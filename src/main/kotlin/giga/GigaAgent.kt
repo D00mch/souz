@@ -1,6 +1,7 @@
 package com.dumch.giga
 
 import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.desktop.ToolCreateNote
 import com.dumch.tool.desktop.ToolOpenApp
 import com.dumch.tool.desktop.ToolOpenBrowser
 import com.dumch.tool.files.*
@@ -128,6 +129,7 @@ class GigaAgent(
             ToolModifyFile.toGiga(),
             ToolFindTextInFiles.toGiga(),
             ToolOpenBrowser(ToolRunBashCommand).toGiga(),
+            ToolCreateNote(ToolRunBashCommand).toGiga(),
             ToolOpenApp(ToolRunBashCommand).toGiga(),
         ).associateBy { it.fn.name }
 
