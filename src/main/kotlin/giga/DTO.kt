@@ -25,17 +25,14 @@ object GigaResponse {
     data class Choice(
         val message: Message,
         val index: Int,
-        @JsonProperty("finish_reason")
-        val finishReason: String
+        @JsonProperty("finish_reason") val finishReason: String
     )
 
     data class Message(
         val content: String,
         val role: GigaMessageRole,
-        @JsonProperty("function_call")
-        val functionCall: FunctionCall? = null,
-        @JsonProperty("functions_state_id")
-        val functionsStateId: String?
+        @JsonProperty("function_call") val functionCall: FunctionCall? = null,
+        @JsonProperty("functions_state_id") val functionsStateId: String?,
     )
 
     data class FunctionCall(
@@ -82,8 +79,8 @@ object GigaRequest {
     data class Message(
         val role: GigaMessageRole,
         val content: String, // Could be String or FunctionCall object
-        @JsonProperty("functions_state_id")
-        val functionsStateId: String? = null
+        @JsonProperty("functions_state_id") val functionsStateId: String? = null,
+        val attachments: List<String>? = null,
     )
 
     data class Function(
