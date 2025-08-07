@@ -19,7 +19,6 @@ class GigaAgent(
         val conversation = ArrayList<GigaRequest.Message>()
 
         userMessages.collect { userText ->
-            // trySummarize(conversation)
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             for (i in 1..10) { // infinite loop protection
                 if (!isActive) break
@@ -33,15 +32,19 @@ class GigaAgent(
                         return@collect
                     }
 
-                    is GigaResponse.Chat.Ok -> response
+                    is GigaResponse.Chat.Ok -> {
+                        conversation.addAll(response.toRequestMessages())
+                        trySummarize(response, conversation)
+                    }
                 }
-                conversation.addAll(response.toRequestMessages())
 
                 val toolAwaits = ArrayList<Deferred<GigaRequest.Message>>()
                 for (ch in response.choices) {
                     val msg = ch.message
                     when {
-                        msg.content.isNotBlank() && msg.functionsStateId == null -> send(msg.content)
+                        msg.content.isNotBlank() -> {
+                            send(msg.content)
+                        }
 
                         msg.functionCall != null && msg.functionsStateId != null -> {
                             val deferred = async(Dispatchers.IO) { executeTool(msg.functionCall) }
@@ -55,8 +58,11 @@ class GigaAgent(
         }
     }
 
-    private suspend fun trySummarize(conversation: ArrayList<GigaRequest.Message>) {
-        if (conversation.size > 20) return // TODO: decide based on model's max tokens
+    private suspend fun trySummarize(response: GigaResponse.Chat.Ok, conversation: ArrayList<GigaRequest.Message>) {
+        val modelContextWindow = GigaModel.entries.first { response.model.startsWith(it.alias) }.maxTokens
+        val smallConversation = response.usage.totalTokens < modelContextWindow * SUMMARIZE_THRESHOLD
+        if (smallConversation) return
+
         val response: GigaResponse.Chat = withContext(Dispatchers.IO) {
             conversation.add(GigaRequest.Message(
                 role = GigaMessageRole.system,
@@ -68,6 +74,7 @@ class GigaAgent(
             is GigaResponse.Chat.Error -> throw CancellationException("Can't summarize the conversation")
             is GigaResponse.Chat.Ok -> response.toRequestMessages().last()
         }
+        println("Summarizing the conversation... $msg")
         val lastMsg = conversation.last()
         conversation.clear()
         conversation.add(msg)
@@ -111,6 +118,8 @@ class GigaAgent(
     }
 
     companion object {
+        private const val SUMMARIZE_THRESHOLD = 0.85
+
         private val tools: Map<String, GigaToolSetup> = listOf(
             ToolReadFile.toGiga(),
             ToolListFiles.toGiga(),

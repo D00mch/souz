@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.flow
 
 suspend fun main() {
     val agent = GigaAgent.instance(userInputFlow(), GigaChatAPI(GigaAuth))
-    agent.run().collect { text -> print("$agent: $text") }
+    agent.run().collect { text -> println("agent: $text") }
 }
 
 private fun userInputFlow(): Flow<String> = flow {

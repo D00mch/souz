@@ -11,9 +11,16 @@ object GigaResponse {
     )
 
     sealed interface Chat {
-        data class Ok(val choices: List<Choice>, val created: Long, val model: String) : Chat
+        data class Ok(val choices: List<Choice>, val created: Long, val model: String, val usage: Usage) : Chat
         data class Error(val status: Int, val message: String) : Chat
     }
+
+    data class Usage(
+        @JsonProperty("prompt_tokens") val promptTokens: Int,
+        @JsonProperty("completion_tokens") val completionTokens: Int,
+        @JsonProperty("total_tokens") val totalTokens: Int,
+        @JsonProperty("precached_prompt_tokens") val precachedTokens: Int
+    )
 
     data class Choice(
         val message: Message,
@@ -37,9 +44,15 @@ object GigaResponse {
     )
 }
 
+enum class GigaModel(val alias: String, val maxTokens: Int) {
+    Lite("GigaChat-2", 8192),
+    Pro("GigaChat-Pro", 8192),
+    Max("GigaChat-Max", 4096),
+}
+
 object GigaRequest {
     data class Chat(
-        val model: String = "GigaChat-Max",
+        val model: String = GigaModel.Pro.alias,
         val messages: List<Message>,
         @JsonProperty("function_call")
         val functionCall: String = "auto",
