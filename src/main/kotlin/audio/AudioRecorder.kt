@@ -47,8 +47,9 @@ class InMemoryAudioRecorder(
         coroutineScope.launch {
             try {
                 _recordingState.value = State.Stopping
-                val audioData = InMemoryOpusRecorder.stopRecording()
-                _audioFlow.emit(audioData)
+                val wavBytes = InMemoryOpusRecorder.stopRecording()
+                val oggBytes = InMemoryOpusRecorder.wavToOpusOgg(wavBytes)
+                _audioFlow.emit(oggBytes)
                 _recordingState.value = State.Idle
             } catch (e: Exception) {
                 _recordingState.value = State.Error(e.message ?: "Failed to stop recording")

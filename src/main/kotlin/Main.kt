@@ -38,7 +38,7 @@ suspend fun main() = coroutineScope {
             .catch { System.err.println("Error in audio flow: ${it.message}") }
             .map { audioData ->
                 File("capture2.ogg").writeBytes(audioData)
-                val resp = gigaVoiceAPI.recognize(File("capture2.ogg").readBytes())
+                val resp = gigaVoiceAPI.recognize(audioData)
                 println("Recognition response: $resp")
                 resp
             }
