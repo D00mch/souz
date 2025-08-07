@@ -9,7 +9,9 @@ import ws.schild.jave.*
 import ws.schild.jave.encode.AudioAttributes
 import ws.schild.jave.encode.EncodingAttributes
 
-/** Simple utility that records the microphone, encodes to Ogg/Opus and returns the result as ByteArray. */
+/**
+ * Simple utility that records the microphone, encodes to Ogg/Opus and returns the result as ByteArray.
+ */
 object InMemoryOpusRecorder {
 
     private var line: TargetDataLine? = null

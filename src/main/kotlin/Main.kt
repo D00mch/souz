@@ -1,11 +1,18 @@
 package com.dumch
 
 import com.dumch.audio.InMemoryAudioRecorder
+import com.dumch.audio.playText
+import com.dumch.giga.GigaAgent
+import com.dumch.giga.GigaAuth
+import com.dumch.giga.GigaChatAPI
+import com.dumch.giga.GigaVoiceAPI
 import com.dumch.keys.HotkeyListener
 import com.github.kwhat.jnativehook.GlobalScreen
 import com.github.kwhat.jnativehook.NativeHookException
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 
 private const val AGENT_ALIAS = ""
 
@@ -22,15 +29,22 @@ suspend fun main() = coroutineScope {
         }
     }
     launch { audioRecorder.logState() }
+    val gigaVoiceAPI = GigaVoiceAPI(GigaAuth)
+    val gigaChatAPI  = GigaChatAPI(GigaAuth)
     withNativeHook(hotkeyListener) {
-        audioRecorder.audioFlow
-            .onEach { audioData ->
-                println("\n$AGENT_ALIAS: [Received audio data: ${audioData.size} bytes]")
+        val userInputFlow = audioRecorder.audioFlow
+            .onEach { println("\n$AGENT_ALIAS: [Received audio data: ${it.size} bytes]") }
+            .catch { System.err.println("Error in audio flow: ${it.message}") }
+            .map { audioData ->
+                val resp = gigaVoiceAPI.recognize(audioData)
+                println("Recognition response: $resp")
+                resp
             }
-            .catch { e ->
-                System.err.println("Error in audio flow: ${e.message}")
-            }
-            .collect()
+
+        GigaAgent.instance(userInputFlow, gigaChatAPI).run().collect { text ->
+            print("AI text: $text")
+            playText(text)
+        }
     }
 }
 
