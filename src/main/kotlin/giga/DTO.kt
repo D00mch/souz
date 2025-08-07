@@ -10,6 +10,10 @@ object GigaResponse {
         @JsonProperty("expires_at") val expiresAt: Date
     )
 
+    data class CountTokens(
+        @JsonProperty("input_tokens") val inputTokens: Long
+    )
+
     sealed interface Chat {
         data class Ok(val choices: List<Choice>, val created: Long, val model: String) : Chat
         data class Error(val status: Int, val message: String) : Chat

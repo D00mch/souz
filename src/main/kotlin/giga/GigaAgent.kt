@@ -19,7 +19,7 @@ class GigaAgent(
         val conversation = ArrayList<GigaRequest.Message>()
 
         userMessages.collect { userText ->
-            // trySummarize(conversation)
+            trySummarize(conversation)
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             for (i in 1..10) { // infinite loop protection
                 if (!isActive) break
@@ -56,22 +56,27 @@ class GigaAgent(
     }
 
     private suspend fun trySummarize(conversation: ArrayList<GigaRequest.Message>) {
-        if (conversation.size > 20) return // TODO: decide based on model's max tokens
-        val response: GigaResponse.Chat = withContext(Dispatchers.IO) {
-            conversation.add(GigaRequest.Message(
+        val inputTokens = api.countTokens(conversation)
+        if (inputTokens > MAX_TOKENS * THRESHOLD_PCT) return
+
+        val messages = ArrayList(conversation)
+        messages.add(
+            GigaRequest.Message(
                 role = GigaMessageRole.system,
                 content = "Summarize the conversation so far",
-            ))
-            chat(conversation)
+            )
+        )
+        val response: GigaResponse.Chat = withContext(Dispatchers.IO) {
+            chat(messages)
         }
-        val msg: GigaRequest.Message = when(response) {
+        val summary: GigaRequest.Message = when (response) {
             is GigaResponse.Chat.Error -> throw CancellationException("Can't summarize the conversation")
             is GigaResponse.Chat.Ok -> response.toRequestMessages().last()
         }
-        val lastMsg = conversation.last()
+        val lastMsg = conversation.lastOrNull()
         conversation.clear()
-        conversation.add(msg)
-        conversation.add(lastMsg)
+        conversation.add(summary)
+        if (lastMsg != null) conversation.add(lastMsg)
     }
 
     private fun GigaResponse.Chat.Ok.toRequestMessages(): Collection<GigaRequest.Message> {
@@ -111,6 +116,9 @@ class GigaAgent(
     }
 
     companion object {
+        private const val MAX_TOKENS = 10_120L
+        private const val THRESHOLD_PCT = 0.8
+
         private val tools: Map<String, GigaToolSetup> = listOf(
             ToolReadFile.toGiga(),
             ToolListFiles.toGiga(),

@@ -36,5 +36,13 @@ class GigaChatAPI(private val auth: GigaAuth) {
         }
     }
 
+    suspend fun countTokens(messages: List<GigaRequest.Message>): Long {
+        val body = GigaRequest.Chat(messages = messages)
+        val response = client.post("https://gigachat.devices.sberbank.ru/api/v1/tokens") {
+            setBody(body)
+        }
+        return response.body<GigaResponse.CountTokens>().inputTokens
+    }
+
     fun clear() = client.close()
 }
