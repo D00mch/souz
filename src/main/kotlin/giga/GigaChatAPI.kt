@@ -6,6 +6,7 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.request.*
+import io.ktor.client.request.forms.*
 import io.ktor.http.*
 
 class GigaChatAPI(private val auth: GigaAuth) {
@@ -34,6 +35,31 @@ class GigaChatAPI(private val auth: GigaAuth) {
             response.status.isSuccess() -> response.body<GigaResponse.Chat.Ok>()
             else -> response.body<GigaResponse.Chat.Error>()
         }
+    }
+
+    suspend fun uploadImage(image: ByteArray, filename: String): GigaResponse.UploadFile {
+        val response = client.post("https://gigachat.devices.sberbank.ru/api/v1/files") {
+            contentType(ContentType.MultiPart.FormData)
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append("purpose", "general")
+                        append(
+                            key = "file",
+                            value = image,
+                            headers = Headers.build {
+                                append(
+                                    HttpHeaders.ContentDisposition,
+                                    "form-data; name=\"file\"; filename=\"$filename\""
+                                )
+                                append(HttpHeaders.ContentType, ContentType.Application.OctetStream.toString())
+                            }
+                        )
+                    }
+                )
+            )
+        }
+        return response.body()
     }
 
     fun clear() = client.close()

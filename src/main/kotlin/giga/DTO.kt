@@ -62,6 +62,16 @@ object GigaResponse {
         @JsonProperty("age_score") val ageScore: Double,
         @JsonProperty("gender_score") val genderScore: Double
     )
+
+    data class UploadFile(
+        val bytes: Int,
+        @JsonProperty("created_at") val createdAt: Long,
+        val filename: String,
+        val id: String,
+        @JsonProperty("object") val objectType: String,
+        val purpose: String,
+        @JsonProperty("access_policy") val accessPolicy: String,
+    )
 }
 
 enum class GigaModel(val alias: String, val maxTokens: Int) {
