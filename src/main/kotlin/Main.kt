@@ -13,6 +13,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import java.io.File
 
 private const val AGENT_ALIAS = ""
 
@@ -36,7 +37,8 @@ suspend fun main() = coroutineScope {
             .onEach { println("\n$AGENT_ALIAS: [Received audio data: ${it.size} bytes]") }
             .catch { System.err.println("Error in audio flow: ${it.message}") }
             .map { audioData ->
-                val resp = gigaVoiceAPI.recognize(audioData)
+                File("capture2.ogg").writeBytes(audioData)
+                val resp = gigaVoiceAPI.recognize(File("capture2.ogg").readBytes())
                 println("Recognition response: $resp")
                 resp
             }
