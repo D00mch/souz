@@ -61,13 +61,3 @@ private suspend fun withNativeHook(hotkeyListener: HotkeyListener, block: suspen
         GlobalScreen.unregisterNativeHook()
     }
 }
-
-private fun userInputFlow(): Flow<String> = flow {
-    println("\nType your message or `exit` to quit")
-    while (true) {
-        print("> ")
-        val input = readLine() ?: break
-        if (input.equals("exit", ignoreCase = true)) break
-        emit(input)
-    }
-}
