@@ -6,5 +6,5 @@ import com.dumch.tool.desktop.ToolOpenBrowser
 
 fun main() {
     val tool = ToolOpenBrowser(ToolRunBashCommand)
-    tool.invoke(ToolOpenApp.Input("https://www.sberbank.ru"))
+    tool.invoke(ToolOpenBrowser.Input("https://www.sberbank.ru"))
 }
