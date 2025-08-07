@@ -37,10 +37,9 @@ suspend fun main() = coroutineScope {
             .onEach { println("\n$AGENT_ALIAS: [Received audio data: ${it.size} bytes]") }
             .catch { System.err.println("Error in audio flow: ${it.message}") }
             .map { audioData ->
-                File("capture2.ogg").writeBytes(audioData)
                 val resp = gigaVoiceAPI.recognize(audioData)
                 println("Recognition response: $resp")
-                resp
+                resp.result.joinToString("\n")
             }
 
         GigaAgent.instance(userInputFlow, gigaChatAPI).run().collect { text ->

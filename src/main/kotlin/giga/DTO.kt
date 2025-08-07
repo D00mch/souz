@@ -42,6 +42,26 @@ object GigaResponse {
         val name: String,
         val arguments: Map<String, Any>
     )
+
+    data class RecognizeResponse(
+        val result: List<String>,
+        val emotions: List<Emotion>,
+        @JsonProperty("person_identity") val personIdentity: PersonIdentity,
+        val status: Int
+    )
+
+    data class Emotion(
+        val negative: Double,
+        val neutral: Double,
+        val positive: Double
+    )
+
+    data class PersonIdentity(
+        val age: String,
+        val gender: String,
+        @JsonProperty("age_score") val ageScore: Double,
+        @JsonProperty("gender_score") val genderScore: Double
+    )
 }
 
 enum class GigaModel(val alias: String, val maxTokens: Int) {
@@ -52,7 +72,7 @@ enum class GigaModel(val alias: String, val maxTokens: Int) {
 
 object GigaRequest {
     data class Chat(
-        val model: String = GigaModel.Pro.alias,
+        val model: String = GigaModel.Max.alias,
         val messages: List<Message>,
         @JsonProperty("function_call")
         val functionCall: String = "auto",
