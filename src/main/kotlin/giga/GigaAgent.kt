@@ -98,6 +98,7 @@ class GigaAgent(
         val fn = tools[functionCall.name] ?: return GigaRequest.Message(
             GigaMessageRole.function, """{"result":"no such function ${functionCall.name}"}"""
         )
+        println("Executing tool: ${fn.fn.name}, arguments: ${functionCall.arguments}")
         return fn.invoke(functionCall)
     }
 
