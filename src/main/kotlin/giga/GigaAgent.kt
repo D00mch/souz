@@ -1,5 +1,8 @@
 package com.dumch.giga
 
+import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.desktop.ToolOpenApp
+import com.dumch.tool.desktop.ToolOpenBrowser
 import com.dumch.tool.files.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
@@ -12,12 +15,11 @@ class GigaAgent(
 ) {
     private val functions: List<GigaRequest.Function> = tools.map { it.value.fn }
 
-    // Чтобы самим не думать об управлении ЖЦ, воспользуемся имеющимся channelFlow
     fun run(): Flow<String> = channelFlow {
-        val conversation = ArrayList<GigaRequest.Message>() // TODO: shrink on every N steps
+        val conversation = ArrayList<GigaRequest.Message>()
 
         userMessages.collect { userText ->
-            trySummarize(conversation)
+            // trySummarize(conversation)
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             for (i in 1..10) { // infinite loop protection
                 if (!isActive) break
@@ -115,6 +117,8 @@ class GigaAgent(
             ToolDeleteFile.toGiga(),
             ToolModifyFile.toGiga(),
             ToolFindTextInFiles.toGiga(),
+            ToolOpenBrowser(ToolRunBashCommand).toGiga(),
+            ToolOpenApp(ToolRunBashCommand).toGiga(),
         ).associateBy { it.fn.name }
 
         fun instance(userMessages: Flow<String>, api: GigaChatAPI): GigaAgent {
