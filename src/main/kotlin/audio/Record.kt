@@ -4,6 +4,7 @@ import java.io.*
 import java.nio.file.Files
 import javax.sound.sampled.*
 import kotlin.system.exitProcess
+import kotlinx.coroutines.*
 import ws.schild.jave.*
 import ws.schild.jave.encode.AudioAttributes
 import ws.schild.jave.encode.EncodingAttributes
@@ -11,80 +12,90 @@ import ws.schild.jave.encode.EncodingAttributes
 /** Simple utility that records the microphone, encodes to Ogg/Opus and returns the result as ByteArray. */
 object InMemoryOpusRecorder {
 
-    /** Record the microphone for the given number of seconds. */
-    fun recordPcm(seconds: Int,
-                  sampleRate: Float = 44_100f,  // Changed from 48kHz to 44.1kHz for better compatibility
-                  channels: Int = 1,           // Changed to mono for simplicity
-                  sampleSizeBits: Int = 16): ByteArray {
+    private var line: TargetDataLine? = null
+    private var format: AudioFormat? = null
+    private var rawOut: ByteArrayOutputStream? = null
+    private var recordingJob: Job? = null
 
-        // List available mixers for debugging
-        println("Available mixers:")
-        AudioSystem.getMixerInfo().forEach { 
-            println("- ${it.name} (${it.description})")
-        }
-
-        val format = AudioFormat(sampleRate, sampleSizeBits, channels, /*signed =*/ true, /*bigEndian =*/ false)
-        println("Trying to open audio format: $format")
-        
-        val info = DataLine.Info(TargetDataLine::class.java, format)
+    fun startRecording(
+        scope: CoroutineScope,
+        sampleRate: Float = 44_100f,
+        channels: Int = 1,
+        sampleSizeBits: Int = 16
+    ): Job {
+        val fmt = AudioFormat(sampleRate, sampleSizeBits, channels, true, false)
+        val info = DataLine.Info(TargetDataLine::class.java, fmt)
         if (!AudioSystem.isLineSupported(info)) {
-            println("ERROR: Line not supported for format: $format")
-            println("Available target data lines:")
-            AudioSystem.getTargetLineInfo(info).forEach { println("- $it") }
-            throw LineUnavailableException("Line not supported for format: $format")
+            println("ERROR: Line not supported for format: $fmt")
+            throw LineUnavailableException("Line not supported for format: $fmt")
         }
-        
-        val line = AudioSystem.getLine(info) as TargetDataLine
+
+        val target = AudioSystem.getLine(info) as TargetDataLine
+        target.open(fmt)
+        target.start()
+
+        line = target
+        format = fmt
+        rawOut = ByteArrayOutputStream()
+
+        recordingJob = scope.launch(Dispatchers.IO) {
+            val buffer = ByteArray(4096)
+            while (isActive) {
+                val read = target.read(buffer, 0, buffer.size)
+                if (read > 0) {
+                    rawOut?.write(buffer, 0, read)
+                }
+            }
+        }
+
+        return recordingJob as Job
+    }
+
+    suspend fun stopRecording(): ByteArray {
+        delay(2_000)
+        recordingJob?.cancelAndJoin()
+
+        val target = line
+        val fmt = format
+        val bos = rawOut
 
         try {
-            line.open(format)
-            line.start()
-            println("Successfully opened audio line")
-
-            val rawOut = ByteArrayOutputStream()
-            val buffer = ByteArray(4096)
-            val endTime = System.currentTimeMillis() + seconds * 1_000L
-            var totalBytesRead = 0L
-            var iterations = 0
-
-            println("Starting recording...")
-            while (System.currentTimeMillis() < endTime) {
-                val read = line.read(buffer, 0, buffer.size)
-                if (read > 0) {
-                    rawOut.write(buffer, 0, read)
-                    totalBytesRead += read
-                } else if (read < 0) {
-                    println("Warning: Read $read bytes from audio line")
-                }
-                iterations++
-            }
-            println("Recording finished. Read $totalBytesRead bytes in $iterations iterations")
-
-            if (totalBytesRead == 0L) {
-                throw IllegalStateException("No audio data was captured. Check your microphone permissions and connections.")
-            }
-
-            // Wrap raw PCM in a WAV header
-            val frames = rawOut.size() / format.frameSize
-            val wavBOS = ByteArrayOutputStream()
-            val ais = AudioInputStream(
-                ByteArrayInputStream(rawOut.toByteArray()),
-                format,
-                frames.toLong()
-            )
-            
-            AudioSystem.write(ais, AudioFileFormat.Type.WAVE, wavBOS)
-            println("Generated WAV file with ${wavBOS.size()} bytes")
-            return wavBOS.toByteArray()
-        } finally {
-            try {
-                line.stop()
-                line.close()
-                line.flush()
-            } catch (e: Exception) {
-                println("Error while closing audio line: ${e.message}")
-            }
+            target?.stop()
+            target?.close()
+            target?.flush()
+        } catch (e: Exception) {
+            println("Error while closing audio line: ${e.message}")
         }
+
+        line = null
+        recordingJob = null
+
+        val rawBytes = bos?.toByteArray() ?: ByteArray(0)
+        if (fmt == null) return rawBytes
+
+        val frames = rawBytes.size / fmt.frameSize
+        val wavBOS = ByteArrayOutputStream()
+        val ais = AudioInputStream(
+            ByteArrayInputStream(rawBytes),
+            fmt,
+            frames.toLong()
+        )
+        AudioSystem.write(ais, AudioFileFormat.Type.WAVE, wavBOS)
+        return wavBOS.toByteArray()
+    }
+
+    suspend fun recordPcm(
+        seconds: Int,
+        sampleRate: Float = 44_100f,
+        channels: Int = 1,
+        sampleSizeBits: Int = 16
+    ): ByteArray {
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        startRecording(scope, sampleRate, channels, sampleSizeBits)
+        delay(seconds * 1_000L)
+        val data = stopRecording()
+        scope.cancel()
+        return data
     }
 
     /** Encode the given WAV bytes to Ogg/Opus and return the compressed bytes. */
@@ -119,10 +130,10 @@ object InMemoryOpusRecorder {
     }
 }
 
-fun main() {
+fun main() = runBlocking {
     println("Starting audio recording test...")
     println("Make sure your microphone is properly connected and has the necessary permissions.")
-    
+
     try {
         println("Will record for 5 seconds. Speak into your microphone...")
         // Record audio

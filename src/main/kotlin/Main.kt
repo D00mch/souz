@@ -12,7 +12,6 @@ private const val AGENT_ALIAS = ""
 suspend fun main() = coroutineScope {
     val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     val audioRecorder = InMemoryAudioRecorder(
-        recordingDurationSeconds = 7,
         coroutineScope = appScope
     )
     val hotkeyListener = HotkeyListener { pressed ->
