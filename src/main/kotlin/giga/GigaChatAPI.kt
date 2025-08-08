@@ -8,6 +8,7 @@ import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.http.*
+import java.io.File
 
 class GigaChatAPI(private val auth: GigaAuth) {
     private val client = HttpClient(CIO) {
@@ -63,4 +64,10 @@ class GigaChatAPI(private val auth: GigaAuth) {
     }
 
     fun clear() = client.close()
+}
+
+suspend fun main() {
+    val f = File("/Users/m1/Pictures/portrait.jpeg")
+    val resp = GigaChatAPI(GigaAuth).uploadImage(f.readBytes(), f.name)
+    println(resp)
 }
