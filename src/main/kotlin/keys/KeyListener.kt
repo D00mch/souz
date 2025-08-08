@@ -7,6 +7,7 @@ import com.github.kwhat.jnativehook.keyboard.NativeKeyListener
 import jdk.jfr.RecordingState
 import kotlinx.coroutines.*
 import kotlin.system.exitProcess
+import org.slf4j.LoggerFactory
 
 class HotkeyListener(
     private val onPressed: (Boolean) -> Unit
@@ -44,16 +45,17 @@ class HotkeyListener(
 }
 
 fun main() {
+    val l = LoggerFactory.getLogger("HotkeyListener")
     val hotkeyListener = HotkeyListener { pressed ->
         val msg = if (pressed) "onStart" else "onStop"
-        println(msg)
+        l.info(msg)
     }
 
     try {
         GlobalScreen.registerNativeHook()
         GlobalScreen.addNativeKeyListener(hotkeyListener)
     } catch (e: NativeHookException) {
-        System.err.println("Failed to register native hook: ${e.message}")
+        l.error("Failed to register native hook: ${e.message}")
         exitProcess(1)
     }
 

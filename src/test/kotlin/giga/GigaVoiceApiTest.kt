@@ -4,11 +4,13 @@ import com.dumch.giga.GigaAuth
 import com.dumch.giga.GigaVoiceAPI
 import java.io.File
 import kotlin.test.assertTrue
+import org.slf4j.LoggerFactory
 
 suspend fun main () {
+    val l = LoggerFactory.getLogger("GigaVoiceApiTest")
     val key = System.getenv("VOICE_KEY")
     if (key.isNullOrBlank()) {
-        println("VOICE_KEY not set; skipping real API test")
+        l.info("VOICE_KEY not set; skipping real API test")
         return
     }
 
