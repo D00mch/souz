@@ -7,46 +7,55 @@ import com.dumch.tool.ToolSetup
 class ToolOpenFolder(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenFolder.Input> {
 
     override val name: String = "OpenFolder"
-    override val description: String = "Opens Picture with specified name in selected folder"
+    override val description: String = "Opens Folder by its name"
     override fun invoke(input: Input): String {
         bash.invoke(
             ToolRunBashCommand.Input(
                 """
                 osascript <<EOF
-                    tell application "Finder"
-                        if (count of Finder windows) is 0 then
-                            display dialog "Нет открытых окон Finder!" with title "Ошибка" buttons {"OK"} default button 1
-                            return
+                    set folderName to "${input.name}"
+
+                    try
+                        set sanitizedName to quoted form of folderName
+                        set searchCmd to "mdfind \"kMDItemKind == 'Folder' && kMDItemDisplayName == " & sanitizedName & "\""
+                        
+                        set searchResults to do shell script searchCmd
+                        if searchResults is "" then
+                            set searchCmd to "mdfind \"kind:folder " & sanitizedName & "\""
+                            set searchResults to do shell script searchCmd
                         end if
                         
-                        set currentFolder to (target of front window) as alias
-                        set folderPath to POSIX path of currentFolder
+                        if searchResults is "" then
+                            set searchCmd to "find ~ /Volumes -type d -name " & sanitizedName & " -maxdepth 5 2>/dev/null | head -n 20"
+                            set searchResults to do shell script searchCmd
+                        end if
                         
-                        set imageName to "${input.name}"
+                        if searchResults is "" then
+                            error "Папка не найдена"
+                        end if
                         
-                        set imageExtensions to {"jpg", "jpeg", "png", "gif", "heic", "webp", "tiff", "bmp"}
+                        set foundPaths to paragraphs of searchResults
                         
-                        set foundImage to missing value
-                        
-                        repeat with itemFile in (files of currentFolder) as list
-                            set fileName to name of itemFile
-                            set fileExtension to name extension of itemFile
-                            
-                            if (fileName contains imageName) and (fileExtension is in imageExtensions) then
-                                set foundImage to itemFile
-                                exit repeat
-                            end if
-                        end repeat
-                        
-                        if foundImage is not missing value then
-                            tell application "Preview"
-                                activate
-                                open foundImage
-                            end tell
+                        if (count of foundPaths) is 1 then
+                            openInFinder(first item of foundPaths)
                         else
-                            display dialog "Изображение '" & imageName & "' не найдено в папке:" & return & folderPath with title "Ошибка" buttons {"OK"} default button 1
+                            set selectedPath to choose from list foundPaths with title "Найдено несколько папок" with prompt "Выберите папку '" & folderName & "':" OK button name "Открыть"
+                            if selectedPath is not false then
+                                openInFinder(first item of selectedPath)
+                            end if
                         end if
-                    end tell
+                        
+                    on error errMsg
+                        display alert "Ошибка" message errMsg as critical buttons {"OK"}
+                    end try
+                    
+                    on openInFinder(posixPath)
+                        tell application "Finder"
+                            activate
+                            reveal (POSIX file posixPath as alias)
+                            open (POSIX file posixPath as alias)
+                        end tell
+                    end openInFinder
                 EOF
             """.trimIndent()
             )
@@ -55,7 +64,7 @@ class ToolOpenFolder(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenF
     }
 
     class Input(
-        @InputParamDescription("Picture name")
+        @InputParamDescription("Folder name")
         val name: String
     )
 }
