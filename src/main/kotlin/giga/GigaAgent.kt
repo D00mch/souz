@@ -6,6 +6,7 @@ import com.dumch.tool.desktop.ToolOpenApp
 import com.dumch.tool.desktop.ToolOpenBrowser
 import com.dumch.tool.desktop.ToolOpenFolder
 import com.dumch.tool.desktop.ToolOpenPhoto
+import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.files.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
@@ -104,7 +105,7 @@ class GigaAgent(
         }
     }
 
-    private fun executeTool(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
+    private suspend fun executeTool(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
         val fn = tools[functionCall.name] ?: return GigaRequest.Message(
             GigaMessageRole.function, """{"result":"no such function ${functionCall.name}"}"""
         )
@@ -130,6 +131,7 @@ class GigaAgent(
             ToolDeleteFile.toGiga(),
             ToolModifyFile.toGiga(),
             ToolFindTextInFiles.toGiga(),
+            ToolDesktopScreenShot().toGiga(),
             ToolOpenBrowser(ToolRunBashCommand).toGiga(),
             ToolCreateNote(ToolRunBashCommand).toGiga(),
             ToolOpenPhoto(ToolRunBashCommand).toGiga(),

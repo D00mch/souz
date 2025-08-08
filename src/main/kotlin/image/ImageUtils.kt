@@ -15,10 +15,10 @@ import javax.imageio.ImageWriteParam
  */
 object ImageUtils {
     /** Capture the entire desktop and return the image as JPEG bytes. */
-    fun captureDesktop(): ByteArray {
+    fun captureDesktop(robot: Robot): ByteArray {
         val screenSize = Toolkit.getDefaultToolkit().screenSize
         val captureRect = Rectangle(screenSize)
-        val image = Robot().createScreenCapture(captureRect)
+        val image = robot.createScreenCapture(captureRect)
         val output = ByteArrayOutputStream()
         val writer = ImageIO.getImageWritersByFormatName("jpg").next()
         val ios = ImageIO.createImageOutputStream(output)
@@ -57,7 +57,7 @@ object ImageUtils {
 }
 
 fun main() {
-    val screenshot = ImageUtils.captureDesktop()
+    val screenshot = ImageUtils.captureDesktop(Robot())
     val jpeg = ImageUtils.compressJpeg(screenshot)
     File("desktop.jpg").writeBytes(jpeg)
 }
