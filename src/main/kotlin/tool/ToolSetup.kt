@@ -16,4 +16,8 @@ interface ToolSetup<Input> {
     operator fun invoke(input: Input): String
 }
 
+interface ToolSetupWithAttachments<Input> : ToolSetup<Input> {
+    val attachments: List<String>
+}
+
 class BadInputException(msg: String) : Exception(msg)
