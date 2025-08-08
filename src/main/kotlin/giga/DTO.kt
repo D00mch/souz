@@ -64,7 +64,7 @@ object GigaResponse {
     )
 
     data class UploadFile(
-        val bytes: Int,
+        val bytes: Long,
         @JsonProperty("created_at") val createdAt: Long,
         val filename: String,
         val id: String,

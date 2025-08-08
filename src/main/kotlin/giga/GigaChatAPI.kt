@@ -1,28 +1,37 @@
 package com.dumch.giga
 
+import com.dumch.tool.ToolRunBashCommand
+import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
+import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
-import io.ktor.client.request.forms.*
 import io.ktor.http.*
 import java.io.File
 
 class GigaChatAPI(private val auth: GigaAuth) {
     private val client = HttpClient(CIO) {
         var token = "" // get form env, or cache, or db
-        val gigaKey = System.getenv("GIGA_KEY")
         gigaDefaults()
+        install(Logging) {
+            level = LogLevel.ALL
+            sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
+            logger = object : Logger {
+                override fun log(message: String) = println("[Ktor] $message")
+            }
+        }
         install(Auth) {
             bearer {
                 loadTokens {
                     BearerTokens(token, "")
                 }
                 refreshTokens {
-                    token = auth.requestToken(gigaKey, "GIGACHAT_API_PERS")
-                    BearerTokens(token, "")
+                    BearerTokens(getAccessToken(), "")
                 }
             }
         }
@@ -38,36 +47,33 @@ class GigaChatAPI(private val auth: GigaAuth) {
         }
     }
 
-    suspend fun uploadImage(image: ByteArray, filename: String): GigaResponse.UploadFile {
-        val response = client.post("https://gigachat.devices.sberbank.ru/api/v1/files") {
-            contentType(ContentType.MultiPart.FormData)
-            setBody(
-                MultiPartFormDataContent(
-                    formData {
-                        append("purpose", "general")
-                        append(
-                            key = "file",
-                            value = image,
-                            headers = Headers.build {
-                                append(
-                                    HttpHeaders.ContentDisposition,
-                                    "form-data; name=\"file\"; filename=\"$filename\""
-                                )
-                                append(HttpHeaders.ContentType, ContentType.Application.OctetStream.toString())
-                            }
-                        )
-                    }
-                )
+    val objectMapper = jacksonObjectMapper()
+        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+
+    suspend fun uploadImage(file: File): GigaResponse.UploadFile {
+        val token = getAccessToken()
+        val result = ToolRunBashCommand.invoke(
+            ToolRunBashCommand.Input(
+                """
+                curl -X POST 'https://gigachat.devices.sberbank.ru/api/v1/files' \
+                     -H "Authorization: Bearer $token" \
+                     -F "file=@${file.path};type=image/jpeg" \
+                     -F "purpose=general"
+                """.trimIndent()
             )
-        }
-        return response.body()
+        )
+        val body = result.lines().last()
+        return objectMapper.readValue(body)
     }
 
-    fun clear() = client.close()
+    private suspend fun getAccessToken(): String {
+        val gigaKey = System.getenv("GIGA_KEY")
+        return auth.requestToken(gigaKey, "GIGACHAT_API_PERS")
+    }
 }
 
 suspend fun main() {
     val f = File("/Users/m1/Pictures/portrait.jpeg")
-    val resp = GigaChatAPI(GigaAuth).uploadImage(f.readBytes(), f.name)
+    val resp = GigaChatAPI(GigaAuth).uploadImage(f)
     println(resp)
 }

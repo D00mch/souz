@@ -9,6 +9,12 @@ repositories {
     mavenCentral()
 }
 
+sourceSets {
+    main {
+        resources.srcDir(setOf("src/main/resources"))
+    }
+}
+
 dependencies {
     implementation(kotlin("reflect"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${Versions.Coroutines}")
@@ -17,6 +23,7 @@ dependencies {
     // ktor
     implementation("io.ktor:ktor-client-core:${Versions.Ktor}")
     implementation("io.ktor:ktor-client-cio:${Versions.Ktor}")
+    implementation("io.ktor:ktor-client-logging:${Versions.Ktor}")
     implementation("io.ktor:ktor-client-content-negotiation:${Versions.Ktor}")
     implementation("io.ktor:ktor-client-auth:${Versions.Ktor}")
     implementation("io.ktor:ktor-serialization-kotlinx-json:${Versions.Ktor}")

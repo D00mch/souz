@@ -17,7 +17,7 @@ suspend fun main() {
     try {
         val wavBytes = File("Generated.wav").readBytes()
         val oggBytes = InMemoryOpusRecorder.wavToOpusOgg(wavBytes)
-        val text = api.recognize(oggBytes)
+        val text = api.recognize(oggBytes).result.joinToString("\n")
         assertTrue(text.contains("hello", ignoreCase = true))
     } finally {
         api.clear()
