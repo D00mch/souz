@@ -6,6 +6,7 @@ import com.dumch.image.ImageUtils
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolSetupWithAttachments
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import java.awt.Robot
 import java.io.File
 
@@ -13,6 +14,7 @@ class ToolDesktopScreenShot(
     private val api: GigaChatAPI = GigaChatAPI(GigaAuth),
     private val robot: Robot = Robot(),
 ) : ToolSetupWithAttachments<ToolDesktopScreenShot.Input> {
+    private val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
 
     override val name: String = "DesktopScreenShot"
     override val description: String = "Captures desktop screenshot and uploads it to GigaChat, returning image id. " +
@@ -29,13 +31,14 @@ class ToolDesktopScreenShot(
             val screenshot = ImageUtils.captureDesktop(robot)
             val file = File.createTempFile("screenshot", ".jpg")
             file.writeBytes(ImageUtils.compressJpeg(screenshot))
+            l.info("Uploading screenshot to GigaChat")
             val upload = api.uploadImage(file)
             lastAttachments.clear()
             lastAttachments.add(upload.id)
             return upload.id
         } catch (e: Exception) {
             return "Error in DesktopScreenShot: ${e.message}"
-                .also { println(it) }
+                .also { l.error(it, e) }
         }
     }
 

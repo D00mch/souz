@@ -21,6 +21,7 @@ dependencies {
     implementation(kotlin("reflect"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${Versions.Coroutines}")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
+    implementation("ch.qos.logback:logback-classic:${Versions.Logback}")
 
     // ktor
     implementation("io.ktor:ktor-client-core:${Versions.Ktor}")

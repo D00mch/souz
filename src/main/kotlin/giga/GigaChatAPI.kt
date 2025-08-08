@@ -19,11 +19,8 @@ class GigaChatAPI(private val auth: GigaAuth) {
         var token = "" // get form env, or cache, or db
         gigaDefaults()
         install(Logging) {
-            level = LogLevel.ALL
+            level = LogLevel.INFO
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
-            logger = object : Logger {
-                override fun log(message: String) = println("[Ktor] $message")
-            }
         }
         install(Auth) {
             bearer {
