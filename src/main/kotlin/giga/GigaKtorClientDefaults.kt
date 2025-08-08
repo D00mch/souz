@@ -8,8 +8,12 @@ import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
-import java.security.cert.X509Certificate
+import java.io.IOException
+import java.io.InputStream
+import java.security.KeyStore
+import java.security.cert.CertificateFactory
 import java.util.*
+import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
 fun HttpClientConfig<CIOEngineConfig>.gigaDefaults() {
@@ -26,12 +30,34 @@ fun HttpClientConfig<CIOEngineConfig>.gigaDefaults() {
     }
     engine {
         https {
-            trustManager = object : X509TrustManager {
-                override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-                override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-            }
+            trustManager = trustManagerFromPem(
+                "russian_trusted_root_ca_gost_2025.cer",
+                "russian_trusted_sub_ca_gost_2025.cer",
+                "russiantrustedca.pem",
+                "russiantrustedca2024.pem",
+            )
         }
     }
 }
 
+private fun resourceStream(path: String) =
+    Thread.currentThread().contextClassLoader.getResourceAsStream(path)
+        ?: throw IOException("Certificate not found on classpath: $path")
+
+fun trustManagerFromPem(vararg resourcePaths: String): X509TrustManager {
+    val cf = CertificateFactory.getInstance("X.509")
+    val ks = KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null) }
+
+    resourcePaths.forEachIndexed { i, path ->
+        val ins: InputStream = resourceStream(path)
+        ins.use {
+            val cert = cf.generateCertificate(it)
+            ks.setCertificateEntry("extra-ca-$i", cert)
+        }
+    }
+
+    val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {
+        init(ks)
+    }
+    return tmf.trustManagers.filterIsInstance<X509TrustManager>().single()
+}
