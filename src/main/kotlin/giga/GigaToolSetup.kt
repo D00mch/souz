@@ -2,6 +2,7 @@ package com.dumch.giga
 
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolSetup
+import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlin.reflect.KCallable
 import kotlin.reflect.full.declaredMembers
@@ -48,6 +49,45 @@ inline fun <reified Input> ToolSetup<Input>.toGiga(): GigaToolSetup {
                 GigaRequest.Message(
                     role = GigaMessageRole.function,
                     content = gigaResult,
+                )
+            } catch (e: Exception) {
+                e.toGigaToolMessage()
+            }
+        }
+    }
+}
+
+fun ToolDesktopScreenShot.toGiga(): GigaToolSetup {
+    val toolSetup = this
+    return object : GigaToolSetup {
+        override val fn: GigaRequest.Function = GigaRequest.Function(
+            name = toolSetup.name,
+            description = toolSetup.description,
+            parameters = GigaRequest.Parameters(
+                "object",
+                properties = HashMap<String, GigaRequest.Property>().apply {
+                    val clazz = ToolDesktopScreenShot.Input::class
+                    for (kProperty: KCallable<*> in clazz.declaredMembers) {
+                        val annotation = kProperty.findAnnotation<InputParamDescription>() ?: continue
+                        val description = annotation.value
+                        val type = kProperty.returnType.toString().substringAfterLast(".").lowercase()
+                        val gigaProperty = GigaRequest.Property(type, description)
+                        put(kProperty.name, gigaProperty)
+                    }
+                },
+            ),
+        )
+
+        override fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
+            return try {
+                val input: ToolDesktopScreenShot.Input =
+                    gigaJsonMapper.convertValue(functionCall.arguments, ToolDesktopScreenShot.Input::class.java)
+                val id = toolSetup.invoke(input)
+                val gigaResult = gigaJsonMapper.writeValueAsString(mapOf("result" to id))
+                GigaRequest.Message(
+                    role = GigaMessageRole.function,
+                    content = gigaResult,
+                    attachments = listOf(id),
                 )
             } catch (e: Exception) {
                 e.toGigaToolMessage()
