@@ -11,7 +11,7 @@ import kotlin.reflect.full.findAnnotation
 
 interface GigaToolSetup {
     val fn: GigaRequest.Function
-    operator fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message
+    suspend operator fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message
 }
 
 val gigaJsonMapper = jacksonObjectMapper()
@@ -37,7 +37,7 @@ inline fun <reified Input> ToolSetup<Input>.toGiga(): GigaToolSetup {
             )
         )
 
-        override fun invoke(
+        override suspend fun invoke(
             functionCall: GigaResponse.FunctionCall,
         ): GigaRequest.Message {
             return try {
@@ -78,12 +78,12 @@ inline fun <reified Input> ToolSetupWithAttachments<Input>.toGiga(): GigaToolSet
             )
         )
 
-        override fun invoke(
+        override suspend fun invoke(
             functionCall: GigaResponse.FunctionCall,
         ): GigaRequest.Message {
             return try {
                 val input: Input = gigaJsonMapper.convertValue(functionCall.arguments, Input::class.java)
-                val toolResult = toolSetup.invoke(input)
+                val toolResult = toolSetup.suspendInvoke(input)
                 val gigaResult = gigaJsonMapper.writeValueAsString(
                     mapOf("result" to toolResult)
                 )

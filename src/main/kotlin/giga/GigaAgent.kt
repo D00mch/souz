@@ -105,7 +105,7 @@ class GigaAgent(
         }
     }
 
-    private fun executeTool(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
+    private suspend fun executeTool(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
         val fn = tools[functionCall.name] ?: return GigaRequest.Message(
             GigaMessageRole.function, """{"result":"no such function ${functionCall.name}"}"""
         )
@@ -131,12 +131,12 @@ class GigaAgent(
             ToolDeleteFile.toGiga(),
             ToolModifyFile.toGiga(),
             ToolFindTextInFiles.toGiga(),
+            ToolDesktopScreenShot().toGiga(),
             ToolOpenBrowser(ToolRunBashCommand).toGiga(),
             ToolCreateNote(ToolRunBashCommand).toGiga(),
             ToolOpenPhoto(ToolRunBashCommand).toGiga(),
             ToolOpenFolder(ToolRunBashCommand).toGiga(),
             ToolOpenApp(ToolRunBashCommand).toGiga(),
-            ToolDesktopScreenShot().toGiga(),
         ).associateBy { it.fn.name }
 
         fun instance(userMessages: Flow<String>, api: GigaChatAPI): GigaAgent {
