@@ -3,6 +3,7 @@ package com.dumch
 import com.dumch.audio.ActiveSoundActiveSoundRecorder
 import com.dumch.audio.InMemoryAudioRecorder
 import com.dumch.audio.playText
+import com.dumch.audio.playTextRand
 import com.dumch.audio.rawToOpusOgg
 import com.dumch.giga.GigaAgent
 import com.dumch.giga.GigaAuth
@@ -19,7 +20,7 @@ import org.slf4j.LoggerFactory
 
 private const val AGENT_ALIAS = ""
 
-private val l = LoggerFactory.getLogger("Main")
+private val l = LoggerFactory.getLogger("AI")
 
 suspend fun main() = coroutineScope {
     val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -30,8 +31,14 @@ suspend fun main() = coroutineScope {
     val hotkeyListener = HotkeyListener { pressed ->
         l.info(if (pressed) "onStart" else "onStop")
         when {
-            pressed -> audioRecorder.start()
-            else -> audioRecorder.stop()
+            pressed -> {
+                playTextRand(220, "Слушаю", "Говори")
+                audioRecorder.start()
+            }
+            else -> {
+                playTextRand(120, "ща сделаю", "поехали", "ну что ж, приступим", "опять работать")
+                audioRecorder.stop()
+            }
         }
     }
     launch { audioRecorder.logState() }
@@ -49,7 +56,7 @@ suspend fun main() = coroutineScope {
             }
 
         GigaAgent.instance(userInputFlow, gigaChatAPI).run().collect { text ->
-            l.info("AI text: $text")
+            l.info(text)
             playText(text)
         }
     }
