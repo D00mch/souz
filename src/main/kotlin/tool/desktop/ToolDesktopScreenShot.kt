@@ -49,6 +49,7 @@ class ToolDesktopScreenShot(
 }
 
 fun main() {
+    val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
     val id = ToolDesktopScreenShot().invoke(ToolDesktopScreenShot.Input("1"))
-    println(id)
+    l.info(id)
 }

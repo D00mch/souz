@@ -13,8 +13,11 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import org.slf4j.LoggerFactory
 
 private const val AGENT_ALIAS = ""
+
+private val l = LoggerFactory.getLogger("Main")
 
 suspend fun main() = coroutineScope {
     val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -22,7 +25,7 @@ suspend fun main() = coroutineScope {
         coroutineScope = appScope
     )
     val hotkeyListener = HotkeyListener { pressed ->
-        println(if (pressed) "onStart" else "onStop")
+        l.info(if (pressed) "onStart" else "onStop")
         when {
             pressed -> audioRecorder.start()
             else -> audioRecorder.stop()
@@ -33,16 +36,16 @@ suspend fun main() = coroutineScope {
     val gigaChatAPI  = GigaChatAPI(GigaAuth)
     withNativeHook(hotkeyListener) {
         val userInputFlow = audioRecorder.audioFlow
-            .onEach { println("\n$AGENT_ALIAS: [Received audio data: ${it.size} bytes]") }
-            .catch { System.err.println("Error in audio flow: ${it.message}") }
+            .onEach { l.info("\n$AGENT_ALIAS: [Received audio data: ${it.size} bytes]") }
+            .catch { l.error("Error in audio flow: ${it.message}") }
             .map { audioData ->
                 val resp = gigaVoiceAPI.recognize(audioData)
-                println("Recognition response: $resp")
+                l.info("Recognition response: $resp")
                 resp.result.joinToString("\n")
             }
 
         GigaAgent.instance(userInputFlow, gigaChatAPI).run().collect { text ->
-            print("AI text: $text")
+            l.info("AI text: $text")
             playText(text)
         }
     }
@@ -51,14 +54,14 @@ suspend fun main() = coroutineScope {
 private suspend fun InMemoryAudioRecorder.logState(): Nothing {
     recordingState.collect { state ->
         when (state) {
-            is InMemoryAudioRecorder.State.Starting -> println("Recording state: Starting audio recording...")
-            is InMemoryAudioRecorder.State.Recording -> println("Recording state: Recording... (press Option + 2 to stop)")
-            is InMemoryAudioRecorder.State.Stopping -> println("Recording state: Stopping recording...")
+            is InMemoryAudioRecorder.State.Starting -> l.info("Recording state: Starting audio recording...")
+            is InMemoryAudioRecorder.State.Recording -> l.info("Recording state: Recording... (press Option + 2 to stop)")
+            is InMemoryAudioRecorder.State.Stopping -> l.info("Recording state: Stopping recording...")
             is InMemoryAudioRecorder.State.Idle -> {
-                println("Recording state: Idle")
+                l.info("Recording state: Idle")
             }
 
-            is InMemoryAudioRecorder.State.Error -> println("Recording state: Error: ${state.message}")
+            is InMemoryAudioRecorder.State.Error -> l.error("Recording state: Error: ${state.message}")
         }
     }
 }
@@ -69,7 +72,7 @@ private suspend fun withNativeHook(hotkeyListener: HotkeyListener, block: suspen
         GlobalScreen.addNativeKeyListener(hotkeyListener)
         block()
     } catch (e: NativeHookException) {
-        System.err.println("Failed to initialize hotkey listener: ${e.message}")
+        l.error("Failed to initialize hotkey listener: ${e.message}")
     } finally {
         GlobalScreen.unregisterNativeHook()
     }

@@ -13,6 +13,7 @@ import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import java.io.File
+import org.slf4j.LoggerFactory
 
 class GigaChatAPI(private val auth: GigaAuth) {
     private val client = HttpClient(CIO) {
@@ -72,5 +73,5 @@ class GigaChatAPI(private val auth: GigaAuth) {
 suspend fun main() {
     val f = File("/Users/m1/Pictures/portrait.jpeg")
     val resp = GigaChatAPI(GigaAuth).uploadImage(f)
-    println(resp)
+    LoggerFactory.getLogger("GigaChatAPI").info("$resp")
 }

@@ -9,6 +9,7 @@ import com.dumch.giga.toGiga
 import com.dumch.tool.files.ToolListFiles
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import org.slf4j.LoggerFactory
 
 class GigaToolTest {
     @Test
@@ -33,8 +34,9 @@ class GigaToolTest {
             arguments = mapOf("path" to "src/test/resources"),
         )
 
+        val l = LoggerFactory.getLogger(GigaToolTest::class.java)
         val result = toolsMap[functionCall.name]!!.invoke(functionCall)
-        println(result)
+        l.info("$result")
         assertEquals(
             GigaRequest.Message(
                 role = GigaMessageRole.function,

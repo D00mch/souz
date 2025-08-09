@@ -12,12 +12,14 @@ import java.io.File
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import org.slf4j.LoggerFactory
 
 class ToolTest {
 
     @Test
     fun `test ToolReadFile`() {
-        println(File("src/test/resources/test.txt").readText())
+        val l = LoggerFactory.getLogger(ToolTest::class.java)
+        l.info(File("src/test/resources/test.txt").readText())
         val result = ToolReadFile(ToolReadFile.Input("src/test/resources/test.txt"))
         assertEquals("Test content\n", result)
     }
@@ -29,7 +31,8 @@ class ToolTest {
 
         val resources = ToolListFiles(ToolListFiles.Input("src/test/resources"))
         assertEquals("[directory/,directory/file.txt,test.txt]", resources)
-        println(resources)
+        val l = LoggerFactory.getLogger(ToolTest::class.java)
+        l.info(resources)
     }
 
     @Test

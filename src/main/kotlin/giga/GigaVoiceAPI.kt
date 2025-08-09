@@ -8,6 +8,9 @@ import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import java.io.File
+import org.slf4j.LoggerFactory
+
+private val l = LoggerFactory.getLogger("GigaVoiceAPI")
 
 class GigaVoiceAPI(private val auth: GigaAuth) {
     private val client = HttpClient(CIO) {
@@ -51,5 +54,5 @@ class GigaVoiceAPI(private val auth: GigaAuth) {
 suspend fun main() {
     val api = GigaVoiceAPI(GigaAuth)
     val result = api.recognize(File("capture2.ogg").readBytes())
-    println(result)
+    l.info("$result")
 }
