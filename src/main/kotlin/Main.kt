@@ -1,7 +1,9 @@
 package com.dumch
 
+import com.dumch.audio.ActiveSoundActiveSoundRecorder
 import com.dumch.audio.InMemoryAudioRecorder
 import com.dumch.audio.playText
+import com.dumch.audio.rawToOpusOgg
 import com.dumch.giga.GigaAgent
 import com.dumch.giga.GigaAuth
 import com.dumch.giga.GigaChatAPI
@@ -22,7 +24,8 @@ private val l = LoggerFactory.getLogger("Main")
 suspend fun main() = coroutineScope {
     val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     val audioRecorder = InMemoryAudioRecorder(
-        coroutineScope = appScope
+        recorder = ActiveSoundActiveSoundRecorder(),
+        coroutineScope = appScope,
     )
     val hotkeyListener = HotkeyListener { pressed ->
         l.info(if (pressed) "onStart" else "onStop")
@@ -38,6 +41,7 @@ suspend fun main() = coroutineScope {
         val userInputFlow = audioRecorder.audioFlow
             .onEach { l.info("\n$AGENT_ALIAS: [Received audio data: ${it.size} bytes]") }
             .catch { l.error("Error in audio flow: ${it.message}") }
+            .map { audioData -> rawToOpusOgg(rawData = audioData) }
             .map { audioData ->
                 val resp = gigaVoiceAPI.recognize(audioData)
                 l.info("Recognition response: $resp")
