@@ -6,33 +6,50 @@ import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent
 import com.github.kwhat.jnativehook.keyboard.NativeKeyListener
 import kotlin.system.exitProcess
 import org.slf4j.LoggerFactory
+import kotlinx.coroutines.*
 
 class HotkeyListener(
-    private val onPressed: (Boolean) -> Unit
+    private val onPressed: (Boolean) -> Unit,
+    private val onDoubleClick: () -> Unit,
 ) : NativeKeyListener {
     private var isAltPressed = false
     private var isHotkeyActive = false
+    private var pressTime = 0L
+    private var lastClickTime = 0L
+    private val holdThreshold = 200L
+    private val doubleClickThreshold = 300L
+    private val scope = CoroutineScope(Dispatchers.Default)
 
     override fun nativeKeyPressed(e: NativeKeyEvent) {
         if (e.rawCode == 61 && e.keyCode == 56) {
+            pressTime = System.currentTimeMillis()
             isAltPressed = true
-        }
-
-        // Check if hotkey combination is complete (Alt + 2)
-        if (isAltPressed && !isHotkeyActive) {
-            isHotkeyActive = true
-            onPressed(true)
+            scope.launch {
+                delay(holdThreshold)
+                if (isAltPressed && !isHotkeyActive) {
+                    isHotkeyActive = true
+                    onPressed(true)
+                }
+            }
         }
     }
 
     override fun nativeKeyReleased(e: NativeKeyEvent) {
         if (e.rawCode == 61 && e.keyCode == 56) {
+            val releaseTime = System.currentTimeMillis()
             isAltPressed = false
-        }
 
-        if (isHotkeyActive && !isAltPressed) {
-            isHotkeyActive = false
-            onPressed(false)
+            if (isHotkeyActive) {
+                isHotkeyActive = false
+                onPressed(false)
+            } else {
+                if (releaseTime - lastClickTime < doubleClickThreshold) {
+                    onDoubleClick()
+                    lastClickTime = 0
+                } else {
+                    lastClickTime = releaseTime
+                }
+            }
         }
     }
 
@@ -41,10 +58,13 @@ class HotkeyListener(
 
 fun main() {
     val l = LoggerFactory.getLogger("HotkeyListener")
-    val hotkeyListener = HotkeyListener { pressed ->
-        val msg = if (pressed) "onStart" else "onStop"
-        l.info(msg)
-    }
+    val hotkeyListener = HotkeyListener(
+        onPressed = { pressed ->
+            val msg = if (pressed) "onStart" else "onStop"
+            l.info(msg)
+        },
+        onDoubleClick = { l.info("double click") }
+    )
 
     try {
         GlobalScreen.registerNativeHook()
