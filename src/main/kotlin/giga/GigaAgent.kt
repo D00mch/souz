@@ -24,7 +24,9 @@ class GigaAgent(
     private val functions: List<GigaRequest.Function> = tools.map { it.value.fn }
 
     fun run(): Flow<String> = channelFlow {
-        val conversation = ArrayList<GigaRequest.Message>()
+        val conversation = ArrayList<GigaRequest.Message>().apply {
+            add(systemPrompt)
+        }
 
         userMessages.collect { userText ->
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
@@ -73,7 +75,7 @@ class GigaAgent(
 
         val response: GigaResponse.Chat = withContext(Dispatchers.IO) {
             conversation.add(GigaRequest.Message(
-                role = GigaMessageRole.system,
+                role = GigaMessageRole.user,
                 content = "Summarize the conversation so far",
             ))
             chat(conversation)
@@ -85,6 +87,7 @@ class GigaAgent(
         l.info("Summarizing the conversation... $msg")
         val lastMsg = conversation.last()
         conversation.clear()
+        conversation.add(systemPrompt)
         conversation.add(msg)
         conversation.add(lastMsg)
     }
@@ -126,7 +129,15 @@ class GigaAgent(
     }
 
     companion object {
-        private const val SUMMARIZE_THRESHOLD = 0.85
+        private const val SUMMARIZE_THRESHOLD = 0.7
+
+        private val systemPrompt = GigaRequest.Message(
+            role = GigaMessageRole.system,
+            content = """
+                Ты — помощник слепого человека. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
+                c помощью имеющихся функций, решай, а не проси пользователя сделать это. Если сомневаешься, уточни.
+            """.trimIndent()
+        )
 
         private val tools: Map<String, GigaToolSetup> = listOf(
             ToolReadFile.toGiga(),
