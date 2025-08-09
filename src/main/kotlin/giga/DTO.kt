@@ -1,6 +1,8 @@
 package com.dumch.giga
 
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.util.*
 
 object GigaResponse {
@@ -112,3 +114,6 @@ object GigaRequest {
 
 @Suppress("EnumEntryName")
 enum class GigaMessageRole { system, user, assistant, function }
+
+val objectMapper = jacksonObjectMapper()
+    .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)

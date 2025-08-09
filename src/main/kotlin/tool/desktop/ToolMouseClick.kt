@@ -93,7 +93,7 @@ class ToolMouseClickMac : ToolSetup<ToolMouseClickMac.Input> {
     class Input(
         @InputParamDescription("The x coordinate of the mouse click") val x: String,
         @InputParamDescription("The y coordinate of the mouse click") val y: String,
-        @InputParamDescription("The button to click. 1 means left, 2 means right, 3 means middle") val button: String
+        @InputParamDescription("The button to click. 1 means left, 2 means right, 3 means middle") val button: String = "1"
     )
 }
 

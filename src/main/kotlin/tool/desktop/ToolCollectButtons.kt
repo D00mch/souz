@@ -1,14 +1,19 @@
 package com.dumch.tool.desktop
 
+import com.dumch.giga.objectMapper
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.ToolSetup
+import com.fasterxml.jackson.module.kotlin.readValue
+import kotlinx.coroutines.delay
+import kotlin.collections.map
 
 
 class ToolCollectButtons(private val bash: ToolRunBashCommand) : ToolSetup<ToolCollectButtons.Input> {
 
     override val name: String = "CollectButtons"
-    override val description: String = "Collects buttons from frontmost application window and returns JSON with buttons description and coordinates"
+    override val description: String = "Collects buttons from the frontmost application window and returns JSON with buttons description and coordinates," +
+            "e.g., [{\"x\": 100, \"y\": 200, \"name\": \"Button 1\"}, {\"x\": 300, \"y\": 400, \"name\": \"Button 2\"}]"
     override fun invoke(input: Input): String {
         val result = bash.invoke(
             ToolRunBashCommand.Input(
@@ -90,13 +95,8 @@ class ToolCollectButtons(private val bash: ToolRunBashCommand) : ToolSetup<ToolC
                     		end try
                     	end repeat
                     	
-                    	-- Собираем все кнопки в JSON-массив
-                    	if (count of jsonButtons) > ${input.buttonsCount} then
-                    		set text item delimiters to ", "
-                    		return "[" & (jsonButtons as text) & "]"
-                    	else
-                    		return "[]"
-                    	end if
+                        set text item delimiters to ", "
+                        return "[" & (jsonButtons as text) & "]"
                     end createJsonFromData
 
                     tell application "System Events"
@@ -111,14 +111,35 @@ class ToolCollectButtons(private val bash: ToolRunBashCommand) : ToolSetup<ToolC
             )
         )
 
-        return result
+        val outButtons = objectMapper.readValue<List<OsxButton>>(result)
+            .take(input.buttonsCount.toInt())
+            .map { osxBtn ->
+                val width = osxBtn.size[0]
+                val height = osxBtn.size[1]
+                OutButton(osxBtn.position[0] + width / 2, osxBtn.position[1] + height / 2, osxBtn.name)
+            }
+        return objectMapper.writeValueAsString(outButtons)
     }
 
-
-
-    class Input(
-        @InputParamDescription("Default buttons count")
-        val buttonsCount: String = "0"
+    data class Input(
+        @InputParamDescription("Default buttons count is 7. If you want to return more, send a number, e.g., 15")
+        val buttonsCount: String = "7"
     )
+
+    data class OsxButton(
+        val buttonName: String,
+        val role: String,
+        val name: String,
+        val description: String,
+        val help: String?,
+        val position: List<Int>,
+        val size: List<Int>
+    )
+
+    data class OutButton(val x: Int, val y: Int, val name: String)
 }
 
+suspend fun main() {
+    val tool = ToolCollectButtons(ToolRunBashCommand)
+    println(tool.invoke(ToolCollectButtons.Input("3")))
+}

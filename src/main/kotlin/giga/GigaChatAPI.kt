@@ -1,8 +1,6 @@
 package com.dumch.giga
 
 import com.dumch.tool.ToolRunBashCommand
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -13,7 +11,6 @@ import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import java.io.File
-import org.slf4j.LoggerFactory
 
 class GigaChatAPI(private val auth: GigaAuth) {
     private val client = HttpClient(CIO) {
@@ -44,9 +41,6 @@ class GigaChatAPI(private val auth: GigaAuth) {
             else -> response.body<GigaResponse.Chat.Error>()
         }
     }
-
-    val objectMapper = jacksonObjectMapper()
-        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
     suspend fun uploadImage(file: File): GigaResponse.UploadFile {
         val token = getAccessToken()
