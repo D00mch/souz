@@ -7,6 +7,7 @@ import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.desktop.ToolMouseClickMac
 import com.dumch.tool.desktop.ToolOpenApp
 import com.dumch.tool.desktop.ToolOpenBrowser
+import com.dumch.tool.desktop.ToolOpenFile
 import com.dumch.tool.desktop.ToolOpenFolder
 import com.dumch.tool.desktop.ToolOpenPhoto
 import com.dumch.tool.files.*
@@ -153,6 +154,7 @@ class GigaAgent(
             ToolOpenPhoto(ToolRunBashCommand).toGiga(),
             ToolOpenFolder(ToolRunBashCommand).toGiga(),
             ToolCollectButtons(ToolRunBashCommand).toGiga(),
+            ToolOpenFile(ToolRunBashCommand).toGiga(),
             ToolOpenApp(ToolRunBashCommand).toGiga(),
         ).associateBy { it.fn.name }
 
