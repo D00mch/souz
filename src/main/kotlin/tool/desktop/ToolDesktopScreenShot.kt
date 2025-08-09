@@ -12,7 +12,6 @@ import java.io.File
 
 class ToolDesktopScreenShot(
     private val api: GigaChatAPI = GigaChatAPI(GigaAuth),
-    private val robot: Robot = Robot(),
 ) : ToolSetupWithAttachments<ToolDesktopScreenShot.Input> {
     private val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
 
@@ -28,9 +27,9 @@ class ToolDesktopScreenShot(
 
     override suspend fun suspendInvoke(input: Input): String {
         try {
-            val screenshot = ImageUtils.captureDesktop(robot)
+            val screenshot = ImageUtils.screenshotJpegBytes()
             val file = File.createTempFile("screenshot", ".jpg")
-            file.writeBytes(ImageUtils.compressJpeg(screenshot))
+            file.writeBytes(screenshot)
             l.info("Uploading screenshot to GigaChat")
             val upload = api.uploadImage(file)
             lastAttachments.clear()

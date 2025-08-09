@@ -6,6 +6,9 @@
         </encoder>
     </appender>
 
+    <!-- Mute verbose ffmpeg output parsed by JAVE -->
+    <logger name="ws.schild.jave.process.ffmpeg.ConversionOutputAnalyzer" level="OFF"/>
+
     <root level="debug">
         <appender-ref ref="STDOUT"/>
     </root>

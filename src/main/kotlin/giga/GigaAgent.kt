@@ -1,12 +1,15 @@
 package com.dumch.giga
 
 import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.desktop.ToolCollectButtons
 import com.dumch.tool.desktop.ToolCreateNote
+import com.dumch.tool.desktop.ToolDesktopScreenShot
+import com.dumch.tool.desktop.ToolMouseClickMac
 import com.dumch.tool.desktop.ToolOpenApp
 import com.dumch.tool.desktop.ToolOpenBrowser
+import com.dumch.tool.desktop.ToolOpenFile
 import com.dumch.tool.desktop.ToolOpenFolder
 import com.dumch.tool.desktop.ToolOpenPhoto
-import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.files.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
@@ -22,7 +25,9 @@ class GigaAgent(
     private val functions: List<GigaRequest.Function> = tools.map { it.value.fn }
 
     fun run(): Flow<String> = channelFlow {
-        val conversation = ArrayList<GigaRequest.Message>()
+        val conversation = ArrayList<GigaRequest.Message>().apply {
+            add(systemPrompt)
+        }
         var awaitConfirmation = false
 
         userMessages.collect { userText ->
@@ -99,7 +104,7 @@ class GigaAgent(
 
         val response: GigaResponse.Chat = withContext(Dispatchers.IO) {
             conversation.add(GigaRequest.Message(
-                role = GigaMessageRole.system,
+                role = GigaMessageRole.user,
                 content = "Summarize the conversation so far",
             ))
             chat(conversation)
@@ -111,6 +116,7 @@ class GigaAgent(
         l.info("Summarizing the conversation... $msg")
         val lastMsg = conversation.last()
         conversation.clear()
+        conversation.add(systemPrompt)
         conversation.add(msg)
         conversation.add(lastMsg)
     }
@@ -152,7 +158,16 @@ class GigaAgent(
     }
 
     companion object {
-        private const val SUMMARIZE_THRESHOLD = 0.85
+        private const val SUMMARIZE_THRESHOLD = 0.7
+
+        private val systemPrompt = GigaRequest.Message(
+            role = GigaMessageRole.system,
+            content = """
+                Ты — помощник слепого человека. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
+                c помощью имеющихся функций, решай, а не проси пользователя сделать это. Если сомневаешься, уточни.
+                Если юзер спрашивает, какие кнопки на экране, воводи только их названия, юзеру не интересны координаты.
+            """.trimIndent()
+        )
 
         private val tools: Map<String, GigaToolSetup> = listOf(
             ToolReadFile.toGiga(),
@@ -160,12 +175,15 @@ class GigaAgent(
             ToolNewFile.toGiga(),
             ToolDeleteFile.toGiga(),
             ToolModifyFile.toGiga(),
+            ToolMouseClickMac().toGiga(),
             ToolFindTextInFiles.toGiga(),
             ToolDesktopScreenShot().toGiga(),
             ToolOpenBrowser(ToolRunBashCommand).toGiga(),
             ToolCreateNote(ToolRunBashCommand).toGiga(),
             ToolOpenPhoto(ToolRunBashCommand).toGiga(),
             ToolOpenFolder(ToolRunBashCommand).toGiga(),
+            ToolCollectButtons(ToolRunBashCommand).toGiga(),
+            ToolOpenFile(ToolRunBashCommand).toGiga(),
             ToolOpenApp(ToolRunBashCommand).toGiga(),
         ).associateBy { it.fn.name }
 

@@ -21,3 +21,8 @@ class ToolOpenApp(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenApp.
         val appName: String
     )
 }
+
+fun main() {
+    val tool = ToolOpenApp(ToolRunBashCommand)
+    println(tool.invoke(ToolOpenApp.Input("Finder")))
+}

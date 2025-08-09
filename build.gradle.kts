@@ -34,6 +34,8 @@ dependencies {
 
     // desktop manipulation
     implementation("com.github.kwhat:jnativehook:2.2.2")
+    implementation("net.java.dev.jna:jna:5.14.0") // robot replacement, no jar icon will appear
+    implementation("net.java.dev.jna:jna-platform:5.14.0")
 
     // audio
     implementation("ws.schild:jave-core:3.5.0")

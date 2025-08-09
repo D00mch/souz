@@ -1,10 +1,31 @@
 package com.dumch.audio
 
-fun playText(text: String) {
-    val saveEnding = "$text р"
-    ProcessBuilder("say", "-r", "230", saveEnding).start().waitFor()
+import java.io.File
+import javax.sound.sampled.AudioSystem
+import javax.sound.sampled.LineEvent
+
+fun playText(text: String, speed: Int = 230) {
+    val saveEnding = "$text "
+    ProcessBuilder("say", "-r", "$speed", saveEnding).start().waitFor()
+}
+
+private val random = java.util.Random()
+
+fun playTextRand(speed: Int = 230, vararg texts: String) {
+    val text = texts[random.nextInt(texts.size)]
+    playText(text, speed)
+}
+
+val audio = AudioSystem.getAudioInputStream(File("/System/Library/Sounds/Tink.aiff"))
+val clip = AudioSystem.getClip()
+
+fun playMacPing() {
+    clip.addLineListener { if (it.type == LineEvent.Type.STOP) clip.close() }
+    clip.open(audio)
+    clip.start()
 }
 
 fun main() {
-    playText("Можешь оценить скорость моей речи, она достаточно быстрая?")
+    playMacPing()
+//    playText("Можешь оценить скорость моей речи, она достаточно быстрая?")
 }

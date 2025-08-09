@@ -1,7 +1,11 @@
 package com.dumch
 
+import com.dumch.audio.ActiveSoundActiveSoundRecorder
 import com.dumch.audio.InMemoryAudioRecorder
+import com.dumch.audio.playMacPing
 import com.dumch.audio.playText
+import com.dumch.audio.playTextRand
+import com.dumch.audio.rawToOpusOgg
 import com.dumch.giga.GigaAgent
 import com.dumch.giga.GigaAuth
 import com.dumch.giga.GigaChatAPI
@@ -17,18 +21,28 @@ import org.slf4j.LoggerFactory
 
 private const val AGENT_ALIAS = ""
 
-private val l = LoggerFactory.getLogger("Main")
+private val l = LoggerFactory.getLogger("AI")
 
 suspend fun main() = coroutineScope {
     val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     val audioRecorder = InMemoryAudioRecorder(
-        coroutineScope = appScope
+        recorder = ActiveSoundActiveSoundRecorder(),
+        coroutineScope = appScope,
     )
     val hotkeyListener = HotkeyListener { pressed ->
         l.info(if (pressed) "onStart" else "onStop")
         when {
-            pressed -> audioRecorder.start()
-            else -> audioRecorder.stop()
+            pressed -> {
+                playMacPing()
+                audioRecorder.start()
+            }
+            else -> {
+                audioRecorder.stop()
+                launch {
+                    delay(300)
+                    playTextRand(120, "ща сделаю", "поехали", "ну что ж, приступим", "опять работать")
+                }
+            }
         }
     }
     launch { audioRecorder.logState() }
@@ -38,6 +52,7 @@ suspend fun main() = coroutineScope {
         val userInputFlow = audioRecorder.audioFlow
             .onEach { l.info("\n$AGENT_ALIAS: [Received audio data: ${it.size} bytes]") }
             .catch { l.error("Error in audio flow: ${it.message}") }
+            .map { audioData -> rawToOpusOgg(rawData = audioData) }
             .map { audioData ->
                 val resp = gigaVoiceAPI.recognize(audioData)
                 l.info("Recognition response: $resp")
@@ -45,7 +60,7 @@ suspend fun main() = coroutineScope {
             }
 
         GigaAgent.instance(userInputFlow, gigaChatAPI).run().collect { text ->
-            l.info("AI text: $text")
+            l.info(text)
             playText(text)
         }
     }
