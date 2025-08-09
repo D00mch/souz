@@ -5,7 +5,7 @@ import com.dumch.audio.playText
 import com.dumch.giga.GigaAgent
 import com.dumch.giga.GigaAuth
 import com.dumch.giga.GigaChatAPI
-import com.dumch.giga.GigaVoiceAPI
+import com.dumch.audio.WhisperJniRecognizer
 import com.dumch.keys.HotkeyListener
 import com.github.kwhat.jnativehook.GlobalScreen
 import com.github.kwhat.jnativehook.NativeHookException
@@ -29,16 +29,15 @@ suspend fun main() = coroutineScope {
         }
     }
     launch { audioRecorder.logState() }
-    val gigaVoiceAPI = GigaVoiceAPI(GigaAuth)
     val gigaChatAPI  = GigaChatAPI(GigaAuth)
     withNativeHook(hotkeyListener) {
         val userInputFlow = audioRecorder.audioFlow
             .onEach { println("\n$AGENT_ALIAS: [Received audio data: ${it.size} bytes]") }
             .catch { System.err.println("Error in audio flow: ${it.message}") }
             .map { audioData ->
-                val resp = gigaVoiceAPI.recognize(audioData)
-                println("Recognition response: $resp")
-                resp.result.joinToString("\n")
+                val text = WhisperJniRecognizer.recognize(audioData)
+                println("Recognition result: $text")
+                text
             }
 
         GigaAgent.instance(userInputFlow, gigaChatAPI).run().collect { text ->

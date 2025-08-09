@@ -38,6 +38,7 @@ dependencies {
     // audio
     implementation("ws.schild:jave-core:3.5.0")
     implementation("ws.schild:jave-nativebin-osxm1:3.5.0")
+    implementation("io.github.givimad:whisper-jni:${Versions.WhisperJni}")
 
     testImplementation(kotlin("test"))
 }
