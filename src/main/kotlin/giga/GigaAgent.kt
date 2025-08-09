@@ -23,43 +23,71 @@ class GigaAgent(
 
     fun run(): Flow<String> = channelFlow {
         val conversation = ArrayList<GigaRequest.Message>()
+        var awaitConfirmation = false
 
         userMessages.collect { userText ->
+            if (awaitConfirmation) {
+                val answer = userText.trim().lowercase()
+                if (!answer.startsWith("y")) {
+                    send("Stopping conversation")
+                    close()
+                }
+                awaitConfirmation = false
+                return@collect
+            }
+
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             for (i in 1..10) { // infinite loop protection
                 if (!isActive) break
-                val response: GigaResponse.Chat = withContext(Dispatchers.IO) {
-                    chat(conversation)
+                val response: GigaResponse.Chat = try {
+                    withContext(Dispatchers.IO) { chat(conversation) }
+                } catch (t: Throwable) {
+                    send("Error: ${t.message}. Continue? (y/n)")
+                    awaitConfirmation = true
+                    break
                 }
                 when (response) {
                     is GigaResponse.Chat.Error -> {
-                        send(response.message)
-                        close()
-                        return@collect
+                        send("${response.message}. Continue? (y/n)")
+                        awaitConfirmation = true
+                        break
                     }
 
                     is GigaResponse.Chat.Ok -> {
                         conversation.addAll(response.toRequestMessages())
-                        trySummarize(response, conversation)
-                    }
-                }
-
-                val toolAwaits = ArrayList<Deferred<GigaRequest.Message>>()
-                for (ch in response.choices) {
-                    val msg = ch.message
-                    when {
-                        msg.content.isNotBlank() -> {
-                            send(msg.content)
+                        try {
+                            trySummarize(response, conversation)
+                        } catch (t: Throwable) {
+                            send("Error: ${t.message}. Continue? (y/n)")
+                            awaitConfirmation = true
+                            break
                         }
 
-                        msg.functionCall != null && msg.functionsStateId != null -> {
-                            val deferred = async(Dispatchers.IO) { executeTool(msg.functionCall) }
-                            toolAwaits.add(deferred)
+                        val toolAwaits = ArrayList<Deferred<GigaRequest.Message>>()
+                        for (ch in response.choices) {
+                            val msg = ch.message
+                            when {
+                                msg.content.isNotBlank() -> {
+                                    send(msg.content)
+                                }
+
+                                msg.functionCall != null && msg.functionsStateId != null -> {
+                                    val deferred = async(Dispatchers.IO) { executeTool(msg.functionCall) }
+                                    toolAwaits.add(deferred)
+                                }
+                            }
+                        }
+                        if (toolAwaits.isEmpty()) break
+                        try {
+                            conversation.addAll(toolAwaits.awaitAll())
+                        } catch (t: Throwable) {
+                            send("Error: ${t.message}. Continue? (y/n)")
+                            awaitConfirmation = true
+                            break
                         }
                     }
                 }
-                if (toolAwaits.isEmpty()) break
-                conversation.addAll(toolAwaits.awaitAll())
+                if (awaitConfirmation) break
             }
         }
     }
