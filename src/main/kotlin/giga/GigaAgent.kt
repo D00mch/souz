@@ -1,14 +1,14 @@
 package com.dumch.giga
 
-import ToolMouseClick
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.desktop.ToolCollectButtons
 import com.dumch.tool.desktop.ToolCreateNote
+import com.dumch.tool.desktop.ToolDesktopScreenShot
+import com.dumch.tool.desktop.ToolMouseClickMac
 import com.dumch.tool.desktop.ToolOpenApp
 import com.dumch.tool.desktop.ToolOpenBrowser
 import com.dumch.tool.desktop.ToolOpenFolder
 import com.dumch.tool.desktop.ToolOpenPhoto
-import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.files.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
@@ -134,7 +134,7 @@ class GigaAgent(
             ToolNewFile.toGiga(),
             ToolDeleteFile.toGiga(),
             ToolModifyFile.toGiga(),
-            ToolMouseClick().toGiga(),
+            ToolMouseClickMac().toGiga(),
             ToolFindTextInFiles.toGiga(),
             ToolDesktopScreenShot().toGiga(),
             ToolOpenBrowser(ToolRunBashCommand).toGiga(),
