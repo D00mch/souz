@@ -35,7 +35,7 @@ suspend fun main() = coroutineScope {
             .onEach { println("\n$AGENT_ALIAS: [Received audio data: ${it.size} bytes]") }
             .catch { System.err.println("Error in audio flow: ${it.message}") }
             .map { audioData ->
-                val text = WhisperJniRecognizer.recognize(audioData)
+                val text: String = TODO() // WhisperJniRecognizer.recognize(audioData)
                 println("Recognition result: $text")
                 text
             }
