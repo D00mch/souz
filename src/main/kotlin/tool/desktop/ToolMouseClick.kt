@@ -20,10 +20,10 @@ class ToolMouseClick : ToolSetup<ToolMouseClick.Input> {
 
     class Input(
         @InputParamDescription("The x coordinate of the mouse click")
-        val x: Int,
+        val x: String,
         @InputParamDescription("The y coordinate of the mouse click")
-        val y: Int,
+        val y: String,
         @InputParamDescription("The button to click. 1 means left, 2 means right, 3 means middle")
-        val button: Int
+        val button: String
     )
 }
