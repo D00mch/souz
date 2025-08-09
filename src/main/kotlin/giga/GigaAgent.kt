@@ -10,6 +10,8 @@ import com.dumch.tool.desktop.ToolOpenBrowser
 import com.dumch.tool.desktop.ToolOpenFile
 import com.dumch.tool.desktop.ToolOpenFolder
 import com.dumch.tool.desktop.ToolOpenPhoto
+import com.dumch.tool.desktop.ToolCreateNewBrowserTab
+import com.dumch.tool.desktop.ToolMinimizeWindows
 import com.dumch.tool.files.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
@@ -138,6 +140,13 @@ class GigaAgent(
                 Ты — помощник слепого человека. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
                 c помощью имеющихся функций, решай, а не проси пользователя сделать это. Если сомневаешься, уточни.
                 Если юзер спрашивает, какие кнопки на экране, воводи только их названия, юзеру не интересны координаты.
+                Если тебя просят открыть какой-то сайт, а браузер(например, Safari) уже запущен - открой новую вкладку в том же окне. 
+                Если тебя просят проанализировать или описать то, что находится на экране, используй тул DesktopScreenShot.
+                Если тебя просят нажать на какую-то кнопку, используй тул получения кнопок, а после нажимай. 
+                Если тебя просят свернуть данное окно - передавай current в качестве параметра в туле MinimizeWindows.
+                Если тебя просят открыть приложение используя наименование на русском языке, при необходимости переводи его на английский, чтобы устройство поняло о какой программе речь, например Заметки - Notes.
+                Если тебя просят нажать куда-либо на экране, используй инструмент получения экрана определяй координаты и нажимай на подходящую область используя тул MouseClick.
+                Старайся по максимуму использовать предложенные инструменты для помощи пользователю. 
             """.trimIndent()
         )
 
@@ -156,6 +165,8 @@ class GigaAgent(
             ToolOpenFolder(ToolRunBashCommand).toGiga(),
             ToolCollectButtons(ToolRunBashCommand).toGiga(),
             ToolOpenFile(ToolRunBashCommand).toGiga(),
+            ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
+            ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
             ToolOpenApp(ToolRunBashCommand).toGiga(),
         ).associateBy { it.fn.name }
 
