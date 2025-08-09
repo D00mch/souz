@@ -8,7 +8,7 @@ import com.dumch.tool.ToolSetup
 class ToolCollectButtons(private val bash: ToolRunBashCommand) : ToolSetup<ToolCollectButtons.Input> {
 
     override val name: String = "CollectButtons"
-    override val description: String = "Collects buttons from frontmost application window and returns JSON"
+    override val description: String = "Collects buttons from frontmost application window and returns JSON with buttons description and coordinates"
     override fun invoke(input: Input): String {
         val result = bash.invoke(
             ToolRunBashCommand.Input(
@@ -116,10 +116,9 @@ class ToolCollectButtons(private val bash: ToolRunBashCommand) : ToolSetup<ToolC
 
 
 
-    class Input {
+    class Input(
         @InputParamDescription("Default buttons count")
-        val buttonsCount = "0"
-    }
+        val buttonsCount: String = "0"
+    )
 }
-
 

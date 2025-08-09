@@ -70,8 +70,8 @@ class GigaChatAPI(private val auth: GigaAuth) {
     }
 }
 
-suspend fun main() {
-    val f = File("/Users/m1/Pictures/portrait.jpeg")
-    val resp = GigaChatAPI(GigaAuth).uploadImage(f)
-    LoggerFactory.getLogger("GigaChatAPI").info("$resp")
-}
+//suspend fun main() {
+//    val f = File("/Users/m1/Pictures/portrait.jpeg")
+//    val resp = GigaChatAPI(GigaAuth).uploadImage(f)
+//    LoggerFactory.getLogger("GigaChatAPI").info("$resp")
+//}
