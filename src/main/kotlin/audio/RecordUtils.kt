@@ -8,12 +8,13 @@ import kotlinx.coroutines.*
 import ws.schild.jave.*
 import ws.schild.jave.encode.AudioAttributes
 import ws.schild.jave.encode.EncodingAttributes
+import org.slf4j.LoggerFactory
 
 /**
  * Simple utility that records the microphone, encodes to Ogg/Opus and returns the result as ByteArray.
  */
 object InMemoryOpusRecorder {
-
+    private val l = LoggerFactory.getLogger(InMemoryOpusRecorder::class.java)
     private var line: TargetDataLine? = null
     private var format: AudioFormat? = null
     private var rawOut: ByteArrayOutputStream? = null
@@ -28,7 +29,7 @@ object InMemoryOpusRecorder {
         val fmt = AudioFormat(sampleRate, sampleSizeBits, channels, true, false)
         val info = DataLine.Info(TargetDataLine::class.java, fmt)
         if (!AudioSystem.isLineSupported(info)) {
-            println("ERROR: Line not supported for format: $fmt")
+            l.error("Line not supported for format: $fmt")
             throw LineUnavailableException("Line not supported for format: $fmt")
         }
 
@@ -66,7 +67,7 @@ object InMemoryOpusRecorder {
             target?.close()
             target?.flush()
         } catch (e: Exception) {
-            println("Error while closing audio line: ${e.message}")
+            l.error("Error while closing audio line: ${e.message}")
         }
 
         line = null
@@ -133,20 +134,21 @@ object InMemoryOpusRecorder {
 }
 
 fun main() = runBlocking {
-    println("Starting audio recording test...")
-    println("Make sure your microphone is properly connected and has the necessary permissions.")
+    val l = LoggerFactory.getLogger("RecordUtils")
+    l.info("Starting audio recording test...")
+    l.info("Make sure your microphone is properly connected and has the necessary permissions.")
 
     try {
-        println("Will record for 5 seconds. Speak into your microphone...")
+        l.info("Will record for 5 seconds. Speak into your microphone...")
         // Record audio
         val wav = InMemoryOpusRecorder.recordPcm(seconds = 5)
-        println("Converting to Opus format...")
+        l.info("Converting to Opus format...")
         val oggOpus = InMemoryOpusRecorder.wavToOpusOgg(wav)
         val opusFile = File("capture.ogg")
         opusFile.writeBytes(oggOpus)
-        println("Successfully saved ${oggOpus.size} bytes of Opus audio to ${opusFile.absolutePath}")
+        l.info("Successfully saved ${oggOpus.size} bytes of Opus audio to ${opusFile.absolutePath}")
     } catch (e: Exception) {
-        println("\nERROR: ${e.message}")
+        l.error("\nERROR: ${e.message}")
         exitProcess(1)
     }
 }

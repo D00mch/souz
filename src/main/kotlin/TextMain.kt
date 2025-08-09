@@ -5,14 +5,17 @@ import com.dumch.giga.GigaAuth
 import com.dumch.giga.GigaChatAPI
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import org.slf4j.LoggerFactory
+
+private val logAgent = LoggerFactory.getLogger("Agent")
 
 suspend fun main() {
     val agent = GigaAgent.instance(userInputFlow(), GigaChatAPI(GigaAuth))
-    agent.run().collect { text -> println("agent: $text") }
+    agent.run().collect { text -> logAgent.info(text) }
 }
 
 private fun userInputFlow(): Flow<String> = flow {
-    println("\nType your message or `exit` to quit")
+    logAgent.info("\nType your message or `exit` to quit")
     while (true) {
         print("> ")
         val input = readlnOrNull() ?: break

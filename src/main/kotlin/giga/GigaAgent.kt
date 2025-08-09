@@ -8,16 +8,19 @@ import com.dumch.tool.desktop.ToolOpenApp
 import com.dumch.tool.desktop.ToolOpenBrowser
 import com.dumch.tool.desktop.ToolOpenFolder
 import com.dumch.tool.desktop.ToolOpenPhoto
+import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.files.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import org.slf4j.LoggerFactory
 
 class GigaAgent(
     private val userMessages: Flow<String>,
     private val api: GigaChatAPI,
     private val tools: Map<String, GigaToolSetup>,
 ) {
+    private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val functions: List<GigaRequest.Function> = tools.map { it.value.fn }
 
     fun run(): Flow<String> = channelFlow {
@@ -79,7 +82,7 @@ class GigaAgent(
             is GigaResponse.Chat.Error -> throw CancellationException("Can't summarize the conversation")
             is GigaResponse.Chat.Ok -> response.toRequestMessages().last()
         }
-        println("Summarizing the conversation... $msg")
+        l.info("Summarizing the conversation... $msg")
         val lastMsg = conversation.last()
         conversation.clear()
         conversation.add(msg)
@@ -106,11 +109,11 @@ class GigaAgent(
         }
     }
 
-    private fun executeTool(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
+    private suspend fun executeTool(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
         val fn = tools[functionCall.name] ?: return GigaRequest.Message(
             GigaMessageRole.function, """{"result":"no such function ${functionCall.name}"}"""
         )
-        println("Executing tool: ${fn.fn.name}, arguments: ${functionCall.arguments}")
+        l.info("Executing tool: ${fn.fn.name}, arguments: ${functionCall.arguments}")
         return fn.invoke(functionCall)
     }
 
@@ -133,6 +136,7 @@ class GigaAgent(
             ToolModifyFile.toGiga(),
             ToolMouseClick().toGiga(),
             ToolFindTextInFiles.toGiga(),
+            ToolDesktopScreenShot().toGiga(),
             ToolOpenBrowser(ToolRunBashCommand).toGiga(),
             ToolCreateNote(ToolRunBashCommand).toGiga(),
             ToolOpenPhoto(ToolRunBashCommand).toGiga(),
