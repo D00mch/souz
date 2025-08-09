@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -35,6 +36,7 @@ object InMemoryOpusRecorder {
     private var rawOut: ByteArrayOutputStream? = null
     private var preBuffer: CircularByteBuffer? = null
     private var captureJob: Job? = null
+    private var scope: CoroutineScope? = null
     @Volatile private var isRecording: Boolean = false
 
     /**
@@ -64,6 +66,7 @@ object InMemoryOpusRecorder {
 
         line = target
         format = fmt
+        this.scope = scope
 
         val bytesPerSecond = (fmt.frameSize * fmt.sampleRate).toInt()
         preBuffer = CircularByteBuffer(bytesPerSecond * preBufferMillis / 1_000)
@@ -97,6 +100,7 @@ object InMemoryOpusRecorder {
     suspend fun stopRecording(): ByteArray {
         val target = line
         if (target != null) {
+            captureJob?.cancelAndJoin()
             target.stop()
             val buffer = ByteArray(4096)
             var available = target.available()
@@ -110,6 +114,18 @@ object InMemoryOpusRecorder {
             }
             isRecording = false
             target.start()
+            captureJob = scope?.launch(Dispatchers.IO) {
+                val buf = ByteArray(4096)
+                while (isActive) {
+                    val read = target.read(buf, 0, buf.size)
+                    if (read > 0) {
+                        preBuffer?.write(buf, 0, read)
+                        if (isRecording) {
+                            rawOut?.write(buf, 0, read)
+                        }
+                    }
+                }
+            }
         } else {
             isRecording = false
         }
