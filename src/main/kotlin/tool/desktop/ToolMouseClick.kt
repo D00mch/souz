@@ -1,21 +1,21 @@
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolSetup
+import org.slf4j.LoggerFactory
+import java.awt.Robot
+import java.awt.event.InputEvent
 
-class ToolMouseClick : ToolSetup<ToolMouseClick.Input> {
+class ToolMouseClick(private val robot: Robot = Robot()) : ToolSetup<ToolMouseClick.Input> {
+    private val l = LoggerFactory.getLogger(ToolMouseClick::class.java)
+
     override val name: String = "MouseClick"
     override val description: String = "Clicks the mouse at the given coordinates."
 
     override fun invoke(input: Input): String {
-        val command =
-            """osascript -e 'tell application "System Events" to click button ${input.button} of the mouse at {${input.x}, ${input.y}}'"""
-        val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
-        val exitCode = process.waitFor()
-
-        return if (exitCode == 0) {
-            "Mouse clicked at (${input.x}, ${input.y})"
-        } else {
-            "Failed to click (exit code: $exitCode)"
-        }
+        robot.mouseMove(input.x.toInt(), input.y.toInt())
+        robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
+        robot.delay(100)
+        robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
+        return "Mouse clicked at (${input.x}, ${input.y})"
     }
 
     class Input(
@@ -26,4 +26,9 @@ class ToolMouseClick : ToolSetup<ToolMouseClick.Input> {
         @InputParamDescription("The button to click. 1 means left, 2 means right, 3 means middle")
         val button: String
     )
+}
+
+fun main() {
+    val tool = ToolMouseClick()
+    tool.invoke(ToolMouseClick.Input("0", "0", "1"))
 }
