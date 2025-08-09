@@ -47,9 +47,7 @@ suspend fun main() = coroutineScope {
                 }
             }
         },
-        onDoubleClick = {
-            stopPlayText()
-        }
+        onDoubleClick = ::stopPlayText
     )
     launch { audioRecorder.logState() }
     val gigaVoiceAPI = GigaVoiceAPI(GigaAuth)
