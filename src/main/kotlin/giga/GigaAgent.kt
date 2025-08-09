@@ -1,6 +1,8 @@
 package com.dumch.giga
 
+import ToolMouseClick
 import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.desktop.ToolCollectButtons
 import com.dumch.tool.desktop.ToolCreateNote
 import com.dumch.tool.desktop.ToolOpenApp
 import com.dumch.tool.desktop.ToolOpenBrowser
@@ -132,12 +134,14 @@ class GigaAgent(
             ToolNewFile.toGiga(),
             ToolDeleteFile.toGiga(),
             ToolModifyFile.toGiga(),
+            ToolMouseClick().toGiga(),
             ToolFindTextInFiles.toGiga(),
             ToolDesktopScreenShot().toGiga(),
             ToolOpenBrowser(ToolRunBashCommand).toGiga(),
             ToolCreateNote(ToolRunBashCommand).toGiga(),
             ToolOpenPhoto(ToolRunBashCommand).toGiga(),
             ToolOpenFolder(ToolRunBashCommand).toGiga(),
+            ToolCollectButtons(ToolRunBashCommand).toGiga(),
             ToolOpenApp(ToolRunBashCommand).toGiga(),
         ).associateBy { it.fn.name }
 
