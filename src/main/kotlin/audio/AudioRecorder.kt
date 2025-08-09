@@ -2,7 +2,6 @@ package com.dumch.audio
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -18,25 +17,29 @@ class InMemoryAudioRecorder(
 ) {
     private val _audioFlow = MutableSharedFlow<ByteArray>()
 
-    private var recordingJob: Job? = null
     private val _recordingState = MutableStateFlow<State>(State.Idle)
     val recordingState = _recordingState.asStateFlow()
 
     val audioFlow: Flow<ByteArray> = _audioFlow
 
+    init {
+        // Warm up the microphone so the first spoken words are captured
+        InMemoryOpusRecorder.prepare(
+            scope = coroutineScope,
+            sampleRate = sampleRate,
+            channels = channels,
+            sampleSizeBits = sampleSizeBits
+        )
+    }
+
     fun start() {
-        if (recordingJob?.isActive == true) {
+        if (_recordingState.value == State.Recording || _recordingState.value == State.Starting) {
             throw IllegalStateException("Recording is already in progress")
         }
 
         _recordingState.value = State.Starting
         try {
-            recordingJob = InMemoryOpusRecorder.startRecording(
-                scope = coroutineScope,
-                sampleRate = sampleRate,
-                channels = channels,
-                sampleSizeBits = sampleSizeBits
-            )
+            InMemoryOpusRecorder.startRecording()
             _recordingState.value = State.Recording
         } catch (e: Exception) {
             _recordingState.value = State.Error(e.message ?: "Error during audio recording")
@@ -53,8 +56,6 @@ class InMemoryAudioRecorder(
                 _recordingState.value = State.Idle
             } catch (e: Exception) {
                 _recordingState.value = State.Error(e.message ?: "Failed to stop recording")
-            } finally {
-                recordingJob = null
             }
         }
     }
