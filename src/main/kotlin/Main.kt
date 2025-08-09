@@ -2,6 +2,7 @@ package com.dumch
 
 import com.dumch.audio.ActiveSoundActiveSoundRecorder
 import com.dumch.audio.InMemoryAudioRecorder
+import com.dumch.audio.playMacPing
 import com.dumch.audio.playText
 import com.dumch.audio.playTextRand
 import com.dumch.audio.rawToOpusOgg
@@ -32,12 +33,15 @@ suspend fun main() = coroutineScope {
         l.info(if (pressed) "onStart" else "onStop")
         when {
             pressed -> {
-                playTextRand(220, "Слушаю", "Говори")
+                playMacPing()
                 audioRecorder.start()
             }
             else -> {
-                playTextRand(120, "ща сделаю", "поехали", "ну что ж, приступим", "опять работать")
                 audioRecorder.stop()
+                launch {
+                    delay(300)
+                    playTextRand(120, "ща сделаю", "поехали", "ну что ж, приступим", "опять работать")
+                }
             }
         }
     }
