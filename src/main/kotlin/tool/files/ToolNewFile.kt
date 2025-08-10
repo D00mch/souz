@@ -14,7 +14,6 @@ object ToolNewFile : ToolSetup<ToolNewFile.Input> {
         if (file.exists()) {
             throw BadInputException("File already exists: ${input.path}")
         }
-        FilesToolUtil.requirePathIsSave(file)
         file.parentFile?.mkdirs()
         file.writeText(input.text)
         return "File created at ${input.path}"
