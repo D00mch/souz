@@ -2,6 +2,7 @@ package com.dumch.tool.desktop
 
 import com.dumch.audio.playText
 import com.dumch.giga.objectMapper
+import com.dumch.image.ImageUtils
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.ToolSetup
@@ -128,7 +129,9 @@ class ToolCollectButtons(
             .map { osxBtn ->
                 val width = osxBtn.size[0]
                 val height = osxBtn.size[1]
-                OutButton(osxBtn.position[0] + width / 2, osxBtn.position[1] + height / 2, osxBtn.name)
+                val x = (osxBtn.position[0] + width / 2) * ImageUtils.DESKTOP_SCREENSHOT_QUALITY
+                val y = (osxBtn.position[1] + height / 2) * ImageUtils.DESKTOP_SCREENSHOT_QUALITY
+                OutButton(x.toInt(), y.toInt(), osxBtn.name)
             }
         return objectMapper.writeValueAsString(outButtons)
     }
