@@ -1,44 +1,10 @@
 package com.dumch.tool.desktop
 
 import com.dumch.image.ImageUtils
+import com.dumch.keys.*
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolSetup
-import com.sun.jna.*
 import org.slf4j.LoggerFactory
-
-@Structure.FieldOrder("x", "y")
-class CGPoint() : Structure(), Structure.ByValue {     // <- public + ByValue
-    @JvmField var x: Double = 0.0                      // <- public field
-    @JvmField var y: Double = 0.0
-
-    constructor(x: Double, y: Double) : this() {
-        this.x = x; this.y = y
-    }
-}
-
-@Suppress("FunctionName")
-private interface CoreGraphics : Library {
-    fun CGEventCreateMouseEvent(
-        source: Pointer?,
-        mouseType: Int,
-        mouseCursorPosition: CGPoint,   // class implements ByValue
-        mouseButton: Int
-    ): Pointer
-
-    fun CGEventPost(tap: Int, eventRef: Pointer)
-    fun CGWarpMouseCursorPosition(newCursorPosition: CGPoint): Int
-
-    companion object {
-        val INSTANCE: CoreGraphics = Native.load("CoreGraphics", CoreGraphics::class.java)
-    }
-}
-
-private interface CoreFoundation : Library {
-    fun CFRelease(ref: Pointer)
-    companion object {
-        val INSTANCE: CoreFoundation = Native.load("CoreFoundation", CoreFoundation::class.java)
-    }
-}
 
 private object CG {
     const val kCGHIDEventTap = 0
