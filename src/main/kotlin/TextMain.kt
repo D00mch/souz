@@ -10,7 +10,7 @@ import org.slf4j.LoggerFactory
 private val logAgent = LoggerFactory.getLogger("Agent")
 
 suspend fun main() {
-    val agent = GigaAgent.instance(userInputFlow(), GigaChatAPI(GigaAuth))
+    val agent = GigaAgent.instance(userInputFlow(), GigaChatAPI.INSTANCE)
     agent.run().collect { text -> logAgent.info(text) }
 }
 

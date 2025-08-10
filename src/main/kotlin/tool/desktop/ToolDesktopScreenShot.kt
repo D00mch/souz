@@ -1,17 +1,15 @@
 package com.dumch.tool.desktop
 
-import com.dumch.giga.GigaAuth
 import com.dumch.giga.GigaChatAPI
 import com.dumch.image.ImageUtils
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolSetupWithAttachments
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
-import java.awt.Robot
 import java.io.File
 
 class ToolDesktopScreenShot(
-    private val api: GigaChatAPI = GigaChatAPI(GigaAuth),
+    private val api: GigaChatAPI = GigaChatAPI.INSTANCE,
 ) : ToolSetupWithAttachments<ToolDesktopScreenShot.Input> {
     private val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
 

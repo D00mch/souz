@@ -10,14 +10,20 @@ import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
 import io.ktor.http.*
+import org.slf4j.LoggerFactory
 import java.io.File
 
 class GigaChatAPI(private val auth: GigaAuth) {
+    private val l = LoggerFactory.getLogger(GigaChatAPI::class.java)
+
     private val client = HttpClient(CIO) {
         var token = "" // get form env, or cache, or db
         gigaDefaults()
         install(Logging) {
-            level = LogLevel.ALL
+            val envLevel = System.getenv("GIGA_LOG_LEVEL")
+                ?.let { LogLevel.valueOf(it) } ?: LogLevel.INFO
+            l.info("GIGA_LOG_LEVEL: $envLevel")
+            level = envLevel
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
         }
         install(Auth) {
@@ -61,6 +67,10 @@ class GigaChatAPI(private val auth: GigaAuth) {
     private suspend fun getAccessToken(): String {
         val gigaKey = System.getenv("GIGA_KEY")
         return auth.requestToken(gigaKey, "GIGACHAT_API_PERS")
+    }
+
+    companion object {
+        val INSTANCE = GigaChatAPI(GigaAuth)
     }
 }
 

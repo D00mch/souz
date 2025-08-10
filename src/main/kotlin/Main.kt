@@ -51,7 +51,7 @@ suspend fun main() = coroutineScope {
     )
     launch { audioRecorder.logState() }
     val gigaVoiceAPI = GigaVoiceAPI(GigaAuth)
-    val gigaChatAPI  = GigaChatAPI(GigaAuth)
+    val gigaChatAPI  = GigaChatAPI.INSTANCE
     withNativeHook(hotkeyListener) {
         val userInputFlow = audioRecorder.audioFlow
             .onEach { l.info("\n$AGENT_ALIAS: [Received audio data: ${it.size} bytes]") }
