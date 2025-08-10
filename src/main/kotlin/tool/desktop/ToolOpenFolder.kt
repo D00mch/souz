@@ -59,6 +59,6 @@ EOF
 }
 
 fun main() {
-    val v = ToolOpenFolder(ToolRunBashCommand)(ToolOpenFolder.Input("Pictures"))
+    val v = ToolOpenFolder(ToolRunBashCommand)(ToolOpenFolder.Input("Семья"))
     println(v)
 }
