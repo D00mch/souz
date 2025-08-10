@@ -102,6 +102,6 @@ inline fun <reified Input> ToolSetupWithAttachments<Input>.toGiga(): GigaToolSet
 fun Exception.toGigaToolMessage(): GigaRequest.Message {
     return GigaRequest.Message(
         role = GigaMessageRole.function,
-        content = """{"result": "${message ?: toString()}"}""",
+        content = """{"result": "Can:t invoke function: ${message ?: toString()}"}""",
     )
 }

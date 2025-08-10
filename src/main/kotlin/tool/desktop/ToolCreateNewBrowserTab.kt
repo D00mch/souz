@@ -9,6 +9,7 @@ class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<
     override val name: String = "CreateNewBrowserTab"
     override val description: String = "Opens the given url in the new tab if Safari is running or opens the url in the default browser"
     override fun invoke(input: Input): String {
+        if (input.url.isBlank()) return "The url is empty. Can't open it"
         bash.invoke(
             ToolRunBashCommand.Input(
                 """
