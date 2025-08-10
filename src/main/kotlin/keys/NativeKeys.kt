@@ -73,6 +73,20 @@ object VK {
     const val ESC = 53
     const val SPACE = 49
 
+    // Function keys
+    const val F1 = 122
+    const val F2 = 120
+    const val F3 = 99
+    const val F4 = 118
+    const val F5 = 96
+    const val F6 = 97
+    const val F7 = 98
+    const val F8 = 100
+    const val F9 = 101
+    const val F10 = 109
+    const val F11 = 103
+    const val F12 = 111
+
     // Letters
     const val T = 17
     const val Q = 12
