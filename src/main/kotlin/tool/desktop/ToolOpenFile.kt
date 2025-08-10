@@ -9,7 +9,7 @@ class ToolOpenFile(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenFil
     private val l = LoggerFactory.getLogger(ToolOpenFile::class.java)
 
     override val name: String = "OpenFile"
-    override val description: String = "Opens the file at the given path in the default app"
+    override val description: String = "Opens the file at the given path in the default app. Use it to open photos as well"
 
     override fun invoke(input: Input): String {
         try {
