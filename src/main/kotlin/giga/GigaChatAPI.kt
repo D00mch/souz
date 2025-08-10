@@ -49,12 +49,12 @@ class GigaChatAPI(private val auth: GigaAuth) {
     }
 
     suspend fun uploadImage(file: File): GigaResponse.UploadFile {
-        val token = getAccessToken()
+        val accessToken = getAccessToken()
         val result = ToolRunBashCommand.invoke(
             ToolRunBashCommand.Input(
                 """
                 curl -X POST 'https://gigachat.devices.sberbank.ru/api/v1/files' \
-                     -H "Authorization: Bearer $token" \
+                     -H "Authorization: Bearer $accessToken" \
                      -F "file=@${file.path};type=image/jpeg" \
                      -F "purpose=general"
                 """.trimIndent()
