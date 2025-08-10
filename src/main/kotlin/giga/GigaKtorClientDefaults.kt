@@ -31,10 +31,10 @@ fun HttpClientConfig<CIOEngineConfig>.gigaDefaults() {
     engine {
         https {
             trustManager = trustManagerFromPem(
-                "russian_trusted_root_ca_gost_2025.cer",
-                "russian_trusted_sub_ca_gost_2025.cer",
-                "russiantrustedca.pem",
-                "russiantrustedca2024.pem",
+                "certs/russian_trusted_root_ca_gost_2025.cer",
+                "certs/russian_trusted_sub_ca_gost_2025.cer",
+                "certs/russiantrustedca.pem",
+                "certs/russiantrustedca2024.pem",
             )
         }
     }
