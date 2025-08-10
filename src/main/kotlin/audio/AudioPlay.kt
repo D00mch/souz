@@ -4,9 +4,18 @@ import java.io.File
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.LineEvent
 
+private var sayProcess: Process? = null
+
 fun playText(text: String, speed: Int = 230) {
+    stopPlayText()
     val saveEnding = "$text "
-    ProcessBuilder("say", "-r", "$speed", saveEnding).start().waitFor()
+    sayProcess = ProcessBuilder("say", "-r", "$speed", saveEnding).start()
+    sayProcess?.waitFor()
+}
+
+fun stopPlayText() {
+    sayProcess?.destroyForcibly()
+    sayProcess = null
 }
 
 private val random = java.util.Random()
@@ -16,10 +25,9 @@ fun playTextRand(speed: Int = 230, vararg texts: String) {
     playText(text, speed)
 }
 
-val audio = AudioSystem.getAudioInputStream(File("/System/Library/Sounds/Tink.aiff"))
-val clip = AudioSystem.getClip()
-
 fun playMacPing() {
+    val audio = AudioSystem.getAudioInputStream(File("/System/Library/Sounds/Tink.aiff"))
+    val clip = AudioSystem.getClip()
     clip.addLineListener { if (it.type == LineEvent.Type.STOP) clip.close() }
     clip.open(audio)
     clip.start()

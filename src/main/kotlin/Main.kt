@@ -5,6 +5,7 @@ import com.dumch.audio.InMemoryAudioRecorder
 import com.dumch.audio.playMacPing
 import com.dumch.audio.playText
 import com.dumch.audio.playTextRand
+import com.dumch.audio.stopPlayText
 import com.dumch.audio.rawToOpusOgg
 import com.dumch.giga.GigaAgent
 import com.dumch.giga.GigaAuth
@@ -29,22 +30,25 @@ suspend fun main() = coroutineScope {
         recorder = ActiveSoundActiveSoundRecorder(),
         coroutineScope = appScope,
     )
-    val hotkeyListener = HotkeyListener { pressed ->
-        l.info(if (pressed) "onStart" else "onStop")
-        when {
-            pressed -> {
-                playMacPing()
-                audioRecorder.start()
-            }
-            else -> {
-                audioRecorder.stop()
-                launch {
-                    delay(300)
-                    playTextRand(120, "ща сделаю", "поехали", "ну что ж, приступим", "опять работать")
+    val hotkeyListener = HotkeyListener(
+        onPressed = { pressed ->
+            l.info(if (pressed) "onStart" else "onStop")
+            when {
+                pressed -> {
+                    playMacPing()
+                    audioRecorder.start()
+                }
+                else -> {
+                    audioRecorder.stop()
+                    launch {
+                        delay(300)
+                        playTextRand(120, "ща сделаю", "поехали", "ну что ж, приступим", "опять работать")
+                    }
                 }
             }
-        }
-    }
+        },
+        onDoubleClick = ::stopPlayText
+    )
     launch { audioRecorder.logState() }
     val gigaVoiceAPI = GigaVoiceAPI(GigaAuth)
     val gigaChatAPI  = GigaChatAPI(GigaAuth)

@@ -220,13 +220,16 @@ suspend fun main() {
     val audioRecorder = InMemoryAudioRecorder(
         coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     )
-    val hotkeyListener = HotkeyListener { pressed ->
-        println(if (pressed) "onStart" else "onStop")
-        when {
-            pressed -> audioRecorder.start()
-            else -> audioRecorder.stop()
-        }
-    }
+    val hotkeyListener = HotkeyListener(
+        onPressed = { pressed ->
+            println(if (pressed) "onStart" else "onStop")
+            when {
+                pressed -> audioRecorder.start()
+                else -> audioRecorder.stop()
+            }
+        },
+        onDoubleClick = { println("double click") }
+    )
 
     var i = 0
     try {
