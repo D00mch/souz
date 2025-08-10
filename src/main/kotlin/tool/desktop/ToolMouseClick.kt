@@ -1,5 +1,6 @@
 package com.dumch.tool.desktop
 
+import com.dumch.image.ImageUtils
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolSetup
 import com.sun.jna.*
@@ -65,8 +66,8 @@ class ToolMouseClickMac : ToolSetup<ToolMouseClickMac.Input> {
             "This implementation supports macOS only."
         }
 
-        val x = input.x.toDouble()
-        val y = input.y.toDouble()
+        val x = input.x.toDouble() / ImageUtils.DESKTOP_SCREENSHOT_QUALITY
+        val y = input.y.toDouble() / ImageUtils.DESKTOP_SCREENSHOT_QUALITY
 
         val (btnIdx, downType, upType) = when (input.button.toInt()) {
             1 -> Triple(CG.kCGMouseButtonLeft, CG.kCGEventLeftMouseDown, CG.kCGEventLeftMouseUp)

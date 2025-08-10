@@ -7,7 +7,7 @@ import com.dumch.tool.ToolSetup
 class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<ToolCreateNewBrowserTab.Input> {
 
     override val name: String = "CreateNewBrowserTab"
-    override val description: String = "Opens the given url in the new tab if Safari is running"
+    override val description: String = "Opens the given url in the new tab if Safari is running or opens the url in the default browser"
     override fun invoke(input: Input): String {
         bash.invoke(
             ToolRunBashCommand.Input(
@@ -18,11 +18,11 @@ class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<
 
                         if (count of windows) > 0 then
                             tell front window
-                                set newTab to make new tab with properties {URL:"${'$'}{input.url}"}
+                                set newTab to make new tab with properties {URL:"${input.url}"}
                                 set current tab to newTab
                             end tell
                         else
-                            make new document with properties {URL:"${'$'}{input.url}"}
+                            make new document with properties {URL:"${input.url}"}
                         end if
                     end tell
                 EOF

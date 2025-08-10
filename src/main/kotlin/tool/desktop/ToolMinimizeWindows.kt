@@ -62,7 +62,7 @@ class ToolMinimizeWindows(private val bash: ToolRunBashCommand) : ToolSetup<Tool
     }
 
     class Input(
-        @InputParamDescription("Option: minimize(collapse) all windows or just the current window")
+        @InputParamDescription("send all to minimize all windows or send current to minimize the current window")
         val minimizeOption: String
     )
 }

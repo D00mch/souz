@@ -1,20 +1,33 @@
 package com.dumch.tool.desktop
 
+import com.dumch.audio.playText
 import com.dumch.giga.objectMapper
+import com.dumch.image.ImageUtils
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.ToolSetup
 import com.fasterxml.jackson.module.kotlin.readValue
-import kotlinx.coroutines.delay
-import kotlin.collections.map
+import kotlinx.coroutines.*
+import org.slf4j.LoggerFactory
 
 
-class ToolCollectButtons(private val bash: ToolRunBashCommand) : ToolSetup<ToolCollectButtons.Input> {
+class ToolCollectButtons(
+    private val bash: ToolRunBashCommand,
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+) : ToolSetup<ToolCollectButtons.Input> {
+    private val l = LoggerFactory.getLogger(ToolCollectButtons::class.java)
 
     override val name: String = "CollectButtons"
     override val description: String = "Collects buttons from the frontmost application window and returns JSON with buttons description and coordinates," +
             "e.g., [{\"x\": 100, \"y\": 200, \"name\": \"Button 1\"}, {\"x\": 300, \"y\": 400, \"name\": \"Button 2\"}]"
-    override fun invoke(input: Input): String {
+
+    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+
+    override suspend fun suspendInvoke(input: Input): String {
+        scope.launch {
+            playText("Щаа-щаа", 190)
+        }
+        l.info("Collecting buttons from the frontmost application window")
         val result = bash.invoke(
             ToolRunBashCommand.Input(
                 """
@@ -116,7 +129,9 @@ class ToolCollectButtons(private val bash: ToolRunBashCommand) : ToolSetup<ToolC
             .map { osxBtn ->
                 val width = osxBtn.size[0]
                 val height = osxBtn.size[1]
-                OutButton(osxBtn.position[0] + width / 2, osxBtn.position[1] + height / 2, osxBtn.name)
+                val x = (osxBtn.position[0] + width / 2) * ImageUtils.DESKTOP_SCREENSHOT_QUALITY
+                val y = (osxBtn.position[1] + height / 2) * ImageUtils.DESKTOP_SCREENSHOT_QUALITY
+                OutButton(x.toInt(), y.toInt(), osxBtn.name)
             }
         return objectMapper.writeValueAsString(outButtons)
     }

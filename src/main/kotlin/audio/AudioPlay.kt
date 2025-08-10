@@ -25,10 +25,9 @@ fun playTextRand(speed: Int = 230, vararg texts: String) {
     playText(text, speed)
 }
 
-val audio = AudioSystem.getAudioInputStream(File("/System/Library/Sounds/Tink.aiff"))
-val clip = AudioSystem.getClip()
-
 fun playMacPing() {
+    val audio = AudioSystem.getAudioInputStream(File("/System/Library/Sounds/Tink.aiff"))
+    val clip = AudioSystem.getClip()
     clip.addLineListener { if (it.type == LineEvent.Type.STOP) clip.close() }
     clip.open(audio)
     clip.start()

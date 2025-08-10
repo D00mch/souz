@@ -42,7 +42,7 @@ inline fun <reified Input> ToolSetup<Input>.toGiga(): GigaToolSetup {
         ): GigaRequest.Message {
             return try {
                 val input: Input = gigaJsonMapper.convertValue(functionCall.arguments, Input::class.java)
-                val toolResult = toolSetup.invoke(input)
+                val toolResult = toolSetup.suspendInvoke(input)
                 val gigaResult = gigaJsonMapper.writeValueAsString(
                     mapOf("result" to toolResult)
                 )

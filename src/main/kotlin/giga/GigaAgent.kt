@@ -6,7 +6,6 @@ import com.dumch.tool.desktop.ToolCreateNote
 import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.desktop.ToolMouseClickMac
 import com.dumch.tool.desktop.ToolOpenApp
-import com.dumch.tool.desktop.ToolOpenBrowser
 import com.dumch.tool.desktop.ToolOpenFile
 import com.dumch.tool.desktop.ToolOpenFolder
 import com.dumch.tool.desktop.ToolOpenPhoto
@@ -27,7 +26,7 @@ class GigaAgent(
     private val functions: List<GigaRequest.Function> = tools.map { it.value.fn }
 
     fun run(): Flow<String> = channelFlow {
-        val conversation = ArrayList<GigaRequest.Message>().apply {
+        val conversation = ArrayDeque<GigaRequest.Message>().apply {
             add(systemPrompt)
         }
 
@@ -35,57 +34,74 @@ class GigaAgent(
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             for (i in 1..10) { // infinite loop protection
                 if (!isActive) break
-                val response: GigaResponse.Chat = withContext(Dispatchers.IO) {
-                    chat(conversation)
+                val response: GigaResponse.Chat = try {
+                    withContext(Dispatchers.IO) { chat(conversation) }
+                } catch (e: Throwable) {
+                    l.error("Error: ${e.message}", e)
+                    send("Не смогли достучаться до сервера. Будем пробовать снова?")
+                    break
                 }
                 when (response) {
                     is GigaResponse.Chat.Error -> {
-                        send(response.message)
-                        close()
-                        return@collect
+                        l.error("Error: ${response.message}")
+                        send("Возникли сложности, объясните еще раз")
+                        break
                     }
 
                     is GigaResponse.Chat.Ok -> {
                         conversation.addAll(response.toRequestMessages())
-                        trySummarize(response, conversation)
-                    }
-                }
-
-                val toolAwaits = ArrayList<Deferred<GigaRequest.Message>>()
-                for (ch in response.choices) {
-                    val msg = ch.message
-                    when {
-                        msg.content.isNotBlank() -> {
-                            send(msg.content)
+                        try {
+                            trySummarize(response, conversation)
+                        } catch (e: Throwable) {
+                            send("Error: ${e.message}. Continue? (y/n)")
+                            break
                         }
 
-                        msg.functionCall != null && msg.functionsStateId != null -> {
-                            val deferred = async(Dispatchers.IO) { executeTool(msg.functionCall) }
-                            toolAwaits.add(deferred)
+                        val toolAwaits = ArrayList<Deferred<GigaRequest.Message>>()
+                        for (ch in response.choices) {
+                            val msg = ch.message
+                            when {
+                                msg.content.isNotBlank() -> {
+                                    send(msg.content)
+                                }
+
+                                msg.functionCall != null && msg.functionsStateId != null -> {
+                                    val deferred = async(Dispatchers.IO) { executeTool(msg.functionCall) }
+                                    toolAwaits.add(deferred)
+                                }
+                            }
+                        }
+                        if (toolAwaits.isEmpty()) break
+                        try {
+                            conversation.addAll(toolAwaits.awaitAll())
+                        } catch (t: Throwable) {
+                            send("Error: ${t.message}. Continue? (y/n)")
+                            break
                         }
                     }
                 }
-                if (toolAwaits.isEmpty()) break
-                conversation.addAll(toolAwaits.awaitAll())
             }
         }
     }
 
-    private suspend fun trySummarize(response: GigaResponse.Chat.Ok, conversation: ArrayList<GigaRequest.Message>) {
+    private suspend fun trySummarize(response: GigaResponse.Chat.Ok, conversation: ArrayDeque<GigaRequest.Message>) {
         val modelContextWindow = GigaModel.entries.first { response.model.startsWith(it.alias) }.maxTokens
         val smallConversation = response.usage.totalTokens < modelContextWindow * SUMMARIZE_THRESHOLD
         if (smallConversation) return
 
-        val response: GigaResponse.Chat = withContext(Dispatchers.IO) {
+        val summaryResponse: GigaResponse.Chat = withContext(Dispatchers.IO) {
             conversation.add(GigaRequest.Message(
                 role = GigaMessageRole.user,
                 content = "Summarize the conversation so far",
             ))
             chat(conversation)
         }
-        val msg: GigaRequest.Message = when(response) {
-            is GigaResponse.Chat.Error -> throw CancellationException("Can't summarize the conversation")
-            is GigaResponse.Chat.Ok -> response.toRequestMessages().last()
+        val msg: GigaRequest.Message = when(summaryResponse) {
+            is GigaResponse.Chat.Error -> {
+                l.error("Error on summarization: ${summaryResponse.message}")
+                return trySummarizaWithLess(conversation, response)
+            }
+            is GigaResponse.Chat.Ok -> summaryResponse.toRequestMessages().last()
         }
         l.info("Summarizing the conversation... $msg")
         val lastMsg = conversation.last()
@@ -93,6 +109,16 @@ class GigaAgent(
         conversation.add(systemPrompt)
         conversation.add(msg)
         conversation.add(lastMsg)
+    }
+
+    private suspend fun trySummarizaWithLess(
+        conversation: ArrayDeque<GigaRequest.Message>,
+        response: GigaResponse.Chat.Ok
+    ) {
+        conversation.removeFirst() // Remove system prompt
+        conversation.removeFirst() // Remove first user message
+        conversation.removeLast() // Summarization request message
+        trySummarize(response, conversation)
     }
 
     private fun GigaResponse.Chat.Ok.toRequestMessages(): Collection<GigaRequest.Message> {
@@ -123,7 +149,7 @@ class GigaAgent(
         return fn.invoke(functionCall)
     }
 
-    private suspend fun chat(conversation: ArrayList<GigaRequest.Message>): GigaResponse.Chat {
+    private suspend fun chat(conversation: ArrayDeque<GigaRequest.Message>): GigaResponse.Chat {
         val body = GigaRequest.Chat(
             messages = conversation,
             functions = functions,
@@ -158,7 +184,6 @@ class GigaAgent(
             ToolMouseClickMac().toGiga(),
             ToolFindTextInFiles.toGiga(),
             ToolDesktopScreenShot().toGiga(),
-            ToolOpenBrowser(ToolRunBashCommand).toGiga(),
             ToolCreateNote(ToolRunBashCommand).toGiga(),
             ToolOpenPhoto(ToolRunBashCommand).toGiga(),
             ToolOpenFolder(ToolRunBashCommand).toGiga(),
