@@ -37,13 +37,13 @@ class GigaAgent(
                     withContext(Dispatchers.IO) { chat(conversation) }
                 } catch (e: Throwable) {
                     l.error("Error: ${e.message}", e)
-                    send("Ошибочка вышла, разработчики уже работают над ней. Попробуйте повторить запрос позже.")
+                    send("Не смогли достучаться до сервера. Будем пробовать снова?")
                     break
                 }
                 when (response) {
                     is GigaResponse.Chat.Error -> {
                         l.error("Error: ${response.message}")
-                        send("Не смогли достучаться до сервера. Будем пробовать снова?")
+                        send("Возникли сложности, объясните еще раз")
                         break
                     }
 
