@@ -16,6 +16,13 @@ object ToolRunBashCommand : ToolSetup<ToolRunBashCommand.Input> {
         return output.trim()
     }
 
+    fun sh(str: String) = invoke(Input(str))
+
+    fun script(s: String): String {
+        val p = ProcessBuilder("bash","-lc", s).redirectErrorStream(false).start()
+        return p.inputStream.bufferedReader().readText().trim()
+    }
+
     data class Input(
         @InputParamDescription("The bash command to run, e.g., 'ls', 'echo Hello', './gradlew tasks'")
         val command: String

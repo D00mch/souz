@@ -3,6 +3,8 @@ package com.dumch.tool.desktop
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.ToolSetup
+import java.awt.SystemColor.window
+import java.lang.ProcessBuilder.Redirect.to
 
 class ToolMinimizeWindows(private val bash: ToolRunBashCommand) : ToolSetup<ToolMinimizeWindows.Input> {
 
@@ -62,7 +64,7 @@ class ToolMinimizeWindows(private val bash: ToolRunBashCommand) : ToolSetup<Tool
     }
 
     class Input(
-        @InputParamDescription("send all to minimize all windows or send current to minimize the current window")
+        @InputParamDescription("""send "all" to minimize all windows or send "current" to minimize the current window""")
         val minimizeOption: String
     )
 }

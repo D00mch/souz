@@ -8,7 +8,6 @@ import com.dumch.tool.desktop.ToolMouseClickMac
 import com.dumch.tool.desktop.ToolOpenApp
 import com.dumch.tool.desktop.ToolOpenFile
 import com.dumch.tool.desktop.ToolOpenFolder
-import com.dumch.tool.desktop.ToolOpenPhoto
 import com.dumch.tool.desktop.ToolCreateNewBrowserTab
 import com.dumch.tool.desktop.ToolMinimizeWindows
 import com.dumch.tool.files.*
@@ -185,7 +184,6 @@ class GigaAgent(
             ToolFindTextInFiles.toGiga(),
             ToolDesktopScreenShot().toGiga(),
             ToolCreateNote(ToolRunBashCommand).toGiga(),
-            ToolOpenPhoto(ToolRunBashCommand).toGiga(),
             ToolOpenFolder(ToolRunBashCommand).toGiga(),
             ToolCollectButtons(ToolRunBashCommand).toGiga(),
             ToolOpenFile(ToolRunBashCommand).toGiga(),
