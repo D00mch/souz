@@ -90,7 +90,9 @@ EOF
         if (path.isBlank()) return path
 
         val files = ToolListFiles(ToolListFiles.Input(path))
-        return """{"path":"$path","files":$files}"""
+        val result = """{"path":"$path","files":$files}"""
+        l.info("Result is $result")
+        return result
     }
 
     class Input(
