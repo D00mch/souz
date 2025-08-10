@@ -17,7 +17,7 @@ class GigaChatAPI(private val auth: GigaAuth) {
         var token = "" // get form env, or cache, or db
         gigaDefaults()
         install(Logging) {
-            level = LogLevel.INFO
+            level = LogLevel.ALL
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
         }
         install(Auth) {

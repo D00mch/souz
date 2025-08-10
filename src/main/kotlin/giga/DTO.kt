@@ -76,7 +76,7 @@ object GigaResponse {
 enum class GigaModel(val alias: String, val maxTokens: Int) {
     Lite("GigaChat-2", 8192),
     Pro("GigaChat-Pro", 8192),
-    Max("GigaChat-Max", 4096),
+    Max("GigaChat-Max", 8192),
 }
 
 object GigaRequest {

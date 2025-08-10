@@ -48,9 +48,9 @@ class GigaAgent(
                     }
 
                     is GigaResponse.Chat.Ok -> {
+                        trySummarize(response, conversation)
                         conversation.addAll(response.toRequestMessages())
                         try {
-                            trySummarize(response, conversation)
                         } catch (e: Throwable) {
                             send("Error: ${e.message}. Continue? (y/n)")
                             break
@@ -88,36 +88,32 @@ class GigaAgent(
         val smallConversation = response.usage.totalTokens < modelContextWindow * SUMMARIZE_THRESHOLD
         if (smallConversation) return
 
+        l.info("About to summarize the conversation...")
         val summaryResponse: GigaResponse.Chat = withContext(Dispatchers.IO) {
             conversation.add(GigaRequest.Message(
                 role = GigaMessageRole.user,
-                content = "Summarize the conversation so far",
+                content = "Резюмируй разговор",
             ))
-            chat(conversation)
+            chat(conversation, fns = emptyList())
         }
         val msg: GigaRequest.Message = when(summaryResponse) {
             is GigaResponse.Chat.Error -> {
                 l.error("Error on summarization: ${summaryResponse.message}")
-                return trySummarizaWithLess(conversation, response)
+                return trySummarizeWithLess(conversation, response)
             }
             is GigaResponse.Chat.Ok -> summaryResponse.toRequestMessages().last()
         }
         l.info("Summarizing the conversation... $msg")
-        val lastMsg = conversation.last()
         conversation.clear()
         conversation.add(systemPrompt)
         conversation.add(msg)
-        conversation.add(lastMsg)
     }
 
-    private suspend fun trySummarizaWithLess(
+    private suspend fun trySummarizeWithLess(
         conversation: ArrayDeque<GigaRequest.Message>,
         response: GigaResponse.Chat.Ok
     ) {
-        conversation.removeFirst() // Remove system prompt
-        conversation.removeFirst() // Remove first user message
-        conversation.removeLast() // Summarization request message
-        trySummarize(response, conversation)
+        conversation.clear()
     }
 
     private fun GigaResponse.Chat.Ok.toRequestMessages(): Collection<GigaRequest.Message> {
@@ -148,16 +144,19 @@ class GigaAgent(
         return fn.invoke(functionCall)
     }
 
-    private suspend fun chat(conversation: ArrayDeque<GigaRequest.Message>): GigaResponse.Chat {
+    private suspend fun chat(
+        conversation: ArrayDeque<GigaRequest.Message>,
+        fns: List<GigaRequest.Function> = functions,
+    ): GigaResponse.Chat {
         val body = GigaRequest.Chat(
             messages = conversation,
-            functions = functions,
+            functions = fns,
         )
         return api.message(body)
     }
 
     companion object {
-        private const val SUMMARIZE_THRESHOLD = 0.7
+        private const val SUMMARIZE_THRESHOLD = 0.95
 
         private val systemPrompt = GigaRequest.Message(
             role = GigaMessageRole.system,

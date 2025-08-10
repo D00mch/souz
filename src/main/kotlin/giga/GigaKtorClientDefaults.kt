@@ -23,7 +23,7 @@ fun HttpClientConfig<CIOEngineConfig>.gigaDefaults() {
         header("RqUID", UUID.randomUUID().toString())
     }
     install(HttpTimeout) {
-        requestTimeoutMillis = 20000
+        requestTimeoutMillis = 10000
     }
     install(ContentNegotiation) {
         jackson { this.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES) }
