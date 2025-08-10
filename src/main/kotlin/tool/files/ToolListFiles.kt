@@ -15,7 +15,6 @@ object ToolListFiles : ToolSetup<ToolListFiles.Input> {
         if (!base.exists() || !base.isDirectory) {
             throw BadInputException("Invalid directory path: $dirPath")
         }
-        FilesToolUtil.requirePathIsSave(base)
     val files = base.walkTopDown() // sequence
         .filter { it != base }
         .map { file ->

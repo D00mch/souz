@@ -21,6 +21,6 @@ class ToolOpenFile(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenFil
 }
 
 fun main() {
-    val v = ToolOpenFile(ToolRunBashCommand)(ToolOpenFile.Input("\$HOME/Pictures/портрет.jpeg"))
+    val v = ToolOpenFile(ToolRunBashCommand)(ToolOpenFile.Input("\$HOME/Pictures/"))
     println(v)
 }

@@ -15,7 +15,6 @@ object ToolFindTextInFiles : ToolSetup<ToolFindTextInFiles.Input> {
         if (!baseDir.exists() || !baseDir.isDirectory) {
             throw BadInputException("Invalid directory path: ${input.path}")
         }
-        FilesToolUtil.requirePathIsSave(baseDir)
         val matchedFiles = baseDir.walkTopDown()
             .filter { it.isFile && it.readText().contains(input.text) }
             .map { it.relativeTo(baseDir).path }

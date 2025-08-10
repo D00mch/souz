@@ -13,8 +13,8 @@ object FilesToolUtil {
 
     @Throws(BadInputException::class)
     fun requirePathIsSave(file: File) {
-//        if (!isPathSafe(file)) {
-//            throw BadInputException("Access denied: File path must be within project directory")
-//        }
+        if (!isPathSafe(file)) {
+            throw BadInputException("Access denied: File path must be within project directory")
+        }
     }
 }
