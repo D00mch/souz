@@ -3,13 +3,14 @@ package com.dumch.tool.desktop
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.ToolSetup
+import com.dumch.tool.files.ToolListFiles
 import org.slf4j.LoggerFactory
 
 class ToolOpenFolder(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenFolder.Input> {
     private val l = LoggerFactory.getLogger(ToolOpenFolder::class.java)
 
     override val name: String = "OpenFolder"
-    override val description: String = "Opens Folder by its name, returns the path"
+    override val description: String = "Opens Folder by its name, returns the path and the list of files inside"
 
     override fun invoke(input: Input): String {
         l.info("Opening folder '${input.name}'")
@@ -45,7 +46,10 @@ EOF
             """.trimIndent()
 
         val path = bash.script(script)
-        return "$path"
+        if (path.isBlank()) return path
+
+        val files = ToolListFiles(ToolListFiles.Input(path))
+        return """{"path":"$path","files":$files}"""
     }
 
     class Input(
