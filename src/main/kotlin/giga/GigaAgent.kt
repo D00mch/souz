@@ -9,7 +9,6 @@ import com.dumch.tool.desktop.ToolOpenApp
 import com.dumch.tool.desktop.ToolOpenBrowser
 import com.dumch.tool.desktop.ToolOpenFile
 import com.dumch.tool.desktop.ToolOpenFolder
-import com.dumch.tool.desktop.ToolOpenPhoto
 import com.dumch.tool.files.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
@@ -179,7 +178,6 @@ class GigaAgent(
             ToolDesktopScreenShot().toGiga(),
             ToolOpenBrowser(ToolRunBashCommand).toGiga(),
             ToolCreateNote(ToolRunBashCommand).toGiga(),
-            ToolOpenPhoto(ToolRunBashCommand).toGiga(),
             ToolOpenFolder(ToolRunBashCommand).toGiga(),
             ToolCollectButtons(ToolRunBashCommand).toGiga(),
             ToolOpenFile(ToolRunBashCommand).toGiga(),
