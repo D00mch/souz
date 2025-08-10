@@ -4,6 +4,7 @@ import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.ToolSetup
 import org.slf4j.LoggerFactory
+import java.io.File
 
 class ToolOpenFile(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenFile.Input> {
     private val l = LoggerFactory.getLogger(ToolOpenFile::class.java)
@@ -13,6 +14,10 @@ class ToolOpenFile(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenFil
 
     override fun invoke(input: Input): String {
         try {
+            val isFolder = File(input.filePath).isDirectory
+            if (isFolder) {
+                return ToolOpenFolder(bash).invoke(ToolOpenFolder.Input(input.filePath))
+            }
             bash.sh("""open "${input.filePath}"""")
         } catch (e: Exception) {
             l.error("Error opening file: ${e.message}")
