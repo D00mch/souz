@@ -6,9 +6,10 @@ import com.dumch.tool.desktop.ToolCreateNote
 import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.desktop.ToolMouseClickMac
 import com.dumch.tool.desktop.ToolOpenApp
-import com.dumch.tool.desktop.ToolOpenBrowser
 import com.dumch.tool.desktop.ToolOpenFile
 import com.dumch.tool.desktop.ToolOpenFolder
+import com.dumch.tool.desktop.ToolCreateNewBrowserTab
+import com.dumch.tool.desktop.ToolMinimizeWindows
 import com.dumch.tool.files.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
@@ -161,9 +162,15 @@ class GigaAgent(
         private val systemPrompt = GigaRequest.Message(
             role = GigaMessageRole.system,
             content = """
-                Ты — помощник слепого человека. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
-                c помощью имеющихся функций, решай, а не проси пользователя сделать это. Если сомневаешься, уточни.
+                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
+                c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
                 Если юзер спрашивает, какие кнопки на экране, воводи только их названия, юзеру не интересны координаты.
+                Если тебя просят открыть какой-то сайт, а браузер(например, Safari) уже запущен - открой новую вкладку в том же окне через toolCreateNewBrowserTab. 
+                Если тебя просят проанализировать или описать то, что находится на экране, используй тул DesktopScreenShot.
+                Если тебя просят нажать на какую-то кнопку, используй тул получения кнопок, а после нажимай. 
+                Если тебя просят свернуть данное окно - передавай current в качестве параметра в туле MinimizeWindows.
+                Если тебя просят открыть приложение c наименованием на русском языке, при необходимости переводи его на английский, чтобы устройство поняло о какой программе речь, например Заметки - Notes.
+                Если тебя просят нажать куда-либо на экране, используй инструмент получения экрана определяй координаты и нажимай на подходящую область используя тул MouseClick.
             """.trimIndent()
         )
 
@@ -176,11 +183,12 @@ class GigaAgent(
             ToolMouseClickMac().toGiga(),
             ToolFindTextInFiles.toGiga(),
             ToolDesktopScreenShot().toGiga(),
-            ToolOpenBrowser(ToolRunBashCommand).toGiga(),
             ToolCreateNote(ToolRunBashCommand).toGiga(),
             ToolOpenFolder(ToolRunBashCommand).toGiga(),
             ToolCollectButtons(ToolRunBashCommand).toGiga(),
             ToolOpenFile(ToolRunBashCommand).toGiga(),
+            ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
+            ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
             ToolOpenApp(ToolRunBashCommand).toGiga(),
         ).associateBy { it.fn.name }
 
