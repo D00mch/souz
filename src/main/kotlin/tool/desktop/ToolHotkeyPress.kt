@@ -14,26 +14,26 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
 
     class Input(
         @InputParamDescription(
-            """Return a list of strings to press a hotkey. Example [\"full_screen_toggle\"]. Keys options:
-            \"arrow_left\"           -> left arrow
-            \"arrow_right\"          -> right arrow
-            \"arrow_up\"             -> arrow up
-            \"arrow_down\"           -> arrow down
-            \"page_up\"              -> page up
-            \"page_down\"            -> page down
-            \"home\"                 -> home
-            \"end\"                  -> end
-            \"backspace\"            -> label \"Delete\" on Mac keyboards
-            \"enter\"                -> enter
-            \"escape\"               -> escape
-            \"space\"                -> space
-            \"go_to_left_screen\"    -> ctrl+left
-            \"go_to_right_screen\"   -> ctrl+right
-            \"full_screen_toggle\"   -> ctrl+cmd+f
-            \"close_app\"            -> cmd+q
-            \"close_tab\"            -> cmd+w
-            \"open_just_closed_tab\" -> cmd+shift+t
-            \"cancel_last_action\"   -> cmd+z"""
+            """Return a list of strings to press a hotkey. Example ["full_screen_toggle"]. Keys options:
+            "arrow_left"           -> left arrow
+            "arrow_right"          -> right arrow
+            "arrow_up"             -> arrow up
+            "arrow_down"           -> arrow down
+            "page_up"              -> page up
+            "page_down"            -> page down
+            "home"                 -> home
+            "end"                  -> end
+            "backspace"            -> label "Delete" on Mac keyboards
+            "enter"                -> enter
+            "escape"               -> escape
+            "space"                -> space
+            "go_to_left_screen"    -> ctrl+left
+            "go_to_right_screen"   -> ctrl+right
+            "full_screen_toggle"   -> ctrl+cmd+f
+            "close_app"            -> cmd+q
+            "close_tab"            -> cmd+w
+            "open_just_closed_tab" -> cmd+shift+t
+            "cancel_last_action"   -> cmd+z"""
         )
         val keys: List<String>
     )
@@ -93,5 +93,5 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
 
 suspend fun main() {
     val tool = ToolHotkeyMac()
-    println(tool.invoke(ToolHotkeyMac.Input(listOf("open_just_closed_tab"))))
+    println(tool.invoke(ToolHotkeyMac.Input(listOf("close_tab", "close_tab"))))
 }
