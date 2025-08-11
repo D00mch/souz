@@ -3,7 +3,6 @@ package com.dumch.tool.desktop
 import com.dumch.image.ImageUtils
 import com.dumch.keys.*
 import com.dumch.tool.*
-import org.slf4j.LoggerFactory
 
 private object CG {
     const val kCGHIDEventTap = 0
@@ -19,7 +18,6 @@ private object CG {
 }
 
 class ToolMouseClickMac : ToolSetup<ToolMouseClickMac.Input> {
-    private val l = LoggerFactory.getLogger(ToolMouseClickMac::class.java)
     private val cg = CoreGraphics.INSTANCE
     private val cf = CoreFoundation.INSTANCE
 

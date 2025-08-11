@@ -1,8 +1,6 @@
 package com.dumch.tool.desktop
 
 import com.dumch.tool.*
-import java.awt.SystemColor.window
-import java.lang.ProcessBuilder.Redirect.to
 
 class ToolMinimizeWindows(private val bash: ToolRunBashCommand) : ToolSetup<ToolMinimizeWindows.Input> {
 

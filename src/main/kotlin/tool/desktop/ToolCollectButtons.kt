@@ -165,7 +165,7 @@ class ToolCollectButtons(
     data class OutButton(val x: Int, val y: Int, val name: String)
 }
 
-suspend fun main() {
+fun main() {
     val tool = ToolCollectButtons(ToolRunBashCommand)
     println(tool.invoke(ToolCollectButtons.Input("3")))
     println(tool.toGiga().fn)
