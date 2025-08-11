@@ -1,12 +1,19 @@
 package com.dumch.giga
 
+import com.dumch.giga.toGiga
 import com.dumch.tool.InputParamDescription
+import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.ToolSetup
 import com.dumch.tool.ToolSetupWithAttachments
+import com.dumch.tool.desktop.ToolHotkeyMac
+import com.dumch.tool.desktop.ToolMediaControl
+import com.dumch.tool.desktop.ToolMouseClickMac
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlin.reflect.KCallable
+import kotlin.reflect.KClass
 import kotlin.reflect.full.declaredMembers
 import kotlin.reflect.full.findAnnotation
+import kotlin.reflect.full.isSubclassOf
 
 
 interface GigaToolSetup {
@@ -29,7 +36,19 @@ inline fun <reified Input> ToolSetup<Input>.toGiga(): GigaToolSetup {
                     for (kProperty: KCallable<*> in clazz.declaredMembers) {
                         val annotation = kProperty.findAnnotation<InputParamDescription>() ?: continue
                         val description = annotation.value
-                        val type = kProperty.returnType.toString().substringAfterLast(".").lowercase()
+                        val type = when (val classifier = kProperty.returnType.classifier) {
+                            String::class -> "string"
+                            Boolean::class -> "boolean"
+                            Int::class, Long::class, Double::class -> "number"
+                            List::class, Set::class, Array::class -> "array"
+                            Map::class -> "object" // or you could have a special "map" type if needed
+                            else -> if (classifier is KClass<*> && classifier.isSubclassOf(Collection::class)) {
+                                "array"
+                            } else {
+                                "object"
+                            }
+
+                        }
                         val gigaProperty = GigaRequest.Property(type, description)
                         put(kProperty.name, gigaProperty)
                     }
@@ -59,28 +78,9 @@ inline fun <reified Input> ToolSetup<Input>.toGiga(): GigaToolSetup {
 
 inline fun <reified Input> ToolSetupWithAttachments<Input>.toGiga(): GigaToolSetup {
     val toolSetup = this
-    return object : GigaToolSetup {
-        override val fn: GigaRequest.Function = GigaRequest.Function(
-            name = toolSetup.name,
-            description = toolSetup.description,
-            parameters = GigaRequest.Parameters(
-                "object",
-                properties = HashMap<String, GigaRequest.Property>().apply {
-                    val clazz = Input::class
-                    for (kProperty: KCallable<*> in clazz.declaredMembers) {
-                        val annotation = kProperty.findAnnotation<InputParamDescription>() ?: continue
-                        val description = annotation.value
-                        val type = kProperty.returnType.toString().substringAfterLast(".").lowercase()
-                        val gigaProperty = GigaRequest.Property(type, description)
-                        put(kProperty.name, gigaProperty)
-                    }
-                }
-            )
-        )
-
-        override suspend fun invoke(
-            functionCall: GigaResponse.FunctionCall,
-        ): GigaRequest.Message {
+    val gigaToolSetup = (toolSetup as ToolSetup<Input>).toGiga()
+    return object : GigaToolSetup by gigaToolSetup {
+        override suspend fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
             return try {
                 val input: Input = gigaJsonMapper.convertValue(functionCall.arguments, Input::class.java)
                 val toolResult = toolSetup.suspendInvoke(input)
@@ -104,4 +104,10 @@ fun Exception.toGigaToolMessage(): GigaRequest.Message {
         role = GigaMessageRole.function,
         content = """{"result": "Can:t invoke function: ${message ?: toString()}"}""",
     )
+}
+
+fun main() {
+    ToolHotkeyMac().toGiga()
+    ToolMediaControl(ToolRunBashCommand).toGiga()
+    ToolMouseClickMac().toGiga()
 }
