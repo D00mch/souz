@@ -1,8 +1,6 @@
 package com.dumch.tool.desktop
 
-import com.dumch.tool.InputParamDescription
-import com.dumch.tool.ToolRunBashCommand
-import com.dumch.tool.ToolSetup
+import com.dumch.tool.*
 import com.dumch.tool.files.ToolListFiles
 import org.slf4j.LoggerFactory
 
@@ -11,6 +9,21 @@ class ToolOpenFolder(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenF
 
     override val name: String = "OpenFolder"
     override val description: String = "Opens Folder by its name, returns the path and the list of files inside"
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Открой загрузки",
+            params = mapOf("name" to "Downloads")
+        ),
+        FewShotExample(
+            request = "Открой папку 'Семья'",
+            params = mapOf("name" to "Семья")
+        )
+    )
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "JSON string with path and files")
+        )
+    )
 
     data class Input(
         @InputParamDescription("Folder name")

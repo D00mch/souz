@@ -5,6 +5,17 @@ import java.io.BufferedReader
 object ToolRunBashCommand : ToolSetup<ToolRunBashCommand.Input> {
     override val name = "RunBashCommand"
     override val description = "Executes a bash command and returns its output"
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "List files in the current directory",
+            params = mapOf("command" to "ls")
+        )
+    )
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Command output")
+        )
+    )
 
     override fun invoke(input: Input): String {
         val process = ProcessBuilder("bash", "-c", input.command)

@@ -1,13 +1,26 @@
 package com.dumch.tool.desktop
 
-import com.dumch.tool.InputParamDescription
-import com.dumch.tool.ToolRunBashCommand
-import com.dumch.tool.ToolSetup
+import com.dumch.tool.*
 
 class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<ToolCreateNewBrowserTab.Input> {
-
+    data class Input(
+        @InputParamDescription("The url to open, e.g., 'https://www.sberbank.ru'")
+        val url: String
+    )
     override val name: String = "CreateNewBrowserTab"
-    override val description: String = "Opens the given url in the new tab if Safari is running or opens the url in the default browser"
+    override val description: String = "Opens the given url in the new tab if Safari is running " +
+            "or opens the url in the default browser"
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Открой google в новой вкладке",
+            params = mapOf("url" to "https://www.google.com")
+        )
+    )
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Operation status, e.g., 'Done'")
+        )
+    )
     override fun invoke(input: Input): String {
         if (input.url.isBlank()) return "The url is empty. Can't open it"
         bash.invoke(
@@ -32,9 +45,4 @@ class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<
         )
         return "Done"
     }
-
-    class Input(
-        @InputParamDescription("The url to open, e.g., 'https://www.sberbank.ru'")
-        val url: String
-    )
 }

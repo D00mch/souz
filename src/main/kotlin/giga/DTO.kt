@@ -98,17 +98,26 @@ object GigaRequest {
     data class Function(
         val name: String,
         val description: String,
-        val parameters: Parameters
+        val parameters: Parameters,
+        @JsonProperty("few_shot_examples") val fewShotExamples: List<FewShotExample> = emptyList(),
+        @JsonProperty("return_parameters") val returnParameters: Parameters
     )
 
     data class Parameters(
         val type: String,
-        val properties: Map<String, Property>
+        val properties: Map<String, Property>,
+        val required: List<String> = emptyList()
     )
 
     data class Property(
         val type: String,
-        val description: String? = null
+        val description: String? = null,
+        @JsonProperty("enum") val enum: List<String>? = null
+    )
+
+    data class FewShotExample(
+        val request: String,
+        val params: Map<String, Any>
     )
 }
 

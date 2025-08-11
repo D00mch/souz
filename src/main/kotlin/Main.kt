@@ -20,8 +20,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import org.slf4j.LoggerFactory
 
-private const val AGENT_ALIAS = ""
-
 private val l = LoggerFactory.getLogger("AI")
 
 suspend fun main() = coroutineScope {
@@ -54,7 +52,7 @@ suspend fun main() = coroutineScope {
     val gigaChatAPI  = GigaChatAPI.INSTANCE
     withNativeHook(hotkeyListener) {
         val userInputFlow = audioRecorder.audioFlow
-            .onEach { l.info("\n$AGENT_ALIAS: [Received audio data: ${it.size} bytes]") }
+            .onEach { l.info("[Received audio data: ${it.size} bytes]") }
             .catch { l.error("Error in audio flow: ${it.message}") }
             .map { audioData -> rawToOpusOgg(rawData = audioData) }
             .map { audioData ->
