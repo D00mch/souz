@@ -18,8 +18,13 @@ object ToolRunBashCommand : ToolSetup<ToolRunBashCommand.Input> {
 
     fun sh(str: String) = invoke(Input(str))
 
-    fun script(s: String): String {
-        val p = ProcessBuilder("bash","-lc", s).redirectErrorStream(false).start()
+    fun apple(script: String): String {
+        val scriptInvocation = """
+            osascript <<EOF
+            $script
+            EOF
+        """.trimIndent()
+        val p = ProcessBuilder("bash","-lc", scriptInvocation).redirectErrorStream(false).start()
         return p.inputStream.bufferedReader().readText().trim()
     }
 

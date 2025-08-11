@@ -12,11 +12,15 @@ class ToolOpenFolder(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenF
     override val name: String = "OpenFolder"
     override val description: String = "Opens Folder by its name, returns the path and the list of files inside"
 
+    data class Input(
+        @InputParamDescription("Folder name")
+        val name: String
+    )
+
     override fun invoke(input: Input): String {
         l.info("Opening folder '${input.name}'")
         val script =
             """
-osascript <<EOF
 set folderName to "${input.name}"
 try
     set sanitizedName to quoted form of folderName
@@ -83,10 +87,9 @@ on error err
     do shell script "echo " & quoted form of ("ERROR: " & err) & " 1>&2"
     return ""
 end try
-EOF
             """.trimIndent()
 
-        val path = bash.script(script)
+        val path = bash.apple(script)
         if (path.isBlank()) return path
 
         val files = ToolListFiles(ToolListFiles.Input(path))
@@ -94,14 +97,9 @@ EOF
         l.info("Result is $result")
         return result
     }
-
-    class Input(
-        @InputParamDescription("Folder name")
-        val name: String
-    )
 }
 
 fun main() {
-    val v = ToolOpenFolder(ToolRunBashCommand)(ToolOpenFolder.Input("Семья"))
+    val v = ToolOpenFolder(ToolRunBashCommand)(ToolOpenFolder.Input("семья"))
     println(v)
 }
