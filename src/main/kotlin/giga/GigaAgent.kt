@@ -38,13 +38,13 @@ class GigaAgent(
                 val response: GigaResponse.Chat = try {
                     withContext(Dispatchers.IO) { chat(conversation) }
                 } catch (e: Throwable) {
-                    l.error("Error: ${e.message}", e)
+                    l.error("Error: loop $i: ${e.message}", e)
                     send("Не смогли достучаться до сервера. Будем пробовать снова?")
                     break
                 }
                 when (response) {
                     is GigaResponse.Chat.Error -> {
-                        l.error("Error: ${response.message}")
+                        l.error("Error: loop $i: ${response.message}")
                         send("Возникли сложности, объясните еще раз")
                         break
                     }
@@ -54,7 +54,7 @@ class GigaAgent(
                         conversation.addAll(response.toRequestMessages())
                         try {
                         } catch (e: Throwable) {
-                            send("Error: ${e.message}. Continue? (y/n)")
+                            send("Error: loop $i: ${e.message}. Продолжаем работу?")
                             break
                         }
 
@@ -76,7 +76,7 @@ class GigaAgent(
                         try {
                             conversation.addAll(toolAwaits.awaitAll())
                         } catch (t: Throwable) {
-                            send("Error: ${t.message}. Continue? (y/n)")
+                            send("Error: ${t.message}. Продолжаем работу?")
                             break
                         }
                     }
@@ -101,7 +101,7 @@ class GigaAgent(
         val msg: GigaRequest.Message = when(summaryResponse) {
             is GigaResponse.Chat.Error -> {
                 l.error("Error on summarization: ${summaryResponse.message}")
-                return trySummarizeWithLess(conversation, response)
+                return conversation.clear()
             }
             is GigaResponse.Chat.Ok -> summaryResponse.toRequestMessages().last()
         }
@@ -109,13 +109,6 @@ class GigaAgent(
         conversation.clear()
         conversation.add(systemPrompt)
         conversation.add(msg)
-    }
-
-    private suspend fun trySummarizeWithLess(
-        conversation: ArrayDeque<GigaRequest.Message>,
-        response: GigaResponse.Chat.Ok
-    ) {
-        conversation.clear()
     }
 
     private fun GigaResponse.Chat.Ok.toRequestMessages(): Collection<GigaRequest.Message> {
@@ -128,7 +121,7 @@ class GigaAgent(
                     mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
                 )
 
-                else -> throw IllegalStateException("Can't get content from ${ch}")
+                else -> throw IllegalStateException("Can't get content from $ch")
             }
             GigaRequest.Message(
                 role = ch.message.role,
