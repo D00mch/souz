@@ -4,6 +4,13 @@ import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.ToolSetup
 
+/**
+ * Controls media playback, volume, and display brightness via AppleScript.
+ *
+ * For brightness adjustment actions, this tool invokes the `brightness` command-line
+ * utility. Ensure the utility is installed and available on the system path
+ * (for example, `brew install brightness` or see https://github.com/nriley/brightness).
+ */
 class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMediaControl.Input> {
     override val name: String = "MediaControl"
     override val description: String = "Controls media playback, volume, and display brightness"
