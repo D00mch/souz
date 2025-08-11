@@ -10,30 +10,32 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
     private val cf = CoreFoundation.INSTANCE
 
     override val name = "Hotkey"
-    override val description = "Sends a key or a hotkey (macOS). This key will be pressed"
+    override val description = "Press keys provided in a list like [\"space\", \"close_tab\"]"
 
     class Input(
-        @InputParamDescription("""Return a string to press a hotkey. Example "full_screen_toggle". Options:
-            "arrow_left"           -> left arrow
-            "arrow_right"          -> right arrow
-            "arrow_up"             -> arrow up
-            "arrow_down"           -> arrow down
-            "page_up"              -> page up
-            "page_down"            -> page down
-            "home"                 -> home
-            "end"                  -> end
-            "backspace"            -> label "Delete" on Mac keyboards
-            "enter"                -> enter
-            "escape"               -> escape
-            "space"                -> space
-            "go_to_left_screen"    -> ctrl+left
-            "go_to_right_screen"   -> ctrl+right
-            "full_screen_toggle"   -> ctrl+cmd+f
-            "close_app"            -> cmd+q
-            "close_tab"            -> cmd+w
-            "open_just_closed_tab" -> cmd+shift+t
-            "cancel_last_action"   -> cmd+z""")
-        val hotkey: String
+        @InputParamDescription(
+            """Return a list of strings to press a hotkey. Example [\"full_screen_toggle\"]. Keys options:
+            \"arrow_left\"           -> left arrow
+            \"arrow_right\"          -> right arrow
+            \"arrow_up\"             -> arrow up
+            \"arrow_down\"           -> arrow down
+            \"page_up\"              -> page up
+            \"page_down\"            -> page down
+            \"home\"                 -> home
+            \"end\"                  -> end
+            \"backspace\"            -> label \"Delete\" on Mac keyboards
+            \"enter\"                -> enter
+            \"escape\"               -> escape
+            \"space\"                -> space
+            \"go_to_left_screen\"    -> ctrl+left
+            \"go_to_right_screen\"   -> ctrl+right
+            \"full_screen_toggle\"   -> ctrl+cmd+f
+            \"close_app\"            -> cmd+q
+            \"close_tab\"            -> cmd+w
+            \"open_just_closed_tab\" -> cmd+shift+t
+            \"cancel_last_action\"   -> cmd+z"""
+        )
+        val keys: List<String>
     )
 
     override fun invoke(input: Input): String {
@@ -59,35 +61,37 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
             mods.forEach { keyUp(it) }
         }
 
-        when (input.hotkey.lowercase()) {
-            "arrow_left"           -> press(VK.LEFT)
-            "arrow_right"          -> press(VK.RIGHT)
-            "arrow_up"             -> press(VK.UP)
-            "arrow_down"           -> press(VK.DOWN)
-            "page_up"              -> press(VK.PAGE_UP)
-            "page_down"            -> press(VK.PAGE_DOWN)
-            "home"                 -> press(VK.HOME)
-            "end"                  -> press(VK.END)
-            "delete"               -> press(VK.FORWARD_DELETE) // forward delete
-            "backspace"            -> press(VK.BACKSPACE)      // label "Delete" on Mac keyboards
-            "enter"                -> press(VK.RETURN)
-            "escape"               -> press(VK.ESC)
-            "space"                -> press(VK.SPACE)
-            "go_to_left_screen"    -> combo(VK.LEFT, VK.CTRL)        // ctrl+left
-            "go_to_right_screen"   -> combo(VK.LEFT, VK.CTRL)        // ctrl+right
-            "full_screen_toggle"   -> combo(VK.F, VK.CMD, VK.CTRL)   // ctrl+cmd+f
-            "close_app"            -> combo(VK.Q, VK.CMD)            // cmd+q
-            "close_tab"            -> combo(VK.W, VK.CMD)            // cmd+w
-            "open_just_closed_tab" -> combo(VK.T, VK.CMD, VK.SHIFT)  // cmd+shift+t
-            "cancel_last_action"   -> combo(VK.Z, VK.CMD)            // cmd+z
-            else -> error("Unknown hotkey: ${input.hotkey}")
+        input.keys.forEach { key ->
+            when (key.lowercase()) {
+                "arrow_left"           -> press(VK.LEFT)
+                "arrow_right"          -> press(VK.RIGHT)
+                "arrow_up"             -> press(VK.UP)
+                "arrow_down"           -> press(VK.DOWN)
+                "page_up"              -> press(VK.PAGE_UP)
+                "page_down"            -> press(VK.PAGE_DOWN)
+                "home"                 -> press(VK.HOME)
+                "end"                  -> press(VK.END)
+                "delete"               -> press(VK.FORWARD_DELETE) // forward delete
+                "backspace"            -> press(VK.BACKSPACE)      // label "Delete" on Mac keyboards
+                "enter"                -> press(VK.RETURN)
+                "escape"               -> press(VK.ESC)
+                "space"                -> press(VK.SPACE)
+                "go_to_left_screen"    -> combo(VK.LEFT, VK.CTRL)        // ctrl+left
+                "go_to_right_screen"   -> combo(VK.RIGHT, VK.CTRL)       // ctrl+right
+                "full_screen_toggle"   -> combo(VK.F, VK.CMD, VK.CTRL)   // ctrl+cmd+f
+                "close_app"            -> combo(VK.Q, VK.CMD)            // cmd+q
+                "close_tab"            -> combo(VK.W, VK.CMD)            // cmd+w
+                "open_just_closed_tab" -> combo(VK.T, VK.CMD, VK.SHIFT)  // cmd+shift+t
+                "cancel_last_action"   -> combo(VK.Z, VK.CMD)            // cmd+z
+                else -> error("Unknown hotkey: $key")
+            }
         }
 
-        return "Pressed ${input.hotkey}"
+        return "Pressed ${input.keys.joinToString(", ")}"
     }
 }
 
 suspend fun main() {
     val tool = ToolHotkeyMac()
-    println(tool.invoke(ToolHotkeyMac.Input("open_just_closed_tab")))
+    println(tool.invoke(ToolHotkeyMac.Input(listOf("open_just_closed_tab"))))
 }
