@@ -17,7 +17,6 @@ class GigaChatAPI(private val auth: GigaAuth) {
     private val l = LoggerFactory.getLogger(GigaChatAPI::class.java)
 
     private val client = HttpClient(CIO) {
-        var token = "" // get form env, or cache, or db
         gigaDefaults()
         install(Logging) {
             val envLevel = System.getenv("GIGA_LOG_LEVEL")
@@ -29,10 +28,10 @@ class GigaChatAPI(private val auth: GigaAuth) {
         install(Auth) {
             bearer {
                 loadTokens {
-                    BearerTokens(token, "")
+                    BearerTokens(loadAccessToken(), "")
                 }
                 refreshTokens {
-                    BearerTokens(getAccessToken(), "")
+                    BearerTokens(refreshAccessToken(), "")
                 }
             }
         }
@@ -49,7 +48,14 @@ class GigaChatAPI(private val auth: GigaAuth) {
     }
 
     suspend fun uploadImage(file: File): GigaResponse.UploadFile {
-        val accessToken = getAccessToken()
+        return try {
+            uploadImageWithToken(file, loadAccessToken())
+        } catch (e: Exception) {
+            uploadImageWithToken(file, refreshAccessToken())
+        }
+    }
+
+    private suspend fun uploadImageWithToken(file: File, accessToken: String): GigaResponse.UploadFile {
         val result = ToolRunBashCommand.invoke(
             ToolRunBashCommand.Input(
                 """
@@ -57,16 +63,22 @@ class GigaChatAPI(private val auth: GigaAuth) {
                      -H "Authorization: Bearer $accessToken" \
                      -F "file=@${file.path};type=image/jpeg" \
                      -F "purpose=general"
-                """.trimIndent()
+                """.trimIndent(),
             )
         )
         val body = result.lines().last()
         return objectMapper.readValue(body)
     }
 
-    private suspend fun getAccessToken(): String {
-        val gigaKey = System.getenv("GIGA_KEY")
-        return auth.requestToken(gigaKey, "GIGACHAT_API_PERS")
+    private suspend fun loadAccessToken(): String {
+        return System.getProperty("GIGA_ACCESS_TOKEN") ?: refreshAccessToken()
+    }
+
+    private suspend fun refreshAccessToken(): String {
+        val apiKey = System.getenv("GIGA_KEY")
+        val newToken = auth.requestToken(apiKey, "GIGACHAT_API_PERS")
+        System.setProperty("GIGA_ACCESS_TOKEN", newToken)
+        return newToken
     }
 
     companion object {
