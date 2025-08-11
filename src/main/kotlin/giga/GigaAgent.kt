@@ -10,6 +10,7 @@ import com.dumch.tool.desktop.ToolOpenFile
 import com.dumch.tool.desktop.ToolOpenFolder
 import com.dumch.tool.desktop.ToolCreateNewBrowserTab
 import com.dumch.tool.desktop.ToolHotkeyMac
+import com.dumch.tool.desktop.ToolMediaControl
 import com.dumch.tool.desktop.ToolMinimizeWindows
 import com.dumch.tool.files.*
 import kotlinx.coroutines.*
@@ -184,6 +185,7 @@ class GigaAgent(
             ToolModifyFile.toGiga(),
             ToolMouseClickMac().toGiga(),
             ToolHotkeyMac().toGiga(),
+            ToolMediaControl(ToolRunBashCommand).toGiga(),
             ToolFindTextInFiles.toGiga(),
             ToolDesktopScreenShot().toGiga(),
             ToolCreateNote(ToolRunBashCommand).toGiga(),
