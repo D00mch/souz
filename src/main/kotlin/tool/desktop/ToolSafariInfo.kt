@@ -1,8 +1,15 @@
 package com.dumch.tool.desktop
 
+import com.dumch.giga.objectMapper
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.ToolSetup
+import org.w3c.dom.Element
+import org.w3c.dom.Node
+import java.io.StringReader
+import javax.xml.parsers.DocumentBuilderFactory
+import org.xml.sax.InputSource
+
 
 /**
  * Returns information from Safari: browsing history, bookmarks or open tabs.
@@ -18,11 +25,15 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
         val type: String,
     )
 
-    override fun invoke(input: Input): String = when (input.type.lowercase()) {
-        "history" -> bash.invoke(ToolRunBashCommand.Input(historyCommand()))
-        "bookmarks" -> bash.invoke(ToolRunBashCommand.Input(bookmarksCommand()))
-        "tabs" -> bash.invoke(ToolRunBashCommand.Input(tabsCommand()))
-        else -> "Unknown type: ${input.type}"
+    override fun invoke(input: Input): String {
+        return when (input.type.lowercase()) {
+            "history" -> bash.sh(historyCommand())
+            "bookmarks" -> parseSafariBookmarks(bash.sh(bookmarksCommand())).let {
+                objectMapper.writeValueAsString(it)
+            }
+            "tabs" -> bash.sh(tabsCommand())
+            else -> "Unknown type: ${input.type}"
+        }
     }
 
     private fun historyCommand(): String = """
@@ -56,3 +67,111 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
     """.trimIndent()
 }
 
+private fun parseSafariBookmarks(xmlString: String): Map<String, String> {
+    val bookmarks = mutableMapOf<String, String>()
+    try {
+        val factory = DocumentBuilderFactory.newInstance()
+        val builder = factory.newDocumentBuilder()
+        val inputSource = InputSource(StringReader(xmlString))
+        val document = builder.parse(inputSource)
+        document.documentElement.normalize()
+
+        // Start processing from the top-level <dict> element
+        val dictElements = document.getElementsByTagName("dict")
+        if (dictElements.length > 0) {
+            processDictElement(dictElements.item(0) as Element, bookmarks)
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return bookmarks
+}
+
+private fun processDictElement(dict: Element, bookmarks: MutableMap<String, String>) {
+    var currentNode: Node? = dict.firstChild
+    var type: String? = null
+    var title: String? = null
+    var url: String? = null
+    var childrenArray: Element? = null
+
+    while (currentNode != null) {
+        // Skip text nodes (whitespace)
+        if (currentNode.nodeType == Node.ELEMENT_NODE && currentNode.nodeName == "key") {
+            val key = currentNode.textContent
+            // Get next element sibling, skipping text nodes
+            var nextSibling = currentNode.nextSibling
+            while (nextSibling != null && nextSibling.nodeType != Node.ELEMENT_NODE) {
+                nextSibling = nextSibling.nextSibling
+            }
+
+            when (key) {
+                "WebBookmarkType" -> {
+                    if (nextSibling != null && nextSibling.nodeName == "string") {
+                        type = nextSibling.textContent
+                    }
+                }
+                "URIDictionary" -> {
+                    if (nextSibling != null) {
+                        title = extractTitleFromUriDictionary(nextSibling as Element)
+                    }
+                }
+                "URLString" -> {
+                    if (nextSibling != null && nextSibling.nodeName == "string") {
+                        url = nextSibling.textContent
+                    }
+                }
+                "Children" -> {
+                    if (nextSibling != null && nextSibling.nodeName == "array") {
+                        childrenArray = nextSibling as Element
+                    }
+                }
+            }
+        }
+        currentNode = currentNode.nextSibling
+    }
+
+    // Process leaf node if it's a bookmark
+    if (type == "WebBookmarkTypeLeaf" && title != null && url != null) {
+        bookmarks[title] = url
+    }
+
+    // Process children if they exist
+    childrenArray?.let { processArrayElement(it, bookmarks) }
+}
+
+private fun extractTitleFromUriDictionary(uriDict: Element): String? {
+    var currentNode: Node? = uriDict.firstChild
+    while (currentNode != null) {
+        // Skip text nodes (whitespace)
+        if (currentNode.nodeType == Node.ELEMENT_NODE && currentNode.nodeName == "key" &&
+            currentNode.textContent == "title") {
+            // Get next element sibling, skipping text nodes
+            var titleElement = currentNode.nextSibling
+            while (titleElement != null && titleElement.nodeType != Node.ELEMENT_NODE) {
+                titleElement = titleElement.nextSibling
+            }
+            if (titleElement != null && titleElement.nodeName == "string") {
+                return titleElement.textContent
+            }
+        }
+        currentNode = currentNode.nextSibling
+    }
+    return null
+}
+
+private fun processArrayElement(array: Element, bookmarks: MutableMap<String, String>) {
+    var currentNode: Node? = array.firstChild
+    while (currentNode != null) {
+        // Only process element nodes (skip text nodes)
+        if (currentNode.nodeType == Node.ELEMENT_NODE && currentNode.nodeName == "dict") {
+            processDictElement(currentNode as Element, bookmarks)
+        }
+        currentNode = currentNode.nextSibling
+    }
+}
+
+fun main() {
+    val tool = ToolSafariInfo(ToolRunBashCommand)
+    val result = tool.invoke(ToolSafariInfo.Input("history"))
+    println(result)
+}
