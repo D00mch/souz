@@ -17,8 +17,8 @@ class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMed
             "playpause" -> """tell application \"Music\" to playpause"""
             "volume_up" -> """set volume output volume ((output volume of (get volume settings)) + 10)"""
             "volume_down" -> """set volume output volume ((output volume of (get volume settings)) - 10)"""
-            "brightness_up" -> """tell application \"System Events\" to key code 144"""
-            "brightness_down" -> """tell application \"System Events\" to key code 145"""
+            "brightness_up" -> """do shell script \"brightness +0.1\""""
+            "brightness_down" -> """do shell script \"brightness -0.1\""""
             else -> throw IllegalArgumentException("Unknown action: ${input.action}")
         }
         bash.apple(script)
