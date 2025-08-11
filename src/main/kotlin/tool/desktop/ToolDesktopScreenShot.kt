@@ -2,8 +2,7 @@ package com.dumch.tool.desktop
 
 import com.dumch.giga.GigaChatAPI
 import com.dumch.image.ImageUtils
-import com.dumch.tool.InputParamDescription
-import com.dumch.tool.ToolSetupWithAttachments
+import com.dumch.tool.*
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -16,6 +15,17 @@ class ToolDesktopScreenShot(
     override val name: String = "DesktopScreenShot"
     override val description: String = "Captures desktop screenshot and uploads it to GigaChat, returning image id. " +
             "Use it to see what's on desktop"
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Take a screenshot of the first desktop",
+            params = mapOf("path" to "1")
+        )
+    )
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Uploaded image id")
+        )
+    )
 
     private val lastAttachments = ArrayList<String>()
     override val attachments: List<String>

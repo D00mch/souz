@@ -1,13 +1,22 @@
 package com.dumch.tool.files
 
-import com.dumch.tool.BadInputException
-import com.dumch.tool.InputParamDescription
-import com.dumch.tool.ToolSetup
+import com.dumch.tool.*
 import java.io.File
 
 object ToolModifyFile : ToolSetup<ToolModifyFile.Input> {
     override val name = "EditFile"
     override val description = "Replace text in a file. Replaces 'old_text' with 'new_text' in the specified file. "
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Replace foo with bar in notes.txt",
+            params = mapOf("path" to "notes.txt", "oldText" to "foo", "newText" to "bar")
+        )
+    )
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Operation status")
+        )
+    )
 
     override fun invoke(input: Input): String {
         val file = File(input.path)

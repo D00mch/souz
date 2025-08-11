@@ -1,9 +1,7 @@
 package com.dumch.tool.desktop
 
 import com.dumch.giga.objectMapper
-import com.dumch.tool.InputParamDescription
-import com.dumch.tool.ToolRunBashCommand
-import com.dumch.tool.ToolSetup
+import com.dumch.tool.*
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.StringReader
@@ -19,20 +17,32 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
 
     override val name: String = "SafariInfo"
     override val description: String = "Returns Safari history, bookmarks or open tabs"
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Show my Safari history",
+            params = mapOf("type" to InfoType.history)
+        )
+    )
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Information from Safari")
+        )
+    )
+
+    enum class InfoType { history, bookmarks, tabs }
 
     class Input(
-        @InputParamDescription("Type of information to fetch: 'history', 'bookmarks', or 'tabs'")
-        val type: String,
+        @InputParamDescription("Type of information to fetch")
+        val type: InfoType,
     )
 
     override fun invoke(input: Input): String {
-        return when (input.type.lowercase()) {
-            "history" -> bash.sh(historyCommand())
-            "bookmarks" -> parseSafariBookmarks(bash.sh(bookmarksCommand())).let {
+        return when (input.type) {
+            InfoType.history -> bash.sh(historyCommand())
+            InfoType.bookmarks -> parseSafariBookmarks(bash.sh(bookmarksCommand())).let {
                 objectMapper.writeValueAsString(it)
             }
-            "tabs" -> bash.sh(tabsCommand())
-            else -> "Unknown type: ${input.type}"
+            InfoType.tabs -> bash.sh(tabsCommand())
         }
     }
 
@@ -172,6 +182,6 @@ private fun processArrayElement(array: Element, bookmarks: MutableMap<String, St
 
 fun main() {
     val tool = ToolSafariInfo(ToolRunBashCommand)
-    val result = tool.invoke(ToolSafariInfo.Input("history"))
+    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.history))
     println(result)
 }

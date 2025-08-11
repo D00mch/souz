@@ -1,8 +1,7 @@
 package com.dumch.tool.desktop
 
 import com.dumch.keys.*
-import com.dumch.tool.InputParamDescription
-import com.dumch.tool.ToolSetup
+import com.dumch.tool.*
 import java.lang.Thread.sleep
 
 class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
@@ -11,6 +10,17 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
 
     override val name = "Hotkey"
     override val description = "Press keys provided in a list like [\"space\", \"close_tab\"]"
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Close the current tab",
+            params = mapOf("keys" to listOf("close_tab"))
+        )
+    )
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Pressed keys description")
+        )
+    )
 
     class Input(
         @InputParamDescription(

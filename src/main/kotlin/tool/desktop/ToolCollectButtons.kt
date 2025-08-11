@@ -3,9 +3,7 @@ package com.dumch.tool.desktop
 import com.dumch.audio.playText
 import com.dumch.giga.objectMapper
 import com.dumch.image.ImageUtils
-import com.dumch.tool.InputParamDescription
-import com.dumch.tool.ToolRunBashCommand
-import com.dumch.tool.ToolSetup
+import com.dumch.tool.*
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
@@ -20,6 +18,17 @@ class ToolCollectButtons(
     override val name: String = "CollectButtons"
     override val description: String = "Collects buttons from the frontmost application window and returns JSON with buttons description and coordinates," +
             "e.g., [{\"x\": 100, \"y\": 200, \"name\": \"Button 1\"}, {\"x\": 300, \"y\": 400, \"name\": \"Button 2\"}]"
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Collect first five buttons on the screen",
+            params = mapOf("buttonsCount" to "5")
+        )
+    )
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "JSON array of buttons")
+        )
+    )
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 

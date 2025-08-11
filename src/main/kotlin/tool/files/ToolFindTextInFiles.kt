@@ -1,14 +1,23 @@
 package com.dumch.tool.files
 
-import com.dumch.tool.BadInputException
-import com.dumch.tool.InputParamDescription
-import com.dumch.tool.ToolSetup
+import com.dumch.tool.*
 import java.io.File
 
 object ToolFindTextInFiles : ToolSetup<ToolFindTextInFiles.Input> {
     override val name = "FindTextInFiles"
     override val description = "Search for a specific text across all files in a directory (recursively) " +
             "and return matching file paths."
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Find TODO markers",
+            params = mapOf("path" to ".", "text" to "TODO")
+        )
+    )
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Array of matching file paths")
+        )
+    )
 
     override fun invoke(input: Input): String {
         val baseDir = File(input.path)

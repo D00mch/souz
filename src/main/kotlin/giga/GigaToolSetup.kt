@@ -14,6 +14,7 @@ import kotlin.reflect.KClass
 import kotlin.reflect.full.declaredMembers
 import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.isSubclassOf
+import kotlin.reflect.full.primaryConstructor
 
 
 interface GigaToolSetup {
@@ -23,35 +24,48 @@ interface GigaToolSetup {
 
 val gigaJsonMapper = jacksonObjectMapper()
 
-inline fun <reified Input> ToolSetup<Input>.toGiga(): GigaToolSetup {
+inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
     val toolSetup = this
     return object : GigaToolSetup {
         override val fn: GigaRequest.Function = GigaRequest.Function(
             name = toolSetup.name,
             description = toolSetup.description,
             parameters = GigaRequest.Parameters(
-                "object",
+                type = "object",
                 properties = HashMap<String, GigaRequest.Property>().apply {
                     val clazz = Input::class
                     for (kProperty: KCallable<*> in clazz.declaredMembers) {
                         val annotation = kProperty.findAnnotation<InputParamDescription>() ?: continue
                         val description = annotation.value
-                        val type = when (val classifier = kProperty.returnType.classifier) {
+                        val classifier = kProperty.returnType.classifier
+                        val enumValues: List<String>? = if (classifier is KClass<*> && classifier.isSubclassOf(Enum::class)) {
+                            (classifier.java.enumConstants as Array<out Enum<*>>).map { it.name }
+                        } else null
+                        val type = when (classifier) {
                             String::class -> "string"
                             Boolean::class -> "boolean"
                             Int::class, Long::class, Double::class -> "number"
                             List::class, Set::class, Array::class -> "array"
-                            Map::class -> "object" // or you could have a special "map" type if needed
-                            else -> if (classifier is KClass<*> && classifier.isSubclassOf(Collection::class)) {
-                                "array"
-                            } else {
-                                "object"
+                            Map::class -> "object"
+                            else -> when {
+                                classifier is KClass<*> && classifier.isSubclassOf(Collection::class) -> "array"
+                                classifier is KClass<*> && classifier.isSubclassOf(Enum::class) -> "string"
+                                else -> "object"
                             }
-
                         }
-                        val gigaProperty = GigaRequest.Property(type, description)
+                        val gigaProperty = GigaRequest.Property(type, description, enumValues)
                         put(kProperty.name, gigaProperty)
                     }
+                },
+                required = Input::class.primaryConstructor?.parameters
+                    ?.filter { !it.isOptional && !it.type.isMarkedNullable }
+                    ?.mapNotNull { it.name } ?: emptyList()
+            ),
+            fewShotExamples = toolSetup.fewShotExamples.map { GigaRequest.FewShotExample(it.request, it.params) },
+            returnParameters = GigaRequest.Parameters(
+                type = toolSetup.returnParameters.type,
+                properties = toolSetup.returnParameters.properties.mapValues {
+                    GigaRequest.Property(it.value.type, it.value.description)
                 }
             )
         )
@@ -76,7 +90,7 @@ inline fun <reified Input> ToolSetup<Input>.toGiga(): GigaToolSetup {
     }
 }
 
-inline fun <reified Input> ToolSetupWithAttachments<Input>.toGiga(): GigaToolSetup {
+inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): GigaToolSetup {
     val toolSetup = this
     val gigaToolSetup = (toolSetup as ToolSetup<Input>).toGiga()
     return object : GigaToolSetup by gigaToolSetup {

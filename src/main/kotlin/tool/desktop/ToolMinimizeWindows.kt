@@ -1,8 +1,6 @@
 package com.dumch.tool.desktop
 
-import com.dumch.tool.InputParamDescription
-import com.dumch.tool.ToolRunBashCommand
-import com.dumch.tool.ToolSetup
+import com.dumch.tool.*
 import java.awt.SystemColor.window
 import java.lang.ProcessBuilder.Redirect.to
 
@@ -10,6 +8,17 @@ class ToolMinimizeWindows(private val bash: ToolRunBashCommand) : ToolSetup<Tool
 
     override val name: String = "MinimizeWindows"
     override val description: String = "Collapses desktop windows according to the given parameter: all windows or just the active window"
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Minimize all windows",
+            params = mapOf("minimizeOption" to WindowTarget.all)
+        )
+    )
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Operation status")
+        )
+    )
     override fun invoke(input: Input): String {
         bash.invoke(
             ToolRunBashCommand.Input(
@@ -63,8 +72,10 @@ class ToolMinimizeWindows(private val bash: ToolRunBashCommand) : ToolSetup<Tool
         return "Done"
     }
 
+    enum class WindowTarget { all, current }
+
     class Input(
-        @InputParamDescription("""send "all" to minimize all windows or send "current" to minimize the current window""")
-        val minimizeOption: String
+        @InputParamDescription("send \"all\" to minimize all windows or \"current\" to minimize the current window")
+        val minimizeOption: WindowTarget
     )
 }

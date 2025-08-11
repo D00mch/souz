@@ -1,8 +1,6 @@
 package com.dumch.tool.desktop
 
-import com.dumch.tool.InputParamDescription
-import com.dumch.tool.ToolRunBashCommand
-import com.dumch.tool.ToolSetup
+import com.dumch.tool.*
 import org.slf4j.LoggerFactory
 import java.io.File
 import kotlin.text.replace
@@ -12,6 +10,17 @@ class ToolOpenFile(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenFil
 
     override val name: String = "OpenFile"
     override val description: String = "Opens the file at the given path in the default app. Use it to open photos as well"
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Open my profile picture",
+            params = mapOf("filePath" to "\$HOME/Pictures/profile.jpg")
+        )
+    )
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Operation status")
+        )
+    )
 
     override fun invoke(input: Input): String {
         val fixedPath = input.filePath.replace("\$HOME", System.getenv("HOME"))
