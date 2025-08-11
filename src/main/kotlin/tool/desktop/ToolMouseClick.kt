@@ -23,11 +23,19 @@ class ToolMouseClickMac : ToolSetup<ToolMouseClickMac.Input> {
     private val cg = CoreGraphics.INSTANCE
     private val cf = CoreFoundation.INSTANCE
 
+    enum class MouseButton { left, right, middle }
+
+    data class Input(
+        @InputParamDescription("The x coordinate of the mouse click") val x: Int,
+        @InputParamDescription("The y coordinate of the mouse click") val y: Int,
+        @InputParamDescription("The button to click") val button: MouseButton = MouseButton.left
+    )
+
     override val name = "MouseClick"
     override val description = "Clicks the mouse at the given coordinates (macOS)."
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Click at coordinates 100,200",
+            request = "Нажми кнопку мыши в точке 100,200",
             params = mapOf("x" to 100, "y" to 200, "button" to MouseButton.left)
         )
     )
@@ -65,14 +73,6 @@ class ToolMouseClickMac : ToolSetup<ToolMouseClickMac.Input> {
 
         return "Mouse clicked at ($x, $y) with button $btnIdx"
     }
-
-    enum class MouseButton { left, right, middle }
-
-    class Input(
-        @InputParamDescription("The x coordinate of the mouse click") val x: Int,
-        @InputParamDescription("The y coordinate of the mouse click") val y: Int,
-        @InputParamDescription("The button to click") val button: MouseButton = MouseButton.left
-    )
 }
 
 fun main() {

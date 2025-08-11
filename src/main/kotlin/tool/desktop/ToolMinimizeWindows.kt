@@ -6,12 +6,23 @@ import java.lang.ProcessBuilder.Redirect.to
 
 class ToolMinimizeWindows(private val bash: ToolRunBashCommand) : ToolSetup<ToolMinimizeWindows.Input> {
 
+    enum class WindowTarget { all, current }
+
+    data class Input(
+        @InputParamDescription("send \"all\" to minimize all windows or \"current\" to minimize the current window")
+        val minimizeOption: WindowTarget
+    )
+
     override val name: String = "MinimizeWindows"
     override val description: String = "Collapses desktop windows according to the given parameter: all windows or just the active window"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Minimize all windows",
+            request = "Сверни все окна",
             params = mapOf("minimizeOption" to WindowTarget.all)
+        ),
+        FewShotExample(
+            request = "Скрой текущее окно",
+            params = mapOf("minimizeOption" to WindowTarget.current)
         )
     )
     override val returnParameters = ReturnParameters(
@@ -71,11 +82,4 @@ class ToolMinimizeWindows(private val bash: ToolRunBashCommand) : ToolSetup<Tool
         )
         return "Done"
     }
-
-    enum class WindowTarget { all, current }
-
-    class Input(
-        @InputParamDescription("send \"all\" to minimize all windows or \"current\" to minimize the current window")
-        val minimizeOption: WindowTarget
-    )
 }

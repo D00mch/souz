@@ -4,6 +4,12 @@ import com.dumch.tool.*
 import java.io.File
 
 object ToolFindTextInFiles : ToolSetup<ToolFindTextInFiles.Input> {
+    data class Input(
+        @InputParamDescription("Directory path to search in (recursive)")
+        val path: String = ".",
+        @InputParamDescription("Text to search for inside files")
+        val text: String
+    )
     override val name = "FindTextInFiles"
     override val description = "Search for a specific text across all files in a directory (recursively) " +
             "and return matching file paths."
@@ -11,6 +17,10 @@ object ToolFindTextInFiles : ToolSetup<ToolFindTextInFiles.Input> {
         FewShotExample(
             request = "Find TODO markers",
             params = mapOf("path" to ".", "text" to "TODO")
+        ),
+        FewShotExample(
+            request = "Сколько main функций в проекте",
+            params = mapOf("path" to ".", "text" to "fun main(")
         )
     )
     override val returnParameters = ReturnParameters(
@@ -31,11 +41,4 @@ object ToolFindTextInFiles : ToolSetup<ToolFindTextInFiles.Input> {
 
         return matchedFiles.joinToString(",", prefix = "[", postfix = "]")
     }
-
-    data class Input(
-        @InputParamDescription("Directory path to search in (recursive)")
-        val path: String = ".",
-        @InputParamDescription("Text to search for inside files")
-        val text: String
-    )
 }

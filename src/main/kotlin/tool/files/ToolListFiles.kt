@@ -4,6 +4,10 @@ import com.dumch.tool.*
 import java.io.File
 
 object ToolListFiles : ToolSetup<ToolListFiles.Input> {
+    data class Input(
+        @InputParamDescription("Relative path to list files from")
+        val path: String = "."
+    )
     override val name = "ListFiles"
     override val description = "Runs bash ls command at a given path. Dot (.) means current directory"
     override val fewShotExamples = listOf(
@@ -33,9 +37,4 @@ object ToolListFiles : ToolSetup<ToolListFiles.Input> {
 
         return files.joinToString(",", prefix = "[", postfix = "]")
     }
-
-    data class Input(
-        @InputParamDescription("Relative path to list files from")
-        val path: String = "."
-    )
 }

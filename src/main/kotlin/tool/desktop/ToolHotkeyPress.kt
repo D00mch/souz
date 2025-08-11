@@ -8,21 +8,7 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
     private val cg = CoreGraphics.INSTANCE
     private val cf = CoreFoundation.INSTANCE
 
-    override val name = "Hotkey"
-    override val description = "Press keys provided in a list like [\"space\", \"close_tab\"]"
-    override val fewShotExamples = listOf(
-        FewShotExample(
-            request = "Close the current tab",
-            params = mapOf("keys" to listOf("close_tab"))
-        )
-    )
-    override val returnParameters = ReturnParameters(
-        properties = mapOf(
-            "result" to ReturnProperty("string", "Pressed keys description")
-        )
-    )
-
-    class Input(
+    data class Input(
         @InputParamDescription(
             """Return a list of strings to press a hotkey. Example ["full_screen_toggle"]. Keys options:
             "arrow_left"           -> left arrow
@@ -46,6 +32,36 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
             "cancel_last_action"   -> cmd+z"""
         )
         val keys: List<String>
+    )
+
+    override val name = "Hotkey"
+    override val description = "Press keys provided in a list like [\"space\", \"close_tab\"]"
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Отмени действие",
+            params = mapOf("keys" to listOf("cancel_last_action"))
+        ),
+        FewShotExample(
+            request = "Доскроль страницу до низа",
+            params = mapOf("keys" to listOf("page_down"))
+        ),
+        FewShotExample(
+            request = "Отскроль страницу совсем немного",
+            params = mapOf("keys" to listOf("arrow_down", "arrow_down"))
+        ),
+        FewShotExample(
+            request = "Проскроль страницу на 2 экрана",
+            params = mapOf("keys" to listOf("space", "space", "space"))
+        ),
+        FewShotExample(
+            request = "Закрой 3 вкладки",
+            params = mapOf("keys" to listOf("close_tab", "close_tab", "close_tab"))
+        ),
+    )
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Pressed keys description")
+        )
     )
 
     override fun invoke(input: Input): String {

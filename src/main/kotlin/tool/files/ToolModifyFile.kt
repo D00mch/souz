@@ -4,6 +4,14 @@ import com.dumch.tool.*
 import java.io.File
 
 object ToolModifyFile : ToolSetup<ToolModifyFile.Input> {
+    data class Input(
+        @InputParamDescription("The path to the file, including file name")
+        val path: String,
+        @InputParamDescription("Exact text to find in the file - must occur exactly once")
+        val oldText: String,
+        @InputParamDescription("Replacement text for the specified old_text")
+        val newText: String,
+    )
     override val name = "EditFile"
     override val description = "Replace text in a file. Replaces 'old_text' with 'new_text' in the specified file. "
     override val fewShotExamples = listOf(
@@ -31,13 +39,4 @@ object ToolModifyFile : ToolSetup<ToolModifyFile.Input> {
         file.writeText(newContent)
         return "OK"
     }
-
-    data class Input(
-        @InputParamDescription("The path to the file, including file name")
-        val path: String,
-        @InputParamDescription("Exact text to find in the file - must occur exactly once")
-        val oldText: String,
-        @InputParamDescription("Replacement text for the specified old_text")
-        val newText: String,
-    )
 }

@@ -2,6 +2,7 @@ package com.dumch.tool.desktop
 
 import com.dumch.audio.playText
 import com.dumch.giga.objectMapper
+import com.dumch.giga.toGiga
 import com.dumch.image.ImageUtils
 import com.dumch.tool.*
 import com.fasterxml.jackson.module.kotlin.readValue
@@ -15,12 +16,18 @@ class ToolCollectButtons(
 ) : ToolSetup<ToolCollectButtons.Input> {
     private val l = LoggerFactory.getLogger(ToolCollectButtons::class.java)
 
+    data class Input(
+        @InputParamDescription("Default buttons count is 7. If you want to return more, send a number, e.g., 15")
+        val buttonsCount: String = "7"
+    )
+
     override val name: String = "CollectButtons"
-    override val description: String = "Collects buttons from the frontmost application window and returns JSON with buttons description and coordinates," +
+    override val description: String = "Collects buttons from the frontmost application window " +
+            "and returns JSON with buttons description and coordinates," +
             "e.g., [{\"x\": 100, \"y\": 200, \"name\": \"Button 1\"}, {\"x\": 300, \"y\": 400, \"name\": \"Button 2\"}]"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Collect first five buttons on the screen",
+            request = "Какие кнопки на экране, перечисли несколько?",
             params = mapOf("buttonsCount" to "5")
         )
     )
@@ -145,11 +152,6 @@ class ToolCollectButtons(
         return objectMapper.writeValueAsString(outButtons)
     }
 
-    data class Input(
-        @InputParamDescription("Default buttons count is 7. If you want to return more, send a number, e.g., 15")
-        val buttonsCount: String = "7"
-    )
-
     data class OsxButton(
         val buttonName: String,
         val role: String,
@@ -166,4 +168,5 @@ class ToolCollectButtons(
 suspend fun main() {
     val tool = ToolCollectButtons(ToolRunBashCommand)
     println(tool.invoke(ToolCollectButtons.Input("3")))
+    println(tool.toGiga().fn)
 }

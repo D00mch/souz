@@ -14,26 +14,31 @@ import org.xml.sax.InputSource
  * Works on macOS only and uses system tools such as `sqlite3`, `plutil` and AppleScript.
  */
 class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafariInfo.Input> {
-
+    enum class InfoType { history, bookmarks, tabs }
+    data class Input(
+        @InputParamDescription("Type of information to fetch")
+        val type: InfoType,
+    )
     override val name: String = "SafariInfo"
     override val description: String = "Returns Safari history, bookmarks or open tabs"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Show my Safari history",
+            request = "Покажи историю браузера",
             params = mapOf("type" to InfoType.history)
-        )
+        ),
+        FewShotExample(
+            request = "Найди закладку про фильмы в Safari",
+            params = mapOf("type" to InfoType.bookmarks)
+        ),
+        FewShotExample(
+            request = "Покажи открытые вкладки в Safari",
+            params = mapOf("type" to InfoType.tabs)
+        ),
     )
     override val returnParameters = ReturnParameters(
         properties = mapOf(
             "result" to ReturnProperty("string", "Information from Safari")
         )
-    )
-
-    enum class InfoType { history, bookmarks, tabs }
-
-    class Input(
-        @InputParamDescription("Type of information to fetch")
-        val type: InfoType,
     )
 
     override fun invoke(input: Input): String {

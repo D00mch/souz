@@ -1,14 +1,22 @@
 package com.dumch.tool.desktop
 
 import com.dumch.tool.*
+import org.slf4j.LoggerFactory
 
 class ToolOpenApp(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenApp.Input> {
-    override val name: String
-        get() = "OpenApp"
+    private val l = LoggerFactory.getLogger(ToolOpenApp::class.java)
+
+    data class Input(
+        @InputParamDescription("The name of the app to open, e.g., 'Safari', 'Calendar', 'Telegram'")
+        val appName: String
+    )
+
+    override val name: String = "OpenApp"
     override val description: String = "Opens the given app"
+
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Launch Calculator",
+            request = "Запусти калькулятор",
             params = mapOf("appName" to "Calculator")
         )
     )
@@ -19,16 +27,14 @@ class ToolOpenApp(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenApp.
     )
 
     override fun invoke(input: Input): String {
-        bash.invoke(
-            ToolRunBashCommand.Input("""open -a "${input.appName}"""")
-        )
+        try {
+            bash.sh("""open -a "${input.appName}"""")
+        } catch (e: Exception) {
+            return "Error in ToolOpenApp: ${e.message}"
+                .also { l.error(it, e) }
+        }
         return "Done"
     }
-
-    class Input(
-        @InputParamDescription("The name of the app to open, e.g., 'Safari', 'Calendar', 'Telegram'")
-        val appName: String
-    )
 }
 
 fun main() {

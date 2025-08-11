@@ -4,11 +4,15 @@ import com.dumch.tool.*
 import java.io.File
 
 object ToolDeleteFile : ToolSetup<ToolDeleteFile.Input> {
+    data class Input(
+        @InputParamDescription("The path of the file to delete")
+        val path: String
+    )
     override val name = "DeleteFile"
     override val description = "Deletes a file at the given path."
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Remove temp.txt",
+            request = "Удали temp.txt",
             params = mapOf("path" to "temp.txt")
         )
     )
@@ -27,9 +31,4 @@ object ToolDeleteFile : ToolSetup<ToolDeleteFile.Input> {
         file.delete()
         return "File deleted at ${input.path}"
     }
-
-    data class Input(
-        @InputParamDescription("The path of the file to delete")
-        val path: String
-    )
 }

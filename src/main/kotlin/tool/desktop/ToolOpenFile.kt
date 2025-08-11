@@ -8,13 +8,22 @@ import kotlin.text.replace
 class ToolOpenFile(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenFile.Input> {
     private val l = LoggerFactory.getLogger(ToolOpenFile::class.java)
 
+    data class Input(
+        @InputParamDescription("The full path to the file to open, e.g., '\$HOME/Pictures/портрет.jpeg'")
+        val filePath: String,
+    )
+    
     override val name: String = "OpenFile"
     override val description: String = "Opens the file at the given path in the default app. Use it to open photos as well"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Open my profile picture",
+            request = "Покажи profile",
             params = mapOf("filePath" to "\$HOME/Pictures/profile.jpg")
-        )
+        ),
+        FewShotExample(
+            request = "Открой пэдеэфку в загрузках",
+            params = mapOf("filePath" to "\$HOME/Downloads/*.pdf")
+        ),
     )
     override val returnParameters = ReturnParameters(
         properties = mapOf(
@@ -37,11 +46,6 @@ class ToolOpenFile(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenFil
         }
         return "Done"
     }
-
-    data class Input(
-        @InputParamDescription("The full path to the file to open, e.g., '\$HOME/Pictures/портрет.jpeg'")
-        val filePath: String,
-    )
 }
 
 fun main() {

@@ -1,5 +1,7 @@
 package com.dumch.tool.desktop
 
+import com.dumch.giga.objectMapper
+import com.dumch.giga.toGiga
 import com.dumch.tool.*
 
 class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMediaControl.Input> {
@@ -16,7 +18,7 @@ class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMed
     override val description: String = "Controls volume and display brightness"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Turn the volume up",
+            request = "Сделай громкость повыше",
             params = mapOf("action" to Action.volume_up)
         )
     )
@@ -42,6 +44,7 @@ class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMed
 }
 
 fun main() {
-    val r = ToolMediaControl(ToolRunBashCommand).invoke(ToolMediaControl.Input(ToolMediaControl.Action.playpause))
-    println(r)
+    val t = ToolMediaControl(ToolRunBashCommand)
+    // t.invoke(ToolMediaControl.Input(ToolMediaControl.Action.brightness_up))
+    println(objectMapper.writeValueAsString(t.toGiga().fn))
 }

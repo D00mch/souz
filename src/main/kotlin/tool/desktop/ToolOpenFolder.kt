@@ -11,8 +11,12 @@ class ToolOpenFolder(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenF
     override val description: String = "Opens Folder by its name, returns the path and the list of files inside"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Open Downloads folder",
+            request = "Открой загрузки",
             params = mapOf("name" to "Downloads")
+        ),
+        FewShotExample(
+            request = "Открой папку 'Семья'",
+            params = mapOf("name" to "Семья")
         )
     )
     override val returnParameters = ReturnParameters(
