@@ -77,6 +77,10 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
             request = "Сделай окно меньше",
             params = mapOf("action" to Action.resize_smart, "meta" to "-150")
         ),
+        FewShotExample(
+            request = "Перенеси приложение на первый экран",
+            params = mapOf("action" to Action.move_app_to_workspace, "meta" to "1")
+        ),
     )
 
     override val returnParameters: ReturnParameters = ReturnParameters(
