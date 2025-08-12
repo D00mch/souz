@@ -24,6 +24,11 @@ sourceSets {
     }
 }
 
+java {
+    sourceCompatibility = JavaVersion.VERSION_23
+    targetCompatibility = JavaVersion.VERSION_23
+}
+
 dependencies {
     implementation(kotlin("reflect"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${Versions.Coroutines}")
@@ -83,12 +88,23 @@ protobuf {
     }
 }
 
+tasks.named("generateProto") {
+    outputs.upToDateWhen {
+        val dir = file("${project.buildFile}/generated/source/proto/main/java/gigachat/v1")
+        dir.exists() && dir.list()?.isNotEmpty() == true
+    }
+}
+
+tasks.named("prepareKotlinBuildScriptModel") {
+    dependsOn("generateProto")
+}
+
 tasks.named("compileKotlin") {
     dependsOn("generateProto")
 }
 
-tasks.test {
-    useJUnitPlatform()
+tasks.named("build") {
+    dependsOn("generateProto")
 }
 
 tasks.processResources {
