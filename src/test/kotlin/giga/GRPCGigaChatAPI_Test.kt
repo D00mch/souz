@@ -1,6 +1,5 @@
 package giga
 
-import com.dumch.giga.*
 import gigachat.v1.ChatServiceGrpcKt
 import gigachat.v1.Gigachatv1
 import io.grpc.Metadata
@@ -21,7 +20,7 @@ class GRPCGigaChatAPI_Test {
             .setRole("assistant")
             .setContent("response")
             .build()
-        val alt = Gigachatv1.ChatResponse.Alternative.newBuilder()
+        val alt = Gigachatv1.Alternative.newBuilder()
             .setMessage(msg)
             .setIndex(0)
             .setFinishReason("stop")
