@@ -99,14 +99,9 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
     }
 
     private fun loadSslContext(): SslContext {
-        val certPath = System.getenv("GRPC_DEFAULT_SSL_ROOTS_FILE_PATH")
-            ?: "certs/russiantrustedca.pem"
-        val stream = if (File(certPath).exists()) {
-            File(certPath).inputStream()
-        } else {
-            Thread.currentThread().contextClassLoader.getResourceAsStream(certPath)
+        val certPath = "certs/russiantrustedca.pem"
+        val stream = Thread.currentThread().contextClassLoader.getResourceAsStream(certPath)
                 ?: throw IllegalStateException("Certificate not found: $certPath")
-        }
         stream.use { ins ->
             return GrpcSslContexts.forClient().trustManager(ins).build()
         }
@@ -114,7 +109,6 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
 }
 
 suspend fun main() {
-    println(System.getenv("GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"))
     val api = GRPCGigaChatAPI.INSTANCE
     val result = api.message(GigaRequest.Chat(
         model = "GigaChat-Pro",
