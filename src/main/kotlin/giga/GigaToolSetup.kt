@@ -38,9 +38,10 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
                         val annotation = kProperty.findAnnotation<InputParamDescription>() ?: continue
                         val description = annotation.value
                         val classifier = kProperty.returnType.classifier
-                        val enumValues: List<String>? = if (classifier is KClass<*> && classifier.isSubclassOf(Enum::class)) {
-                            (classifier.java.enumConstants as Array<out Enum<*>>).map { it.name }
-                        } else null
+                        @Suppress("UNCHECKED_CAST") val enumValues: List<String>? =
+                            if (classifier is KClass<*> && classifier.isSubclassOf(Enum::class)) {
+                                (classifier.java.enumConstants as Array<out Enum<*>>).map { it.name }
+                            } else null
                         val type = when (classifier) {
                             String::class -> "string"
                             Boolean::class -> "boolean"

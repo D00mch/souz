@@ -8,6 +8,7 @@ import io.ktor.client.request.forms.*
 import io.ktor.http.*
 
 object GigaAuth {
+    private val l = org.slf4j.LoggerFactory.getLogger(GigaAuth::class.java)
     suspend fun requestToken(apiKey: String, scope: String): String {
         val client = HttpClient(CIO) {
             gigaDefaults()
@@ -20,10 +21,20 @@ object GigaAuth {
         ) {
             header("Content-Type", "application/x-www-form-urlencoded")
             header("Authorization", "Basic $apiKey")
-        }.body<GigaResponse.Token>()
+        }
 
+        if (!response.status.isSuccess()) {
+            l.error("Error in requestToken: ${response.status}")
+            throw IllegalStateException("Error in requestToken: ${response.status}")
+        }
+        val token = try {
+            response.body<GigaResponse.Token>()
+        } catch (e: Exception) {
+            l.error("Error in requestToken: ${e.message}")
+            throw e
+        }
         client.close()
-        return response.accessToken
+        return token.accessToken
     }
 }
 /*

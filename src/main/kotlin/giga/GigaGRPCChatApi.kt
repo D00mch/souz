@@ -1,0 +1,193 @@
+package com.dumch.giga
+
+import gigachat.v1.ChatServiceGrpcKt
+import gigachat.v1.Gigachatv1
+import io.grpc.ManagedChannel
+import io.grpc.Metadata
+import io.grpc.Status
+import org.slf4j.LoggerFactory
+import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
+import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext
+import java.io.File
+import com.fasterxml.jackson.module.kotlin.readValue
+import io.grpc.StatusException
+import io.grpc.StatusRuntimeException
+
+/**
+ * Simple gRPC client for GigaChat ChatService.
+ * @param gigaChatAPI GigaRestChatAPI to support other methods like image upload
+ */
+class GigaGRPCChatApi(
+    private val auth: GigaAuth,
+    private val gigaChatAPI: GigaRestChatAPI = GigaRestChatAPI.INSTANCE,
+) : GigaChatAPI by gigaChatAPI {
+    private val l = LoggerFactory.getLogger(GigaGRPCChatApi::class.java)
+
+    private val channel: ManagedChannel =
+        NettyChannelBuilder.forAddress("gigachat.devices.sberbank.ru", 443)
+            .sslContext(loadSslContext())
+            .build()
+
+    private val stub: ChatServiceGrpcKt.ChatServiceCoroutineStub =
+        ChatServiceGrpcKt.ChatServiceCoroutineStub(channel)
+
+    override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat {
+        val request = Gigachatv1.ChatRequest.newBuilder()
+            .setModel(body.model)
+            .setOptions(
+                Gigachatv1.ChatOptions.newBuilder()
+                    .addAllFunctions(
+                        body.functions.map { it.toGRPC() }
+                    )
+                    .build()
+            )
+            .addAllMessages(body.messages.map { msg ->
+                Gigachatv1.Message.newBuilder()
+                    .setRole(msg.role.name)
+                    .setContent(msg.content)
+                    .apply {
+                        msg.functionsStateId?.let { id -> functionsStateId = id }
+                        msg.attachments?.let { att -> addAllAttachments(att) }
+                    }
+                    .build()
+            })
+            .build()
+
+        val token = loadAccessToken()
+        return try {
+            stub.chat(request, authHeaders(token)).toGigaResponse()
+        } catch (e: Exception) {
+            l.error("Error in gRPC chat", e)
+            suspend fun retryWithRefresh() =
+                stub.chat(request, authHeaders(refreshAccessToken())).toGigaResponse()
+            when {
+                e is StatusException && e.status.code == Status.Code.UNAUTHENTICATED -> retryWithRefresh()
+                e is StatusRuntimeException && e.status.code == Status.Code.UNAUTHENTICATED -> retryWithRefresh()
+                else -> throw e
+            }
+        }
+    }
+
+    private fun GigaRequest.Function.toGRPC(): Gigachatv1.Function? {
+        val fn = this
+        return Gigachatv1.Function.newBuilder()
+            .setName(fn.name)
+            .setDescription(fn.description)
+            .setParameters(objectMapper.writeValueAsString(fn.parameters))
+            .addAllFewShotExamples(fn.fewShotExamples.map { it.toGRPC() })
+            .build()
+    }
+
+    private fun GigaRequest.FewShotExample.toGRPC(): Gigachatv1.AnyExample {
+        val example = this
+        return Gigachatv1.AnyExample.newBuilder()
+            .setRequest(example.request)
+            .setParams(
+                Gigachatv1.Params.newBuilder()
+                    .addAllPairs(
+                        example.params.map { (k, v) ->
+                            Gigachatv1.Pair.newBuilder()
+                                .setKey(k)
+                                .setValue(v.toString())
+                                .build()
+                        }
+                    )
+            )
+            .build()
+    }
+
+    private suspend fun loadAccessToken(): String {
+        return System.getProperty("GIGA_ACCESS_TOKEN") ?: refreshAccessToken()
+    }
+
+    private suspend fun refreshAccessToken(): String {
+        val apiKey = System.getenv("GIGA_KEY")
+        val newToken = auth.requestToken(apiKey, "GIGACHAT_API_PERS")
+        System.setProperty("GIGA_ACCESS_TOKEN", newToken)
+        return newToken
+    }
+
+    private fun authHeaders(token: String): Metadata = Metadata().apply {
+        val key = Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER)
+        put(key, "Bearer $token")
+    }
+
+    private fun Gigachatv1.ChatResponse.toGigaResponse(): GigaResponse.Chat {
+        val choices = alternativesList.map { alt ->
+            val msg = alt.message
+            val functionCall = if (msg.hasFunctionCall()) {
+                val args: Map<String, Any> = objectMapper.readValue(msg.functionCall.arguments)
+                GigaResponse.FunctionCall(
+                    name = msg.functionCall.name,
+                    arguments = args
+                )
+            } else null
+
+            GigaResponse.Choice(
+                message = GigaResponse.Message(
+                    content = msg.content,
+                    role = GigaMessageRole.valueOf(msg.role),
+                    functionCall = functionCall,
+                    functionsStateId = if (msg.hasFunctionsStateId()) msg.functionsStateId else null,
+                ),
+                index = alt.index,
+                finishReason = alt.finishReason,
+            )
+        }
+
+        val u = usage
+        val usageDto = GigaResponse.Usage(
+            promptTokens = u.promptTokens,
+            completionTokens = u.completionTokens,
+            totalTokens = u.totalTokens,
+            precachedTokens = 0,
+        )
+
+        return GigaResponse.Chat.Ok(
+            choices = choices,
+            created = timestamp,
+            model = modelInfo.name,
+            usage = usageDto,
+        )
+    }
+
+    override suspend fun uploadImage(file: File): GigaResponse.UploadFile {
+        throw UnsupportedOperationException("Image upload is not supported for gRPC API")
+    }
+
+    companion object {
+        val INSTANCE = GigaGRPCChatApi(GigaAuth)
+    }
+
+    private fun loadSslContext(): SslContext {
+        val certPath = "certs/russiantrustedca.pem"
+        val stream = Thread.currentThread().contextClassLoader.getResourceAsStream(certPath)
+                ?: throw IllegalStateException("Certificate not found: $certPath")
+        stream.use { ins ->
+            return GrpcSslContexts.forClient().trustManager(ins).build()
+        }
+    }
+}
+
+suspend fun main() {
+    val api = GigaGRPCChatApi.INSTANCE
+    val result: GigaResponse.Chat = api.message(GigaRequest.Chat(
+        model = "GigaChat-Pro",
+        messages = listOf(
+            GigaRequest.Message(
+                role = GigaMessageRole.user,
+                content = "Привет, как дела?",
+            ),
+            GigaRequest.Message(
+                role = GigaMessageRole.assistant,
+                content = "Привет! Я говорю по русски, но я могу общаться на английском и на французском.",
+            ),
+            GigaRequest.Message(
+                role = GigaMessageRole.user,
+                content = "Я хочу поговорить на английском.",
+            )
+        )
+    ))
+    println(result)
+}

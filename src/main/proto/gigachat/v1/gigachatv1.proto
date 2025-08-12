@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+package gigachat.v1;
+
+option go_package = "./;protocol";
+
+service ChatService {
+  rpc Chat (ChatRequest) returns (ChatResponse);
+  rpc ChatStream (ChatRequest) returns (stream ChatResponse);
+}
+
+message ChatRequest {
+  ChatOptions options = 1;
+  string model = 2;
+  repeated Message messages = 3;
+}
+
+message ChatOptions {
+  reserved 3;
+  optional float temperature = 1;
+  optional float top_p = 2;
+  optional int32 max_tokens = 4;
+  optional float repetition_penalty = 5;
+  optional float update_interval = 6;
+  repeated string flags = 7;
+  FunctionCallPolicy function_call = 8;
+  repeated Function functions = 9;
+}
+
+message FunctionCallPolicy {
+  enum Mode {
+    undefined = 0;
+    auto = 1;
+    none = 2;
+    forced = 3;
+  }
+  Mode mode = 1;
+  optional string name = 2;
+}
+
+message Function {
+  string name = 1;
+  string description = 2;
+  string parameters = 3;
+  repeated AnyExample few_shot_examples = 4;
+  optional string return_parameters = 5;
+}
+
+message AnyExample {
+  string request = 1;
+  Params params = 2;
+}
+
+message Params {
+  repeated Pair pairs = 1;
+}
+
+message Pair {
+  string key = 1;
+  string value = 2;
+}
+
+message Message {
+  reserved 3,4;
+  string role = 1;
+  string content = 2;
+  optional FunctionCall function_call = 5;
+  optional string function_name = 6;
+  optional string functions_state_id = 8;
+  repeated string attachments = 11;
+}
+
+message ChatResponse {
+  reserved 5;
+  repeated Alternative alternatives = 1;
+  Usage usage = 2;
+  ModelInfo model_info = 3;
+  int64 timestamp = 4;
+}
+
+message Alternative {
+  Message message = 1;
+  string finish_reason = 2;
+  int32 index = 3;
+}
+
+message Usage {
+  reserved 4;
+  int32 prompt_tokens = 1;
+  int32 completion_tokens = 2;
+  int32 total_tokens = 3;
+}
+
+message ModelInfo {
+  string name = 1;
+  string version = 2;
+}
+
+message FunctionCall {
+  string name = 1;
+  string arguments = 2;
+}
+
+service ModelsService {
+  rpc ListModels (ListModelsRequest) returns (ListModelsResponse);
+  rpc RetrieveModel (RetrieveModelRequest) returns (RetrieveModelResponse);
+}
+
+message ListModelsRequest {}
+
+message ListModelsResponse {
+  repeated Model models = 1;
+}
+
+message Model {
+  string name = 1;
+  string object = 2;
+  string owned_by = 3;
+  string type = 8;
+}
+
+message RetrieveModelRequest {
+  string name = 1;
+}
+
+message RetrieveModelResponse {
+  Model model = 1;
+}
+

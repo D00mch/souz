@@ -85,7 +85,7 @@ object GigaRequest {
         val messages: List<Message>,
         @JsonProperty("function_call")
         val functionCall: String = "auto",
-        val functions: List<Function>? = null,
+        val functions: List<Function> = emptyList(),
     )
 
     data class Message(
