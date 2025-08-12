@@ -1,6 +1,5 @@
 import org.gradle.api.file.DuplicatesStrategy
 import com.google.protobuf.gradle.*
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     kotlin("jvm") version Versions.Kotlin
@@ -23,6 +22,11 @@ sourceSets {
     main {
         resources.srcDir(setOf("src/main/resources"))
     }
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_23
+    targetCompatibility = JavaVersion.VERSION_23
 }
 
 dependencies {
@@ -84,28 +88,23 @@ protobuf {
     }
 }
 
-val protoOutputDir = file("$buildDir/generated/source/proto/main/java/gigachat/v1")
-
-val generateProtoIfNeeded by tasks.registering {
-    onlyIf { !protoOutputDir.exists() || protoOutputDir.listFiles().isNullOrEmpty() }
-    dependsOn("generateProto")
-}
-
-tasks.withType<KotlinCompile>().configureEach {
-    dependsOn(generateProtoIfNeeded)
-}
-
-tasks.named("run") {
-    dependsOn(generateProtoIfNeeded)
-}
-
-tasks.test {
-    useJUnitPlatform()
-    dependsOn(generateProtoIfNeeded)
+tasks.named("generateProto") {
+    outputs.upToDateWhen {
+        val dir = file("${project.buildFile}/generated/source/proto/main/java/gigachat/v1")
+        dir.exists() && dir.list()?.isNotEmpty() == true
+    }
 }
 
 tasks.named("prepareKotlinBuildScriptModel") {
-    dependsOn(generateProtoIfNeeded)
+    dependsOn("generateProto")
+}
+
+tasks.named("compileKotlin") {
+    dependsOn("generateProto")
+}
+
+tasks.named("build") {
+    dependsOn("generateProto")
 }
 
 tasks.processResources {
