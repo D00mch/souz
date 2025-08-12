@@ -1,5 +1,10 @@
 package giga
 
+import com.dumch.giga.GRPCGigaChatAPI
+import com.dumch.giga.GigaAuth
+import com.dumch.giga.GigaMessageRole
+import com.dumch.giga.GigaRequest
+import com.dumch.giga.GigaResponse
 import gigachat.v1.ChatServiceGrpcKt
 import gigachat.v1.Gigachatv1
 import io.grpc.Metadata
@@ -12,7 +17,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
-class GRPCGigaChatAPI_Test {
+class GRPCGigaChatAPITest {
     private val authKey = Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER)
 
     private fun sampleResponse(): Gigachatv1.ChatResponse {

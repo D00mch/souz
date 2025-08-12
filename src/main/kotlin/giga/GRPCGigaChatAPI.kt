@@ -161,7 +161,7 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
 
 suspend fun main() {
     val api = GRPCGigaChatAPI.INSTANCE
-    val result = api.message(GigaRequest.Chat(
+    val result: GigaResponse.Chat = api.message(GigaRequest.Chat(
         model = "GigaChat-Pro",
         messages = listOf(
             GigaRequest.Message(
