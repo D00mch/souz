@@ -4,11 +4,14 @@ import gigachat.v1.ChatServiceGrpcKt
 import gigachat.v1.Gigachatv1
 import io.grpc.ManagedChannel
 import io.grpc.Metadata
+import io.grpc.Status
+import io.grpc.StatusRuntimeException
 import org.slf4j.LoggerFactory
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext
 import java.io.File
+import com.fasterxml.jackson.module.kotlin.readValue
 
 /**
  * Simple gRPC client for GigaChat ChatService.
@@ -24,13 +27,7 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
     private val stub: ChatServiceGrpcKt.ChatServiceCoroutineStub =
         ChatServiceGrpcKt.ChatServiceCoroutineStub(channel)
 
-    suspend fun message(body: GigaRequest.Chat): Gigachatv1.ChatResponse {
-        val token = loadAccessToken()
-        val headers = Metadata().apply {
-            val key = Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER)
-            put(key, "Bearer $token")
-        }
-
+    suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat {
         val request = Gigachatv1.ChatRequest.newBuilder()
             .setModel(body.model)
             .setOptions(
@@ -52,7 +49,17 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
             })
             .build()
 
-        return stub.chat(request, headers)
+        val token = loadAccessToken()
+        return try {
+            stub.chat(request, authHeaders(token)).toGigaResponse()
+        } catch (e: StatusRuntimeException) {
+            if (e.status.code == Status.Code.UNAUTHENTICATED) {
+                val newToken = refreshAccessToken()
+                stub.chat(request, authHeaders(newToken)).toGigaResponse()
+            } else {
+                throw e
+            }
+        }
     }
 
     private fun GigaRequest.Function.toGRPC(): Gigachatv1.Function? {
@@ -94,6 +101,50 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
         return newToken
     }
 
+    private fun authHeaders(token: String): Metadata = Metadata().apply {
+        val key = Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER)
+        put(key, "Bearer $token")
+    }
+
+    private fun Gigachatv1.ChatResponse.toGigaResponse(): GigaResponse.Chat {
+        val choices = alternativesList.map { alt ->
+            val msg = alt.message
+            val functionCall = if (msg.hasFunctionCall()) {
+                val args: Map<String, Any> = objectMapper.readValue(msg.functionCall.arguments)
+                GigaResponse.FunctionCall(
+                    name = msg.functionCall.name,
+                    arguments = args
+                )
+            } else null
+
+            GigaResponse.Choice(
+                message = GigaResponse.Message(
+                    content = msg.content,
+                    role = GigaMessageRole.valueOf(msg.role),
+                    functionCall = functionCall,
+                    functionsStateId = if (msg.hasFunctionsStateId()) msg.functionsStateId else null,
+                ),
+                index = alt.index,
+                finishReason = alt.finishReason,
+            )
+        }
+
+        val u = usage
+        val usageDto = GigaResponse.Usage(
+            promptTokens = u.promptTokens,
+            completionTokens = u.completionTokens,
+            totalTokens = u.totalTokens,
+            precachedTokens = 0,
+        )
+
+        return GigaResponse.Chat.Ok(
+            choices = choices,
+            created = timestamp,
+            model = modelInfo.name,
+            usage = usageDto,
+        )
+    }
+
     companion object {
         val INSTANCE = GRPCGigaChatAPI(GigaAuth)
     }
@@ -110,7 +161,7 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
 
 suspend fun main() {
     val api = GRPCGigaChatAPI.INSTANCE
-    val result = api.message(GigaRequest.Chat(
+    val result: GigaResponse.Chat = api.message(GigaRequest.Chat(
         model = "GigaChat-Pro",
         messages = listOf(
             GigaRequest.Message(
