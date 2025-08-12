@@ -55,6 +55,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         return try {
             uploadImageWithToken(file, loadAccessToken())
         } catch (e: Exception) {
+            l.error("Error in REST chat", e)
             uploadImageWithToken(file, refreshAccessToken())
         }
     }
