@@ -4,10 +4,15 @@ import com.google.protobuf.gradle.*
 plugins {
     kotlin("jvm") version Versions.Kotlin
     id("com.google.protobuf") version "0.9.4"
+    application
 }
 
 group = "com.dumch"
 version = "1.0-SNAPSHOT"
+
+application {
+    mainClass.set("com.dumch.MainKt")
+}
 
 repositories {
     mavenCentral()
@@ -71,8 +76,15 @@ protobuf {
                 id("grpc")
                 id("grpckt")
             }
+            task.builtins {
+                id("kotlin")
+            }
         }
     }
+}
+
+tasks.named("compileKotlin") {
+    dependsOn("generateProto")
 }
 
 tasks.test {

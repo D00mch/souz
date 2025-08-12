@@ -1,13 +1,10 @@
 package com.dumch.giga
 
-import gigachat.v1.ChatRequest
-import gigachat.v1.ChatResponse
 import gigachat.v1.ChatServiceGrpcKt
-import gigachat.v1.Message
+import gigachat.v1.Gigachatv1
 import io.grpc.ManagedChannel
 import io.grpc.ManagedChannelBuilder
 import io.grpc.Metadata
-import io.grpc.stub.MetadataUtils
 import org.slf4j.LoggerFactory
 
 /**
@@ -24,29 +21,63 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
     private val stub: ChatServiceGrpcKt.ChatServiceCoroutineStub =
         ChatServiceGrpcKt.ChatServiceCoroutineStub(channel)
 
-    suspend fun message(body: GigaRequest.Chat): ChatResponse {
+    suspend fun message(body: GigaRequest.Chat): Gigachatv1.ChatResponse {
         val token = loadAccessToken()
         val headers = Metadata().apply {
             val key = Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER)
             put(key, "Bearer $token")
         }
-        val headerStub = MetadataUtils.attachHeaders(stub, headers)
 
-        val request = ChatRequest.newBuilder()
+        val request = Gigachatv1.ChatRequest.newBuilder()
             .setModel(body.model)
-            .addAllMessages(body.messages.map {
-                Message.newBuilder()
-                    .setRole(it.role.name)
-                    .setContent(it.content)
+            .setOptions(
+                Gigachatv1.ChatOptions.newBuilder()
+                    .addAllFunctions(
+                        body.functions.map { it.toGRPC() }
+                    )
+                    .build()
+            )
+            .addAllMessages(body.messages.map { msg ->
+                Gigachatv1.Message.newBuilder()
+                    .setRole(msg.role.name)
+                    .setContent(msg.content)
                     .apply {
-                        it.functionsStateId?.let { id -> functionsStateId = id }
-                        it.attachments?.let { att -> addAllAttachments(att) }
+                        msg.functionsStateId?.let { id -> functionsStateId = id }
+                        msg.attachments?.let { att -> addAllAttachments(att) }
                     }
                     .build()
             })
             .build()
 
-        return headerStub.chat(request)
+        return stub.chat(request, headers)
+    }
+
+    private fun GigaRequest.Function.toGRPC(): Gigachatv1.Function? {
+        val fn = this
+        return Gigachatv1.Function.newBuilder()
+            .setName(fn.name)
+            .setDescription(fn.description)
+            .setParameters(objectMapper.writeValueAsString(fn.parameters))
+            .addAllFewShotExamples(fn.fewShotExamples.map { it.toGRPC() })
+            .build()
+    }
+
+    private fun GigaRequest.FewShotExample.toGRPC(): Gigachatv1.AnyExample {
+        val example = this
+        return Gigachatv1.AnyExample.newBuilder()
+            .setRequest(example.request)
+            .setParams(
+                Gigachatv1.Params.newBuilder()
+                    .addAllPairs(
+                        example.params.map { (k, v) ->
+                            Gigachatv1.Pair.newBuilder()
+                                .setKey(k)
+                                .setValue(v.toString())
+                                .build()
+                        }
+                    )
+            )
+            .build()
     }
 
     private suspend fun loadAccessToken(): String {
@@ -55,7 +86,7 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
 
     private suspend fun refreshAccessToken(): String {
         val apiKey = System.getenv("GIGA_KEY")
-        val newToken = auth.requestToken(apiKey, "GIGACHAT_API_CORP")
+        val newToken = auth.requestToken(apiKey, "GIGACHAT_API_PERS")
         System.setProperty("GIGA_ACCESS_TOKEN", newToken)
         return newToken
     }
@@ -65,3 +96,25 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
     }
 }
 
+suspend fun main() {
+    println(System.getenv("GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"))
+    val api = GRPCGigaChatAPI.INSTANCE
+    val result = api.message(GigaRequest.Chat(
+        model = "GigaChat-Pro",
+        messages = listOf(
+            GigaRequest.Message(
+                role = GigaMessageRole.user,
+                content = "Привет, как дела?",
+            ),
+            GigaRequest.Message(
+                role = GigaMessageRole.assistant,
+                content = "Привет! Я говорю по русски, но я могу общаться на английском и на французском.",
+            ),
+            GigaRequest.Message(
+                role = GigaMessageRole.user,
+                content = "Я хочу поговорить на английском.",
+            )
+        )
+    ))
+    println(result)
+}

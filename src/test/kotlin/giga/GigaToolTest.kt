@@ -7,6 +7,7 @@ import com.dumch.giga.GigaMessageRole
 import com.dumch.giga.gigaJsonMapper
 import com.dumch.giga.toGiga
 import com.dumch.tool.files.ToolListFiles
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import org.slf4j.LoggerFactory
@@ -18,15 +19,15 @@ class GigaToolTest {
         assertEquals(fn.name, "ListFiles")
         val jsonParams = gigaJsonMapper.writeValueAsString(fn.parameters)
         assertEquals(
-            """
-            {"type":"object","properties":{"path":{"type":"string","description":"Relative path to list files from"}}}
+        """
+{"type":"object","properties":{"path":{"type":"string","description":"Relative path to list files from","enum":null}},"required":[]}
         """.trimIndent(),
             jsonParams
         )
     }
 
     @Test
-    fun `test function invocation`() {
+    fun `test function invocation`() = runBlocking {
         val toolsMap: Map<String, GigaToolSetup> = listOf(ToolListFiles.toGiga()).associateBy { it.fn.name }
 
         val functionCall = GigaResponse.FunctionCall(
