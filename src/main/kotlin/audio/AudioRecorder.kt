@@ -8,11 +8,13 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.slf4j.LoggerFactory
 
 class InMemoryAudioRecorder(
     private val recorder: ActiveSoundRecorder = ActiveSoundActiveSoundRecorder(),
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 ) {
+    private val l = LoggerFactory.getLogger(InMemoryAudioRecorder::class.java)
     private val _audioFlow = MutableSharedFlow<ByteArray>()
 
     private val _recordingState = MutableStateFlow<State>(State.Idle)
@@ -23,6 +25,21 @@ class InMemoryAudioRecorder(
     init {
         // Warm up the microphone so the first spoken words are captured
         recorder.prepare()
+    }
+
+    suspend fun logState(): Nothing {
+        recordingState.collect { state ->
+            when (state) {
+                is State.Starting -> l.info("Recording state: Starting audio recording...")
+                is State.Recording -> l.info("Recording state: Recording... (press Option + 2 to stop)")
+                is State.Stopping -> l.info("Recording state: Stopping recording...")
+                is State.Idle -> {
+                    l.info("Recording state: Idle")
+                }
+
+                is State.Error -> l.error("Recording state: Error: ${state.message}")
+            }
+        }
     }
 
     fun start() {

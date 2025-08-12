@@ -68,21 +68,6 @@ suspend fun main() = coroutineScope {
     }
 }
 
-private suspend fun InMemoryAudioRecorder.logState(): Nothing {
-    recordingState.collect { state ->
-        when (state) {
-            is InMemoryAudioRecorder.State.Starting -> l.info("Recording state: Starting audio recording...")
-            is InMemoryAudioRecorder.State.Recording -> l.info("Recording state: Recording... (press Option + 2 to stop)")
-            is InMemoryAudioRecorder.State.Stopping -> l.info("Recording state: Stopping recording...")
-            is InMemoryAudioRecorder.State.Idle -> {
-                l.info("Recording state: Idle")
-            }
-
-            is InMemoryAudioRecorder.State.Error -> l.error("Recording state: Error: ${state.message}")
-        }
-    }
-}
-
 private suspend fun withNativeHook(hotkeyListener: HotkeyListener, block: suspend () -> Unit) {
     try {
         GlobalScreen.registerNativeHook()
