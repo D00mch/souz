@@ -16,8 +16,8 @@ import com.fasterxml.jackson.module.kotlin.readValue
 /**
  * Simple gRPC client for GigaChat ChatService.
  */
-class GRPCGigaChatAPI(private val auth: GigaAuth) {
-    private val l = LoggerFactory.getLogger(GRPCGigaChatAPI::class.java)
+class GigaGRPCChatApi(private val auth: GigaAuth) : GigaChatAPI {
+    private val l = LoggerFactory.getLogger(GigaGRPCChatApi::class.java)
 
     private val channel: ManagedChannel =
         NettyChannelBuilder.forAddress("gigachat.devices.sberbank.ru", 443)
@@ -27,7 +27,7 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
     private val stub: ChatServiceGrpcKt.ChatServiceCoroutineStub =
         ChatServiceGrpcKt.ChatServiceCoroutineStub(channel)
 
-    suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat {
+    override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat {
         val request = Gigachatv1.ChatRequest.newBuilder()
             .setModel(body.model)
             .setOptions(
@@ -145,8 +145,12 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
         )
     }
 
+    override suspend fun uploadImage(file: File): GigaResponse.UploadFile {
+        throw UnsupportedOperationException("Image upload is not supported for gRPC API")
+    }
+
     companion object {
-        val INSTANCE = GRPCGigaChatAPI(GigaAuth)
+        val INSTANCE = GigaGRPCChatApi(GigaAuth)
     }
 
     private fun loadSslContext(): SslContext {
@@ -160,7 +164,7 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
 }
 
 suspend fun main() {
-    val api = GRPCGigaChatAPI.INSTANCE
+    val api = GigaGRPCChatApi.INSTANCE
     val result: GigaResponse.Chat = api.message(GigaRequest.Chat(
         model = "GigaChat-Pro",
         messages = listOf(

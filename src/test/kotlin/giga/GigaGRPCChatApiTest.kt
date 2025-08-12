@@ -1,6 +1,6 @@
 package giga
 
-import com.dumch.giga.GRPCGigaChatAPI
+import com.dumch.giga.GigaGRPCChatApi
 import com.dumch.giga.GigaAuth
 import com.dumch.giga.GigaMessageRole
 import com.dumch.giga.GigaRequest
@@ -17,7 +17,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
-class GRPCGigaChatAPITest {
+class GigaGRPCChatApiTest {
     private val authKey = Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER)
 
     private fun sampleResponse(): Gigachatv1.ChatResponse {
@@ -64,8 +64,8 @@ class GRPCGigaChatAPITest {
             response
         }
 
-        val api = GRPCGigaChatAPI(GigaAuth)
-        val field = GRPCGigaChatAPI::class.java.getDeclaredField("stub").apply { isAccessible = true }
+        val api = GigaGRPCChatApi(GigaAuth)
+        val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
         field.set(api, stub)
 
         System.setProperty("GIGA_ACCESS_TOKEN", "token1")
@@ -94,8 +94,8 @@ class GRPCGigaChatAPITest {
             throw StatusRuntimeException(Status.UNAUTHENTICATED)
         }
 
-        val api = GRPCGigaChatAPI(GigaAuth)
-        val field = GRPCGigaChatAPI::class.java.getDeclaredField("stub").apply { isAccessible = true }
+        val api = GigaGRPCChatApi(GigaAuth)
+        val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
         field.set(api, stub)
 
         System.setProperty("GIGA_ACCESS_TOKEN", "token1")
@@ -116,8 +116,8 @@ class GRPCGigaChatAPITest {
         val response = sampleResponse()
         coEvery { stub.chat(any(), capture(headers)) } returns response
 
-        val api = GRPCGigaChatAPI(GigaAuth)
-        val field = GRPCGigaChatAPI::class.java.getDeclaredField("stub").apply { isAccessible = true }
+        val api = GigaGRPCChatApi(GigaAuth)
+        val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
         field.set(api, stub)
 
         System.setProperty("GIGA_ACCESS_TOKEN", "token1")
