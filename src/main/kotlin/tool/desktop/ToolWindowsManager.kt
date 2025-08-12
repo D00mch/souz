@@ -27,6 +27,9 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
         move_down,
         resize_width,
         resize_height,
+        resize_smart,
+        go_to_workspace,
+        move_app_to_workspace,
     }
 
     override val name: String = "WindowsManager"
@@ -70,6 +73,10 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
             request = "Сделай окно значительно короче",
             params = mapOf("action" to Action.resize_height, "meta" to "-200")
         ),
+        FewShotExample(
+            request = "Сделай окно меньше",
+            params = mapOf("action" to Action.resize_smart, "meta" to "-150")
+        ),
     )
 
     override val returnParameters: ReturnParameters = ReturnParameters(
@@ -91,6 +98,9 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
             Action.move_down -> "move down"
             Action.resize_width -> "resize width ${input.meta}"
             Action.resize_height -> "resize down ${input.meta}"
+            Action.resize_smart -> "resize smart ${input.meta}"
+            Action.go_to_workspace -> "workspace ${input.meta}"
+            Action.move_app_to_workspace -> "move-node-to-workspace ${input.meta}"
         }
         return try {
             l.info("Executing command: $cmd")
@@ -124,6 +134,10 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
 // Usage
 fun main() {
     val t = ToolWindowsManager
-    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.layout_tiles_horizontal, ""))
-    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.resize_width, "-70"))
+    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.move_app_to_workspace, "2"))
+    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.go_to_workspace, "2"))
+
+//    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.move_left, ""))
+//    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.layout_tiles_horizontal, ""))
+//    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.resize_width, "-70"))
 }
