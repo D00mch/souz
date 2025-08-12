@@ -59,7 +59,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         }
     }
 
-    private suspend fun uploadImageWithToken(file: File, accessToken: String): GigaResponse.UploadFile {
+    private fun uploadImageWithToken(file: File, accessToken: String): GigaResponse.UploadFile {
         val result = ToolRunBashCommand.invoke(
             ToolRunBashCommand.Input(
                 """
