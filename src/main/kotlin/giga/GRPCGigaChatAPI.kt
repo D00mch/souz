@@ -3,9 +3,12 @@ package com.dumch.giga
 import gigachat.v1.ChatServiceGrpcKt
 import gigachat.v1.Gigachatv1
 import io.grpc.ManagedChannel
-import io.grpc.ManagedChannelBuilder
 import io.grpc.Metadata
 import org.slf4j.LoggerFactory
+import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
+import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext
+import java.io.File
 
 /**
  * Simple gRPC client for GigaChat ChatService.
@@ -14,8 +17,8 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
     private val l = LoggerFactory.getLogger(GRPCGigaChatAPI::class.java)
 
     private val channel: ManagedChannel =
-        ManagedChannelBuilder.forAddress("gigachat.devices.sberbank.ru", 443)
-            .useTransportSecurity()
+        NettyChannelBuilder.forAddress("gigachat.devices.sberbank.ru", 443)
+            .sslContext(loadSslContext())
             .build()
 
     private val stub: ChatServiceGrpcKt.ChatServiceCoroutineStub =
@@ -93,6 +96,20 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
 
     companion object {
         val INSTANCE = GRPCGigaChatAPI(GigaAuth)
+    }
+
+    private fun loadSslContext(): SslContext {
+        val certPath = System.getenv("GRPC_DEFAULT_SSL_ROOTS_FILE_PATH")
+            ?: "certs/russiantrustedca.pem"
+        val stream = if (File(certPath).exists()) {
+            File(certPath).inputStream()
+        } else {
+            Thread.currentThread().contextClassLoader.getResourceAsStream(certPath)
+                ?: throw IllegalStateException("Certificate not found: $certPath")
+        }
+        stream.use { ins ->
+            return GrpcSslContexts.forClient().trustManager(ins).build()
+        }
     }
 }
 
