@@ -5,19 +5,24 @@ import gigachat.v1.Gigachatv1
 import io.grpc.ManagedChannel
 import io.grpc.Metadata
 import io.grpc.Status
-import io.grpc.StatusRuntimeException
 import org.slf4j.LoggerFactory
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext
 import java.io.File
 import com.fasterxml.jackson.module.kotlin.readValue
+import io.grpc.StatusException
+import io.grpc.StatusRuntimeException
 
 /**
  * Simple gRPC client for GigaChat ChatService.
+ * @param gigaChatAPI GigaRestChatAPI to support other methods like image upload
  */
-class GRPCGigaChatAPI(private val auth: GigaAuth) {
-    private val l = LoggerFactory.getLogger(GRPCGigaChatAPI::class.java)
+class GigaGRPCChatApi(
+    private val auth: GigaAuth,
+    private val gigaChatAPI: GigaRestChatAPI = GigaRestChatAPI.INSTANCE,
+) : GigaChatAPI by gigaChatAPI {
+    private val l = LoggerFactory.getLogger(GigaGRPCChatApi::class.java)
 
     private val channel: ManagedChannel =
         NettyChannelBuilder.forAddress("gigachat.devices.sberbank.ru", 443)
@@ -27,7 +32,7 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
     private val stub: ChatServiceGrpcKt.ChatServiceCoroutineStub =
         ChatServiceGrpcKt.ChatServiceCoroutineStub(channel)
 
-    suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat {
+    override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat {
         val request = Gigachatv1.ChatRequest.newBuilder()
             .setModel(body.model)
             .setOptions(
@@ -52,12 +57,14 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
         val token = loadAccessToken()
         return try {
             stub.chat(request, authHeaders(token)).toGigaResponse()
-        } catch (e: StatusRuntimeException) {
-            if (e.status.code == Status.Code.UNAUTHENTICATED) {
-                val newToken = refreshAccessToken()
-                stub.chat(request, authHeaders(newToken)).toGigaResponse()
-            } else {
-                throw e
+        } catch (e: Exception) {
+            l.error("Error in gRPC chat", e)
+            suspend fun retryWithRefresh() =
+                stub.chat(request, authHeaders(refreshAccessToken())).toGigaResponse()
+            when {
+                e is StatusException && e.status.code == Status.Code.UNAUTHENTICATED -> retryWithRefresh()
+                e is StatusRuntimeException && e.status.code == Status.Code.UNAUTHENTICATED -> retryWithRefresh()
+                else -> throw e
             }
         }
     }
@@ -145,8 +152,12 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
         )
     }
 
+    override suspend fun uploadImage(file: File): GigaResponse.UploadFile {
+        throw UnsupportedOperationException("Image upload is not supported for gRPC API")
+    }
+
     companion object {
-        val INSTANCE = GRPCGigaChatAPI(GigaAuth)
+        val INSTANCE = GigaGRPCChatApi(GigaAuth)
     }
 
     private fun loadSslContext(): SslContext {
@@ -160,7 +171,7 @@ class GRPCGigaChatAPI(private val auth: GigaAuth) {
 }
 
 suspend fun main() {
-    val api = GRPCGigaChatAPI.INSTANCE
+    val api = GigaGRPCChatApi.INSTANCE
     val result: GigaResponse.Chat = api.message(GigaRequest.Chat(
         model = "GigaChat-Pro",
         messages = listOf(

@@ -1,6 +1,7 @@
 package com.dumch.tool.desktop
 
 import com.dumch.giga.GigaChatAPI
+import com.dumch.giga.GigaRestChatAPI
 import com.dumch.image.ImageUtils
 import com.dumch.tool.*
 import kotlinx.coroutines.runBlocking
@@ -8,7 +9,7 @@ import org.slf4j.LoggerFactory
 import java.io.File
 
 class ToolDesktopScreenShot(
-    private val api: GigaChatAPI = GigaChatAPI.INSTANCE,
+    private val api: GigaChatAPI = GigaRestChatAPI.INSTANCE,
 ) : ToolSetupWithAttachments<ToolDesktopScreenShot.Input> {
     private val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
 
