@@ -1,14 +1,19 @@
 #include <jni.h>
-#include "MediaKeysNative.h"
-#include <stdint.h>
 
-// Объявление Swift-функции
-extern void sendMediaKey(uint32_t keyCode);
+// Declarations of Swift functions compiled into the library
+extern void playPause(void);
+extern void nextTrack(void);
+extern void previousTrack(void);
 
-JNIEXPORT void JNICALL Java_MediaKeysNative_sendMediaKey(
-    JNIEnv *env,
-    jobject obj,
-    jint keyCode) {
-
-    sendMediaKey((uint32_t)keyCode);
+JNIEXPORT void JNICALL Java_com_dumch_libs_MediaKeysNative_playPauseNative(JNIEnv *env, jobject obj) {
+    playPause();
 }
+
+JNIEXPORT void JNICALL Java_com_dumch_libs_MediaKeysNative_nextTrackNative(JNIEnv *env, jobject obj) {
+    nextTrack();
+}
+
+JNIEXPORT void JNICALL Java_com_dumch_libs_MediaKeysNative_previousTrackNative(JNIEnv *env, jobject obj) {
+    previousTrack();
+}
+

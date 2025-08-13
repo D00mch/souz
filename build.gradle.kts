@@ -13,7 +13,7 @@ repositories {
 
 sourceSets {
     main {
-        resources.srcDir(setOf("src/main/resources"))
+        resources.srcDirs("src/main/resources", "src/main/libs")
     }
 }
 
@@ -46,10 +46,8 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
-}
-
-tasks.withType<JavaExec> {
-    systemProperty("java.library.path", "src/main/libs")
+    // Ensure native library is discoverable during tests
+    systemProperty("java.library.path", "${projectDir}/src/main/libs")
 }
 
 tasks.processResources {
