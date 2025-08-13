@@ -1,7 +1,10 @@
-import Cocoa
 import Foundation
 
-func sendMediaKeyEvent(keyCode: UInt32) {
+#if canImport(Cocoa)
+import Cocoa
+
+@_cdecl("sendMediaKeyEvent")
+public func sendMediaKeyEvent(_ keyCode: UInt32) {
     // Создаем системное событие
     let event = NSEvent.otherEvent(
         with: .systemDefined,
@@ -14,10 +17,10 @@ func sendMediaKeyEvent(keyCode: UInt32) {
         data1: Int((keyCode << 16) | (0xA << 8)),
         data2: -1
     )
-    
+
     // Отправляем событие
     event?.cgEvent?.post(tap: .cghidEventTap)
-    
+
     // Создаем событие отпускания клавиши
     let releaseEvent = NSEvent.otherEvent(
         with: .systemDefined,
@@ -32,13 +35,19 @@ func sendMediaKeyEvent(keyCode: UInt32) {
     )
     releaseEvent?.cgEvent?.post(tap: .cghidEventTap)
 }
+#else
+@_cdecl("sendMediaKeyEvent")
+public func sendMediaKeyEvent(_ keyCode: UInt32) {
+    // Stub for non-macOS platforms
+}
+#endif
 
 // Системные коды медиа-клавиш
 let NX_KEY_PLAY: UInt32 = 16
 let NX_KEY_NEXT: UInt32 = 17
 let NX_KEY_PREV: UInt32 = 18
 
-
 // Пример использования
-//sendMediaKeyEvent(keyCode: NX_KEY_PLAY) // Play/Pause
-//sendMediaKeyEvent(keyCode: NX_KEY_NEXT) // Next Track
+// sendMediaKeyEvent(NX_KEY_PLAY) // Play/Pause
+// sendMediaKeyEvent(NX_KEY_NEXT) // Next Track
+
