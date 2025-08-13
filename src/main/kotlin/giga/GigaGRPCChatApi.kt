@@ -1,18 +1,18 @@
 package com.dumch.giga
 
+import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.desktop.ToolOpenApp
+import com.fasterxml.jackson.module.kotlin.readValue
 import gigachat.v1.ChatServiceGrpcKt
 import gigachat.v1.Gigachatv1
-import io.grpc.ManagedChannel
-import io.grpc.Metadata
-import io.grpc.Status
-import org.slf4j.LoggerFactory
+import io.grpc.*
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.transform
+import org.slf4j.LoggerFactory
 import java.io.File
-import com.fasterxml.jackson.module.kotlin.readValue
-import io.grpc.StatusException
-import io.grpc.StatusRuntimeException
 
 /**
  * Simple gRPC client for GigaChat ChatService.
@@ -67,6 +67,56 @@ class GigaGRPCChatApi(
                 else -> throw e
             }
         }
+    }
+
+    suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chunk> {
+        val request = Gigachatv1.ChatRequest.newBuilder()
+//            .setModel(body.model)
+            .setModel(GigaModel.Pro.alias)
+            .setOptions(
+                Gigachatv1.ChatOptions.newBuilder()
+                    .addAllFunctions(
+                        body.functions.map { it.toGRPC() }
+                    )
+                    .build()
+            )
+            .addAllMessages(body.messages.map { msg ->
+                Gigachatv1.Message.newBuilder()
+                    .setRole(msg.role.name)
+                    .setContent(msg.content)
+                    .apply {
+                        msg.functionsStateId?.let { id -> functionsStateId = id }
+                        msg.attachments?.let { att -> addAllAttachments(att) }
+                    }
+                    .build()
+            })
+            .build()
+
+        return stub.chatStream(request, authHeaders(loadAccessToken()))
+            .transform { resp ->
+                resp.alternativesList.forEach { alt ->
+                    val msg = alt.message
+                    val chunk = if (msg.hasFunctionCall()) {
+                        GigaResponse.FunctionCall(
+                            msg.functionCall.name,
+                            objectMapper.readValue(msg.functionCall.arguments)
+                        )
+                    } else {
+                        GigaResponse.ChatChunk(
+                            index = alt.index,
+                            delta = GigaResponse.Delta(
+                                content = alt.message.content,
+                                role = if (alt.message.role.isBlank()) {
+                                    GigaMessageRole.assistant
+                                } else {
+                                    GigaMessageRole.valueOf(alt.message.role)
+                                }
+                            )
+                        )
+                    }
+                    emit(chunk)
+                }
+            }
     }
 
     private fun GigaRequest.Function.toGRPC(): Gigachatv1.Function? {
@@ -134,6 +184,7 @@ class GigaGRPCChatApi(
                 index = alt.index,
                 finishReason = alt.finishReason,
             )
+                .also { l.info("response: $it") }
         }
 
         val u = usage
@@ -172,22 +223,31 @@ class GigaGRPCChatApi(
 
 suspend fun main() {
     val api = GigaGRPCChatApi.INSTANCE
-    val result: GigaResponse.Chat = api.message(GigaRequest.Chat(
-        model = "GigaChat-Pro",
+
+    val systemPrompt = GigaRequest.Message(
+        role = GigaMessageRole.system,
+        content = """
+                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
+                c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
+            """.trimIndent()
+    )
+
+    val result = api.messageStream(
+        GigaRequest.Chat(
+        model = GigaModel.Pro.alias,
+        stream = true,
         messages = listOf(
+            systemPrompt,
             GigaRequest.Message(
                 role = GigaMessageRole.user,
-                content = "Привет, как дела?",
+                content = "Открой приложение Telegram",
             ),
-            GigaRequest.Message(
-                role = GigaMessageRole.assistant,
-                content = "Привет! Я говорю по русски, но я могу общаться на английском и на французском.",
-            ),
-            GigaRequest.Message(
-                role = GigaMessageRole.user,
-                content = "Я хочу поговорить на английском.",
-            )
-        )
+        ),
+        functions = listOf(
+            ToolOpenApp(ToolRunBashCommand).toGiga(),
+        ).map { it.fn }
     ))
-    println(result)
+    result.collect {
+        println("Chunk: $it")
+    }
 }

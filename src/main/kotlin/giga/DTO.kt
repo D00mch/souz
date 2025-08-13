@@ -30,6 +30,18 @@ object GigaResponse {
         @JsonProperty("finish_reason") val finishReason: String
     )
 
+    sealed interface Chunk
+
+    data class Delta(
+        val content: String,
+        val role: GigaMessageRole,
+    )
+
+    data class ChatChunk(
+        val index: Int,
+        val delta: Delta,
+    ) : Chunk
+
     data class Message(
         val content: String,
         val role: GigaMessageRole,
@@ -40,7 +52,7 @@ object GigaResponse {
     data class FunctionCall(
         val name: String,
         val arguments: Map<String, Any>
-    )
+    ) : Chunk
 
     data class RecognizeResponse(
         val result: List<String>,
