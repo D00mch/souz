@@ -46,6 +46,8 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // Ensure native library is discoverable during tests
+    systemProperty("java.library.path", "${projectDir}/src/main/libs")
 }
 
 tasks.processResources {

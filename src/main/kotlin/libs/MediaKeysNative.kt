@@ -29,18 +29,13 @@ class MediaKeysNative {
         }
     }
 
-    private external fun sendMediaKey(keyCode: Int)
+    private external fun playPauseNative()
+    private external fun nextTrackNative()
+    private external fun previousTrackNative()
 
-    // Константы для медиа-клавиш
-    object KeyCodes {
-        const val PLAY: Int = 16
-        const val NEXT: Int = 17
-        const val PREV: Int = 18
-    }
-
-    // Публичные методы
-    fun playPause() = sendMediaKey(KeyCodes.PLAY)
-    fun nextTrack() = sendMediaKey(KeyCodes.NEXT)
-    fun previousTrack() = sendMediaKey(KeyCodes.PREV)
+    // Публичные методы вызывают нативные функции
+    fun playPause() = playPauseNative()
+    fun nextTrack() = nextTrackNative()
+    fun previousTrack() = previousTrackNative()
 
 }
