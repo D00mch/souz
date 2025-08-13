@@ -46,11 +46,6 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
-    systemProperty("java.library.path", "src/main/libs")
-}
-
-tasks.withType<JavaExec> {
-    systemProperty("java.library.path", "src/main/libs")
 }
 
 tasks.processResources {
