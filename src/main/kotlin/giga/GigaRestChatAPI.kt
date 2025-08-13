@@ -80,7 +80,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
                     if (data == null || data == "[DONE]") {
                         return@collect
                     }
-                    parseStreamChunk(data).forEach { emit(it) }
+                    emit(parseStreamChunk(data))
                 }
             }
         } catch (e: ClientRequestException) {
@@ -106,9 +106,9 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         }
     }
 
-    private fun parseStreamChunk(data: String): List<GigaResponse.Chat> {
+    private fun parseStreamChunk(data: String): GigaResponse.Chat {
         val node = objectMapper.readTree(data)
-        val choicesNode = node["choices"] ?: return emptyList()
+        val choicesNode = node["choices"] ?: emptyList()
 
         val choices = choicesNode.mapNotNull { choice ->
             val finishReasonText = choice["finish_reason"]?.asText()
@@ -136,14 +136,12 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
                     content = content,
                     role = role,
                     functionCall = functionCall,
-                    functionsStateId = null,
+                    functionsStateId = delta["functions_state_id"]?.asText(),
                 ),
                 index = choice["index"]?.asInt() ?: 0,
                 finishReason = finishReasonText?.toFinishReason(),
             )
         }
-
-        if (choices.isEmpty()) return emptyList()
 
         val usageNode = node["usage"]
         val usage = if (usageNode != null && !usageNode.isNull) {
@@ -160,13 +158,11 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         val model = node["model"]?.asText() ?: ""
         val created = node["created"]?.asLong() ?: 0L
 
-        return listOf(
-            GigaResponse.Chat.Ok(
-                choices = choices,
-                created = created,
-                model = model,
-                usage = usage,
-            )
+        return GigaResponse.Chat.Ok(
+            choices = choices,
+            created = created,
+            model = model,
+            usage = usage,
         )
     }
 
@@ -223,8 +219,8 @@ suspend fun main() {
                 systemPrompt,
                 GigaRequest.Message(
                     role = GigaMessageRole.user,
-                    content = "Как дела?",
-//                    content = "Открой приложение Telegram",
+//                    content = "Как дела?",
+                    content = "Открой приложение Telegram",
                 ),
             ),
             functions = listOf(
