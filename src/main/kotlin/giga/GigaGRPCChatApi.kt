@@ -71,8 +71,7 @@ class GigaGRPCChatApi(
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> {
         val request = Gigachatv1.ChatRequest.newBuilder()
-//            .setModel(body.model)
-            .setModel(GigaModel.Pro.alias)
+            .setModel(body.model)
             .setOptions(
                 Gigachatv1.ChatOptions.newBuilder()
                     .addAllFunctions(
