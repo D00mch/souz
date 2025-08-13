@@ -80,7 +80,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
                     if (data == null || data == "[DONE]") {
                         return@collect
                     }
-                    parseStreamChunk(data).forEach { emit(it) }
+                    emit(parseStreamChunk(data))
                 }
             }
         } catch (e: ClientRequestException) {
@@ -106,36 +106,64 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         }
     }
 
-    private fun parseStreamChunk(data: String): List<GigaResponse.Chat> {
-        TODO("Implement it the way it's implemented within GigaGRPCChatApi")
-        /*
+    private fun parseStreamChunk(data: String): GigaResponse.Chat {
         val node = objectMapper.readTree(data)
-        val choices = node["choices"] ?: return emptyList()
-        val chunks = mutableListOf<GigaResponse.Chunk>()
-        for (choice in choices) {
-            val index = choice["index"].asInt()
-            val delta = choice["delta"] ?: continue
-            val functionCall = delta["function_call"]
-            if (functionCall != null && !functionCall.isNull) {
-                val name = functionCall["name"].asText()
-                val argsText = functionCall["arguments"]?.toString() ?: "{}"
-                val args: Map<String, Any> = objectMapper.readValue(argsText)
-                chunks.add(GigaResponse.FunctionCall(name, args))
-            } else {
-                val content = delta["content"]?.asText() ?: ""
-                val roleStr = delta["role"]?.asText()
-                val role = roleStr?.takeIf { it.isNotBlank() }?.let { GigaMessageRole.valueOf(it) }
-                    ?: GigaMessageRole.assistant
-                chunks.add(
-                    GigaResponse.ChatChunk(
-                        index = index,
-                        delta = GigaResponse.Delta(content = content, role = role)
-                    )
-                )
+        val choicesNode = node["choices"] ?: emptyList()
+
+        val choices = choicesNode.mapNotNull { choice ->
+            val finishReasonText = choice["finish_reason"]?.asText()
+            if (finishReasonText.equals("stop", ignoreCase = true)) {
+                l.info("finishReason: $finishReasonText")
+                return@mapNotNull null
             }
+
+            val delta = choice["delta"] ?: return@mapNotNull null
+            val functionCallNode = delta["function_call"]
+            val functionCall = if (functionCallNode != null && !functionCallNode.isNull) {
+                val name = functionCallNode["name"]?.asText() ?: ""
+                val argsText = functionCallNode["arguments"]?.toString() ?: "{}"
+                val args: Map<String, Any> = objectMapper.readValue(argsText)
+                GigaResponse.FunctionCall(name, args)
+            } else null
+
+            val content = delta["content"]?.asText() ?: ""
+            val roleStr = delta["role"]?.asText()
+            val role = roleStr?.takeIf { it.isNotBlank() }?.let { GigaMessageRole.valueOf(it) }
+                ?: GigaMessageRole.assistant
+
+            GigaResponse.Choice(
+                message = GigaResponse.Message(
+                    content = content,
+                    role = role,
+                    functionCall = functionCall,
+                    functionsStateId = delta["functions_state_id"]?.asText(),
+                ),
+                index = choice["index"]?.asInt() ?: 0,
+                finishReason = finishReasonText?.toFinishReason(),
+            )
         }
-        return chunks
-         */
+
+        val usageNode = node["usage"]
+        val usage = if (usageNode != null && !usageNode.isNull) {
+            GigaResponse.Usage(
+                promptTokens = usageNode["prompt_tokens"]?.asInt() ?: 0,
+                completionTokens = usageNode["completion_tokens"]?.asInt() ?: 0,
+                totalTokens = usageNode["total_tokens"]?.asInt() ?: 0,
+                precachedTokens = usageNode["precached_prompt_tokens"]?.asInt() ?: 0,
+            )
+        } else {
+            GigaResponse.Usage(0, 0, 0, 0)
+        }
+
+        val model = node["model"]?.asText() ?: ""
+        val created = node["created"]?.asLong() ?: 0L
+
+        return GigaResponse.Chat.Ok(
+            choices = choices,
+            created = created,
+            model = model,
+            usage = usage,
+        )
     }
 
     private fun uploadImageWithToken(file: File, accessToken: String): GigaResponse.UploadFile {
@@ -191,8 +219,8 @@ suspend fun main() {
                 systemPrompt,
                 GigaRequest.Message(
                     role = GigaMessageRole.user,
-                    content = "Как дела?",
-//                    content = "Открой приложение Telegram",
+//                    content = "Как дела?",
+                    content = "Открой приложение Telegram",
                 ),
             ),
             functions = listOf(
