@@ -15,12 +15,32 @@ class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMed
         val action: Action
     )
 
-    override val name: String = "VolumeAndBrightness"
-    override val description: String = "Controls volume and display brightness"
+    override val name: String = "MediaControl"
+    override val description: String = "Controls volume, brightness, next track, previous track, play/pause"
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Сделай громкость повыше",
             params = mapOf("action" to Action.volume_up)
+        ),
+        FewShotExample(
+            request = "Нажми на плей",
+            params = mapOf("action" to Action.playpause)
+        ),
+        FewShotExample(
+            request = "Повысь яркость",
+            params = mapOf("action" to Action.brightness_up)
+        ),
+        FewShotExample(
+            request = "Запусти музыку",
+            params = mapOf("action" to Action.playpause)
+        ),
+        FewShotExample(
+            request = "Поставь на паузу",
+            params = mapOf("action" to Action.playpause)
+        ),
+        FewShotExample(
+            request = "Перейди на следующую песню",
+            params = mapOf("action" to Action.next)
         )
     )
     override val returnParameters = ReturnParameters(
