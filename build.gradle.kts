@@ -47,6 +47,7 @@ dependencies {
     implementation("io.ktor:ktor-client-auth:${Versions.Ktor}")
     implementation("io.ktor:ktor-serialization-kotlinx-json:${Versions.Ktor}")
     implementation("io.ktor:ktor-serialization-jackson:${Versions.Ktor}")
+    implementation("io.ktor:ktor-client-sse:${Versions.Ktor}")
 
     // grpc
     implementation("io.grpc:grpc-kotlin-stub:${Versions.GrpcKotlin}")
