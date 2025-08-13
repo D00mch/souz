@@ -3,6 +3,7 @@ package com.dumch.tool.desktop
 import com.dumch.giga.objectMapper
 import com.dumch.giga.toGiga
 import com.dumch.tool.*
+import com.dumch.libs.MediaKeysNative
 
 class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMediaControl.Input> {
     enum class Action {
@@ -14,12 +15,32 @@ class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMed
         val action: Action
     )
 
-    override val name: String = "VolumeAndBrightness"
-    override val description: String = "Controls volume and display brightness"
+    override val name: String = "MediaControl"
+    override val description: String = "Controls volume, brightness, next track, previous track, play/pause"
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Сделай громкость повыше",
             params = mapOf("action" to Action.volume_up)
+        ),
+        FewShotExample(
+            request = "Нажми на плей",
+            params = mapOf("action" to Action.playpause)
+        ),
+        FewShotExample(
+            request = "Повысь яркость",
+            params = mapOf("action" to Action.brightness_up)
+        ),
+        FewShotExample(
+            request = "Запусти музыку",
+            params = mapOf("action" to Action.playpause)
+        ),
+        FewShotExample(
+            request = "Поставь на паузу",
+            params = mapOf("action" to Action.playpause)
+        ),
+        FewShotExample(
+            request = "Перейди на следующую песню",
+            params = mapOf("action" to Action.next)
         )
     )
     override val returnParameters = ReturnParameters(
@@ -28,23 +49,24 @@ class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMed
         )
     )
 
+    val mediaKeys = MediaKeysNative()
+
     override fun invoke(input: Input): String {
-        val script = when (input.action) {
-            Action.next -> ""
-            Action.previous -> ""
-            Action.playpause -> ""
-            Action.volume_up -> "set volume output volume ((output volume of (get volume settings)) + 10)"
-            Action.volume_down -> "set volume output volume ((output volume of (get volume settings)) - 10)"
-            Action.brightness_down -> "tell application \"System Events\" to key code 145"
-            Action.brightness_up -> "tell application \"System Events\" to key code 144"
+        when (input.action) {
+            Action.next -> mediaKeys.nextTrack()
+            Action.previous -> mediaKeys.previousTrack()
+            Action.playpause -> mediaKeys.playPause()
+            Action.volume_up -> bash.apple("set volume output volume ((output volume of (get volume settings)) + 10)")
+            Action.volume_down -> bash.apple("set volume output volume ((output volume of (get volume settings)) - 10)")
+            Action.brightness_down -> bash.apple("tell application \"System Events\" to key code 145")
+            Action.brightness_up -> bash.apple("tell application \"System Events\" to key code 144")
         }
-        bash.apple(script)
         return "Done"
     }
 }
 
 fun main() {
     val t = ToolMediaControl(ToolRunBashCommand)
-    // t.invoke(ToolMediaControl.Input(ToolMediaControl.Action.brightness_up))
+    t.invoke(ToolMediaControl.Input(ToolMediaControl.Action.playpause))
     println(objectMapper.writeValueAsString(t.toGiga().fn))
 }

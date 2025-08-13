@@ -20,7 +20,7 @@ repositories {
 
 sourceSets {
     main {
-        resources.srcDir(setOf("src/main/resources"))
+        resources.srcDirs("src/main/resources", "src/main/libs")
     }
 }
 
@@ -31,6 +31,8 @@ java {
 
 tasks.test {
     useJUnitPlatform()
+    // Ensure native library is discoverable during tests
+    systemProperty("java.library.path", "${projectDir}/src/main/libs")
 }
 
 dependencies {
@@ -47,7 +49,6 @@ dependencies {
     implementation("io.ktor:ktor-client-auth:${Versions.Ktor}")
     implementation("io.ktor:ktor-serialization-kotlinx-json:${Versions.Ktor}")
     implementation("io.ktor:ktor-serialization-jackson:${Versions.Ktor}")
-    implementation("io.ktor:ktor-client-sse:${Versions.Ktor}")
 
     // grpc
     implementation("io.grpc:grpc-kotlin-stub:${Versions.GrpcKotlin}")
