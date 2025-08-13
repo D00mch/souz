@@ -33,6 +33,7 @@ suspend fun main() = coroutineScope {
             l.info(if (pressed) "onStart" else "onStop")
             when {
                 pressed -> {
+                    stopPlayText()
                     playMacPing()
                     audioRecorder.start()
                 }
