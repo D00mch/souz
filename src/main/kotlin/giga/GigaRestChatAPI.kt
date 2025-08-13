@@ -3,26 +3,20 @@ package com.dumch.giga
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.desktop.ToolOpenApp
 import com.fasterxml.jackson.module.kotlin.readValue
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.auth.Auth
-import io.ktor.client.plugins.auth.providers.BearerTokens
-import io.ktor.client.plugins.auth.providers.bearer
-import io.ktor.client.plugins.logging.LogLevel
-import io.ktor.client.plugins.logging.Logging
-import io.ktor.client.plugins.sse.SSE
-import io.ktor.client.plugins.sse.sse
-import io.ktor.client.request.HttpRequestBuilder
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
-import io.ktor.http.isSuccess
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.auth.*
+import io.ktor.client.plugins.auth.providers.*
+import io.ktor.client.plugins.logging.*
+import io.ktor.client.plugins.sse.*
+import io.ktor.client.request.*
+import io.ktor.http.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.slf4j.LoggerFactory
 import java.io.File
+import kotlin.time.Duration.Companion.seconds
 
 class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
@@ -46,7 +40,10 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
                 }
             }
         }
-        install(SSE)
+        install(SSE) {
+            maxReconnectionAttempts = 0
+            reconnectionTime = 3.seconds
+        }
     }
 
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat {
@@ -61,20 +58,18 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chunk> = flow {
         client.sse(
-            method = HttpMethod.Post,
-            urlString = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
+            urlString = URL,
             request = {
+                method = HttpMethod.Post
                 setBody(body.copy(stream = true))
             }
         ) {
-            try {
-                for (event in incoming) {
-                    val data = event.data
-                    if (data == "[DONE]") break
-                    parseStreamChunk(data).forEach { emit(it) }
+            incoming.collect { event ->
+                val data: String? = event.data
+                if (data == null ||  data == "[DONE]") {
+                    return@collect
                 }
-            } finally {
-                cancel()
+                parseStreamChunk(data).forEach { emit(it) }
             }
         }
     }
@@ -98,7 +93,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
             val functionCall = delta["function_call"]
             if (functionCall != null && !functionCall.isNull) {
                 val name = functionCall["name"].asText()
-                val argsText = functionCall["arguments"]?.asText() ?: "{}"
+                val argsText = functionCall["arguments"]?.toString() ?: "{}"
                 val args: Map<String, Any> = objectMapper.readValue(argsText)
                 chunks.add(GigaResponse.FunctionCall(name, args))
             } else {
@@ -144,6 +139,8 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
     }
 
     companion object {
+        private val URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
+
         val INSTANCE = GigaRestChatAPI(GigaAuth)
     }
 }
@@ -154,9 +151,9 @@ suspend fun main() {
     val systemPrompt = GigaRequest.Message(
         role = GigaMessageRole.system,
         content = """
-                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то за
-дачу можно решить
-                c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
+                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. 
+                Если какую-то за дачу можно решить c помощью имеющихся функций, сделай, 
+                а не проси пользователя сделать это. Если сомневаешься, уточни.
             """.trimIndent()
     )
 
@@ -168,7 +165,8 @@ suspend fun main() {
                 systemPrompt,
                 GigaRequest.Message(
                     role = GigaMessageRole.user,
-                    content = "Открой приложение Telegram",
+                    content = "Как дела?",
+//                    content = "Открой приложение Telegram",
                 ),
             ),
             functions = listOf(
