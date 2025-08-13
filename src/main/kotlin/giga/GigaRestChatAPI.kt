@@ -1,6 +1,7 @@
 package com.dumch.giga
 
 import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.desktop.ToolOpenApp
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -10,10 +11,16 @@ import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.sse.SSE
+import io.ktor.client.plugins.sse.sse
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import org.slf4j.LoggerFactory
 import java.io.File
 
@@ -39,6 +46,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
                 }
             }
         }
+        install(SSE)
     }
 
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat {
@@ -51,6 +59,26 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         }
     }
 
+    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chunk> = flow {
+        client.sse(
+            method = HttpMethod.Post,
+            urlString = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
+            request = {
+                setBody(body.copy(stream = true))
+            }
+        ) {
+            try {
+                for (event in incoming) {
+                    val data = event.data
+                    if (data == "[DONE]") break
+                    parseStreamChunk(data).forEach { emit(it) }
+                }
+            } finally {
+                cancel()
+            }
+        }
+    }
+
     override suspend fun uploadImage(file: File): GigaResponse.UploadFile {
         return try {
             uploadImageWithToken(file, loadAccessToken())
@@ -58,6 +86,35 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
             l.error("Error in REST chat", e)
             uploadImageWithToken(file, refreshAccessToken())
         }
+    }
+
+    private fun parseStreamChunk(data: String): List<GigaResponse.Chunk> {
+        val node = objectMapper.readTree(data)
+        val choices = node["choices"] ?: return emptyList()
+        val chunks = mutableListOf<GigaResponse.Chunk>()
+        for (choice in choices) {
+            val index = choice["index"].asInt()
+            val delta = choice["delta"] ?: continue
+            val functionCall = delta["function_call"]
+            if (functionCall != null && !functionCall.isNull) {
+                val name = functionCall["name"].asText()
+                val argsText = functionCall["arguments"]?.asText() ?: "{}"
+                val args: Map<String, Any> = objectMapper.readValue(argsText)
+                chunks.add(GigaResponse.FunctionCall(name, args))
+            } else {
+                val content = delta["content"]?.asText() ?: ""
+                val roleStr = delta["role"]?.asText()
+                val role = roleStr?.takeIf { it.isNotBlank() }?.let { GigaMessageRole.valueOf(it) }
+                    ?: GigaMessageRole.assistant
+                chunks.add(
+                    GigaResponse.ChatChunk(
+                        index = index,
+                        delta = GigaResponse.Delta(content = content, role = role)
+                    )
+                )
+            }
+        }
+        return chunks
     }
 
     private fun uploadImageWithToken(file: File, accessToken: String): GigaResponse.UploadFile {
@@ -90,9 +147,36 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         val INSTANCE = GigaRestChatAPI(GigaAuth)
     }
 }
+ 
+suspend fun main() {
+    val api = GigaRestChatAPI.INSTANCE
 
-//suspend fun main() {
-//    val f = File("/Users/m1/Pictures/portrait.jpeg")
-//    val resp = GigaRestChatAPI(GigaAuth).uploadImage(f)
-//    LoggerFactory.getLogger("GigaRestChatAPI").info("$resp")
-//}
+    val systemPrompt = GigaRequest.Message(
+        role = GigaMessageRole.system,
+        content = """
+                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то за
+дачу можно решить
+                c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
+            """.trimIndent()
+    )
+
+    val result = api.messageStream(
+        GigaRequest.Chat(
+            model = GigaModel.Pro.alias,
+            stream = true,
+            messages = listOf(
+                systemPrompt,
+                GigaRequest.Message(
+                    role = GigaMessageRole.user,
+                    content = "Открой приложение Telegram",
+                ),
+            ),
+            functions = listOf(
+                ToolOpenApp(ToolRunBashCommand).toGiga(),
+            ).map { it.fn }
+        )
+    )
+    result.collect {
+        println("Chunk: $it")
+    }
+}
