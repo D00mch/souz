@@ -29,13 +29,10 @@ class MediaKeysNative {
         }
     }
 
-    private external fun playPauseNative()
-    private external fun nextTrackNative()
-    private external fun previousTrackNative()
+    private external fun sendMediaKeyEvent(keyCode: Int)
 
-    // Публичные методы вызывают нативные функции
-    fun playPause() = playPauseNative()
-    fun nextTrack() = nextTrackNative()
-    fun previousTrack() = previousTrackNative()
+    fun playPause() = sendMediaKeyEvent(16)
+    fun nextTrack() = sendMediaKeyEvent(17)
+    fun previousTrack() = sendMediaKeyEvent(18)
 
 }
