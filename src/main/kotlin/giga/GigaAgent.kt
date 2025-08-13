@@ -16,6 +16,7 @@ import com.dumch.tool.desktop.ToolSafariInfo
 import com.dumch.tool.desktop.ToolWindowsManager
 import com.dumch.tool.files.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import org.slf4j.LoggerFactory
@@ -23,7 +24,7 @@ import org.slf4j.LoggerFactory
 class GigaAgent(
     private val userMessages: Flow<String>,
     private val api: GigaChatAPI,
-    private val tools: Map<String, GigaToolSetup>,
+    private val settings: Settings,
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val functions: List<GigaRequest.Function> = tools.map { it.value.fn }
@@ -52,39 +53,33 @@ class GigaAgent(
                     }
 
                     is GigaResponse.Chat.Ok -> {
-                        trySummarize(response, conversation)
-                        conversation.addAll(response.toRequestMessages())
                         try {
+                            trySummarize(response, conversation)
+                            conversation.addAll(response.toRequestMessages())
                         } catch (e: Throwable) {
                             send("Error: loop $i: ${e.message}. Продолжаем работу?")
                             break
                         }
 
-                        val toolAwaits = ArrayList<Deferred<GigaRequest.Message>>()
-                        for (ch in response.choices) {
-                            val msg = ch.message
-                            when {
-                                msg.content.isNotBlank() -> {
-                                    send(msg.content)
-                                }
+                        val fnCallMessages = response.choices.mapNotNull { handleGigaChoice(it) }
 
-                                msg.functionCall != null && msg.functionsStateId != null -> {
-                                    val deferred = async(Dispatchers.IO) { executeTool(msg.functionCall) }
-                                    toolAwaits.add(deferred)
-                                }
-                            }
-                        }
-                        if (toolAwaits.isEmpty()) break
-                        try {
-                            conversation.addAll(toolAwaits.awaitAll())
-                        } catch (t: Throwable) {
-                            send("Error: ${t.message}. Продолжаем работу?")
-                            break
-                        }
+                        // if no functions invoked, we can proceed to the next user's message
+                        if (fnCallMessages.isEmpty()) break
+                        conversation.addAll(fnCallMessages)
                     }
                 }
             }
         }
+    }
+
+    /** @return true if function was invoked */
+    private suspend fun ProducerScope<String>.handleGigaChoice(ch: GigaResponse.Choice): GigaRequest.Message? {
+        val msg = ch.message
+        when {
+            msg.functionCall != null && msg.functionsStateId != null -> return executeTool(msg.functionCall)
+            msg.content.isNotBlank() -> send(msg.content)
+        }
+        return null
     }
 
     private suspend fun trySummarize(response: GigaResponse.Chat.Ok, conversation: ArrayDeque<GigaRequest.Message>) {
@@ -146,11 +141,18 @@ class GigaAgent(
         fns: List<GigaRequest.Function> = functions,
     ): GigaResponse.Chat {
         val body = GigaRequest.Chat(
+            model = settings.model,
             messages = conversation,
             functions = fns,
         )
         return api.message(body)
     }
+
+    data class Settings(
+        val functions: Map<String, GigaToolSetup>,
+        val model: String = GigaModel.Pro.alias,
+        val stream: Boolean = false,
+    )
 
     companion object {
         private const val SUMMARIZE_THRESHOLD = 0.95
@@ -186,7 +188,12 @@ class GigaAgent(
         ).associateBy { it.fn.name }
 
         fun instance(userMessages: Flow<String>, api: GigaChatAPI): GigaAgent {
-            return GigaAgent(userMessages, api, tools)
+            val settings = Settings(
+                tools,
+                GigaModel.Max.alias,
+                stream = false,
+            )
+            return GigaAgent(userMessages, api, settings)
         }
     }
 }
