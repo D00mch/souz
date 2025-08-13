@@ -3,6 +3,7 @@ package com.dumch.tool.desktop
 import com.dumch.giga.objectMapper
 import com.dumch.giga.toGiga
 import com.dumch.tool.*
+import com.dumch.libs.MediaKeysNative
 
 class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMediaControl.Input> {
     enum class Action {
@@ -28,11 +29,13 @@ class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMed
         )
     )
 
+    val mediaKeys = MediaKeysNative()
+
     override fun invoke(input: Input): String {
         val script = when (input.action) {
-            Action.next -> ""
-            Action.previous -> ""
-            Action.playpause -> ""
+            Action.next -> mediaKeys.nextTrack()
+            Action.previous ->  mediaKeys.previousTrack()
+            Action.playpause ->  mediaKeys.playPause()
             Action.volume_up -> "set volume output volume ((output volume of (get volume settings)) + 10)"
             Action.volume_down -> "set volume output volume ((output volume of (get volume settings)) - 10)"
             Action.brightness_down -> "tell application \"System Events\" to key code 145"
@@ -45,6 +48,6 @@ class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMed
 
 fun main() {
     val t = ToolMediaControl(ToolRunBashCommand)
-    // t.invoke(ToolMediaControl.Input(ToolMediaControl.Action.brightness_up))
+    t.invoke(ToolMediaControl.Input(ToolMediaControl.Action.playpause))
     println(objectMapper.writeValueAsString(t.toGiga().fn))
 }

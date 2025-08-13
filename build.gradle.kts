@@ -48,6 +48,10 @@ tasks.test {
     useJUnitPlatform()
 }
 
+tasks.withType<JavaExec> {
+    systemProperty("java.library.path", "src/main/libs")
+}
+
 tasks.processResources {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
