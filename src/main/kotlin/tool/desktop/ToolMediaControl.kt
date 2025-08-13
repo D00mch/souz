@@ -32,16 +32,15 @@ class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMed
     val mediaKeys = MediaKeysNative()
 
     override fun invoke(input: Input): String {
-        val script = when (input.action) {
+        when (input.action) {
             Action.next -> mediaKeys.nextTrack()
-            Action.previous ->  mediaKeys.previousTrack()
-            Action.playpause ->  mediaKeys.playPause()
-            Action.volume_up -> "set volume output volume ((output volume of (get volume settings)) + 10)"
-            Action.volume_down -> "set volume output volume ((output volume of (get volume settings)) - 10)"
-            Action.brightness_down -> "tell application \"System Events\" to key code 145"
-            Action.brightness_up -> "tell application \"System Events\" to key code 144"
+            Action.previous -> mediaKeys.previousTrack()
+            Action.playpause -> mediaKeys.playPause()
+            Action.volume_up -> bash.apple("set volume output volume ((output volume of (get volume settings)) + 10)")
+            Action.volume_down -> bash.apple("set volume output volume ((output volume of (get volume settings)) - 10)")
+            Action.brightness_down -> bash.apple("tell application \"System Events\" to key code 145")
+            Action.brightness_up -> bash.apple("tell application \"System Events\" to key code 144")
         }
-        bash.apple(script)
         return "Done"
     }
 }

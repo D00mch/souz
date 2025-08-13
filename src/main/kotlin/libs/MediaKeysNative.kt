@@ -3,7 +3,7 @@ package com.dumch.libs
 class MediaKeysNative {
     companion object {
         init {
-            System.loadLibrary("src/main/libs/libMediaKeys.dylib")
+            System.loadLibrary("MediaKeys")
         }
     }
 

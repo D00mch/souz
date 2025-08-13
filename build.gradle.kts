@@ -13,7 +13,7 @@ repositories {
 
 sourceSets {
     main {
-        resources.srcDir(setOf("src/main/resources"))
+        resources.srcDirs("src/main/resources", "src/main/libs")
     }
 }
 
@@ -46,6 +46,7 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    systemProperty("java.library.path", "src/main/libs")
 }
 
 tasks.withType<JavaExec> {
