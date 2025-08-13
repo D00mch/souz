@@ -6,6 +6,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.logging.*
@@ -46,31 +47,53 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         }
     }
 
-    override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat {
-        val response = client.post("https://gigachat.devices.sberbank.ru/api/v1/chat/completions") {
+    override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
+        val response = client.post(URL) {
             setBody(body)
         }
-        return when {
+        when {
             response.status.isSuccess() -> response.body<GigaResponse.Chat.Ok>()
-            else -> response.body<GigaResponse.Chat.Error>()
+            response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
+                GigaResponse.Chat.Error(response.status.value, "Authentication error: ${response.status.description}")
+
+            else -> runCatching { response.body<GigaResponse.Chat.Error>() }
+                .getOrElse {
+                    GigaResponse.Chat.Error(response.status.value, response.status.description)
+                }
         }
+    } catch (t: Throwable) {
+        l.error("Error in REST chat", t)
+        GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")
     }
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = flow {
-        client.sse(
-            urlString = URL,
-            request = {
-                method = HttpMethod.Post
-                setBody(body.copy(stream = true))
-            }
-        ) {
-            incoming.collect { event ->
-                val data: String? = event.data
-                if (data == null ||  data == "[DONE]") {
-                    return@collect
+        try {
+            client.sse(
+                urlString = URL,
+                request = {
+                    method = HttpMethod.Post
+                    setBody(body.copy(stream = true))
                 }
-                parseStreamChunk(data).forEach { emit(it) }
+            ) {
+                incoming.collect { event ->
+                    val data: String? = event.data
+                    if (data == null || data == "[DONE]") {
+                        return@collect
+                    }
+                    parseStreamChunk(data).forEach { emit(it) }
+                }
             }
+        } catch (e: ClientRequestException) {
+            val status = e.response.status
+            val msg = if (status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden) {
+                "Authentication error: ${status.description}"
+            } else {
+                "HTTP error: ${status.description}"
+            }
+            emit(GigaResponse.Chat.Error(status.value, msg))
+        } catch (t: Throwable) {
+            l.error("Error in REST chat stream", t)
+            emit(GigaResponse.Chat.Error(-1, "Connection error: ${t.message}"))
         }
     }
 
