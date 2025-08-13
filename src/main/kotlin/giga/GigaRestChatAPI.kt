@@ -56,7 +56,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         }
     }
 
-    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chunk> = flow {
+    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = flow {
         client.sse(
             urlString = URL,
             request = {
@@ -83,7 +83,9 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         }
     }
 
-    private fun parseStreamChunk(data: String): List<GigaResponse.Chunk> {
+    private fun parseStreamChunk(data: String): List<GigaResponse.Chat> {
+        TODO("Implement it the way it's implemented within GigaGRPCChatApi")
+        /*
         val node = objectMapper.readTree(data)
         val choices = node["choices"] ?: return emptyList()
         val chunks = mutableListOf<GigaResponse.Chunk>()
@@ -110,6 +112,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
             }
         }
         return chunks
+         */
     }
 
     private fun uploadImageWithToken(file: File, accessToken: String): GigaResponse.UploadFile {

@@ -27,20 +27,8 @@ object GigaResponse {
     data class Choice(
         val message: Message,
         val index: Int,
-        @JsonProperty("finish_reason") val finishReason: String
+        @JsonProperty("finish_reason") val finishReason: FinishReason?
     )
-
-    sealed interface Chunk
-
-    data class Delta(
-        val content: String,
-        val role: GigaMessageRole,
-    )
-
-    data class ChatChunk(
-        val index: Int,
-        val delta: Delta,
-    ) : Chunk
 
     data class Message(
         val content: String,
@@ -52,7 +40,7 @@ object GigaResponse {
     data class FunctionCall(
         val name: String,
         val arguments: Map<String, Any>
-    ) : Chunk
+    )
 
     data class RecognizeResponse(
         val result: List<String>,
@@ -83,6 +71,17 @@ object GigaResponse {
         val purpose: String,
         @JsonProperty("access_policy") val accessPolicy: String,
     )
+
+    enum class FinishReason { stop, length, function_call, blacklist, error }
+}
+
+fun String.toFinishReason(): GigaResponse.FinishReason? {
+    if (this.isEmpty()) return null
+    return try {
+        GigaResponse.FinishReason.valueOf(this)
+    } catch (e: IllegalArgumentException) {
+        null
+    }
 }
 
 enum class GigaModel(val alias: String, val maxTokens: Int) {

@@ -10,7 +10,7 @@ import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.flow.map
 import org.slf4j.LoggerFactory
 import java.io.File
 
@@ -69,7 +69,7 @@ class GigaGRPCChatApi(
         }
     }
 
-    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chunk> {
+    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> {
         val request = Gigachatv1.ChatRequest.newBuilder()
 //            .setModel(body.model)
             .setModel(GigaModel.Pro.alias)
@@ -93,29 +93,47 @@ class GigaGRPCChatApi(
             .build()
 
         return stub.chatStream(request, authHeaders(loadAccessToken()))
-            .transform { resp ->
-                resp.alternativesList.forEach { alt ->
+            .map { resp ->
+                val usage = GigaResponse.Usage(
+                    promptTokens = resp.usage.promptTokens,
+                    completionTokens = resp.usage.completionTokens,
+                    totalTokens = resp.usage.totalTokens,
+                    precachedTokens = 0,
+                )
+                val choices = resp.alternativesList.mapNotNull { alt ->
                     val msg = alt.message
-                    val chunk = if (msg.hasFunctionCall()) {
-                        GigaResponse.FunctionCall(
-                            msg.functionCall.name,
-                            objectMapper.readValue(msg.functionCall.arguments)
-                        )
-                    } else {
-                        GigaResponse.ChatChunk(
-                            index = alt.index,
-                            delta = GigaResponse.Delta(
-                                content = alt.message.content,
-                                role = if (alt.message.role.isBlank()) {
-                                    GigaMessageRole.assistant
-                                } else {
-                                    GigaMessageRole.valueOf(alt.message.role)
-                                }
-                            )
-                        )
+                    if (alt.finishReason.equals("stop", ignoreCase = true)) {
+                        l.info("finishReason: ${alt.finishReason}")
+                        return@mapNotNull null
                     }
-                    emit(chunk)
+                    GigaResponse.Choice(
+                        message = GigaResponse.Message(
+                            content = msg.content,
+                            role = if (msg.role.isBlank()) {
+                                GigaMessageRole.assistant
+                            } else {
+                                GigaMessageRole.valueOf(msg.role)
+                            },
+                            functionCall = if (msg.hasFunctionCall()) {
+                                GigaResponse.FunctionCall(
+                                    name = msg.functionCall.name,
+                                    arguments = objectMapper.readValue(msg.functionCall.arguments)
+                                )
+                            } else {
+                                null
+                            },
+                            functionsStateId = msg.functionsStateId,
+                        ),
+                        index = alt.index,
+                        finishReason = alt.finishReason.toFinishReason()
+                    )
                 }
+                GigaResponse.Chat.Ok(
+                    choices = choices,
+                    created = resp.timestamp,
+                    model = body.model,
+                    usage = usage
+                )
             }
     }
 
@@ -182,7 +200,7 @@ class GigaGRPCChatApi(
                     functionsStateId = if (msg.hasFunctionsStateId()) msg.functionsStateId else null,
                 ),
                 index = alt.index,
-                finishReason = alt.finishReason,
+                finishReason = alt.finishReason.toFinishReason()
             )
                 .also { l.info("response: $it") }
         }
@@ -240,7 +258,7 @@ suspend fun main() {
             systemPrompt,
             GigaRequest.Message(
                 role = GigaMessageRole.user,
-                content = "Открой приложение Telegram",
+                content = "Привет, как дела?",
             ),
         ),
         functions = listOf(
@@ -248,6 +266,6 @@ suspend fun main() {
         ).map { it.fn }
     ))
     result.collect {
-        println("Chunk: $it")
+        println("Response: $it")
     }
 }
