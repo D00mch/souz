@@ -3,6 +3,7 @@ package com.dumch
 import com.dumch.giga.GigaAgent
 import com.dumch.giga.GigaAuth
 import com.dumch.giga.GigaChatAPI
+import com.dumch.giga.GigaRestChatAPI
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.slf4j.LoggerFactory
@@ -10,7 +11,7 @@ import org.slf4j.LoggerFactory
 private val logAgent = LoggerFactory.getLogger("Agent")
 
 suspend fun main() {
-    val agent = GigaAgent.instance(userInputFlow(), GigaChatAPI.INSTANCE)
+    val agent = GigaAgent.instance(userInputFlow(), GigaRestChatAPI.INSTANCE)
     agent.run().collect { text -> logAgent.info(text) }
 }
 

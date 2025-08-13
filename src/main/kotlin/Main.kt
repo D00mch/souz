@@ -9,7 +9,7 @@ import com.dumch.audio.stopPlayText
 import com.dumch.audio.rawToOpusOgg
 import com.dumch.giga.GigaAgent
 import com.dumch.giga.GigaAuth
-import com.dumch.giga.GigaChatAPI
+import com.dumch.giga.GigaGRPCChatApi
 import com.dumch.giga.GigaVoiceAPI
 import com.dumch.keys.HotkeyListener
 import com.github.kwhat.jnativehook.GlobalScreen
@@ -49,7 +49,6 @@ suspend fun main() = coroutineScope {
     )
     launch { audioRecorder.logState() }
     val gigaVoiceAPI = GigaVoiceAPI(GigaAuth)
-    val gigaChatAPI  = GigaChatAPI.INSTANCE
     withNativeHook(hotkeyListener) {
         val userInputFlow = audioRecorder.audioFlow
             .onEach { l.info("[Received audio data: ${it.size} bytes]") }
@@ -61,7 +60,7 @@ suspend fun main() = coroutineScope {
                 resp.result.joinToString("\n")
             }
 
-        GigaAgent.instance(userInputFlow, gigaChatAPI).run().collect { text ->
+        GigaAgent.instance(userInputFlow, GigaGRPCChatApi.INSTANCE).run().collect { text ->
             l.info(text)
             playText(text)
         }

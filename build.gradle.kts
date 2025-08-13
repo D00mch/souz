@@ -1,11 +1,18 @@
 import org.gradle.api.file.DuplicatesStrategy
+import com.google.protobuf.gradle.*
 
 plugins {
     kotlin("jvm") version Versions.Kotlin
+    id("com.google.protobuf") version "0.9.4"
+    application
 }
 
 group = "com.dumch"
 version = "1.0-SNAPSHOT"
+
+application {
+    mainClass.set("com.dumch.MainKt")
+}
 
 repositories {
     mavenCentral()
@@ -15,6 +22,17 @@ sourceSets {
     main {
         resources.srcDirs("src/main/resources", "src/main/libs")
     }
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_23
+    targetCompatibility = JavaVersion.VERSION_23
+}
+
+tasks.test {
+    useJUnitPlatform()
+    // Ensure native library is discoverable during tests
+    systemProperty("java.library.path", "${projectDir}/src/main/libs")
 }
 
 dependencies {
@@ -32,6 +50,13 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:${Versions.Ktor}")
     implementation("io.ktor:ktor-serialization-jackson:${Versions.Ktor}")
 
+    // grpc
+    implementation("io.grpc:grpc-kotlin-stub:${Versions.GrpcKotlin}")
+    implementation("io.grpc:grpc-protobuf:${Versions.Grpc}")
+    implementation("io.grpc:grpc-stub:${Versions.Grpc}")
+    implementation("io.grpc:grpc-netty-shaded:${Versions.Grpc}")
+    implementation("com.google.protobuf:protobuf-kotlin:${Versions.Protobuf}")
+
     // desktop manipulation
     implementation("com.github.kwhat:jnativehook:2.2.2")
     implementation("net.java.dev.jna:jna:5.14.0") // robot replacement, no jar icon will appear
@@ -42,12 +67,51 @@ dependencies {
     implementation("ws.schild:jave-nativebin-osxm1:3.5.0")
 
     testImplementation(kotlin("test"))
+    testImplementation("io.mockk:mockk:1.13.11")
 }
 
-tasks.test {
-    useJUnitPlatform()
-    // Ensure native library is discoverable during tests
-    systemProperty("java.library.path", "${projectDir}/src/main/libs")
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:${Versions.Protobuf}"
+    }
+    plugins {
+        id("grpc") {
+            artifact = "io.grpc:protoc-gen-grpc-java:${Versions.Grpc}"
+        }
+        id("grpckt") {
+            artifact = "io.grpc:protoc-gen-grpc-kotlin:${Versions.GrpcKotlin}:jdk8@jar"
+        }
+    }
+    generateProtoTasks {
+        all().forEach { task ->
+            task.plugins {
+                id("grpc")
+                id("grpckt")
+            }
+            task.builtins {
+                id("kotlin")
+            }
+        }
+    }
+}
+
+tasks.named("generateProto") {
+    outputs.upToDateWhen {
+        val dir = file("${project.buildFile}/generated/source/proto/main/java/gigachat/v1")
+        dir.exists() && dir.list()?.isNotEmpty() == true
+    }
+}
+
+tasks.named("prepareKotlinBuildScriptModel") {
+    dependsOn("generateProto")
+}
+
+tasks.named("compileKotlin") {
+    dependsOn("generateProto")
+}
+
+tasks.named("build") {
+    dependsOn("generateProto")
 }
 
 tasks.processResources {
