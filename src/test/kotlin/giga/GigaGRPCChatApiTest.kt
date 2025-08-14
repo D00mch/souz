@@ -60,10 +60,10 @@ class GigaGRPCChatApiTest {
         val headers = mutableListOf<Metadata>()
         val response = sampleResponse()
         var calls = 0
-        coEvery { stub.chat(any(), capture(headers)) } answers {
+        coEvery { stub.chatStream(any(), capture(headers)) } answers {
             calls++
             if (calls == 1) throw StatusRuntimeException(Status.UNAUTHENTICATED)
-            response
+            flow { emit(response) }
         }
 
         val api = GigaGRPCChatApi(GigaAuth)
@@ -91,8 +91,7 @@ class GigaGRPCChatApiTest {
 
         val stub = mockk<ChatServiceGrpcKt.ChatServiceCoroutineStub>()
         var calls = 0
-        coEvery { stub.chat(any(), any()) } answers {
-            calls++
+        coEvery { stub.chatStream(any(), any()) } answers { calls++
             throw StatusRuntimeException(Status.UNAUTHENTICATED)
         }
 
@@ -196,6 +195,6 @@ class GigaGRPCChatApiTest {
 
         val results = api.messageStream(body).toList()
         val err = results.single() as GigaResponse.Chat.Error
-        assertEquals(-1, err.code)
+        assertEquals(-1, err.status)
     }
 }
