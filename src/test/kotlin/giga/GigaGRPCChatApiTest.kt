@@ -11,6 +11,8 @@ import io.grpc.Metadata
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
 import io.mockk.*
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -20,7 +22,7 @@ import kotlin.test.assertFailsWith
 class GigaGRPCChatApiTest {
     private val authKey = Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER)
 
-    private fun sampleResponse(): Gigachatv1.ChatResponse {
+    private fun sampleResponse(finishReason: String = "stop"): Gigachatv1.ChatResponse {
         val msg = Gigachatv1.Message.newBuilder()
             .setRole("assistant")
             .setContent("response")
@@ -29,6 +31,7 @@ class GigaGRPCChatApiTest {
             .setMessage(msg)
             .setIndex(0)
             .setFinishReason("stop")
+            .setFinishReason(finishReason)
             .build()
         val usage = Gigachatv1.Usage.newBuilder()
             .setPromptTokens(1)
@@ -58,7 +61,7 @@ class GigaGRPCChatApiTest {
         val headers = mutableListOf<Metadata>()
         val response = sampleResponse()
         var calls = 0
-        coEvery { stub.chat(any(), capture(headers)) } answers {
+        coEvery { stub.chat(any(), capture(headers)) } coAnswers {
             calls++
             if (calls == 1) throw StatusRuntimeException(Status.UNAUTHENTICATED)
             response
@@ -88,11 +91,7 @@ class GigaGRPCChatApiTest {
         coEvery { GigaAuth.requestToken(any(), any()) } returns "token2"
 
         val stub = mockk<ChatServiceGrpcKt.ChatServiceCoroutineStub>()
-        var calls = 0
-        coEvery { stub.chat(any(), any()) } answers {
-            calls++
-            throw StatusRuntimeException(Status.UNAUTHENTICATED)
-        }
+        coEvery { stub.chat(any(), any()) } throws StatusRuntimeException(Status.UNAUTHENTICATED)
 
         val api = GigaGRPCChatApi(GigaAuth)
         val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
@@ -105,7 +104,7 @@ class GigaGRPCChatApiTest {
         )
 
         assertFailsWith<StatusRuntimeException> { api.message(body) }
-        assertEquals(2, calls)
+        coVerify(exactly = 2) { stub.chat(any(), any()) }
     }
 
     @Test
@@ -135,5 +134,65 @@ class GigaGRPCChatApiTest {
         assertEquals(1, result.usage.promptTokens)
         assertEquals("Bearer token1", headers[0].get(authKey))
         coVerify(exactly = 0) { GigaAuth.requestToken(any(), any()) }
+    }
+
+    @Test
+    fun `messageStream retries once on UNAUTHENTICATED and returns mapped response`() = runBlocking {
+        mockkObject(GigaAuth)
+        coEvery { GigaAuth.requestToken(any(), any()) } returns "token2"
+
+        val stub = mockk<ChatServiceGrpcKt.ChatServiceCoroutineStub>()
+        val headers = mutableListOf<Metadata>()
+        val response = sampleResponse(finishReason = "length")
+        var calls = 0
+        every { stub.chatStream(any(), capture(headers)) } answers {
+            calls++
+            if (calls == 1) {
+                flow { throw StatusRuntimeException(Status.UNAUTHENTICATED) }
+            } else {
+                flow { emit(response) }
+            }
+        }
+
+        val api = GigaGRPCChatApi(GigaAuth)
+        val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
+        field.set(api, stub)
+
+        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
+        val body = GigaRequest.Chat(
+            model = "GigaChat-Pro",
+            stream = true,
+            messages = listOf(GigaRequest.Message(GigaMessageRole.user, "hi"))
+        )
+
+        val results = api.messageStream(body).toList()
+
+        assertEquals(2, calls)
+        assertEquals("Bearer token1", headers[0].get(authKey))
+        assertEquals("Bearer token2", headers[1].get(authKey))
+        val ok = results.single() as GigaResponse.Chat.Ok
+        assertEquals("response", ok.choices.first().message.content)
+    }
+
+    @Test
+    fun `messageStream returns error on failure`() = runBlocking {
+        mockkObject(GigaAuth)
+        val stub = mockk<ChatServiceGrpcKt.ChatServiceCoroutineStub>()
+        every { stub.chatStream(any(), any()) } returns flow { throw StatusRuntimeException(Status.INTERNAL) }
+
+        val api = GigaGRPCChatApi(GigaAuth)
+        val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
+        field.set(api, stub)
+
+        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
+        val body = GigaRequest.Chat(
+            model = "GigaChat-Pro",
+            stream = true,
+            messages = listOf(GigaRequest.Message(GigaMessageRole.user, "hi"))
+        )
+
+        val results = api.messageStream(body).toList()
+        val err = results.single() as GigaResponse.Chat.Error
+        assertEquals(-1, err.status)
     }
 }

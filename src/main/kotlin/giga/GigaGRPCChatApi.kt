@@ -10,6 +10,8 @@ import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -69,7 +71,7 @@ class GigaGRPCChatApi(
         }
     }
 
-    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> {
+    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = flow {
         val request = Gigachatv1.ChatRequest.newBuilder()
             .setModel(body.model)
             .setOptions(
@@ -91,49 +93,69 @@ class GigaGRPCChatApi(
             })
             .build()
 
-        return stub.chatStream(request, authHeaders(loadAccessToken()))
-            .map { resp ->
-                val usage = GigaResponse.Usage(
-                    promptTokens = resp.usage.promptTokens,
-                    completionTokens = resp.usage.completionTokens,
-                    totalTokens = resp.usage.totalTokens,
-                    precachedTokens = 0,
-                )
-                val choices = resp.alternativesList.mapNotNull { alt ->
-                    val msg = alt.message
-                    if (alt.finishReason.equals("stop", ignoreCase = true)) {
-                        l.info("finishReason: ${alt.finishReason}")
-                        return@mapNotNull null
-                    }
-                    GigaResponse.Choice(
-                        message = GigaResponse.Message(
-                            content = msg.content,
-                            role = if (msg.role.isBlank()) {
-                                GigaMessageRole.assistant
-                            } else {
-                                GigaMessageRole.valueOf(msg.role)
-                            },
-                            functionCall = if (msg.hasFunctionCall()) {
-                                GigaResponse.FunctionCall(
-                                    name = msg.functionCall.name,
-                                    arguments = objectMapper.readValue(msg.functionCall.arguments)
-                                )
-                            } else {
-                                null
-                            },
-                            functionsStateId = msg.functionsStateId,
-                        ),
-                        index = alt.index,
-                        finishReason = alt.finishReason.toFinishReason()
-                    )
-                }
-                GigaResponse.Chat.Ok(
-                    choices = choices,
-                    created = resp.timestamp,
-                    model = body.model,
-                    usage = usage
-                )
+        suspend fun stream(token: String) {
+            stub.chatStream(request, authHeaders(token))
+                .map { resp -> resp.mapResponse(body.model) }
+                .collect { emit(it) }
+        }
+
+        try {
+            stream(loadAccessToken())
+        } catch (e: Exception) {
+            l.error("Error in gRPC chat stream", e)
+            if (
+                (e is StatusException && e.status.code == Status.Code.UNAUTHENTICATED) ||
+                (e is StatusRuntimeException && e.status.code == Status.Code.UNAUTHENTICATED)
+            ) {
+                stream(refreshAccessToken())
+            } else {
+                emit(GigaResponse.Chat.Error(-1, "Connection error: ${e.message}"))
             }
+        }
+    }
+
+    private fun Gigachatv1.ChatResponse.mapResponse(model: String): GigaResponse.Chat {
+        val resp = this
+        val usage = GigaResponse.Usage(
+            promptTokens = resp.usage.promptTokens,
+            completionTokens = resp.usage.completionTokens,
+            totalTokens = resp.usage.totalTokens,
+            precachedTokens = 0,
+        )
+        val choices = resp.alternativesList.mapNotNull { alt ->
+            val msg = alt.message
+            if (alt.finishReason.equals("stop", ignoreCase = true)) {
+                l.info("finishReason: ${alt.finishReason}")
+                return@mapNotNull null
+            }
+            GigaResponse.Choice(
+                message = GigaResponse.Message(
+                    content = msg.content,
+                    role = if (msg.role.isBlank()) {
+                        GigaMessageRole.assistant
+                    } else {
+                        GigaMessageRole.valueOf(msg.role)
+                    },
+                    functionCall = if (msg.hasFunctionCall()) {
+                        GigaResponse.FunctionCall(
+                            name = msg.functionCall.name,
+                            arguments = objectMapper.readValue(msg.functionCall.arguments)
+                        )
+                    } else {
+                        null
+                    },
+                    functionsStateId = msg.functionsStateId,
+                ),
+                index = alt.index,
+                finishReason = alt.finishReason.toFinishReason()
+            )
+        }
+        return GigaResponse.Chat.Ok(
+            choices = choices,
+            created = resp.timestamp,
+            model = model,
+            usage = usage
+        )
     }
 
     private fun GigaRequest.Function.toGRPC(): Gigachatv1.Function? {
