@@ -66,6 +66,9 @@ dependencies {
     implementation("ws.schild:jave-core:3.5.0")
     implementation("ws.schild:jave-nativebin-osxm1:3.5.0")
 
+    // selenium
+    implementation("org.seleniumhq.selenium:selenium-java:${Versions.Selenium}")
+
     testImplementation(kotlin("test"))
     testImplementation("io.mockk:mockk:1.13.11")
 }

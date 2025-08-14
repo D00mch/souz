@@ -6,4 +6,5 @@ object Versions {
     const val Grpc = "1.65.0"
     const val GrpcKotlin = "1.4.1"
     const val Protobuf = "3.25.3"
+    const val Selenium = "4.35.0"
 }
