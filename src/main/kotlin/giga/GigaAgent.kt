@@ -5,8 +5,7 @@ import com.dumch.tool.desktop.ToolCollectButtons
 import com.dumch.tool.desktop.ToolCreateNote
 import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.desktop.ToolMouseClickMac
-import com.dumch.tool.desktop.ToolOpenApp
-import com.dumch.tool.desktop.ToolOpenFile
+import com.dumch.tool.desktop.ToolOpen
 import com.dumch.tool.desktop.ToolOpenFolder
 import com.dumch.tool.desktop.ToolCreateNewBrowserTab
 import com.dumch.tool.desktop.ToolHotkeyMac
@@ -236,10 +235,9 @@ class GigaAgent(
             ToolCreateNote(ToolRunBashCommand).toGiga(),
             ToolOpenFolder(ToolRunBashCommand).toGiga(),
             ToolCollectButtons(ToolRunBashCommand).toGiga(),
-            ToolOpenFile(ToolRunBashCommand).toGiga(),
+            ToolOpen(ToolRunBashCommand).toGiga(),
             ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
             ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
-            ToolOpenApp(ToolRunBashCommand).toGiga(),
         ).associateBy { it.fn.name }
 
         fun instance(userMessages: Flow<String>, api: GigaChatAPI): GigaAgent {
