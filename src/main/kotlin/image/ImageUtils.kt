@@ -2,8 +2,6 @@ package com.dumch.image
 
 import com.dumch.image.ImageUtils.screenshotJpegBytes
 import java.awt.Rectangle
-import java.awt.Robot
-import java.awt.Toolkit
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -41,23 +39,67 @@ object ImageUtils {
 
     fun screenshotJpegBytes(
         rect: Rectangle? = null,
-        quality: Float = DESKTOP_SCREENSHOT_QUALITY
+        quality: Float = DESKTOP_SCREENSHOT_QUALITY,
+        scaleDown: Boolean = true,
     ): ByteArray {
-        val area = rect ?: Rectangle(Toolkit.getDefaultToolkit().screenSize)
-        val img: BufferedImage = Robot().createScreenCapture(area)
+        val tempFile = File.createTempFile("screenshot", ".png")
+        tempFile.deleteOnExit()
 
-        val writer = ImageIO.getImageWritersByFormatName("jpg").next()
-        val baos = ByteArrayOutputStream()
-        val ios = ImageIO.createImageOutputStream(baos)
-        writer.output = ios
-
-        val p: ImageWriteParam = writer.defaultWriteParam.apply {
-            compressionMode = ImageWriteParam.MODE_EXPLICIT
-            compressionQuality = quality.coerceIn(0f, 1f) // lower -> smaller file
+        val processBuilder = if (rect == null) {
+            ProcessBuilder("screencapture", "-x", tempFile.absolutePath)
+        } else {
+            ProcessBuilder(
+                "screencapture", "-x", "-R",
+                "${rect.x},${rect.y},${rect.width},${rect.height}",
+                tempFile.absolutePath
+            )
         }
 
-        writer.write(null, IIOImage(img, null, null), p)
-        ios.close(); writer.dispose()
+        val process = processBuilder.start()
+        process.waitFor()
+
+        val img = ImageIO.read(tempFile)
+        val rgbImage = BufferedImage(
+            img.width, img.height, BufferedImage.TYPE_INT_RGB
+        ).apply {
+            createGraphics().drawImage(img, 0, 0, null)
+        }
+
+
+        val finalImage = if (scaleDown) {
+            val newWidth = rgbImage.width / 2
+            val newHeight = rgbImage.height / 2
+            BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_RGB).apply {
+                createGraphics().drawImage(
+                    rgbImage,
+                    0, 0, newWidth, newHeight,
+                    0, 0, rgbImage.width, rgbImage.height,
+                    null
+                )
+            }
+        } else {
+            rgbImage
+        }
+
+        // 4. Сохраняем в JPEG с указанным качеством
+        val baos = ByteArrayOutputStream()
+        ImageIO.createImageOutputStream(baos).use { ios ->
+            val writer = ImageIO.getImageWritersByFormatName("jpg").next().apply {
+                output = ios
+            }
+
+            writer.write(
+                null,
+                IIOImage(finalImage, null, null),
+                writer.defaultWriteParam.apply {
+                    compressionMode = ImageWriteParam.MODE_EXPLICIT
+                    compressionQuality = quality.coerceIn(0f, 1f)
+                }
+            )
+            writer.dispose()
+        }
+
+        tempFile.delete()
         return baos.toByteArray()
     }
 }

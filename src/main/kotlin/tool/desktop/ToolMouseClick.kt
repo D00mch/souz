@@ -30,7 +30,7 @@ class ToolMouseClickMac : ToolSetup<ToolMouseClickMac.Input> {
     )
 
     override val name = "MouseClick"
-    override val description = "Clicks the mouse at the given coordinates (macOS)."
+    override val description = "Emulates a mouse click on a specific screen area according to its coordinates from DesktopScreenShot (macOS)."
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Нажми кнопку мыши в точке 100,200",
@@ -48,8 +48,8 @@ class ToolMouseClickMac : ToolSetup<ToolMouseClickMac.Input> {
             "This implementation supports macOS only."
         }
 
-        val x = input.x.toDouble() / ImageUtils.DESKTOP_SCREENSHOT_QUALITY
-        val y = input.y.toDouble() / ImageUtils.DESKTOP_SCREENSHOT_QUALITY
+        val x = input.x.toDouble() * 2
+        val y = input.y.toDouble() * 2
 
         val (btnIdx, downType, upType) = when (input.button) {
             MouseButton.left -> Triple(CG.kCGMouseButtonLeft, CG.kCGEventLeftMouseDown, CG.kCGEventLeftMouseUp)

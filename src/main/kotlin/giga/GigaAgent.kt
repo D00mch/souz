@@ -205,7 +205,7 @@ class GigaAgent(
 
     data class Settings(
         val functions: Map<String, GigaToolSetup>,
-        val model: GigaModel = GigaModel.Pro,
+        val model: GigaModel = GigaModel.Max,
         val stream: Boolean = false,
     )
 
@@ -217,6 +217,7 @@ class GigaAgent(
             content = """
                 Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
                 c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
+                Если нужно открыть папку, используй функцию OpenFolder.
             """.trimIndent()
         )
 
