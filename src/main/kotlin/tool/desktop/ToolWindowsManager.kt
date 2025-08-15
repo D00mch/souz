@@ -118,12 +118,13 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
             Action.go_to_workspace -> "workspace ${input.meta}"
             Action.move_app_to_workspace -> "move-node-to-workspace ${input.meta}"
         }
-        return try {
+        try {
             l.info("Executing command: $cmd")
             runAerospace(*cmd.split(" ").toTypedArray())
-            "Done"
+            return "Done"
         } catch (e: Exception) {
-            "Error in ToolWindowsManager: ${e.message}".also { l.error(it, e) }
+            l.error("ToolWindowsManager failed", e)
+            throw RuntimeException("ToolWindowsManager failed: ${e.message}", e)
         }
     }
 

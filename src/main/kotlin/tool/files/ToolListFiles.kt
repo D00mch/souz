@@ -28,12 +28,12 @@ object ToolListFiles : ToolSetup<ToolListFiles.Input> {
         if (!base.exists() || !base.isDirectory) {
             throw BadInputException("Invalid directory path: $dirPath")
         }
-    val files = base.walkTopDown() // sequence
-        .filter { it != base }
-        .map { file ->
-            val relPath = file.relativeTo(base).path
-            if (file.isDirectory) "$relPath/" else relPath
-        }
+        val files = base.walkTopDown()
+            .filter { it != base }
+            .map { file ->
+                val relPath = file.relativeTo(base).path
+                if (file.isDirectory) "$relPath/" else relPath
+            }
 
         return files.joinToString(",", prefix = "[", postfix = "]")
     }

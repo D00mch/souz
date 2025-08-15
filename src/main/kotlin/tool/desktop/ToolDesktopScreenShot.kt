@@ -58,8 +58,8 @@ class ToolDesktopScreenShot(
             lastAttachments.add(upload.id)
             return upload.id
         } catch (e: Exception) {
-            return "Error in DesktopScreenShot: ${e.message}"
-                .also { l.error(it, e) }
+            l.error("DesktopScreenShot failed", e)
+            throw RuntimeException("DesktopScreenShot failed: ${e.message}", e)
         }
     }
 }
