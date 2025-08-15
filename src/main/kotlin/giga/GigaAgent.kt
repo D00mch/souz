@@ -1,6 +1,8 @@
 package com.dumch.giga
 
 import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.config.ConfigStore
+import com.dumch.tool.config.ToolInstructionStore
 import com.dumch.tool.desktop.*
 import com.dumch.tool.files.*
 import kotlinx.coroutines.Dispatchers
@@ -11,11 +13,13 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import kotlin.collections.map
 
 class GigaAgent(
     private val userMessages: Flow<String>,
     private val api: GigaChatAPI,
     private val settings: Settings,
+    private val config: ConfigStore = ConfigStore,
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val tools: Map<String, GigaToolSetup> = settings.functions
@@ -47,12 +51,19 @@ class GigaAgent(
             .getOrElse { "[]" }
         val dirs = runCatching {ToolListFiles.invoke(ToolListFiles.Input(System.getenv("HOME"), 3))}
             .getOrElse { "[]" }
+        val instructions = runCatching {
+            val currentInstructions =
+                config.get<ArrayList<ToolInstructionStore.Input>>(ToolInstructionStore.INSTUCTIONS_KEY, ArrayList())
+            currentInstructions.map { (name: String, instr: String) ->
+                "Когда я говорю: `$name`, выполняй инструкцию: $instr"
+            }
+        }
         val apps = objectMapper.writeValueAsString(
             mapOf(
                 "installed" to installedApps,
                 "opened" to openedApps,
                 "dirs" to dirs,
-                "instructions" to listOf("Когда я говорю: `поиск`, открывай приложение `Google Chrome`")
+                "instructions" to instructions
             )
         )
         conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))
@@ -246,6 +257,7 @@ class GigaAgent(
                 ToolMediaControl(ToolRunBashCommand).toGiga(),
                 ToolFindTextInFiles.toGiga(),
                 ToolDesktopScreenShot().toGiga(),
+                ToolInstructionStore(ConfigStore).toGiga(),
                 ToolCreateNote(ToolRunBashCommand).toGiga(),
 //                ToolShowApps.toGiga(),
 //                ToolOpenFolder(ToolRunBashCommand).toGiga(),

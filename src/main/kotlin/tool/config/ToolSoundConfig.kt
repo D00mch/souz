@@ -5,6 +5,11 @@ import com.dumch.tool.*
 private const val SPEED_KEY = "sound_speed"
 
 object ToolSoundConfig : ToolSetup<ToolSoundConfig.Input> {
+    data class Input(
+        @InputParamDescription("Desired speed for speech synthesis")
+        val speed: Int
+    )
+
     override val name: String = "SoundConfig"
     override val description: String = "Updates sound configuration such as speed"
 
@@ -25,9 +30,4 @@ object ToolSoundConfig : ToolSetup<ToolSoundConfig.Input> {
         ConfigStore.put(SPEED_KEY, input.speed)
         return "Sound speed updated to ${input.speed}"
     }
-
-    data class Input(
-        @InputParamDescription("Desired speed for speech synthesis")
-        val speed: Int
-    )
 }
