@@ -22,7 +22,7 @@ class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<
         )
     )
     override fun invoke(input: Input): String {
-        if (input.url.isBlank()) return "The url is empty. Can't open it"
+        if (input.url.isBlank()) throw BadInputException("The url is empty. Can't open it")
         bash.invoke(
             ToolRunBashCommand.Input(
                 """

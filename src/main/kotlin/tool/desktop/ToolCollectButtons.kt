@@ -40,6 +40,8 @@ class ToolCollectButtons(
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 
     override suspend fun suspendInvoke(input: Input): String {
+        val count = input.buttonsCount.toIntOrNull()?.takeIf { it > 0 }
+            ?: throw BadInputException("Invalid buttonsCount: ${input.buttonsCount}")
         scope.launch {
             playText("Щаа-щаа", 190)
         }
@@ -141,7 +143,7 @@ class ToolCollectButtons(
         )
 
         val outButtons = objectMapper.readValue<List<OsxButton>>(result)
-            .take(input.buttonsCount.toInt())
+            .take(count)
             .map { osxBtn ->
                 val width = osxBtn.size[0]
                 val height = osxBtn.size[1]
