@@ -18,7 +18,7 @@ class ToolCollectButtons(
 
     data class Input(
         @InputParamDescription("Default buttons count is 7. If you want to return more, send a number, e.g., 15")
-        val buttonsCount: String = "7"
+        val buttonsCount: Int = 7
     )
 
     override val name: String = "CollectButtons"
@@ -28,7 +28,7 @@ class ToolCollectButtons(
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Какие кнопки на экране, перечисли несколько?",
-            params = mapOf("buttonsCount" to "5")
+            params = mapOf("buttonsCount" to 5)
         )
     )
     override val returnParameters = ReturnParameters(
@@ -40,7 +40,7 @@ class ToolCollectButtons(
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 
     override suspend fun suspendInvoke(input: Input): String {
-        val count = input.buttonsCount.toIntOrNull()?.takeIf { it > 0 }
+        val count = input.buttonsCount.takeIf { it > 0 }
             ?: throw BadInputException("Invalid buttonsCount: ${input.buttonsCount}")
         scope.launch {
             playText("Щаа-щаа", 190)
@@ -169,6 +169,6 @@ class ToolCollectButtons(
 
 fun main() {
     val tool = ToolCollectButtons(ToolRunBashCommand)
-    println(tool.invoke(ToolCollectButtons.Input("3")))
+    println(tool.invoke(ToolCollectButtons.Input(3)))
     println(tool.toGiga().fn)
 }

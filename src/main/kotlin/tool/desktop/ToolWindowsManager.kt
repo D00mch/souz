@@ -108,7 +108,6 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
         }
         try {
             l.info("Executing command: $cmd")
-//            runAerospaceCommand(*cmd.split(" ").toTypedArray())
             runAerospace(*cmd.split(" ").toTypedArray())
             return "Done"
         } catch (e: Exception) {

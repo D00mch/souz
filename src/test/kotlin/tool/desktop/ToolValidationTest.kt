@@ -22,7 +22,7 @@ class ToolValidationTest {
     fun `collect buttons rejects invalid number`() {
         assertThrows<BadInputException> {
             ToolCollectButtons(ToolRunBashCommand).invoke(
-                ToolCollectButtons.Input("abc")
+                ToolCollectButtons.Input(0)
             )
         }
     }
