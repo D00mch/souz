@@ -259,13 +259,11 @@ class GigaAgent(
             ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
         ).associateBy { it.fn.name }
 
-        fun instance(userMessages: Flow<String>, api: GigaChatAPI): GigaAgent {
-            val settings = Settings(
-                tools,
-                GigaModel.Pro,
-                stream = true,
-            )
-            return GigaAgent(userMessages, api, settings)
-        }
+        fun instance(
+            userMessages: Flow<String>,
+            api: GigaChatAPI,
+            model: GigaModel = GigaModel.Max,
+            settings: Settings = Settings(tools, model, stream = true)
+        ): GigaAgent = GigaAgent(userMessages, api, settings)
     }
 }
