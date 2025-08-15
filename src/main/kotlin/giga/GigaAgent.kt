@@ -12,6 +12,7 @@ import com.dumch.tool.desktop.ToolHotkeyMac
 import com.dumch.tool.desktop.ToolMediaControl
 import com.dumch.tool.desktop.ToolMinimizeWindows
 import com.dumch.tool.desktop.ToolSafariInfo
+import com.dumch.tool.desktop.ToolShowApps
 import com.dumch.tool.desktop.ToolWindowsManager
 import com.dumch.tool.files.*
 import kotlinx.coroutines.*
@@ -225,6 +226,7 @@ class GigaAgent(
             ToolNewFile.toGiga(),
             ToolDeleteFile.toGiga(),
             ToolModifyFile.toGiga(),
+            ToolShowApps().toGiga(),
             ToolWindowsManager.toGiga(),
             ToolSafariInfo(ToolRunBashCommand).toGiga(),
             ToolMouseClickMac().toGiga(),
