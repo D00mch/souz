@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 interface GigaChatAPI {
     suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat
     suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat>
-    suspend fun uploadImage(file: File): GigaResponse.UploadFile
+    suspend fun uploadFile(file: File): GigaResponse.UploadFile
+    suspend fun downloadFile(fileId: String): String?
 }
 

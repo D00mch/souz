@@ -53,7 +53,7 @@ class ToolDesktopScreenShot(
             val file = File.createTempFile("screenshot", ".jpg")
             file.writeBytes(screenshot)
             l.info("Uploading screenshot to GigaChat")
-            val upload = api.uploadImage(file)
+            val upload = api.uploadFile(file)
             lastAttachments.clear()
             lastAttachments.add(upload.id)
             return upload.id

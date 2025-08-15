@@ -9,6 +9,7 @@ import com.dumch.tool.desktop.ToolOpenApp
 import com.dumch.tool.desktop.ToolOpenFile
 import com.dumch.tool.desktop.ToolOpenFolder
 import com.dumch.tool.desktop.ToolCreateNewBrowserTab
+import com.dumch.tool.desktop.ToolFileSharing
 import com.dumch.tool.desktop.ToolHotkeyMac
 import com.dumch.tool.desktop.ToolMediaControl
 import com.dumch.tool.desktop.ToolMinimizeWindows
@@ -217,6 +218,7 @@ class GigaAgent(
             content = """
                 Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
                 c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
+                Если тебя просят сгенерировать картинки или другие файлы, то генерируй их с помощью функции text2image, жди результата генерации, а после используй download функцию FileSharing для скачивания.
             """.trimIndent()
         )
 
@@ -230,6 +232,7 @@ class GigaAgent(
             ToolSafariInfo(ToolRunBashCommand).toGiga(),
             ToolMouseClickMac().toGiga(),
             ToolHotkeyMac().toGiga(),
+            ToolFileSharing().toGiga(),
             ToolMediaControl(ToolRunBashCommand).toGiga(),
             ToolFindTextInFiles.toGiga(),
             ToolDesktopScreenShot().toGiga(),
