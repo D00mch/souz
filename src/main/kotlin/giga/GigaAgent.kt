@@ -6,7 +6,6 @@ import com.dumch.tool.desktop.ToolCreateNote
 import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.desktop.ToolMouseClickMac
 import com.dumch.tool.desktop.ToolOpen
-import com.dumch.tool.desktop.ToolOpenFolder
 import com.dumch.tool.desktop.ToolCreateNewBrowserTab
 import com.dumch.tool.desktop.ToolHotkeyMac
 import com.dumch.tool.desktop.ToolMediaControl
@@ -263,7 +262,7 @@ class GigaAgent(
         fun instance(userMessages: Flow<String>, api: GigaChatAPI): GigaAgent {
             val settings = Settings(
                 tools,
-                GigaModel.Max,
+                GigaModel.Pro,
                 stream = true,
             )
             return GigaAgent(userMessages, api, settings)
