@@ -1,20 +1,18 @@
 package com.dumch.tool.config
 
+import com.dumch.giga.objectMapper
 import java.util.prefs.Preferences
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 
 object ConfigStore {
-    @PublishedApi
+    @PublishedApi // to use prefs inside the reified (inlined) `get`
     internal val prefs: Preferences = Preferences.userNodeForPackage(ConfigStore::class.java)
-    @PublishedApi
-    internal val mapper = jacksonObjectMapper()
 
     fun put(key: String, value: Any) {
         val str = when (value) {
             is String -> value
             is Int, is Long, is Float, is Double, is Boolean -> value.toString()
-            else -> mapper.writeValueAsString(value)
+            else -> objectMapper.writeValueAsString(value)
         }
         prefs.put(key, str)
     }
@@ -32,7 +30,7 @@ object ConfigStore {
                 Double::class -> str.toDouble()
                 Boolean::class -> str.toBooleanStrict()
                 String::class -> str
-                else -> mapper.readValue<T>(str)
+                else -> objectMapper.readValue<T>(str)
             } as T
         }.getOrNull()
     }

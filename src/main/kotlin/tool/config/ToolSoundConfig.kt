@@ -10,14 +10,14 @@ object ToolSoundConfig : ToolSetup<ToolSoundConfig.Input> {
 
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Set sound speed to 180",
+            request = "Установи скорость речи на 180 символов в секунду",
             params = mapOf("speed" to 180)
-        )
+        ),
     )
 
     override val returnParameters = ReturnParameters(
         properties = mapOf(
-            "result" to ReturnProperty("string", "Confirmation message")
+            "result" to ReturnProperty("string", "Confirmation message or error")
         )
     )
 
