@@ -20,6 +20,7 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
         focus_left,
         focus_right,
         focus_up,
+        focus_app,
         focus_down,
         move_left,
         move_right,
@@ -81,10 +82,20 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
             request = "Перенеси приложение на первый экран",
             params = mapOf("action" to Action.move_app_to_workspace, "meta" to "1")
         ),
+        FewShotExample(
+            request = "Перекинь апп на первый workspace",
+            params = mapOf("action" to Action.move_app_to_workspace, "meta" to "1")
+        ),
+        FewShotExample(
+            request = "Переведи фокус на приложение Хром",
+            params = mapOf("action" to Action.focus_app, "meta" to "com.google.Chrome")
+        )
     )
 
     override val returnParameters: ReturnParameters = ReturnParameters(
-        properties = mapOf("result" to ReturnProperty("string", "Operation status"))
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Command result text.")
+        )
     )
 
     override fun invoke(input: Input): String {
@@ -96,6 +107,7 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
             Action.focus_right -> "focus right"
             Action.focus_up -> "focus up"
             Action.focus_down -> "focus down"
+            Action.focus_app -> return ToolOpen(ToolRunBashCommand).invoke(ToolOpen.Input(input.meta))
             Action.move_left -> "move left"
             Action.move_right -> "move right"
             Action.move_up -> "move up"
@@ -106,13 +118,13 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
             Action.go_to_workspace -> "workspace ${input.meta}"
             Action.move_app_to_workspace -> "move-node-to-workspace ${input.meta}"
         }
-        return try {
+        try {
             l.info("Executing command: $cmd")
-//            runAerospaceCommand(*cmd.split(" ").toTypedArray())
             runAerospace(*cmd.split(" ").toTypedArray())
-            "Done"
+            return "Done"
         } catch (e: Exception) {
-            "Error in ToolWindowsManager: ${e.message}".also { l.error(it, e) }
+            l.error("ToolWindowsManager failed", e)
+            throw RuntimeException("ToolWindowsManager failed: ${e.message}", e)
         }
     }
 
@@ -138,8 +150,10 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
 // Usage
 fun main() {
     val t = ToolWindowsManager
-    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.move_app_to_workspace, "2"))
-    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.go_to_workspace, "2"))
+//    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.list_apps, "")))
+//    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.move_app_to_workspace, "2")))
+    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.focus_app, "com.google.Chrome")))
+//    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.go_to_workspace, "2"))
 
 //    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.move_left, ""))
 //    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.layout_tiles_horizontal, ""))

@@ -21,6 +21,7 @@ class ToolCreateNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolCreat
         )
     )
     override fun invoke(input: Input): String {
+        if (input.noteText.isBlank()) throw BadInputException("Note text cannot be empty")
         bash.invoke(
             ToolRunBashCommand.Input(
                 """

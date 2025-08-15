@@ -2,11 +2,14 @@ package com.dumch.tool.files
 
 import com.dumch.tool.*
 import java.io.File
+import kotlin.io.relativeTo
 
 object ToolListFiles : ToolSetup<ToolListFiles.Input> {
     data class Input(
         @InputParamDescription("Relative path to list files from")
-        val path: String = "."
+        val path: String = ".",
+        @InputParamDescription("Max depth to traverse (1 = direct children only; <=0 = unlimited)")
+        val depth: Int = Integer.MAX_VALUE
     )
     override val name = "ListFiles"
     override val description = "Runs bash ls command at a given path. Dot (.) means current directory"
@@ -23,18 +26,44 @@ object ToolListFiles : ToolSetup<ToolListFiles.Input> {
     )
 
     override fun invoke(input: Input): String {
-        val dirPath = input.path
-        val base = File(dirPath)
+        val fixedPath = FilesToolUtil.applyDefaultEnvs(input.path)
+        val base = File(fixedPath)
         if (!base.exists() || !base.isDirectory) {
-            throw BadInputException("Invalid directory path: $dirPath")
+            throw BadInputException("Invalid directory path: $fixedPath")
         }
-    val files = base.walkTopDown() // sequence
-        .filter { it != base }
-        .map { file ->
-            val relPath = file.relativeTo(base).path
-            if (file.isDirectory) "$relPath/" else relPath
-        }
+
+        val files = base.walkTopDown()
+            .onEnter { file ->
+                val prohibit = excludedPaths.contains(file.path)
+                        || file.name.startsWith('.')
+                !prohibit
+            }
+            .maxDepth(input.depth)
+            .filter { it != base }
+            .map { file ->
+                val relPath = file.relativeTo(base).path
+                if (file.isDirectory) "$fixedPath/$relPath/" else "$fixedPath/$relPath"
+            }
 
         return files.joinToString(",", prefix = "[", postfix = "]")
     }
+}
+
+private val excludedPaths: List<String> = run {
+    val home = System.getenv("HOME")
+    listOf(
+        "$home/Library",
+        "$home/Sync",
+        "$home/Yandex.Disk.localized",
+        "$home/go",
+        "$home/dotfiles",
+        "$home/Applications",
+    )
+}
+
+fun main() {
+    val result = ToolListFiles(
+        ToolListFiles.Input("${'$'}HOME", 3)
+    )
+    println(result)
 }
