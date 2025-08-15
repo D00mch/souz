@@ -19,9 +19,9 @@ class GigaToolTest {
         assertEquals(fn.name, "ListFiles")
         val jsonParams = gigaJsonMapper.writeValueAsString(fn.parameters)
         assertEquals(
-        """
-{"type":"object","properties":{"path":{"type":"string","description":"Relative path to list files from","enum":null}},"required":[]}
-        """.trimIndent(),
+            """
+{"type":"object","properties":{"path":{"type":"string","description":"Relative path to list files from","enum":null},"depth":{"type":"number","description":"Max depth to traverse (1 = direct children only; <=0 = unlimited)","enum":null}},"required":[]}
+            """.trimIndent(),
             jsonParams
         )
     }
@@ -41,7 +41,7 @@ class GigaToolTest {
         assertEquals(
             GigaRequest.Message(
                 role = GigaMessageRole.function,
-                content = """{"result":"[directory/,directory/file.txt,test.txt]"}""",
+                content = """{"result":"[src/test/resources/directory/,src/test/resources/directory/file.txt,src/test/resources/test.txt]"}""",
             ),
             result
         )

@@ -28,11 +28,11 @@ class ToolTest {
     fun `test ToolListFiles`() {
         val result = ToolListFiles(ToolListFiles.Input("gradle/wrapper"))
         val files = result.removePrefix("[").removeSuffix("]").split(",").toSet()
-        assertEquals(setOf("gradle-wrapper.jar", "gradle-wrapper.properties"), files)
+        assertEquals(setOf("gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties"), files)
 
         val resources = ToolListFiles(ToolListFiles.Input("src/test/resources"))
         val resourceFiles = resources.removePrefix("[").removeSuffix("]").split(",").toSet()
-        assertEquals(setOf("directory/", "directory/file.txt", "test.txt"), resourceFiles)
+        assertEquals(setOf("src/test/resources/directory/", "src/test/resources/directory/file.txt", "src/test/resources/test.txt"), resourceFiles)
         val l = LoggerFactory.getLogger(ToolTest::class.java)
         l.info(resources)
     }
