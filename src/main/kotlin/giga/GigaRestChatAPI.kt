@@ -27,7 +27,12 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         install(Logging) {
             val envLevel = System.getenv("GIGA_LOG_LEVEL")
                 ?.let { LogLevel.valueOf(it) } ?: LogLevel.INFO
-            l.info("GIGA_LOG_LEVEL: $envLevel")
+            this@GigaRestChatAPI.l.info("GIGA_LOG_LEVEL: $envLevel")
+            logger = object : Logger {
+                override fun log(message: String) {
+                    this@GigaRestChatAPI.l.debug(message)
+                }
+            }
             level = envLevel
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
         }

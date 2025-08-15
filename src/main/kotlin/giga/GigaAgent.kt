@@ -20,7 +20,9 @@ class GigaAgent(
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val tools: Map<String, GigaToolSetup> = settings.functions
     private val functions: List<GigaRequest.Function> = settings.functions.map { it.value.fn }
-    private val installedApps = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
+    private val installedApps = runCatching {
+        ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
+    }.getOrElse { "[]" }
 
     fun run(): Flow<String> = channelFlow {
         val conversation = ArrayDeque<GigaRequest.Message>().apply {
@@ -28,7 +30,9 @@ class GigaAgent(
         }
 
         userMessages.collect { userText ->
-            val openedApps = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
+            val openedApps = runCatching {
+                ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
+            }.getOrElse { "[]" }
             appendSystemInfo(openedApps, conversation)
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
@@ -70,9 +74,10 @@ class GigaAgent(
             }
         }.collect { response ->
             (response as GigaResponse.Chat.Ok).choices.forEach { choice ->
-                conversation.add(choice.toMessage())
-                val result = handleGigaChoice(choice)
-                if (result != null) results.add(result)
+                choice.toMessage()?.let { msg ->
+                    conversation.add(msg)
+                    handleGigaChoice(choice)?.let { results.add(it) }
+                }
             }
             totalTokens += response.usage.totalTokens
         }
@@ -159,19 +164,17 @@ class GigaAgent(
     }
 
     private fun GigaResponse.Chat.Ok.toRequestMessages(): Collection<GigaRequest.Message> {
-        return choices.map { it.toMessage() }
+        return choices.mapNotNull { it.toMessage() }
     }
 
-    private fun GigaResponse.Choice.toMessage(): GigaRequest.Message {
+    private fun GigaResponse.Choice.toMessage(): GigaRequest.Message? {
         val msg = this.message
         val content: String = when {
             msg.content.isNotBlank() -> msg.content
-
             msg.functionCall != null -> gigaJsonMapper.writeValueAsString(
                 mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
             )
-
-            else -> throw IllegalStateException("Can't get content from $this")
+            else -> return null
         }
         return GigaRequest.Message(
             role = msg.role,

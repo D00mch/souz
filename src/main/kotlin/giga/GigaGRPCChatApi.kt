@@ -12,10 +12,11 @@ import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
 import org.slf4j.LoggerFactory
+import org.slf4j.bridge.SLF4JBridgeHandler
 import java.io.File
 
 /**
@@ -29,6 +30,12 @@ class GigaGRPCChatApi(
     private val l = LoggerFactory.getLogger(GigaGRPCChatApi::class.java)
 
     init {
+        // Bridge JUL (used by gRPC) to SLF4J so logback handles all logs
+        if (!SLF4JBridgeHandler.isInstalled()) {
+            SLF4JBridgeHandler.removeHandlersForRootLogger()
+            SLF4JBridgeHandler.install()
+        }
+
         val envLevel = System.getenv("GIGA_GRPC_LOG_LEVEL")
             ?: System.getenv("GIGA_LOG_LEVEL")
         val nettyLevel = envLevel
@@ -88,7 +95,7 @@ class GigaGRPCChatApi(
         }
     }
 
-    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = flow {
+    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> {
         val request = Gigachatv1.ChatRequest.newBuilder()
             .setModel(body.model)
             .setOptions(
@@ -110,21 +117,17 @@ class GigaGRPCChatApi(
             })
             .build()
 
-        suspend fun stream(token: String) {
-            stub.chatStream(request, authHeaders(token))
+        suspend fun stream(token: String): Flow<GigaResponse.Chat> {
+            return stub.chatStream(request, authHeaders(token))
                 .map { resp -> resp.mapResponse(body.model) }
-                .collect { emit(it) }
         }
 
-        try {
-            stream(loadAccessToken())
-        } catch (e: Exception) {
+        return stream(loadAccessToken()).catch { e ->
             l.error("Error in gRPC chat stream", e)
-            if (
-                (e is StatusException && e.status.code == Status.Code.UNAUTHENTICATED) ||
+            if ((e is StatusException && e.status.code == Status.Code.UNAUTHENTICATED) ||
                 (e is StatusRuntimeException && e.status.code == Status.Code.UNAUTHENTICATED)
             ) {
-                stream(refreshAccessToken())
+                emitAll(stream(refreshAccessToken()))
             } else {
                 emit(GigaResponse.Chat.Error(-1, "Connection error: ${e.message}"))
             }
@@ -143,6 +146,10 @@ class GigaGRPCChatApi(
             val msg = alt.message
             if (alt.finishReason.equals("stop", ignoreCase = true)) {
                 l.info("finishReason: ${alt.finishReason}")
+                return@mapNotNull null
+            }
+            if (msg.content.isBlank() && !msg.hasFunctionCall()) {
+                l.info("Empty message chunk skipped")
                 return@mapNotNull null
             }
             GigaResponse.Choice(
