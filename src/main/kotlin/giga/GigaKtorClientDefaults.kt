@@ -1,5 +1,6 @@
 package com.dumch.giga
 
+import com.dumch.tool.files.FilesToolUtil.resourceStream
 import com.fasterxml.jackson.databind.DeserializationFeature
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
@@ -8,7 +9,6 @@ import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
-import java.io.IOException
 import java.io.InputStream
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
@@ -39,10 +39,6 @@ fun HttpClientConfig<CIOEngineConfig>.gigaDefaults() {
         }
     }
 }
-
-private fun resourceStream(path: String) =
-    Thread.currentThread().contextClassLoader.getResourceAsStream(path)
-        ?: throw IOException("Certificate not found on classpath: $path")
 
 fun trustManagerFromPem(vararg resourcePaths: String): X509TrustManager {
     val cf = CertificateFactory.getInstance("X.509")

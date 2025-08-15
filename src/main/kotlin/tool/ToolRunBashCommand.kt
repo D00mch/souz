@@ -23,7 +23,7 @@ object ToolRunBashCommand : ToolSetup<ToolRunBashCommand.Input> {
             .start()
         val output = process.inputStream.bufferedReader().use(BufferedReader::readText)
         val exitCode = process.waitFor()
-        if (exitCode != 0) throw RuntimeException("Command failed with exit code $exitCode")
+        if (exitCode != 0) throw ShellException(output, exitCode)
         return output.trim()
     }
 
@@ -36,6 +36,9 @@ object ToolRunBashCommand : ToolSetup<ToolRunBashCommand.Input> {
             EOF
         """.trimIndent()
         val p = ProcessBuilder("bash","-lc", scriptInvocation).redirectErrorStream(false).start()
+        val output = p.inputStream.bufferedReader().readText()
+        val exitCode = p.waitFor()
+        if (exitCode != 0) throw ShellException(output, exitCode)
         return p.inputStream.bufferedReader().readText().trim()
     }
 
@@ -43,4 +46,11 @@ object ToolRunBashCommand : ToolSetup<ToolRunBashCommand.Input> {
         @InputParamDescription("The bash command to run, e.g., 'ls', 'echo Hello', './gradlew tasks'")
         val command: String
     )
+}
+
+class ShellException(msg: String, val exitCode: Int) : Exception(msg)
+
+fun main() {
+    val result = ToolRunBashCommand.invoke(ToolRunBashCommand.Input("open /System/Applications/Weather.app"))
+    println(result)
 }

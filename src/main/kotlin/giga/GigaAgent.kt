@@ -5,15 +5,14 @@ import com.dumch.tool.desktop.ToolCollectButtons
 import com.dumch.tool.desktop.ToolCreateNote
 import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.desktop.ToolMouseClickMac
-import com.dumch.tool.desktop.ToolOpenApp
-import com.dumch.tool.desktop.ToolOpenFile
-import com.dumch.tool.desktop.ToolOpenFolder
+import com.dumch.tool.desktop.ToolOpen
 import com.dumch.tool.desktop.ToolCreateNewBrowserTab
 import com.dumch.tool.desktop.ToolFileSharing
 import com.dumch.tool.desktop.ToolHotkeyMac
 import com.dumch.tool.desktop.ToolMediaControl
 import com.dumch.tool.desktop.ToolMinimizeWindows
 import com.dumch.tool.desktop.ToolSafariInfo
+import com.dumch.tool.desktop.ToolShowApps
 import com.dumch.tool.desktop.ToolWindowsManager
 import com.dumch.tool.files.*
 import kotlinx.coroutines.*
@@ -30,6 +29,7 @@ class GigaAgent(
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val functions: List<GigaRequest.Function> = tools.map { it.value.fn }
+    private val installedApps = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
 
     fun run(): Flow<String> = channelFlow {
         val conversation = ArrayDeque<GigaRequest.Message>().apply {
@@ -37,6 +37,8 @@ class GigaAgent(
         }
 
         userMessages.collect { userText ->
+            val openedApps = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
+            appendSystemInfo(openedApps, conversation)
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
                 streamPipeline(conversation)
@@ -45,7 +47,22 @@ class GigaAgent(
             }
         }
     }
-    
+
+    private fun appendSystemInfo(
+        openedApps: String,
+        conversation: ArrayDeque<GigaRequest.Message>
+    ) {
+        val dirs = ToolListFiles.invoke(ToolListFiles.Input(System.getenv("HOME"), 3))
+        val apps = objectMapper.writeValueAsString(
+            mapOf(
+                "installed" to installedApps,
+                "opened" to openedApps,
+                "dirs" to dirs
+            )
+        )
+        conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))
+    }
+
     private suspend fun ProducerScope<String>.streamPipeline(conversation: ArrayDeque<GigaRequest.Message>) {
         val responses = chatStream(conversation)
         val results = ArrayList<GigaRequest.Message>()
@@ -206,7 +223,7 @@ class GigaAgent(
 
     data class Settings(
         val functions: Map<String, GigaToolSetup>,
-        val model: GigaModel = GigaModel.Pro,
+        val model: GigaModel = GigaModel.Max,
         val stream: Boolean = false,
     )
 
@@ -237,21 +254,19 @@ class GigaAgent(
             ToolFindTextInFiles.toGiga(),
             ToolDesktopScreenShot().toGiga(),
             ToolCreateNote(ToolRunBashCommand).toGiga(),
-            ToolOpenFolder(ToolRunBashCommand).toGiga(),
+//            ToolShowApps.toGiga(),
+//            ToolOpenFolder(ToolRunBashCommand).toGiga(),
             ToolCollectButtons(ToolRunBashCommand).toGiga(),
-            ToolOpenFile(ToolRunBashCommand).toGiga(),
+            ToolOpen(ToolRunBashCommand).toGiga(),
             ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
             ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
-            ToolOpenApp(ToolRunBashCommand).toGiga(),
         ).associateBy { it.fn.name }
 
-        fun instance(userMessages: Flow<String>, api: GigaChatAPI): GigaAgent {
-            val settings = Settings(
-                tools,
-                GigaModel.Max,
-                stream = true,
-            )
-            return GigaAgent(userMessages, api, settings)
-        }
+        fun instance(
+            userMessages: Flow<String>,
+            api: GigaChatAPI,
+            model: GigaModel = GigaModel.Max,
+            settings: Settings = Settings(tools, model, stream = true)
+        ): GigaAgent = GigaAgent(userMessages, api, settings)
     }
 }

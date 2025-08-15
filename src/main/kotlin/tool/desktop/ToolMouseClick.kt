@@ -30,7 +30,7 @@ class ToolMouseClickMac : ToolSetup<ToolMouseClickMac.Input> {
     )
 
     override val name = "MouseClick"
-    override val description = "Clicks the mouse at the given coordinates (macOS)."
+    override val description = "Emulates a mouse click on a specific screen area according to its coordinates from DesktopScreenShot (macOS)."
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Нажми кнопку мыши в точке 100,200",

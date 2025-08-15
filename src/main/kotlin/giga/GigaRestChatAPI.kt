@@ -1,7 +1,7 @@
 package com.dumch.giga
 
 import com.dumch.tool.ToolRunBashCommand
-import com.dumch.tool.desktop.ToolOpenApp
+import com.dumch.tool.desktop.ToolOpen
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -254,7 +254,7 @@ suspend fun main() {
                 ),
             ),
             functions = listOf(
-                ToolOpenApp(ToolRunBashCommand).toGiga(),
+                ToolOpen(ToolRunBashCommand).toGiga(),
             ).map { it.fn }
         )
     )
