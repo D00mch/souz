@@ -20,7 +20,7 @@ class ToolFileSharing(
     data class Input(
         @InputParamDescription("Action to perform")
         val action: Action,
-        @InputParamDescription("File Id to download from GigaChat")
+        @InputParamDescription("File to download id from GigaChat")
         val fileId: String,
         @InputParamDescription("File to upload path")
         val filePath: String,
@@ -32,15 +32,15 @@ class ToolFileSharing(
     }
 
     override val name: String = "FileSharing"
-    override val description: String = "Allows to upload files to GigaChat and save generated files by its file_id from GigaChat"
+    override val description: String = "Allows to upload files to GigaChat for analysis and download files from GigaChat"
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
-            request = "Загрузить файл",
-            params = mapOf("action" to Action.upload)
+            request = "Проанализируй файл",
+            params = mapOf("action" to Action.upload, "filePath" to "/path/to/file")
         ),
         FewShotExample(
             request = "Скачать файл",
-            params = mapOf("action" to Action.download)
+            params = mapOf("action" to Action.download, "file_id" to "some_id")
         )
     )
 
