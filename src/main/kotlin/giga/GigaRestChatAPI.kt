@@ -18,17 +18,26 @@ import kotlinx.coroutines.flow.flow
 import org.slf4j.LoggerFactory
 import java.io.File
 import kotlin.time.Duration.Companion.seconds
+import ch.qos.logback.classic.Level
 
 class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
 
+    init {
+        runCatching {
+            val level = LogFileConfigurer.configure(
+                logFile = "gigarest.log",
+                envVars = listOf("GIGA_LOG_LEVEL"),
+                defaultLevel = Level.INFO,
+            )
+            l.info("GIGA_LOG_LEVEL: $level")
+        }.onFailure { e -> l.warn("Failed to configure logging", e) }
+    }
+
     private val client = HttpClient(CIO) {
         gigaDefaults()
         install(Logging) {
-            val envLevel = System.getenv("GIGA_LOG_LEVEL")
-                ?.let { LogLevel.valueOf(it) } ?: LogLevel.INFO
-            l.info("GIGA_LOG_LEVEL: $envLevel")
-            level = envLevel
+            level = LogLevel.ALL
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
         }
         install(Auth) {
