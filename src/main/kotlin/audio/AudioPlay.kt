@@ -4,9 +4,10 @@ import java.io.File
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.LineEvent
 import com.dumch.tool.config.ConfigStore
+import com.dumch.tool.config.ToolSoundConfig
+import com.dumch.tool.config.ToolSoundConfig.Companion.DEFAULT_SPEED
 
-private const val SPEED_KEY = "sound_speed"
-private const val DEFAULT_SPEED = 230
+private const val SPEED_KEY = ToolSoundConfig.SPEED_KEY
 
 private var sayProcess: Process? = null
 

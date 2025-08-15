@@ -3,6 +3,7 @@ package com.dumch.giga
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.config.ConfigStore
 import com.dumch.tool.config.ToolInstructionStore
+import com.dumch.tool.config.ToolSoundConfig
 import com.dumch.tool.desktop.*
 import com.dumch.tool.files.*
 import kotlinx.coroutines.Dispatchers
@@ -251,6 +252,7 @@ class GigaAgent(
                 ToolDeleteFile.toGiga(),
                 ToolModifyFile.toGiga(),
                 ToolWindowsManager.toGiga(),
+                ToolSoundConfig(ConfigStore).toGiga(),
                 ToolSafariInfo(ToolRunBashCommand).toGiga(),
                 ToolMouseClickMac().toGiga(),
                 ToolHotkeyMac().toGiga(),
