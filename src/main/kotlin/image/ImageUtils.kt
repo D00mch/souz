@@ -20,6 +20,7 @@ object ImageUtils {
      * Compress JPEG bytes with the given [quality].
      * [quality] should be between 0f (maximum compression) and 1f (minimum compression).
      */
+    @Suppress("unused")
     fun compressJpeg(jpegBytes: ByteArray, quality: Float = DESKTOP_SCREENSHOT_QUALITY): ByteArray {
         val inputImage = ImageIO.read(ByteArrayInputStream(jpegBytes))
         val compressed = ByteArrayOutputStream()
@@ -83,24 +84,26 @@ object ImageUtils {
 
         // 4. Сохраняем в JPEG с указанным качеством
         val baos = ByteArrayOutputStream()
-        ImageIO.createImageOutputStream(baos).use { ios ->
-            val writer = ImageIO.getImageWritersByFormatName("jpg").next().apply {
-                output = ios
-            }
-
-            writer.write(
-                null,
-                IIOImage(finalImage, null, null),
-                writer.defaultWriteParam.apply {
-                    compressionMode = ImageWriteParam.MODE_EXPLICIT
-                    compressionQuality = quality.coerceIn(0f, 1f)
+        try {
+            ImageIO.createImageOutputStream(baos).use { ios ->
+                val writer = ImageIO.getImageWritersByFormatName("jpg").next().apply {
+                    output = ios
                 }
-            )
-            writer.dispose()
+                writer.write(
+                    null,
+                    IIOImage(finalImage, null, null),
+                    writer.defaultWriteParam.apply {
+                        compressionMode = ImageWriteParam.MODE_EXPLICIT
+                        compressionQuality = quality.coerceIn(0f, 1f)
+                    }
+                )
+                writer.dispose()
+            }
+            tempFile.delete()
+            return baos.toByteArray()
+        } finally {
+            baos.close()
         }
-
-        tempFile.delete()
-        return baos.toByteArray()
     }
 }
 

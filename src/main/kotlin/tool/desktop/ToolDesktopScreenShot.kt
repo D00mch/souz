@@ -64,30 +64,8 @@ class ToolDesktopScreenShot(
     }
 }
 
-//fun main() {
-//    val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
-//    val id = ToolDesktopScreenShot().invoke(ToolDesktopScreenShot.Input("1"))
-//    l.info(id)
-//}
-
-fun main() = runBlocking {
-
-    class TestScreenShot {
-        suspend fun suspendInvoke(): String {
-            try {
-                val screenshot = ImageUtils.screenshotJpegBytes()
-
-                val outputFile = File(System.getProperty("user.home") + "/Desktop/screenshot_test.jpg")
-                outputFile.writeBytes(screenshot)
-
-                return "Success: ${outputFile.name}"
-            } catch (e: Exception) {
-                return "Error: ${e.message}".also { e.printStackTrace() }
-            }
-        }
-    }
-
-    // 2. Запуск теста
-    val result = TestScreenShot().suspendInvoke()
-    println(result)
+fun main() {
+    val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
+    val id = ToolDesktopScreenShot().invoke(ToolDesktopScreenShot.Input("1"))
+    l.info(id)
 }
