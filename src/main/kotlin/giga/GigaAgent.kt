@@ -1,6 +1,10 @@
 package com.dumch.giga
 
 import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.config.ConfigStore
+import com.dumch.tool.config.ToolInstructionStore
+import com.dumch.tool.config.ToolSoundConfig
+import com.dumch.tool.config.ToolSoundConfigDiff
 import com.dumch.tool.desktop.*
 import com.dumch.tool.files.*
 import kotlinx.coroutines.Dispatchers
@@ -11,11 +15,14 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import kotlin.collections.map
+import java.util.concurrent.atomic.AtomicBoolean
 
 class GigaAgent(
     private val userMessages: Flow<String>,
     private val api: GigaChatAPI,
     private val settings: Settings,
+    private val config: ConfigStore = ConfigStore,
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val tools: Map<String, GigaToolSetup> = settings.functions
@@ -23,6 +30,7 @@ class GigaAgent(
     private val installedApps = runCatching {
         ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
     }.getOrElse { "[]" }
+    private val stopRequested = AtomicBoolean(false)
 
     fun run(): Flow<String> = channelFlow {
         val conversation = ArrayDeque<GigaRequest.Message>().apply {
@@ -30,10 +38,7 @@ class GigaAgent(
         }
 
         userMessages.collect { userText ->
-            val openedApps = runCatching {
-                ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
-            }.getOrElse { "[]" }
-            appendSystemInfo(openedApps, conversation)
+            appendSystemInfo(conversation)
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
                 streamPipeline(conversation)
@@ -44,27 +49,38 @@ class GigaAgent(
     }
 
     private fun appendSystemInfo(
-        openedApps: String,
         conversation: ArrayDeque<GigaRequest.Message>
     ) {
-        val dirs = ToolListFiles.invoke(ToolListFiles.Input(System.getenv("HOME"), 3))
+        val openedApps = runCatching { ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running)) }
+            .getOrElse { "[]" }
+        val dirs = runCatching {ToolListFiles.invoke(ToolListFiles.Input(System.getenv("HOME"), 3))}
+            .getOrElse { "[]" }
+        val instructions = runCatching {
+            val currentInstructions =
+                config.get<ArrayList<ToolInstructionStore.Input>>(ToolInstructionStore.INSTUCTIONS_KEY, ArrayList())
+            currentInstructions.map { (name: String, instr: String) ->
+                "Когда я говорю: `$name`, выполняй инструкцию: $instr"
+            }
+        }
         val apps = objectMapper.writeValueAsString(
             mapOf(
                 "installed" to installedApps,
                 "opened" to openedApps,
-                "dirs" to dirs
+                "dirs" to dirs,
+                "instructions" to instructions
             )
         )
         conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))
     }
 
     private suspend fun ProducerScope<String>.streamPipeline(conversation: ArrayDeque<GigaRequest.Message>) {
+        stopRequested.set(false)
         val responses = chatStream(conversation)
         val results = ArrayList<GigaRequest.Message>()
         var totalTokens = 0
         responses.takeWhile { response ->
             l.info("response: $response")
-            when (response) {
+            !stopRequested.get() && when (response) {
                 is GigaResponse.Chat.Error -> {
                     l.error("Error in chunk: response: $response")
                     send("Ошибочка вышла, извините")
@@ -73,7 +89,9 @@ class GigaAgent(
                 is GigaResponse.Chat.Ok -> true
             }
         }.collect { response ->
+            if (stopRequested.get()) return@collect
             (response as GigaResponse.Chat.Ok).choices.forEach { choice ->
+                if (stopRequested.get()) return@forEach
                 choice.toMessage()?.let { msg ->
                     conversation.add(msg)
                     handleGigaChoice(choice)?.let { results.add(it) }
@@ -82,13 +100,17 @@ class GigaAgent(
             totalTokens += response.usage.totalTokens
         }
 
-        if (results.isEmpty()) {
+        if (stopRequested.get() || results.isEmpty()) {
             return
         } else {
             conversation.addAll(results)
             trySummarize(totalTokens, conversation)
             streamPipeline(conversation)
         }
+    }
+
+    fun stop() {
+        stopRequested.set(true)
     }
 
     private suspend fun ProducerScope<String>.singleResponsePipeline(conversation: ArrayDeque<GigaRequest.Message>) {
@@ -240,12 +262,15 @@ class GigaAgent(
                 ToolDeleteFile.toGiga(),
                 ToolModifyFile.toGiga(),
                 ToolWindowsManager.toGiga(),
+                ToolSoundConfig(ConfigStore).toGiga(),
+                ToolSoundConfigDiff(ConfigStore).toGiga(),
                 ToolSafariInfo(ToolRunBashCommand).toGiga(),
                 ToolMouseClickMac().toGiga(),
                 ToolHotkeyMac().toGiga(),
                 ToolMediaControl(ToolRunBashCommand).toGiga(),
                 ToolFindTextInFiles.toGiga(),
                 ToolDesktopScreenShot().toGiga(),
+                ToolInstructionStore(ConfigStore).toGiga(),
                 ToolCreateNote(ToolRunBashCommand).toGiga(),
 //                ToolShowApps.toGiga(),
 //                ToolOpenFolder(ToolRunBashCommand).toGiga(),

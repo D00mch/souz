@@ -17,7 +17,7 @@ class HotkeyListener(
     private var pressTime = 0L
     private var lastClickTime = 0L
     private val holdThreshold = 200L
-    private val doubleClickThreshold = 300L
+    private val doubleClickThreshold = 700L
     private val scope = CoroutineScope(Dispatchers.Default)
 
     override fun nativeKeyPressed(e: NativeKeyEvent) {
