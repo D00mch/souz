@@ -13,7 +13,7 @@ import javax.imageio.ImageWriteParam
  * Utility object for capturing desktop screenshots and compressing images.
  */
 object ImageUtils {
-    const val DESKTOP_SCREENSHOT_QUALITY = 0.85f
+    const val DESKTOP_SCREENSHOT_QUALITY = 0.5f
 
     /**
      * Compress JPEG bytes with the given [quality].
@@ -22,8 +22,8 @@ object ImageUtils {
     fun compressJpeg(rgbImage: BufferedImage, quality: Float = DESKTOP_SCREENSHOT_QUALITY): ByteArray {
         val scaleDown = quality < 1f
         val finalImage = if (scaleDown) {
-            val newWidth = rgbImage.width / 2
-            val newHeight = rgbImage.height / 2
+            val newWidth = (rgbImage.width * quality).toInt()
+            val newHeight = (rgbImage.height * quality).toInt()
             BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_RGB).apply {
                 createGraphics().drawImage(
                     rgbImage,

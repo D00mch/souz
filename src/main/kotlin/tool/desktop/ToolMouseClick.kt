@@ -48,8 +48,8 @@ class ToolMouseClickMac : ToolSetup<ToolMouseClickMac.Input> {
             "This implementation supports macOS only."
         }
 
-        val x = input.x.toDouble() * 2
-        val y = input.y.toDouble() * 2
+        val x = input.x.toDouble() / ImageUtils.DESKTOP_SCREENSHOT_QUALITY
+        val y = input.y.toDouble() / ImageUtils.DESKTOP_SCREENSHOT_QUALITY
 
         val (btnIdx, downType, upType) = when (input.button) {
             MouseButton.left -> Triple(CG.kCGMouseButtonLeft, CG.kCGEventLeftMouseDown, CG.kCGEventLeftMouseUp)
