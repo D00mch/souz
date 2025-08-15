@@ -2,34 +2,23 @@ package com.dumch.tool.config
 
 import com.dumch.tool.*
 
-
 class ToolSoundConfig(private val config: ConfigStore) : ToolSetup<ToolSoundConfig.Input> {
     data class Input(
-        @InputParamDescription("Speed diff to apply to the current speed")
-        val diff: Int,
-        @InputParamDescription("Desired speed for speech synthesis, but default it's the user current speed")
-        val speed: Int? = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED),
+        @InputParamDescription("Desired speed for speech synthesis")
+        val speed: Int,
     )
 
     override val name: String = "SoundConfig"
-    override val description: String = "Updates sound configuration such as speed"
+    override val description: String = "Sets sound configuration such as speed"
 
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Установи скорость речи на 180 символов в секунду",
-            params = mapOf("diff" to 0, "speed" to 180)
+            params = mapOf("speed" to 180)
         ),
         FewShotExample(
             request = "Можешь поставить скорость речи на среднюю скорость",
-            params = mapOf("diff" to 0, "speed" to 140)
-        ),
-        FewShotExample(
-            request = "Сделай скорость речи медленнее",
-            params = mapOf("diff" to -40)
-        ),
-        FewShotExample(
-            request = "Можешь совсем немногожко замедлить речь",
-            params = mapOf("diff" to -20)
+            params = mapOf("speed" to 140)
         ),
     )
 
@@ -40,8 +29,7 @@ class ToolSoundConfig(private val config: ConfigStore) : ToolSetup<ToolSoundConf
     )
 
     override fun invoke(input: Input): String {
-        val currentSpeed = input.speed ?: ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)
-        val newSpeed = currentSpeed + input.diff
+        val newSpeed = input.speed
         config.put(SPEED_KEY, newSpeed)
         return "Sound speed updated to ${input.speed}"
     }
