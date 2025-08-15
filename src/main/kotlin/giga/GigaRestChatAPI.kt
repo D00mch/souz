@@ -198,22 +198,20 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
     private fun downloadFileWithToken(
         fileId: String,
         accessToken: String,
-        outputFileName: String = "downloaded_file"
     ): String? {
-        val downloadsDir = File(System.getProperty("user.home"), "Downloads").apply { mkdirs() }
-        val outputFile = File(downloadsDir, outputFileName)
-        val result = ToolRunBashCommand.invoke(
-            ToolRunBashCommand.Input(
-                """
-                curl -L -g 'https://gigachat.devices.sberbank.ru/api/v1/files/${fileId}/content' \
-                -H 'Accept: application/octet-stream' \
-                -H 'Authorization: Bearer $accessToken' \
-                -o $outputFileName
-                """.trimIndent(),
-            )
+        val documentsDir = File(System.getProperty("user.home"), "SluxxDocuments").apply { mkdirs() }
+        val command = """
+            cd ${'$'}{documentsDir.absolutePath} && \
+            curl -s -L -g 'https://gigachat.devices.sberbank.ru/api/v1/files/${'$'}{fileId}/content' \
+            -H 'Accept: application/octet-stream' \
+            -H 'Authorization: Bearer ${'$'}accessToken' \
+            -OJ -w '%{filename_effective}' -o /dev/null
+        """.trimIndent()
+        val fileName = ToolRunBashCommand.invoke(
+            ToolRunBashCommand.Input(command)
         )
 
-        return outputFile.absolutePath
+        return File(documentsDir, fileName).absolutePath
     }
 
     private suspend fun loadAccessToken(): String {

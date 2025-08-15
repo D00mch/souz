@@ -11,6 +11,7 @@ import com.dumch.tool.ToolSetupWithAttachments
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.awt.Desktop
 
 class ToolFileSharing(
     private val api: GigaChatAPI = GigaRestChatAPI.INSTANCE,
@@ -57,11 +58,26 @@ class ToolFileSharing(
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 
     override suspend fun suspendInvoke(input: Input): String {
-        val file = File(input.filePath)
-
         return when (input.action) {
-            Action.upload -> api.uploadFile(file).id
-            Action.download -> api.downloadFile(input.fileId) ?: "File not found"
+            Action.upload -> {
+                val file = File(input.filePath)
+                api.uploadFile(file).id
+            }
+            Action.download -> {
+                val path = api.downloadFile(input.fileId)
+                if (path != null) {
+                    try {
+                        if (Desktop.isDesktopSupported()) {
+                            Desktop.getDesktop().open(File(path))
+                        }
+                    } catch (e: Exception) {
+                        l.error("Failed to open file", e)
+                    }
+                    path
+                } else {
+                    "File not found"
+                }
+            }
         }
     }
 
