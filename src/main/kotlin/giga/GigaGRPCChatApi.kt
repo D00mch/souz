@@ -9,6 +9,8 @@ import io.grpc.*
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
@@ -25,6 +27,21 @@ class GigaGRPCChatApi(
     private val gigaChatAPI: GigaRestChatAPI = GigaRestChatAPI.INSTANCE,
 ) : GigaChatAPI by gigaChatAPI {
     private val l = LoggerFactory.getLogger(GigaGRPCChatApi::class.java)
+
+    init {
+        val envLevel = System.getenv("GIGA_GRPC_LOG_LEVEL")
+            ?: System.getenv("GIGA_LOG_LEVEL")
+        val nettyLevel = envLevel
+            ?.let {
+                val normalized = if (it.equals("NONE", ignoreCase = true)) "OFF" else it
+                runCatching { Level.valueOf(normalized) }.getOrNull()
+            }
+            ?: Level.WARN
+        l.info("GIGA_GRPC_LOG_LEVEL: $nettyLevel")
+        (LoggerFactory.getLogger("io.grpc") as? Logger)?.level = nettyLevel
+        (LoggerFactory.getLogger("io.grpc.netty.shaded") as? Logger)?.level = nettyLevel
+        (LoggerFactory.getLogger("io.netty") as? Logger)?.level = nettyLevel
+    }
 
     private val channel: ManagedChannel =
         NettyChannelBuilder.forAddress("gigachat.devices.sberbank.ru", 443)
@@ -191,7 +208,8 @@ class GigaGRPCChatApi(
     }
 
     private suspend fun refreshAccessToken(): String {
-        val apiKey = System.getenv("GIGA_KEY")
+        val apiKey = System.getenv("GIGA_KEY") ?: System.getProperty("GIGA_KEY")
+            ?: throw IllegalStateException("GIGA_KEY is not set")
         val newToken = auth.requestToken(apiKey, "GIGACHAT_API_PERS")
         System.setProperty("GIGA_ACCESS_TOKEN", newToken)
         return newToken

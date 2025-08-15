@@ -216,7 +216,8 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
     }
 
     private suspend fun refreshAccessToken(): String {
-        val apiKey = System.getenv("GIGA_KEY")
+        val apiKey = System.getenv("GIGA_KEY") ?: System.getProperty("GIGA_KEY")
+            ?: throw IllegalStateException("GIGA_KEY is not set")
         val newToken = auth.requestToken(apiKey, "GIGACHAT_API_PERS")
         System.setProperty("GIGA_ACCESS_TOKEN", newToken)
         return newToken

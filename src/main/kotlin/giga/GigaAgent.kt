@@ -1,25 +1,15 @@
 package com.dumch.giga
 
 import com.dumch.tool.ToolRunBashCommand
-import com.dumch.tool.desktop.ToolCollectButtons
-import com.dumch.tool.desktop.ToolCreateNote
-import com.dumch.tool.desktop.ToolDesktopScreenShot
-import com.dumch.tool.desktop.ToolMouseClickMac
-import com.dumch.tool.desktop.ToolOpen
-import com.dumch.tool.desktop.ToolCreateNewBrowserTab
-import com.dumch.tool.desktop.ToolFileSharing
-import com.dumch.tool.desktop.ToolHotkeyMac
-import com.dumch.tool.desktop.ToolMediaControl
-import com.dumch.tool.desktop.ToolMinimizeWindows
-import com.dumch.tool.desktop.ToolSafariInfo
-import com.dumch.tool.desktop.ToolShowApps
-import com.dumch.tool.desktop.ToolWindowsManager
+import com.dumch.tool.desktop.*
 import com.dumch.tool.files.*
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.takeWhile
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 
 class GigaAgent(
@@ -28,7 +18,8 @@ class GigaAgent(
     private val settings: Settings,
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
-    private val functions: List<GigaRequest.Function> = tools.map { it.value.fn }
+    private val tools: Map<String, GigaToolSetup> = settings.functions
+    private val functions: List<GigaRequest.Function> = settings.functions.map { it.value.fn }
     private val installedApps = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
 
     fun run(): Flow<String> = channelFlow {
@@ -235,32 +226,32 @@ class GigaAgent(
             content = """
                 Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
                 c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
-                Если тебя просят сгенерировать картинки или другие файлы, то генерируй их с помощью функции text2image, жди результата генерации, а после используй download функцию FileSharing для скачивания.
             """.trimIndent()
         )
 
-        private val tools: Map<String, GigaToolSetup> = listOf(
-            ToolReadFile.toGiga(),
-            ToolListFiles.toGiga(),
-            ToolNewFile.toGiga(),
-            ToolDeleteFile.toGiga(),
-            ToolModifyFile.toGiga(),
-            ToolWindowsManager.toGiga(),
-            ToolSafariInfo(ToolRunBashCommand).toGiga(),
-            ToolMouseClickMac().toGiga(),
-            ToolHotkeyMac().toGiga(),
-            ToolFileSharing().toGiga(),
-            ToolMediaControl(ToolRunBashCommand).toGiga(),
-            ToolFindTextInFiles.toGiga(),
-            ToolDesktopScreenShot().toGiga(),
-            ToolCreateNote(ToolRunBashCommand).toGiga(),
-//            ToolShowApps.toGiga(),
-//            ToolOpenFolder(ToolRunBashCommand).toGiga(),
-            ToolCollectButtons(ToolRunBashCommand).toGiga(),
-            ToolOpen(ToolRunBashCommand).toGiga(),
-            ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
-            ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
-        ).associateBy { it.fn.name }
+        private val tools: Map<String, GigaToolSetup> by lazy {
+            listOf(
+                ToolReadFile.toGiga(),
+                ToolListFiles.toGiga(),
+                ToolNewFile.toGiga(),
+                ToolDeleteFile.toGiga(),
+                ToolModifyFile.toGiga(),
+                ToolWindowsManager.toGiga(),
+                ToolSafariInfo(ToolRunBashCommand).toGiga(),
+                ToolMouseClickMac().toGiga(),
+                ToolHotkeyMac().toGiga(),
+                ToolMediaControl(ToolRunBashCommand).toGiga(),
+                ToolFindTextInFiles.toGiga(),
+                ToolDesktopScreenShot().toGiga(),
+                ToolCreateNote(ToolRunBashCommand).toGiga(),
+//                ToolShowApps.toGiga(),
+//                ToolOpenFolder(ToolRunBashCommand).toGiga(),
+                ToolCollectButtons(ToolRunBashCommand).toGiga(),
+                ToolOpen(ToolRunBashCommand).toGiga(),
+                ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
+                ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
+            ).associateBy { it.fn.name }
+        }
 
         fun instance(
             userMessages: Flow<String>,
