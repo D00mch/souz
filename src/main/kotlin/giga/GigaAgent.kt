@@ -29,6 +29,7 @@ class GigaAgent(
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val functions: List<GigaRequest.Function> = tools.map { it.value.fn }
+    private val installedApps = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
 
     fun run(): Flow<String> = channelFlow {
         val conversation = ArrayDeque<GigaRequest.Message>().apply {
@@ -36,6 +37,8 @@ class GigaAgent(
         }
 
         userMessages.collect { userText ->
+            val openedApps = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
+            appendSystemInfo(openedApps, conversation)
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
                 streamPipeline(conversation)
@@ -44,7 +47,22 @@ class GigaAgent(
             }
         }
     }
-    
+
+    private fun appendSystemInfo(
+        openedApps: String,
+        conversation: ArrayDeque<GigaRequest.Message>
+    ) {
+        val dirs = ToolListFiles.invoke(ToolListFiles.Input(System.getenv("HOME"), 3))
+        val apps = objectMapper.writeValueAsString(
+            mapOf(
+                "installed" to installedApps,
+                "opened" to openedApps,
+                "dirs" to dirs
+            )
+        )
+        conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))
+    }
+
     private suspend fun ProducerScope<String>.streamPipeline(conversation: ArrayDeque<GigaRequest.Message>) {
         val responses = chatStream(conversation)
         val results = ArrayList<GigaRequest.Message>()
@@ -217,7 +235,6 @@ class GigaAgent(
             content = """
                 Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
                 c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
-                Если нужно открыть папку, используй функцию OpenFolder.
             """.trimIndent()
         )
 
@@ -227,7 +244,6 @@ class GigaAgent(
             ToolNewFile.toGiga(),
             ToolDeleteFile.toGiga(),
             ToolModifyFile.toGiga(),
-            ToolShowApps().toGiga(),
             ToolWindowsManager.toGiga(),
             ToolSafariInfo(ToolRunBashCommand).toGiga(),
             ToolMouseClickMac().toGiga(),
@@ -236,7 +252,8 @@ class GigaAgent(
             ToolFindTextInFiles.toGiga(),
             ToolDesktopScreenShot().toGiga(),
             ToolCreateNote(ToolRunBashCommand).toGiga(),
-            ToolOpenFolder(ToolRunBashCommand).toGiga(),
+//            ToolShowApps.toGiga(),
+//            ToolOpenFolder(ToolRunBashCommand).toGiga(),
             ToolCollectButtons(ToolRunBashCommand).toGiga(),
             ToolOpen(ToolRunBashCommand).toGiga(),
             ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),

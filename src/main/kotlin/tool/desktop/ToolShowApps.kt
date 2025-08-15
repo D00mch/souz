@@ -10,7 +10,7 @@ import com.dumch.tool.ToolSetup
 import com.dumch.tool.files.FilesToolUtil
 import com.fasterxml.jackson.annotation.JsonProperty
 
-class ToolShowApps : ToolSetup<ToolShowApps.Input> {
+object ToolShowApps : ToolSetup<ToolShowApps.Input> {
     data class Input(
         @InputParamDescription("Action to perform")
         val state: AppState,
@@ -69,7 +69,7 @@ private data class Result(
 )
 
 fun main() {
-    val tool = ToolShowApps()
+    val tool = ToolShowApps
     val result = tool.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
     println(result)
 }

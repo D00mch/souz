@@ -26,4 +26,8 @@ object FilesToolUtil {
 
     fun resourceAsText(path: String): String =
         resourceStream(path).bufferedReader().use { it.readText() }
+
+    fun applyDefaultEnvs(s: String): String {
+        return s.replace("\$HOME", System.getenv("HOME"))
+    }
 }
