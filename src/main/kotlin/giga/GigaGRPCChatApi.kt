@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
 import org.slf4j.LoggerFactory
+import org.slf4j.bridge.SLF4JBridgeHandler
 import java.io.File
 
 /**
@@ -29,6 +30,12 @@ class GigaGRPCChatApi(
     private val l = LoggerFactory.getLogger(GigaGRPCChatApi::class.java)
 
     init {
+        // Bridge JUL (used by gRPC) to SLF4J so logback handles all logs
+        if (!SLF4JBridgeHandler.isInstalled()) {
+            SLF4JBridgeHandler.removeHandlersForRootLogger()
+            SLF4JBridgeHandler.install()
+        }
+
         val envLevel = System.getenv("GIGA_GRPC_LOG_LEVEL")
             ?: System.getenv("GIGA_LOG_LEVEL")
         val nettyLevel = envLevel
