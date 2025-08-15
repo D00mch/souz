@@ -234,6 +234,7 @@ class GigaAgent(
             messages = conversation,
             functions = fns,
         )
+        l.debug("Chat request: $body")
         return api.messageStream(body)
     }
 
