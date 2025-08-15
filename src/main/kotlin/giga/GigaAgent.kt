@@ -261,6 +261,8 @@ class GigaAgent(
                 ToolNewFile.toGiga(),
                 ToolDeleteFile.toGiga(),
                 ToolModifyFile.toGiga(),
+                ToolUploadFile().toGiga(),
+                ToolDownloadFile().toGiga(),
                 ToolWindowsManager.toGiga(),
                 ToolSoundConfig(ConfigStore).toGiga(),
                 ToolSoundConfigDiff(ConfigStore).toGiga(),
