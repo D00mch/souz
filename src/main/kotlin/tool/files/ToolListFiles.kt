@@ -43,7 +43,7 @@ object ToolListFiles : ToolSetup<ToolListFiles.Input> {
             .map { file ->
                 val relPath = file.relativeTo(base).path
                 if (file.isDirectory) "$fixedPath/$relPath/" else "$fixedPath/$relPath"
-            }
+            } // no sort or .toList() required, not for codex
 
         return files.joinToString(",", prefix = "[", postfix = "]")
     }
