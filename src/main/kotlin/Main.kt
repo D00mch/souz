@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import org.slf4j.LoggerFactory
+import java.util.concurrent.atomic.AtomicReference
 
 private val l = LoggerFactory.getLogger("AI")
 
@@ -29,12 +30,14 @@ suspend fun main() = coroutineScope {
         recorder = ActiveSoundActiveSoundRecorder(),
         coroutineScope = appScope,
     )
+    val agentRef = AtomicReference<GigaAgent?>(null)
     val hotkeyListener = HotkeyListener(
         onPressed = { pressed ->
             l.info(if (pressed) "onStart" else "onStop")
             when {
                 pressed -> {
                     stopPlayText()
+                    agentRef.get()?.stop()
                     playMacPing()
                     audioRecorder.start()
                 }
@@ -47,7 +50,10 @@ suspend fun main() = coroutineScope {
                 }
             }
         },
-        onDoubleClick = ::stopPlayText
+        onDoubleClick = {
+            stopPlayText()
+            agentRef.get()?.stop()
+        }
     )
     launch { audioRecorder.logState() }
     val gigaVoiceAPI = GigaVoiceAPI(GigaAuth)
@@ -70,6 +76,7 @@ suspend fun main() = coroutineScope {
 
         while (isActive) {
             val agent = GigaAgent.instance(userInputFlow, GigaGRPCChatApi.INSTANCE, model = model)
+            agentRef.set(agent)
             runCatching {
                 agent.run().collect { text ->
                     l.info(text)

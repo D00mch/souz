@@ -15,6 +15,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import kotlin.collections.map
+import java.util.concurrent.atomic.AtomicBoolean
 
 class GigaAgent(
     private val userMessages: Flow<String>,
@@ -28,6 +29,7 @@ class GigaAgent(
     private val installedApps = runCatching {
         ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
     }.getOrElse { "[]" }
+    private val stopRequested = AtomicBoolean(false)
 
     fun run(): Flow<String> = channelFlow {
         val conversation = ArrayDeque<GigaRequest.Message>().apply {
@@ -71,12 +73,13 @@ class GigaAgent(
     }
 
     private suspend fun ProducerScope<String>.streamPipeline(conversation: ArrayDeque<GigaRequest.Message>) {
+        stopRequested.set(false)
         val responses = chatStream(conversation)
         val results = ArrayList<GigaRequest.Message>()
         var totalTokens = 0
         responses.takeWhile { response ->
             l.info("response: $response")
-            when (response) {
+            !stopRequested.get() && when (response) {
                 is GigaResponse.Chat.Error -> {
                     l.error("Error in chunk: response: $response")
                     send("Ошибочка вышла, извините")
@@ -85,7 +88,9 @@ class GigaAgent(
                 is GigaResponse.Chat.Ok -> true
             }
         }.collect { response ->
+            if (stopRequested.get()) return@collect
             (response as GigaResponse.Chat.Ok).choices.forEach { choice ->
+                if (stopRequested.get()) return@forEach
                 choice.toMessage()?.let { msg ->
                     conversation.add(msg)
                     handleGigaChoice(choice)?.let { results.add(it) }
@@ -94,13 +99,17 @@ class GigaAgent(
             totalTokens += response.usage.totalTokens
         }
 
-        if (results.isEmpty()) {
+        if (stopRequested.get() || results.isEmpty()) {
             return
         } else {
             conversation.addAll(results)
             trySummarize(totalTokens, conversation)
             streamPipeline(conversation)
         }
+    }
+
+    fun stop() {
+        stopRequested.set(true)
     }
 
     private suspend fun ProducerScope<String>.singleResponsePipeline(conversation: ArrayDeque<GigaRequest.Message>) {
