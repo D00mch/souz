@@ -12,8 +12,8 @@ import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -88,7 +88,7 @@ class GigaGRPCChatApi(
         }
     }
 
-    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = flow {
+    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> {
         val request = Gigachatv1.ChatRequest.newBuilder()
             .setModel(body.model)
             .setOptions(
@@ -110,21 +110,17 @@ class GigaGRPCChatApi(
             })
             .build()
 
-        suspend fun stream(token: String) {
-            stub.chatStream(request, authHeaders(token))
+        suspend fun stream(token: String): Flow<GigaResponse.Chat> {
+            return stub.chatStream(request, authHeaders(token))
                 .map { resp -> resp.mapResponse(body.model) }
-                .collect { emit(it) }
         }
 
-        try {
-            stream(loadAccessToken())
-        } catch (e: Exception) {
+        return stream(loadAccessToken()).catch { e ->
             l.error("Error in gRPC chat stream", e)
-            if (
-                (e is StatusException && e.status.code == Status.Code.UNAUTHENTICATED) ||
+            if ((e is StatusException && e.status.code == Status.Code.UNAUTHENTICATED) ||
                 (e is StatusRuntimeException && e.status.code == Status.Code.UNAUTHENTICATED)
             ) {
-                stream(refreshAccessToken())
+                emitAll(stream(refreshAccessToken()))
             } else {
                 emit(GigaResponse.Chat.Error(-1, "Connection error: ${e.message}"))
             }
@@ -143,6 +139,10 @@ class GigaGRPCChatApi(
             val msg = alt.message
             if (alt.finishReason.equals("stop", ignoreCase = true)) {
                 l.info("finishReason: ${alt.finishReason}")
+                return@mapNotNull null
+            }
+            if (msg.content.isBlank() && !msg.hasFunctionCall()) {
+                l.info("Empty message chunk skipped")
                 return@mapNotNull null
             }
             GigaResponse.Choice(
@@ -208,7 +208,8 @@ class GigaGRPCChatApi(
     }
 
     private suspend fun refreshAccessToken(): String {
-        val apiKey = System.getenv("GIGA_KEY")
+        val apiKey = System.getenv("GIGA_KEY") ?: System.getProperty("GIGA_KEY")
+            ?: throw IllegalStateException("GIGA_KEY is not set")
         val newToken = auth.requestToken(apiKey, "GIGACHAT_API_PERS")
         System.setProperty("GIGA_ACCESS_TOKEN", newToken)
         return newToken

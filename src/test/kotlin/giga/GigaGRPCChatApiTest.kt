@@ -18,6 +18,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class GigaGRPCChatApiTest {
     private val authKey = Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER)
@@ -50,6 +51,7 @@ class GigaGRPCChatApiTest {
     fun tearDown() {
         unmockkAll()
         System.clearProperty("GIGA_ACCESS_TOKEN")
+        System.clearProperty("GIGA_KEY")
     }
 
     @Test
@@ -67,11 +69,11 @@ class GigaGRPCChatApiTest {
             response
         }
 
-        val api = GigaGRPCChatApi(GigaAuth)
+        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
+        System.setProperty("GIGA_KEY", "key")
+        val api = GigaGRPCChatApi(GigaAuth, mockk())
         val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
         field.set(api, stub)
-
-        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
         val body = GigaRequest.Chat(
             model = "GigaChat-Pro",
             messages = listOf(GigaRequest.Message(GigaMessageRole.user, "hi"))
@@ -93,11 +95,11 @@ class GigaGRPCChatApiTest {
         val stub = mockk<ChatServiceGrpcKt.ChatServiceCoroutineStub>()
         coEvery { stub.chat(any(), any()) } throws StatusRuntimeException(Status.UNAUTHENTICATED)
 
-        val api = GigaGRPCChatApi(GigaAuth)
+        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
+        System.setProperty("GIGA_KEY", "key")
+        val api = GigaGRPCChatApi(GigaAuth, mockk())
         val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
         field.set(api, stub)
-
-        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
         val body = GigaRequest.Chat(
             model = "GigaChat-Pro",
             messages = listOf(GigaRequest.Message(GigaMessageRole.user, "hi"))
@@ -115,11 +117,11 @@ class GigaGRPCChatApiTest {
         val response = sampleResponse()
         coEvery { stub.chat(any(), capture(headers)) } returns response
 
-        val api = GigaGRPCChatApi(GigaAuth)
+        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
+        System.setProperty("GIGA_KEY", "key")
+        val api = GigaGRPCChatApi(GigaAuth, mockk())
         val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
         field.set(api, stub)
-
-        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
         val body = GigaRequest.Chat(
             model = "GigaChat-Pro",
             messages = listOf(GigaRequest.Message(GigaMessageRole.user, "hi"))
@@ -154,11 +156,11 @@ class GigaGRPCChatApiTest {
             }
         }
 
-        val api = GigaGRPCChatApi(GigaAuth)
+        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
+        System.setProperty("GIGA_KEY", "key")
+        val api = GigaGRPCChatApi(GigaAuth, mockk())
         val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
         field.set(api, stub)
-
-        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
         val body = GigaRequest.Chat(
             model = "GigaChat-Pro",
             stream = true,
@@ -180,6 +182,44 @@ class GigaGRPCChatApiTest {
         val stub = mockk<ChatServiceGrpcKt.ChatServiceCoroutineStub>()
         every { stub.chatStream(any(), any()) } returns flow { throw StatusRuntimeException(Status.INTERNAL) }
 
+        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
+        val api = GigaGRPCChatApi(GigaAuth)
+        val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
+        field.set(api, stub)
+        val body = GigaRequest.Chat(
+            model = "GigaChat-Pro",
+            stream = true,
+            messages = listOf(GigaRequest.Message(GigaMessageRole.user, "hi"))
+        )
+
+        val results = api.messageStream(body).toList()
+        val err = results.single() as GigaResponse.Chat.Error
+        assertEquals(-1, err.status)
+    }
+
+    @Test
+    fun `messageStream skips empty messages`() = runBlocking {
+        mockkObject(GigaAuth)
+        val stub = mockk<ChatServiceGrpcKt.ChatServiceCoroutineStub>()
+        val emptyMsg = Gigachatv1.Message.newBuilder().build()
+        val alt = Gigachatv1.Alternative.newBuilder()
+            .setMessage(emptyMsg)
+            .setIndex(0)
+            .setFinishReason("length")
+            .build()
+        val usage = Gigachatv1.Usage.newBuilder()
+            .setPromptTokens(0)
+            .setCompletionTokens(0)
+            .setTotalTokens(0)
+            .build()
+        val response = Gigachatv1.ChatResponse.newBuilder()
+            .addAlternatives(alt)
+            .setTimestamp(123L)
+            .setModelInfo(Gigachatv1.ModelInfo.newBuilder().setName("GigaChat-Pro").build())
+            .setUsage(usage)
+            .build()
+        every { stub.chatStream(any(), any()) } returns flow { emit(response) }
+
         val api = GigaGRPCChatApi(GigaAuth)
         val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
         field.set(api, stub)
@@ -192,7 +232,7 @@ class GigaGRPCChatApiTest {
         )
 
         val results = api.messageStream(body).toList()
-        val err = results.single() as GigaResponse.Chat.Error
-        assertEquals(-1, err.status)
+        val ok = results.single() as GigaResponse.Chat.Ok
+        assertTrue(ok.choices.isEmpty())
     }
 }

@@ -1,24 +1,15 @@
 package com.dumch.giga
 
 import com.dumch.tool.ToolRunBashCommand
-import com.dumch.tool.desktop.ToolCollectButtons
-import com.dumch.tool.desktop.ToolCreateNote
-import com.dumch.tool.desktop.ToolDesktopScreenShot
-import com.dumch.tool.desktop.ToolMouseClickMac
-import com.dumch.tool.desktop.ToolOpen
-import com.dumch.tool.desktop.ToolCreateNewBrowserTab
-import com.dumch.tool.desktop.ToolHotkeyMac
-import com.dumch.tool.desktop.ToolMediaControl
-import com.dumch.tool.desktop.ToolMinimizeWindows
-import com.dumch.tool.desktop.ToolSafariInfo
-import com.dumch.tool.desktop.ToolShowApps
-import com.dumch.tool.desktop.ToolWindowsManager
+import com.dumch.tool.desktop.*
 import com.dumch.tool.files.*
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.takeWhile
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 
 class GigaAgent(
@@ -27,8 +18,11 @@ class GigaAgent(
     private val settings: Settings,
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
-    private val functions: List<GigaRequest.Function> = tools.map { it.value.fn }
-    private val installedApps = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
+    private val tools: Map<String, GigaToolSetup> = settings.functions
+    private val functions: List<GigaRequest.Function> = settings.functions.map { it.value.fn }
+    private val installedApps = runCatching {
+        ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
+    }.getOrElse { "[]" }
 
     fun run(): Flow<String> = channelFlow {
         val conversation = ArrayDeque<GigaRequest.Message>().apply {
@@ -36,7 +30,9 @@ class GigaAgent(
         }
 
         userMessages.collect { userText ->
-            val openedApps = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
+            val openedApps = runCatching {
+                ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
+            }.getOrElse { "[]" }
             appendSystemInfo(openedApps, conversation)
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
@@ -78,9 +74,10 @@ class GigaAgent(
             }
         }.collect { response ->
             (response as GigaResponse.Chat.Ok).choices.forEach { choice ->
-                conversation.add(choice.toMessage())
-                val result = handleGigaChoice(choice)
-                if (result != null) results.add(result)
+                choice.toMessage()?.let { msg ->
+                    conversation.add(msg)
+                    handleGigaChoice(choice)?.let { results.add(it) }
+                }
             }
             totalTokens += response.usage.totalTokens
         }
@@ -167,19 +164,17 @@ class GigaAgent(
     }
 
     private fun GigaResponse.Chat.Ok.toRequestMessages(): Collection<GigaRequest.Message> {
-        return choices.map { it.toMessage() }
+        return choices.mapNotNull { it.toMessage() }
     }
 
-    private fun GigaResponse.Choice.toMessage(): GigaRequest.Message {
+    private fun GigaResponse.Choice.toMessage(): GigaRequest.Message? {
         val msg = this.message
         val content: String = when {
             msg.content.isNotBlank() -> msg.content
-
             msg.functionCall != null -> gigaJsonMapper.writeValueAsString(
                 mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
             )
-
-            else -> throw IllegalStateException("Can't get content from $this")
+            else -> return null
         }
         return GigaRequest.Message(
             role = msg.role,
@@ -237,27 +232,29 @@ class GigaAgent(
             """.trimIndent()
         )
 
-        private val tools: Map<String, GigaToolSetup> = listOf(
-            ToolReadFile.toGiga(),
-            ToolListFiles.toGiga(),
-            ToolNewFile.toGiga(),
-            ToolDeleteFile.toGiga(),
-            ToolModifyFile.toGiga(),
-            ToolWindowsManager.toGiga(),
-            ToolSafariInfo(ToolRunBashCommand).toGiga(),
-            ToolMouseClickMac().toGiga(),
-            ToolHotkeyMac().toGiga(),
-            ToolMediaControl(ToolRunBashCommand).toGiga(),
-            ToolFindTextInFiles.toGiga(),
-            ToolDesktopScreenShot().toGiga(),
-            ToolCreateNote(ToolRunBashCommand).toGiga(),
-//            ToolShowApps.toGiga(),
-//            ToolOpenFolder(ToolRunBashCommand).toGiga(),
-            ToolCollectButtons(ToolRunBashCommand).toGiga(),
-            ToolOpen(ToolRunBashCommand).toGiga(),
-            ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
-            ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
-        ).associateBy { it.fn.name }
+        private val tools: Map<String, GigaToolSetup> by lazy {
+            listOf(
+                ToolReadFile.toGiga(),
+                ToolListFiles.toGiga(),
+                ToolNewFile.toGiga(),
+                ToolDeleteFile.toGiga(),
+                ToolModifyFile.toGiga(),
+                ToolWindowsManager.toGiga(),
+                ToolSafariInfo(ToolRunBashCommand).toGiga(),
+                ToolMouseClickMac().toGiga(),
+                ToolHotkeyMac().toGiga(),
+                ToolMediaControl(ToolRunBashCommand).toGiga(),
+                ToolFindTextInFiles.toGiga(),
+                ToolDesktopScreenShot().toGiga(),
+                ToolCreateNote(ToolRunBashCommand).toGiga(),
+//                ToolShowApps.toGiga(),
+//                ToolOpenFolder(ToolRunBashCommand).toGiga(),
+                ToolCollectButtons(ToolRunBashCommand).toGiga(),
+                ToolOpen(ToolRunBashCommand).toGiga(),
+                ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
+                ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
+            ).associateBy { it.fn.name }
+        }
 
         fun instance(
             userMessages: Flow<String>,
