@@ -30,10 +30,7 @@ class GigaAgent(
         }
 
         userMessages.collect { userText ->
-            val openedApps = runCatching {
-                ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
-            }.getOrElse { "[]" }
-            appendSystemInfo(openedApps, conversation)
+            appendSystemInfo(conversation)
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
                 streamPipeline(conversation)
@@ -44,15 +41,18 @@ class GigaAgent(
     }
 
     private fun appendSystemInfo(
-        openedApps: String,
         conversation: ArrayDeque<GigaRequest.Message>
     ) {
-        val dirs = ToolListFiles.invoke(ToolListFiles.Input(System.getenv("HOME"), 3))
+        val openedApps = runCatching { ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running)) }
+            .getOrElse { "[]" }
+        val dirs = runCatching {ToolListFiles.invoke(ToolListFiles.Input(System.getenv("HOME"), 3))}
+            .getOrElse { "[]" }
         val apps = objectMapper.writeValueAsString(
             mapOf(
                 "installed" to installedApps,
                 "opened" to openedApps,
-                "dirs" to dirs
+                "dirs" to dirs,
+                "instructions" to listOf("Когда я говорю: `поиск`, открывай приложение `Google Chrome`")
             )
         )
         conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))
