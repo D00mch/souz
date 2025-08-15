@@ -20,8 +20,12 @@ class ToolSoundConfig(private val config: ConfigStore) : ToolSetup<ToolSoundConf
             params = mapOf("diff" to 0, "speed" to 180)
         ),
         FewShotExample(
-            request = "Можешь ускорить воспроизведение звука",
-            params = mapOf("diff" to 40)
+            request = "Можешь поставить скорость речи на среднюю скорость",
+            params = mapOf("diff" to 0, "speed" to 140)
+        ),
+        FewShotExample(
+            request = "Сделай скорость речи медленнее",
+            params = mapOf("diff" to -40)
         ),
         FewShotExample(
             request = "Можешь совсем немногожко замедлить речь",
@@ -39,7 +43,7 @@ class ToolSoundConfig(private val config: ConfigStore) : ToolSetup<ToolSoundConf
         val currentSpeed = input.speed ?: ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)
         val newSpeed = currentSpeed + input.diff
         config.put(SPEED_KEY, newSpeed)
-        return "Sound speed updated to ${input.diff}"
+        return "Sound speed updated to ${input.speed}"
     }
 
     companion object {
