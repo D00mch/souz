@@ -239,6 +239,8 @@ class GigaAgent(
                 ToolNewFile.toGiga(),
                 ToolDeleteFile.toGiga(),
                 ToolModifyFile.toGiga(),
+                ToolUploadFile().toGiga(),
+                ToolDownloadFile().toGiga(),
                 ToolWindowsManager.toGiga(),
                 ToolSafariInfo(ToolRunBashCommand).toGiga(),
                 ToolMouseClickMac().toGiga(),
