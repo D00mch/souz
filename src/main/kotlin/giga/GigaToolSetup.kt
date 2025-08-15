@@ -1,7 +1,7 @@
 package com.dumch.giga
 
-import com.dumch.giga.toGiga
 import com.dumch.tool.InputParamDescription
+import com.dumch.tool.ShellException
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.ToolSetup
 import com.dumch.tool.ToolSetupWithAttachments
@@ -115,9 +115,13 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): GigaT
 }
 
 fun Exception.toGigaToolMessage(): GigaRequest.Message {
+    val msg = when(this) {
+        is ShellException -> "The function was executed with shell, the exit code: $exitCode, output: $message"
+        else -> "Can:t invoke function: ${message ?: toString()}"
+    }
     return GigaRequest.Message(
         role = GigaMessageRole.function,
-        content = """{"result": "Can:t invoke function: ${message ?: toString()}"}""",
+        content = objectMapper.writeValueAsString(mapOf("result" to msg)),
     )
 }
 
