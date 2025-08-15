@@ -10,6 +10,7 @@ import com.dumch.audio.rawToOpusOgg
 import com.dumch.giga.GigaAgent
 import com.dumch.giga.GigaAuth
 import com.dumch.giga.GigaGRPCChatApi
+import com.dumch.giga.GigaModel
 import com.dumch.giga.GigaVoiceAPI
 import com.dumch.keys.HotkeyListener
 import com.github.kwhat.jnativehook.GlobalScreen
@@ -61,8 +62,14 @@ suspend fun main() = coroutineScope {
                 resp.result.joinToString("\n")
             }
 
+        val model = System.getenv("GIGA_MODEL")?.let { env ->
+            GigaModel.entries.firstOrNull {
+                it.name.equals(env, ignoreCase = true) || it.alias.equals(env, ignoreCase = true)
+            }
+        } ?: GigaModel.Max
+
         while (isActive) {
-            val agent = GigaAgent.instance(userInputFlow, GigaGRPCChatApi.INSTANCE)
+            val agent = GigaAgent.instance(userInputFlow, GigaGRPCChatApi.INSTANCE, model = model)
             runCatching {
                 agent.run().collect { text ->
                     l.info(text)
