@@ -9,6 +9,8 @@ import io.grpc.*
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
@@ -25,6 +27,21 @@ class GigaGRPCChatApi(
     private val gigaChatAPI: GigaRestChatAPI = GigaRestChatAPI.INSTANCE,
 ) : GigaChatAPI by gigaChatAPI {
     private val l = LoggerFactory.getLogger(GigaGRPCChatApi::class.java)
+
+    init {
+        val envLevel = System.getenv("GIGA_GRPC_LOG_LEVEL")
+            ?: System.getenv("GIGA_LOG_LEVEL")
+        val nettyLevel = envLevel
+            ?.let {
+                val normalized = if (it.equals("NONE", ignoreCase = true)) "OFF" else it
+                runCatching { Level.valueOf(normalized) }.getOrNull()
+            }
+            ?: Level.WARN
+        l.info("GIGA_GRPC_LOG_LEVEL: $nettyLevel")
+        (LoggerFactory.getLogger("io.grpc") as? Logger)?.level = nettyLevel
+        (LoggerFactory.getLogger("io.grpc.netty.shaded") as? Logger)?.level = nettyLevel
+        (LoggerFactory.getLogger("io.netty") as? Logger)?.level = nettyLevel
+    }
 
     private val channel: ManagedChannel =
         NettyChannelBuilder.forAddress("gigachat.devices.sberbank.ru", 443)
