@@ -37,35 +37,34 @@ class ToolOpen(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpen.Input>
     )
 
     override fun invoke(input: Input): String {
-        val fixed = input.target.replace("\$HOME", System.getenv("HOME"))
+        val fixedPath = input.target.replace("\$HOME", System.getenv("HOME"))
         return try {
             when {
-                fixed.contains('/') -> {
-                    val file = File(fixed)
-                    if (file.isDirectory) {
-                        ToolOpenFolder(bash).invoke(ToolOpenFolder.Input(File(fixed).name))
+                fixedPath.contains('/') -> {
+                    val isDir = !fixedPath.endsWith(".app") && File(fixedPath).isDirectory
+                    if (isDir) {
+                        ToolOpenFolder(bash).invoke(ToolOpenFolder.Input(File(fixedPath).name))
                     } else {
-                        bash.sh("""open "${fixed}"""")
+                        bash.sh("""open "$fixedPath"""")
                         "Done"
                     }
                 }
-                fixed.contains('.') -> {
-                    bash.sh("""open -b $fixed""")
+                fixedPath.contains('.') -> {
+                    bash.sh("""open -b $fixedPath""")
                     "Done"
                 }
                 else -> {
-                    ToolOpenFolder(bash).invoke(ToolOpenFolder.Input(File(fixed).name))
+                    ToolOpenFolder(bash).invoke(ToolOpenFolder.Input(File(fixedPath).name))
                 }
             }
         } catch (e: Exception) {
-            l.error("Error opening '$fixed': ${e.message}")
-            ToolOpenFolder(bash).invoke(ToolOpenFolder.Input(File(fixed).name))
+            l.error("Error opening '$fixedPath': ${e.message}")
+            ToolOpenFolder(bash).invoke(ToolOpenFolder.Input(File(fixedPath).name))
         }
     }
 }
 
 fun main() {
-    val tool = ToolOpen(ToolRunBashCommand)
-    println(tool.invoke(ToolOpen.Input("com.apple.Safari")))
-
+    val result = ToolOpenFolder(ToolRunBashCommand).invoke(ToolOpenFolder.Input("/System/Applcications/Weather.app"))
+    println(result)
 }
