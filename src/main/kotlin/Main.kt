@@ -11,6 +11,7 @@ import com.dumch.giga.GigaAgent
 import com.dumch.giga.GigaAuth
 import com.dumch.giga.GigaGRPCChatApi
 import com.dumch.giga.GigaVoiceAPI
+import com.dumch.giga.GigaModel
 import com.dumch.keys.HotkeyListener
 import com.github.kwhat.jnativehook.GlobalScreen
 import com.github.kwhat.jnativehook.NativeHookException
@@ -61,7 +62,17 @@ suspend fun main() = coroutineScope {
                 resp.result.joinToString("\n")
             }
 
-        GigaAgent.instance(userInputFlow, GigaGRPCChatApi.INSTANCE).run().collect { text ->
+        val model = System.getenv("giga_model")
+            ?.let { name ->
+                GigaModel.values().firstOrNull { it.name.equals(name, ignoreCase = true) }
+            }
+            ?: GigaModel.Max
+
+        GigaAgent.instance(
+            userInputFlow,
+            GigaGRPCChatApi.INSTANCE,
+            model = model,
+        ).run().collect { text ->
             l.info(text)
             playText(text)
         }
