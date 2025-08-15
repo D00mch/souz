@@ -20,7 +20,7 @@ class ToolDesktopScreenShot(
 
     override val name: String = "DesktopScreenShot"
     override val description: String = "Captures desktop screenshot and uploads it to GigaChat, returning image id. " +
-            "Use it to see what's on desktop"
+            "Use it to see what's on desktop and to analyze elements on the screen and its coordinates."
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Сделай скриншот",
