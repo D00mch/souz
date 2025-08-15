@@ -61,9 +61,16 @@ suspend fun main() = coroutineScope {
                 resp.result.joinToString("\n")
             }
 
-        GigaAgent.instance(userInputFlow, GigaGRPCChatApi.INSTANCE).run().collect { text ->
-            l.info(text)
-            playText(text)
+        while (isActive) {
+            val agent = GigaAgent.instance(userInputFlow, GigaGRPCChatApi.INSTANCE)
+            runCatching {
+                agent.run().collect { text ->
+                    l.info(text)
+                    playText(text)
+                }
+            }.onFailure { e ->
+                l.error("Agent flow terminated: ${e.message}", e)
+            }
         }
     }
 }
