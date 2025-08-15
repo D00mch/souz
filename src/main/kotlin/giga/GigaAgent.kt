@@ -27,6 +27,7 @@ class GigaAgent(
     private val settings: Settings,
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
+    private val tools: Map<String, GigaToolSetup> = settings.functions
     private val functions: List<GigaRequest.Function> = tools.map { it.value.fn }
 
     fun run(): Flow<String> = channelFlow {
@@ -219,30 +220,32 @@ class GigaAgent(
             """.trimIndent()
         )
 
-        private val tools: Map<String, GigaToolSetup> = listOf(
-            ToolReadFile.toGiga(),
-            ToolListFiles.toGiga(),
-            ToolNewFile.toGiga(),
-            ToolDeleteFile.toGiga(),
-            ToolModifyFile.toGiga(),
-            ToolWindowsManager.toGiga(),
-            ToolSafariInfo(ToolRunBashCommand).toGiga(),
-            ToolMouseClickMac().toGiga(),
-            ToolHotkeyMac().toGiga(),
-            ToolMediaControl(ToolRunBashCommand).toGiga(),
-            ToolFindTextInFiles.toGiga(),
-            ToolDesktopScreenShot().toGiga(),
-            ToolCreateNote(ToolRunBashCommand).toGiga(),
-            ToolOpenFolder(ToolRunBashCommand).toGiga(),
-            ToolCollectButtons(ToolRunBashCommand).toGiga(),
-            ToolOpen(ToolRunBashCommand).toGiga(),
-            ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
-            ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
-        ).associateBy { it.fn.name }
+        private val defaultTools: Map<String, GigaToolSetup> by lazy {
+            listOf(
+                ToolReadFile.toGiga(),
+                ToolListFiles.toGiga(),
+                ToolNewFile.toGiga(),
+                ToolDeleteFile.toGiga(),
+                ToolModifyFile.toGiga(),
+                ToolWindowsManager.toGiga(),
+                ToolSafariInfo(ToolRunBashCommand).toGiga(),
+                ToolMouseClickMac().toGiga(),
+                ToolHotkeyMac().toGiga(),
+                ToolMediaControl(ToolRunBashCommand).toGiga(),
+                ToolFindTextInFiles.toGiga(),
+                ToolDesktopScreenShot().toGiga(),
+                ToolCreateNote(ToolRunBashCommand).toGiga(),
+                ToolOpenFolder(ToolRunBashCommand).toGiga(),
+                ToolCollectButtons(ToolRunBashCommand).toGiga(),
+                ToolOpen(ToolRunBashCommand).toGiga(),
+                ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
+                ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
+            ).associateBy { it.fn.name }
+        }
 
         fun instance(userMessages: Flow<String>, api: GigaChatAPI): GigaAgent {
             val settings = Settings(
-                tools,
+                defaultTools,
                 GigaModel.Max,
                 stream = true,
             )
