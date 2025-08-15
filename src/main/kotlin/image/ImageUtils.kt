@@ -85,10 +85,9 @@ object ImageUtils {
             ).apply {
                 createGraphics().drawImage(img, 0, 0, null)
             }
-            compressJpeg(rgbImage, quality)
+            return compressJpeg(rgbImage, quality)
         } finally {
             tempFile.delete()
-            throw kotlinx.io.IOException("Failed to make screenshot")
         }
     }
 }
