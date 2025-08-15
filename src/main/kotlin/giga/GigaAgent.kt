@@ -35,10 +35,10 @@ class GigaAgent(
     fun run(): Flow<String> = channelFlow {
         val conversation = ArrayDeque<GigaRequest.Message>().apply {
             add(systemPrompt)
+            appendSystemInfo(this)
         }
 
         userMessages.collect { userText ->
-            appendSystemInfo(conversation)
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
                 streamPipeline(conversation)
@@ -182,6 +182,7 @@ class GigaAgent(
         l.info("Summarizing the conversation... $msg")
         conversation.clear()
         conversation.add(systemPrompt)
+        appendSystemInfo(conversation)
         conversation.add(msg)
     }
 

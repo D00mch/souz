@@ -85,9 +85,9 @@ fun String.toFinishReason(): GigaResponse.FinishReason? {
 }
 
 enum class GigaModel(val alias: String, val maxTokens: Int) {
-    Lite("GigaChat-2", 8192),
-    Pro("GigaChat-Pro", 8192),
-    Max("GigaChat-Max", 8192),
+    Lite("GigaChat-2", 32768),
+    Pro("GigaChat-Pro", 32768),
+    Max("GigaChat-Max", 32768),
 }
 
 object GigaRequest {
