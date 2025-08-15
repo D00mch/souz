@@ -62,9 +62,9 @@ suspend fun main() = coroutineScope {
                 resp.result.joinToString("\n")
             }
 
-        val model = System.getenv("GIGA_MODEL")?.let { env ->
-            GigaModel.entries.firstOrNull {
-                it.name.equals(env, ignoreCase = true) || it.alias.equals(env, ignoreCase = true)
+        val model = System.getenv("GIGA_MODEL")?.let { envModel ->
+            GigaModel.entries.firstOrNull { enumModel ->
+                 enumModel.name.equals(envModel, ignoreCase = true) ||  enumModel.alias.equals(envModel, ignoreCase = true)
             }
         } ?: GigaModel.Max
 
