@@ -201,10 +201,10 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
     ): String? {
         val documentsDir = File(System.getProperty("user.home"), "SluxxDocuments").apply { mkdirs() }
         val command = """
-            cd ${'$'}{documentsDir.absolutePath} && \
-            curl -s -L -g 'https://gigachat.devices.sberbank.ru/api/v1/files/${'$'}{fileId}/content' \
+            cd "${documentsDir.absolutePath}" && \
+            curl -s -L -g 'https://gigachat.devices.sberbank.ru/api/v1/files/${fileId}/content' \
             -H 'Accept: application/octet-stream' \
-            -H 'Authorization: Bearer ${'$'}accessToken' \
+            -H 'Authorization: Bearer $accessToken' \
             -OJ -w '%{filename_effective}' -o /dev/null
         """.trimIndent()
         val fileName = ToolRunBashCommand.invoke(
