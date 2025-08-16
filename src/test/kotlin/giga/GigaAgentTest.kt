@@ -13,6 +13,18 @@ class GigaAgentTest {
     fun `singleResponse emits assistant reply`() = runBlocking {
         val api = mockk<GigaChatAPI>()
         val usage = GigaResponse.Usage(1, 1, 2, 0)
+        val classifyMsg = GigaResponse.Message(
+            content = "io",
+            role = GigaMessageRole.assistant,
+            functionCall = null,
+            functionsStateId = null,
+        )
+        val classifyResponse = GigaResponse.Chat.Ok(
+            choices = listOf(GigaResponse.Choice(classifyMsg, 0, GigaResponse.FinishReason.stop)),
+            created = 0L,
+            model = "m",
+            usage = usage,
+        )
         val msg = GigaResponse.Message(
             content = "hello",
             role = GigaMessageRole.assistant,
@@ -25,7 +37,7 @@ class GigaAgentTest {
             model = "m",
             usage = usage,
         )
-        coEvery { api.message(any()) } returns response
+        coEvery { api.message(any()) } returnsMany listOf(classifyResponse, response)
 
         val agent = GigaAgent(
             userMessages = flowOf("hi"),
@@ -35,13 +47,25 @@ class GigaAgentTest {
         val results = agent.run().toList()
 
         assertEquals(listOf("hello"), results)
-        coVerify(exactly = 1) { api.message(any()) }
+        coVerify(exactly = 2) { api.message(any()) }
     }
 
     @Test
     fun `executes tool and sends result back to api`() = runBlocking {
         val api = mockk<GigaChatAPI>()
         val usage = GigaResponse.Usage(1, 1, 2, 0)
+        val classifyMsg = GigaResponse.Message(
+            content = "io",
+            role = GigaMessageRole.assistant,
+            functionCall = null,
+            functionsStateId = null,
+        )
+        val classifyResponse = GigaResponse.Chat.Ok(
+            choices = listOf(GigaResponse.Choice(classifyMsg, 0, GigaResponse.FinishReason.stop)),
+            created = 0L,
+            model = "m",
+            usage = usage,
+        )
 
         val fnCallMsg = GigaResponse.Message(
             content = "",
@@ -72,7 +96,7 @@ class GigaAgentTest {
         )
 
         val bodies = mutableListOf<GigaRequest.Chat>()
-        coEvery { api.message(capture(bodies)) } returnsMany listOf(fnResponse, finalResponse)
+        coEvery { api.message(capture(bodies)) } returnsMany listOf(classifyResponse, fnResponse, finalResponse)
 
         val agent = GigaAgent(
             userMessages = flowOf("list"),
@@ -84,11 +108,11 @@ class GigaAgentTest {
             ),
         )
         val outputs = agent.run().toList().also {
-            coVerify(exactly = 2) { api.message(any()) }
+            coVerify(exactly = 3) { api.message(any()) }
         }
 
         assertEquals(listOf("done"), outputs)
-        val fnResult = bodies[1].messages[bodies[1].messages.size - 2]
+        val fnResult = bodies[2].messages[bodies[2].messages.size - 2]
         assertEquals(GigaMessageRole.function, fnResult.role)
         assertEquals("{}", fnResult.content)
     }
@@ -97,6 +121,18 @@ class GigaAgentTest {
     fun `stream mode uses messageStream`() = runBlocking {
         val api = mockk<GigaChatAPI>()
         val usage = GigaResponse.Usage(1, 1, 2, 0)
+        val classifyMsg = GigaResponse.Message(
+            content = "io",
+            role = GigaMessageRole.assistant,
+            functionCall = null,
+            functionsStateId = null,
+        )
+        val classifyResponse = GigaResponse.Chat.Ok(
+            choices = listOf(GigaResponse.Choice(classifyMsg, 0, GigaResponse.FinishReason.stop)),
+            created = 0L,
+            model = "m",
+            usage = usage,
+        )
         val msg = GigaResponse.Message(
             content = "streamed",
             role = GigaMessageRole.assistant,
@@ -109,6 +145,7 @@ class GigaAgentTest {
             model = "m",
             usage = usage,
         )
+        coEvery { api.message(any()) } returns classifyResponse
         coEvery { api.messageStream(any()) } returns flowOf(response)
 
         val agent = GigaAgent(
@@ -120,7 +157,7 @@ class GigaAgentTest {
 
         assertEquals(listOf("streamed"), results)
         coVerify(exactly = 1) { api.messageStream(any()) }
-        coVerify(exactly = 0) { api.message(any()) }
+        coVerify(exactly = 1) { api.message(any()) }
     }
 
     private fun dummyTool(name: String): GigaToolSetup = object : GigaToolSetup {

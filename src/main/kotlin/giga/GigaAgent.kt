@@ -28,6 +28,17 @@ class GigaAgent(
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
+    private enum class ToolCategory { IO, BROWSER, DESKTOP, CONFIG }
+
+    private val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> = mapOf(
+        ToolCategory.IO to settings.functions.filterKeys { ioToolNames.contains(it) },
+        ToolCategory.BROWSER to settings.functions.filterKeys { browserToolNames.contains(it) },
+        ToolCategory.DESKTOP to settings.functions.filterKeys { desktopToolNames.contains(it) },
+        ToolCategory.CONFIG to settings.functions.filterKeys { configToolNames.contains(it) },
+    )
+    private val functionsByCategory: Map<ToolCategory, List<GigaRequest.Function>> =
+        toolsByCategory.mapValues { it.value.values.map { setup -> setup.fn } }
+
     private val tools: Map<String, GigaToolSetup> = settings.functions
     private val functions: List<GigaRequest.Function> = settings.functions.map { it.value.fn }
     private val installedApps = runCatching {
@@ -42,11 +53,13 @@ class GigaAgent(
         }
 
         userMessages.collect { userText ->
+            val category = classify(userText)
+            val fns = category?.let { functionsByCategory[it] } ?: functions
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
-                streamPipeline(conversation)
+                streamPipeline(conversation, fns)
             } else {
-                singleResponsePipeline(conversation)
+                singleResponsePipeline(conversation, fns)
             }
         }
     }
@@ -76,9 +89,12 @@ class GigaAgent(
         conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))
     }
 
-    private suspend fun ProducerScope<String>.streamPipeline(conversation: ArrayDeque<GigaRequest.Message>) {
+    private suspend fun ProducerScope<String>.streamPipeline(
+        conversation: ArrayDeque<GigaRequest.Message>,
+        fns: List<GigaRequest.Function>,
+    ) {
         stopRequested.set(false)
-        val responses = chatStream(conversation)
+        val responses = chatStream(conversation, fns)
         val results = ArrayList<GigaRequest.Message>()
         var totalTokens = 0
         responses.takeWhile { response ->
@@ -108,7 +124,7 @@ class GigaAgent(
         } else {
             conversation.addAll(results)
             trySummarize(totalTokens, conversation)
-            streamPipeline(conversation)
+            streamPipeline(conversation, fns)
         }
     }
 
@@ -116,11 +132,14 @@ class GigaAgent(
         stopRequested.set(true)
     }
 
-    private suspend fun ProducerScope<String>.singleResponsePipeline(conversation: ArrayDeque<GigaRequest.Message>) {
+    private suspend fun ProducerScope<String>.singleResponsePipeline(
+        conversation: ArrayDeque<GigaRequest.Message>,
+        fns: List<GigaRequest.Function>,
+    ) {
         for (i in 1..10) { // infinite loop protection
             if (!isActive) break
             val response: GigaResponse.Chat = try {
-                withContext(Dispatchers.IO) { chat(conversation) }
+                withContext(Dispatchers.IO) { chat(conversation, fns) }
             } catch (e: Throwable) {
                 l.error("Error: loop $i: ${e.message}", e)
                 send("Не смогли достучаться до сервера. Будем пробовать снова?")
@@ -160,6 +179,34 @@ class GigaAgent(
             msg.content.isNotBlank() -> send(msg.content)
         }
         return null
+    }
+
+    private suspend fun classify(userText: String): ToolCategory? {
+        val messages = ArrayDeque<GigaRequest.Message>().apply {
+            add(GigaRequest.Message(GigaMessageRole.system, CLASSIFIER_PROMPT))
+            add(GigaRequest.Message(GigaMessageRole.user, userText))
+        }
+        val body = GigaRequest.Chat(
+            model = settings.model.alias,
+            messages = messages,
+            functions = emptyList(),
+        )
+        return when (val resp = api.message(body)) {
+            is GigaResponse.Chat.Error -> {
+                l.error("Classification error: ${resp.message}")
+                null
+            }
+            is GigaResponse.Chat.Ok -> {
+                val cat = resp.choices.firstOrNull()?.message?.content?.trim()?.lowercase()
+                when (cat) {
+                    "io" -> ToolCategory.IO
+                    "browser" -> ToolCategory.BROWSER
+                    "desktop" -> ToolCategory.DESKTOP
+                    "config" -> ToolCategory.CONFIG
+                    else -> null
+                }
+            }
+        }
     }
 
     private suspend fun trySummarize(totalTokens: Int, conversation: ArrayDeque<GigaRequest.Message>) {
@@ -250,6 +297,42 @@ class GigaAgent(
 
     companion object {
         private const val SUMMARIZE_THRESHOLD = 0.95
+
+        private const val CLASSIFIER_PROMPT = "You are a classification algorithm. Respond with exactly one word: io, browser, desktop, or config"
+
+        private val ioToolNames = setOf(
+            "ReadFile",
+            "ListFiles",
+            "NewFile",
+            "DeleteFile",
+            "EditFile",
+            "FindTextInFiles",
+        )
+
+        private val browserToolNames = setOf(
+            "CreateNewBrowserTab",
+            "SafariInfo",
+        )
+
+        private val configToolNames = setOf(
+            "SoundConfig",
+            "SoundConfigDiff",
+            "InstructionStore",
+        )
+
+        private val desktopToolNames = setOf(
+            "WindowsManager",
+            "MouseClick",
+            "Hotkey",
+            "MediaControl",
+            "DesktopScreenShot",
+            "CollectButtons",
+            "Open",
+            "CreateNote",
+            "MinimizeWindows",
+            "OpenFolder",
+            "ShowApps",
+        )
 
         private val systemPrompt = GigaRequest.Message(
             role = GigaMessageRole.system,

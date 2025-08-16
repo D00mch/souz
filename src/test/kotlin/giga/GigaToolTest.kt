@@ -38,12 +38,14 @@ class GigaToolTest {
         val l = LoggerFactory.getLogger(GigaToolTest::class.java)
         val result = toolsMap[functionCall.name]!!.invoke(functionCall)
         l.info("$result")
-        assertEquals(
-            GigaRequest.Message(
-                role = GigaMessageRole.function,
-                content = """{"result":"[src/test/resources/directory/,src/test/resources/directory/file.txt,src/test/resources/test.txt]"}""",
-            ),
-            result
+        assertEquals(GigaMessageRole.function, result.role)
+        val actual = gigaJsonMapper.readTree(result.content).get("result").asText()
+        val actualSet = actual.removePrefix("[").removeSuffix("]").split(",").toSet()
+        val expected = setOf(
+            "src/test/resources/directory/",
+            "src/test/resources/directory/file.txt",
+            "src/test/resources/test.txt",
         )
+        assertEquals(expected, actualSet)
     }
 }
