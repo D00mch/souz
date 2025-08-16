@@ -72,6 +72,22 @@ object GigaResponse {
         @JsonProperty("access_policy") val accessPolicy: String,
     )
 
+    sealed interface Embeddings {
+        data class Ok(
+            val data: List<Embedding>,
+            val model: String,
+            @JsonProperty("object") val objectType: String,
+        ) : Embeddings
+
+        data class Error(val status: Int, val message: String) : Embeddings
+    }
+
+    data class Embedding(
+        val embedding: List<Double>,
+        val index: Int,
+        @JsonProperty("object") val objectType: String? = null,
+    )
+
     enum class FinishReason { stop, length, function_call, blacklist, error }
 }
 
@@ -97,6 +113,7 @@ object GigaRequest {
         @JsonProperty("function_call")
         val functionCall: String = "auto",
         val functions: List<Function> = emptyList(),
+        val temperature: Float? = null,
         val stream: Boolean = false,
     )
 
@@ -130,6 +147,11 @@ object GigaRequest {
     data class FewShotExample(
         val request: String,
         val params: Map<String, Any>
+    )
+
+    data class Embeddings(
+        val model: String = "Embeddings",
+        val input: List<String>,
     )
 }
 

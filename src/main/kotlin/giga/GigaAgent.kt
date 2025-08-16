@@ -266,6 +266,7 @@ class GigaAgent(
             model = settings.model.alias,
             messages = conversation,
             functions = fns,
+            temperature = settings.temperature,
         )
         return api.message(body)
     }
@@ -278,6 +279,7 @@ class GigaAgent(
             model = settings.model.alias,
             messages = conversation,
             functions = fns,
+            temperature = settings.temperature,
         )
         l.debug("Chat request:\n{}", logObjectMapper.writeValueAsString(body))
         return api.messageStream(body)
@@ -287,6 +289,7 @@ class GigaAgent(
         val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
         val model: GigaModel = GigaModel.Max,
         val stream: Boolean = false,
+        val temperature: Float? = null,
     )
 
     companion object {

@@ -205,6 +205,53 @@ class GigaAgentTest {
         assertEquals(listOf("ListFiles"), fnNames)
     }
 
+    @Test
+    fun `passes temperature from settings`() = runBlocking {
+        val api = mockk<GigaChatAPI>()
+        val usage = GigaResponse.Usage(1, 1, 2, 0)
+        val classifyMsg = GigaResponse.Message(
+            content = "io",
+            role = GigaMessageRole.assistant,
+            functionCall = null,
+            functionsStateId = null,
+        )
+        val classifyResponse = GigaResponse.Chat.Ok(
+            choices = listOf(GigaResponse.Choice(classifyMsg, 0, GigaResponse.FinishReason.stop)),
+            created = 0L,
+            model = "m",
+            usage = usage,
+        )
+        val msg = GigaResponse.Message(
+            content = "hello",
+            role = GigaMessageRole.assistant,
+            functionCall = null,
+            functionsStateId = null,
+        )
+        val response = GigaResponse.Chat.Ok(
+            choices = listOf(GigaResponse.Choice(msg, 0, GigaResponse.FinishReason.stop)),
+            created = 0L,
+            model = "m",
+            usage = usage,
+        )
+        val bodies = mutableListOf<GigaRequest.Chat>()
+        coEvery { api.message(capture(bodies)) } returnsMany listOf(classifyResponse, response)
+
+        val agent = GigaAgent(
+            userMessages = flowOf("hi"),
+            api = api,
+            settings = GigaAgent.Settings(
+                toolsByCategory = emptyMap(),
+                model = GigaModel.Pro,
+                stream = false,
+                temperature = 0.33f,
+            ),
+        )
+
+        agent.run().toList()
+
+        assertEquals(0.33f, bodies.last().temperature)
+    }
+
     private fun dummyTool(name: String): GigaToolSetup = object : GigaToolSetup {
         override val fn: GigaRequest.Function = GigaRequest.Function(
             name = name,

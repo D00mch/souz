@@ -235,4 +235,53 @@ class GigaGRPCChatApiTest {
         val ok = results.single() as GigaResponse.Chat.Ok
         assertTrue(ok.choices.isEmpty())
     }
+
+    @Test
+    fun `passes temperature in message request`() = runBlocking {
+        mockkObject(GigaAuth)
+        val stub = mockk<ChatServiceGrpcKt.ChatServiceCoroutineStub>()
+        val requestSlot = slot<Gigachatv1.ChatRequest>()
+        val response = sampleResponse()
+        coEvery { stub.chat(capture(requestSlot), any()) } returns response
+
+        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
+        val api = GigaGRPCChatApi(GigaAuth)
+        val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
+        field.set(api, stub)
+
+        val body = GigaRequest.Chat(
+            model = "GigaChat-Pro",
+            messages = listOf(GigaRequest.Message(GigaMessageRole.user, "hi")),
+            temperature = 0.42f
+        )
+
+        api.message(body)
+
+        assertEquals(0.42f, requestSlot.captured.options.temperature)
+    }
+
+    @Test
+    fun `passes temperature in messageStream request`() = runBlocking {
+        mockkObject(GigaAuth)
+        val stub = mockk<ChatServiceGrpcKt.ChatServiceCoroutineStub>()
+        val requestSlot = slot<Gigachatv1.ChatRequest>()
+        val response = sampleResponse(finishReason = "length")
+        every { stub.chatStream(capture(requestSlot), any()) } returns flow { emit(response) }
+
+        System.setProperty("GIGA_ACCESS_TOKEN", "token1")
+        val api = GigaGRPCChatApi(GigaAuth)
+        val field = GigaGRPCChatApi::class.java.getDeclaredField("stub").apply { isAccessible = true }
+        field.set(api, stub)
+
+        val body = GigaRequest.Chat(
+            model = "GigaChat-Pro",
+            messages = listOf(GigaRequest.Message(GigaMessageRole.user, "hi")),
+            temperature = 0.5f,
+            stream = true,
+        )
+
+        api.messageStream(body).toList()
+
+        assertEquals(0.5f, requestSlot.captured.options.temperature)
+    }
 }
