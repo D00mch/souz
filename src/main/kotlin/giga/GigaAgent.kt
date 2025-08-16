@@ -176,7 +176,8 @@ class GigaAgent(
     }
 
     private suspend fun classify(userText: String, conversation: ArrayDeque<GigaRequest.Message>): ToolCategory? {
-        val smallHistory = conversation.takeLast(3).map { it.content }.joinToString("\n")
+        val smallHistory = conversation.takeLast(if (conversation.size > 3) 2 else 0)
+            .joinToString("\n") { it.content }
         val messages = ArrayDeque<GigaRequest.Message>().apply {
             add(GigaRequest.Message(GigaMessageRole.system, CLASSIFIER_PROMPT))
             add(GigaRequest.Message(GigaMessageRole.user, "History:\n$smallHistory\n"))
@@ -187,7 +188,7 @@ class GigaAgent(
             messages = messages,
             functions = emptyList(),
         )
-        l.info("Classifying user message: $userText, \nbody: \n${gigaJsonMapper.writeValueAsString(body)}")
+        l.info("Classifying user message: $userText, \nbody: \n${logObjectMapper.writeValueAsString(body)}")
         return when (val resp = api.message(body)) {
             is GigaResponse.Chat.Error -> {
                 l.error("Classification error: ${resp.message}")
