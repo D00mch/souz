@@ -30,10 +30,6 @@ class ToolDesktopScreenShot(
             request = "Что видишь на экране?",
             params = mapOf("path" to "1")
         ),
-        FewShotExample(
-            request = "Что видишь на третьем экране?",
-            params = mapOf("path" to "3")
-        )
     )
     override val returnParameters = ReturnParameters(
         properties = mapOf(
@@ -53,7 +49,7 @@ class ToolDesktopScreenShot(
             val file = File.createTempFile("screenshot", ".jpg")
             file.writeBytes(screenshot)
             l.info("Uploading screenshot to GigaChat")
-            val upload = api.uploadImage(file)
+            val upload = api.uploadFile(file)
             lastAttachments.clear()
             lastAttachments.add(upload.id)
             return upload.id

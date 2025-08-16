@@ -339,6 +339,8 @@ class GigaAgent(
                     ToolWindowsManager.toGiga(),
                     ToolMouseClickMac().toGiga(),
                     ToolHotkeyMac().toGiga(),
+                    ToolUploadFile().toGiga(),
+                    ToolDownloadFile().toGiga(),
                     ToolMediaControl(ToolRunBashCommand).toGiga(),
                     ToolDesktopScreenShot().toGiga(),
                     ToolCollectButtons(ToolRunBashCommand).toGiga(),
@@ -346,7 +348,7 @@ class GigaAgent(
                     ToolCreateNote(ToolRunBashCommand).toGiga(),
                     ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
                     ToolOpenFolder(ToolRunBashCommand).toGiga(),
-                    ToolShowApps.toGiga(),
+                    ToolShowApps.toGiga(), // we get it by default anyway
                 ).associateBy { it.fn.name },
             )
         }

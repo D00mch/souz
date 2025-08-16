@@ -267,10 +267,6 @@ class GigaGRPCChatApi(
         )
     }
 
-    override suspend fun uploadImage(file: File): GigaResponse.UploadFile {
-        throw UnsupportedOperationException("Image upload is not supported for gRPC API")
-    }
-
     companion object {
         val INSTANCE = GigaGRPCChatApi(GigaAuth)
     }
