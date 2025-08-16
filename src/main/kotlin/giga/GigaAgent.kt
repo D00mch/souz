@@ -261,6 +261,13 @@ class GigaAgent(
 
         private val tools: Map<String, GigaToolSetup> by lazy {
             listOf(
+                ToolReadFile.toGiga(),
+                ToolListFiles.toGiga(),
+                ToolNewFile.toGiga(),
+                ToolDeleteFile.toGiga(),
+                ToolModifyFile.toGiga(),
+                ToolUploadFile().toGiga(),
+                ToolDownloadFile().toGiga(),
 //                ToolReadFile.toGiga(),
 //                ToolListFiles.toGiga(),
 //                ToolNewFile.toGiga(),

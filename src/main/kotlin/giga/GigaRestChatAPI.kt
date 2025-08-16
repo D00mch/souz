@@ -102,12 +102,21 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         }
     }
 
-    override suspend fun uploadImage(file: File): GigaResponse.UploadFile {
+    override suspend fun uploadFile(file: File): GigaResponse.UploadFile {
         return try {
             uploadImageWithToken(file, loadAccessToken())
         } catch (e: Exception) {
             l.error("Error in REST chat", e)
             uploadImageWithToken(file, refreshAccessToken())
+        }
+    }
+
+    override suspend fun downloadFile(fileId: String): String? {
+        return try {
+            downloadFileWithToken(fileId, loadAccessToken())
+        } catch (e: Exception) {
+            l.error("Error in REST chat", e)
+            downloadFileWithToken(fileId, refreshAccessToken())
         }
     }
 
@@ -184,6 +193,25 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         )
         val body = result.lines().last()
         return objectMapper.readValue(body)
+    }
+
+    private fun downloadFileWithToken(
+        fileId: String,
+        accessToken: String,
+    ): String? {
+        val documentsDir = File(System.getProperty("user.home"), "SluxxDocuments").apply { mkdirs() }
+        val command = """
+            cd "${documentsDir.absolutePath}" && \
+            curl -s -L -g 'https://gigachat.devices.sberbank.ru/api/v1/files/${fileId}/content' \
+            -H 'Accept: application/octet-stream' \
+            -H 'Authorization: Bearer $accessToken' \
+            -OJ -w '%{filename_effective}' -o /dev/null
+        """.trimIndent()
+        val fileName = ToolRunBashCommand.invoke(
+            ToolRunBashCommand.Input(command)
+        )
+
+        return File(documentsDir, fileName).absolutePath
     }
 
     private suspend fun loadAccessToken(): String {

@@ -10,17 +10,17 @@ import org.xml.sax.InputSource
 
 
 /**
- * Returns information from Safari: browsing history, bookmarks or open tabs.
+ * Returns information from Safari: browsing history, bookmarks, open tabs or current tab URL.
  * Works on macOS only and uses system tools such as `sqlite3`, `plutil` and AppleScript.
  */
 class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafariInfo.Input> {
-    enum class InfoType { history, bookmarks, tabs }
+    enum class InfoType { history, bookmarks, tabs, currentTab }
     data class Input(
         @InputParamDescription("Type of information to fetch")
         val type: InfoType,
     )
     override val name: String = "SafariInfo"
-    override val description: String = "Returns Safari history, bookmarks or open tabs"
+    override val description: String = "Returns Safari history, bookmarks, open tabs or current tab URL"
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Покажи историю браузера",
@@ -34,6 +34,14 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
             request = "Покажи открытые вкладки в Safari",
             params = mapOf("type" to InfoType.tabs)
         ),
+        FewShotExample(
+            request = "Покажи адрес текущей вкладки Safari",
+            params = mapOf("type" to InfoType.currentTab)
+        ),
+        FewShotExample(
+            request = "Сделай обзор открытой вкладки",
+            params = mapOf("type" to InfoType.currentTab)
+        )
     )
     override val returnParameters = ReturnParameters(
         properties = mapOf(
@@ -48,6 +56,7 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
                 objectMapper.writeValueAsString(it)
             }
             InfoType.tabs -> bash.sh(tabsCommand())
+            InfoType.currentTab -> bash.sh(currentTabCommand())
         }
     }
 
@@ -77,6 +86,18 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
                     end repeat
                 end repeat
                 return output
+            end tell
+        EOF
+    """.trimIndent()
+
+    private fun currentTabCommand(): String = """
+        osascript <<'EOF'
+            tell application "Safari"
+                if exists (front document) then
+                    return URL of front document
+                else
+                    return ""
+                end if
             end tell
         EOF
     """.trimIndent()
