@@ -63,16 +63,8 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
             params = mapOf("action" to Action.focus_right, "meta" to "")
         ),
         FewShotExample(
-            request = "Перемести окно вверх",
-            params = mapOf("action" to Action.move_up, "meta" to "")
-        ),
-        FewShotExample(
             request = "Сделай окошко немного пошире",
             params = mapOf("action" to Action.resize_width, "meta" to "+50")
-        ),
-        FewShotExample(
-            request = "Сделай окно значительно короче",
-            params = mapOf("action" to Action.resize_height, "meta" to "-200")
         ),
         FewShotExample(
             request = "Сделай окно меньше",
