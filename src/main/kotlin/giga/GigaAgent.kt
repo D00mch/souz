@@ -299,10 +299,10 @@ class GigaAgent(
         private val CLASSIFIER_PROMPT = """
             You are a classification algorithm. Pick one category for the user's request.
             Categories:
-            - io: file operations or searching text
-            - browser: web pages, tabs, or browser hotkeys
-            - desktop: windows, apps, mouse or general hotkeys
-            - config: changing or storing settings
+            - io: file operations or searching text, when we need to update README.md in the project or find something in code;
+            - browser: web pages, tabs, or browser hotkeys, or when we need to get general info like weather or news;
+            - desktop: windows, apps, mouse or general hotkeys, or when we want to get screenshot, or donwload/upload a document;
+            - config: changing or storing settings, like sound speed or instructions.
             Examples: "создай файл" -> io, "открой вкладку" -> browser,
             "перемести окно" -> desktop, "уменьши громкость" -> config
             Respond with exactly one word: io, browser, desktop, or config
