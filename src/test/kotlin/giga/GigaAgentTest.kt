@@ -159,7 +159,10 @@ class GigaAgentTest {
         val results = agent.run().toList()
 
         assertEquals(listOf("streamed"), results)
-        coVerify(exactly = 1) { api.messageStream(any()) }
+        coVerify(exactly = 1) {
+            @Suppress("UnusedFlow")
+            api.messageStream(any())
+        }
         coVerify(exactly = 1) { api.message(any()) }
     }
 

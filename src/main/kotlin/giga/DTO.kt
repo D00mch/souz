@@ -93,11 +93,7 @@ object GigaResponse {
 
 fun String.toFinishReason(): GigaResponse.FinishReason? {
     if (this.isEmpty()) return null
-    return try {
-        GigaResponse.FinishReason.valueOf(this)
-    } catch (e: IllegalArgumentException) {
-        null
-    }
+    return runCatching { GigaResponse.FinishReason.valueOf(this) }.getOrNull()
 }
 
 enum class GigaModel(val alias: String, val maxTokens: Int) {
