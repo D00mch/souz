@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
 import org.slf4j.LoggerFactory
 import org.slf4j.bridge.SLF4JBridgeHandler
-import java.io.File
 
 /**
  * Simple gRPC client for GigaChat ChatService.

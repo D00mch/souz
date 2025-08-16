@@ -1,12 +1,12 @@
 package com.dumch.giga
 
-import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.ToolsFactory
 import com.dumch.tool.config.ConfigStore
 import com.dumch.tool.config.ToolInstructionStore
-import com.dumch.tool.config.ToolSoundConfig
-import com.dumch.tool.config.ToolSoundConfigDiff
-import com.dumch.tool.desktop.*
-import com.dumch.tool.files.*
+import com.dumch.tool.desktop.ToolShowApps
+import com.dumch.tool.files.ToolListFiles
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
@@ -14,10 +14,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.databind.SerializationFeature
 import org.slf4j.LoggerFactory
-import kotlin.collections.map
 import java.util.concurrent.atomic.AtomicBoolean
 
 class GigaAgent(
@@ -28,8 +25,16 @@ class GigaAgent(
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
-    private val tools: Map<String, GigaToolSetup> = settings.functions
-    private val functions: List<GigaRequest.Function> = settings.functions.map { it.value.fn }
+
+    enum class ToolCategory { IO, BROWSER, DESKTOP, CONFIG }
+
+    private val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> = settings.toolsByCategory
+    private val functionsByCategory: Map<ToolCategory, List<GigaRequest.Function>> =
+        toolsByCategory.mapValues { entry -> entry.value.values.map { setup -> setup.fn } }
+
+    private val tools: Map<String, GigaToolSetup> =
+        toolsByCategory.values.flatMap { it.entries }.associate { it.key to it.value }
+    private val functions: List<GigaRequest.Function> = tools.values.map { it.fn }
     private val installedApps = runCatching {
         ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
     }.getOrElse { "[]" }
@@ -42,11 +47,13 @@ class GigaAgent(
         }
 
         userMessages.collect { userText ->
+            val category = classify(userText, conversation)
+            val fns = category?.let { functionsByCategory[it] } ?: functions
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
-                streamPipeline(conversation)
+                streamPipeline(conversation, fns)
             } else {
-                singleResponsePipeline(conversation)
+                singleResponsePipeline(conversation, fns)
             }
         }
     }
@@ -76,9 +83,12 @@ class GigaAgent(
         conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))
     }
 
-    private suspend fun ProducerScope<String>.streamPipeline(conversation: ArrayDeque<GigaRequest.Message>) {
+    private suspend fun ProducerScope<String>.streamPipeline(
+        conversation: ArrayDeque<GigaRequest.Message>,
+        fns: List<GigaRequest.Function>,
+    ) {
         stopRequested.set(false)
-        val responses = chatStream(conversation)
+        val responses = chatStream(conversation, fns)
         val results = ArrayList<GigaRequest.Message>()
         var totalTokens = 0
         responses.takeWhile { response ->
@@ -108,7 +118,7 @@ class GigaAgent(
         } else {
             conversation.addAll(results)
             trySummarize(totalTokens, conversation)
-            streamPipeline(conversation)
+            streamPipeline(conversation, fns)
         }
     }
 
@@ -116,11 +126,14 @@ class GigaAgent(
         stopRequested.set(true)
     }
 
-    private suspend fun ProducerScope<String>.singleResponsePipeline(conversation: ArrayDeque<GigaRequest.Message>) {
+    private suspend fun ProducerScope<String>.singleResponsePipeline(
+        conversation: ArrayDeque<GigaRequest.Message>,
+        fns: List<GigaRequest.Function>,
+    ) {
         for (i in 1..10) { // infinite loop protection
             if (!isActive) break
             val response: GigaResponse.Chat = try {
-                withContext(Dispatchers.IO) { chat(conversation) }
+                withContext(Dispatchers.IO) { chat(conversation, fns) }
             } catch (e: Throwable) {
                 l.error("Error: loop $i: ${e.message}", e)
                 send("Не смогли достучаться до сервера. Будем пробовать снова?")
@@ -160,6 +173,38 @@ class GigaAgent(
             msg.content.isNotBlank() -> send(msg.content)
         }
         return null
+    }
+
+    private suspend fun classify(userText: String, conversation: ArrayDeque<GigaRequest.Message>): ToolCategory? {
+        val smallHistory = conversation.takeLast(if (conversation.size > 3) 2 else 0)
+            .joinToString("\n") { it.content }
+        val messages = ArrayDeque<GigaRequest.Message>().apply {
+            add(GigaRequest.Message(GigaMessageRole.system, CLASSIFIER_PROMPT))
+            add(GigaRequest.Message(GigaMessageRole.user, "History:\n$smallHistory\n"))
+            add(GigaRequest.Message(GigaMessageRole.user, "New message:\n$userText"))
+        }
+        val body = GigaRequest.Chat(
+            model = settings.model.alias,
+            messages = messages,
+            functions = emptyList(),
+        )
+        l.info("Classifying user message: $userText, \nbody: \n${logObjectMapper.writeValueAsString(body)}")
+        return when (val resp = api.message(body)) {
+            is GigaResponse.Chat.Error -> {
+                l.error("Classification error: ${resp.message}")
+                null
+            }
+            is GigaResponse.Chat.Ok -> {
+                val cat = resp.choices.firstOrNull()?.message?.content?.trim()?.uppercase()
+                l.info("Category: $cat")
+                try {
+                    ToolCategory.valueOf(cat ?: "desktop")
+                } catch (e: IllegalArgumentException) {
+                    l.error("Invalid category: $cat", e)
+                    ToolCategory.DESKTOP
+                }
+            }
+        }
     }
 
     private suspend fun trySummarize(totalTokens: Int, conversation: ArrayDeque<GigaRequest.Message>) {
@@ -243,7 +288,7 @@ class GigaAgent(
     }
 
     data class Settings(
-        val functions: Map<String, GigaToolSetup>,
+        val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
         val model: GigaModel = GigaModel.Max,
         val stream: Boolean = false,
     )
@@ -251,53 +296,33 @@ class GigaAgent(
     companion object {
         private const val SUMMARIZE_THRESHOLD = 0.95
 
+        private val CLASSIFIER_PROMPT = """
+You are a classification algorithm. Pick one category for the user's request.
+Categories:
+- io: file operations or searching text, when we need to update README.md in the project or find something in code;
+- browser: web pages, tabs, or browser hotkeys, or when we need to get general info like weather or news;
+- desktop: windows, apps, mouse or general hotkeys, or when we want to get screenshot, or donwload/upload a document;
+- config: changing or storing settings, like sound speed or instructions.
+Examples: "создай файл" -> io, "открой вкладку" -> browser,
+"перемести окно" -> desktop, "уменьши громкость" -> config
+Respond with exactly one word: io, browser, desktop, or config
+""".trimIndent()
+
+        private val SYSTEM_PROMPT = """
+Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
+c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
+""".trimIndent()
+
         private val systemPrompt = GigaRequest.Message(
             role = GigaMessageRole.system,
-            content = """
-                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
-                c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
-            """.trimIndent()
+            content = SYSTEM_PROMPT
         )
-
-        private val tools: Map<String, GigaToolSetup> by lazy {
-            listOf(
-                ToolReadFile.toGiga(),
-                ToolListFiles.toGiga(),
-                ToolNewFile.toGiga(),
-                ToolDeleteFile.toGiga(),
-                ToolModifyFile.toGiga(),
-                ToolUploadFile().toGiga(),
-                ToolDownloadFile().toGiga(),
-//                ToolReadFile.toGiga(),
-//                ToolListFiles.toGiga(),
-//                ToolNewFile.toGiga(),
-//                ToolDeleteFile.toGiga(),
-//                ToolModifyFile.toGiga(),
-                ToolWindowsManager.toGiga(),
-                ToolSoundConfig(ConfigStore).toGiga(),
-                ToolSoundConfigDiff(ConfigStore).toGiga(),
-                ToolSafariInfo(ToolRunBashCommand).toGiga(),
-                ToolMouseClickMac().toGiga(),
-                ToolHotkeyMac().toGiga(),
-                ToolMediaControl(ToolRunBashCommand).toGiga(),
-                ToolFindTextInFiles.toGiga(),
-                ToolDesktopScreenShot().toGiga(),
-                ToolInstructionStore(ConfigStore).toGiga(),
-                ToolCreateNote(ToolRunBashCommand).toGiga(),
-//                ToolShowApps.toGiga(),
-//                ToolOpenFolder(ToolRunBashCommand).toGiga(),
-                ToolCollectButtons(ToolRunBashCommand).toGiga(),
-                ToolOpen(ToolRunBashCommand).toGiga(),
-                ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
-                ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
-            ).associateBy { it.fn.name }
-        }
 
         fun instance(
             userMessages: Flow<String>,
             api: GigaChatAPI,
             model: GigaModel = GigaModel.Max,
-            settings: Settings = Settings(tools, model, stream = true)
+            settings: Settings = Settings(ToolsFactory.toolsByCategory, model, stream = true)
         ): GigaAgent = GigaAgent(userMessages, api, settings)
     }
 }

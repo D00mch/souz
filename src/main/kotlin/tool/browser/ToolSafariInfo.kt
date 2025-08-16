@@ -1,4 +1,4 @@
-package com.dumch.tool.desktop
+package com.dumch.tool.browser
 
 import com.dumch.giga.objectMapper
 import com.dumch.tool.*

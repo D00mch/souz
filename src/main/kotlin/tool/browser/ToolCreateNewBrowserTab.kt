@@ -1,4 +1,4 @@
-package com.dumch.tool.desktop
+package com.dumch.tool.browser
 
 import com.dumch.tool.*
 
@@ -14,6 +14,10 @@ class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<
         FewShotExample(
             request = "Открой google в новой вкладке",
             params = mapOf("url" to "https://www.google.com")
+        ),
+        FewShotExample(
+            request = "Какая погода в Москве?",
+            params = mapOf("url" to "https://yandex.ru/pogoda/ru/moscow?lat=55.740234&lon=37.532223")
         )
     )
     override val returnParameters = ReturnParameters(
