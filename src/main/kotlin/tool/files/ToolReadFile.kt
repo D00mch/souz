@@ -32,3 +32,8 @@ object ToolReadFile : ToolSetup<ToolReadFile.Input> {
         return file.readText()
     }
 }
+
+fun main() {
+    val tool = ToolReadFile
+    println(tool.invoke(ToolReadFile.Input("Users/duxx/Отчеты/sales_report.csv")))
+}

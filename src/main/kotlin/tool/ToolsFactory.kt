@@ -20,7 +20,6 @@ import com.dumch.tool.desktop.ToolMinimizeWindows
 import com.dumch.tool.desktop.ToolMouseClickMac
 import com.dumch.tool.desktop.ToolOpen
 import com.dumch.tool.desktop.ToolOpenFolder
-import com.dumch.tool.desktop.ToolPlotCsv
 import com.dumch.tool.desktop.ToolUploadFile
 import com.dumch.tool.desktop.ToolWindowsManager
 import com.dumch.tool.files.ToolDeleteFile
@@ -29,7 +28,7 @@ import com.dumch.tool.files.ToolListFiles
 import com.dumch.tool.files.ToolModifyFile
 import com.dumch.tool.files.ToolNewFile
 import com.dumch.tool.files.ToolReadFile
-import com.dumch.tool.data.ToolPlotCsv
+import com.dumch.tool.desktop.ToolPlotCsv
 
 object ToolsFactory {
     val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> by lazy {
@@ -41,7 +40,6 @@ object ToolsFactory {
                 ToolDeleteFile.toGiga(),
                 ToolModifyFile.toGiga(),
                 ToolFindTextInFiles.toGiga(),
-                ToolPlotCsv(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.BROWSER to listOf(

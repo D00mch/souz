@@ -17,21 +17,29 @@ class ToolPlotCsv(private val bash: ToolRunBashCommand) : ToolSetup<ToolPlotCsv.
         @InputParamDescription("Column name to use for the y-axis")
         val yColumn: String,
         @InputParamDescription("Path for the output image. Defaults to 'plot.png'")
-        val output: String? = null,
+        val output: String? = "/Users/duxx/SluxxDocuments/plot.png",
     )
 
     override val name: String = "PlotCsv"
-    override val description: String = "Generate a line plot image from a CSV file using matplotlib"
+    override val description: String = "Generate a plot image from a CSV file using matplotlib"
 
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Построй график зависимости sales от month из файла data.csv",
+            request = "Построй график дохода по клиенту из файла sales_report.csv",
             params = mapOf(
-                "path" to "data.csv",
-                "xColumn" to "month",
-                "yColumn" to "sales"
+                "path" to "path/to/sales_report.csv",
+                "xColumn" to "Клиент",
+                "yColumn" to "Доход"
             )
-        )
+        ),
+        FewShotExample(
+            request = "Построй график количество покупок по категориям из файла sales_report.csv",
+            params = mapOf(
+                "path" to "path/to/sales_report.csv",
+                "xColumn" to "Категория",
+                "yColumn" to "Количество"
+            )
+        ),
     )
 
     override val returnParameters = ReturnParameters(
@@ -44,7 +52,12 @@ class ToolPlotCsv(private val bash: ToolRunBashCommand) : ToolSetup<ToolPlotCsv.
         val scriptPath = File("scripts/plot_csv.py").absolutePath
         val csvPath = File(input.path).absolutePath
         val outputPath = File(input.output ?: "plot.png").absolutePath
-        val command = "python \"$scriptPath\" \"$csvPath\" \"${input.xColumn}\" \"${input.yColumn}\" \"$outputPath\""
+        val command = "python3 \"$scriptPath\" \"$csvPath\" \"${input.xColumn}\" \"${input.yColumn}\" \"$outputPath\""
         return bash.sh(command)
     }
+}
+
+fun main() {
+    val tool = ToolPlotCsv(ToolRunBashCommand)
+    println(tool.invoke(ToolPlotCsv.Input("/Users/duxx/Отчеты/sales_report.csv", "Клиент", "Доход")))
 }
