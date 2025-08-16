@@ -33,27 +33,14 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
 
     data class Input(
         @InputParamDescription(
-            """Select a hotkey to press. Hotkey options:
-            \"arrow_left\"           -> left arrow
-            \"arrow_right\"          -> right arrow
-            \"arrow_up\"             -> arrow up
-            \"arrow_down\"           -> arrow down
-            \"page_up\"              -> page up
-            \"page_down\"            -> page down
-            \"home\"                 -> home
-            \"end\"                  -> end
-            \"delete\"               -> forward delete
-            \"backspace\"            -> label \"Delete\" on Mac keyboards
-            \"enter\"                -> enter
-            \"escape\"               -> escape
-            \"space\"                -> space
-            \"go_to_left_screen\"    -> ctrl+left
-            \"go_to_right_screen\"   -> ctrl+right
-            \"full_screen_toggle\"   -> ctrl+cmd+f
-            \"close_app\"            -> cmd+q
-            \"close_tab\"            -> cmd+w
-            \"open_just_closed_tab\" -> cmd+shift+t
-            \"cancel_last_action\"   -> cmd+z"""
+            """Select a hotkey to press. Some combined hotkey options:
+"go_to_left_screen" -> ctrl+left
+"go_to_right_screen" -> ctrl+right
+"full_screen_toggle" -> ctrl+cmd+f
+"close_app" -> cmd+q
+"close_tab" -> cmd+w
+"open_just_closed_tab" -> cmd+shift+t
+"cancel_last_action" -> cmd+z"""
         )
         val hotKey: HotKey,
     )
