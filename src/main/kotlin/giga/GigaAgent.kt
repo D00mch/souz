@@ -1,13 +1,12 @@
 package com.dumch.giga
 
-import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.ToolsFactory
 import com.dumch.tool.config.ConfigStore
 import com.dumch.tool.config.ToolInstructionStore
-import com.dumch.tool.config.ToolSoundConfig
-import com.dumch.tool.config.ToolSoundConfigDiff
-import com.dumch.tool.desktop.*
-import com.dumch.tool.browser.*
-import com.dumch.tool.files.*
+import com.dumch.tool.desktop.ToolShowApps
+import com.dumch.tool.files.ToolListFiles
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
@@ -15,10 +14,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.databind.SerializationFeature
 import org.slf4j.LoggerFactory
-import kotlin.collections.map
 import java.util.concurrent.atomic.AtomicBoolean
 
 class GigaAgent(
@@ -320,52 +316,12 @@ c помощью имеющихся функций, сделай, а не про
             role = GigaMessageRole.system,
             content = SYSTEM_PROMPT
         )
-        private val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> by lazy {
-            mapOf(
-                ToolCategory.IO to listOf(
-                    ToolReadFile.toGiga(),
-                    ToolListFiles.toGiga(),
-                    ToolNewFile.toGiga(),
-                    ToolDeleteFile.toGiga(),
-                    ToolModifyFile.toGiga(),
-                    ToolFindTextInFiles.toGiga(),
-                ).associateBy { it.fn.name },
-
-                ToolCategory.BROWSER to listOf(
-                    ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
-                    ToolSafariInfo(ToolRunBashCommand).toGiga(),
-                    ToolBrowserHotkeys().toGiga(),
-                ).associateBy { it.fn.name },
-
-                ToolCategory.CONFIG to listOf(
-                    ToolSoundConfig(ConfigStore).toGiga(),
-                    ToolSoundConfigDiff(ConfigStore).toGiga(),
-                    ToolInstructionStore(ConfigStore).toGiga(),
-                ).associateBy { it.fn.name },
-
-                ToolCategory.DESKTOP to listOf(
-                    ToolWindowsManager.toGiga(),
-                    ToolMouseClickMac().toGiga(),
-                    ToolHotkeyMac().toGiga(),
-                    ToolUploadFile().toGiga(),
-                    ToolDownloadFile().toGiga(),
-                    ToolMediaControl(ToolRunBashCommand).toGiga(),
-                    ToolDesktopScreenShot().toGiga(),
-                    ToolCollectButtons(ToolRunBashCommand).toGiga(),
-                    ToolOpen(ToolRunBashCommand).toGiga(),
-                    ToolCreateNote(ToolRunBashCommand).toGiga(),
-                    ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
-                    ToolOpenFolder(ToolRunBashCommand).toGiga(),
-                    // ToolShowApps.toGiga(), // we get it by default anyway
-                ).associateBy { it.fn.name },
-            )
-        }
 
         fun instance(
             userMessages: Flow<String>,
             api: GigaChatAPI,
             model: GigaModel = GigaModel.Max,
-            settings: Settings = Settings(toolsByCategory, model, stream = true)
+            settings: Settings = Settings(ToolsFactory.toolsByCategory, model, stream = true)
         ): GigaAgent = GigaAgent(userMessages, api, settings)
     }
 }
