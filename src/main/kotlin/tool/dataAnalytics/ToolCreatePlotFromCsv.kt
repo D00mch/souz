@@ -1,4 +1,4 @@
-package com.dumch.tool.desktop
+package com.dumch.tool.dataAnalytics
 
 import com.dumch.tool.BadInputException
 import com.dumch.tool.FewShotExample
@@ -18,7 +18,7 @@ class ToolCreatePlotFromCsv(private val bash: ToolRunBashCommand) : ToolSetup<To
         @InputParamDescription("Column name to use for the y-axis; omit to list available headers")
         val yColumn: String? = null,
         @InputParamDescription("Path for the output image. Defaults to 'plot.png'")
-        val output: String? = "/Users/duxx/SluxxDocuments/plot.png",
+        val output: String? = "${System.getProperty("user.home")}/SluxxDocuments/plot.png",
     )
 
     override val name: String = "CreatePlotFromCsv"

@@ -303,9 +303,10 @@ Categories:
 - desktop: windows, apps, mouse or general hotkeys;
 - io: when we want to get screenshot, or download/upload a document;
 - config: changing or storing settings, like sound speed or instructions.
+- dataAnalytics: when we want to analyze data, like plotting a graph or finding correlations.
 Examples: "создай файл" -> coder, "открой вкладку" -> browser,
-"перемести окно" -> desktop, "сделай скриншот" -> io, "уменьши громкость" -> config
-Respond with exactly one word: coder, browser, desktop, io, or config
+"перемести окно" -> desktop, "сделай скриншот" -> io, "уменьши громкость" -> config, "построй график дохода" -> dataAnalytics
+Respond with exactly one word: coder, browser, desktop, io, config, or dataAnalytics
 """.trimIndent()
 
         private val SYSTEM_PROMPT = """

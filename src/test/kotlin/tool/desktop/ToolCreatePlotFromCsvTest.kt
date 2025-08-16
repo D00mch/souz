@@ -1,7 +1,7 @@
 package tool.desktop
 
 import com.dumch.tool.ToolRunBashCommand
-import com.dumch.tool.desktop.ToolCreatePlotFromCsv
+import com.dumch.tool.dataAnalytics.ToolCreatePlotFromCsv
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

@@ -11,7 +11,7 @@ import com.dumch.tool.config.ToolSoundConfig
 import com.dumch.tool.config.ToolSoundConfigDiff
 import com.dumch.tool.desktop.ToolCollectButtons
 import com.dumch.tool.desktop.ToolCreateNote
-import com.dumch.tool.desktop.ToolCreatePlotFromCsv
+import com.dumch.tool.dataAnalytics.ToolCreatePlotFromCsv
 import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.desktop.ToolDownloadFile
 import com.dumch.tool.desktop.ToolHotkeyMac
@@ -38,9 +38,14 @@ object ToolsFactory {
                 ToolListFiles.toGiga(),
                 ToolNewFile.toGiga(),
                 ToolDeleteFile.toGiga(),
-                ToolCreatePlotFromCsv(ToolRunBashCommand).toGiga(),
                 ToolModifyFile.toGiga(),
                 ToolFindTextInFiles.toGiga(),
+            ).associateBy { it.fn.name },
+
+            ToolCategory.DATAANALYTICS to listOf(
+                ToolCreatePlotFromCsv(ToolRunBashCommand).toGiga(),
+                ToolUploadFile().toGiga(),
+                ToolDownloadFile().toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.BROWSER to listOf(
