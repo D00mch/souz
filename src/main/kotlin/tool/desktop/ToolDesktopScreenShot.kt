@@ -30,10 +30,6 @@ class ToolDesktopScreenShot(
             request = "Что видишь на экране?",
             params = mapOf("path" to "1")
         ),
-        FewShotExample(
-            request = "Что видишь на третьем экране?",
-            params = mapOf("path" to "3")
-        )
     )
     override val returnParameters = ReturnParameters(
         properties = mapOf(
