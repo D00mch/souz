@@ -1,5 +1,6 @@
 package com.dumch.tool.desktop
 
+import com.dumch.tool.BadInputException
 import com.dumch.tool.FewShotExample
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ReturnParameters
@@ -12,18 +13,25 @@ class ToolPlotCsv(private val bash: ToolRunBashCommand) : ToolSetup<ToolPlotCsv.
     data class Input(
         @InputParamDescription("Path to a CSV file with table data")
         val path: String,
-        @InputParamDescription("Column name to use for the x-axis")
-        val xColumn: String,
-        @InputParamDescription("Column name to use for the y-axis")
-        val yColumn: String,
+        @InputParamDescription("Column name to use for the x-axis; omit to list available headers")
+        val xColumn: String? = null,
+        @InputParamDescription("Column name to use for the y-axis; omit to list available headers")
+        val yColumn: String? = null,
         @InputParamDescription("Path for the output image. Defaults to 'plot.png'")
         val output: String? = "/Users/duxx/SluxxDocuments/plot.png",
     )
 
     override val name: String = "PlotCsv"
-    override val description: String = "Generate a plot image from a CSV file using matplotlib"
+    override val description: String = "Generate a plot image from a CSV file using matplotlib. " +
+        "If column names are not provided, returns the list of CSV headers"
 
     override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Какие столбцы есть в файле sales_report.csv?",
+            params = mapOf(
+                "path" to "path/to/sales_report.csv"
+            )
+        ),
         FewShotExample(
             request = "Построй график дохода по клиенту из файла sales_report.csv",
             params = mapOf(
@@ -44,13 +52,25 @@ class ToolPlotCsv(private val bash: ToolRunBashCommand) : ToolSetup<ToolPlotCsv.
 
     override val returnParameters = ReturnParameters(
         properties = mapOf(
-            "result" to ReturnProperty("string", "Stdout from plot command")
+            "result" to ReturnProperty("string", "Stdout from plot command or CSV headers")
         )
     )
 
     override fun invoke(input: Input): String {
+        val csv = File(input.path)
+        if (!csv.exists() || csv.isDirectory) {
+            throw BadInputException("Invalid file path: ${input.path}")
+        }
+
+        if (input.xColumn == null || input.yColumn == null) {
+            csv.bufferedReader().use { reader ->
+                val headers = reader.readLine()?.split(",") ?: emptyList()
+                return headers.joinToString(prefix = "[", postfix = "]")
+            }
+        }
+
         val scriptPath = File("scripts/plot_csv.py").absolutePath
-        val csvPath = File(input.path).absolutePath
+        val csvPath = csv.absolutePath
         val outputPath = File(input.output ?: "plot.png").absolutePath
         val command = "python3 \"$scriptPath\" \"$csvPath\" \"${input.xColumn}\" \"${input.yColumn}\" \"$outputPath\""
         return bash.sh(command)
@@ -59,5 +79,5 @@ class ToolPlotCsv(private val bash: ToolRunBashCommand) : ToolSetup<ToolPlotCsv.
 
 fun main() {
     val tool = ToolPlotCsv(ToolRunBashCommand)
-    println(tool.invoke(ToolPlotCsv.Input("/Users/duxx/Отчеты/sales_report.csv", "Клиент", "Доход")))
+    println(tool.invoke(ToolPlotCsv.Input("src/test/resources/sample.csv")))
 }
