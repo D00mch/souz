@@ -38,6 +38,7 @@ object ToolsFactory {
                 ToolListFiles.toGiga(),
                 ToolNewFile.toGiga(),
                 ToolDeleteFile.toGiga(),
+                ToolCreatePlotFromCsv(ToolRunBashCommand).toGiga(),
                 ToolModifyFile.toGiga(),
                 ToolFindTextInFiles.toGiga(),
             ).associateBy { it.fn.name },
@@ -65,7 +66,7 @@ object ToolsFactory {
                 ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
                 ToolOpenFolder(ToolRunBashCommand).toGiga(),
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
-                ToolCreatePlotFromCsv(ToolRunBashCommand).toGiga(),
+
                 // ToolShowApps.toGiga(), // we get it by default anyway
             ).associateBy { it.fn.name },
 

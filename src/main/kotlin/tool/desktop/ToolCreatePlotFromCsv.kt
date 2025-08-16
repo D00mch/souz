@@ -22,7 +22,7 @@ class ToolCreatePlotFromCsv(private val bash: ToolRunBashCommand) : ToolSetup<To
     )
 
     override val name: String = "CreatePlotFromCsv"
-    override val description: String = "Generate a plot image from a CSV file using matplotlib. " +
+    override val description: String = "Create a plot image from a CSV file using matplotlib. " +
             "If column names are not provided, returns the list of CSV headers"
 
     override val fewShotExamples = listOf(
@@ -73,5 +73,5 @@ class ToolCreatePlotFromCsv(private val bash: ToolRunBashCommand) : ToolSetup<To
 
 fun main() {
     val tool = ToolCreatePlotFromCsv(ToolRunBashCommand)
-    println(tool.invoke(ToolCreatePlotFromCsv.Input("src/test/resources/sample.csv")))
+    println(tool.invoke(ToolCreatePlotFromCsv.Input("/Users/duxx/Отчеты/sales_report.csv", "Клиент", "Доход")))
 }
