@@ -26,7 +26,7 @@ class ToolUploadFile(
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Проанализируй файл report",
-            params = mapOf("filePath" to "/path/to/file")
+            params = mapOf("filePath" to "/path/to/report.csv")
         )
     )
     override val returnParameters = ReturnParameters(
