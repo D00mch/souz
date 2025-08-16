@@ -97,6 +97,7 @@ object GigaRequest {
         @JsonProperty("function_call")
         val functionCall: String = "auto",
         val functions: List<Function> = emptyList(),
+        val temperature: Float? = null,
         val stream: Boolean = false,
     )
 
