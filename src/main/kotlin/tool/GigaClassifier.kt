@@ -48,7 +48,8 @@ class LocalRegexClassifier : GigaClassifier {
 
         private val CATEGORY_PATTERNS: Map<ToolCategory, List<WeightedRegex>> = mapOf(
             ToolCategory.CODER to listOf(
-                WeightedRegex(Regex("readme|разработ|рефактор|отрефактор|баг|композиц|наслед|абстракт|ооп|полиморф|лисков|чистый код"), 2.0),
+                WeightedRegex(Regex("кодер|coder"), 2.0),
+                WeightedRegex(Regex("readme|ридми|разработ|рефактор|отрефактор|баг|композиц|наслед|абстракт|ооп|полиморф|лисков|чистый код"), 2.0),
                 WeightedRegex(Regex("реализ|ошибк|open closed|абстракц"), 1.0),
                 WeightedRegex(Regex("вынес|напис|поправ|измен|додел|чищ|удобн|созда"), 0.5),
             ),
@@ -61,12 +62,12 @@ class LocalRegexClassifier : GigaClassifier {
                 WeightedRegex(Regex("громк|volume|скорост|speed|instruction|ускорь речь|замедли речь|скорость речь"), 1.0),
             ),
             ToolCategory.DESKTOP to listOf(
-                WeightedRegex(Regex("перенеси окно|перейди на экран|перетащи окно|размести приложения по|"), 2.0),
+                WeightedRegex(Regex("перенеси окно|перейди на экран|перетащи окно|размести приложения по"), 2.0),
                 WeightedRegex(Regex("окн|window|desktop"), 1.5),
                 WeightedRegex(Regex("прилож|app|mouse|мыш|screen|скрин|экран"), 1.0),
             ),
             ToolCategory.IO to listOf(
-                WeightedRegex(Regex("скриншот|screenshot|сфоткай экран|сфотографируй экран"), 2.0),
+                WeightedRegex(Regex("скриншот|screenshot|сфоткай экран|сфотографируй экран|что на экране"), 2.0),
                 WeightedRegex(Regex("скач|download|загруз|upload"), 1.0),
             ),
         )
