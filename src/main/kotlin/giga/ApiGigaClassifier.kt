@@ -14,11 +14,7 @@ class ApiGigaClassifier(
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
 
     override suspend fun classify(body: String): ToolCategory? {
-        val req: GigaRequest.Chat = try {
-            gigaJsonMapper.readValue(body)
-        } catch (_: Exception) {
-            return null
-        }
+        val req: GigaRequest.Chat = gigaJsonMapper.readValue(body)
         l.info("Classifying via API, body:\n{}", logObjectMapper.writeValueAsString(req))
         return when (val resp = api.message(req)) {
             is GigaResponse.Chat.Error -> {
@@ -28,12 +24,7 @@ class ApiGigaClassifier(
             is GigaResponse.Chat.Ok -> {
                 val cat = resp.choices.firstOrNull()?.message?.content?.trim()?.uppercase()
                 l.info("Category: {}", cat)
-                try {
-                    ToolCategory.valueOf(cat ?: "DESKTOP")
-                } catch (e: IllegalArgumentException) {
-                    l.error("Invalid category: {}", cat, e)
-                    ToolCategory.DESKTOP
-                }
+                ToolCategory.valueOf(cat ?: "DESKTOP")
             }
         }
     }
