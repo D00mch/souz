@@ -261,11 +261,11 @@ class GigaAgent(
 
         private val tools: Map<String, GigaToolSetup> by lazy {
             listOf(
-                ToolReadFile.toGiga(),
-                ToolListFiles.toGiga(),
-                ToolNewFile.toGiga(),
-                ToolDeleteFile.toGiga(),
-                ToolModifyFile.toGiga(),
+//                ToolReadFile.toGiga(),
+//                ToolListFiles.toGiga(),
+//                ToolNewFile.toGiga(),
+//                ToolDeleteFile.toGiga(),
+//                ToolModifyFile.toGiga(),
                 ToolWindowsManager.toGiga(),
                 ToolSoundConfig(ConfigStore).toGiga(),
                 ToolSoundConfigDiff(ConfigStore).toGiga(),
