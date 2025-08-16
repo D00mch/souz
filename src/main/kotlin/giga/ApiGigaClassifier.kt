@@ -1,6 +1,6 @@
 package com.dumch.giga
 
-import com.dumch.tool.GigaClassifier
+import com.dumch.tool.UserMessageClassifier
 import com.dumch.tool.ToolCategory
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory
 
 class ApiGigaClassifier(
     private val api: GigaChatAPI,
-) : GigaClassifier {
+) : UserMessageClassifier {
     private val l = LoggerFactory.getLogger(ApiGigaClassifier::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
 

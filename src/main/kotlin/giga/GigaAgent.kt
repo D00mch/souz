@@ -1,7 +1,7 @@
 package com.dumch.giga
 
 import com.dumch.db.DesktopInfoRepository
-import com.dumch.tool.GigaClassifier
+import com.dumch.tool.UserMessageClassifier
 import com.dumch.tool.LocalRegexClassifier
 import com.dumch.tool.ToolCategory
 import com.dumch.tool.ToolsFactory
@@ -23,8 +23,8 @@ class GigaAgent(
     private val api: GigaChatAPI,
     private val ragRepo: DesktopInfoRepository,
     private val settings: Settings,
-    private val apiClassifier: GigaClassifier = ApiGigaClassifier(api),
-    private val localClassifier: GigaClassifier = LocalRegexClassifier(),
+    private val apiClassifier: UserMessageClassifier = ApiGigaClassifier(api),
+    private val localClassifier: UserMessageClassifier = LocalRegexClassifier(),
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)

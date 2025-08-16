@@ -5,7 +5,7 @@ import com.dumch.giga.GigaRequest
 import com.dumch.giga.gigaJsonMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 
-fun interface GigaClassifier {
+fun interface UserMessageClassifier {
     suspend fun classify(body: String): ToolCategory?
 }
 
@@ -18,7 +18,7 @@ enum class ToolCategory {
     DATAANALYTICS,
 }
 
-class LocalRegexClassifier : GigaClassifier {
+class LocalRegexClassifier : UserMessageClassifier {
     override suspend fun classify(body: String): ToolCategory? {
         val chat: GigaRequest.Chat = try {
             gigaJsonMapper.readValue(body)
