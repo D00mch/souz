@@ -1,13 +1,16 @@
 package com.dumch.tool.config
 
+import com.dumch.db.DesktopInfoRepository
 import com.dumch.tool.FewShotExample
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ReturnParameters
 import com.dumch.tool.ReturnProperty
 import com.dumch.tool.ToolSetup
+import kotlinx.coroutines.runBlocking
 
 class ToolInstructionStore(
-    private val config: ConfigStore
+    private val config: ConfigStore,
+    private val repo: DesktopInfoRepository,
 ): ToolSetup<ToolInstructionStore.Input> {
 
     data class Input(
@@ -38,9 +41,15 @@ class ToolInstructionStore(
         properties = mapOf("result" to ReturnProperty("string", "Operation status"))
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+
+    override suspend fun suspendInvoke(input: Input): String {
         val currentInstructions = config.get<ArrayList<Input>>(INSTUCTIONS_KEY, ArrayList())
         currentInstructions.add(input)
+
+        val dbInstructions = listOf("Когда я говорю: `${input.name}`, выполняй инструкцию: ${input.action}")
+        repo.storeDesktopInfo(dbInstructions)
+
         config.put(INSTUCTIONS_KEY, currentInstructions)
         return "Instruction stored"
     }

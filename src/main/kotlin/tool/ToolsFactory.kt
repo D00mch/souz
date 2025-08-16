@@ -1,5 +1,6 @@
 package com.dumch.tool
 
+import com.dumch.db.DesktopInfoRepository
 import com.dumch.giga.GigaToolSetup
 import com.dumch.giga.toGiga
 import com.dumch.tool.browser.ToolBrowserHotkeys
@@ -30,7 +31,7 @@ import com.dumch.tool.files.ToolModifyFile
 import com.dumch.tool.files.ToolNewFile
 import com.dumch.tool.files.ToolReadFile
 
-object ToolsFactory {
+class ToolsFactory(private val repo: DesktopInfoRepository) {
     val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> by lazy {
         mapOf(
             ToolCategory.CODER to listOf(
@@ -57,7 +58,7 @@ object ToolsFactory {
             ToolCategory.CONFIG to listOf(
                 ToolSoundConfig(ConfigStore).toGiga(),
                 ToolSoundConfigDiff(ConfigStore).toGiga(),
-                ToolInstructionStore(ConfigStore).toGiga(),
+                ToolInstructionStore(ConfigStore, repo).toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.DESKTOP to listOf(
@@ -71,7 +72,6 @@ object ToolsFactory {
                 ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
                 ToolOpenFolder(ToolRunBashCommand).toGiga(),
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
-
                 // ToolShowApps.toGiga(), // we get it by default anyway
             ).associateBy { it.fn.name },
 

@@ -1,5 +1,6 @@
 package giga
 
+import com.dumch.db.DesktopInfoRepository
 import com.dumch.giga.*
 import com.dumch.tool.ToolCategory
 import io.mockk.*
@@ -43,6 +44,7 @@ class GigaAgentTest {
         val agent = GigaAgent(
             userMessages = flowOf("hi"),
             api = api,
+            ragRepo = mockRagRepo(),
             settings = GigaAgent.Settings(toolsByCategory = emptyMap(), model = GigaModel.Pro, stream = false),
         )
         val results = agent.run().toList()
@@ -102,6 +104,7 @@ class GigaAgentTest {
         val agent = GigaAgent(
             userMessages = flowOf("list"),
             api = api,
+            ragRepo = mockRagRepo(),
             settings = GigaAgent.Settings(
                 toolsByCategory = mapOf(
                     ToolCategory.CODER to mapOf("ListFiles" to dummyTool("ListFiles"))
@@ -154,6 +157,7 @@ class GigaAgentTest {
         val agent = GigaAgent(
             userMessages = flowOf("hi"),
             api = api,
+            ragRepo = mockRagRepo(),
             settings = GigaAgent.Settings(toolsByCategory = emptyMap(), model = GigaModel.Pro, stream = true),
         )
         val results = agent.run().toList()
@@ -189,8 +193,9 @@ class GigaAgentTest {
         )
 
         val agent = GigaAgent(
-            userMessages = flowOf("создай файл"),
+            userMessages = flowOf("создай файл readme"),
             api = api,
+            ragRepo = mockRagRepo(),
             settings = GigaAgent.Settings(
                 toolsByCategory = mapOf(
                     ToolCategory.CODER to mapOf("ListFiles" to dummyTool("ListFiles")),
@@ -242,6 +247,7 @@ class GigaAgentTest {
         val agent = GigaAgent(
             userMessages = flowOf("hi"),
             api = api,
+            ragRepo = mockRagRepo(),
             settings = GigaAgent.Settings(
                 toolsByCategory = emptyMap(),
                 model = GigaModel.Pro,
@@ -253,6 +259,10 @@ class GigaAgentTest {
         agent.run().toList()
 
         assertEquals(0.33f, bodies.last().temperature)
+    }
+
+    private fun mockRagRepo(): DesktopInfoRepository = mockk<DesktopInfoRepository> {
+        coEvery { search(any(), any()) } returns emptyList()
     }
 
     private fun dummyTool(name: String): GigaToolSetup = object : GigaToolSetup {

@@ -7,10 +7,13 @@ import com.dumch.audio.playText
 import com.dumch.audio.playTextRand
 import com.dumch.audio.stopPlayText
 import com.dumch.audio.rawToOpusOgg
+import com.dumch.db.VectorDB
+import com.dumch.db.DesktopInfoRepository
 import com.dumch.giga.GigaAgent
 import com.dumch.giga.GigaAuth
 import com.dumch.giga.GigaGRPCChatApi
 import com.dumch.giga.GigaModel
+import com.dumch.giga.GigaRestChatAPI
 import com.dumch.giga.GigaVoiceAPI
 import com.dumch.keys.HotkeyListener
 import com.github.kwhat.jnativehook.GlobalScreen
@@ -57,6 +60,8 @@ suspend fun main() = coroutineScope {
     )
     launch { audioRecorder.logState() }
     val gigaVoiceAPI = GigaVoiceAPI(GigaAuth)
+    val desktopInfoRepo = DesktopInfoRepository(GigaRestChatAPI.INSTANCE, VectorDB)
+    appScope.launchDbSetup(desktopInfoRepo)
     withNativeHook(hotkeyListener) {
         val userInputFlow = audioRecorder.audioFlow
             .onEach { l.info("[Received audio data: ${it.size} bytes]") }
@@ -70,12 +75,13 @@ suspend fun main() = coroutineScope {
 
         val model = System.getenv("GIGA_MODEL")?.let { envModel ->
             GigaModel.entries.firstOrNull { enumModel ->
-                 enumModel.name.equals(envModel, ignoreCase = true) ||  enumModel.alias.equals(envModel, ignoreCase = true)
+                 enumModel.name.equals(envModel, ignoreCase = true) ||
+                         enumModel.alias.equals(envModel, ignoreCase = true)
             }
         } ?: GigaModel.Max
 
         while (isActive) {
-            val agent = GigaAgent.instance(userInputFlow, GigaGRPCChatApi.INSTANCE, model = model)
+            val agent = GigaAgent.instance(userInputFlow, GigaGRPCChatApi.INSTANCE, desktopInfoRepo, model = model)
             agentRef.set(agent)
             runCatching {
                 agent.run().collect { text ->
@@ -87,6 +93,13 @@ suspend fun main() = coroutineScope {
             }
         }
     }
+}
+
+/**
+ * Updates data once a day.
+ */
+private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch {
+    repo.storeDesktopDataDaily()
 }
 
 private suspend fun withNativeHook(hotkeyListener: HotkeyListener, block: suspend () -> Unit) {
