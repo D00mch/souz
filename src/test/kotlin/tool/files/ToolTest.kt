@@ -39,7 +39,7 @@ class ToolTest {
 
         val resources = ToolListFiles(ToolListFiles.Input("src/test/resources"))
         val resourceFiles = resources.removePrefix("[").removeSuffix("]").split(",").toSet()
-        assertEquals(setOf("src/test/resources/directory/", "src/test/resources/directory/file.txt", "src/test/resources/test.txt"), resourceFiles)
+        assertEquals(setOf("src/test/resources/directory/", "src/test/resources/directory/file.txt", "src/test/resources/sample.csv", "src/test/resources/test.txt"), resourceFiles)
         val l = LoggerFactory.getLogger(ToolTest::class.java)
         l.info(resources)
     }
