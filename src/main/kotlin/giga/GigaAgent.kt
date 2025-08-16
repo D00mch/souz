@@ -5,7 +5,6 @@ import com.dumch.tool.GigaClassifier
 import com.dumch.tool.LocalRegexClassifier
 import com.dumch.tool.ToolCategory
 import com.dumch.tool.ToolsFactory
-import com.dumch.tool.config.ConfigStore
 import com.dumch.tool.desktop.ToolShowApps
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -24,7 +23,6 @@ class GigaAgent(
     private val api: GigaChatAPI,
     private val ragRepo: DesktopInfoRepository,
     private val settings: Settings,
-    private val config: ConfigStore = ConfigStore,
     private val apiClassifier: GigaClassifier = ApiGigaClassifier(api),
     private val localClassifier: GigaClassifier = LocalRegexClassifier(),
 ) {
