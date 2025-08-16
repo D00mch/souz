@@ -21,7 +21,7 @@ class ToolPlotCsv(private val bash: ToolRunBashCommand) : ToolSetup<ToolPlotCsv.
     )
 
     override val name: String = "PlotCsv"
-    override val description: String = "Generate a plot image from a CSV file using matplotlib"
+    override val description: String = "Generate a plot image from a CSV file using matplotlib. You should first upload the CSV file to GigaChat to get info about the file"
 
     override val fewShotExamples = listOf(
         FewShotExample(
