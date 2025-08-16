@@ -23,16 +23,20 @@ class ToolDownloadFile(
     )
 
     override val name: String = "DownloadFile"
-    override val description: String = "Downloads file from GigaChat and opens it on the desktop"
+    override val description: String = "Downloads file from GigaChat (for example, generated images) and opens it on the desktop"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Скачай файл",
+            request = "Скачай файл, который ты только что сгенерировал",
             params = mapOf("fileId" to "some_id")
+        ),
+        FewShotExample(
+            request = "Сгенерируй картинку заката и пришли её мне",
+            params = mapOf("fileId" to "generated_image_id")
         )
     )
     override val returnParameters = ReturnParameters(
         properties = mapOf(
-            "result" to ReturnProperty("string", "Path to downloaded file or error message")
+            "result" to ReturnProperty("string", "The path to the downloaded file or error message")
         )
     )
 

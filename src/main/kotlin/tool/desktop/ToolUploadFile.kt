@@ -22,10 +22,10 @@ class ToolUploadFile(
     )
 
     override val name: String = "UploadFile"
-    override val description: String = "Uploads file to GigaChat for analysis and returns file id"
+    override val description: String = "Uploads file to GigaChat for analysis (logs, reports, etc.) and returns file id"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Проанализируй файл",
+            request = "Проанализируй файл report",
             params = mapOf("filePath" to "/path/to/file")
         )
     )

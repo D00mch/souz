@@ -38,6 +38,10 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
             request = "Покажи адрес текущей вкладки Safari",
             params = mapOf("type" to InfoType.currentTab)
         ),
+        FewShotExample(
+            request = "Сделай обзор открытой вкладки",
+            params = mapOf("type" to InfoType.currentTab)
+        )
     )
     override val returnParameters = ReturnParameters(
         properties = mapOf(
