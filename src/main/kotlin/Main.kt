@@ -1,6 +1,6 @@
 package com.dumch
 
-import com.dumch.audio.ActiveSoundActiveSoundRecorder
+import com.dumch.audio.ActiveSoundRecorderImpl
 import com.dumch.audio.InMemoryAudioRecorder
 import com.dumch.audio.playMacPing
 import com.dumch.audio.playText
@@ -30,7 +30,7 @@ private val l = LoggerFactory.getLogger("AI")
 suspend fun main() = coroutineScope {
     val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     val audioRecorder = InMemoryAudioRecorder(
-        recorder = ActiveSoundActiveSoundRecorder(),
+        recorder = ActiveSoundRecorderImpl(),
         coroutineScope = appScope,
     )
     val agentRef = AtomicReference<GigaAgent?>(null)

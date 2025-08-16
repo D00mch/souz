@@ -1,7 +1,6 @@
 package com.dumch.tool
 
 import com.dumch.db.DesktopInfoRepository
-import com.dumch.giga.GigaAgent.ToolCategory
 import com.dumch.giga.GigaToolSetup
 import com.dumch.giga.toGiga
 import com.dumch.tool.browser.ToolBrowserHotkeys
@@ -13,6 +12,7 @@ import com.dumch.tool.config.ToolSoundConfig
 import com.dumch.tool.config.ToolSoundConfigDiff
 import com.dumch.tool.desktop.ToolCollectButtons
 import com.dumch.tool.desktop.ToolCreateNote
+import com.dumch.tool.dataAnalytics.ToolCreatePlotFromCsv
 import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.desktop.ToolDownloadFile
 import com.dumch.tool.desktop.ToolHotkeyMac
@@ -34,13 +34,19 @@ import com.dumch.tool.files.ToolReadFile
 class ToolsFactory(private val repo: DesktopInfoRepository) {
     val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> by lazy {
         mapOf(
-            ToolCategory.IO to listOf(
+            ToolCategory.CODER to listOf(
                 ToolReadFile.toGiga(),
                 ToolListFiles.toGiga(),
                 ToolNewFile.toGiga(),
                 ToolDeleteFile.toGiga(),
                 ToolModifyFile.toGiga(),
                 ToolFindTextInFiles.toGiga(),
+            ).associateBy { it.fn.name },
+
+            ToolCategory.DATAANALYTICS to listOf(
+                ToolCreatePlotFromCsv(ToolRunBashCommand).toGiga(),
+                ToolUploadFile().toGiga(),
+                ToolDownloadFile().toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.BROWSER to listOf(
@@ -59,10 +65,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolWindowsManager.toGiga(),
                 ToolMouseClickMac().toGiga(),
                 ToolHotkeyMac().toGiga(),
-                ToolUploadFile().toGiga(),
-                ToolDownloadFile().toGiga(),
                 ToolMediaControl(ToolRunBashCommand).toGiga(),
-                ToolDesktopScreenShot().toGiga(),
                 ToolCollectButtons(ToolRunBashCommand).toGiga(),
                 ToolOpen(ToolRunBashCommand).toGiga(),
                 ToolCreateNote(ToolRunBashCommand).toGiga(),
@@ -70,6 +73,12 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolOpenFolder(ToolRunBashCommand).toGiga(),
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
                 // ToolShowApps.toGiga(), // we get it by default anyway
+            ).associateBy { it.fn.name },
+
+            ToolCategory.IO to listOf(
+                ToolUploadFile().toGiga(),
+                ToolDownloadFile().toGiga(),
+                ToolDesktopScreenShot().toGiga(),
             ).associateBy { it.fn.name },
         )
     }

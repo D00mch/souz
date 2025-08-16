@@ -1,6 +1,7 @@
 package giga
 
 import com.dumch.giga.*
+import com.dumch.tool.ToolCategory
 import io.mockk.*
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
@@ -14,7 +15,7 @@ class GigaAgentTest {
         val api = mockk<GigaChatAPI>()
         val usage = GigaResponse.Usage(1, 1, 2, 0)
         val classifyMsg = GigaResponse.Message(
-            content = "io",
+            content = "coder",
             role = GigaMessageRole.assistant,
             functionCall = null,
             functionsStateId = null,
@@ -55,7 +56,7 @@ class GigaAgentTest {
         val api = mockk<GigaChatAPI>()
         val usage = GigaResponse.Usage(1, 1, 2, 0)
         val classifyMsg = GigaResponse.Message(
-            content = "io",
+            content = "coder",
             role = GigaMessageRole.assistant,
             functionCall = null,
             functionsStateId = null,
@@ -103,7 +104,7 @@ class GigaAgentTest {
             api = api,
             settings = GigaAgent.Settings(
                 toolsByCategory = mapOf(
-                    GigaAgent.ToolCategory.IO to mapOf("ListFiles" to dummyTool("ListFiles"))
+                    ToolCategory.CODER to mapOf("ListFiles" to dummyTool("ListFiles"))
                 ),
                 model = GigaModel.Pro,
                 stream = false,
@@ -124,7 +125,7 @@ class GigaAgentTest {
         val api = mockk<GigaChatAPI>()
         val usage = GigaResponse.Usage(1, 1, 2, 0)
         val classifyMsg = GigaResponse.Message(
-            content = "io",
+            content = "coder",
             role = GigaMessageRole.assistant,
             functionCall = null,
             functionsStateId = null,
@@ -158,8 +159,53 @@ class GigaAgentTest {
         val results = agent.run().toList()
 
         assertEquals(listOf("streamed"), results)
-        coVerify(exactly = 1) { api.messageStream(any()) }
+        coVerify(exactly = 1) {
+            @Suppress("UnusedFlow")
+            api.messageStream(any())
+        }
         coVerify(exactly = 1) { api.message(any()) }
+    }
+
+    @Test
+    fun `falls back to local classifier on api error`() = runBlocking {
+        val api = mockk<GigaChatAPI>()
+        val usage = GigaResponse.Usage(1, 1, 2, 0)
+        val msg = GigaResponse.Message(
+            content = "done",
+            role = GigaMessageRole.assistant,
+            functionCall = null,
+            functionsStateId = null,
+        )
+        val response = GigaResponse.Chat.Ok(
+            choices = listOf(GigaResponse.Choice(msg, 0, GigaResponse.FinishReason.stop)),
+            created = 0L,
+            model = "m",
+            usage = usage,
+        )
+        val bodies = mutableListOf<GigaRequest.Chat>()
+        coEvery { api.message(capture(bodies)) } returnsMany listOf(
+            GigaResponse.Chat.Error(500, "fail"),
+            response,
+        )
+
+        val agent = GigaAgent(
+            userMessages = flowOf("создай файл"),
+            api = api,
+            settings = GigaAgent.Settings(
+                toolsByCategory = mapOf(
+                    ToolCategory.CODER to mapOf("ListFiles" to dummyTool("ListFiles")),
+                    ToolCategory.BROWSER to mapOf("OpenUrl" to dummyTool("OpenUrl"))
+                ),
+                model = GigaModel.Pro,
+                stream = false,
+            ),
+        )
+        val outputs = agent.run().toList()
+
+        assertEquals(listOf("done"), outputs)
+        // second body is chat request; it should include only CODER functions
+        val fnNames = bodies[1].functions.map { it.name }
+        assertEquals(listOf("ListFiles"), fnNames)
     }
 
     @Test
