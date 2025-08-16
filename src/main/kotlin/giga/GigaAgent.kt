@@ -22,6 +22,8 @@ class GigaAgent(
     private val api: GigaChatAPI,
     private val settings: Settings,
     private val config: ConfigStore = ConfigStore,
+    private val apiClassifier: GigaClassifier = ApiGigaClassifier(api),
+    private val localClassifier: GigaClassifier = LocalRegexClassifier(),
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
@@ -176,6 +178,15 @@ class GigaAgent(
     }
 
     private suspend fun classify(userText: String, conversation: ArrayDeque<GigaRequest.Message>): ToolCategory? {
+        val body = buildClassifierBody(userText, conversation)
+        l.info("Classifying user message: $userText, \nbody: \n${logObjectMapper.writeValueAsString(body)}")
+        return apiClassifier.classify(body) ?: localClassifier.classify(body)
+    }
+
+    private fun buildClassifierBody(
+        userText: String,
+        conversation: ArrayDeque<GigaRequest.Message>,
+    ): GigaRequest.Chat {
         val smallHistory = conversation.takeLast(if (conversation.size > 3) 2 else 0)
             .joinToString("\n") { it.content }
         val messages = ArrayDeque<GigaRequest.Message>().apply {
@@ -183,28 +194,11 @@ class GigaAgent(
             add(GigaRequest.Message(GigaMessageRole.user, "History:\n$smallHistory\n"))
             add(GigaRequest.Message(GigaMessageRole.user, "New message:\n$userText"))
         }
-        val body = GigaRequest.Chat(
+        return GigaRequest.Chat(
             model = settings.model.alias,
             messages = messages,
             functions = emptyList(),
         )
-        l.info("Classifying user message: $userText, \nbody: \n${logObjectMapper.writeValueAsString(body)}")
-        return when (val resp = api.message(body)) {
-            is GigaResponse.Chat.Error -> {
-                l.error("Classification error: ${resp.message}")
-                null
-            }
-            is GigaResponse.Chat.Ok -> {
-                val cat = resp.choices.firstOrNull()?.message?.content?.trim()?.uppercase()
-                l.info("Category: $cat")
-                try {
-                    ToolCategory.valueOf(cat ?: "desktop")
-                } catch (e: IllegalArgumentException) {
-                    l.error("Invalid category: $cat", e)
-                    ToolCategory.DESKTOP
-                }
-            }
-        }
     }
 
     private suspend fun trySummarize(totalTokens: Int, conversation: ArrayDeque<GigaRequest.Message>) {
