@@ -1,6 +1,5 @@
 package com.dumch.tool
 
-import com.dumch.giga.GigaAgent.ToolCategory
 import com.dumch.giga.GigaToolSetup
 import com.dumch.giga.toGiga
 import com.dumch.tool.browser.ToolBrowserHotkeys
@@ -33,7 +32,7 @@ import com.dumch.tool.files.ToolReadFile
 object ToolsFactory {
     val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> by lazy {
         mapOf(
-            ToolCategory.IO to listOf(
+            ToolCategory.CODER to listOf(
                 ToolReadFile.toGiga(),
                 ToolListFiles.toGiga(),
                 ToolNewFile.toGiga(),
@@ -58,10 +57,7 @@ object ToolsFactory {
                 ToolWindowsManager.toGiga(),
                 ToolMouseClickMac().toGiga(),
                 ToolHotkeyMac().toGiga(),
-                ToolUploadFile().toGiga(),
-                ToolDownloadFile().toGiga(),
                 ToolMediaControl(ToolRunBashCommand).toGiga(),
-                ToolDesktopScreenShot().toGiga(),
                 ToolCollectButtons(ToolRunBashCommand).toGiga(),
                 ToolOpen(ToolRunBashCommand).toGiga(),
                 ToolCreateNote(ToolRunBashCommand).toGiga(),
@@ -69,6 +65,12 @@ object ToolsFactory {
                 ToolOpenFolder(ToolRunBashCommand).toGiga(),
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
                 // ToolShowApps.toGiga(), // we get it by default anyway
+            ).associateBy { it.fn.name },
+
+            ToolCategory.IO to listOf(
+                ToolUploadFile().toGiga(),
+                ToolDownloadFile().toGiga(),
+                ToolDesktopScreenShot().toGiga(),
             ).associateBy { it.fn.name },
         )
     }
