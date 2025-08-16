@@ -51,7 +51,7 @@ class GigaAgent(
         }
 
         userMessages.collect { userText ->
-            val category = classify(userText)
+            val category = classify(userText, conversation)
             val fns = category?.let { functionsByCategory[it] } ?: functions
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
@@ -179,29 +179,32 @@ class GigaAgent(
         return null
     }
 
-    private suspend fun classify(userText: String): ToolCategory? {
+    private suspend fun classify(userText: String, conversation: ArrayDeque<GigaRequest.Message>): ToolCategory? {
+        val smallHistory = conversation.takeLast(3).map { it.content }.joinToString("\n")
         val messages = ArrayDeque<GigaRequest.Message>().apply {
             add(GigaRequest.Message(GigaMessageRole.system, CLASSIFIER_PROMPT))
-            add(GigaRequest.Message(GigaMessageRole.user, userText))
+            add(GigaRequest.Message(GigaMessageRole.user, "History:\n$smallHistory\n"))
+            add(GigaRequest.Message(GigaMessageRole.user, "New message:\n$userText"))
         }
         val body = GigaRequest.Chat(
             model = settings.model.alias,
             messages = messages,
             functions = emptyList(),
         )
+        l.info("Classifying user message: $userText, \nbody: \n${gigaJsonMapper.writeValueAsString(body)}")
         return when (val resp = api.message(body)) {
             is GigaResponse.Chat.Error -> {
                 l.error("Classification error: ${resp.message}")
                 null
             }
             is GigaResponse.Chat.Ok -> {
-                val cat = resp.choices.firstOrNull()?.message?.content?.trim()?.lowercase()
-                when (cat) {
-                    "io" -> ToolCategory.IO
-                    "browser" -> ToolCategory.BROWSER
-                    "desktop" -> ToolCategory.DESKTOP
-                    "config" -> ToolCategory.CONFIG
-                    else -> null
+                val cat = resp.choices.firstOrNull()?.message?.content?.trim()?.uppercase()
+                l.info("Category: $cat")
+                try {
+                    ToolCategory.valueOf(cat ?: "desktop")
+                } catch (e: IllegalArgumentException) {
+                    l.error("Invalid category: $cat", e)
+                    ToolCategory.DESKTOP
                 }
             }
         }
@@ -297,23 +300,25 @@ class GigaAgent(
         private const val SUMMARIZE_THRESHOLD = 0.95
 
         private val CLASSIFIER_PROMPT = """
-            You are a classification algorithm. Pick one category for the user's request.
-            Categories:
-            - io: file operations or searching text, when we need to update README.md in the project or find something in code;
-            - browser: web pages, tabs, or browser hotkeys, or when we need to get general info like weather or news;
-            - desktop: windows, apps, mouse or general hotkeys, or when we want to get screenshot, or donwload/upload a document;
-            - config: changing or storing settings, like sound speed or instructions.
-            Examples: "создай файл" -> io, "открой вкладку" -> browser,
-            "перемести окно" -> desktop, "уменьши громкость" -> config
-            Respond with exactly one word: io, browser, desktop, or config
-        """.trimIndent()
+You are a classification algorithm. Pick one category for the user's request.
+Categories:
+- io: file operations or searching text, when we need to update README.md in the project or find something in code;
+- browser: web pages, tabs, or browser hotkeys, or when we need to get general info like weather or news;
+- desktop: windows, apps, mouse or general hotkeys, or when we want to get screenshot, or donwload/upload a document;
+- config: changing or storing settings, like sound speed or instructions.
+Examples: "создай файл" -> io, "открой вкладку" -> browser,
+"перемести окно" -> desktop, "уменьши громкость" -> config
+Respond with exactly one word: io, browser, desktop, or config
+""".trimIndent()
+
+        private val SYSTEM_PROMPT = """
+Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
+c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
+""".trimIndent()
 
         private val systemPrompt = GigaRequest.Message(
             role = GigaMessageRole.system,
-            content = """
-                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
-                c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
-            """.trimIndent()
+            content = SYSTEM_PROMPT
         )
         private val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> by lazy {
             mapOf(
@@ -325,16 +330,19 @@ class GigaAgent(
                     ToolModifyFile.toGiga(),
                     ToolFindTextInFiles.toGiga(),
                 ).associateBy { it.fn.name },
+
                 ToolCategory.BROWSER to listOf(
                     ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
                     ToolSafariInfo(ToolRunBashCommand).toGiga(),
                     ToolBrowserHotkeys().toGiga(),
                 ).associateBy { it.fn.name },
+
                 ToolCategory.CONFIG to listOf(
                     ToolSoundConfig(ConfigStore).toGiga(),
                     ToolSoundConfigDiff(ConfigStore).toGiga(),
                     ToolInstructionStore(ConfigStore).toGiga(),
                 ).associateBy { it.fn.name },
+
                 ToolCategory.DESKTOP to listOf(
                     ToolWindowsManager.toGiga(),
                     ToolMouseClickMac().toGiga(),
@@ -348,7 +356,7 @@ class GigaAgent(
                     ToolCreateNote(ToolRunBashCommand).toGiga(),
                     ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
                     ToolOpenFolder(ToolRunBashCommand).toGiga(),
-                    ToolShowApps.toGiga(), // we get it by default anyway
+                    // ToolShowApps.toGiga(), // we get it by default anyway
                 ).associateBy { it.fn.name },
             )
         }
