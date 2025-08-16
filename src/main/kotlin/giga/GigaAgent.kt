@@ -1,5 +1,8 @@
 package com.dumch.giga
 
+import com.dumch.tool.GigaClassifier
+import com.dumch.tool.LocalRegexClassifier
+import com.dumch.tool.ToolCategory
 import com.dumch.tool.ToolsFactory
 import com.dumch.tool.config.ConfigStore
 import com.dumch.tool.config.ToolInstructionStore
@@ -27,8 +30,6 @@ class GigaAgent(
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
-
-    enum class ToolCategory { IO, BROWSER, DESKTOP, CONFIG }
 
     private val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> = settings.toolsByCategory
     private val functionsByCategory: Map<ToolCategory, List<GigaRequest.Function>> =
@@ -179,8 +180,9 @@ class GigaAgent(
 
     private suspend fun classify(userText: String, conversation: ArrayDeque<GigaRequest.Message>): ToolCategory? {
         val body = buildClassifierBody(userText, conversation)
+        val bodyJson = gigaJsonMapper.writeValueAsString(body)
         l.info("Classifying user message: $userText, \nbody: \n${logObjectMapper.writeValueAsString(body)}")
-        return apiClassifier.classify(body) ?: localClassifier.classify(body)
+        return apiClassifier.classify(bodyJson) ?: localClassifier.classify(bodyJson)
     }
 
     private fun buildClassifierBody(
@@ -293,13 +295,14 @@ class GigaAgent(
         private val CLASSIFIER_PROMPT = """
 You are a classification algorithm. Pick one category for the user's request.
 Categories:
-- io: file operations or searching text, when we need to update README.md in the project or find something in code;
+- coder: file operations or searching text, when we need to update README.md in the project or find something in code;
 - browser: web pages, tabs, or browser hotkeys, or when we need to get general info like weather or news;
-- desktop: windows, apps, mouse or general hotkeys, or when we want to get screenshot, or donwload/upload a document;
+- desktop: windows, apps, mouse or general hotkeys;
+- io: when we want to get screenshot, or download/upload a document;
 - config: changing or storing settings, like sound speed or instructions.
-Examples: "создай файл" -> io, "открой вкладку" -> browser,
-"перемести окно" -> desktop, "уменьши громкость" -> config
-Respond with exactly one word: io, browser, desktop, or config
+Examples: "создай файл" -> coder, "открой вкладку" -> browser,
+"перемести окно" -> desktop, "сделай скриншот" -> io, "уменьши громкость" -> config
+Respond with exactly one word: coder, browser, desktop, io, or config
 """.trimIndent()
 
         private val SYSTEM_PROMPT = """
