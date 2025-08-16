@@ -1,4 +1,4 @@
-package tool.desktop
+package tool.dataAnalytics
 
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.dataAnalytics.ToolCreatePlotFromCsv
