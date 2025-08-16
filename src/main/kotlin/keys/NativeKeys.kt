@@ -79,4 +79,5 @@ object VK {
     const val W = 13
     const val Z = 6
     const val F = 3
+    const val V = 9
 }
