@@ -15,6 +15,7 @@ enum class ToolCategory {
     CONFIG,
     DESKTOP,
     IO,
+    DATAANALYTICS,
 }
 
 class LocalRegexClassifier : GigaClassifier {
@@ -69,6 +70,10 @@ class LocalRegexClassifier : GigaClassifier {
             ToolCategory.IO to listOf(
                 WeightedRegex(Regex("скриншот|screenshot|сфоткай экран|сфотографируй экран|что на экране"), 2.0),
                 WeightedRegex(Regex("скач|download|загруз|upload"), 1.0),
+            ),
+            ToolCategory.DATAANALYTICS to listOf(
+                WeightedRegex(Regex("построй|созда|сделай|проанализ|график|chart|graph|plot|что на графике"), 2.0),
+                WeightedRegex(Regex("найд|find|скольк|корреляци|correlation|причин|корреляции"), 1.0),
             ),
         )
     }

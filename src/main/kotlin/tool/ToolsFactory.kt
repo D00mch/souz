@@ -11,6 +11,7 @@ import com.dumch.tool.config.ToolSoundConfig
 import com.dumch.tool.config.ToolSoundConfigDiff
 import com.dumch.tool.desktop.ToolCollectButtons
 import com.dumch.tool.desktop.ToolCreateNote
+import com.dumch.tool.dataAnalytics.ToolCreatePlotFromCsv
 import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.desktop.ToolDownloadFile
 import com.dumch.tool.desktop.ToolHotkeyMac
@@ -41,6 +42,12 @@ object ToolsFactory {
                 ToolFindTextInFiles.toGiga(),
             ).associateBy { it.fn.name },
 
+            ToolCategory.DATAANALYTICS to listOf(
+                ToolCreatePlotFromCsv(ToolRunBashCommand).toGiga(),
+                ToolUploadFile().toGiga(),
+                ToolDownloadFile().toGiga(),
+            ).associateBy { it.fn.name },
+
             ToolCategory.BROWSER to listOf(
                 ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
                 ToolSafariInfo(ToolRunBashCommand).toGiga(),
@@ -64,6 +71,7 @@ object ToolsFactory {
                 ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
                 ToolOpenFolder(ToolRunBashCommand).toGiga(),
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
+
                 // ToolShowApps.toGiga(), // we get it by default anyway
             ).associateBy { it.fn.name },
 
