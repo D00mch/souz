@@ -1,6 +1,8 @@
-package giga
+package tool
 
-import com.dumch.giga.*
+import com.dumch.giga.GigaMessageRole
+import com.dumch.giga.GigaRequest
+import com.dumch.giga.gigaJsonMapper
 import com.dumch.tool.LocalRegexClassifier
 import com.dumch.tool.ToolCategory
 import kotlinx.coroutines.runBlocking
@@ -53,14 +55,16 @@ class LocalRegexClassifierTest {
     @Test
     fun `classifies config instruction`() = runBlocking {
         val classifier = LocalRegexClassifier()
-        val category = classifier.classify(body("Сохрани инструкцию: когда я говорю TG Шам, отправь Шамилю сообщение в телеграме со словом Привет"))
+        val category =
+            classifier.classify(body("Сохрани инструкцию: когда я говорю TG Шам, отправь Шамилю сообщение в телеграме со словом Привет"))
         assertEquals(ToolCategory.CONFIG, category)
     }
 
     @Test
     fun `classifies config volume and instruction`() = runBlocking {
         val classifier = LocalRegexClassifier()
-        val category = classifier.classify(body("Запомни инструкцию: когда я говорю «Ускорь», ускорь скорость речь на 40 слов в минуту"))
+        val category =
+            classifier.classify(body("Запомни инструкцию: когда я говорю «Ускорь», ускорь скорость речь на 40 слов в минуту"))
         assertEquals(ToolCategory.CONFIG, category)
     }
 
