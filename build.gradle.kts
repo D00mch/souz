@@ -77,6 +77,9 @@ dependencies {
     implementation("ws.schild:jave-core:3.5.0")
     implementation("ws.schild:jave-nativebin-osxm1:3.5.0")
 
+    // database
+    implementation("org.xerial:sqlite-jdbc:3.45.3.0")
+
     testImplementation(kotlin("test"))
     testImplementation("io.mockk:mockk:1.13.11")
 }
