@@ -19,9 +19,12 @@ class HotkeyListener(
     private val holdThreshold = 200L
     private val doubleClickThreshold = 700L
     private val scope = CoroutineScope(Dispatchers.Default)
+    companion object {
+        private const val OPTION_RAW_CODE = 61
+    }
 
     override fun nativeKeyPressed(e: NativeKeyEvent) {
-        if (e.rawCode == 61 && e.keyCode == 56) {
+        if (e.rawCode == OPTION_RAW_CODE && e.keyCode == VK.SHIFT) {
             pressTime = System.currentTimeMillis()
             isAltPressed = true
             scope.launch {
@@ -35,7 +38,7 @@ class HotkeyListener(
     }
 
     override fun nativeKeyReleased(e: NativeKeyEvent) {
-        if (e.rawCode == 61 && e.keyCode == 56) {
+        if (e.rawCode == OPTION_RAW_CODE && e.keyCode == VK.SHIFT) {
             val releaseTime = System.currentTimeMillis()
             isAltPressed = false
 
