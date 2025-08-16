@@ -9,7 +9,7 @@ import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.ToolSetup
 import java.io.File
 
-class ToolPlotCsv(private val bash: ToolRunBashCommand) : ToolSetup<ToolPlotCsv.Input> {
+class ToolCreatePlotFromCsv(private val bash: ToolRunBashCommand) : ToolSetup<ToolCreatePlotFromCsv.Input> {
     data class Input(
         @InputParamDescription("Path to a CSV file with table data")
         val path: String,
@@ -21,7 +21,7 @@ class ToolPlotCsv(private val bash: ToolRunBashCommand) : ToolSetup<ToolPlotCsv.
         val output: String? = "/Users/duxx/SluxxDocuments/plot.png",
     )
 
-    override val name: String = "PlotCsv"
+    override val name: String = "CreatePlotFromCsv"
     override val description: String = "Generate a plot image from a CSV file using matplotlib. " +
         "If column names are not provided, returns the list of CSV headers"
 
@@ -72,6 +72,6 @@ class ToolPlotCsv(private val bash: ToolRunBashCommand) : ToolSetup<ToolPlotCsv.
 }
 
 fun main() {
-    val tool = ToolPlotCsv(ToolRunBashCommand)
-    println(tool.invoke(ToolPlotCsv.Input("src/test/resources/sample.csv")))
+    val tool = ToolCreatePlotFromCsv(ToolRunBashCommand)
+    println(tool.invoke(ToolCreatePlotFromCsv.Input("src/test/resources/sample.csv")))
 }
