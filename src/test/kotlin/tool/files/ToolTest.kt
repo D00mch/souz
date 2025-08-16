@@ -25,6 +25,13 @@ class ToolTest {
     }
 
     @Test
+    fun `test ToolReadFile absolute path`() {
+        val absolute = File("src/test/resources/test.txt").absolutePath
+        val result = ToolReadFile(ToolReadFile.Input(absolute))
+        assertEquals("Test content\n", result)
+    }
+
+    @Test
     fun `test ToolListFiles`() {
         val result = ToolListFiles(ToolListFiles.Input("gradle/wrapper"))
         val files = result.removePrefix("[").removeSuffix("]").split(",").toSet()
