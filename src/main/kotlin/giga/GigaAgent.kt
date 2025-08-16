@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.databind.SerializationFeature
 import org.slf4j.LoggerFactory
 import kotlin.collections.map
 import java.util.concurrent.atomic.AtomicBoolean
@@ -25,6 +27,7 @@ class GigaAgent(
     private val config: ConfigStore = ConfigStore,
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
+    private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
     private val tools: Map<String, GigaToolSetup> = settings.functions
     private val functions: List<GigaRequest.Function> = settings.functions.map { it.value.fn }
     private val installedApps = runCatching {
@@ -235,7 +238,7 @@ class GigaAgent(
             messages = conversation,
             functions = fns,
         )
-        l.debug("Chat request: $body")
+        l.debug("Chat request:\n{}", logObjectMapper.writeValueAsString(body))
         return api.messageStream(body)
     }
 
