@@ -1,13 +1,14 @@
 package com.dumch.giga
 
+import com.dumch.db.DesktopInfoRepository
 import com.dumch.tool.ToolsFactory
 import com.dumch.tool.config.ConfigStore
-import com.dumch.tool.config.ToolInstructionStore
 import com.dumch.tool.desktop.ToolShowApps
-import com.dumch.tool.files.ToolListFiles
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.google.protobuf.api
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -20,6 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class GigaAgent(
     private val userMessages: Flow<String>,
     private val api: GigaChatAPI,
+    private val ragRepo: DesktopInfoRepository,
     private val settings: Settings,
     private val config: ConfigStore = ConfigStore,
 ) {
@@ -35,19 +37,23 @@ class GigaAgent(
     private val tools: Map<String, GigaToolSetup> =
         toolsByCategory.values.flatMap { it.entries }.associate { it.key to it.value }
     private val functions: List<GigaRequest.Function> = tools.values.map { it.fn }
-    private val installedApps = runCatching {
-        ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
-    }.getOrElse { "[]" }
     private val stopRequested = AtomicBoolean(false)
 
     fun run(): Flow<String> = channelFlow {
         val conversation = ArrayDeque<GigaRequest.Message>().apply {
             add(systemPrompt)
-            appendSystemInfo(this)
+            appendCurrentDesktopInfo(this)
         }
 
         userMessages.collect { userText ->
             val category = classify(userText, conversation)
+            val msgEmbeddings = ragRepo.search(userText)
+            conversation.add(
+                GigaRequest.Message(
+                    role = GigaMessageRole.user,
+                    content = msgEmbeddings.joinToString("; "),
+                )
+            )
             val fns = category?.let { functionsByCategory[it] } ?: functions
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
@@ -58,28 +64,12 @@ class GigaAgent(
         }
     }
 
-    private fun appendSystemInfo(
+    private fun appendCurrentDesktopInfo(
         conversation: ArrayDeque<GigaRequest.Message>
     ) {
         val openedApps = runCatching { ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running)) }
             .getOrElse { "[]" }
-        val dirs = runCatching {ToolListFiles.invoke(ToolListFiles.Input(System.getenv("HOME"), 3))}
-            .getOrElse { "[]" }
-        val instructions = runCatching {
-            val currentInstructions =
-                config.get<ArrayList<ToolInstructionStore.Input>>(ToolInstructionStore.INSTUCTIONS_KEY, ArrayList())
-            currentInstructions.map { (name: String, instr: String) ->
-                "Когда я говорю: `$name`, выполняй инструкцию: $instr"
-            }
-        }
-        val apps = objectMapper.writeValueAsString(
-            mapOf(
-                "installed" to installedApps,
-                "opened" to openedApps,
-                "dirs" to dirs,
-                "instructions" to instructions
-            )
-        )
+        val apps = objectMapper.writeValueAsString(mapOf("opened apps" to openedApps))
         conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))
     }
 
@@ -230,7 +220,7 @@ class GigaAgent(
         l.info("Summarizing the conversation... $msg")
         conversation.clear()
         conversation.add(systemPrompt)
-        appendSystemInfo(conversation)
+        appendCurrentDesktopInfo(conversation)
         conversation.add(msg)
     }
 
@@ -324,8 +314,9 @@ c помощью имеющихся функций, сделай, а не про
         fun instance(
             userMessages: Flow<String>,
             api: GigaChatAPI,
+            desktopRepo: DesktopInfoRepository,
             model: GigaModel = GigaModel.Max,
-            settings: Settings = Settings(ToolsFactory.toolsByCategory, model, stream = true)
-        ): GigaAgent = GigaAgent(userMessages, api, settings)
+            settings: Settings = Settings(ToolsFactory(desktopRepo).toolsByCategory, model, stream = true)
+        ): GigaAgent = GigaAgent(userMessages, api, desktopRepo, settings)
     }
 }

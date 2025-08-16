@@ -17,7 +17,7 @@ import java.nio.file.Paths
  * Handles initialization of a Lucene index and stores/retrieves user desktop
  * data embeddings.
  */
-object RagDatabase {
+object VectorDB {
     private const val INDEX_PATH = "build/rag_index"
     private const val INIT_KEY = "rag_db_initialized"
 

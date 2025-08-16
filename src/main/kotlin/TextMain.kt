@@ -1,5 +1,7 @@
 package com.dumch
 
+import com.dumch.db.DesktopInfoRepository
+import com.dumch.db.VectorDB
 import com.dumch.giga.GigaAgent
 import com.dumch.giga.GigaAuth
 import com.dumch.giga.GigaChatAPI
@@ -11,7 +13,8 @@ import org.slf4j.LoggerFactory
 private val logAgent = LoggerFactory.getLogger("Agent")
 
 suspend fun main() {
-    val agent = GigaAgent.instance(userInputFlow(), GigaRestChatAPI.INSTANCE)
+    val desktopInfoRepo = DesktopInfoRepository(GigaRestChatAPI.INSTANCE, VectorDB)
+    val agent = GigaAgent.instance(userInputFlow(), GigaRestChatAPI.INSTANCE, desktopInfoRepo)
     agent.run().collect { text -> logAgent.info(text) }
 }
 
