@@ -19,8 +19,8 @@ class ToolSendTelegramMessage(private val bash: ToolRunBashCommand) : ToolSetup<
     override val description: String = "Sends a message to a Telegram contact"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Напиши в телеграм Шамилю привет",
-            params = mapOf("name" to "Шамиль", "message" to "привет"),
+            request = "Напиши в телеграм Артуру привет",
+            params = mapOf("name" to "Артур", "message" to "привет"),
         ),
         FewShotExample(
             request = "Можешь отправить Шамилю сообщение в TG, чтобы не забыл подготовить презентацию к завтрашнему дню",
@@ -41,39 +41,32 @@ class ToolSendTelegramMessage(private val bash: ToolRunBashCommand) : ToolSetup<
             "This implementation supports macOS only."
         }
 
-        // Step 1: open Telegram by bundle id
-        bash.sh("""open -b org.telegram.desktop""")
-
-        // Step 2: wait until Telegram opens
-        var opened = false
-        repeat(20) {
-            try {
-                bash.sh("pgrep -x Telegram")
-                opened = true
-                return@repeat
-            } catch (_: Exception) {
-                sleep(500)
-            }
-        }
-        if (!opened) sleep(1000)
-
-        // Step 3: press Esc twice
-        press(VK.ESC)
-        sleep(50)
-        press(VK.ESC)
-
-        // Step 4: wait for 1 second
+        // Open Telegram
+        ToolRunBashCommand.apple("""tell application "Telegram" to activate""")
         sleep(1000)
 
-        // Step 5: type the name (paste from clipboard)
+        // Open find window
+        press(VK.ESC)
+        sleep(100)
+        press(VK.ESC)
+        sleep(100)
+        find()
+        sleep(300)
+
+        // Paste the name
         setClipboard(input.name)
         paste()
+        sleep(2000)
 
-        // Step 6: press enter
+        // Press enter
         press(VK.RETURN)
+        sleep(1000)
+        press(VK.RETURN) // to select the first result
 
         // Step 7: write the message
         setClipboard(input.message)
+
+        sleep(1000)
         paste()
 
         // Step 8: wait for 1 second
@@ -81,6 +74,7 @@ class ToolSendTelegramMessage(private val bash: ToolRunBashCommand) : ToolSetup<
 
         // Step 9: press enter
         press(VK.RETURN)
+        sleep(1000)
 
         return "Sent Telegram message to ${input.name}"
     }
@@ -100,7 +94,17 @@ class ToolSendTelegramMessage(private val bash: ToolRunBashCommand) : ToolSetup<
 
     private fun paste() {
         keyDown(VK.CMD)
+        sleep(50)
         press(VK.V)
+        sleep(50)
+        keyUp(VK.CMD)
+    }
+
+    private fun find() {
+        keyDown(VK.CMD)
+        sleep(50)
+        press(VK.F)
+        sleep(50)
         keyUp(VK.CMD)
     }
 
@@ -110,3 +114,7 @@ class ToolSendTelegramMessage(private val bash: ToolRunBashCommand) : ToolSetup<
     }
 }
 
+fun main() {
+    val tool = ToolSendTelegramMessage(ToolRunBashCommand)
+    println(tool.invoke(ToolSendTelegramMessage.Input("Шамиль", "привет, пишу нашим агентом! Сработало!")))
+}
