@@ -15,7 +15,7 @@ class ApiGigaClassifier(
 
     override suspend fun classify(body: String): ToolCategory? {
         val req: GigaRequest.Chat = gigaJsonMapper.readValue(body)
-        l.info("Classifying via API, body:\n{}", logObjectMapper.writeValueAsString(req))
+        l.debug("Classifying via API, body:\n{}", logObjectMapper.writeValueAsString(req))
         return when (val resp = api.message(req)) {
             is GigaResponse.Chat.Error -> {
                 l.error("Classification error: {}", resp.message)
