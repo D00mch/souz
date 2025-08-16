@@ -9,16 +9,11 @@ import com.dumch.tool.config.ConfigStore
 class RagDatabaseTest {
     private fun reset() {
         ConfigStore.prefs.remove("rag_db_initialized")
-        File("build/rag.db").delete()
+        File("build/rag_index").deleteRecursively()
     }
 
     @Test
     fun writesAndReads() {
-        val ext = System.getenv("SQLITE_VEC_PATH")
-        if (ext == null) {
-            println("SQLITE_VEC_PATH not set, skipping test")
-            return
-        }
         reset()
         RagDatabase.initializeOnce()
         val data = listOf("hello world")

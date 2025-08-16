@@ -8,7 +8,7 @@ import java.time.LocalDate
 
 /**
  * Orchestrates extraction of desktop data, embedding via LLM and persistence
- * into the SQLite vector database.
+ * into a Lucene index for similarity search.
  */
 class RagRepository(
     private val api: GigaRestChatAPI,
