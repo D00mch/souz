@@ -29,7 +29,7 @@ import com.dumch.tool.files.ToolListFiles
 import com.dumch.tool.files.ToolModifyFile
 import com.dumch.tool.files.ToolNewFile
 import com.dumch.tool.files.ToolReadFile
-import com.dumch.tool.desktop.ToolPlotCsv
+
 
 object ToolsFactory {
     val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> by lazy {
