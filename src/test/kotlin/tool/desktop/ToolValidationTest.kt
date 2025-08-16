@@ -1,7 +1,7 @@
 package tool.desktop
 
 import com.dumch.tool.BadInputException
-import com.dumch.tool.desktop.ToolCreateNewBrowserTab
+import com.dumch.tool.browser.ToolCreateNewBrowserTab
 import com.dumch.tool.desktop.ToolCreateNote
 import com.dumch.tool.desktop.ToolCollectButtons
 import com.dumch.tool.ToolRunBashCommand

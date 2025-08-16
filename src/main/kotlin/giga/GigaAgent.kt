@@ -6,6 +6,7 @@ import com.dumch.tool.config.ToolInstructionStore
 import com.dumch.tool.config.ToolSoundConfig
 import com.dumch.tool.config.ToolSoundConfigDiff
 import com.dumch.tool.desktop.*
+import com.dumch.tool.browser.*
 import com.dumch.tool.files.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ProducerScope
@@ -28,19 +29,16 @@ class GigaAgent(
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
-    private enum class ToolCategory { IO, BROWSER, DESKTOP, CONFIG }
 
-    private val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> = mapOf(
-        ToolCategory.IO to settings.functions.filterKeys { ioToolNames.contains(it) },
-        ToolCategory.BROWSER to settings.functions.filterKeys { browserToolNames.contains(it) },
-        ToolCategory.DESKTOP to settings.functions.filterKeys { desktopToolNames.contains(it) },
-        ToolCategory.CONFIG to settings.functions.filterKeys { configToolNames.contains(it) },
-    )
+    enum class ToolCategory { IO, BROWSER, DESKTOP, CONFIG }
+
+    private val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> = settings.toolsByCategory
     private val functionsByCategory: Map<ToolCategory, List<GigaRequest.Function>> =
-        toolsByCategory.mapValues { it.value.values.map { setup -> setup.fn } }
+        toolsByCategory.mapValues { entry -> entry.value.values.map { setup -> setup.fn } }
 
-    private val tools: Map<String, GigaToolSetup> = settings.functions
-    private val functions: List<GigaRequest.Function> = settings.functions.map { it.value.fn }
+    private val tools: Map<String, GigaToolSetup> =
+        toolsByCategory.values.flatMap { it.entries }.associate { it.key to it.value }
+    private val functions: List<GigaRequest.Function> = tools.values.map { it.fn }
     private val installedApps = runCatching {
         ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
     }.getOrElse { "[]" }
@@ -290,7 +288,7 @@ class GigaAgent(
     }
 
     data class Settings(
-        val functions: Map<String, GigaToolSetup>,
+        val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
         val model: GigaModel = GigaModel.Max,
         val stream: Boolean = false,
     )
@@ -298,41 +296,17 @@ class GigaAgent(
     companion object {
         private const val SUMMARIZE_THRESHOLD = 0.95
 
-        private const val CLASSIFIER_PROMPT = "You are a classification algorithm. Respond with exactly one word: io, browser, desktop, or config"
-
-        private val ioToolNames = setOf(
-            "ReadFile",
-            "ListFiles",
-            "NewFile",
-            "DeleteFile",
-            "EditFile",
-            "FindTextInFiles",
-        )
-
-        private val browserToolNames = setOf(
-            "CreateNewBrowserTab",
-            "SafariInfo",
-        )
-
-        private val configToolNames = setOf(
-            "SoundConfig",
-            "SoundConfigDiff",
-            "InstructionStore",
-        )
-
-        private val desktopToolNames = setOf(
-            "WindowsManager",
-            "MouseClick",
-            "Hotkey",
-            "MediaControl",
-            "DesktopScreenShot",
-            "CollectButtons",
-            "Open",
-            "CreateNote",
-            "MinimizeWindows",
-            "OpenFolder",
-            "ShowApps",
-        )
+        private val CLASSIFIER_PROMPT = """
+            You are a classification algorithm. Pick one category for the user's request.
+            Categories:
+            - io: file operations or searching text
+            - browser: web pages, tabs, or browser hotkeys
+            - desktop: windows, apps, mouse or general hotkeys
+            - config: changing or storing settings
+            Examples: "создай файл" -> io, "открой вкладку" -> browser,
+            "перемести окно" -> desktop, "уменьши громкость" -> config
+            Respond with exactly one word: io, browser, desktop, or config
+        """.trimIndent()
 
         private val systemPrompt = GigaRequest.Message(
             role = GigaMessageRole.system,
@@ -341,39 +315,47 @@ class GigaAgent(
                 c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
             """.trimIndent()
         )
-
-        private val tools: Map<String, GigaToolSetup> by lazy {
-            listOf(
-                ToolReadFile.toGiga(),
-                ToolListFiles.toGiga(),
-                ToolNewFile.toGiga(),
-                ToolDeleteFile.toGiga(),
-                ToolModifyFile.toGiga(),
-                ToolWindowsManager.toGiga(),
-                ToolSoundConfig(ConfigStore).toGiga(),
-                ToolSoundConfigDiff(ConfigStore).toGiga(),
-                ToolSafariInfo(ToolRunBashCommand).toGiga(),
-                ToolMouseClickMac().toGiga(),
-                ToolHotkeyMac().toGiga(),
-                ToolMediaControl(ToolRunBashCommand).toGiga(),
-                ToolFindTextInFiles.toGiga(),
-                ToolDesktopScreenShot().toGiga(),
-                ToolInstructionStore(ConfigStore).toGiga(),
-                ToolCreateNote(ToolRunBashCommand).toGiga(),
-//                ToolShowApps.toGiga(),
-//                ToolOpenFolder(ToolRunBashCommand).toGiga(),
-                ToolCollectButtons(ToolRunBashCommand).toGiga(),
-                ToolOpen(ToolRunBashCommand).toGiga(),
-                ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
-                ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
-            ).associateBy { it.fn.name }
+        private val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> by lazy {
+            mapOf(
+                ToolCategory.IO to listOf(
+                    ToolReadFile.toGiga(),
+                    ToolListFiles.toGiga(),
+                    ToolNewFile.toGiga(),
+                    ToolDeleteFile.toGiga(),
+                    ToolModifyFile.toGiga(),
+                    ToolFindTextInFiles.toGiga(),
+                ).associateBy { it.fn.name },
+                ToolCategory.BROWSER to listOf(
+                    ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
+                    ToolSafariInfo(ToolRunBashCommand).toGiga(),
+                    ToolBrowserHotkeys().toGiga(),
+                ).associateBy { it.fn.name },
+                ToolCategory.CONFIG to listOf(
+                    ToolSoundConfig(ConfigStore).toGiga(),
+                    ToolSoundConfigDiff(ConfigStore).toGiga(),
+                    ToolInstructionStore(ConfigStore).toGiga(),
+                ).associateBy { it.fn.name },
+                ToolCategory.DESKTOP to listOf(
+                    ToolWindowsManager.toGiga(),
+                    ToolMouseClickMac().toGiga(),
+                    ToolHotkeyMac().toGiga(),
+                    ToolMediaControl(ToolRunBashCommand).toGiga(),
+                    ToolDesktopScreenShot().toGiga(),
+                    ToolCollectButtons(ToolRunBashCommand).toGiga(),
+                    ToolOpen(ToolRunBashCommand).toGiga(),
+                    ToolCreateNote(ToolRunBashCommand).toGiga(),
+                    ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
+                    ToolOpenFolder(ToolRunBashCommand).toGiga(),
+                    ToolShowApps.toGiga(),
+                ).associateBy { it.fn.name },
+            )
         }
 
         fun instance(
             userMessages: Flow<String>,
             api: GigaChatAPI,
             model: GigaModel = GigaModel.Max,
-            settings: Settings = Settings(tools, model, stream = true)
+            settings: Settings = Settings(toolsByCategory, model, stream = true)
         ): GigaAgent = GigaAgent(userMessages, api, settings)
     }
 }

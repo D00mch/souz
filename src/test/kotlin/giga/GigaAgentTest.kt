@@ -42,7 +42,7 @@ class GigaAgentTest {
         val agent = GigaAgent(
             userMessages = flowOf("hi"),
             api = api,
-            settings = GigaAgent.Settings(functions = emptyMap(), model = GigaModel.Pro, stream = false),
+            settings = GigaAgent.Settings(toolsByCategory = emptyMap(), model = GigaModel.Pro, stream = false),
         )
         val results = agent.run().toList()
 
@@ -102,7 +102,9 @@ class GigaAgentTest {
             userMessages = flowOf("list"),
             api = api,
             settings = GigaAgent.Settings(
-                functions = mapOf("ListFiles" to dummyTool("ListFiles")),
+                toolsByCategory = mapOf(
+                    GigaAgent.ToolCategory.IO to mapOf("ListFiles" to dummyTool("ListFiles"))
+                ),
                 model = GigaModel.Pro,
                 stream = false,
             ),
@@ -151,7 +153,7 @@ class GigaAgentTest {
         val agent = GigaAgent(
             userMessages = flowOf("hi"),
             api = api,
-            settings = GigaAgent.Settings(functions = emptyMap(), model = GigaModel.Pro, stream = true),
+            settings = GigaAgent.Settings(toolsByCategory = emptyMap(), model = GigaModel.Pro, stream = true),
         )
         val results = agent.run().toList()
 
