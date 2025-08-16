@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 
 class InMemoryAudioRecorder(
-    private val recorder: ActiveSoundRecorder = ActiveSoundActiveSoundRecorder(),
+    private val recorder: ActiveSoundRecorder = ActiveSoundRecorderImpl(),
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 ) {
     private val l = LoggerFactory.getLogger(InMemoryAudioRecorder::class.java)

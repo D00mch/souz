@@ -25,7 +25,7 @@ import javax.sound.sampled.TargetDataLine
 import kotlin.concurrent.withLock
 import kotlin.system.exitProcess
 
-class ActiveSoundActiveSoundRecorder(
+class ActiveSoundRecorderImpl(
     sampleRate: Float = 16_000f,
     sampleSizeBits: Int = 16,
     channels: Int = 1,
@@ -41,7 +41,7 @@ class ActiveSoundActiveSoundRecorder(
     private val bytesPerSample = sampleSizeBits / 8
     private val samplesPerFrame = (sampleRate * frameMillis / 1000f).toInt()
     private val frameBytes = samplesPerFrame * bytesPerSample * channels
-    private val maxFrames = (preRollMillis / frameMillis).coerceAtLeast(1)
+    private val maxFrames = ((preRollMillis + frameMillis - 1) / frameMillis).coerceAtLeast(1)
 
     private val ringLock = ReentrantLock()
     private val ring = ArrayDeque<ByteArray>(maxFrames)
@@ -84,7 +84,7 @@ class ActiveSoundActiveSoundRecorder(
 
     override fun startRecording() {
         if (!prepared.get()) prepare() // idempotent
-        val ch = Channel<ByteArray>(Channel.UNLIMITED)
+        val ch = Channel<ByteArray>(capacity = 1024)
 
         // Ensure pre-roll frames precede any live frames sent after activation.
         ringLock.withLock {
@@ -95,7 +95,7 @@ class ActiveSoundActiveSoundRecorder(
     }
 
     override suspend fun stopRecording(): ByteArray {
-        val ch = activeChannelRef.getAndSet(null) ?: return ByteArray(0)
+        val ch = ringLock.withLock { activeChannelRef.getAndSet(null) } ?: return ByteArray(0)
         ch.close() // stop producers to this channel
 
         val chunks = ArrayList<ByteArray>(256)
@@ -141,7 +141,7 @@ fun rawToOpusOgg(
     sampleRate: Float = 16_000f,
     sampleSizeInBits: Int = 16,
     channels: Int = 1,
-    bitRate: Int = 64_000
+    bitRate: Int = 32_000
 ): ByteArray {
     // First convert raw data to WAV format
     val wavBytes = rawToWav(rawData, sampleRate, sampleSizeInBits, channels)
