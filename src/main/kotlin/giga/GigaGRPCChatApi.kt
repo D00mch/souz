@@ -62,9 +62,12 @@ class GigaGRPCChatApi(
             .setModel(body.model)
             .setOptions(
                 Gigachatv1.ChatOptions.newBuilder()
-                    .addAllFunctions(
-                        body.functions.map { it.toGRPC() }
-                    )
+                    .apply {
+                        addAllFunctions(
+                            body.functions.map { it.toGRPC() }
+                        )
+                        body.temperature?.let { temperature = it }
+                    }
                     .build()
             )
             .addAllMessages(body.messages.map { msg ->
@@ -99,9 +102,12 @@ class GigaGRPCChatApi(
             .setModel(body.model)
             .setOptions(
                 Gigachatv1.ChatOptions.newBuilder()
-                    .addAllFunctions(
-                        body.functions.map { it.toGRPC() }
-                    )
+                    .apply {
+                        addAllFunctions(
+                            body.functions.map { it.toGRPC() }
+                        )
+                        body.temperature?.let { temperature = it }
+                    }
                     .build()
             )
             .addAllMessages(body.messages.map { msg ->
