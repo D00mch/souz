@@ -44,6 +44,7 @@ class GigaToolTest {
         val expected = setOf(
             "src/test/resources/directory/",
             "src/test/resources/directory/file.txt",
+            "src/test/resources/sample.csv",
             "src/test/resources/test.txt",
         )
         assertEquals(expected, actualSet)

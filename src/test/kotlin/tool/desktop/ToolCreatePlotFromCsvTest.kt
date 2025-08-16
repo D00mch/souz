@@ -1,0 +1,15 @@
+package tool.desktop
+
+import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.desktop.ToolCreatePlotFromCsv
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class ToolCreatePlotFromCsvTest {
+    @Test
+    fun `extract headers from csv`() {
+        val tool = ToolCreatePlotFromCsv(ToolRunBashCommand)
+        val result = tool.invoke(ToolCreatePlotFromCsv.Input("src/test/resources/sample.csv"))
+        assertEquals("[name, age]", result)
+    }
+}

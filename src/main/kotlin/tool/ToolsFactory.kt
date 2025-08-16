@@ -11,6 +11,7 @@ import com.dumch.tool.config.ToolSoundConfig
 import com.dumch.tool.config.ToolSoundConfigDiff
 import com.dumch.tool.desktop.ToolCollectButtons
 import com.dumch.tool.desktop.ToolCreateNote
+import com.dumch.tool.desktop.ToolCreatePlotFromCsv
 import com.dumch.tool.desktop.ToolDesktopScreenShot
 import com.dumch.tool.desktop.ToolDownloadFile
 import com.dumch.tool.desktop.ToolHotkeyMac
@@ -64,6 +65,7 @@ object ToolsFactory {
                 ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
                 ToolOpenFolder(ToolRunBashCommand).toGiga(),
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
+                ToolCreatePlotFromCsv(ToolRunBashCommand).toGiga(),
                 // ToolShowApps.toGiga(), // we get it by default anyway
             ).associateBy { it.fn.name },
 
