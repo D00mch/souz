@@ -1,7 +1,6 @@
 package com.dumch.giga
 
 import com.dumch.tool.ToolRunBashCommand
-import com.dumch.tool.desktop.ToolOpen
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -100,6 +99,28 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
             l.error("Error in REST chat stream", t)
             emit(GigaResponse.Chat.Error(-1, "Connection error: ${t.message}"))
         }
+    }
+
+    override suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings = try {
+        val response = client.post(EMBEDDINGS_URL) {
+            setBody(body)
+        }
+        when {
+            response.status.isSuccess() -> response.body<GigaResponse.Embeddings.Ok>()
+            response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
+                GigaResponse.Embeddings.Error(
+                    response.status.value,
+                    "Authentication error: ${response.status.description}"
+                )
+
+            else -> runCatching { response.body<GigaResponse.Embeddings.Error>() }
+                .getOrElse {
+                    GigaResponse.Embeddings.Error(response.status.value, response.status.description)
+                }
+        }
+    } catch (t: Throwable) {
+        l.error("Error in REST embeddings", t)
+        GigaResponse.Embeddings.Error(-1, "Connection error: ${t.message}")
     }
 
     override suspend fun uploadFile(file: File): GigaResponse.UploadFile {
@@ -228,6 +249,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
 
     companion object {
         private val URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
+        private val EMBEDDINGS_URL = "https://gigachat.devices.sberbank.ru/api/v1/embeddings"
 
         val INSTANCE = GigaRestChatAPI(GigaAuth)
     }
@@ -236,33 +258,13 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
 suspend fun main() {
     val api = GigaRestChatAPI.INSTANCE
 
-    val systemPrompt = GigaRequest.Message(
-        role = GigaMessageRole.system,
-        content = """
-                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. 
-                Если какую-то за дачу можно решить c помощью имеющихся функций, сделай, 
-                а не проси пользователя сделать это. Если сомневаешься, уточни.
-            """.trimIndent()
-    )
-
-    val result = api.messageStream(
-        GigaRequest.Chat(
-            model = GigaModel.Pro.alias,
-            stream = true,
-            messages = listOf(
-                systemPrompt,
-                GigaRequest.Message(
-                    role = GigaMessageRole.user,
-//                    content = "Как дела?",
-                    content = "Открой приложение Telegram",
-                ),
-            ),
-            functions = listOf(
-                ToolOpen(ToolRunBashCommand).toGiga(),
-            ).map { it.fn }
+    val result = api.embeddings(
+        GigaRequest.Embeddings(
+            input = listOf(
+                "Расскажи о современных технологиях",
+                "Что такое искусственный интеллект?",
+            )
         )
     )
-    result.collect {
-        println("Chunk: $it")
-    }
+    println(result)
 }
