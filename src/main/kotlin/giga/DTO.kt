@@ -76,7 +76,7 @@ object GigaResponse {
         data class Ok(
             val data: List<Embedding>,
             val model: String,
-            val usage: Usage,
+            @JsonProperty("object") val objectType: String,
         ) : Embeddings
 
         data class Error(val status: Int, val message: String) : Embeddings

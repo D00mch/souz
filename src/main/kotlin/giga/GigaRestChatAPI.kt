@@ -105,6 +105,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         val response = client.post(EMBEDDINGS_URL) {
             setBody(body)
         }
+        println(response.status)
         when {
             response.status.isSuccess() -> response.body<GigaResponse.Embeddings.Ok>()
             response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
