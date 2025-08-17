@@ -111,6 +111,7 @@ object GigaRequest {
         val functions: List<Function> = emptyList(),
         val temperature: Float? = null,
         val stream: Boolean = false,
+        val maxTokens: Int = 24_228,
     )
 
     data class Message(

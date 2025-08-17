@@ -66,6 +66,7 @@ class GigaGRPCChatApi(
                         addAllFunctions(
                             body.functions.map { it.toGRPC() }
                         )
+                        maxTokens = body.maxTokens
                         body.temperature?.let { temperature = it }
                     }
                     .build()
@@ -106,6 +107,7 @@ class GigaGRPCChatApi(
                         addAllFunctions(
                             body.functions.map { it.toGRPC() }
                         )
+                        maxTokens = body.maxTokens
                         body.temperature?.let { temperature = it }
                     }
                     .build()
