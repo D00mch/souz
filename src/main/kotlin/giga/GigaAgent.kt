@@ -43,18 +43,13 @@ class GigaAgent(
     fun run(): Flow<String> = channelFlow {
         val conversation = ArrayDeque<GigaRequest.Message>().apply {
             add(systemPrompt)
-            appendCurrentDesktopInfo(this)
         }
 
         userMessages.collect { userText ->
             val category = classify(userText, conversation)
             val msgEmbeddings = ragRepo.search(userText)
-            conversation.add(
-                GigaRequest.Message(
-                    role = GigaMessageRole.user,
-                    content = msgEmbeddings.joinToString("; "),
-                )
-            )
+            conversation.add(GigaRequest.Message(role = GigaMessageRole.user, content = msgEmbeddings.joinToString("; ")))
+            appendCurrentDesktopInfo(conversation)
             val fns = category?.let { functionsByCategory[it] } ?: functions
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
@@ -223,7 +218,6 @@ class GigaAgent(
         l.info("Summarizing the conversation... $msg")
         conversation.clear()
         conversation.add(systemPrompt)
-        appendCurrentDesktopInfo(conversation)
         conversation.add(msg)
     }
 
