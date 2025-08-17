@@ -31,15 +31,17 @@ object ToolRunBashCommand : ToolSetup<ToolRunBashCommand.Input> {
 
     fun apple(script: String): String {
         val scriptInvocation = """
-            osascript <<EOF
-            $script
-            EOF
+osascript <<EOF
+$script
+EOF
         """.trimIndent()
-        val p = ProcessBuilder("bash","-lc", scriptInvocation).redirectErrorStream(false).start()
-        val output = p.inputStream.bufferedReader().readText()
+        val p = ProcessBuilder("bash","-lc", scriptInvocation)
+            .redirectErrorStream(true)
+            .start()
+        val output = p.inputStream.bufferedReader().use(BufferedReader::readText)
         val exitCode = p.waitFor()
         if (exitCode != 0) throw ShellException(output, exitCode)
-        return p.inputStream.bufferedReader().readText().trim()
+        return output.trim()
     }
 
     data class Input(
