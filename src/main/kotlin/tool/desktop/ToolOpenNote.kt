@@ -22,26 +22,22 @@ class ToolOpenNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenNot
     )
     override fun invoke(input: Input): String {
         if (input.noteName.isBlank()) throw BadInputException("Note name cannot be empty")
-        bash.invoke(
-            ToolRunBashCommand.Input(
-                """
-                osascript <<EOF
-                    tell application "Notes"
-                    	activate
-                    	set noteName to "${input.noteName}" 
-                    	set foundNotes to (notes whose name is noteName)
-                    	
-                    	if (count of foundNotes) > 0 then
-                    		set firstNote to item 1 of foundNotes
-                    		show firstNote
-                    	else
-                    		display dialog "Заметка с названием ${input.noteName} не найдена." buttons {"OK"} default button 1
-                    	end if
-                    end tell
-                EOF
-            """.trimIndent()
-            )
-        )
+        bash.apple(
+            """
+                        tell application "Notes"
+                            activate
+                            set noteName to "${input.noteName}" 
+                            set foundNotes to (notes whose name is noteName)
+                            
+                            if (count of foundNotes) > 0 then
+                                set firstNote to item 1 of foundNotes
+                                show firstNote
+                            else
+                                display dialog "Заметка с названием ${input.noteName} не найдена." buttons {"OK"} default button 1
+                            end if
+                        end tell
+                    """).trimIndent()
+
         return "Done"
     }
 }
