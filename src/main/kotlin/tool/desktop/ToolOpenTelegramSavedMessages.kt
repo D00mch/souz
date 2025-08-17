@@ -5,7 +5,7 @@ import com.dumch.tool.*
 class ToolOpenTelegramSavedMessages(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenTelegramSavedMessages.Input> {
     data class Input(
         @InputParamDescription("Delay time for launch Telegram")
-        val delayTime: String = "0.2"
+        val delayTime: Double = 0.2
     )
     override val name: String = "OpenTelegramSavedMessages"
     override val description: String = "Opens Telegram saved messages"
