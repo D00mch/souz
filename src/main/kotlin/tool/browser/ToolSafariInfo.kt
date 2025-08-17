@@ -20,6 +20,8 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
         val type: InfoType,
         @InputParamDescription("URL of the page to get text from")
         val url: String? = null,
+        @InputParamDescription("Number of lines to return if provided")
+        val count: Int? = 50
     )
     override val name: String = "SafariInfo"
     override val description: String = "Returns Safari history, bookmarks, open tabs and URL of current tab"
@@ -53,7 +55,7 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
 
     override fun invoke(input: Input): String {
         return when (input.type) {
-            InfoType.history -> bash.sh(historyCommand())
+            InfoType.history -> bash.sh(historyCommand(input.count))
             InfoType.bookmarks -> parseSafariBookmarks(bash.sh(bookmarksCommand())).let {
                 objectMapper.writeValueAsString(it)
             }
@@ -70,15 +72,16 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
         }
     }
 
-    private fun historyCommand(): String = """
+    private fun historyCommand(count: Int? = 50): String = """
         sqlite3 ~/Library/Safari/History.db "
             SELECT
                 datetime(visit_time + 978307200,'unixepoch') AS last_visit,
-                url
+                url,
+                title
             FROM history_visits
             JOIN history_items ON history_items.id = history_visits.history_item
             ORDER BY last_visit DESC
-            LIMIT 50;
+            LIMIT $count;
         "
     """.trimIndent()
 
@@ -231,6 +234,6 @@ private fun processArrayElement(array: Element, bookmarks: MutableMap<String, St
 
 fun main() {
     val tool = ToolSafariInfo(ToolRunBashCommand)
-    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.tabs))
+    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.history))
     println(result)
 }

@@ -27,7 +27,7 @@ class DesktopInfoRepository(
         db.initializeOnce()
         val today = LocalDate.now().toString() // returns data like 2023-03-31
         if (ConfigStore.get(LAST_RUN_KEY, "") == today) return
-
+        db.clearAllTexts()
         val data = DesktopDataExtractor.extract()
         storeDesktopInfo(data)
         ConfigStore.put(LAST_RUN_KEY, today)
@@ -57,7 +57,9 @@ class DesktopInfoRepository(
 }
 
 suspend fun main() {
+//    ConfigStore.rm("rag_repo_last_run") // to reset
     val api = GigaRestChatAPI(GigaAuth)
     val repo = DesktopInfoRepository(api, VectorDB)
-    println(repo.search("жена"))
+    repo.storeDesktopDataDaily()
+    println(repo.search("Найди историю в браузере про четырехногих животных похожих на волка"))
 }

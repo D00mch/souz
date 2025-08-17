@@ -48,10 +48,18 @@ object VectorDB {
         DirectoryReader.open(dir).use { reader ->
             val list = mutableListOf<String>()
             for (i in 0 until reader.maxDoc()) {
-                val doc = reader.document(i)
+                val doc = reader.storedFields().document(i)
                 doc.get("text")?.let { list.add(it) }
             }
             return list
+        }
+    }
+
+    /** clears the database */
+    fun clearAllTexts() {
+        val dir = FSDirectory.open(Paths.get(INDEX_PATH))
+        IndexWriter(dir, IndexWriterConfig()).use { writer ->
+            writer.deleteAll()
         }
     }
 
@@ -67,7 +75,7 @@ object VectorDB {
             val topDocs = searcher.search(query, limit)
             val texts = mutableListOf<String>()
             topDocs.scoreDocs.forEach { sd ->
-                searcher.doc(sd.doc).get("text")?.let { texts.add(it) }
+                searcher.storedFields().document(sd.doc).get("text")?.let { texts.add(it) }
             }
             return texts
         }
@@ -83,4 +91,9 @@ object VectorDB {
     }
 
     private const val MAX_DIM = 1024
+}
+
+fun main() {
+//    VectorDB.clearAllTexts()
+    println(VectorDB.getAllTexts().size)
 }

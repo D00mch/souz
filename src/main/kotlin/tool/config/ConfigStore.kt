@@ -17,6 +17,10 @@ object ConfigStore {
         prefs.put(key, str)
     }
 
+    fun rm(key: String) {
+        prefs.remove(key)
+    }
+
     inline fun <reified T : Any> get(key: String, default: T): T =
         get<T>(key) ?: default
 

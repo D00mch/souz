@@ -1,6 +1,8 @@
 package com.dumch.db
 
 import com.dumch.giga.objectMapper
+import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.browser.ToolSafariInfo
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.dumch.tool.config.ConfigStore
 import com.dumch.tool.config.ToolInstructionStore
@@ -9,6 +11,7 @@ import com.dumch.tool.files.ToolListFiles
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.util.ArrayList
+import kotlin.collections.map
 
 /**
  * Collects various desktop information and converts it to a list of strings
@@ -20,12 +23,6 @@ object DesktopDataExtractor {
             val json = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
             val arr: List<Map<String, String>> = objectMapper.readValue(json)
             arr.map { "У меня есть установленное приложение ${it["app-name"]}" }
-        }.getOrElse { emptyList() }
-
-        val opened = runCatching {
-            val json = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
-            val arr: List<Map<String, String>> = objectMapper.readValue(json)
-            arr.map { "Сейчас открыто приложение ${it["app-name"]}" }
         }.getOrElse { emptyList() }
 
         val dirs = runCatching {
@@ -41,7 +38,24 @@ object DesktopDataExtractor {
                 "Помни о такой инструкции: Когда я говорю: `${inp.name}`, выполняй инструкцию: ${inp.action}"
             }
         }.getOrElse { emptyList() }
-        return installed + opened + dirs + instructions
+
+        return installed + dirs + instructions + browserHistory(500)
+    }
+
+    fun browserHistory(count: Int = 10): List<String> {
+        return runCatching {
+            val lines = ToolSafariInfo(ToolRunBashCommand).invoke(
+                ToolSafariInfo.Input(
+                    ToolSafariInfo.InfoType.history,
+                    count = count
+                )
+            )
+                .lines()
+            lines.map { historyLine ->
+                val (date, url, title) = historyLine.split("|")
+                "В истории браузера есть запись: $title, url: $url, дата: $date"
+            }
+        }.getOrElse { emptyList() }
     }
 }
 

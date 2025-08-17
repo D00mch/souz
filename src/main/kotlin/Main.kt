@@ -7,6 +7,7 @@ import com.dumch.audio.playText
 import com.dumch.audio.playTextRand
 import com.dumch.audio.stopPlayText
 import com.dumch.audio.rawToOpusOgg
+import com.dumch.db.DesktopDataExtractor
 import com.dumch.db.VectorDB
 import com.dumch.db.DesktopInfoRepository
 import com.dumch.giga.GigaAgent
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.time.Duration.Companion.minutes
 
 private val l = LoggerFactory.getLogger("AI")
 
@@ -97,9 +99,15 @@ suspend fun main() = coroutineScope {
 
 /**
  * Updates data once a day.
+ * Update browser history every 5 minutes.
  */
 private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch {
     repo.storeDesktopDataDaily()
+    while (true) {
+        delay(5.minutes)
+        val browserHistory = DesktopDataExtractor.browserHistory(10)
+        repo.storeDesktopInfo(browserHistory)
+    }
 }
 
 private suspend fun withNativeHook(hotkeyListener: HotkeyListener, block: suspend () -> Unit) {
