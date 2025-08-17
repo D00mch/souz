@@ -9,6 +9,7 @@ import java.awt.im.InputContext
 import java.net.URI
 import java.util.*
 
+@Suppress("unused")
 object MrRobot {
 
     private val robot = Robot()
@@ -151,7 +152,7 @@ object MrRobot {
     /* ---------- SCREEN ---------- */
 
     fun screenSize(): Dimension = Toolkit.getDefaultToolkit().screenSize
-    fun currentLayout() = InputContext.getInstance().locale
+    fun currentLayout(): Locale? = InputContext.getInstance().locale
 
     /* ---------- MOUSE ---------- */
 
