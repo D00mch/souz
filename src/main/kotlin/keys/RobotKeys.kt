@@ -1,5 +1,6 @@
 package com.dumch.keys
 
+import com.dumch.tool.ToolRunBashCommand
 import java.awt.*
 import java.awt.datatransfer.*
 import java.awt.event.InputEvent
@@ -215,7 +216,19 @@ object MrRobot {
 
     /* ---------- LAUNCH ---------- */
 
-    fun launch(uri: String) = Desktop.getDesktop().browse(URI(uri))
+    fun launch(uri: String, await: Boolean = false) {
+        if (await) {
+            // OSX only support
+            ToolRunBashCommand.apple("""
+tell application "Telegram"
+    open location "$uri"
+end tell   
+            """.trimIndent())
+            sleep(1000)
+        } else {
+            Desktop.getDesktop().browse(URI(uri))
+        }
+    }
 }
 
 fun main() {
