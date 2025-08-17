@@ -62,7 +62,7 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
             InfoType.pageText -> {
                 val targetUrl = input.url ?: bash.sh(currentTabUrlCommand()).trim()
                 if (targetUrl.isBlank()) {
-                    "URL is required for pageText"
+                    "Error: URL is required for pageText"
                 } else {
                     bash.sh(pageTextCommand(targetUrl))
                 }

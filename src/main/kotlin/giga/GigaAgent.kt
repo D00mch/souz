@@ -43,11 +43,6 @@ class GigaAgent(
     private val installedApps = runCatching {
         ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
     }.getOrElse { "[]" }
-    private val safariOpenedTabs = runCatching {
-        ToolSafariInfo(ToolRunBashCommand).invoke(
-            ToolSafariInfo.Input(ToolSafariInfo.InfoType.tabs)
-        )
-    }.getOrElse { "" }
     private val stopRequested = AtomicBoolean(false)
 
     fun run(): Flow<String> = channelFlow {
@@ -82,6 +77,11 @@ class GigaAgent(
                 "Когда я говорю: `$name`, выполняй инструкцию: $instr"
             }
         }
+        val safariOpenedTabs = runCatching {
+            ToolSafariInfo(ToolRunBashCommand).invoke(
+                ToolSafariInfo.Input(ToolSafariInfo.InfoType.tabs)
+            )
+        }.getOrElse { "" }
         val apps = objectMapper.writeValueAsString(
             mapOf(
                 "installed" to installedApps,
