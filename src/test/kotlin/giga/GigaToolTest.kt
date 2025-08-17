@@ -1,16 +1,12 @@
 package giga
 
-import com.dumch.giga.GigaRequest
-import com.dumch.giga.GigaResponse
-import com.dumch.giga.GigaToolSetup
-import com.dumch.giga.GigaMessageRole
-import com.dumch.giga.gigaJsonMapper
-import com.dumch.giga.toGiga
+import com.dumch.giga.*
 import com.dumch.tool.files.ToolListFiles
+import com.fasterxml.jackson.module.kotlin.contains
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import org.slf4j.LoggerFactory
 
 class GigaToolTest {
     @Test
@@ -39,7 +35,13 @@ class GigaToolTest {
         val result = toolsMap[functionCall.name]!!.invoke(functionCall)
         l.info("$result")
         assertEquals(GigaMessageRole.function, result.role)
-        val actual = gigaJsonMapper.readTree(result.content).get("result").asText()
+        val actual = gigaJsonMapper.readTree(result.content).let { nodes ->
+            if (nodes.contains("result")) {
+                nodes.get("result").asText()
+            } else {
+                nodes.asText()
+            }
+        }
         val actualSet = actual.removePrefix("[").removeSuffix("]").split(",").toSet()
         val expected = setOf(
             "src/test/resources/directory/",
