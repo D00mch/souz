@@ -73,7 +73,6 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
                 ToolOpenFolder(ToolRunBashCommand).toGiga(),
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
-                ToolReadScreenText().toGiga(),
                 // ToolShowApps.toGiga(), // we get it by default anyway
             ).associateBy { it.fn.name },
 
@@ -81,6 +80,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolUploadFile().toGiga(),
                 ToolDownloadFile().toGiga(),
                 ToolDesktopScreenShot().toGiga(),
+                ToolReadScreenText().toGiga(),
             ).associateBy { it.fn.name },
         )
     }

@@ -24,7 +24,7 @@ class GigaAgent(
     private val ragRepo: DesktopInfoRepository,
     private val settings: Settings,
     private val apiClassifier: UserMessageClassifier = ApiGigaClassifier(api),
-    private val localClassifier: UserMessageClassifier = LocalRegexClassifier(),
+    private val localClassifier: UserMessageClassifier = LocalRegexClassifier,
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
@@ -287,7 +287,7 @@ Categories:
 - coder: file operations or searching text, when we need to update README.md in the project or find something in code;
 - browser: web pages, tabs, or browser hotkeys, or when we need to get general info like weather or news;
 - desktop: windows, apps, mouse or general hotkeys;
-- io: when we want to get screenshot, or download/upload a document;
+- io: when we want to get screenshot, or download/upload a document, or read the whole text from screen;
 - config: changing or storing settings, like sound speed or instructions.
 - dataAnalytics: when we want to analyze data, like plotting a graph or finding correlations.
 Examples: "создай файл" -> coder, "открой вкладку" -> browser,
