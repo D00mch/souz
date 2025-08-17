@@ -43,9 +43,9 @@ class GigaAgent(
     private val installedApps = runCatching {
         ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
     }.getOrElse { "[]" }
-    private val safariCurrentTabUrl = runCatching {
+    private val safariOpenedTabs = runCatching {
         ToolSafariInfo(ToolRunBashCommand).invoke(
-            ToolSafariInfo.Input(ToolSafariInfo.InfoType.currentTabUrl)
+            ToolSafariInfo.Input(ToolSafariInfo.InfoType.tabs)
         )
     }.getOrElse { "" }
     private val stopRequested = AtomicBoolean(false)
@@ -88,7 +88,7 @@ class GigaAgent(
                 "opened" to openedApps,
                 "dirs" to dirs,
                 "instructions" to instructions,
-                "currentOpenedPageUrl" to safariCurrentTabUrl,
+                "currentOpenedTabs" to safariOpenedTabs,
             )
         )
         conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))
