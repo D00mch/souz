@@ -55,7 +55,7 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
             params = mapOf("action" to Action.layout_fullscreen, "meta" to "")
         ),
         FewShotExample(
-            request = "Фокус на окно левее",
+            request = "Перенеси фокус на окно левее",
             params = mapOf("action" to Action.focus_left, "meta" to "")
         ),
         FewShotExample(
