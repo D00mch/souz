@@ -25,10 +25,8 @@ class ToolOpenTelegramSavedMessages(private val bash: ToolRunBashCommand) : Tool
         )
     )
     override fun invoke(input: Input): String {
-        bash.invoke(
-            ToolRunBashCommand.Input(
+        bash.apple(
                 """
-                osascript <<EOF
                     tell application "Telegram"
                     	if it is not running then
                     		launch
@@ -52,10 +50,9 @@ class ToolOpenTelegramSavedMessages(private val bash: ToolRunBashCommand) : Tool
                     		keystroke "0" using command down -- Запасной способ
                     	end try
                     end tell
-                EOF
             """.trimIndent()
             )
-        )
+
         return "Done"
     }
 }
