@@ -66,9 +66,10 @@ suspend fun main() = coroutineScope {
     appScope.launchDbSetup(desktopInfoRepo)
     withNativeHook(hotkeyListener) {
         val userInputFlow = audioRecorder.audioFlow
-            .onEach { l.info("[Received audio data: ${it.size} bytes]") }
+            .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
             .catch { l.error("Error in audio flow: ${it.message}") }
             .map { audioData -> rawToOpusOgg(rawData = audioData) }
+            .onEach { l.debug("[Sending audio data: ${it.size} bytes]") }
             .map { audioData ->
                 val resp = gigaVoiceAPI.recognize(audioData)
                 l.info("Recognition response: $resp")
