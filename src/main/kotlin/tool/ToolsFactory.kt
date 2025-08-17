@@ -31,6 +31,7 @@ import com.dumch.tool.files.ToolListFiles
 import com.dumch.tool.files.ToolModifyFile
 import com.dumch.tool.files.ToolNewFile
 import com.dumch.tool.files.ToolReadFile
+import com.dumch.tool.browser.ToolFocusOnTab
 
 class ToolsFactory(private val repo: DesktopInfoRepository) {
     val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> by lazy {
@@ -54,6 +55,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
                 ToolSafariInfo(ToolRunBashCommand).toGiga(),
                 ToolBrowserHotkeys().toGiga(),
+                ToolFocusOnTab(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.CONFIG to listOf(
