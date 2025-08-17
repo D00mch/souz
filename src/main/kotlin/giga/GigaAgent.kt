@@ -6,6 +6,8 @@ import com.dumch.tool.LocalRegexClassifier
 import com.dumch.tool.ToolCategory
 import com.dumch.tool.ToolsFactory
 import com.dumch.tool.desktop.ToolShowApps
+import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.browser.ToolSafariInfo
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlinx.coroutines.Dispatchers
@@ -66,9 +68,18 @@ class GigaAgent(
     private fun appendCurrentDesktopInfo(
         conversation: ArrayDeque<GigaRequest.Message>
     ) {
-        val openedApps = runCatching { ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running)) }
-            .getOrElse { "[]" }
-        val apps = objectMapper.writeValueAsString(mapOf("opened apps" to openedApps))
+        val openedApps = runCatching {
+            ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
+        }.getOrElse { "[]" }
+        val safariOpenedTabs = runCatching {
+            ToolSafariInfo(ToolRunBashCommand).invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.tabs))
+        }.getOrElse { "[]" }
+        val apps = objectMapper.writeValueAsString(
+            mapOf(
+                "opened apps" to openedApps,
+                "opened safari tabs" to safariOpenedTabs,
+            )
+        )
         conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))
     }
 
