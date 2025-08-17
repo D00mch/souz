@@ -33,6 +33,8 @@ import com.dumch.tool.files.ToolModifyFile
 import com.dumch.tool.files.ToolNewFile
 import com.dumch.tool.files.ToolReadFile
 import com.dumch.tool.browser.ToolFocusOnTab
+import com.dumch.tool.desktop.ToolOpenNote
+import com.dumch.tool.desktop.ToolOpenTelegramSavedMessages
 
 class ToolsFactory(private val repo: DesktopInfoRepository) {
     val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> by lazy {
@@ -70,6 +72,8 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolWindowsManager.toGiga(),
                 ToolMouseClickMac().toGiga(),
                 ToolHotkeyMac().toGiga(),
+                ToolOpenNote(ToolRunBashCommand).toGiga(),
+                ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
                 ToolMediaControl(ToolRunBashCommand).toGiga(),
                 ToolCollectButtons(ToolRunBashCommand).toGiga(),
                 ToolOpen(ToolRunBashCommand).toGiga(),
