@@ -21,6 +21,7 @@ import com.dumch.tool.desktop.ToolMinimizeWindows
 import com.dumch.tool.desktop.ToolMouseClickMac
 import com.dumch.tool.desktop.ToolOpen
 import com.dumch.tool.desktop.ToolOpenFolder
+import com.dumch.tool.desktop.ToolReadScreenText
 import com.dumch.tool.desktop.ToolSendTelegramMessage
 import com.dumch.tool.desktop.ToolUploadFile
 import com.dumch.tool.desktop.ToolWindowsManager
@@ -72,6 +73,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
                 ToolOpenFolder(ToolRunBashCommand).toGiga(),
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
+                ToolReadScreenText().toGiga(),
                 // ToolShowApps.toGiga(), // we get it by default anyway
             ).associateBy { it.fn.name },
 
