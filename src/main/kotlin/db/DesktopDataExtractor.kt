@@ -18,7 +18,7 @@ import kotlin.collections.map
  * ready for embedding.
  */
 object DesktopDataExtractor {
-    fun extract(): List<String> {
+    fun all(): List<String> {
         val installed = runCatching {
             val json = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
             val arr: List<Map<String, String>> = objectMapper.readValue(json)
@@ -33,13 +33,16 @@ object DesktopDataExtractor {
         }.getOrElse { emptyList() }
 
         val instructions = runCatching {
-            val list = ConfigStore.get<ArrayList<ToolInstructionStore.Input>>(ToolInstructionStore.INSTUCTIONS_KEY, ArrayList())
+            val list = ConfigStore.get<ArrayList<ToolInstructionStore.Input>>(
+                ToolInstructionStore.INSTUCTIONS_KEY,
+                ArrayList()
+            )
             list.map { inp ->
                 "Помни о такой инструкции: Когда я говорю: `${inp.name}`, выполняй инструкцию: ${inp.action}"
             }
         }.getOrElse { emptyList() }
 
-        return installed + dirs + instructions + browserHistory(500)
+        return installed + dirs + instructions + notes() + browserHistory(500)
     }
 
     fun browserHistory(count: Int = 10): List<String> {
@@ -57,13 +60,23 @@ object DesktopDataExtractor {
             }
         }.getOrElse { emptyList() }
     }
+
+    fun notes(): List<String> = runCatching {
+        val script = """
+set AppleScript's text item delimiters to linefeed
+tell application "Notes" to set xs to name of notes
+return xs as text
+            """.trimIndent()
+        val raw = ToolRunBashCommand.apple(script)
+        raw.lines().map { "У меня есть заметка: $it" }
+    }.getOrElse { emptyList() }
 }
 
 fun main() {
     val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
     println(
         logObjectMapper.writeValueAsString(
-            DesktopDataExtractor.extract()
+            DesktopDataExtractor.all()
         )
     )
 }
