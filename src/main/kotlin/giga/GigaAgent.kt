@@ -47,8 +47,7 @@ class GigaAgent(
 
         userMessages.collect { userText ->
             val category = classify(userText, conversation)
-            val msgEmbeddings = ragRepo.search(userText)
-            conversation.add(GigaRequest.Message(role = GigaMessageRole.user, content = msgEmbeddings.joinToString("; ")))
+            appendRelatedTextsFromDB(userText, conversation)
             appendCurrentDesktopInfo(conversation)
             val fns = category?.let { functionsByCategory[it] } ?: functions
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
@@ -58,6 +57,19 @@ class GigaAgent(
                 singleResponsePipeline(conversation, fns)
             }
         }
+    }
+
+    private suspend fun appendRelatedTextsFromDB(
+        userText: String,
+        conversation: ArrayDeque<GigaRequest.Message>
+    ) {
+        val msgEmbeddings = ragRepo.search(userText)
+        conversation.add(
+            GigaRequest.Message(
+                role = GigaMessageRole.user,
+                content = msgEmbeddings.joinToString("; ", prefix = "$DESKTOP_DETAILS: ")
+            )
+        )
     }
 
     private fun appendCurrentDesktopInfo(
@@ -208,7 +220,7 @@ class GigaAgent(
             ))
             chat(conversation, fns = emptyList())
         }
-        val msg: GigaRequest.Message = when(summaryResponse) {
+        val msg: GigaRequest.Message = when (summaryResponse) {
             is GigaResponse.Chat.Error -> {
                 l.error("Error on summarization: ${summaryResponse.message}")
                 return conversation.clear()
@@ -306,6 +318,8 @@ c помощью имеющихся функций, сделай, а не про
 Не зацикливайся на задаче, если ее нельзя решить за 5 шагов. Экономь мои токены!
 Если работаешь с файлами, отвечай кратко, не нужно рассказывать все, только по делу.
 """.trimIndent()
+
+        private const val DESKTOP_DETAILS = "Вот информация о системе, которая может быть полезна"
 
         private val systemPrompt = GigaRequest.Message(
             role = GigaMessageRole.system,
