@@ -6,6 +6,7 @@ import com.dumch.giga.toGiga
 import com.dumch.tool.browser.ToolBrowserHotkeys
 import com.dumch.tool.browser.ToolCreateNewBrowserTab
 import com.dumch.tool.browser.ToolSafariInfo
+import com.dumch.tool.coder.ToolRequestSelection
 import com.dumch.tool.config.ConfigStore
 import com.dumch.tool.config.ToolInstructionStore
 import com.dumch.tool.config.ToolSoundConfig
@@ -42,6 +43,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolDeleteFile.toGiga(),
                 ToolModifyFile.toGiga(),
                 ToolFindTextInFiles.toGiga(),
+                ToolRequestSelection.toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.DATAANALYTICS to listOf(
