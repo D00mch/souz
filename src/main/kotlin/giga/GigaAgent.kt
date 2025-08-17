@@ -173,7 +173,7 @@ class GigaAgent(
     private suspend fun classify(userText: String, conversation: ArrayDeque<GigaRequest.Message>): ToolCategory? {
         val body = buildClassifierBody(userText, conversation)
         val bodyJson = gigaJsonMapper.writeValueAsString(body)
-        l.info("Classifying user message: $userText, \nbody: \n${logObjectMapper.writeValueAsString(body)}")
+        l.debug("Classifying user message: $userText, \nbody: \n${logObjectMapper.writeValueAsString(body)}")
         return apiClassifier.classify(bodyJson) ?: localClassifier.classify(bodyJson)
     }
 
