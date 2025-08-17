@@ -9,7 +9,7 @@ class ToolFocusOnTab(private val bash: ToolRunBashCommand) : ToolSetup<ToolFocus
     )
 
     override val name: String = "FocusOnTab"
-    override val description: String = "Focuses the Safari tab with the given index using hotkeys. Use this tool if requesting tab is already opened"
+    override val description: String = "Focuses the Safari tab with the given index using hotkeys."
 
     override val fewShotExamples = listOf(
         FewShotExample(
