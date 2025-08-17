@@ -186,7 +186,12 @@ class GigaAgent(
         val body = buildClassifierBody(userText, conversation)
         val bodyJson = gigaJsonMapper.writeValueAsString(body)
         l.debug("Classifying user message: $userText, \nbody: \n${logObjectMapper.writeValueAsString(body)}")
-        return apiClassifier.classify(bodyJson) ?: localClassifier.classify(bodyJson)
+        return try {
+            apiClassifier.classify(bodyJson)
+        } catch (e: Exception) {
+            l.error("Error in apiClassifier: ${e.message}")
+            localClassifier.classify(bodyJson)
+        }
     }
 
     private fun buildClassifierBody(
