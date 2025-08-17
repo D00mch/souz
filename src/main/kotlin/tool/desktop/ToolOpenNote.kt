@@ -7,7 +7,7 @@ class ToolOpenNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenNot
         @InputParamDescription("Note name")
         val noteName: String
     )
-    override val name: String = "CreateNote"
+    override val name: String = "OpenNote"
     override val description: String = "Opens Notes by its name"
     override val fewShotExamples = listOf(
         FewShotExample(
