@@ -22,8 +22,6 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
         enter,
         escape,
         space,
-        go_to_left_screen,
-        go_to_right_screen,
         full_screen_toggle,
         close_app,
         close_tab,
@@ -114,8 +112,6 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
             HotKey.enter -> press(VK.RETURN)
             HotKey.escape -> press(VK.ESC)
             HotKey.space -> press(VK.SPACE)
-            HotKey.go_to_left_screen -> combo(VK.LEFT, VK.CTRL)           // ctrl+left
-            HotKey.go_to_right_screen -> combo(VK.RIGHT, VK.CTRL)         // ctrl+right
             HotKey.full_screen_toggle -> combo(VK.F, VK.CMD, VK.CTRL)     // ctrl+cmd+f
             HotKey.close_app -> combo(VK.Q, VK.CMD)                       // cmd+q
             HotKey.close_tab -> combo(VK.W, VK.CMD)                       // cmd+w
