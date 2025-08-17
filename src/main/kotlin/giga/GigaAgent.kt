@@ -8,6 +8,8 @@ import com.dumch.tool.config.ConfigStore
 import com.dumch.tool.config.ToolInstructionStore
 import com.dumch.tool.desktop.ToolShowApps
 import com.dumch.tool.files.ToolListFiles
+import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.browser.ToolSafariInfo
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +43,11 @@ class GigaAgent(
     private val installedApps = runCatching {
         ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
     }.getOrElse { "[]" }
+    private val safariCurrentTabUrl = runCatching {
+        ToolSafariInfo(ToolRunBashCommand).invoke(
+            ToolSafariInfo.Input(ToolSafariInfo.InfoType.currentTabUrl)
+        )
+    }.getOrElse { "" }
     private val stopRequested = AtomicBoolean(false)
 
     fun run(): Flow<String> = channelFlow {
@@ -80,7 +87,8 @@ class GigaAgent(
                 "installed" to installedApps,
                 "opened" to openedApps,
                 "dirs" to dirs,
-                "instructions" to instructions
+                "instructions" to instructions,
+                "currentOpenedPageUrl" to safariCurrentTabUrl,
             )
         )
         conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))

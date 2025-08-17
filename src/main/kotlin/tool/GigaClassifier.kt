@@ -55,7 +55,7 @@ class LocalRegexClassifier : GigaClassifier {
                 WeightedRegex(Regex("вынес|напис|поправ|измен|додел|чищ|удобн|созда"), 0.5),
             ),
             ToolCategory.BROWSER to listOf(
-                WeightedRegex(Regex("http[s]?://|браузер|browser|safari"), 2.0),
+                WeightedRegex(Regex("http[s]?://|браузер|browser|safari|Закладк"), 2.0),
                 WeightedRegex(Regex("вкладк|tab|сайт|страниц|истори"), 1.0),
             ),
             ToolCategory.CONFIG to listOf(
