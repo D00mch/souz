@@ -90,9 +90,14 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
         osascript <<'EOF'
             tell application "Safari"
                 set output to ""
+                set tabIndex to 1
                 repeat with w in windows
                     repeat with t in tabs of w
                         set output to output & URL of t & linefeed
+                        set tabName to name of t
+                        set tabUrl to URL of t
+                        set output to output & "{" & quote & tabIndex & quote & ", " & quote & tabName & quote & ", " & quote & tabUrl & quote & "}" & linefeed
+                        set tabIndex to tabIndex + 1
                     end repeat
                 end repeat
                 return output
@@ -226,6 +231,6 @@ private fun processArrayElement(array: Element, bookmarks: MutableMap<String, St
 
 fun main() {
     val tool = ToolSafariInfo(ToolRunBashCommand)
-    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.currentTabUrl))
+    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.tabs))
     println(result)
 }
