@@ -39,7 +39,7 @@ object DesktopDataExtractor {
             }
         }.getOrElse { emptyList() }
 
-        return installed + dirs + instructions + browserHistory(500)
+        return installed + dirs + instructions + notes() + browserHistory(500)
     }
 
     fun browserHistory(count: Int = 10): List<String> {
@@ -55,6 +55,22 @@ object DesktopDataExtractor {
                 val (date, url, title) = historyLine.split("|")
                 "В истории браузера есть запись: $title, url: $url, дата: $date"
             }
+        }.getOrElse { emptyList() }
+    }
+
+    fun notes(): List<String> {
+        return runCatching {
+            val script = """
+                tell application "Notes"
+                    set allNotes to name of every note
+                    return allNotes
+                end tell
+            """.trimIndent()
+
+            ToolRunBashCommand.apple(script)
+                .split(",")
+                .mapNotNull { it.trim().takeIf { s -> s.isNotEmpty() } }
+                .map { "У меня есть заметка: $it" }
         }.getOrElse { emptyList() }
     }
 }
