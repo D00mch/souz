@@ -17,6 +17,7 @@ object ConfigStore {
         prefs.put(key, str)
     }
 
+    @Suppress("unused")
     fun rm(key: String) {
         prefs.remove(key)
     }

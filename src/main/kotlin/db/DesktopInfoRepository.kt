@@ -41,6 +41,7 @@ class DesktopInfoRepository(
         db.insert(data, embeddings)
     }
 
+    @Suppress("unused")
     fun getDesktopTexts(): List<String> = db.getAllTexts()
 
     /**
