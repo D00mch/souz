@@ -59,10 +59,11 @@ object DesktopDataExtractor {
                     ToolSafariInfo.InfoType.history,
                     count = count
                 )
-            )
-                .lines()
-            lines.map { historyLine ->
+            ).lines()
+            val uniqueUrls: HashSet<String> = HashSet()
+            lines.mapNotNull { historyLine ->
                 val (date, url, title) = historyLine.split("|")
+                if (!uniqueUrls.add(url)) return@mapNotNull null
                 "В истории браузера есть запись: $title, url: ${url.take(50)}, дата: $date"
             }
         }.getOrElse { emptyList() }
