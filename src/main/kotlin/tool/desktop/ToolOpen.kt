@@ -55,6 +55,7 @@ class ToolOpen(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpen.Input>
                 }
                 else -> {
                     ToolOpenFolder(bash).invoke(ToolOpenFolder.Input(File(fixedPath).name))
+                    "Done"
                 }
             }
         } catch (e: Exception) {
