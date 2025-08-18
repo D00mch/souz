@@ -120,8 +120,7 @@ class GigaAgent(
             }
             totalTokens += response.usage.totalTokens
         }
-
-        // squeezeTexts() // TODO: uncomment when implemented
+        conversation.squeezeTexts()
         if (stopRequested.get() || results.isEmpty()) {
             return
         } else {
@@ -133,7 +132,27 @@ class GigaAgent(
 
     // Consolidates agent messages with text into one message
     private fun ArrayDeque<GigaRequest.Message>.squeezeTexts() {
-        TODO("Need to make sure that near messages with texts with role=agents are consolidated into one message")
+        if (isEmpty()) return
+        val squeezed = ArrayDeque<GigaRequest.Message>(size)
+        for (msg in this) {
+            val last = squeezed.lastOrNull()
+            if (
+                last != null &&
+                last.role == GigaMessageRole.assistant &&
+                msg.role == GigaMessageRole.assistant &&
+                last.content.isNotBlank() &&
+                msg.content.isNotBlank() &&
+                (last.functionsStateId == msg.functionsStateId || msg.functionsStateId == null)
+            ) {
+                squeezed.removeLast()
+                val joined = if (last.content.isEmpty()) msg.content else last.content + "\n" + msg.content
+                squeezed.add(last.copy(content = joined))
+            } else {
+                squeezed.add(msg)
+            }
+        }
+        clear()
+        addAll(squeezed)
     }
 
     fun stop() {
@@ -194,7 +213,7 @@ class GigaAgent(
         val bodyJson = gigaJsonMapper.writeValueAsString(body)
         l.debug("Classifying user message: $userText, \nbody: \n${logObjectMapper.writeValueAsString(body)}")
         return try {
-            apiClassifier.classify(bodyJson)
+            apiClassifier.classify(bodyJson) ?: localClassifier.classify(bodyJson)
         } catch (e: Exception) {
             l.error("Error in apiClassifier: ${e.message}")
             localClassifier.classify(bodyJson)

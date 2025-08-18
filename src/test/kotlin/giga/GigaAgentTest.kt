@@ -261,6 +261,64 @@ class GigaAgentTest {
         assertEquals(0.33f, bodies.last().temperature)
     }
 
+    @Test
+    fun `squeezeTexts merges function call and text`() {
+        val agent = GigaAgent(
+            userMessages = flowOf<String>(),
+            api = mockk(),
+            ragRepo = mockRagRepo(),
+            settings = GigaAgent.Settings(toolsByCategory = emptyMap(), model = GigaModel.Pro, stream = true),
+        )
+        val conversation = ArrayDeque<GigaRequest.Message>().apply {
+            add(GigaRequest.Message(GigaMessageRole.user, "u1"))
+            add(
+                GigaRequest.Message(
+                    GigaMessageRole.assistant,
+                    "fn",
+                    functionsStateId = "id1"
+                )
+            )
+            add(
+                GigaRequest.Message(
+                    GigaMessageRole.assistant,
+                    "text",
+                    functionsStateId = null
+                )
+            )
+            add(GigaRequest.Message(GigaMessageRole.user, "u2"))
+        }
+        val m = GigaAgent::class.java.getDeclaredMethod("squeezeTexts", ArrayDeque::class.java)
+        m.isAccessible = true
+        m.invoke(agent, conversation)
+
+        assertEquals(3, conversation.size)
+        val assistant = conversation.elementAt(1)
+        assertEquals("fn\ntext", assistant.content)
+        assertEquals("id1", assistant.functionsStateId)
+    }
+
+    @Test
+    fun `squeezeTexts merges consecutive assistant texts`() {
+        val agent = GigaAgent(
+            userMessages = flowOf<String>(),
+            api = mockk(),
+            ragRepo = mockRagRepo(),
+            settings = GigaAgent.Settings(toolsByCategory = emptyMap(), model = GigaModel.Pro, stream = true),
+        )
+        val conversation = ArrayDeque<GigaRequest.Message>().apply {
+            add(GigaRequest.Message(GigaMessageRole.user, "u"))
+            add(GigaRequest.Message(GigaMessageRole.assistant, "a1"))
+            add(GigaRequest.Message(GigaMessageRole.assistant, "a2"))
+            add(GigaRequest.Message(GigaMessageRole.assistant, "a3"))
+        }
+        val m = GigaAgent::class.java.getDeclaredMethod("squeezeTexts", ArrayDeque::class.java)
+        m.isAccessible = true
+        m.invoke(agent, conversation)
+
+        assertEquals(2, conversation.size)
+        assertEquals("a1\na2\na3", conversation.last().content)
+    }
+
     private fun mockRagRepo(): DesktopInfoRepository = mockk<DesktopInfoRepository> {
         coEvery { search(any(), any()) } returns emptyList()
     }
