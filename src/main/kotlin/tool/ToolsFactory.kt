@@ -57,8 +57,8 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolOpen(ToolRunBashCommand).toGiga(),
                 ToolCreateNote(ToolRunBashCommand).toGiga(),
                 ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
-                ToolOpenFolder(ToolRunBashCommand).toGiga(),
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
+//              ToolOpenFolder(ToolRunBashCommand).toGiga(), // ToolOpen can do it
 //                ToolMouseClickMac().toGiga(),
 //                ToolCollectButtons(ToolRunBashCommand).toGiga(), // too slow, only for mouse
 //                ToolShowApps.toGiga(), // we get it by default anyway

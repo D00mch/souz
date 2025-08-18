@@ -13,7 +13,8 @@ class ToolOpen(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpen.Input>
     )
 
     override val name: String = "Open"
-    override val description: String = "Opens apps, files or folders"
+    override val description: String = "Opens apps, files or folders. If you have two candidates to open, choose" +
+            "the one with the shortest path, but tell the user that there are other options."
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -43,7 +44,7 @@ class ToolOpen(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpen.Input>
                 fixedPath.contains('/') -> {
                     val isDir = !fixedPath.endsWith(".app") && File(fixedPath).isDirectory
                     if (isDir) {
-                        ToolOpenFolder(bash).invoke(ToolOpenFolder.Input(File(fixedPath).name))
+                        bash.sh("""open -R "$fixedPath"""")
                     } else {
                         bash.sh("""open "$fixedPath"""")
                         "Done"
