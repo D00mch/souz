@@ -141,7 +141,7 @@ fun rawToOpusOgg(
     sampleRate: Float = 16_000f,
     sampleSizeInBits: Int = 16,
     channels: Int = 1,
-    bitRate: Int = 32_000
+    bitRate: Int = 64_000
 ): ByteArray {
     // First convert raw data to WAV format
     val wavBytes = rawToWav(rawData, sampleRate, sampleSizeInBits, channels)
