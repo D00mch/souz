@@ -80,11 +80,11 @@ class GigaAgent(
         }.getOrElse { "[]" }
         val safariOpenedTabs = runCatching {
             ToolSafariInfo(ToolRunBashCommand).invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.tabs))
-        }.getOrElse { "[]" }
+        }.getOrElse { "{}" }
         val apps = objectMapper.writeValueAsString(
             mapOf(
                 "opened apps" to openedApps,
-                "opened safari tabs" to safariOpenedTabs,
+                "opened safari tabs to position number" to safariOpenedTabs,
             )
         )
         conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))

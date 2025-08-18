@@ -59,7 +59,13 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
             InfoType.bookmarks -> parseSafariBookmarks(bash.sh(bookmarksCommand())).let {
                 objectMapper.writeValueAsString(it)
             }
-            InfoType.tabs -> bash.sh(tabsCommand())
+            InfoType.tabs -> {
+                val result: Map<String, Int> = bash.sh(tabsCommand()).lines().associate { line ->
+                    val (index, tabName) = line.replace("\"", "").split(", ")
+                    tabName to index.toInt()
+                }
+                objectMapper.writeValueAsString(result)
+            }
             InfoType.currentTabUrl -> bash.sh(currentTabUrlCommand())
             InfoType.pageText -> {
                 val targetUrl = input.url ?: bash.sh(currentTabUrlCommand()).trim()
@@ -90,22 +96,20 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
     """.trimIndent()
 
     private fun tabsCommand(): String = """
-        osascript <<'EOF'
-            tell application "Safari"
-                set output to ""
-                set tabIndex to 1
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        set output to output & URL of t & linefeed
-                        set tabName to name of t
-                        set tabUrl to URL of t
-                        set output to output & "{" & quote & tabIndex & quote & ", " & quote & tabName & quote & ", " & quote & tabUrl & quote & "}" & linefeed
-                        set tabIndex to tabIndex + 1
-                    end repeat
-                end repeat
-                return output
-            end tell
-        EOF
+osascript <<'EOF'
+tell application "Safari"
+    set output to ""
+    set tabIndex to 1
+    repeat with w in windows
+        repeat with t in tabs of w
+            set tabName to name of t
+            set output to output & tabIndex & ", " & quote & tabName & quote& linefeed
+            set tabIndex to tabIndex + 1
+        end repeat
+    end repeat
+    return text 1 thru -2 of output
+end tell
+EOF
     """.trimIndent()
 
     private fun currentTabUrlCommand(): String = """
@@ -234,6 +238,6 @@ private fun processArrayElement(array: Element, bookmarks: MutableMap<String, St
 
 fun main() {
     val tool = ToolSafariInfo(ToolRunBashCommand)
-    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.history))
+    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.tabs))
     println(result)
 }
