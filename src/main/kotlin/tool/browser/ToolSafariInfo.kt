@@ -1,6 +1,5 @@
 package com.dumch.tool.browser
 
-import com.dumch.giga.objectMapper
 import com.dumch.tool.*
 import org.w3c.dom.Element
 import org.w3c.dom.Node
@@ -56,9 +55,7 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
     override fun invoke(input: Input): String {
         return when (input.type) {
             InfoType.history -> bash.sh(historyCommand(input.count))
-            InfoType.bookmarks -> parseSafariBookmarks(bash.sh(bookmarksCommand())).let {
-                objectMapper.writeValueAsString(it)
-            }
+            InfoType.bookmarks -> parseSafariBookmarks(bash.sh(bookmarksCommand())).toString()
             InfoType.tabs -> {
                 bash.sh(tabsCommand()).lines().joinToString { line ->
                     val (index, tabName) = line.replace("\"", "").split(", ")
@@ -238,6 +235,6 @@ private fun processArrayElement(array: Element, bookmarks: MutableMap<String, St
 
 fun main() {
     val tool = ToolSafariInfo(ToolRunBashCommand)
-    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.tabs))
+    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.bookmarks))
     println(result)
 }
