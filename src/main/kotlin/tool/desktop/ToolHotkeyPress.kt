@@ -9,35 +9,18 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
     private val cf = CoreFoundation.INSTANCE
 
     enum class HotKey {
-        arrow_left,
-        arrow_right,
-        arrow_up,
-        arrow_down,
-        page_up,
-        page_down,
-        home,
-        end,
-        delete,
-        backspace,
-        enter,
         escape,
         space,
         full_screen_toggle,
         close_app,
-        close_tab,
-        open_just_closed_tab,
         cancel_last_action,
     }
 
     data class Input(
         @InputParamDescription(
             """Select a hotkey to press. Some combined hotkey options:
-"go_to_left_screen" -> ctrl+left
-"go_to_right_screen" -> ctrl+right
 "full_screen_toggle" -> ctrl+cmd+f
 "close_app" -> cmd+q
-"close_tab" -> cmd+w
-"open_just_closed_tab" -> cmd+shift+t
 "cancel_last_action" -> cmd+z"""
         )
         val hotKey: HotKey,
@@ -51,16 +34,8 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
             params = mapOf("hotKey" to HotKey.cancel_last_action)
         ),
         FewShotExample(
-            request = "Доскроль страницу до низа",
-            params = mapOf("hotKey" to HotKey.page_down)
-        ),
-        FewShotExample(
-            request = "Закрой вкладку",
-            params = mapOf("hotKey" to HotKey.close_tab)
-        ),
-        FewShotExample(
-            request = "Открой последнюю закрытую вкладку",
-            params = mapOf("hotKey" to HotKey.open_just_closed_tab)
+            request = "Сделай прилоние на весь экран",
+            params = mapOf("hotKey" to HotKey.full_screen_toggle)
         ),
     )
     override val returnParameters = ReturnParameters(
@@ -99,23 +74,10 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
 
     private fun extracted(key: HotKey) {
         when (key) {
-            HotKey.arrow_left -> press(VK.LEFT)
-            HotKey.arrow_right -> press(VK.RIGHT)
-            HotKey.arrow_up -> press(VK.UP)
-            HotKey.arrow_down -> press(VK.DOWN)
-            HotKey.page_up -> press(VK.PAGE_UP)
-            HotKey.page_down -> press(VK.PAGE_DOWN)
-            HotKey.home -> press(VK.HOME)
-            HotKey.end -> press(VK.END)
-            HotKey.delete -> press(VK.FORWARD_DELETE)    // forward delete
-            HotKey.backspace -> press(VK.BACKSPACE)      // label "Delete" on Mac keyboards
-            HotKey.enter -> press(VK.RETURN)
             HotKey.escape -> press(VK.ESC)
             HotKey.space -> press(VK.SPACE)
             HotKey.full_screen_toggle -> combo(VK.F, VK.CMD, VK.CTRL)     // ctrl+cmd+f
             HotKey.close_app -> combo(VK.Q, VK.CMD)                       // cmd+q
-            HotKey.close_tab -> combo(VK.W, VK.CMD)                       // cmd+w
-            HotKey.open_just_closed_tab -> combo(VK.T, VK.CMD, VK.SHIFT)  // cmd+shift+t
             HotKey.cancel_last_action -> combo(VK.Z, VK.CMD)              // cmd+z
         }
     }
@@ -123,6 +85,6 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
 
 fun main() {
     val tool = ToolHotkeyMac()
-    println(tool.invoke(ToolHotkeyMac.Input(ToolHotkeyMac.HotKey.close_tab)))
+    println(tool.invoke(ToolHotkeyMac.Input(ToolHotkeyMac.HotKey.cancel_last_action)))
 }
 

@@ -34,8 +34,8 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
     }
 
     override val name: String = "WindowsManager"
-    override val description: String = "Allows to control windows manager: change window size, move, focus, " +
-            "layout, etc."
+    override val description: String = "Позволяет управлять окнами, переходить по экранам, " +
+            "менять размер приложений, переносить окна по экранам"
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
@@ -77,6 +77,10 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
         FewShotExample(
             request = "Перекинь апп на первый workspace",
             params = mapOf("action" to Action.move_app_to_workspace, "meta" to "1")
+        ),
+        FewShotExample(
+            request = "Перенеси фокус на пятый экран",
+            params = mapOf("action" to Action.go_to_workspace, "meta" to "5")
         ),
         FewShotExample(
             request = "Переведи фокус на приложение Хром",

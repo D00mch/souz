@@ -50,7 +50,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
 
             ToolCategory.DESKTOP to listOf(
                 ToolWindowsManager.toGiga(),
-                ToolHotkeyMac().toGiga(),
+                ToolHotkeyMac().toGiga(), // we should provide deliberate tools
                 ToolOpenNote(ToolRunBashCommand).toGiga(),
                 ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
                 ToolMediaControl(ToolRunBashCommand).toGiga(),

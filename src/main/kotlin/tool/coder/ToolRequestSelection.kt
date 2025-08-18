@@ -25,6 +25,10 @@ object ToolRequestSelection : ToolSetup<ToolRequestSelection.Input> {
             request = "Расскажи подробнее о коде в selection",
             params = mapOf("allowOnlyPath" to true)
         ),
+        FewShotExample(
+            request = "Что делает эта функция?",
+            params = mapOf("allowOnlyPath" to true)
+        ),
     )
     override val returnParameters: ReturnParameters = ReturnParameters(
         properties = mapOf(
