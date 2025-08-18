@@ -148,6 +148,26 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         }
     }
 
+    override suspend fun balance(): GigaResponse.Balance = try {
+        val response = client.get(BALANCE_URL)
+        when {
+            response.status.isSuccess() -> response.body<GigaResponse.Balance.Ok>()
+            response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
+                GigaResponse.Balance.Error(
+                    response.status.value,
+                    "Authentication error: ${response.status.description}"
+                )
+
+            else -> runCatching { response.body<GigaResponse.Balance.Error>() }
+                .getOrElse {
+                    GigaResponse.Balance.Error(response.status.value, response.status.description)
+                }
+        }
+    } catch (t: Throwable) {
+        l.error("Error in REST balance", t)
+        GigaResponse.Balance.Error(-1, "Connection error: ${t.message}")
+    }
+
     private fun parseStreamChunk(data: String): GigaResponse.Chat {
         val node = objectMapper.readTree(data)
         val choicesNode = node["choices"] ?: emptyList()
@@ -257,6 +277,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
     companion object {
         private val URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
         private val EMBEDDINGS_URL = "https://gigachat.devices.sberbank.ru/api/v1/embeddings"
+        private val BALANCE_URL = "https://gigachat.devices.sberbank.ru/api/v1/balance"
 
         val INSTANCE = GigaRestChatAPI(GigaAuth)
     }

@@ -9,5 +9,6 @@ interface GigaChatAPI {
     suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings
     suspend fun uploadFile(file: File): GigaResponse.UploadFile
     suspend fun downloadFile(fileId: String): String?
+    suspend fun balance(): GigaResponse.Balance
 }
 
