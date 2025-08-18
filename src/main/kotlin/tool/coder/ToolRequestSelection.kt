@@ -1,6 +1,5 @@
 package com.dumch.tool.coder
 
-import com.dumch.giga.objectMapper
 import com.dumch.keys.MrRobot
 import com.dumch.tool.FewShotExample
 import com.dumch.tool.InputParamDescription

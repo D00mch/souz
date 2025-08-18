@@ -97,9 +97,7 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): GigaT
             return try {
                 val input: Input = gigaJsonMapper.convertValue(functionCall.arguments, Input::class.java)
                 val toolResult = toolSetup.suspendInvoke(input)
-                val gigaResult = gigaJsonMapper.writeValueAsString(
-                    mapOf("result" to toolResult)
-                )
+                val gigaResult = gigaJsonMapper.writeValueAsString(toolResult)
                 GigaRequest.Message(
                     role = GigaMessageRole.function,
                     content = gigaResult,
