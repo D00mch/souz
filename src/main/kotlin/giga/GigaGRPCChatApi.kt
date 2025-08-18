@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
 import org.slf4j.LoggerFactory
 import org.slf4j.bridge.SLF4JBridgeHandler
+import java.util.UUID
 
 /**
  * Simple gRPC client for GigaChat ChatService.
@@ -86,11 +87,11 @@ class GigaGRPCChatApi(
 
         val token = loadAccessToken()
         return try {
-            stub.chat(request, authHeaders(token)).toGigaResponse()
+            stub.chat(request, headers(token)).toGigaResponse()
         } catch (e: Exception) {
             l.error("Error in gRPC chat", e)
             suspend fun retryWithRefresh() =
-                stub.chat(request, authHeaders(refreshAccessToken())).toGigaResponse()
+                stub.chat(request, headers(refreshAccessToken())).toGigaResponse()
             when {
                 e is StatusException && e.status.code == Status.Code.UNAUTHENTICATED -> retryWithRefresh()
                 e is StatusRuntimeException && e.status.code == Status.Code.UNAUTHENTICATED -> retryWithRefresh()
@@ -127,7 +128,7 @@ class GigaGRPCChatApi(
             .build()
 
         suspend fun stream(token: String): Flow<GigaResponse.Chat> {
-            return stub.chatStream(request, authHeaders(token))
+            return stub.chatStream(request, headers(token))
                 .map { resp -> resp.mapResponse(body.model) }
         }
 
@@ -231,9 +232,13 @@ class GigaGRPCChatApi(
         return newToken
     }
 
-    private fun authHeaders(token: String): Metadata = Metadata().apply {
-        val key = Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER)
-        put(key, "Bearer $token")
+    private val uuid = UUID.randomUUID().toString()
+
+    private fun headers(token: String): Metadata = Metadata().apply {
+        val authKey = Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER)
+        put(authKey, "Bearer $token")
+        val sessionKey = Metadata.Key.of("x-session-id", Metadata.ASCII_STRING_MARSHALLER)
+        put(sessionKey, uuid)
     }
 
     private fun Gigachatv1.ChatResponse.toGigaResponse(): GigaResponse.Chat {

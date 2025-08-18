@@ -11,11 +11,13 @@ import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.client.plugins.sse.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
 class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
@@ -51,8 +53,11 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         }
     }
 
+    val uuid = UUID.randomUUID().toString()
+
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
         val response = client.post(URL) {
+            header("X-Session-ID", uuid)
             setBody(body)
         }
         when {
@@ -60,7 +65,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
             response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
                 GigaResponse.Chat.Error(response.status.value, "Authentication error: ${response.status.description}")
 
-            else -> runCatching { response.body<GigaResponse.Chat.Error>() }
+            else -> runCatching { GigaResponse.Chat.Error(response.status.value, response.bodyAsText()) }
                 .getOrElse {
                     GigaResponse.Chat.Error(response.status.value, response.status.description)
                 }
@@ -77,6 +82,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
                 request = {
                     method = HttpMethod.Post
                     setBody(body.copy(stream = true))
+                    header("X-Session-ID", uuid)
                 }
             ) {
                 incoming.collect { event ->
@@ -92,7 +98,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
             val msg = if (status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden) {
                 "Authentication error: ${status.description}"
             } else {
-                "HTTP error: ${status.description}"
+                "HTTP error: ${e.response.bodyAsText()}"
             }
             emit(GigaResponse.Chat.Error(status.value, msg))
         } catch (t: Throwable) {
