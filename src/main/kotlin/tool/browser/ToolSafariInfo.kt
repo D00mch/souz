@@ -60,11 +60,11 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
                 objectMapper.writeValueAsString(it)
             }
             InfoType.tabs -> {
-                val result: Map<String, Int> = bash.sh(tabsCommand()).lines().associate { line ->
+                bash.sh(tabsCommand()).lines().joinToString { line ->
                     val (index, tabName) = line.replace("\"", "").split(", ")
-                    tabName to index.toInt()
+                    (tabName to index.toInt()).toString()
+                    "$tabName: $index"
                 }
-                objectMapper.writeValueAsString(result)
             }
             InfoType.currentTabUrl -> bash.sh(currentTabUrlCommand())
             InfoType.pageText -> {
