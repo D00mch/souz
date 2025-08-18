@@ -56,7 +56,7 @@ object DesktopDataExtractor {
                 .lines()
             lines.map { historyLine ->
                 val (date, url, title) = historyLine.split("|")
-                "В истории браузера есть запись: $title, url: $url, дата: $date"
+                "В истории браузера есть запись: $title, url: ${url.take(50)}, дата: $date"
             }
         }.getOrElse { emptyList() }
     }
