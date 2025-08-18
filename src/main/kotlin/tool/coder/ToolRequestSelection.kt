@@ -42,7 +42,12 @@ object ToolRequestSelection : ToolSetup<ToolRequestSelection.Input> {
         val code = MrRobot.clipboardGet()
         MrRobot.hotKeys("cmd", "shift", "c")
         val path = MrRobot.clipboardGet()
-        val result = mapOf("path" to path, "code" to code)
-        return objectMapper.writeValueAsString(result)
+        return """
+ path: $path
+ 
+ ```
+ $code
+ ```
+        """.trimIndent()
     }
 }
