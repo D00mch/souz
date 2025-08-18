@@ -12,7 +12,6 @@ import com.dumch.db.VectorDB
 import com.dumch.db.DesktopInfoRepository
 import com.dumch.giga.GigaAgent
 import com.dumch.giga.GigaAuth
-import com.dumch.giga.GigaGRPCChatApi
 import com.dumch.giga.GigaModel
 import com.dumch.giga.GigaRestChatAPI
 import com.dumch.giga.GigaVoiceAPI
@@ -84,7 +83,7 @@ suspend fun main() = coroutineScope {
         } ?: GigaModel.Max
 
         while (isActive) {
-            val agent = GigaAgent.instance(userInputFlow, GigaGRPCChatApi.INSTANCE, desktopInfoRepo, model = model)
+            val agent = GigaAgent.instance(userInputFlow, GigaRestChatAPI.INSTANCE, desktopInfoRepo, model = model)
             agentRef.set(agent)
             runCatching {
                 agent.run().collect { text ->
