@@ -112,6 +112,7 @@ object GigaRequest {
         val temperature: Float? = null,
         val stream: Boolean = false,
         val maxTokens: Int = 24_228,
+        @JsonProperty("update_interval") val updateInterval: Int? = 4,
     )
 
     data class Message(

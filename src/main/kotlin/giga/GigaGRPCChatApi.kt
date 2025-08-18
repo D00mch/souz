@@ -68,6 +68,7 @@ class GigaGRPCChatApi(
                         )
                         maxTokens = body.maxTokens
                         body.temperature?.let { temperature = it }
+                        body.updateInterval?.let { updateInterval = it.toFloat() }
                     }
                     .build()
             )
@@ -109,6 +110,7 @@ class GigaGRPCChatApi(
                         )
                         maxTokens = body.maxTokens
                         body.temperature?.let { temperature = it }
+                        body.updateInterval?.let { updateInterval = it.toFloat() }
                     }
                     .build()
             )
