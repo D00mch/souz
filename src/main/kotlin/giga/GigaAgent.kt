@@ -3,6 +3,7 @@ package com.dumch.giga
 import com.dumch.db.DesktopInfoRepository
 import com.dumch.tool.UserMessageClassifier
 import com.dumch.tool.LocalRegexClassifier
+import com.dumch.tool.LocalRegexClassifier.classify
 import com.dumch.tool.ToolCategory
 import com.dumch.tool.ToolsFactory
 import com.dumch.tool.desktop.ToolShowApps
@@ -120,6 +121,7 @@ class GigaAgent(
             totalTokens += response.usage.totalTokens
         }
 
+        // squeezeTexts() // TODO: uncomment when implemented
         if (stopRequested.get() || results.isEmpty()) {
             return
         } else {
@@ -127,6 +129,11 @@ class GigaAgent(
             trySummarize(totalTokens, conversation)
             streamPipeline(conversation, fns)
         }
+    }
+
+    // Consolidates agent messages with text into one message
+    private fun ArrayDeque<GigaRequest.Message>.squeezeTexts() {
+        TODO("Need to make sure that near messages with texts with role=agents are consolidated into one message")
     }
 
     fun stop() {
