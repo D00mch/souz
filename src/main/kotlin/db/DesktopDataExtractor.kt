@@ -25,13 +25,6 @@ object DesktopDataExtractor {
             arr.map { "У меня есть установленное приложение ${it["app-name"]}" }
         }.getOrElse { emptyList() }
 
-        val dirs = runCatching {
-            val res = ToolListFiles.invoke(ToolListFiles.Input(System.getenv("HOME"), 3))
-            res.trim('[', ']').split(',')
-                .mapNotNull { it.trim().takeIf { s -> s.isNotEmpty() } }
-                .map { "На моём PC есть папка $it" }
-        }.getOrElse { emptyList() }
-
         val instructions = runCatching {
             val list = ConfigStore.get<ArrayList<ToolInstructionStore.Input>>(
                 ToolInstructionStore.INSTUCTIONS_KEY,
@@ -42,8 +35,22 @@ object DesktopDataExtractor {
             }
         }.getOrElse { emptyList() }
 
-        return installed + dirs + instructions + notes() + browserHistory(500)
+        return installed + files() + instructions + notes() + browserHistory(500)
     }
+
+    fun files(): Sequence<String> = runCatching {
+        val res = ToolListFiles.invoke(ToolListFiles.Input(System.getenv("HOME"), 3))
+        res.trim('[', ']')
+            .splitToSequence(',')
+            .mapNotNull { it.trim().takeIf { s -> s.isNotEmpty() } }    // skip empty lines
+            .filterNot { it.split('/').any { s -> s.startsWith('.') } } // skip hidden files
+            .map { path ->
+                val fileName = path.substringAfterLast('/')
+                // hidden files are filtered above
+                val type = if (fileName.contains('.')) "file" else "folder"
+                "На PC есть $type $path"
+            }
+    }.getOrElse { emptySequence() }
 
     fun browserHistory(count: Int = 10): List<String> {
         return runCatching {
