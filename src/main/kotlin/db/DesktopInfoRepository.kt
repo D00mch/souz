@@ -29,7 +29,9 @@ class DesktopInfoRepository(
         if (ConfigStore.get(LAST_RUN_KEY, "") == today) return
         db.clearAllTexts()
         val data = DesktopDataExtractor.all()
-        storeDesktopInfo(data)
+        data.chunked(500).forEach { chunk ->
+            storeDesktopInfo(data)
+        }
         ConfigStore.put(LAST_RUN_KEY, today)
     }
 
