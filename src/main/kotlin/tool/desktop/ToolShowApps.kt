@@ -58,7 +58,11 @@ The "app-pid" only returned for running apps with `${AppState.running}` input.
         }
 
         AppState.running -> {
-            ToolWindowsManager.runAerospace("list-apps")
+            val result = ToolWindowsManager.runAerospace(
+                "list-apps", "--format",
+                "{app:%{app-name},bundle:%{app-bundle-id},pid:%{app-pid}}"
+            )
+            result.lines().joinToString(prefix = "[", postfix = "]", separator = ",") { it }
         }
     }
 }
