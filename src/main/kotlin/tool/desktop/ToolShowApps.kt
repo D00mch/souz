@@ -58,7 +58,7 @@ The "app-pid" only returned for running apps with `${AppState.running}` input.
         }
 
         AppState.running -> {
-            ToolWindowsManager.runAerospace("list-apps", "--json")
+            ToolWindowsManager.runAerospace("list-apps")
         }
     }
 }
@@ -70,6 +70,6 @@ private data class Result(
 
 fun main() {
     val tool = ToolShowApps
-    val result = tool.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
+    val result = tool.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
     println(result)
 }
