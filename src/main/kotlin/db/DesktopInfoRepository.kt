@@ -30,7 +30,7 @@ class DesktopInfoRepository(
         db.clearAllTexts()
         val data = DesktopDataExtractor.all()
         data.chunked(500).forEach { chunk ->
-            storeDesktopInfo(data)
+            storeDesktopInfo(chunk)
         }
         ConfigStore.put(LAST_RUN_KEY, today)
     }
