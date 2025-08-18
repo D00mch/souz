@@ -1,6 +1,8 @@
 package com.dumch.tool.config
 
 import com.dumch.db.DesktopInfoRepository
+import com.dumch.db.StorredData
+import com.dumch.db.StorredType
 import com.dumch.tool.FewShotExample
 import com.dumch.tool.InputParamDescription
 import com.dumch.tool.ReturnParameters
@@ -47,7 +49,7 @@ class ToolInstructionStore(
         val currentInstructions = config.get<ArrayList<Input>>(INSTUCTIONS_KEY, ArrayList())
         currentInstructions.add(input)
 
-        val dbInstructions = listOf("Когда я говорю: `${input.name}`, выполняй инструкцию: ${input.action}")
+        val dbInstructions = listOf(StorredData("${input.name} -> ${input.action}", StorredType.INSTRUCTIONS))
         repo.storeDesktopInfo(dbInstructions)
 
         config.put(INSTUCTIONS_KEY, currentInstructions)

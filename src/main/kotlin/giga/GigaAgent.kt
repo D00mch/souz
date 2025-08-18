@@ -68,7 +68,9 @@ class GigaAgent(
         conversation.add(
             GigaRequest.Message(
                 role = GigaMessageRole.user,
-                content = msgEmbeddings.joinToString("; ", prefix = "$DESKTOP_DETAILS: ")
+                content = msgEmbeddings.joinToString("; ", prefix = "$DESKTOP_DETAILS: ") {
+                    "${it.type}: ${it.text}"
+                }
             )
         )
     }

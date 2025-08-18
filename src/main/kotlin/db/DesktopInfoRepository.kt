@@ -27,7 +27,7 @@ class DesktopInfoRepository(
         db.initializeOnce()
         val today = LocalDate.now().toString() // returns data like 2023-03-31
         if (ConfigStore.get(LAST_RUN_KEY, "") == today) return
-        db.clearAllTexts()
+        db.clearAllData()
         val data = DesktopDataExtractor.all()
         data.chunked(500).forEach { chunk ->
             storeDesktopInfo(chunk)
@@ -35,8 +35,8 @@ class DesktopInfoRepository(
         ConfigStore.put(LAST_RUN_KEY, today)
     }
 
-    suspend fun storeDesktopInfo(data: List<String>) {
-        val embeddings = when (val resp = api.embeddings(GigaRequest.Embeddings(input = data))) {
+    suspend fun storeDesktopInfo(data: List<StorredData>) {
+        val embeddings = when (val resp = api.embeddings(GigaRequest.Embeddings(input = data.map { it.text }))) {
             is GigaResponse.Embeddings.Ok -> resp.data.map { it.embedding }
             is GigaResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
         }
@@ -44,13 +44,13 @@ class DesktopInfoRepository(
     }
 
     @Suppress("unused")
-    fun getDesktopTexts(): List<String> = db.getAllTexts()
+    fun getDesktopData(): List<StorredData> = db.getAllData()
 
     /**
      * Convert the provided query to an embedding and return the most similar
      * stored texts from the database.
      */
-    suspend fun search(query: String, limit: Int = 5): List<String> {
+    suspend fun search(query: String, limit: Int = 5): List<StorredData> {
         val emb = when (val resp = api.embeddings(GigaRequest.Embeddings(input = listOf(query)))) {
             is GigaResponse.Embeddings.Ok -> resp.data.first().embedding
             is GigaResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
