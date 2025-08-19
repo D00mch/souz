@@ -29,6 +29,7 @@ import kotlin.time.Duration.Companion.minutes
 private val l = LoggerFactory.getLogger("AI")
 
 suspend fun main() = coroutineScope {
+    println("Balance:\n${GigaRestChatAPI.INSTANCE.balance()}\n")
     val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     val audioRecorder = InMemoryAudioRecorder(
         recorder = ActiveSoundRecorderImpl(),
