@@ -228,7 +228,8 @@ suspend fun main() {
                 else -> audioRecorder.stop()
             }
         },
-        onDoubleClick = { println("double click") }
+        onDoubleClick = { println("double click") },
+        onAltRight = { println("alt+right") }
     )
 
     var i = 0
