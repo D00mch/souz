@@ -8,13 +8,14 @@ class ToolOpen(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpen.Input>
     private val l = LoggerFactory.getLogger(ToolOpen::class.java)
 
     data class Input(
-        @InputParamDescription("Name, path or bundle id of app/file/folder to open")
+        @InputParamDescription("Bundle id, like `ru.keepcoder.Telegram`, " +
+                "path to a file or folder like `app/file/folder`, or just a name like `Downloads`")
         val target: String
     )
 
     override val name: String = "Open"
     override val description: String = "Opens apps, files or folders. If you have two candidates to open, choose" +
-            "the one with the shortest path, but tell the user that there are other options."
+            " the one with the shortest path, but tell the user that there are other options."
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -27,7 +28,7 @@ class ToolOpen(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpen.Input>
         ),
         FewShotExample(
             request = "Открой загрузки",
-            params = mapOf("target" to "Downloads")
+            params = mapOf("target" to "~/path/to/Downloads")
         ),
     )
 
