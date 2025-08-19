@@ -88,6 +88,16 @@ object GigaResponse {
         @JsonProperty("object") val objectType: String? = null,
     )
 
+    data class BalanceItem(
+        val usage: String,
+        val value: Int,
+    )
+
+    sealed interface Balance {
+        data class Ok(val balance: List<BalanceItem>) : Balance
+        data class Error(val status: Int, val message: String) : Balance
+    }
+
     enum class FinishReason { stop, length, function_call, blacklist, error }
 }
 
