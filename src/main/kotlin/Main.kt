@@ -50,7 +50,7 @@ suspend fun main() = coroutineScope {
                     audioRecorder.stop()
                     launch {
                         delay(300)
-                        playTextRand(120, "ща сделаю", "поехали", "ну что ж, приступим", "опять работать")
+                        playTextRand(speed = 120, "ok", "okey", "окей", "ок")
                     }
                 }
             }
