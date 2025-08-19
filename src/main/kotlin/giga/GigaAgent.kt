@@ -333,7 +333,7 @@ class GigaAgent(
 "уменьши громкость" -> config,
 "построй график дохода" -> dataAnalytics
 
-Ответ с только одним словом: coder, browser, desktop, io, config, or dataAnalytics.
+Ответ с только одним словом: coder, browser, desktop, config, or dataAnalytics.
 """.trimIndent()
 
         private val SYSTEM_PROMPT = """
