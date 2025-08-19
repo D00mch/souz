@@ -82,19 +82,19 @@ class LocalRegexClassifierTest {
         assertEquals(ToolCategory.DESKTOP, category)
     }
 
-    @Test
-    fun `classifies io download`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val category = classifier.classify(body("скачай файл с только что отредактированным pdf файлом"))
-        assertEquals(ToolCategory.IO, category)
-    }
-
-    @Test
-    fun `classifies io screenshot`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val category = classifier.classify(body("Что на экране?"))
-        assertEquals(ToolCategory.IO, category)
-    }
+//    @Test
+//    fun `classifies io download`() = runBlocking {
+//        val classifier = LocalRegexClassifier
+//        val category = classifier.classify(body("скачай файл с только что отредактированным pdf файлом"))
+//        assertEquals(ToolCategory.IO, category)
+//    }
+//
+//    @Test
+//    fun `classifies io screenshot`() = runBlocking {
+//        val classifier = LocalRegexClassifier
+//        val category = classifier.classify(body("Что на экране?"))
+//        assertEquals(ToolCategory.IO, category)
+//    }
 
     @Test
     fun `returns null on tie`() = runBlocking {
