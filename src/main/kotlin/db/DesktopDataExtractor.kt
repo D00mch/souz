@@ -85,7 +85,7 @@ fun List<StorredData>.asString(): String = groupBy { it.type }.entries.joinToStr
         StorredType.BROWSER_HISTORY -> "История браузера"
         StorredType.NOTES -> "Заметки"
         StorredType.INSTALLED_APPS -> "Установленные приложения"
-        StorredType.INSTRUCTIONS -> "Сохраненные инструкции"
+        StorredType.INSTRUCTIONS -> "Сохраненные инструкции — выполняй их, если услышишь одно слово"
     }
     "$prefix: ${dataList.map { it.text }}"
 }
