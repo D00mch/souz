@@ -33,7 +33,7 @@ object LocalRegexClassifier : UserMessageClassifier {
 
         val scores = CATEGORY_PATTERNS.mapValues { (_, patterns) ->
             patterns.sumOf { (regex, weight) ->
-                if (regex.containsMatchIn(text)) weight else 0.0
+                regex.findAll(text).count() * weight
             }
         }
 
@@ -53,7 +53,7 @@ object LocalRegexClassifier : UserMessageClassifier {
                 Regex("readme|ридми|разработ|рефактор|отрефактор|баг|композиц|наслед|абстракт|ооп|полиморф|лисков|чистый код"),
                 2.0
             ),
-            WeightedRegex(Regex("реализ|ошибк|open closed|абстракц"), 1.0),
+            WeightedRegex(Regex("реализ|ошибк|open closed|абстракц|код"), 1.0),
             WeightedRegex(Regex("вынес|напис|поправ|измен|додел|чищ|удобн|созда"), 0.5),
         ),
         ToolCategory.BROWSER to listOf(
@@ -67,6 +67,7 @@ object LocalRegexClassifier : UserMessageClassifier {
         ToolCategory.DESKTOP to listOf(
             WeightedRegex(Regex("перенеси окно|перейди на экран|перетащи окно|размести приложения по"), 2.0),
             WeightedRegex(Regex("окн|window|desktop"), 1.5),
+            WeightedRegex(Regex("папк|folder|заметк|note|телеграм|telegram|покаж|фокус|увелич|располож|сверн"), 1.5),
             WeightedRegex(Regex("прилож|app|mouse|мыш|screen|скрин|экран"), 1.0),
         ),
         ToolCategory.IO to listOf(
@@ -75,7 +76,7 @@ object LocalRegexClassifier : UserMessageClassifier {
         ),
         ToolCategory.DATAANALYTICS to listOf(
             WeightedRegex(Regex("построй|созда|сделай|проанализ|график|chart|graph|plot|что на графике"), 2.0),
-            WeightedRegex(Regex("найд|find|скольк|корреляци|correlation|причин|корреляции"), 1.0),
+            WeightedRegex(Regex("find|скольк|корреляц|correlation|причин"), 1.0),
         ),
     )
 }
