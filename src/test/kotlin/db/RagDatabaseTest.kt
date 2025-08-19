@@ -16,15 +16,15 @@ class RagDatabaseTest {
         reset()
         VectorDB.initializeOnce()
         val testText = "hello world"
-        val data = listOf(testText)
+        val data = listOf(StorredData(testText, StorredType.NOTES))
         val emb = List(1536) { 0.01 }
         VectorDB.insert(data, listOf(emb))
 
         // get all query
-        assertEquals(data, VectorDB.getAllTexts())
+        assertEquals(data, VectorDB.getAllData())
 
         // similar query
         val result = VectorDB.searchSimilar(emb, 1)
-        assertEquals(testText, result.first())
+        assertEquals(data.first(), result.first())
     }
 }
