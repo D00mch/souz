@@ -1,6 +1,8 @@
 package com.dumch.anthropic
 
 import com.dumch.giga.*
+import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.desktop.ToolOpen
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.logging.*
@@ -41,7 +43,9 @@ class AnthropicChatAPI(
                 urlString = URL,
                 request = {
                     method = HttpMethod.Post
-                    setBody(buildRequest(body).plus("stream" to true))
+                    val request = buildRequest(body).apply { put("stream", true) }
+                    l.info("Request: $request")
+                    setBody(request)
                 }
             ) {
                 incoming.collect { event ->
@@ -55,6 +59,8 @@ class AnthropicChatAPI(
                             emit(toChunk(text, body.model, node["index"]?.asInt() ?: 0))
                         }
                     }
+                    // TODO()
+                    // need to support tools use here
                 }
             }
         } catch (t: Throwable) {
@@ -63,7 +69,7 @@ class AnthropicChatAPI(
         }
     }
 
-    private fun buildRequest(body: GigaRequest.Chat): Map<String, Any> {
+    private fun buildRequest(body: GigaRequest.Chat): HashMap<String, Any> {
         val systemPrompt = body.messages
             .filter { it.role == GigaMessageRole.system }
             .joinToString("\n") { it.content }
@@ -101,7 +107,7 @@ class AnthropicChatAPI(
             )
         }
 
-        return buildMap {
+        return HashMap<String, Any>().apply {
             put("model", body.model)
             put("max_tokens", body.maxTokens)
             put("messages", messages)
@@ -135,5 +141,35 @@ class AnthropicChatAPI(
 
     companion object {
         private const val URL = "https://api.anthropic.com/v1/messages"
+    }
+}
+
+suspend fun main() {
+    val api = AnthropicChatAPI(GigaRestChatAPI.INSTANCE)
+    val systemPrompt = GigaRequest.Message(
+        role = GigaMessageRole.system,
+        content = """
+                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
+                c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
+            """.trimIndent()
+    )
+
+    val result = api.messageStream(
+        GigaRequest.Chat(
+            model = "claude-3-7-sonnet-20250219",
+            stream = true,
+            messages = listOf(
+                systemPrompt,
+                GigaRequest.Message(
+                    role = GigaMessageRole.user,
+                    content = "Открой папку ~/Downloads",
+                ),
+            ),
+            functions = listOf(
+                ToolOpen(ToolRunBashCommand).toGiga(),
+            ).map { it.fn }
+        ))
+    result.collect {
+        println("Response: $it")
     }
 }
