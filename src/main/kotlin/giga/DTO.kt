@@ -106,10 +106,12 @@ fun String.toFinishReason(): GigaResponse.FinishReason? {
     return runCatching { GigaResponse.FinishReason.valueOf(this) }.getOrNull()
 }
 
+const val MAX_TOKENS = 24_228
+
 enum class GigaModel(val alias: String, val maxTokens: Int) {
-    Lite("GigaChat-2", 32768),
-    Pro("GigaChat-Pro", 32768),
-    Max("GigaChat-Max", 32768),
+    Lite("GigaChat-2", MAX_TOKENS),
+    Pro("GigaChat-Pro", MAX_TOKENS),
+    Max("GigaChat-Max", MAX_TOKENS),
 }
 
 object GigaRequest {
@@ -121,7 +123,7 @@ object GigaRequest {
         val functions: List<Function> = emptyList(),
         val temperature: Float? = null,
         val stream: Boolean = false,
-        val maxTokens: Int = 24_228,
+        val maxTokens: Int = MAX_TOKENS,
         @JsonProperty("update_interval") val updateInterval: Int? = 1,
     )
 
