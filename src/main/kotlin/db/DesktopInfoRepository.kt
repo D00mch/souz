@@ -36,11 +36,12 @@ class DesktopInfoRepository(
     }
 
     suspend fun storeDesktopInfo(data: List<StorredData>) {
-        val embeddings = when (val resp = api.embeddings(GigaRequest.Embeddings(input = data.map { it.text }))) {
+        val shortened = data.map { it.copy(text = it.text.take(500)) } // get 400 with long texts
+        val embeddings = when (val resp = api.embeddings(GigaRequest.Embeddings(input = shortened.map { it.text }))) {
             is GigaResponse.Embeddings.Ok -> resp.data.map { it.embedding }
             is GigaResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
         }
-        db.insert(data, embeddings)
+        db.insert(shortened, embeddings)
     }
 
     @Suppress("unused")
