@@ -102,4 +102,32 @@ class LocalRegexClassifierTest {
         val category = classifier.classify(body("прочитай readme и открой http://example.com"))
         assertEquals(null, category)
     }
+    
+    @Test
+    fun `classifies provided phrases`() = runBlocking {
+        val classifier = LocalRegexClassifier
+        val cases = listOf(
+            "Напиши в телеграм Артуру что я на демо" to ToolCategory.DESKTOP,
+            "Открой приложение Интеллиджи Айдеа" to ToolCategory.DESKTOP,
+            "Что делает выбранный участок кода?" to ToolCategory.CODER,
+            "Открой сайт сбера" to ToolCategory.BROWSER,
+            "Найди в закладках и открой страницу с обзором фондового рынка" to ToolCategory.BROWSER,
+            "Расскажи кратко о чем рассказано на текущей странице" to ToolCategory.BROWSER,
+            "Открой папку семья" to ToolCategory.DESKTOP,
+            "Покажи тетю фросю" to ToolCategory.DESKTOP,
+            "Открой папку отчеты" to ToolCategory.DESKTOP,
+            "Построй график дохода по клиенту из файла сейлз репорт" to ToolCategory.DATAANALYTICS,
+            "Добавь заметку - купить пивка" to ToolCategory.DESKTOP,
+            "Открой заметку демо" to ToolCategory.DESKTOP,
+            "сфокусируйся на окне справа" to ToolCategory.DESKTOP,
+            "увеличь окно" to ToolCategory.DESKTOP,
+            "расположи окна вертикально" to ToolCategory.DESKTOP,
+            "сверни все окна" to ToolCategory.DESKTOP,
+        )
+
+        for ((text, expected) in cases) {
+            val category = classifier.classify(body(text))
+            assertEquals(expected, category, text)
+        }
+    }
 }
