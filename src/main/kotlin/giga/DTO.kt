@@ -106,7 +106,7 @@ fun String.toFinishReason(): GigaResponse.FinishReason? {
     return runCatching { GigaResponse.FinishReason.valueOf(this) }.getOrNull()
 }
 
-const val MAX_TOKENS = 24_228
+const val MAX_TOKENS = 12_114
 
 enum class GigaModel(val alias: String, val maxTokens: Int) {
     Lite("GigaChat-2", MAX_TOKENS),
