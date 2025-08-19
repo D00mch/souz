@@ -27,7 +27,7 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
     )
 
     override val name = "Hotkey"
-    override val description = "Press a single hotkey like \"space\" or \"close_tab\""
+    override val description = "Press a single hotkey like \"space\" or \"close_app\""
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Отмени действие",
@@ -36,6 +36,10 @@ class ToolHotkeyMac : ToolSetup<ToolHotkeyMac.Input> {
         FewShotExample(
             request = "Сделай прилоние на весь экран",
             params = mapOf("hotKey" to HotKey.full_screen_toggle)
+        ),
+        FewShotExample(
+            request = "Закрой",
+            params = mapOf("hotKey" to HotKey.close_app)
         ),
     )
     override val returnParameters = ReturnParameters(
