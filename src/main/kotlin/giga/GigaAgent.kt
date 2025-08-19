@@ -346,8 +346,6 @@ c помощью имеющихся функций, сделай, а не про
 Если работаешь с файлами, отвечай кратко, не нужно рассказывать все, только по делу.
 """.trimIndent()
 
-        private const val DESKTOP_DETAILS = "Вот информация о системе, которая может быть полезна"
-
         private val systemPrompt = GigaRequest.Message(
             role = GigaMessageRole.system,
             content = SYSTEM_PROMPT
