@@ -61,9 +61,6 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:${Versions.Ktor}")
     implementation("io.ktor:ktor-serialization-jackson:${Versions.Ktor}")
 
-    // anthropic
-    implementation("com.anthropic:anthropic-java:1.0.0")
-
     // grpc
     implementation("io.grpc:grpc-kotlin-stub:${Versions.GrpcKotlin}")
     implementation("io.grpc:grpc-protobuf:${Versions.Grpc}")
