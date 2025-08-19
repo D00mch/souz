@@ -36,7 +36,6 @@ suspend fun main() = coroutineScope {
         coroutineScope = appScope,
     )
     val agentRef = AtomicReference<GigaAgent?>(null)
-    val agentJob = AtomicReference<Job?>(null)
     val hotkeyListener = HotkeyListener(
         onPressed = { pressed ->
             l.info(if (pressed) "onStart" else "onStop")
@@ -88,17 +87,11 @@ suspend fun main() = coroutineScope {
             val agent = GigaAgent.instance(userInputFlow, GigaRestChatAPI.INSTANCE, desktopInfoRepo, model = model)
             agentRef.set(agent)
             runCatching {
-                agentJob.set(
-                    launch {
-                        agent.run().collect { text ->
-                            l.info(text)
-                            playText(text)
-                        }
-                    }
-                )
+                agent.run().collect { text ->
+                    l.info(text)
+                    playText(text)
+                }
             }.onFailure { e ->
-                agent.stop()
-                agentJob.get()?.cancel()
                 l.error("Agent flow terminated: ${e.message}", e)
             }
         }
