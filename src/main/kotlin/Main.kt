@@ -104,11 +104,11 @@ suspend fun main() = coroutineScope {
  */
 private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch {
     repo.storeDesktopDataDaily()
-    while (true) {
-        delay(5.minutes)
-        val browserHistory = DesktopDataExtractor.browserHistory(10)
-        repo.storeDesktopInfo(browserHistory)
-    }
+//    while (true) {
+//        delay(5.minutes)
+//        val browserHistory = DesktopDataExtractor.browserHistory(10)
+//        repo.storeDesktopInfo(browserHistory)
+//    }
 }
 
 private suspend fun withNativeHook(hotkeyListener: HotkeyListener, block: suspend () -> Unit) {
