@@ -80,7 +80,9 @@ class GigaAgent(
     private suspend fun ProducerScope<String>.streamPipeline(
         conversation: ArrayDeque<GigaRequest.Message>,
         fns: List<GigaRequest.Function>,
+        cycle: Int = 0,
     ) {
+        if (cycle > MAX_TOOLS_CYCLES) return
         stopRequested.set(false)
         val responses = chatStream(conversation, fns)
         val results = ArrayList<GigaRequest.Message>()
@@ -112,7 +114,7 @@ class GigaAgent(
         } else {
             conversation.addAll(results)
             trySummarize(totalTokens, conversation)
-            streamPipeline(conversation, fns)
+            streamPipeline(conversation, fns, cycle + 1)
         }
     }
 
@@ -149,7 +151,7 @@ class GigaAgent(
         conversation: ArrayDeque<GigaRequest.Message>,
         fns: List<GigaRequest.Function>,
     ) {
-        for (i in 1..10) { // infinite loop protection
+        for (i in 1..MAX_TOOLS_CYCLES) { // infinite loop protection
             if (!isActive) break
             val response: GigaResponse.Chat = try {
                 withContext(Dispatchers.IO) { chat(conversation, fns) }
@@ -314,6 +316,7 @@ class GigaAgent(
 
     companion object {
         private const val SUMMARIZE_THRESHOLD = 0.8
+        private const val MAX_TOOLS_CYCLES = 10
 
         private val CLASSIFIER_PROMPT = """
 Ты — алгоритм классификации. Выбери категорию запроса.
