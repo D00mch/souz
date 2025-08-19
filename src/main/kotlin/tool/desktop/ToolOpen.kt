@@ -39,6 +39,12 @@ class ToolOpen(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpen.Input>
 
     override fun invoke(input: Input): String {
         val fixedPath = input.target.replace("\$HOME", System.getenv("HOME"))
+            .replace("\n","")
+            .replace("\\r","")
+            .replace("\\\n","")
+            .replace("\\\\n","")
+            .replace("{","")
+            .replace("}","")
         return try {
             when {
                 fixedPath.contains('/') -> {
