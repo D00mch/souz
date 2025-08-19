@@ -4,18 +4,18 @@ import com.dumch.tool.*
 
 class ToolOpenTelegramSavedMessages(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenTelegramSavedMessages.Input> {
     data class Input(
-        @InputParamDescription("Delay time for launch Telegram")
+        @InputParamDescription("Delay time for launch the messenger")
         val delayTime: Double = 0.2
     )
-    override val name: String = "OpenTelegramSavedMessages"
-    override val description: String = "Opens Telegram saved messages"
+    override val name: String = "OpenSavedMessages"
+    override val description: String = "Opens Messenger with the saved messages chat"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Открой избранное в телеграме",
+            request = "Открой избранные сообщения",
             params = mapOf("delayTime" to "0.2")
         ),
         FewShotExample(
-            request = "Открой сохраненки в телеграме",
+            request = "Открой сохраненки в сообщениях",
             params = mapOf("delayTime" to "0.2")
         )
     )

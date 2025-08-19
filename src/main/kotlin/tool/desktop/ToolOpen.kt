@@ -8,7 +8,7 @@ class ToolOpen(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpen.Input>
     private val l = LoggerFactory.getLogger(ToolOpen::class.java)
 
     data class Input(
-        @InputParamDescription("Bundle id, like `ru.keepcoder.Telegram`, " +
+        @InputParamDescription("Bundle id, like `com.jetbrains.intellij.ce`, " +
                 "path to a file or folder like `app/file/folder`, or just a name like `Downloads`")
         val target: String
     )

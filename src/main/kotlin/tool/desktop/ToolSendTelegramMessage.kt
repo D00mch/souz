@@ -9,21 +9,21 @@ class ToolSendTelegramMessage(private val bash: ToolRunBashCommand) : ToolSetup<
     private val cf = CoreFoundation.INSTANCE
 
     data class Input(
-        @InputParamDescription("Telegram contact name")
+        @InputParamDescription("Messenger contact name")
         val name: String,
         @InputParamDescription("Message to send")
         val message: String,
     )
 
-    override val name: String = "SendTelegramMessage"
-    override val description: String = "Sends a message to a Telegram contact"
+    override val name: String = "SendMessage"
+    override val description: String = "Sends a message to a contact"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Напиши в телеграм Артуру привет",
+            request = "Напиши сообщение Артуру привет",
             params = mapOf("name" to "Артур", "message" to "привет"),
         ),
         FewShotExample(
-            request = "Можешь отправить Шамилю сообщение в TG, чтобы не забыл подготовить презентацию к завтрашнему дню",
+            request = "Можешь отправить Шамилю сообщение, чтобы не забыл подготовить презентацию к завтрашнему дню",
             params = mapOf(
                 "name" to "Шамиль",
                 "message" to "не забудь подготовить презентацию к завтрашнему дню",
@@ -76,7 +76,7 @@ class ToolSendTelegramMessage(private val bash: ToolRunBashCommand) : ToolSetup<
         press(VK.RETURN)
         sleep(1000)
 
-        return "Sent Telegram message to ${input.name}"
+        return "Sent message to ${input.name}"
     }
 
     private fun post(key: Int, down: Boolean) {
