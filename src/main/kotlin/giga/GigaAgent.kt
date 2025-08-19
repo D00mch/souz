@@ -316,7 +316,7 @@ class GigaAgent(
 
     companion object {
         private const val SUMMARIZE_THRESHOLD = 0.8
-        private const val MAX_TOOLS_CYCLES = 10
+        private const val MAX_TOOLS_CYCLES = 8
 
         private val CLASSIFIER_PROMPT = """
 Ты — алгоритм классификации. Выбери категорию запроса.
