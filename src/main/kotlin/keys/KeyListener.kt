@@ -11,6 +11,7 @@ import kotlinx.coroutines.*
 class HotkeyListener(
     private val onPressed: (Boolean) -> Unit,
     private val onDoubleClick: () -> Unit,
+    private val onAltRightArrow: () -> Unit = {},
 ) : NativeKeyListener {
     private var isAltPressed = false
     private var isHotkeyActive = false
@@ -34,6 +35,12 @@ class HotkeyListener(
                     onPressed(true)
                 }
             }
+        }
+
+        if (isAltPressed && e.keyCode == VK.RIGHT) {
+            isAltPressed = false
+            isHotkeyActive = false
+            onAltRightArrow()
         }
     }
 
@@ -66,7 +73,8 @@ fun main() {
             val msg = if (pressed) "onStart" else "onStop"
             l.info(msg)
         },
-        onDoubleClick = { l.info("double click") }
+        onDoubleClick = { l.info("double click") },
+        onAltRightArrow = { l.info("alt+right arrow") }
     )
 
     try {

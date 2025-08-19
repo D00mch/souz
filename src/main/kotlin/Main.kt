@@ -58,6 +58,9 @@ suspend fun main() = coroutineScope {
         onDoubleClick = {
             stopPlayText()
             agentRef.get()?.stop()
+        },
+        onAltRightArrow = {
+            agentRef.get()?.stop()
         }
     )
     launch { audioRecorder.logState() }
