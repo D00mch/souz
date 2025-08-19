@@ -6,10 +6,9 @@ import com.dumch.tool.browser.ToolSafariInfo
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.dumch.tool.config.ConfigStore
 import com.dumch.tool.config.ToolInstructionStore
+import com.dumch.tool.config.ToolInstructionStore.Companion.buildInstruction
 import com.dumch.tool.desktop.ToolShowApps
 import com.dumch.tool.files.ToolListFiles
-import com.fasterxml.jackson.databind.SerializationFeature
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.util.ArrayList
 import kotlin.collections.map
 
@@ -22,7 +21,11 @@ object DesktopDataExtractor {
         val installed = runCatching {
             val json = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
             val arr: List<Map<String, String>> = objectMapper.readValue(json)
-            arr.map { StorredData(it["app-name"] ?: "", StorredType.INSTALLED_APPS) }
+            arr.map {
+                val (appName, appBundleId) = it["app-name"] to it["app-bundle-id"]
+                val text = "Приложение: $appName, bundleId: $appBundleId"
+                StorredData(text, StorredType.INSTALLED_APPS)
+            }
         }.getOrElse { emptyList() }
 
         val instructions = runCatching {
@@ -30,8 +33,8 @@ object DesktopDataExtractor {
                 ToolInstructionStore.INSTUCTIONS_KEY,
                 ArrayList(),
             )
-            list.map { inp ->
-                StorredData("${inp.name} -> ${inp.action}", StorredType.INSTRUCTIONS)
+            list.map { input ->
+                StorredData(buildInstruction(input.name, input.action), StorredType.INSTRUCTIONS)
             }
         }.getOrElse { emptyList() }
 
@@ -42,8 +45,8 @@ object DesktopDataExtractor {
         val res = ToolListFiles.invoke(ToolListFiles.Input(System.getenv("HOME"), 3))
         res.trim('[', ']')
             .splitToSequence(',')
-            .mapNotNull { it.trim().takeIf { s -> s.isNotEmpty() } }
-            .filterNot { it.split('/').any { s -> s.startsWith('.') } }
+            .mapNotNull { it.trim().takeIf { s -> s.isNotEmpty() } }    // skip empty lines
+            .filterNot { it.split('/').any { s -> s.startsWith('.') } } // skip hidden files
             .map { path -> StorredData(path, StorredType.FILES) }
     }.getOrElse { emptySequence() }
 
@@ -59,7 +62,7 @@ object DesktopDataExtractor {
             lines.mapNotNull { historyLine ->
                 val (date, url, title) = historyLine.split("|")
                 if (!uniqueUrls.add(url)) return@mapNotNull null
-                StorredData("$title, ${url.take(50)}, $date", StorredType.BROWSER_HISTORY)
+                StorredData("$title, ${url.take(100)}, $date", StorredType.BROWSER_HISTORY)
             }
         }.getOrElse { emptyList() }
     }
@@ -75,11 +78,18 @@ return xs as text
     }.getOrElse { emptyList() }
 }
 
+
+fun List<StorredData>.asString(): String = groupBy { it.type }.entries.joinToString(", ") { (type, dataList) ->
+    val prefix = when (type) {
+        StorredType.FILES -> "Файлы на моём компьютере"
+        StorredType.BROWSER_HISTORY -> "История браузера"
+        StorredType.NOTES -> "Заметки"
+        StorredType.INSTALLED_APPS -> "Установленные приложения"
+        StorredType.INSTRUCTIONS -> "Сохраненные инструкции"
+    }
+    "$prefix: ${dataList.map { it.text }}"
+}
+
 fun main() {
-    val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
-    println(
-        logObjectMapper.writeValueAsString(
-            DesktopDataExtractor.all()
-        )
-    )
+    println(DesktopDataExtractor.all().asString())
 }

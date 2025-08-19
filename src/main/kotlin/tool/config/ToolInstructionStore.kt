@@ -49,14 +49,19 @@ class ToolInstructionStore(
         val currentInstructions = config.get<ArrayList<Input>>(INSTUCTIONS_KEY, ArrayList())
         currentInstructions.add(input)
 
-        val dbInstructions = listOf(StorredData("${input.name} -> ${input.action}", StorredType.INSTRUCTIONS))
-        repo.storeDesktopInfo(dbInstructions)
+        val dbInstructions = buildInstruction(input.name, input.action)
+        repo.storeDesktopInfo(listOf(StorredData(dbInstructions, StorredType.INSTRUCTIONS)))
 
         config.put(INSTUCTIONS_KEY, currentInstructions)
         return "Instruction stored"
     }
 
+
     companion object {
         const val INSTUCTIONS_KEY = "INSTRUCTIONS"
+
+        fun buildInstruction(name: String, action: String): String {
+            return "Когда я говорю: `$name`, выполняй инструкцию: $action"
+        }
     }
 }

@@ -1,14 +1,11 @@
 package com.dumch.giga
 
 import com.dumch.db.DesktopInfoRepository
-import com.dumch.tool.UserMessageClassifier
-import com.dumch.tool.LocalRegexClassifier
-import com.dumch.tool.LocalRegexClassifier.classify
-import com.dumch.tool.ToolCategory
-import com.dumch.tool.ToolsFactory
-import com.dumch.tool.desktop.ToolShowApps
-import com.dumch.tool.ToolRunBashCommand
+import com.dumch.db.StorredData
+import com.dumch.db.asString
+import com.dumch.tool.*
 import com.dumch.tool.browser.ToolSafariInfo
+import com.dumch.tool.desktop.ToolShowApps
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlinx.coroutines.Dispatchers
@@ -48,8 +45,7 @@ class GigaAgent(
 
         userMessages.collect { userText ->
             val category = classify(userText, conversation)
-            appendRelatedTextsFromDB(userText, conversation)
-            appendCurrentDesktopInfo(conversation)
+            appendActualInformation(userText, conversation)
             val fns = category?.let { functionsByCategory[it] } ?: functions
             conversation.add(GigaRequest.Message(GigaMessageRole.user, userText))
             if (settings.stream) {
@@ -60,37 +56,25 @@ class GigaAgent(
         }
     }
 
-    private suspend fun appendRelatedTextsFromDB(
+    private suspend fun appendActualInformation(
         userText: String,
         conversation: ArrayDeque<GigaRequest.Message>
     ) {
-        val msgEmbeddings = ragRepo.search(userText)
-        conversation.add(
-            GigaRequest.Message(
-                role = GigaMessageRole.user,
-                content = msgEmbeddings.joinToString("; ", prefix = "$DESKTOP_DETAILS: ") {
-                    "${it.type}: ${it.text}"
-                }
-            )
-        )
-    }
-
-    private fun appendCurrentDesktopInfo(
-        conversation: ArrayDeque<GigaRequest.Message>
-    ) {
+        val msgEmbeddings: List<StorredData> = ragRepo.search(userText)
         val openedApps = runCatching {
             ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
         }.getOrElse { "[]" }
         val safariOpenedTabs = runCatching {
             ToolSafariInfo(ToolRunBashCommand).invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.tabs))
         }.getOrElse { "{}" }
-        val apps = objectMapper.writeValueAsString(
-            mapOf(
-                "opened apps" to openedApps,
-                "opened safari tabs to position number" to safariOpenedTabs,
+        conversation.add(
+            GigaRequest.Message(
+                role = GigaMessageRole.user,
+                content = "Информация о моей системе: ${msgEmbeddings.asString()}" +
+                        ", Эти приложения сейчас открыты: $openedApps," +
+                        ", Эти вкладки в Safari открыты: $safariOpenedTabs"
             )
         )
-        conversation.add(GigaRequest.Message(GigaMessageRole.user, apps))
     }
 
     private suspend fun ProducerScope<String>.streamPipeline(

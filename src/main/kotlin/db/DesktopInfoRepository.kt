@@ -64,5 +64,6 @@ suspend fun main() {
     val api = GigaRestChatAPI(GigaAuth)
     val repo = DesktopInfoRepository(api, VectorDB)
     repo.storeDesktopDataDaily()
-    println(repo.search("Есть ли что-то в заметках про Жену?"))
+    println(repo.getDesktopData().size)
+    println(repo.search("Покажи портрет жены."))
 }
