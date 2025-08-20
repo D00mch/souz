@@ -14,7 +14,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.util.UUID
@@ -75,7 +75,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")
     }
 
-    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = flow {
+    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
         try {
             client.sse(
                 urlString = URL,
@@ -90,7 +90,7 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
                     if (data == null || data == "[DONE]") {
                         return@collect
                     }
-                    emit(parseStreamChunk(data))
+                    send(parseStreamChunk(data))
                 }
             }
         } catch (e: ClientRequestException) {
@@ -100,10 +100,10 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
             } else {
                 "HTTP error: ${e.response.bodyAsText()}"
             }
-            emit(GigaResponse.Chat.Error(status.value, msg))
+            send(GigaResponse.Chat.Error(status.value, msg))
         } catch (t: Throwable) {
             l.error("Error in REST chat stream", t)
-            emit(GigaResponse.Chat.Error(-1, "Connection error: ${t.message}"))
+            send(GigaResponse.Chat.Error(-1, "Connection error: ${t.message}"))
         }
     }
 
