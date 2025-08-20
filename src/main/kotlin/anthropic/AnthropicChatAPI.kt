@@ -11,7 +11,7 @@ import io.ktor.client.plugins.sse.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import org.slf4j.LoggerFactory
 import kotlin.time.Duration.Companion.seconds
 
@@ -47,7 +47,7 @@ class AnthropicChatAPI(
         }
     }
 
-    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = flow {
+    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
         val toolBlocks = mutableMapOf<Int, ToolUseBlock>()
         try {
             client.sse(
@@ -70,7 +70,7 @@ class AnthropicChatAPI(
                             val delta = node["delta"]
                             val text = delta?.get("text")?.asText().orEmpty()
                             if (text.isNotEmpty()) {
-                                emit(toChunk(text, body.model, index))
+                                send(toChunk(text, body.model, index))
                             } else {
                                 val partialJson = delta?.get("partial_json")?.asText()
                                 if (!partialJson.isNullOrEmpty()) {
@@ -100,7 +100,7 @@ class AnthropicChatAPI(
                                 val args: Map<String, Any> = if (jsonStr.isNotBlank()) {
                                     objectMapper.readValue(jsonStr)
                                 } else emptyMap()
-                                emit(toToolChunk(block.name, args, block.id, body.model, index))
+                                send(toToolChunk(block.name, args, block.id, body.model, index))
                             }
                         }
                     }
@@ -108,7 +108,7 @@ class AnthropicChatAPI(
             }
         } catch (t: Throwable) {
             l.error("Error in Anthropic chat stream", t)
-            emit(GigaResponse.Chat.Error(-1, "Connection error: ${t.message}"))
+            send(GigaResponse.Chat.Error(-1, "Connection error: ${t.message}"))
         }
     }
 
