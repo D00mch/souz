@@ -382,7 +382,7 @@ class GigaAgent(
             api: GigaChatAPI,
             desktopRepo: DesktopInfoRepository,
             model: GigaModel = GigaModel.Max,
-            settings: Settings = Settings(ToolsFactory(desktopRepo).toolsByCategory, model, stream = true)
+            settings: Settings = Settings(ToolsFactory(desktopRepo).toolsByCategory, model, stream = false)
         ): GigaAgent = GigaAgent(userMessages, api, desktopRepo, settings)
     }
 }

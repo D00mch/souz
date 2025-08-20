@@ -65,6 +65,92 @@ class AnthropicChatAPI(
 
     private val fileTypes = mutableMapOf<String, String>()
 
+    override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
+        val response = client.post(URL) {
+            header("anthropic-beta", "files-api-2025-04-14")
+            val request = buildRequest(body)
+            l.info("Request: $request")
+            setBody(request)
+        }
+        val text = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            GigaResponse.Chat.Error(response.status.value, text)
+        } else {
+            val node = objectMapper.readTree(text)
+            val model = node["model"]?.asText() ?: body.model
+
+            val choices = mutableListOf<GigaResponse.Choice>()
+            val content = node["content"] ?: objectMapper.createArrayNode()
+            content.forEachIndexed { index, blockNode ->
+                when (blockNode["type"]?.asText()) {
+                    "text" -> {
+                        val txt = blockNode["text"]?.asText().orEmpty()
+                        choices += GigaResponse.Choice(
+                            message = GigaResponse.Message(
+                                content = txt,
+                                role = GigaMessageRole.assistant,
+                                functionCall = null,
+                                functionsStateId = null,
+                            ),
+                            index = index,
+                            finishReason = null,
+                        )
+                    }
+                    "tool_use" -> {
+                        val name = blockNode["name"]?.asText().orEmpty()
+                        val id = blockNode["id"]?.asText()
+                        val inputStr = blockNode["input"]?.toString() ?: "{}"
+                        val args: Map<String, Any> = if (inputStr.isNotBlank()) {
+                            objectMapper.readValue(inputStr)
+                        } else emptyMap()
+                        choices += GigaResponse.Choice(
+                            message = GigaResponse.Message(
+                                content = "",
+                                role = GigaMessageRole.assistant,
+                                functionCall = GigaResponse.FunctionCall(name, args),
+                                functionsStateId = id,
+                            ),
+                            index = index,
+                            finishReason = GigaResponse.FinishReason.function_call,
+                        )
+                    }
+                }
+            }
+
+            val usageNode = node["usage"]
+            val usage = GigaResponse.Usage(
+                promptTokens = usageNode?.get("input_tokens")?.asInt() ?: 0,
+                completionTokens = usageNode?.get("output_tokens")?.asInt() ?: 0,
+                totalTokens = (usageNode?.get("input_tokens")?.asInt() ?: 0) +
+                        (usageNode?.get("output_tokens")?.asInt() ?: 0),
+                precachedTokens = 0,
+            )
+
+            val finish = when (node["stop_reason"]?.asText()) {
+                "max_tokens" -> GigaResponse.FinishReason.length
+                "tool_use" -> GigaResponse.FinishReason.function_call
+                "end_turn", "stop_sequence" -> GigaResponse.FinishReason.stop
+                else -> null
+            }
+            if (finish != null && choices.isNotEmpty()) {
+                val last = choices.last()
+                if (last.finishReason == null) {
+                    choices[choices.lastIndex] = last.copy(finishReason = finish)
+                }
+            }
+
+            GigaResponse.Chat.Ok(
+                choices = choices,
+                created = System.currentTimeMillis() / 1000,
+                model = model,
+                usage = usage,
+            )
+        }
+    } catch (t: Throwable) {
+        l.error("Error in Anthropic chat", t)
+        GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")
+    }
+
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
         val toolBlocks = mutableMapOf<Int, ToolUseBlock>()
         try {
@@ -308,6 +394,6 @@ suspend fun main() {
         ).map { it.fn }
     )
 
-//    api.message(request)
-     api.messageStream(request).collect { println("Response: $it") }
+    api.message(request)
+//     api.messageStream(request).collect { println("Response: $it") }
 }
