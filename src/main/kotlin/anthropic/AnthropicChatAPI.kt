@@ -3,6 +3,7 @@ package com.dumch.anthropic
 import com.dumch.giga.*
 import com.dumch.tool.ToolRunBashCommand
 import com.dumch.tool.desktop.ToolOpen
+import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.logging.*
@@ -13,6 +14,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.slf4j.LoggerFactory
 import kotlin.time.Duration.Companion.seconds
+
+const val MODEL = "claude-3-7-sonnet-20250219"
+
+private data class ToolUseBlock(
+    val name: String,
+    val id: String?,
+    val inputBuilder: StringBuilder = StringBuilder(),
+    val initialInput: String = "{}",
+)
 
 class AnthropicChatAPI(
     private val fallback: GigaRestChatAPI = GigaRestChatAPI.INSTANCE,
@@ -38,6 +48,7 @@ class AnthropicChatAPI(
     }
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = flow {
+        val toolBlocks = mutableMapOf<Int, ToolUseBlock>()
         try {
             client.sse(
                 urlString = URL,
@@ -53,14 +64,46 @@ class AnthropicChatAPI(
                     if (data == "[DONE]") return@collect
                     val node = objectMapper.readTree(data)
                     val type = node["type"]?.asText()
-                    if (type == "content_block_delta") {
-                        val text = node["delta"]?.get("text")?.asText().orEmpty()
-                        if (text.isNotEmpty()) {
-                            emit(toChunk(text, body.model, node["index"]?.asInt() ?: 0))
+                    when (type) {
+                        "content_block_delta" -> {
+                            val index = node["index"]?.asInt() ?: 0
+                            val delta = node["delta"]
+                            val text = delta?.get("text")?.asText().orEmpty()
+                            if (text.isNotEmpty()) {
+                                emit(toChunk(text, body.model, index))
+                            } else {
+                                val partialJson = delta?.get("partial_json")?.asText()
+                                if (!partialJson.isNullOrEmpty()) {
+                                    toolBlocks[index]?.inputBuilder?.append(partialJson)
+                                }
+                            }
+                        }
+                        "content_block_start" -> {
+                            val index = node["index"]?.asInt() ?: 0
+                            val block = node["content_block"]
+                            if (block?.get("type")?.asText() == "tool_use") {
+                                val name = block["name"]?.asText().orEmpty()
+                                val id = block["id"]?.asText()
+                                val input = block["input"]?.toString() ?: "{}"
+                                toolBlocks[index] = ToolUseBlock(name, id, StringBuilder(), input)
+                            }
+                        }
+                        "content_block_stop" -> {
+                            val index = node["index"]?.asInt() ?: 0
+                            val block = toolBlocks.remove(index)
+                            if (block != null) {
+                                val jsonStr = if (block.inputBuilder.isNotEmpty()) {
+                                    block.inputBuilder.toString()
+                                } else {
+                                    block.initialInput
+                                }
+                                val args: Map<String, Any> = if (jsonStr.isNotBlank()) {
+                                    objectMapper.readValue(jsonStr)
+                                } else emptyMap()
+                                emit(toToolChunk(block.name, args, block.id, body.model, index))
+                            }
                         }
                     }
-                    // TODO()
-                    // need to support tools use here
                 }
             }
         } catch (t: Throwable) {
@@ -108,7 +151,7 @@ class AnthropicChatAPI(
         }
 
         return HashMap<String, Any>().apply {
-            put("model", body.model)
+            put("model", MODEL)
             put("max_tokens", body.maxTokens)
             put("messages", messages)
             systemPrompt?.let { put("system", it) }
@@ -139,6 +182,31 @@ class AnthropicChatAPI(
         )
     }
 
+    private fun toToolChunk(
+        name: String,
+        args: Map<String, Any>,
+        functionsStateId: String?,
+        model: String,
+        index: Int,
+    ): GigaResponse.Chat {
+        val choice = GigaResponse.Choice(
+            message = GigaResponse.Message(
+                content = "",
+                role = GigaMessageRole.assistant,
+                functionCall = GigaResponse.FunctionCall(name, args),
+                functionsStateId = functionsStateId,
+            ),
+            index = index,
+            finishReason = GigaResponse.FinishReason.function_call,
+        )
+        return GigaResponse.Chat.Ok(
+            choices = listOf(choice),
+            created = System.currentTimeMillis() / 1000,
+            model = model,
+            usage = GigaResponse.Usage(0, 0, 0, 0),
+        )
+    }
+
     companion object {
         private const val URL = "https://api.anthropic.com/v1/messages"
     }
@@ -156,7 +224,7 @@ suspend fun main() {
 
     val result = api.messageStream(
         GigaRequest.Chat(
-            model = "claude-3-7-sonnet-20250219",
+            model = MODEL,
             stream = true,
             messages = listOf(
                 systemPrompt,
