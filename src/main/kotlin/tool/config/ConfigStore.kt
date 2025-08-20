@@ -1,6 +1,7 @@
 package com.dumch.tool.config
 
 import com.dumch.giga.objectMapper
+import com.dumch.tool.config.ToolInstructionStore.Companion.INSTUCTIONS_KEY
 import java.util.prefs.Preferences
 import com.fasterxml.jackson.module.kotlin.readValue
 
@@ -39,4 +40,8 @@ object ConfigStore {
             } as T
         }.getOrNull()
     }
+}
+
+fun main() {
+    ConfigStore.rm(INSTUCTIONS_KEY)
 }
