@@ -9,13 +9,14 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.client.plugins.sse.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import org.slf4j.LoggerFactory
 import kotlin.time.Duration.Companion.seconds
 
-const val MODEL = "claude-3-7-sonnet-20250219"
+const val MODEL = "claude-3-5-haiku-20241022"
 
 private data class ToolUseBlock(
     val name: String,
@@ -45,6 +46,18 @@ class AnthropicChatAPI(
             maxReconnectionAttempts = 0
             reconnectionTime = 3.seconds
         }
+    }
+
+    // Dump function to get errors like 400
+    suspend fun dump(body: GigaRequest.Chat): GigaResponse.Chat {
+        val resp = client.post("https://api.anthropic.com/v1/messages") {
+            contentType(ContentType.Application.Json)
+            val body = buildRequest(body)
+            setBody(body + ("stream" to false)) // force non-streaming
+        }
+        val text = resp.bodyAsText()
+        println("status=${resp.status.value}, body=$text")
+        TODO("Not yet implemented")
     }
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
@@ -222,21 +235,24 @@ suspend fun main() {
             """.trimIndent()
     )
 
-    val result = api.messageStream(
-        GigaRequest.Chat(
-            model = MODEL,
-            stream = true,
-            messages = listOf(
-                systemPrompt,
-                GigaRequest.Message(
-                    role = GigaMessageRole.user,
-                    content = "Открой папку ~/Downloads",
-                ),
+    val request = GigaRequest.Chat(
+        model = MODEL,
+        stream = true,
+        messages = listOf(
+            systemPrompt,
+            GigaRequest.Message(
+                role = GigaMessageRole.user,
+                content = "Открой папку ~/Downloads",
             ),
-            functions = listOf(
-                ToolOpen(ToolRunBashCommand).toGiga(),
-            ).map { it.fn }
-        ))
+        ),
+        functions = listOf(
+            ToolOpen(ToolRunBashCommand).toGiga(),
+        ).map { it.fn }
+    )
+
+    // api.message(request)
+
+    val result = api.messageStream(request)
     result.collect {
         println("Response: $it")
     }
