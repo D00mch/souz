@@ -9,12 +9,15 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.client.plugins.sse.*
 import io.ktor.client.request.*
+import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import org.slf4j.LoggerFactory
 import kotlin.time.Duration.Companion.seconds
+import java.io.File
+import java.nio.file.Files
 
 const val MODEL = "claude-3-5-haiku-20241022"
 
@@ -60,6 +63,8 @@ class AnthropicChatAPI(
         TODO("Not yet implemented")
     }
 
+    private val fileTypes = mutableMapOf<String, String>()
+
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
         val toolBlocks = mutableMapOf<Int, ToolUseBlock>()
         try {
@@ -67,6 +72,7 @@ class AnthropicChatAPI(
                 urlString = URL,
                 request = {
                     method = HttpMethod.Post
+                    header("anthropic-beta", "files-api-2025-04-14")
                     val request = buildRequest(body).apply { put("stream", true) }
                     l.info("Request: $request")
                     setBody(request)
@@ -125,6 +131,41 @@ class AnthropicChatAPI(
         }
     }
 
+    override suspend fun uploadFile(file: File): GigaResponse.UploadFile {
+        val mime = Files.probeContentType(file.toPath()) ?: "application/octet-stream"
+        val response = client.submitFormWithBinaryData(
+            url = FILES_URL,
+            formData = formData {
+                append(
+                    key = "file",
+                    value = file.readBytes(),
+                    headers = Headers.build {
+                        append(
+                            HttpHeaders.ContentDisposition,
+                            "form-data; name=\"file\"; filename=\"${file.name}\""
+                        )
+
+                        append(HttpHeaders.ContentType, mime)
+                    }
+                )
+            }
+        ) {
+            header("anthropic-beta", "files-api-2025-04-14")
+        }
+        val node = objectMapper.readTree(response.bodyAsText())
+        val upload = GigaResponse.UploadFile(
+            bytes = node["bytes"]?.asLong() ?: 0L,
+            createdAt = node["created_at"]?.asLong() ?: System.currentTimeMillis() / 1000,
+            filename = node["filename"]?.asText() ?: file.name,
+            id = node["id"]?.asText() ?: "",
+            objectType = node["type"]?.asText() ?: node["object"]?.asText() ?: "file",
+            purpose = node["purpose"]?.asText() ?: "general",
+            accessPolicy = node["access_policy"]?.asText() ?: "",
+        )
+        fileTypes[upload.id] = mime
+        return upload
+    }
+
     private fun buildRequest(body: GigaRequest.Chat): HashMap<String, Any> {
         val systemPrompt = body.messages
             .filter { it.role == GigaMessageRole.system }
@@ -134,14 +175,25 @@ class AnthropicChatAPI(
         val messages = body.messages
             .filter { it.role != GigaMessageRole.system }
             .map { msg ->
+                val content = ArrayList<Map<String, Any>>()
+                content += mapOf("type" to "text", "text" to msg.content)
+                msg.attachments?.forEach { id ->
+                    val mime = fileTypes[id].orEmpty()
+                    val blockType = if (mime.startsWith("image/")) "image" else "document"
+                    content += mapOf(
+                        "type" to blockType,
+                        "source" to mapOf(
+                            "type" to "file",
+                            "file_id" to id,
+                        ),
+                    )
+                }
                 mapOf(
                     "role" to when (msg.role) {
                         GigaMessageRole.assistant -> "assistant"
                         else -> "user"
                     },
-                    "content" to listOf(
-                        mapOf("type" to "text", "text" to msg.content)
-                    )
+                    "content" to content
                 )
             }
 
@@ -222,15 +274,20 @@ class AnthropicChatAPI(
 
     companion object {
         private const val URL = "https://api.anthropic.com/v1/messages"
+        private const val FILES_URL = "https://api.anthropic.com/v1/files"
     }
 }
 
 suspend fun main() {
     val api = AnthropicChatAPI(GigaRestChatAPI.INSTANCE)
+//
+//    val result = api.uploadFile(File("/Users/m1/IdeaProjects/kotlin/abledo/patch.patch"))
+//    println(result)
+
     val systemPrompt = GigaRequest.Message(
         role = GigaMessageRole.system,
         content = """
-                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
+                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить
                 c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
             """.trimIndent()
     )
@@ -243,6 +300,7 @@ suspend fun main() {
             GigaRequest.Message(
                 role = GigaMessageRole.user,
                 content = "Открой папку ~/Downloads",
+                attachments = listOf("file_011CSJmf9TkDp4foEAxjvW5M"),
             ),
         ),
         functions = listOf(
@@ -250,10 +308,6 @@ suspend fun main() {
         ).map { it.fn }
     )
 
-    // api.message(request)
-
-    val result = api.messageStream(request)
-    result.collect {
-        println("Response: $it")
-    }
+//    api.message(request)
+     api.messageStream(request).collect { println("Response: $it") }
 }
