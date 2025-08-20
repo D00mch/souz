@@ -26,7 +26,7 @@ class DesktopInfoRepository(
     suspend fun storeDesktopDataDaily() {
         db.initializeOnce()
         val today = LocalDate.now().toString() // returns data like 2023-03-31
-        if (ConfigStore.get(LAST_RUN_KEY, "") == today) return
+//        if (ConfigStore.get(LAST_RUN_KEY, "") == today) return
         db.clearAllData()
         val data = DesktopDataExtractor.all()
         data.chunked(500).forEach { chunk ->
