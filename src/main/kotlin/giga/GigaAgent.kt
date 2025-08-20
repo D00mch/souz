@@ -37,6 +37,7 @@ class GigaAgent(
         toolsByCategory.values.flatMap { it.entries }.associate { it.key to it.value }
     private val functions: List<GigaRequest.Function> = tools.values.map { it.fn }
     private val stopRequested = AtomicBoolean(false)
+    private val recreateRequested = AtomicBoolean(false)
 
     fun run(): Flow<String> = channelFlow {
         val conversation = ArrayDeque<GigaRequest.Message>().apply {
@@ -44,6 +45,11 @@ class GigaAgent(
         }
 
         userMessages.collect { userText ->
+            if (recreateRequested.get()) {
+                recreateRequested.set(false)
+                clean(conversation)
+            }
+
             val category = classify(userText, conversation)
             appendActualInformation(userText, conversation)
             val fns = category?.let { functionsByCategory[it] } ?: functions
@@ -109,7 +115,7 @@ class GigaAgent(
             totalTokens += response.usage.totalTokens
         }
         conversation.squeezeTexts()
-        if (stopRequested.get() || results.isEmpty()) {
+        if (results.isEmpty()) {
             return
         } else {
             conversation.addAll(results)
@@ -253,9 +259,18 @@ class GigaAgent(
             is GigaResponse.Chat.Ok -> summaryResponse.toRequestMessages().last()
         }
         l.info("Summarizing the conversation... $msg")
+        clean(conversation)
+        conversation.add(msg)
+    }
+
+    fun requestCleanUp() {
+        recreateRequested.set(true)
+        stopRequested.set(true)
+    }
+
+    private fun clean(conversation: ArrayDeque<GigaRequest.Message>) {
         conversation.clear()
         conversation.add(systemPrompt)
-        conversation.add(msg)
     }
 
     private fun GigaResponse.Chat.Ok.toRequestMessages(): Collection<GigaRequest.Message> {
