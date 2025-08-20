@@ -19,7 +19,7 @@ import kotlin.time.Duration.Companion.seconds
 import java.io.File
 import java.nio.file.Files
 
-const val MODEL = "claude-3-5-haiku-20241022"
+const val MODEL = "claude-3-7-sonnet-20250219"
 
 private data class ToolUseBlock(
     val name: String,
