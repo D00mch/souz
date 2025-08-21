@@ -2,6 +2,7 @@ package com.dumch
 
 import com.dumch.anthropic.AnthropicChatAPI
 import com.dumch.audio.*
+import com.dumch.db.DesktopDataExtractor
 import com.dumch.db.DesktopInfoRepository
 import com.dumch.db.VectorDB
 import com.dumch.giga.*
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.time.Duration.Companion.minutes
 
 private val l = LoggerFactory.getLogger("AI")
 
@@ -98,11 +100,11 @@ suspend fun main() = coroutineScope {
  */
 private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch {
     repo.storeDesktopDataDaily()
-//    while (true) {
-//        delay(5.minutes)
-//        val browserHistory = DesktopDataExtractor.browserHistory(10)
-//        repo.storeDesktopInfo(browserHistory)
-//    }
+    while (true) {
+        delay(5.minutes)
+        val browserHistory = DesktopDataExtractor.browserHistory(10)
+        repo.storeDesktopInfo(browserHistory)
+    }
 }
 
 private suspend fun withNativeHook(hotkeyListener: HotkeyListener, block: suspend () -> Unit) {
