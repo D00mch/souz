@@ -14,7 +14,7 @@ enum class ToolCategory {
     BROWSER,
     CONFIG,
     DESKTOP,
-    // IO,
+    IO,
     DATAANALYTICS,
 }
 
@@ -70,10 +70,10 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("папк|folder|заметк|note|телеграм|telegram|покаж|фокус|увелич|располож|сверн|сообщение"), 1.5),
             WeightedRegex(Regex("прилож|app|mouse|мыш|screen|скрин|экран"), 1.0),
         ),
-//        ToolCategory.IO to listOf(
-//            WeightedRegex(Regex("скриншот|screenshot|сфоткай экран|сфотографируй экран|что на экране|прочти весь текст"), 2.0),
-//            WeightedRegex(Regex("скач|download|загруз|upload|прочти экран|текст с экрана"), 1.0),
-//        ),
+        ToolCategory.IO to listOf(
+            WeightedRegex(Regex("скриншот|screenshot|сфоткай экран|сфотографируй экран|что на экране|прочти весь текст"), 2.0),
+            WeightedRegex(Regex("скач|download|загруз|upload|прочти экран|текст с экрана"), 1.0),
+        ),
         ToolCategory.DATAANALYTICS to listOf(
             WeightedRegex(Regex("построй|созда|сделай|проанализ|график|chart|graph|plot|что на графике"), 2.0),
             WeightedRegex(Regex("find|скольк|корреляц|correlation|причин"), 1.0),

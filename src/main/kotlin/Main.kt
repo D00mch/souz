@@ -1,20 +1,11 @@
 package com.dumch
 
-import com.dumch.audio.ActiveSoundRecorderImpl
-import com.dumch.audio.InMemoryAudioRecorder
-import com.dumch.audio.playMacPing
-import com.dumch.audio.playText
-import com.dumch.audio.playTextRand
-import com.dumch.audio.stopPlayText
-import com.dumch.audio.rawToOpusOgg
+import com.dumch.anthropic.AnthropicChatAPI
+import com.dumch.audio.*
 import com.dumch.db.DesktopDataExtractor
-import com.dumch.db.VectorDB
 import com.dumch.db.DesktopInfoRepository
-import com.dumch.giga.GigaAgent
-import com.dumch.giga.GigaAuth
-import com.dumch.giga.GigaModel
-import com.dumch.giga.GigaRestChatAPI
-import com.dumch.giga.GigaVoiceAPI
+import com.dumch.db.VectorDB
+import com.dumch.giga.*
 import com.dumch.keys.HotkeyListener
 import com.github.kwhat.jnativehook.GlobalScreen
 import com.github.kwhat.jnativehook.NativeHookException
@@ -88,7 +79,8 @@ suspend fun main() = coroutineScope {
         } ?: GigaModel.Max
 
         while (isActive) {
-            val agent = GigaAgent.instance(userInputFlow, GigaRestChatAPI.INSTANCE, desktopInfoRepo, model = model)
+            val api = AnthropicChatAPI(GigaRestChatAPI.INSTANCE)
+            val agent = GigaAgent.instance(userInputFlow, api, desktopInfoRepo, model = model)
             agentRef.set(agent)
             runCatching {
                 agent.run().collect { text ->
@@ -108,11 +100,11 @@ suspend fun main() = coroutineScope {
  */
 private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch {
     repo.storeDesktopDataDaily()
-//    while (true) {
-//        delay(5.minutes)
-//        val browserHistory = DesktopDataExtractor.browserHistory(10)
-//        repo.storeDesktopInfo(browserHistory)
-//    }
+    while (true) {
+        delay(5.minutes)
+        val browserHistory = DesktopDataExtractor.browserHistory(10)
+        repo.storeDesktopInfo(browserHistory)
+    }
 }
 
 private suspend fun withNativeHook(hotkeyListener: HotkeyListener, block: suspend () -> Unit) {
