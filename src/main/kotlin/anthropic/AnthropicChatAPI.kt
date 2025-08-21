@@ -6,6 +6,7 @@ import com.dumch.tool.desktop.ToolOpen
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.logging.*
 import io.ktor.client.plugins.sse.*
 import io.ktor.client.request.*
@@ -19,7 +20,7 @@ import kotlin.time.Duration.Companion.seconds
 import java.io.File
 import java.nio.file.Files
 
-const val MODEL = "claude-3-7-sonnet-20250219"
+const val MODEL = "claude-3-5-haiku-20241022"
 
 private data class ToolUseBlock(
     val name: String,
@@ -146,6 +147,10 @@ class AnthropicChatAPI(
                 usage = usage,
             )
         }
+    } catch (e: ClientRequestException) { // 4xx
+        val resp = e.response.bodyAsText()
+        l.error("Anthropic 400 body: $resp")
+        GigaResponse.Chat.Error(e.response.status.value, resp)
     } catch (t: Throwable) {
         l.error("Error in Anthropic chat", t)
         GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")
@@ -366,9 +371,10 @@ class AnthropicChatAPI(
 
 suspend fun main() {
     val api = AnthropicChatAPI(GigaRestChatAPI.INSTANCE)
-//
-//    val result = api.uploadFile(File("/Users/m1/IdeaProjects/kotlin/abledo/patch.patch"))
+
+//    val result = api.uploadFile(File("/Users/m1/Pictures/портрет.jpeg"))
 //    println(result)
+//    if (true) return
 
     val systemPrompt = GigaRequest.Message(
         role = GigaMessageRole.system,
@@ -386,7 +392,7 @@ suspend fun main() {
             GigaRequest.Message(
                 role = GigaMessageRole.user,
                 content = "Открой папку ~/Downloads",
-                attachments = listOf("file_011CSJmf9TkDp4foEAxjvW5M"),
+                attachments = listOf("011CSK2qjkHumd9ZdXnTPCoR"),
             ),
         ),
         functions = listOf(
