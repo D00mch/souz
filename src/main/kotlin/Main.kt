@@ -25,7 +25,9 @@ private val l = LoggerFactory.getLogger("AI")
 suspend fun main() = coroutineScope {
     println("Balance:\n${GigaRestChatAPI.INSTANCE.balance()}\n")
     setAppIcon()
-    val glassPanel = LiquidGlassPanel()
+    val glassPanel = LiquidGlassPanel().apply {
+        showText("Готов работать")
+    }
     val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     val audioRecorder = InMemoryAudioRecorder(
         recorder = ActiveSoundRecorderImpl(),
@@ -41,7 +43,6 @@ suspend fun main() = coroutineScope {
                     agentRef.get()?.stop()
                     playMacPing()
                     audioRecorder.start()
-                    glassPanel.hide()
                 }
                 else -> {
                     audioRecorder.stop()
