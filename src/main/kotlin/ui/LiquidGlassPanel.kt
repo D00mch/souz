@@ -208,7 +208,7 @@ private const val MIN_HEIGHT = 50
 fun setAppIcon() {
     if (Taskbar.isTaskbarSupported()) {
         runCatching {
-            {}::class.java.getResourceAsStream("/app_icon.png")?.use {
+            {}::class.java.getResourceAsStream("/icon.png")?.use {
                 Taskbar.getTaskbar().setIconImage(ImageIO.read(it))
             }
         }.onFailure { e ->
