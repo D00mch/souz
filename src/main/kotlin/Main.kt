@@ -7,6 +7,8 @@ import com.dumch.db.DesktopInfoRepository
 import com.dumch.db.VectorDB
 import com.dumch.giga.*
 import com.dumch.keys.HotkeyListener
+import com.dumch.ui.LiquidGlassPanel
+import com.dumch.ui.setAppIcon
 import com.github.kwhat.jnativehook.GlobalScreen
 import com.github.kwhat.jnativehook.NativeHookException
 import kotlinx.coroutines.*
@@ -19,8 +21,13 @@ import kotlin.time.Duration.Companion.minutes
 
 private val l = LoggerFactory.getLogger("AI")
 
+
 suspend fun main() = coroutineScope {
     println("Balance:\n${GigaRestChatAPI.INSTANCE.balance()}\n")
+    setAppIcon()
+    val glassPanel = LiquidGlassPanel().apply {
+        showText("Готов работать")
+    }
     val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     val audioRecorder = InMemoryAudioRecorder(
         recorder = ActiveSoundRecorderImpl(),
@@ -85,6 +92,7 @@ suspend fun main() = coroutineScope {
             runCatching {
                 agent.run().collect { text ->
                     l.info(text)
+                    glassPanel.showText(text)
                     playText(text)
                 }
             }.onFailure { e ->
