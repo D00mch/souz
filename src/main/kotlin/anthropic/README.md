@@ -1,3 +1,4 @@
+## Anthropic models
 
 ```bash
 curl https://api.anthropic.com/v1/models \
@@ -61,5 +62,4 @@ curl https://api.anthropic.com/v1/models \
   "first_id": "claude-opus-4-1-20250805",
   "last_id": "claude-3-haiku-20240307"
 }
-
 ```
