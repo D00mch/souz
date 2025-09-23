@@ -38,7 +38,7 @@ object DesktopDataExtractor {
             }
         }.getOrElse { emptyList() }
 
-        return installed + files().toList() + instructions + browserHistory(500) + notes()
+        return installed + files().toList() + instructions + browserHistory(50) // + notes()
     }
 
     fun files(): Sequence<StorredData> = runCatching {
