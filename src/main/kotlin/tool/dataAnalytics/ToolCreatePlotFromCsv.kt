@@ -73,5 +73,5 @@ class ToolCreatePlotFromCsv(private val bash: ToolRunBashCommand) : ToolSetup<To
 
 fun main() {
     val tool = ToolCreatePlotFromCsv(ToolRunBashCommand)
-    println(tool.invoke(ToolCreatePlotFromCsv.Input("/Users/duxx/Отчеты/sales_report.csv", "Клиент", "Доход")))
+    println(tool.invoke(ToolCreatePlotFromCsv.Input("/Users/m1/Downloads/sales_report.csv", "Клиент", "Доход")))
 }

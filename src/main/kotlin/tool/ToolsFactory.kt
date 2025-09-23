@@ -64,12 +64,12 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
 //                ToolShowApps.toGiga(), // we get it by default anyway
             ).associateBy { it.fn.name },
 
-            ToolCategory.IO to listOf(
-                ToolUploadFile().toGiga(),
-                ToolDownloadFile().toGiga(),
-//                ToolDesktopScreenShot().toGiga(),
-                ToolReadScreenText().toGiga(),
-            ).associateBy { it.fn.name },
+//            ToolCategory.IO to listOf(
+//                ToolUploadFile().toGiga(),
+//                ToolDownloadFile().toGiga(),
+////                ToolDesktopScreenShot().toGiga(),
+//                ToolReadScreenText().toGiga(),
+//            ).associateBy { it.fn.name },
         )
     }
 }

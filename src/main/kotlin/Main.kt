@@ -86,7 +86,7 @@ suspend fun main() = coroutineScope {
         } ?: GigaModel.Max
 
         while (isActive) {
-            val api = AnthropicChatAPI(GigaRestChatAPI.INSTANCE)
+            val api = GigaGRPCChatApi(GigaAuth)
             val agent = GigaAgent.instance(userInputFlow, api, desktopInfoRepo, model = model)
             agentRef.set(agent)
             runCatching {
