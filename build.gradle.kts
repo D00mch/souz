@@ -49,11 +49,8 @@ dependencies {
     implementation(kotlin("reflect"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${Versions.Coroutines}")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
-    implementation("ch.qos.logback:logback-classic:${Versions.Logback}")
-    implementation("org.slf4j:jul-to-slf4j:2.0.17")
-
-    // ai
-    implementation("ai.koog:koog-agents:0.4.2")
+      implementation("ch.qos.logback:logback-classic:${Versions.Logback}")
+      implementation("org.slf4j:jul-to-slf4j:2.0.17")
 
     // ktor
     implementation("io.ktor:ktor-client-core:${Versions.Ktor}")
