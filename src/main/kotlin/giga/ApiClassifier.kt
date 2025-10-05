@@ -7,10 +7,10 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
 
-class ApiGigaClassifier(
+class ApiClassifier(
     private val api: GigaChatAPI,
 ) : UserMessageClassifier {
-    private val l = LoggerFactory.getLogger(ApiGigaClassifier::class.java)
+    private val l = LoggerFactory.getLogger(ApiClassifier::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
 
     override suspend fun classify(body: String): ToolCategory? {
