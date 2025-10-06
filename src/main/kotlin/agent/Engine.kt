@@ -3,8 +3,9 @@ package com.dumch.agent
 import com.dumch.giga.GigaRequest
 import com.dumch.giga.GigaToolSetup
 import com.dumch.tool.ToolCategory
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import org.slf4j.Logger
-import java.util.UUID
 import org.slf4j.LoggerFactory
 
 // Immutable context threaded through the graph
@@ -122,7 +123,7 @@ class Engine(
         val leaves = mutableListOf<AgentContext<*>>() // terminal results
         var processed = 0
 
-        while (q.isNotEmpty()) {
+        while (q.isNotEmpty() && currentCoroutineContext().isActive) {
             if (processed >= maxSteps) error("Engine maxSteps ($maxSteps) reached — potential loop")
 
             val (node, inCtx, depth) = q.removeFirst()

@@ -1,19 +1,16 @@
 package com.dumch.agent
 
-import com.dumch.agent.node.NodesCommon.nodeRespToString
-import com.dumch.agent.node.NodesCommon.nodeStringToReq
-import com.dumch.agent.node.NodesCommon.nodeToolUse
+import com.dumch.agent.node.NodesCommon
 import com.dumch.agent.node.NodesLLM
 import com.dumch.db.DesktopInfoRepository
 import com.dumch.db.VectorDB
 import com.dumch.giga.*
 import com.dumch.tool.ToolsFactory
-import io.ktor.util.logging.debug
 import org.slf4j.LoggerFactory
 
 class GigaAgentGraph(
     llmApi: GigaChatAPI,
-    private val nodeUserInput: Node<String, String> = Node("UserInput") { ctx ->
+    private val userInput: Node<String, String> = Node("UserInput") { ctx ->
         println(ctx.input)
         ctx.map { readlnOrNull() ?: "..." }
     }
@@ -22,17 +19,17 @@ class GigaAgentGraph(
     private val llmNodes = NodesLLM(llmApi)
 
     fun buildAgent(): Engine {
-        nodeUserInput.edgeTo(nodeStringToReq)
-        nodeStringToReq.edgeTo(llmNodes.nodeCallMainLLM)
-        llmNodes.nodeCallMainLLM.edgeTo { (input, _, _, _) ->
+        userInput.edgeTo(NodesCommon.stringToReq)
+        NodesCommon.stringToReq.edgeTo(llmNodes.requestToResponse)
+        llmNodes.requestToResponse.edgeTo { (input, _, _, _) ->
             when (input) {
-                is GigaResponse.Chat.Error -> nodeRespToString
-                is GigaResponse.Chat.Ok -> if (isToolUse(input)) nodeToolUse else nodeRespToString
-            }.also { l.debug { "Get $input, route to node $it" } }
+                is GigaResponse.Chat.Error -> NodesCommon.respToString
+                is GigaResponse.Chat.Ok -> if (isToolUse(input)) NodesCommon.nodeToolUse else NodesCommon.respToString
+            }
         }
-        nodeToolUse.edgeTo(llmNodes.nodeCallMainLLM)
-        nodeRespToString.edgeTo(nodeUserInput)
-        return Engine(nodeUserInput)
+        NodesCommon.nodeToolUse.edgeTo(llmNodes.requestToResponse)
+        NodesCommon.respToString.edgeTo(userInput)
+        return Engine(userInput)
     }
 
     private fun isToolUse(input: GigaResponse.Chat.Ok): Boolean = input.choices.any { it.message.functionCall != null }

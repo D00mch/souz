@@ -8,12 +8,13 @@ import com.dumch.giga.GigaMessageRole
 import com.dumch.giga.GigaRequest
 import com.dumch.giga.GigaResponse
 import com.dumch.giga.GigaToolSetup
+import com.dumch.giga.toSystemPromptMessage
 import org.slf4j.LoggerFactory
 
 object NodesCommon {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
-    val nodeStringToReq: Node<String, GigaRequest.Chat> = Node("String->Request") { ctx ->
+    val stringToReq: Node<String, GigaRequest.Chat> = Node("String->Request") { ctx ->
         val usrMsg = GigaRequest.Message(GigaMessageRole.user, ctx.input)
         val history = ArrayList(ctx.history).apply {
             if (isEmpty()) add(ctx.systemPrompt.toSystemPromptMessage())
@@ -22,7 +23,7 @@ object NodesCommon {
         ctx.map(history = history) { ctx.toGigaRequest(history) }
     }
 
-    val nodeRespToString: Node<GigaResponse.Chat, String> = Node("Response->String") { ctx ->
+    val respToString: Node<GigaResponse.Chat, String> = Node("Response->String") { ctx ->
         when (val input = ctx.input) {
             is GigaResponse.Chat.Error -> ctx.map { input.message }
             is GigaResponse.Chat.Ok -> ctx.map { input.choices.last().message.content }
@@ -56,9 +57,4 @@ object NodesCommon {
         l.info("Executing tool: ${fn.fn.name}, arguments: ${functionCall.arguments}")
         return fn.invoke(functionCall)
     }
-
-    private fun String.toSystemPromptMessage() = GigaRequest.Message(
-        role = GigaMessageRole.system,
-        content = this
-    )
 }
