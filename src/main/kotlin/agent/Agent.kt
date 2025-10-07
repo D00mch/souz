@@ -1,11 +1,17 @@
 package com.dumch.agent
 
+import com.dumch.agent.engine.AgentContext
+import com.dumch.agent.engine.AgentSettings
+import com.dumch.agent.engine.Engine
+import com.dumch.agent.engine.Node
+import com.dumch.agent.engine.subgraph
 import com.dumch.agent.node.NodesCommon
 import com.dumch.agent.node.NodesLLM
 import com.dumch.db.DesktopInfoRepository
 import com.dumch.db.VectorDB
 import com.dumch.giga.*
 import com.dumch.tool.ToolsFactory
+import kotlin.math.ceil
 
 class GigaAgentGraph(
     llmApi: GigaChatAPI,
@@ -38,12 +44,20 @@ class GigaAgentGraph(
     private fun isToolUse(input: GigaResponse.Chat.Ok): Boolean = input.choices.any { it.message.functionCall != null }
 }
 
-private const val HISTORY_CHARACTER_THRESHOLD = 6_000
+private const val HISTORY_SUMMARIZE_THRESHOLD = 0.8
+private const val APPROX_CHARS_PER_TOKEN = 4.0
 
-private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(limit: Int = HISTORY_CHARACTER_THRESHOLD): Boolean {
-    val totalCharacters = history.sumOf { it.content.length }
-    return totalCharacters > limit
+private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(
+    threshold: Double = HISTORY_SUMMARIZE_THRESHOLD,
+): Boolean {
+    val model = GigaModel.values().firstOrNull { it.alias == settings.model }
+    val contextWindow = model?.maxTokens ?: MAX_TOKENS
+    val estimatedTokens = systemPrompt.estimateTokenCount() +
+        history.sumOf { it.content.estimateTokenCount() }
+    return estimatedTokens >= contextWindow * threshold
 }
+
+private fun String.estimateTokenCount(): Int = ceil(length / APPROX_CHARS_PER_TOKEN).toInt()
 
 fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaRequest.Chat {
     val ctx = this

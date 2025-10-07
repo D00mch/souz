@@ -1,8 +1,8 @@
 package com.dumch.agent.node
 
-import com.dumch.agent.AgentContext
-import com.dumch.agent.AgentSettings
-import com.dumch.agent.Node
+import com.dumch.agent.engine.AgentContext
+import com.dumch.agent.engine.AgentSettings
+import com.dumch.agent.engine.Node
 import com.dumch.agent.toGigaRequest
 import com.dumch.giga.GigaMessageRole
 import com.dumch.giga.GigaRequest

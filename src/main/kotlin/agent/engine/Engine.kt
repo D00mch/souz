@@ -1,4 +1,4 @@
-package com.dumch.agent
+package com.dumch.agent.engine
 
 import com.dumch.giga.GigaRequest
 import com.dumch.giga.GigaToolSetup
@@ -10,10 +10,12 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import kotlin.math.min
 
 // Immutable context threaded through the graph
 data class AgentContext<I>(
@@ -60,75 +62,11 @@ class EngineCancellation(
     }
 }
 
-internal data class EngineRuntime(val retryPolicy: RetryPolicy)
-
-// A node transforms Ctx<I> into Ctx<O>
-open class Node<I, O>(
-    val name: String,
-    private val logger: Logger = LoggerFactory.getLogger("NodeLLM"),
-    private val op: suspend (AgentContext<I>) -> AgentContext<O>,
+internal data class EngineRuntime(
+    val retryPolicy: RetryPolicy,
+    val maxSteps: Int,
 ) {
-
-    // Transitions keyed by this node's OUTPUT type O
-    private val edges = mutableListOf<Transition<O>>()
-
-    internal open suspend fun execute(ctx: AgentContext<I>, runtime: EngineRuntime): AgentContext<O> = op(ctx)
-
-    /** Strict, type-safe edge: next node must accept O as input. */
-    fun <NO> edgeTo(target: Node<O, NO>): Node<O, NO> {
-        edges += Transition.Static(target)
-        return target
-    }
-
-    /** Typed conditional edge. Multiple conditionals are checked in insertion order. */
-    fun <NO> edgeToIf(pred: (AgentContext<O>) -> Boolean, target: Node<O, NO>): Node<O, NO> {
-        edges += Transition.Conditional(pred, target)
-        return target
-    }
-
-    /** Dynamic router when branches don’t share a single NO type. */
-    fun edgeTo(router: suspend (AgentContext<O>) -> Node<O, *>) {
-        edges += Transition.Dynamic(router)
-    }
-
-    // Inside Node<I, O>
-    internal suspend fun resolveNext(ctx: AgentContext<O>): List<Node<O, *>> {
-        val nextNodes = ArrayList<Node<O, *>>()
-        for (t in edges) {
-            when (t) {
-                is Transition.Static -> nextNodes.addOrWarn(t.target)
-                is Transition.Dynamic<O> -> nextNodes.addOrWarn(t.router(ctx))
-                is Transition.Conditional -> if (t.predicate(ctx)) nextNodes.addOrWarn(t.target)
-            }
-        }
-        return nextNodes
-    }
-
-    /** Adds a [node] if it's not already added; otherwise log with waring */
-    private fun MutableCollection<Node<O, *>>.addOrWarn(node: Node<O, *>) {
-        if (this.contains(node)) {
-            logger.warn("Node duplication arise. Current node: $this, edge $node")
-        } else {
-            this.add(node)
-        }
-    }
-
-    override fun toString(): String = "Node $name; ${Integer.toHexString(hashCode())}"
-
-    private sealed interface Transition<OUT> {
-        class Static<OUT>(val target: Node<OUT, *>) : Transition<OUT>
-        class Conditional<OUT>(
-            val predicate: (AgentContext<OUT>) -> Boolean,
-            val target: Node<OUT, *>
-        ) : Transition<OUT>
-
-        class Dynamic<OUT>(val router: suspend (AgentContext<OUT>) -> Node<OUT, *>) : Transition<OUT>
-    }
-
-    companion object {
-        private var counter = 0
-        private fun nextId(): Int = ++counter
-    }
+    fun forSubgraph(localMaxSteps: Int): EngineRuntime = copy(maxSteps = min(maxSteps, localMaxSteps))
 }
 
 internal class GraphRunner(
@@ -147,14 +85,16 @@ internal class GraphRunner(
         val leaves = mutableListOf<AgentContext<*>>()
         var processed = 0
         var lastCtx: AgentContext<Any?> = seed
+        val coroutineContext = currentCoroutineContext()
+        val runtime = EngineRuntime(retryPolicy, maxSteps)
 
         try {
-            while (q.isNotEmpty()) {
-                currentCoroutineContext().ensureActive()
+            while (q.isNotEmpty() && coroutineContext.isActive) {
+                coroutineContext.ensureActive()
                 if (processed >= maxSteps) error("Engine maxSteps ($maxSteps) reached — potential loop")
 
                 val frame = q.removeFirst()
-                val outCtx = executeWithRetry(frame.node, frame.ctx, frame.depth)
+                val outCtx = executeWithRetry(frame.node, frame.ctx, frame.depth, runtime)
                 onStep?.invoke(frame.depth, frame.node, outCtx)
                 lastCtx = outCtx
 
@@ -171,6 +111,7 @@ internal class GraphRunner(
                 }
                 processed++
             }
+            coroutineContext.ensureActive()
         } catch (cancel: CancellationException) {
             throw EngineCancellation(lastCtx, cancel)
         }
@@ -183,10 +124,10 @@ internal class GraphRunner(
         node: Node<Any?, Any?>,
         inCtx: AgentContext<Any?>,
         depth: Int,
+        runtime: EngineRuntime,
     ): AgentContext<Any?> {
         var attempt = 0
         var lastError: Throwable? = null
-        val runtime = EngineRuntime(retryPolicy)
         while (attempt < retryPolicy.maxAttempts) {
             attempt++
             try {
@@ -250,38 +191,39 @@ class Engine(
         seed: AgentContext<*>,
         maxSteps: Int = 1000,
         onStep: ((step: Int, nodeName: String, ctx: AgentContext<*>) -> Unit)? = null
-    ): EngineHandle {
+    ): EngineRun {
         @Suppress("UNCHECKED_CAST")
         val initial = seed as AgentContext<Any?>
-        val state = MutableStateFlow<AgentContext<*>>(initial)
+        val updates = MutableSharedFlow<AgentContext<*>>(replay = 1)
+        updates.tryEmit(initial)
         val job = scope.async {
             try {
                 val result = run(initial, maxSteps) { step, node, ctx ->
                     onStep?.invoke(step, node, ctx)
-                    state.value = ctx
+                    updates.tryEmit(ctx)
                 }
-                state.value = result
+                updates.tryEmit(result)
                 result
             } catch (cancel: EngineCancellation) {
-                state.value = cancel.lastContext
+                updates.tryEmit(cancel.lastContext)
                 cancel.lastContext
             }
         }
-        return EngineHandleImpl(job, state)
+        return EngineRunImpl(job, updates)
     }
 }
 
-interface EngineHandle {
-    val updates: StateFlow<AgentContext<*>>
+interface EngineRun {
+    val updates: Flow<AgentContext<*>>
     fun stop(cause: CancellationException? = null)
     suspend fun await(): AgentContext<*>
 }
 
-private class EngineHandleImpl(
+private class EngineRunImpl(
     private val deferred: Deferred<AgentContext<*>>,
-    private val state: MutableStateFlow<AgentContext<*>>,
-) : EngineHandle {
-    override val updates: StateFlow<AgentContext<*>> = state
+    private val updatesFlow: MutableSharedFlow<AgentContext<*>>,
+) : EngineRun {
+    override val updates: Flow<AgentContext<*>> = updatesFlow
 
     override fun stop(cause: CancellationException?) {
         deferred.cancel(cause)

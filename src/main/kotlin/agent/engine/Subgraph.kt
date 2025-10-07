@@ -1,4 +1,4 @@
-package com.dumch.agent
+package com.dumch.agent.engine
 
 import org.slf4j.LoggerFactory
 import kotlin.properties.ReadOnlyProperty
@@ -50,10 +50,11 @@ private class SubgraphNode<I, O>(
     @Suppress("UNCHECKED_CAST")
     override suspend fun execute(ctx: AgentContext<I>, runtime: EngineRuntime): AgentContext<O> {
         val runner = GraphRunner(runtime.retryPolicy)
+        val subgraphRuntime = runtime.forSubgraph(maxSteps)
         val result = runner.run(
             start = entry as Node<Any?, Any?>,
             seed = ctx as AgentContext<Any?>,
-            maxSteps = maxSteps,
+            maxSteps = subgraphRuntime.maxSteps,
             stopPredicate = { node, _ -> node === finish }
         )
         return result as AgentContext<O>
