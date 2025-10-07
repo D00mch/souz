@@ -6,7 +6,6 @@ import com.dumch.db.DesktopInfoRepository
 import com.dumch.db.VectorDB
 import com.dumch.giga.*
 import com.dumch.tool.ToolsFactory
-import org.slf4j.LoggerFactory
 
 class GigaAgentGraph(
     llmApi: GigaChatAPI,
@@ -15,24 +14,35 @@ class GigaAgentGraph(
         ctx.map { readlnOrNull() ?: "..." }
     }
 ) {
-    private val l = LoggerFactory.getLogger(GigaAgentGraph::class.java)
     private val llmNodes = NodesLLM(llmApi)
+    private val summarization: Node<GigaResponse.Chat, String> by subgraph(name = "HistorySummarization") {
+        input.edgeTo { ctx -> if (ctx.historyIsTooBig()) llmNodes.summarize else NodesCommon.respToString }
+        llmNodes.summarize.edgeTo(NodesCommon.respToString)
+        NodesCommon.respToString.edgeTo(NodeFinish)
+    }
 
     fun buildAgent(): Engine {
         userInput.edgeTo(NodesCommon.stringToReq)
         NodesCommon.stringToReq.edgeTo(llmNodes.requestToResponse)
-        llmNodes.requestToResponse.edgeTo { (input, _, _, _) ->
-            when (input) {
-                is GigaResponse.Chat.Error -> NodesCommon.respToString
-                is GigaResponse.Chat.Ok -> if (isToolUse(input)) NodesCommon.nodeToolUse else NodesCommon.respToString
+        llmNodes.requestToResponse.edgeTo { ctx ->
+            when (val output = ctx.input) {
+                is GigaResponse.Chat.Error -> summarization
+                is GigaResponse.Chat.Ok -> if (isToolUse(output)) NodesCommon.nodeToolUse else summarization
             }
         }
         NodesCommon.nodeToolUse.edgeTo(llmNodes.requestToResponse)
-        NodesCommon.respToString.edgeTo(userInput)
+        summarization.edgeTo(userInput)
         return Engine(userInput)
     }
 
     private fun isToolUse(input: GigaResponse.Chat.Ok): Boolean = input.choices.any { it.message.functionCall != null }
+}
+
+private const val HISTORY_CHARACTER_THRESHOLD = 6_000
+
+private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(limit: Int = HISTORY_CHARACTER_THRESHOLD): Boolean {
+    val totalCharacters = history.sumOf { it.content.length }
+    return totalCharacters > limit
 }
 
 fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaRequest.Chat {

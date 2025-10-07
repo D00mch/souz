@@ -35,7 +35,7 @@ class NodesLLM(llmApi: GigaChatAPI) {
     /**
      * Restores the last message, and a system prompt. Other messages are transformed into TLDR
      */
-    val summarize: Node<Any, GigaResponse.Chat> = Node("llmSummarize") { ctx ->
+    val summarize: Node<GigaResponse.Chat, GigaResponse.Chat> = Node("llmSummarize") { ctx ->
         val conversation = ArrayList(ctx.history)
 
         val summaryResponse: GigaResponse.Chat = withContext(Dispatchers.IO) {
