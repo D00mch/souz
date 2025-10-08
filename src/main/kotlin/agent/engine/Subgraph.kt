@@ -16,7 +16,7 @@ class SubgraphBuilder<I, O> internal constructor(
 ) {
     val input: Node<I, I> = Node("$graphName::input") { it }
     private val finishNode: Node<O, O> = Node("$graphName::finish") { it }
-    val NodeFinish: Node<O, O> get() = finishNode
+    val nodeFinish: Node<O, O> get() = finishNode
 
     internal fun build(): Node<I, O> = SubgraphNode(graphName, input, finishNode, maxSteps)
 }
@@ -41,7 +41,7 @@ private class SubgraphDelegate<I, O>(
 }
 
 private class SubgraphNode<I, O>(
-    private val label: String,
+    label: String,
     private val entry: Node<I, *>,
     private val finish: Node<O, O>,
     private val maxSteps: Int,

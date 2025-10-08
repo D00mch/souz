@@ -21,10 +21,12 @@ class GigaAgentGraph(
     }
 ) {
     private val llmNodes = NodesLLM(llmApi)
+
+    // Make sure summarization only happens after all tool requests from LLM are answered
     private val summarization: Node<GigaResponse.Chat, String> by subgraph(name = "HistorySummarization") {
         input.edgeTo { ctx -> if (ctx.historyIsTooBig()) llmNodes.summarize else NodesCommon.respToString }
         llmNodes.summarize.edgeTo(NodesCommon.respToString)
-        NodesCommon.respToString.edgeTo(NodeFinish)
+        NodesCommon.respToString.edgeTo(nodeFinish)
     }
 
     fun buildAgent(): Engine {
@@ -50,7 +52,7 @@ private const val APPROX_CHARS_PER_TOKEN = 4.0
 private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(
     threshold: Double = HISTORY_SUMMARIZE_THRESHOLD,
 ): Boolean {
-    val model = GigaModel.values().firstOrNull { it.alias == settings.model }
+    val model = GigaModel.entries.firstOrNull { it.alias == settings.model }
     val contextWindow = model?.maxTokens ?: MAX_TOKENS
     val estimatedTokens = systemPrompt.estimateTokenCount() +
         history.sumOf { it.content.estimateTokenCount() }
@@ -101,7 +103,6 @@ suspend fun main() {
 
 /*
 TODO:
-1. Compression
 2. Stream
 3. RAG
 4. Classification

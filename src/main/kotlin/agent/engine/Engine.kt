@@ -100,11 +100,11 @@ internal class GraphRunner(
 
                 if (stopPredicate?.invoke(frame.node, outCtx) == true) return outCtx
 
-                val nexts = frame.node.resolveNext(outCtx)
-                if (nexts.isEmpty()) {
+                val nextNodes = frame.node.resolveNext(outCtx)
+                if (nextNodes.isEmpty()) {
                     leaves += outCtx
                 } else {
-                    for (child in nexts) {
+                    for (child in nextNodes) {
                         @Suppress("UNCHECKED_CAST")
                         q.add(Frame(child as Node<Any?, Any?>, outCtx, frame.depth + 1))
                     }
@@ -131,8 +131,7 @@ internal class GraphRunner(
         while (attempt < retryPolicy.maxAttempts) {
             attempt++
             try {
-                @Suppress("UNCHECKED_CAST")
-                return node.execute(inCtx, runtime) as AgentContext<Any?>
+                return node.execute(inCtx, runtime)
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 lastError = t
@@ -221,7 +220,7 @@ interface EngineRun {
 
 private class EngineRunImpl(
     private val deferred: Deferred<AgentContext<*>>,
-    private val updatesFlow: MutableSharedFlow<AgentContext<*>>,
+    updatesFlow: MutableSharedFlow<AgentContext<*>>,
 ) : EngineRun {
     override val updates: Flow<AgentContext<*>> = updatesFlow
 
@@ -238,21 +237,20 @@ private class EngineRunImpl(
 
  */
 
-private suspend fun callLlmMock(ctx: AgentContext<String>): AgentContext<String> {
+private fun callLlmMock(ctx: AgentContext<String>): AgentContext<String> {
     val text = ctx.input.trim()
     if (text == "What is the weather today?") return ctx.map { "tool" }
     return ctx.map { "Response: $it" }
 }
 
-private suspend fun callToolMock(ctx: AgentContext<String>): AgentContext<String> {
-    val tool = "echo"
+private fun callToolMock(ctx: AgentContext<String>): AgentContext<String> {
     return ctx.map { "The weather is fine!" }
 }
 
 suspend fun main() {
     val userInputNode = Node<String, String>("userInput") { it }
-    val llmCallNode = Node<String, String>("llmCall") { callLlmMock(it) }
-    val llmToolUseNode = Node<String, String>("llmToolUse") { callToolMock(it) }
+    val llmCallNode = Node("llmCall") { callLlmMock(it) }
+    val llmToolUseNode = Node("llmToolUse") { callToolMock(it) }
     val userOutputNode = Node<String, String>("userOutput") {
         println("Result it: ${it.input}")
         it
