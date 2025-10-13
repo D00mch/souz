@@ -1,6 +1,5 @@
 package com.dumch.agent.engine
 
-import org.slf4j.LoggerFactory
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 
@@ -11,14 +10,12 @@ fun <I, O> subgraph(
 ): ReadOnlyProperty<Any?, Node<I, O>> = SubgraphDelegate(name, maxSteps, configure)
 
 class SubgraphBuilder<I, O> internal constructor(
-    private val graphName: String,
-    private val maxSteps: Int,
+    private val delegate: GraphBuilder<I, O>
 ) {
-    val input: Node<I, I> = Node("$graphName::input") { it }
-    private val finishNode: Node<O, O> = Node("$graphName::finish") { it }
-    val nodeFinish: Node<O, O> get() = finishNode
+    val input: Node<I, I> = delegate.input
+    val nodeFinish: Node<O, O> get() = delegate.nodeFinish
 
-    internal fun build(): Node<I, O> = SubgraphNode(graphName, input, finishNode, maxSteps)
+    internal fun build(): Node<I, O> = delegate.build()
 }
 
 private class SubgraphDelegate<I, O>(
@@ -34,29 +31,9 @@ private class SubgraphDelegate<I, O>(
 
     private fun build(propertyName: String): Node<I, O> {
         val name = nameHint ?: propertyName
-        val builder = SubgraphBuilder<I, O>(name, maxSteps)
-        builder.configure()
-        return builder.build()
-    }
-}
-
-private class SubgraphNode<I, O>(
-    label: String,
-    private val entry: Node<I, *>,
-    private val finish: Node<O, O>,
-    private val maxSteps: Int,
-) : Node<I, O>("$label::subgraph", LoggerFactory.getLogger("Subgraph:$label"), { error("Subgraph node should not invoke base op") }) {
-
-    @Suppress("UNCHECKED_CAST")
-    override suspend fun execute(ctx: AgentContext<I>, runtime: EngineRuntime): AgentContext<O> {
-        val runner = GraphRunner(runtime.retryPolicy)
-        val subgraphRuntime = runtime.forSubgraph(maxSteps)
-        val result = runner.run(
-            start = entry as Node<Any?, Any?>,
-            seed = ctx as AgentContext<Any?>,
-            maxSteps = subgraphRuntime.maxSteps,
-            stopPredicate = { node, _ -> node === finish }
-        )
-        return result as AgentContext<O>
+        val builder = GraphBuilder<I, O>(name, maxSteps, RetryPolicy())
+        val wrapper = SubgraphBuilder(builder)
+        wrapper.configure()
+        return wrapper.build()
     }
 }

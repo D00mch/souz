@@ -3,7 +3,6 @@ package com.dumch.agent.node
 import com.dumch.agent.engine.AgentContext
 import com.dumch.agent.engine.AgentSettings
 import com.dumch.agent.engine.Node
-import com.dumch.agent.toGigaRequest
 import com.dumch.giga.GigaMessageRole
 import com.dumch.giga.GigaRequest
 import com.dumch.giga.GigaResponse
@@ -57,4 +56,14 @@ object NodesCommon {
         l.info("Executing tool: ${fn.fn.name}, arguments: ${functionCall.arguments}")
         return fn.invoke(functionCall)
     }
+}
+
+fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaRequest.Chat {
+    val ctx = this
+    return GigaRequest.Chat(
+        model = ctx.settings.model,
+        messages = history,
+        functions = ctx.activeTools,
+        temperature = ctx.settings.temperature,
+    )
 }

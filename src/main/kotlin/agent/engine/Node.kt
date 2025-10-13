@@ -13,7 +13,7 @@ open class Node<I, O>(
     // Transitions keyed by this node's OUTPUT type O
     private val edges = mutableListOf<Transition<O>>()
 
-    internal open suspend fun execute(ctx: AgentContext<I>, runtime: EngineRuntime): AgentContext<O> = op(ctx)
+    internal open suspend fun execute(ctx: AgentContext<I>, runtime: GraphRuntime): AgentContext<O> = op(ctx)
 
     /** Strict, type-safe edge: next node must accept O as input. */
     fun <NO> edgeTo(target: Node<O, NO>): Node<O, NO> {

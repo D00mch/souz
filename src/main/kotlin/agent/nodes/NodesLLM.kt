@@ -1,7 +1,6 @@
 package com.dumch.agent.node
 
 import com.dumch.agent.engine.Node
-import com.dumch.agent.toGigaRequest
 import com.dumch.giga.GigaChatAPI
 import com.dumch.giga.GigaException
 import com.dumch.giga.GigaMessageRole

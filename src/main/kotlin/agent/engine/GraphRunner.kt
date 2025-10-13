@@ -1,0 +1,144 @@
+package com.dumch.agent.engine
+
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+
+internal class GraphRunner(
+    private val logger: Logger = LoggerFactory.getLogger(GraphRunner::class.java),
+) {
+
+    suspend fun run(
+        start: Node<Any?, Any?>,
+        seed: AgentContext<Any?>,
+        runtime: GraphRuntime,
+        stopPredicate: ((Node<Any?, Any?>, AgentContext<Any?>) -> Boolean)? = null,
+    ): AgentContext<Any?> {
+        val queue = ArrayDeque<Frame>().apply { add(Frame(start, seed, 0)) }
+        val leaves = mutableListOf<AgentContext<*>>()
+        var processed = 0
+        var lastCtx: AgentContext<Any?> = seed
+        val coroutineContext = currentCoroutineContext()
+
+        try {
+            while (queue.isNotEmpty() && coroutineContext.isActive) {
+                coroutineContext.ensureActive()
+                if (processed >= runtime.maxSteps) error("Graph maxSteps (${runtime.maxSteps}) reached — potential loop")
+
+                val frame = queue.removeFirst()
+                val outCtx = executeWithRetry(frame.node, frame.ctx, frame.depth, runtime)
+                runtime.onStep?.invoke(frame.depth, frame.node, outCtx)
+                lastCtx = outCtx
+
+                if (stopPredicate?.invoke(frame.node, outCtx) == true) return outCtx
+
+                val nextNodes = frame.node.resolveNext(outCtx)
+                if (nextNodes.isEmpty()) {
+                    leaves += outCtx
+                } else {
+                    for (child in nextNodes) {
+                        @Suppress("UNCHECKED_CAST")
+                        queue.add(Frame(child as Node<Any?, Any?>, outCtx, frame.depth + 1))
+                    }
+                }
+                processed++
+            }
+            coroutineContext.ensureActive()
+        } catch (cancel: CancellationException) {
+            throw GraphCancellation(lastCtx, cancel)
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        return leaves.lastOrNull() as? AgentContext<Any?> ?: lastCtx
+    }
+
+    private suspend fun executeWithRetry(
+        node: Node<Any?, Any?>,
+        inCtx: AgentContext<Any?>,
+        depth: Int,
+        runtime: GraphRuntime,
+    ): AgentContext<Any?> {
+        val policy = runtime.retryPolicy
+        var attempt = 0
+        var lastError: Throwable? = null
+        while (attempt < policy.maxAttempts) {
+            attempt++
+            try {
+                return node.execute(inCtx, runtime)
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                lastError = t
+                val shouldRetry = policy.shouldRetry(t, inCtx, node, attempt)
+                val attemptsLeft = policy.maxAttempts - attempt
+                if (!shouldRetry || attemptsLeft <= 0) break
+                logger.warn(
+                    "Node '{}' failed on attempt {} (depth {}), retrying ({} attempts left): {}",
+                    node.name,
+                    attempt,
+                    depth,
+                    attemptsLeft,
+                    t.message,
+                    t
+                )
+            }
+        }
+        throw lastError ?: IllegalStateException("Unknown failure in node ${node.name}")
+    }
+
+    private data class Frame(
+        val node: Node<Any?, Any?>,
+        val ctx: AgentContext<Any?>,
+        val depth: Int,
+    )
+}
+
+
+private fun callLlmMock(ctx: AgentContext<String>): AgentContext<String> {
+    val text = ctx.input.trim()
+    if (text == "What is the weather today?") return ctx.map { "tool" }
+    return ctx.map { "Response: $it" }
+}
+
+private fun callToolMock(ctx: AgentContext<String>): AgentContext<String> {
+    return ctx.map { "The weather is fine!" }
+}
+
+suspend fun main() {
+    val userInputNode = Node<String, String>("userInput") { ctx -> ctx.map { readln() } }
+    val llmCallNode = Node("llmCall") { callLlmMock(it) }
+    val llmToolUseNode = Node("llmToolUse") { callToolMock(it) }
+    val userOutputNode = Node<String, String>("userOutput") { it }
+
+    val settings = AgentSettings("gpt5", 0.7f, emptyMap())
+    val seed = AgentContext(input = "What is the weather today?", settings, emptyList(), emptyList(), "")
+
+    val graph = buildGraph {
+        input.edgeTo(userInputNode)
+        userInputNode.edgeTo{ ctx ->
+            when (ctx.input) {
+                "exit", "finish" -> nodeFinish
+                else -> llmCallNode
+            }
+        }
+        llmToolUseNode.edgeTo(llmCallNode)
+        llmCallNode.edgeTo { ctx ->
+            when (ctx.input) {
+                "tool" -> llmToolUseNode
+                else -> userOutputNode
+            }
+        }
+        userOutputNode.edgeTo(userInputNode)
+    }
+    val run: GraphRun = graph.start(scope = CoroutineScope(Job()+ Dispatchers.IO), seed, onStep = {d, n, c ->
+        println("step: $d, node: ${n.name}, ctx: $c")
+    })
+    run.await()
+}

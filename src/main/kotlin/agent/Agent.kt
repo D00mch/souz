@@ -2,7 +2,8 @@ package com.dumch.agent
 
 import com.dumch.agent.engine.AgentContext
 import com.dumch.agent.engine.AgentSettings
-import com.dumch.agent.engine.Engine
+import com.dumch.agent.engine.Graph
+import com.dumch.agent.engine.buildGraph
 import com.dumch.agent.engine.Node
 import com.dumch.agent.engine.subgraph
 import com.dumch.agent.node.NodesCommon
@@ -11,6 +12,11 @@ import com.dumch.db.DesktopInfoRepository
 import com.dumch.db.VectorDB
 import com.dumch.giga.*
 import com.dumch.tool.ToolsFactory
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlin.math.ceil
 
 class GigaAgentGraph(
@@ -23,13 +29,14 @@ class GigaAgentGraph(
     private val llmNodes = NodesLLM(llmApi)
 
     // Make sure summarization only happens after all tool requests from LLM are answered
-    private val summarization: Node<GigaResponse.Chat, String> by subgraph(name = "HistorySummarization") {
+    private val summarization: Node<GigaResponse.Chat, String> by subgraph(name = "Go to user") {
         input.edgeTo { ctx -> if (ctx.historyIsTooBig()) llmNodes.summarize else NodesCommon.respToString }
         llmNodes.summarize.edgeTo(NodesCommon.respToString)
         NodesCommon.respToString.edgeTo(nodeFinish)
     }
 
-    fun buildAgent(): Engine {
+    fun buildAgent(): Graph<String, String> = buildGraph(name = "Agent") {
+        input.edgeTo(userInput)
         userInput.edgeTo(NodesCommon.stringToReq)
         NodesCommon.stringToReq.edgeTo(llmNodes.requestToResponse)
         llmNodes.requestToResponse.edgeTo { ctx ->
@@ -40,7 +47,6 @@ class GigaAgentGraph(
         }
         NodesCommon.nodeToolUse.edgeTo(llmNodes.requestToResponse)
         summarization.edgeTo(userInput)
-        return Engine(userInput)
     }
 
     private fun isToolUse(input: GigaResponse.Chat.Ok): Boolean = input.choices.any { it.message.functionCall != null }
@@ -55,21 +61,11 @@ private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(
     val model = GigaModel.entries.firstOrNull { it.alias == settings.model }
     val contextWindow = model?.maxTokens ?: MAX_TOKENS
     val estimatedTokens = systemPrompt.estimateTokenCount() +
-        history.sumOf { it.content.estimateTokenCount() }
+            history.sumOf { it.content.estimateTokenCount() }
     return estimatedTokens >= contextWindow * threshold
 }
 
 private fun String.estimateTokenCount(): Int = ceil(length / APPROX_CHARS_PER_TOKEN).toInt()
-
-fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaRequest.Chat {
-    val ctx = this
-    return GigaRequest.Chat(
-        model = ctx.settings.model,
-        messages = history,
-        functions = ctx.activeTools,
-        temperature = ctx.settings.temperature,
-    )
-}
 
 val SYSTEM_PROMPT = """
 Ты — помощник, управляющий компьютером. Будь полезным. Говори только по существу.
@@ -95,10 +91,20 @@ suspend fun main() {
         activeTools = settings.tools.values.map { it.fn },
         systemPrompt = SYSTEM_PROMPT
     )
-    val agent = GigaAgentGraph(api).buildAgent()
-    agent.run(seedContext) { step, node, ctx ->
-        println("Step: $step; node: $node; ctx class: ${ctx.input?.javaClass}, history size: ${ctx.history.size}")
+    val graph = GigaAgentGraph(api).buildAgent()
+    val run = graph.start(CoroutineScope(Job() + Dispatchers.IO), seedContext) { step, node, ctx ->
+        println("Step: $step; node: ${node.name}; ctx class: ${ctx.input?.javaClass}, history size: ${ctx.history.size}")
     }
+    val job2 = coroutineScope {
+        launch(Dispatchers.IO) {
+            run.updates.collect { (input, settings, history, activeTools, systemPrompt) ->
+                println("Update: $input, $settings, history size: ${history.size}")
+            }
+        }
+    }
+
+    run.await()
+    job2.join()
 }
 
 /*
