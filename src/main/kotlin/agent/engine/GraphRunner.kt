@@ -35,7 +35,8 @@ internal class GraphRunner(
 
                 val frame = queue.removeFirst()
                 val outCtx = executeWithRetry(frame.node, frame.ctx, frame.depth, runtime)
-                runtime.onStep?.invoke(frame.depth, frame.node, outCtx)
+                val stepInfo = StepInfo(index = processed + 1, depth = frame.depth)
+                runtime.onStep?.invoke(stepInfo, frame.node, outCtx)
                 lastCtx = outCtx
 
                 if (stopPredicate?.invoke(frame.node, outCtx) == true) return outCtx
@@ -137,8 +138,7 @@ suspend fun main() {
         }
         userOutputNode.edgeTo(userInputNode)
     }
-    val run: GraphRun = graph.start(scope = CoroutineScope(Job()+ Dispatchers.IO), seed, onStep = {d, n, c ->
-        println("step: $d, node: ${n.name}, ctx: $c")
+    graph.start(seed, onStep = { step, n, c ->
+        println("step #${step.index} (depth ${step.depth}): node: ${n.name}, ctx: $c")
     })
-    run.await()
 }

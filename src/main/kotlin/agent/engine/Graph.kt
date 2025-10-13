@@ -32,52 +32,18 @@ class Graph<I, O> internal constructor(
         return result as AgentContext<O>
     }
 
-    fun start(
-        scope: CoroutineScope,
+    suspend fun start(
         seed: AgentContext<I>,
         maxSteps: Int = defaultMaxSteps,
-        onStep: ((depth: Int, node: Node<Any?, Any?>, ctx: AgentContext<Any?>) -> Unit)? = null,
-    ): GraphRun {
-        val updates = MutableSharedFlow<AgentContext<*>>(replay = 1)
-        updates.tryEmit(seed as AgentContext<*>)
-        val job = scope.async {
-            try {
-                val runtime = GraphRuntime(
-                    retryPolicy = retryPolicy,
-                    maxSteps = maxSteps,
-                    onStep = onStep
-                )
-                val result = execute(seed, runtime)
-                updates.tryEmit(result)
-                val finalCtx = result as AgentContext<*>
-                updates.tryEmit(finalCtx)
-                result
-            } catch (cancel: GraphCancellation) {
-                updates.tryEmit(cancel.lastContext)
-                cancel.lastContext
-            }
-        }
-        return GraphRunImpl(job, updates)
+        onStep: ((step: StepInfo, node: Node<Any?, Any?>, ctx: AgentContext<Any?>) -> Unit)? = null,
+    ): AgentContext<O> {
+        val runtime = GraphRuntime(
+            retryPolicy = retryPolicy,
+            maxSteps = maxSteps,
+            onStep = onStep
+        )
+        return execute(seed, runtime)
     }
-}
-
-interface GraphRun {
-    val updates: Flow<AgentContext<*>>
-    fun stop(cause: CancellationException? = null)
-    suspend fun await(): AgentContext<*>
-}
-
-private class GraphRunImpl(
-    private val deferred: Deferred<AgentContext<*>>,
-    updatesFlow: MutableSharedFlow<AgentContext<*>>,
-) : GraphRun {
-    override val updates: Flow<AgentContext<*>> = updatesFlow
-
-    override fun stop(cause: CancellationException?) {
-        deferred.cancel(cause)
-    }
-
-    override suspend fun await(): AgentContext<*> = deferred.await()
 }
 
 class GraphBuilder<I, O> internal constructor(

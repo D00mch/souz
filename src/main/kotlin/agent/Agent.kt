@@ -92,25 +92,17 @@ suspend fun main() {
         systemPrompt = SYSTEM_PROMPT
     )
     val graph = GigaAgentGraph(api).buildAgent()
-    val run = graph.start(CoroutineScope(Job() + Dispatchers.IO), seedContext) { step, node, ctx ->
-        println("Step: $step; node: ${node.name}; ctx class: ${ctx.input?.javaClass}, history size: ${ctx.history.size}")
+    graph.start(seedContext) { step, node, ctx ->
+        println(
+            "Step #${step.index}; depth: ${step.depth}; node: ${node.name}; ctx class: ${ctx.input?.javaClass}, " +
+                    "history size: ${ctx.history.size}"
+        )
     }
-    val job2 = coroutineScope {
-        launch(Dispatchers.IO) {
-            run.updates.collect { (input, settings, history, activeTools, systemPrompt) ->
-                println("Update: $input, $settings, history size: ${history.size}")
-            }
-        }
-    }
-
-    run.await()
-    job2.join()
 }
 
 /*
 TODO:
-2. Stream
-3. RAG
-4. Classification
-5. Coroutine friendly
+1. Stream
+2. RAG
+3. Classification
  */

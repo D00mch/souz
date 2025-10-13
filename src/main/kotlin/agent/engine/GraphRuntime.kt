@@ -13,10 +13,21 @@ class GraphCancellation(
     }
 }
 
+data class StepInfo(
+    /**
+     * Sequential index of the executed node within the current graph run (starting from 1).
+     */
+    val index: Int,
+    /**
+     * Depth of the node in the traversal tree. This matches the previous "step" parameter.
+     */
+    val depth: Int,
+)
+
 data class GraphRuntime(
     val retryPolicy: RetryPolicy,
     val maxSteps: Int,
-    val onStep: ((depth: Int, node: Node<Any?, Any?>, ctx: AgentContext<Any?>) -> Unit)? = null,
+    val onStep: ((step: StepInfo, node: Node<Any?, Any?>, ctx: AgentContext<Any?>) -> Unit)? = null,
 ) {
     fun forSubgraph(localMaxSteps: Int): GraphRuntime = copy(maxSteps = min(maxSteps, localMaxSteps))
 }
