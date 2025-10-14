@@ -66,6 +66,15 @@ suspend fun main() = coroutineScope {
     val gigaVoiceAPI = GigaVoiceAPI(GigaAuth)
     val desktopInfoRepo = DesktopInfoRepository(GigaRestChatAPI.INSTANCE, VectorDB)
     appScope.launchDbSetup(desktopInfoRepo)
+
+    val model = System.getenv("GIGA_MODEL")?.let { envModel ->
+        GigaModel.entries.firstOrNull { enumModel ->
+            enumModel.name.equals(envModel, ignoreCase = true) ||
+                    enumModel.alias.equals(envModel, ignoreCase = true)
+        }
+    } ?: GigaModel.Max
+    val api = GigaGRPCChatApi(GigaAuth)
+
     withNativeHook(hotkeyListener) {
         val userInputFlow = audioRecorder.audioFlow
             .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
@@ -78,15 +87,7 @@ suspend fun main() = coroutineScope {
                 resp.result.joinToString("\n")
             }
 
-        val model = System.getenv("GIGA_MODEL")?.let { envModel ->
-            GigaModel.entries.firstOrNull { enumModel ->
-                 enumModel.name.equals(envModel, ignoreCase = true) ||
-                         enumModel.alias.equals(envModel, ignoreCase = true)
-            }
-        } ?: GigaModel.Max
-
         while (isActive) {
-            val api = GigaGRPCChatApi(GigaAuth)
             val agent = GigaAgent.instance(userInputFlow, api, desktopInfoRepo, model = model)
             agentRef.set(agent)
             runCatching {
