@@ -1,22 +1,12 @@
 package com.dumch.agent
 
-import com.dumch.agent.engine.AgentContext
-import com.dumch.agent.engine.AgentSettings
-import com.dumch.agent.engine.Graph
-import com.dumch.agent.engine.buildGraph
-import com.dumch.agent.engine.Node
-import com.dumch.agent.engine.subgraph
+import com.dumch.agent.engine.*
 import com.dumch.agent.node.NodesCommon
 import com.dumch.agent.node.NodesLLM
 import com.dumch.db.DesktopInfoRepository
 import com.dumch.db.VectorDB
 import com.dumch.giga.*
 import com.dumch.tool.ToolsFactory
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import kotlin.math.ceil
 
 class GigaAgentGraph(
@@ -29,7 +19,7 @@ class GigaAgentGraph(
     private val llmNodes = NodesLLM(llmApi)
 
     // Make sure summarization only happens after all tool requests from LLM are answered
-    private val summarization: Node<GigaResponse.Chat, String> by subgraph(name = "Go to user") {
+    private val summarization: Node<GigaResponse.Chat, String> by graph(name = "Go to user") {
         input.edgeTo { ctx -> if (ctx.historyIsTooBig()) llmNodes.summarize else NodesCommon.respToString }
         llmNodes.summarize.edgeTo(NodesCommon.respToString)
         NodesCommon.respToString.edgeTo(nodeFinish)
@@ -94,7 +84,7 @@ suspend fun main() {
     val graph = GigaAgentGraph(api).buildAgent()
     graph.start(seedContext) { step, node, ctx ->
         println(
-            "Step #${step.index}; depth: ${step.depth}; node: ${node.name}; ctx class: ${ctx.input?.javaClass}, " +
+            "Step #${step.index}; depth: ${step.currentGraphIndex}; node: ${node.name}; ctx class: ${ctx.input?.javaClass}, " +
                     "history size: ${ctx.history.size}"
         )
     }

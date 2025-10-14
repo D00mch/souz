@@ -1,14 +1,9 @@
 package com.dumch.agent.engine
 
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -24,18 +19,19 @@ internal class GraphRunner(
     ): AgentContext<Any?> {
         val queue = ArrayDeque<Frame>().apply { add(Frame(start, seed, 0)) }
         val leaves = mutableListOf<AgentContext<*>>()
-        var processed = 0
         var lastCtx: AgentContext<Any?> = seed
         val coroutineContext = currentCoroutineContext()
 
         try {
             while (queue.isNotEmpty() && coroutineContext.isActive) {
                 coroutineContext.ensureActive()
-                if (processed >= runtime.maxSteps) error("Graph maxSteps (${runtime.maxSteps}) reached — potential loop")
+                if (runtime.counter.get() >= runtime.maxSteps) {
+                    error("Graph maxSteps (${runtime.maxSteps}) reached — potential loop")
+                }
 
                 val frame = queue.removeFirst()
-                val outCtx = executeWithRetry(frame.node, frame.ctx, frame.depth, runtime)
-                val stepInfo = StepInfo(index = processed + 1, depth = frame.depth)
+                val outCtx = executeWithRetry(frame.node, frame.ctx, runtime)
+                val stepInfo = StepInfo(currentGraphIndex = frame.depth, index = runtime.counter.get())
                 runtime.onStep?.invoke(stepInfo, frame.node, outCtx)
                 lastCtx = outCtx
 
@@ -50,9 +46,8 @@ internal class GraphRunner(
                         queue.add(Frame(child as Node<Any?, Any?>, outCtx, frame.depth + 1))
                     }
                 }
-                processed++
+                runtime.counter.incrementAndGet()
             }
-            coroutineContext.ensureActive()
         } catch (cancel: CancellationException) {
             throw GraphCancellation(lastCtx, cancel)
         }
@@ -64,7 +59,6 @@ internal class GraphRunner(
     private suspend fun executeWithRetry(
         node: Node<Any?, Any?>,
         inCtx: AgentContext<Any?>,
-        depth: Int,
         runtime: GraphRuntime,
     ): AgentContext<Any?> {
         val policy = runtime.retryPolicy
@@ -84,7 +78,7 @@ internal class GraphRunner(
                     "Node '{}' failed on attempt {} (depth {}), retrying ({} attempts left): {}",
                     node.name,
                     attempt,
-                    depth,
+                    runtime.counter.get(),
                     attemptsLeft,
                     t.message,
                     t
@@ -139,6 +133,6 @@ suspend fun main() {
         userOutputNode.edgeTo(userInputNode)
     }
     graph.start(seed, onStep = { step, n, c ->
-        println("step #${step.index} (depth ${step.depth}): node: ${n.name}, ctx: $c")
+        println("step #${step.index} (depth ${step.currentGraphIndex}): node: ${n.name}, ctx: $c")
     })
 }

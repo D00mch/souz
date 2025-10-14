@@ -2,6 +2,8 @@ package com.dumch.agent.engine
 
 import com.dumch.giga.GigaException
 import kotlinx.coroutines.CancellationException
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.atomics.AtomicInt
 import kotlin.math.min
 
 class GraphCancellation(
@@ -15,21 +17,26 @@ class GraphCancellation(
 
 data class StepInfo(
     /**
-     * Sequential index of the executed node within the current graph run (starting from 1).
+     * Sequential index of the executed node within the run (starting from 0).
      */
     val index: Int,
     /**
-     * Depth of the node in the traversal tree. This matches the previous "step" parameter.
+     * Sequential index of the executed node within the current graph run (starting from 0).
      */
-    val depth: Int,
+    val currentGraphIndex: Int,
 )
 
-data class GraphRuntime(
+internal class GraphRuntime private constructor(
     val retryPolicy: RetryPolicy,
     val maxSteps: Int,
     val onStep: ((step: StepInfo, node: Node<Any?, Any?>, ctx: AgentContext<Any?>) -> Unit)? = null,
+    val counter: AtomicInteger
 ) {
-    fun forSubgraph(localMaxSteps: Int): GraphRuntime = copy(maxSteps = min(maxSteps, localMaxSteps))
+    constructor(
+        retryPolicy: RetryPolicy,
+        maxSteps: Int,
+        onStep: ((step: StepInfo, node: Node<Any?, Any?>, ctx: AgentContext<Any?>) -> Unit)? = null,
+    ): this(retryPolicy, maxSteps, onStep, counter = AtomicInteger())
 }
 
 data class RetryPolicy(
