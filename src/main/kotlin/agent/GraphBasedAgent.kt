@@ -7,15 +7,23 @@ import com.dumch.db.DesktopInfoRepository
 import com.dumch.db.VectorDB
 import com.dumch.giga.*
 import com.dumch.tool.ToolsFactory
+import io.ktor.util.logging.debug
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import org.slf4j.LoggerFactory
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.ceil
 
-class GigaAgentGraph(
-    llmApi: GigaChatAPI,
-    private val userInput: Node<String, String> = Node("UserInput") { ctx ->
-        println(ctx.input)
-        ctx.map { readlnOrNull() ?: "..." }
-    }
+class GraphBasedAgent(
+    private val model: String,
+    private val llmApi: GigaChatAPI,
+    private val desktopInfoRepository: DesktopInfoRepository,
 ) {
+    private val l = LoggerFactory.getLogger(GraphBasedAgent::class.java)
     private val llmNodes = NodesLLM(llmApi)
 
     // Make sure summarization only happens after all tool requests from LLM are answered
@@ -25,9 +33,52 @@ class GigaAgentGraph(
         NodesCommon.respToString.edgeTo(nodeFinish)
     }
 
-    fun buildAgent(): Graph<String, String> = buildGraph(name = "Agent") {
-        input.edgeTo(userInput)
-        userInput.edgeTo(NodesCommon.stringToReq)
+    private val settings = AgentSettings(
+        model = model,
+        temperature = 0.7f,
+        toolsByCategory = ToolsFactory(desktopInfoRepository).toolsByCategory
+    )
+    private val initialCtx = AgentContext(
+        input = "",
+        settings = settings,
+        history = emptyList(),
+        activeTools = settings.tools.values.map { it.fn },
+        systemPrompt = SYSTEM_PROMPT
+    )
+
+    private val _ctx: MutableStateFlow<AgentContext<String>> = MutableStateFlow(initialCtx)
+    val currentContext: StateFlow<AgentContext<String>> = _ctx
+
+    private val runningJob = AtomicReference<Deferred<*>>()
+
+    fun clearContext(): Boolean {
+        cancelActiveJob()
+        return _ctx.tryEmit(initialCtx)
+    }
+
+    fun cancelActiveJob() {
+        runningJob.get()?.cancel(CancellationException("Cleared by force"))
+    }
+
+    /** Execute one job at a time */
+    suspend fun execute(input: String): String {
+        cancelActiveJob()
+        val ctx = currentContext.value.copy(input = input)
+        val result: Deferred<AgentContext<String>> = coroutineScope {
+            async {
+                buildGraph().start(ctx) { step, node, ctx ->
+                    l.debug { "Step: ${step.index}, node: ${node.name}, input: ${ctx.input}" }
+                }
+            }
+        }
+        runningJob.set(result)
+        val newContext = result.await()
+        _ctx.emit(newContext)
+        return newContext.input
+    }
+
+    private fun buildGraph(): Graph<String, String> = buildGraph(name = "Agent") {
+        input.edgeTo(NodesCommon.stringToReq)
         NodesCommon.stringToReq.edgeTo(llmNodes.requestToResponse)
         llmNodes.requestToResponse.edgeTo { ctx ->
             when (val output = ctx.input) {
@@ -36,7 +87,7 @@ class GigaAgentGraph(
             }
         }
         NodesCommon.nodeToolUse.edgeTo(llmNodes.requestToResponse)
-        summarization.edgeTo(userInput)
+        summarization.edgeTo(nodeFinish)
     }
 
     private fun isToolUse(input: GigaResponse.Chat.Ok): Boolean = input.choices.any { it.message.functionCall != null }
@@ -66,28 +117,11 @@ val SYSTEM_PROMPT = """
 """.trimIndent()
 
 suspend fun main() {
-    val api: GigaChatAPI = GigaRestChatAPI(GigaAuth)
+    val api = GigaRestChatAPI(GigaAuth)
     val desktopRepo = DesktopInfoRepository(GigaRestChatAPI(GigaAuth), VectorDB)
-    val settings = AgentSettings(
-        model = GigaModel.Pro.alias,
-        temperature = 0.7f,
-        toolsByCategory = ToolsFactory(desktopRepo).toolsByCategory
-    )
-
-    val seedContext = AgentContext(
-        input = "Agent is ready, ask something:",
-        settings = settings,
-        history = emptyList(),
-        activeTools = settings.tools.values.map { it.fn },
-        systemPrompt = SYSTEM_PROMPT
-    )
-    val graph = GigaAgentGraph(api).buildAgent()
-    graph.start(seedContext) { step, node, ctx ->
-        println(
-            "Step #${step.index}; depth: ${step.currentGraphIndex}; node: ${node.name}; ctx class: ${ctx.input?.javaClass}, " +
-                    "history size: ${ctx.history.size}"
-        )
-    }
+    val graph = GraphBasedAgent(GigaModel.Pro.alias, api, desktopRepo)
+    val result = graph.execute("Hey")
+    println(result)
 }
 
 /*
