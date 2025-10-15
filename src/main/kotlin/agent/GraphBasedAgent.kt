@@ -4,9 +4,17 @@ import com.dumch.agent.engine.*
 import com.dumch.agent.node.NodesCommon
 import com.dumch.agent.node.NodesLLM
 import com.dumch.db.DesktopInfoRepository
+import com.dumch.db.StorredData
 import com.dumch.db.VectorDB
+import com.dumch.db.asString
 import com.dumch.giga.*
+import com.dumch.tool.ToolCategory
 import com.dumch.tool.ToolsFactory
+import com.dumch.tool.UserMessageClassifier
+import com.dumch.tool.LocalRegexClassifier
+import com.dumch.tool.ToolRunBashCommand
+import com.dumch.tool.browser.ToolSafariInfo
+import com.dumch.tool.desktop.ToolShowApps
 import io.ktor.util.logging.debug
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
@@ -14,6 +22,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.slf4j.LoggerFactory
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.ceil
@@ -25,6 +35,10 @@ class GraphBasedAgent(
 ) {
     private val l = LoggerFactory.getLogger(GraphBasedAgent::class.java)
     private val llmNodes = NodesLLM(llmApi)
+    private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
+    private val apiClassifier: UserMessageClassifier = ApiClassifier(llmApi)
+    private val localClassifier: UserMessageClassifier = LocalRegexClassifier
+    private val safariInfoTool = ToolSafariInfo(ToolRunBashCommand)
 
     // Make sure summarization only happens after all tool requests from LLM are answered
     private val summarization: Node<GigaResponse.Chat, String> by graph(name = "Go to user") {
@@ -33,16 +47,43 @@ class GraphBasedAgent(
         NodesCommon.respToString.edgeTo(nodeFinish)
     }
 
+    private val classification: Node<String, String> by graph(name = "Classification") {
+        val runClassification = Node("classify") { ctx: AgentContext<String> ->
+            val category = classify(ctx.input, ctx.history)
+            val functions = category?.let { functionsByCategory[it] } ?: allFunctions
+            ctx.map(activeTools = functions) { it }
+        }
+        input.edgeTo(runClassification)
+        runClassification.edgeTo(nodeFinish)
+    }
+
+    private val appendActualInformationNode: Node<String, String> by graph(name = "Append actual info") {
+        val appendInfo = Node("appendActualInformation") { ctx: AgentContext<String> ->
+            val additionalMessage = appendActualInformation(ctx.input)
+            if (additionalMessage == null) {
+                ctx
+            } else {
+                val history = ArrayList(ctx.history).apply { add(additionalMessage) }
+                ctx.map(history = history) { it }
+            }
+        }
+        input.edgeTo(appendInfo)
+        appendInfo.edgeTo(nodeFinish)
+    }
+
     private val settings = AgentSettings(
         model = model,
         temperature = 0.7f,
         toolsByCategory = ToolsFactory(desktopInfoRepository).toolsByCategory
     )
+    private val functionsByCategory: Map<ToolCategory, List<GigaRequest.Function>> =
+        settings.toolsByCategory.mapValues { entry -> entry.value.values.map { setup -> setup.fn } }
+    private val allFunctions: List<GigaRequest.Function> = settings.tools.values.map { it.fn }
     private val initialCtx = AgentContext(
         input = "",
         settings = settings,
         history = emptyList(),
-        activeTools = settings.tools.values.map { it.fn },
+        activeTools = allFunctions,
         systemPrompt = SYSTEM_PROMPT
     )
 
@@ -78,7 +119,9 @@ class GraphBasedAgent(
     }
 
     private fun buildGraph(): Graph<String, String> = buildGraph(name = "Agent") {
-        input.edgeTo(NodesCommon.stringToReq)
+        input.edgeTo(classification)
+        classification.edgeTo(appendActualInformationNode)
+        appendActualInformationNode.edgeTo(NodesCommon.stringToReq)
         NodesCommon.stringToReq.edgeTo(llmNodes.requestToResponse)
         llmNodes.requestToResponse.edgeTo { ctx ->
             when (val output = ctx.input) {
@@ -91,6 +134,68 @@ class GraphBasedAgent(
     }
 
     private fun isToolUse(input: GigaResponse.Chat.Ok): Boolean = input.choices.any { it.message.functionCall != null }
+
+    private suspend fun classify(
+        userText: String,
+        history: List<GigaRequest.Message>,
+    ): ToolCategory? {
+        val body = buildClassifierBody(userText, history)
+        val bodyJson = gigaJsonMapper.writeValueAsString(body)
+        l.debug("Classifying user message: {}, \nbody: \n{}", userText, logObjectMapper.writeValueAsString(body))
+        return try {
+            val categoryByLocal = localClassifier.classify(bodyJson)
+            val categoryByApi = apiClassifier.classify(bodyJson)
+            if (categoryByApi != categoryByLocal) {
+                l.info("Categories do not match: Local: {}, API: {}", categoryByLocal, categoryByApi)
+                null
+            } else {
+                categoryByLocal
+            }
+        } catch (e: Exception) {
+            l.error("Error in apiClassifier: {}", e.message)
+            null
+        }
+    }
+
+    private fun buildClassifierBody(
+        userText: String,
+        history: List<GigaRequest.Message>,
+    ): GigaRequest.Chat {
+        val smallHistory = history
+            .takeLast(if (history.size > 3) 2 else 0)
+            .joinToString("\n") { it.content }
+        val messages = listOf(
+            GigaRequest.Message(GigaMessageRole.system, CLASSIFIER_PROMPT),
+            GigaRequest.Message(GigaMessageRole.user, "History:\n$smallHistory\n"),
+            GigaRequest.Message(GigaMessageRole.user, "New message:\n$userText"),
+        )
+        return GigaRequest.Chat(
+            model = settings.model,
+            messages = messages,
+            functions = emptyList(),
+        )
+    }
+
+    private suspend fun appendActualInformation(userText: String): GigaRequest.Message? {
+        if (userText.isBlank()) return null
+        val msgEmbeddings: List<StorredData> = runCatching { desktopInfoRepository.search(userText) }
+            .getOrElse {
+                l.error("Error while searching desktop info: {}", it.message)
+                emptyList()
+            }
+        val openedApps = runCatching {
+            ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
+        }.getOrElse { "[]" }
+        val safariOpenedTabs = runCatching {
+            safariInfoTool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.tabs))
+        }.getOrElse { "{}" }
+        return GigaRequest.Message(
+            role = GigaMessageRole.user,
+            content = "Информация о моей системе: ${msgEmbeddings.asString()}" +
+                    ", Эти приложения сейчас открыты: $openedApps," +
+                    ", Эти вкладки в Safari открыты: $safariOpenedTabs"
+        )
+    }
 }
 
 private const val HISTORY_SUMMARIZE_THRESHOLD = 0.8
@@ -108,11 +213,36 @@ private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(
 
 private fun String.estimateTokenCount(): Int = ceil(length / APPROX_CHARS_PER_TOKEN).toInt()
 
+private val CLASSIFIER_PROMPT = """
+Ты — алгоритм классификации. Выбери категорию запроса.
+Категории:
+- coder: если слышишь "кодер", или когда нужно объяснить, изменить или написать код, провести рефакторинг;
+- browser: веб-страницы, вкладки, или браузерные горячие клавиши, или когда надо получить общую информацию о новостях или погоде;
+- desktop: манипуляции с рабочем столом, окнами и экранами, открытие и использование приложений, работа с заметками, открытие папок и файлов;
+- config: изменение или сохранение настроек, вроде скорости речи, запоминание и исполнение инструкций;
+- dataAnalytics: когда надо создать график или найти корреляцию между двумя переменными;
+Примеры:
+добавь вызов логов в данную функцию -> coder
+что делается выделенный код-> coder
+открой сайт сбербанка -> browser
+найди в закладках обзор фондового рынка -> browser
+расскажи кратко о чем рассказано на текущей странице -> browser
+напиши Анюте сообщение: это тест приложения
+открой фото тёти фроси -> desktop
+открой папку отчеты -> desktop
+открой приложение Intellij IDEA -> desktop
+перемести окно на передний план -> desktop
+запомни инструкцию при слове тишина уменьшай громкость -> config
+построй график дохода по клиенту -> dataAnalytics
+
+Ответ с только одним словом: coder, browser, desktop, config, or dataAnalytics.
+""".trimIndent()
+
 val SYSTEM_PROMPT = """
 Ты — помощник, управляющий компьютером. Будь полезным. Говори только по существу.
 Если получил команду, выполняй, потом говори, что сделал.
-Если какую-то задачу можно решить c помощью имеющихся функций, сделай, а не проси пользователя сделать это. 
-Если сомневаешься, уточни. 
+Если какую-то задачу можно решить c помощью имеющихся функций, сделай, а не проси пользователя сделать это.
+Если сомневаешься, уточни.
 Если работаешь с файлами, отвечай кратко, не нужно рассказывать все, только по делу.
 """.trimIndent()
 
