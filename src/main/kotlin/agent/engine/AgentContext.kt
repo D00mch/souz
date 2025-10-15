@@ -17,7 +17,7 @@ data class AgentContext<I>(
         history: List<GigaRequest.Message> = this.history,
         activeTools: List<GigaRequest.Function> = this.activeTools,
         systemPrompt: String = this.systemPrompt,
-        transform: (I) -> O,
+        transform: (I) -> O = { it as O },
     ): AgentContext<O> = AgentContext(input = transform(input), settings, history, activeTools, systemPrompt)
 }
 

@@ -34,41 +34,33 @@ class GraphBasedAgent(
     private val desktopInfoRepository: DesktopInfoRepository,
 ) {
     private val l = LoggerFactory.getLogger(GraphBasedAgent::class.java)
-    private val llmNodes = NodesLLM(llmApi)
+    private val nodesLLM = NodesLLM(llmApi)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
     private val apiClassifier: UserMessageClassifier = ApiClassifier(llmApi)
     private val localClassifier: UserMessageClassifier = LocalRegexClassifier
     private val safariInfoTool = ToolSafariInfo(ToolRunBashCommand)
 
     // Make sure summarization only happens after all tool requests from LLM are answered
-    private val summarization: Node<GigaResponse.Chat, String> by graph(name = "Go to user") {
-        input.edgeTo { ctx -> if (ctx.historyIsTooBig()) llmNodes.summarize else NodesCommon.respToString }
-        llmNodes.summarize.edgeTo(NodesCommon.respToString)
+    private val nodeSummarize: Node<GigaResponse.Chat, String> by graph(name = "Go to user") {
+        nodeInput.edgeTo { ctx -> if (ctx.historyIsTooBig()) nodesLLM.summarize else NodesCommon.respToString }
+        nodesLLM.summarize.edgeTo(NodesCommon.respToString)
         NodesCommon.respToString.edgeTo(nodeFinish)
     }
 
-    private val classification: Node<String, String> by graph(name = "Classification") {
-        val runClassification = Node("classify") { ctx: AgentContext<String> ->
-            val category = classify(ctx.input, ctx.history)
-            val functions = category?.let { functionsByCategory[it] } ?: allFunctions
-            ctx.map(activeTools = functions) { it }
-        }
-        input.edgeTo(runClassification)
-        runClassification.edgeTo(nodeFinish)
+    private val nodeClassify: Node<String, String> = Node("classify") { ctx: AgentContext<String> ->
+        val category = classify(ctx.input, ctx.history)
+        val functions = category?.let { functionsByCategory[it] } ?: allFunctions
+        ctx.map(activeTools = functions) { it }
     }
 
-    private val appendActualInformationNode: Node<String, String> by graph(name = "Append actual info") {
-        val appendInfo = Node("appendActualInformation") { ctx: AgentContext<String> ->
-            val additionalMessage = appendActualInformation(ctx.input)
-            if (additionalMessage == null) {
-                ctx
-            } else {
-                val history = ArrayList(ctx.history).apply { add(additionalMessage) }
-                ctx.map(history = history) { it }
-            }
+    private val nodeAppendAdditionalData: Node<String, String> = Node("appendActualInformation") { ctx ->
+        val additionalMessage = appendActualInformation(ctx.input)
+        if (additionalMessage == null) {
+            ctx
+        } else {
+            val history = ArrayList(ctx.history).apply { add(additionalMessage) }
+            ctx.map(history = history)
         }
-        input.edgeTo(appendInfo)
-        appendInfo.edgeTo(nodeFinish)
     }
 
     private val settings = AgentSettings(
@@ -119,18 +111,18 @@ class GraphBasedAgent(
     }
 
     private fun buildGraph(): Graph<String, String> = buildGraph(name = "Agent") {
-        input.edgeTo(classification)
-        classification.edgeTo(appendActualInformationNode)
-        appendActualInformationNode.edgeTo(NodesCommon.stringToReq)
-        NodesCommon.stringToReq.edgeTo(llmNodes.requestToResponse)
-        llmNodes.requestToResponse.edgeTo { ctx ->
+        nodeInput.edgeTo(nodeClassify)
+        nodeClassify.edgeTo(nodeAppendAdditionalData)
+        nodeAppendAdditionalData.edgeTo(NodesCommon.stringToReq)
+        NodesCommon.stringToReq.edgeTo(nodesLLM.requestToResponse)
+        nodesLLM.requestToResponse.edgeTo { ctx ->
             when (val output = ctx.input) {
-                is GigaResponse.Chat.Error -> summarization
-                is GigaResponse.Chat.Ok -> if (isToolUse(output)) NodesCommon.nodeToolUse else summarization
+                is GigaResponse.Chat.Error -> nodeSummarize
+                is GigaResponse.Chat.Ok -> if (isToolUse(output)) NodesCommon.toolUse else nodeSummarize
             }
         }
-        NodesCommon.nodeToolUse.edgeTo(llmNodes.requestToResponse)
-        summarization.edgeTo(nodeFinish)
+        NodesCommon.toolUse.edgeTo(nodesLLM.requestToResponse)
+        nodeSummarize.edgeTo(nodeFinish)
     }
 
     private fun isToolUse(input: GigaResponse.Chat.Ok): Boolean = input.choices.any { it.message.functionCall != null }

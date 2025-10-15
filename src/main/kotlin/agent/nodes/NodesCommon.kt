@@ -29,7 +29,7 @@ object NodesCommon {
         }
     }
 
-    val nodeToolUse: Node<GigaResponse.Chat, GigaRequest.Chat> = Node("toolUse") { ctx ->
+    val toolUse: Node<GigaResponse.Chat, GigaRequest.Chat> = Node("toolUse") { ctx ->
         val fnCallMessages = fnCallMessages(ctx)
         val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
         ctx.map(history = history) { ctx.toGigaRequest(history) }

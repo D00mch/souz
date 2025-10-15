@@ -116,7 +116,7 @@ suspend fun main() {
     val seed = AgentContext(input = "What is the weather today?", settings, emptyList(), emptyList(), "")
 
     val graph = buildGraph {
-        input.edgeTo(userInputNode)
+        nodeInput.edgeTo(userInputNode)
         userInputNode.edgeTo{ ctx ->
             when (ctx.input) {
                 "exit", "finish" -> nodeFinish

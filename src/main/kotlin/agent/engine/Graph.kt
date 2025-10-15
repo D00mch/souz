@@ -42,10 +42,10 @@ class GraphBuilder<I, O> internal constructor(
     private val graphName: String,
     private val retryPolicy: RetryPolicy,
 ) {
-    val input: Node<I, I> = Node("$graphName::input") { it }
+    val nodeInput: Node<I, I> = Node("$graphName::input") { it }
     val nodeFinish: Node<O, O> = Node("$graphName::finish") { it }
 
-    internal fun build(): Graph<I, O> = Graph(graphName, input, nodeFinish, retryPolicy)
+    internal fun build(): Graph<I, O> = Graph(graphName, nodeInput, nodeFinish, retryPolicy)
 }
 
 fun <I, O> buildGraph(
