@@ -4,31 +4,35 @@ import org.slf4j.LoggerFactory
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 
-class Graph<I, O> internal constructor(
+class Graph<IN, OUT> internal constructor(
     label: String,
-    private val entry: Node<I, *>,
-    private val finish: Node<O, O>,
+    private val enter: Node<IN, *>,
+    private val exit: Node<OUT, OUT>,
     private val retryPolicy: RetryPolicy,
-) : Node<I, O>("$label::graph", LoggerFactory.getLogger("Graph:$label"), { error("Graph node should not invoke base op") }) {
+    private val definition: GraphDefinition,
+) : Node<IN, OUT> {
 
     private val runner = GraphRunner()
 
+    override val name: String = "$label::graph"
+
     @Suppress("UNCHECKED_CAST")
-    override suspend fun execute(ctx: AgentContext<I>, runtime: GraphRuntime): AgentContext<O> {
+    override suspend fun execute(ctx: AgentContext<IN>, runtime: GraphRuntime): AgentContext<OUT> {
         val result = runner.run(
-            start = entry as Node<Any?, Any?>,
+            start = enter as Node<Any?, Any?>,
             seed = ctx as AgentContext<Any?>,
             runtime = runtime,
-            stopPredicate = { node, _ -> node === finish }
+            definition = definition,
+            stopPredicate = { node, _ -> node === exit }
         )
-        return result as AgentContext<O>
+        return result as AgentContext<OUT>
     }
 
     suspend fun start(
-        seed: AgentContext<I>,
+        seed: AgentContext<IN>,
         maxSteps: Int = 1000,
         onStep: ((step: StepInfo, node: Node<Any?, Any?>, ctx: AgentContext<Any?>) -> Unit)? = null,
-    ): AgentContext<O> {
+    ): AgentContext<OUT> {
         val runtime = GraphRuntime(
             retryPolicy = retryPolicy,
             maxSteps = maxSteps,
@@ -38,14 +42,70 @@ class Graph<I, O> internal constructor(
     }
 }
 
-class GraphBuilder<I, O> internal constructor(
+class GraphBuilder<IN, OUT> internal constructor(
     private val graphName: String,
     private val retryPolicy: RetryPolicy,
 ) {
-    val nodeInput: Node<I, I> = Node("$graphName::input") { it }
-    val nodeFinish: Node<O, O> = Node("$graphName::finish") { it }
+    val nodeInput: Node<IN, IN> = Node("$graphName::enter") { it }
+    val nodeFinish: Node<OUT, OUT> = Node("$graphName::exit") { it }
 
-    internal fun build(): Graph<I, O> = Graph(graphName, nodeInput, nodeFinish, retryPolicy)
+    private val transitions: MutableMap<Node<*, *>, MutableList<Transition<*>>> = mutableMapOf()
+
+    fun <IN, OUT, OUT2> Node<IN, OUT>.edgeTo(target: Node<OUT, OUT2>): Node<OUT, OUT2> {
+        registerTransition(this, Transition.Static(target))
+        return target
+    }
+
+    fun <IN, OUT> Node<IN, OUT>.edgeTo(router: suspend (AgentContext<OUT>) -> Node<OUT, *>): Unit {
+        registerTransition(this, Transition.Dynamic(router))
+    }
+
+    private fun <OUT> registerTransition(from: Node<*, OUT>, transition: Transition<OUT>) {
+        val bucket = transitions.getOrPut(from) { mutableListOf() }
+        bucket += transition
+    }
+
+    internal fun build(): Graph<IN, OUT> = Graph(
+        graphName,
+        nodeInput,
+        nodeFinish,
+        retryPolicy,
+        GraphDefinition(transitions.mapValues { it.value.toList() }),
+    )
+}
+
+internal class GraphDefinition(
+    private val transitions: Map<Node<*, *>, List<Transition<*>>>,
+) {
+    private val l = LoggerFactory.getLogger(GraphDefinition::class.java)
+
+    @Suppress("UNCHECKED_CAST")
+    suspend fun nextNodes(node: Node<Any?, Any?>, ctx: AgentContext<Any?>): List<Node<Any?, *>> {
+        val registered = transitions[node] as? List<Transition<Any?>> ?: emptyList()
+        if (registered.isEmpty()) return emptyList()
+
+        val next = ArrayList<Node<Any?, *>>(registered.size)
+        for (transition in registered) {
+            when (transition) {
+                is Transition.Static -> next.addOrWarn(transition.target as Node<Any?, *>)
+                is Transition.Dynamic -> next.addOrWarn(transition.router(ctx) as Node<Any?, *>)
+            }
+        }
+        return next
+    }
+
+    private fun MutableCollection<Node<Any?, *>>.addOrWarn(node: Node<Any?, *>) {
+        if (contains(node)) {
+            l.warn("Node duplication arise. Current node: $this, edge $node")
+        } else {
+            add(node)
+        }
+    }
+}
+
+internal sealed interface Transition<OUT> {
+    class Static<OUT>(val target: Node<OUT, *>) : Transition<OUT>
+    class Dynamic<OUT>(val router: suspend (AgentContext<OUT>) -> Node<OUT, *>) : Transition<OUT>
 }
 
 fun <I, O> buildGraph(

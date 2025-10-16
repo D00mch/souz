@@ -3,8 +3,6 @@ package com.dumch.agent.engine
 import com.dumch.giga.GigaException
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.concurrent.atomics.AtomicInt
-import kotlin.math.min
 
 class GraphCancellation(
     val lastContext: AgentContext<*>,
@@ -26,7 +24,7 @@ data class StepInfo(
     val currentGraphIndex: Int,
 )
 
-internal class GraphRuntime private constructor(
+class GraphRuntime private constructor(
     val retryPolicy: RetryPolicy,
     val maxSteps: Int,
     val onStep: ((step: StepInfo, node: Node<Any?, Any?>, ctx: AgentContext<Any?>) -> Unit)? = null,

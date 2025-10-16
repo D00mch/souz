@@ -15,6 +15,7 @@ internal class GraphRunner(
         start: Node<Any?, Any?>,
         seed: AgentContext<Any?>,
         runtime: GraphRuntime,
+        definition: GraphDefinition,
         stopPredicate: ((Node<Any?, Any?>, AgentContext<Any?>) -> Boolean)? = null,
     ): AgentContext<Any?> {
         val queue = ArrayDeque<Frame>().apply { add(Frame(start, seed, 0)) }
@@ -37,7 +38,7 @@ internal class GraphRunner(
 
                 if (stopPredicate?.invoke(frame.node, outCtx) == true) return outCtx
 
-                val nextNodes = frame.node.resolveNext(outCtx)
+                val nextNodes = definition.nextNodes(frame.node, outCtx)
                 if (nextNodes.isEmpty()) {
                     leaves += outCtx
                 } else {
@@ -95,6 +96,9 @@ internal class GraphRunner(
     )
 }
 
+/*
+                    TEST CODE
+ */
 
 private fun callLlmMock(ctx: AgentContext<String>): AgentContext<String> {
     val text = ctx.input.trim()
