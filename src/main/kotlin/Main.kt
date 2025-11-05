@@ -1,6 +1,6 @@
 package com.dumch
 
-import com.dumch.anthropic.AnthropicChatAPI
+import com.dumch.agent.GraphBasedAgent
 import com.dumch.audio.*
 import com.dumch.db.DesktopDataExtractor
 import com.dumch.db.DesktopInfoRepository
@@ -33,14 +33,14 @@ suspend fun main() = coroutineScope {
         recorder = ActiveSoundRecorderImpl(),
         coroutineScope = appScope,
     )
-    val agentRef = AtomicReference<GigaAgent?>(null)
+    val agentRef = AtomicReference<GraphBasedAgent>(null)
     val hotkeyListener = HotkeyListener(
         onPressed = { pressed ->
             l.info(if (pressed) "onStart" else "onStop")
             when {
                 pressed -> {
                     stopPlayText()
-                    agentRef.get()?.stop()
+                    agentRef.get()?.cancelActiveJob()
                     playMacPing()
                     audioRecorder.start()
                 }
@@ -55,17 +55,26 @@ suspend fun main() = coroutineScope {
         },
         onDoubleClick = {
             stopPlayText()
-            agentRef.get()?.stop()
+            agentRef.get()?.cancelActiveJob()
         },
         onHotKey = {
             stopPlayText()
-            agentRef.get()?.requestCleanUp()
+            agentRef.get()?.clearContext()
         }
     )
     launch { audioRecorder.logState() }
     val gigaVoiceAPI = GigaVoiceAPI(GigaAuth)
     val desktopInfoRepo = DesktopInfoRepository(GigaRestChatAPI.INSTANCE, VectorDB)
     appScope.launchDbSetup(desktopInfoRepo)
+
+    val model = System.getenv("GIGA_MODEL")?.let { envModel ->
+        GigaModel.entries.firstOrNull { enumModel ->
+            enumModel.name.equals(envModel, ignoreCase = true) ||
+                    enumModel.alias.equals(envModel, ignoreCase = true)
+        }
+    } ?: GigaModel.Max
+    val api = GigaGRPCChatApi(GigaAuth)
+
     withNativeHook(hotkeyListener) {
         val userInputFlow = audioRecorder.audioFlow
             .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
@@ -78,19 +87,14 @@ suspend fun main() = coroutineScope {
                 resp.result.joinToString("\n")
             }
 
-        val model = System.getenv("GIGA_MODEL")?.let { envModel ->
-            GigaModel.entries.firstOrNull { enumModel ->
-                 enumModel.name.equals(envModel, ignoreCase = true) ||
-                         enumModel.alias.equals(envModel, ignoreCase = true)
-            }
-        } ?: GigaModel.Max
+
+        val graphAgent = GraphBasedAgent(model.alias, api, desktopInfoRepo)
+        agentRef.set(graphAgent)
 
         while (isActive) {
-            val api = GigaGRPCChatApi(GigaAuth)
-            val agent = GigaAgent.instance(userInputFlow, api, desktopInfoRepo, model = model)
-            agentRef.set(agent)
             runCatching {
-                agent.run().collect { text ->
+                userInputFlow.collect { userInput ->
+                    val text = graphAgent.execute(userInput)
                     l.info(text)
                     glassPanel.showText(text)
                     playText(text)

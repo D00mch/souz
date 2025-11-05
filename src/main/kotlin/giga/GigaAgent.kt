@@ -23,7 +23,7 @@ class GigaAgent(
     private val api: GigaChatAPI,
     private val ragRepo: DesktopInfoRepository,
     private val settings: Settings,
-    private val apiClassifier: UserMessageClassifier = ApiGigaClassifier(api),
+    private val apiClassifier: UserMessageClassifier = ApiClassifier(api),
     private val localClassifier: UserMessageClassifier = LocalRegexClassifier,
 ) {
     private val l = LoggerFactory.getLogger(GigaAgent::class.java)
