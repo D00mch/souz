@@ -41,7 +41,7 @@ class GigaVoiceAPI(private val auth: GigaAuth) {
 
     suspend fun recognize(audio: ByteArray): GigaResponse.RecognizeResponse {
         val response = client.post("https://smartspeech.sber.ru/rest/v1/speech:recognize") {
-            header(HttpHeaders.ContentType, "composeApp/src/jvmMain/kotlin/com.dumch/audio/ogg;codecs=opus")
+            header(HttpHeaders.ContentType, "audio/ogg;codecs=opus")
             header(HttpHeaders.Accept, "application/json")
             setBody(audio)
         }
