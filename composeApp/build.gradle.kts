@@ -93,6 +93,17 @@ compose.desktop {
 
             modules("java.naming") // native build crash without it
 
+            macOS {
+                infoPlist {
+                    extraKeysRawXml = """
+                        <key>NSMicrophoneUsageDescription</key>
+                        <string>Needed for voice capture.</string>
+                        <key>NSSystemAdministrationUsageDescription</key>
+                        <string>Needed to observe input for shortcuts.</string>
+                    """.trimIndent()
+                }
+            }
+
             // macOS dark mode support, works only on the release build, not in debug
             jvmArgs("-Dapple.awt.application.appearance=system")
         }
