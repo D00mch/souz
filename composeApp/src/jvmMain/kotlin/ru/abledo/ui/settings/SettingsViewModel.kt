@@ -9,7 +9,7 @@ import ru.abledo.db.ConfigStore
 import ru.abledo.giga.GigaRestChatAPI
 import ru.abledo.ui.BaseViewModel
 
-internal class SettingsViewModel(
+class SettingsViewModel(
     override val di: DI,
 ) : BaseViewModel<SettingsState, SettingsEvent, SettingsEffect>(), DIAware {
 
@@ -17,8 +17,8 @@ internal class SettingsViewModel(
     private val configStore: ConfigStore by di.instance()
 
     override fun initialState(): SettingsState = SettingsState(
-        gigaChatKey = configStore.get(GIGA_CHAT_KEY),
-        saluteSpeechKey =  configStore.get(SALUTE_SPEECH_KEY)
+        gigaChatKey = configStore.get(GIGA_CHAT_KEY) ?: "",
+        saluteSpeechKey = configStore.get(SALUTE_SPEECH_KEY) ?: ""
     )
 
     override suspend fun handleEvent(event: SettingsEvent) {
