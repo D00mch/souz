@@ -5,8 +5,8 @@ import ru.abledo.ui.VMSideEffect
 import ru.abledo.ui.VMState
 
 data class SettingsState(
-    val gigaChatKey: String,
-    val saluteSpeechKey: String,
+    val gigaChatKey: String = "",
+    val saluteSpeechKey: String = "",
 ): VMState
 
 sealed interface SettingsEvent : VMEvent {

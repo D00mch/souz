@@ -1,7 +1,7 @@
 [versions]
 androidx-lifecycle = "2.9.5"
-composeHotReload = "1.0.0-rc02"
-composeMultiplatform = "1.9.1"
+composeHotReload = "1.0.0-rc04"
+composeMultiplatform = "1.9.3"
 jackson = "2.17.0"
 jave = "3.5.0"
 jnativehook = "2.2.2"

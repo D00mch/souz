@@ -1,6 +1,8 @@
 package ru.abledo.ui.settings
 
+import androidx.lifecycle.viewModelScope
 import io.ktor.util.logging.debug
+import kotlinx.coroutines.launch
 import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
@@ -16,10 +18,18 @@ class SettingsViewModel(
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
     private val configStore: ConfigStore by di.instance()
 
-    override fun initialState(): SettingsState = SettingsState(
-        gigaChatKey = configStore.get(GIGA_CHAT_KEY) ?: "",
-        saluteSpeechKey = configStore.get(SALUTE_SPEECH_KEY) ?: ""
-    )
+    init {
+        viewModelScope.launch {
+            setState {
+                copy(
+                    gigaChatKey = configStore.get(GIGA_CHAT_KEY) ?: "",
+                    saluteSpeechKey = configStore.get(SALUTE_SPEECH_KEY) ?: ""
+                )
+            }
+        }
+    }
+
+    override fun initialState(): SettingsState = SettingsState()
 
     override suspend fun handleEvent(event: SettingsEvent) {
         l.debug { "handleEvent: $event" }

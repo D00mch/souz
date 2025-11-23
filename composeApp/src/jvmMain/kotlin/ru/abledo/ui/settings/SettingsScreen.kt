@@ -1,19 +1,19 @@
 package ru.abledo.ui.settings
 
+import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.OutlinedTextField
-import androidx.compose.material.Scaffold
 import androidx.compose.material.Text
+import androidx.compose.material.TextFieldDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import org.jetbrains.compose.ui.tooling.preview.Preview
 import org.kodein.di.compose.localDI
 import ru.abledo.ui.AppTheme
 
@@ -35,27 +35,25 @@ fun SettingsScreen(
     onGigaChatKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
 ) {
-    Scaffold {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            LabeledTextField(
-                label = "GigaChat key",
-                value = state.gigaChatKey,
-                onValueChange = onGigaChatKeyInput,
-                modifier = Modifier.fillMaxWidth()
-            )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        LabeledTextField(
+            label = "GigaChat key",
+            value = state.gigaChatKey,
+            onValueChange = onGigaChatKeyInput,
+            modifier = Modifier.fillMaxWidth()
+        )
 
-            LabeledTextField(
-                label = "SaluteSpeech key",
-                value = state.saluteSpeechKey,
-                onValueChange = onSaluteSpeechKeyInput,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
+        LabeledTextField(
+            label = "SaluteSpeech key",
+            value = state.saluteSpeechKey,
+            onValueChange = onSaluteSpeechKeyInput,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -70,22 +68,34 @@ private fun LabeledTextField(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(text = label, style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground
+        )
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            colors = TextFieldDefaults.outlinedTextFieldColors(
+                textColor = MaterialTheme.colorScheme.onSurface,
+                cursorColor = MaterialTheme.colorScheme.primary,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                focusedLabelColor = MaterialTheme.colorScheme.primary,
+                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
         )
     }
 }
 
 @Preview
 @Composable
-private fun SettingsScreenPreview() {
-    AppTheme(forceDark = true) {
+fun SettingsScreenPreview() {
+    AppTheme {
         SettingsScreen(
-            state = SettingsState("", ""),
+            state = SettingsState("key1", "key2"),
             onGigaChatKeyInput = {},
             onSaluteSpeechKeyInput = {},
         )

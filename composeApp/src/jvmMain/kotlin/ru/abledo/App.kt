@@ -1,8 +1,8 @@
 package ru.abledo
 
+import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.runtime.Composable
 import ru.abledo.ui.AppTheme
-import org.jetbrains.compose.ui.tooling.preview.Preview
 import ru.abledo.ui.settings.SettingsScreen
 
 @Composable

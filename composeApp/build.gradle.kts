@@ -37,6 +37,7 @@ kotlin {
         jvmMain.dependencies {
             implementation(files("src/jvmMain/resources/darwin-arm64"))
 
+            implementation("org.jetbrains.compose.ui:ui-tooling-preview-desktop")
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
 
@@ -76,10 +77,21 @@ compose.desktop {
     application {
         mainClass = "ru.abledo.MainKt"
 
+        buildTypes {
+            release {
+                proguard {
+                    isEnabled.set(false)
+                }
+            }
+        }
+
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "ru.abledo"
             packageVersion = "1.0.0"
+
+            // macOS dark mode support, works only on the release build, not in debug
+            jvmArgs("-Dapple.awt.application.appearance=system")
         }
     }
 }

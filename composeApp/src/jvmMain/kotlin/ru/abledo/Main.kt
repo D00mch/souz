@@ -1,5 +1,7 @@
 package ru.abledo
 
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.application
 import ru.abledo.agent.GraphBasedAgent
 import ru.abledo.audio.*
 import ru.abledo.db.DesktopDataExtractor
@@ -15,14 +17,27 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import org.kodein.di.compose.withDI
 import org.slf4j.LoggerFactory
+import ru.abledo.di.mainDiModule
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.minutes
 
 private val l = LoggerFactory.getLogger("AI")
 
 
-suspend fun main() = coroutineScope {
+fun main() = application {
+    withDI(mainDiModule) {
+        Window(
+            onCloseRequest = ::exitApplication,
+            title = "TestJvmSize",
+        ) {
+            App()
+        }
+    }
+}
+
+suspend fun main2() = coroutineScope {
     println("Balance:\n${GigaRestChatAPI.INSTANCE.balance()}\n")
     setAppIcon()
     val glassPanel = LiquidGlassPanel().apply {
