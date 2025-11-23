@@ -1,6 +1,4 @@
-import org.gradle.api.problems.internal.DefaultFileLocation.from
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-import org.jetbrains.compose.reload.gradle.files
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -53,13 +51,6 @@ kotlin {
             // ktor client (core + cio + logging + auth + content-negotiation + serialization)
             implementation(libs.bundles.ktorClient)
             implementation(libs.ktor.serializationJackson)
-
-            // grpc
-            implementation(libs.grpc.kotlinStub)
-            implementation(libs.grpc.protobuf)
-            implementation(libs.grpc.stub)
-            implementation(libs.grpc.nettyShaded)
-            implementation(libs.protobuf.kotlin)
 
             // desktop manipulation
             implementation(libs.jnativehook)

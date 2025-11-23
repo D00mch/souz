@@ -12,11 +12,11 @@ import io.github.kdroidfilter.platformtools.darkmodedetector.isSystemInDarkMode
 
 @Composable
 fun AppTheme(
-    forceDart: Boolean = false,
+    forceDark: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val isDark = isSystemInDarkMode()
-    val colorScheme = if (forceDart || isDark) DarkColors else LightColors
+    val colorScheme = if (forceDark || isDark) DarkColors else LightColors
 
     MaterialTheme(colorScheme = colorScheme) {
         Surface(

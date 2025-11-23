@@ -83,7 +83,7 @@ private fun LabeledTextField(
 @Preview
 @Composable
 private fun SettingsScreenPreview() {
-    AppTheme(forceDart = true) {
+    AppTheme(forceDark = true) {
         SettingsScreen(
             state = SettingsState("", ""),
             onGigaChatKeyInput = {},
