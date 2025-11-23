@@ -90,6 +90,8 @@ compose.desktop {
             packageName = "ru.abledo"
             packageVersion = "1.0.0"
 
+            modules("java.naming") // native build crash without it
+
             // macOS dark mode support, works only on the release build, not in debug
             jvmArgs("-Dapple.awt.application.appearance=system")
         }
