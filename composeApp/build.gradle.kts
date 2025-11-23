@@ -21,6 +21,10 @@ kotlin {
             implementation(compose.components.resources)
             implementation(compose.components.uiToolingPreview)
 
+            implementation(libs.kodein.di.framework.compose)
+
+            // ui helpers
+            implementation(libs.platformtools.darkmodedetector)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
 
@@ -79,11 +83,11 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "com.dumch.MainKt"
+        mainClass = "ru.abledo.MainKt"
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "com.dumch"
+            packageName = "ru.abledo"
             packageVersion = "1.0.0"
         }
     }

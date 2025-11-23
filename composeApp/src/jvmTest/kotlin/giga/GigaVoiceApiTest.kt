@@ -1,7 +1,7 @@
 package giga
 
-import com.dumch.giga.GigaAuth
-import com.dumch.giga.GigaVoiceAPI
+import ru.abledo.giga.GigaAuth
+import ru.abledo.giga.GigaVoiceAPI
 import java.io.File
 import kotlin.test.assertTrue
 import org.slf4j.LoggerFactory

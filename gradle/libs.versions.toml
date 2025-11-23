@@ -9,6 +9,8 @@ jna = "5.14.0"
 junit = "4.13.2"
 grpc = "1.65.0"
 grpcKotlin = "1.4.1"
+kdroidfilter-platformtools = "0.6.1"
+kodeinDi = "7.26.1"
 kotlin = "2.2.20"
 kotlinx-coroutines = "1.10.2"
 ktor = "3.2.2"
@@ -32,6 +34,7 @@ grpc-kotlinStub = { module = "io.grpc:grpc-kotlin-stub", version.ref = "grpcKotl
 grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
 grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
 grpc-nettyShaded = { module = "io.grpc:grpc-netty-shaded", version.ref = "grpc" }
+kodein-di-framework-compose = { module = "org.kodein.di:kodein-di-framework-compose", version.ref = "kodeinDi" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 kotlinx-coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
@@ -46,6 +49,7 @@ ktor-serializationJackson = { module = "io.ktor:ktor-serialization-jackson", ver
 logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 lucene-core = { module = "org.apache.lucene:lucene-core", version.ref = "lucene" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+platformtools-darkmodedetector = { module = "io.github.kdroidfilter:platformtools.darkmodedetector", version.ref = "kdroidfilter-platformtools" }
 protobuf-kotlin = { module = "com.google.protobuf:protobuf-kotlin", version.ref = "protobuf" }
 slfj = { module = "org.slf4j:jul-to-slf4j", version.ref = "slfj" }
 

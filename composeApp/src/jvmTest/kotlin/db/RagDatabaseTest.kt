@@ -1,9 +1,8 @@
-package com.dumch.db
+package ru.abledo.db
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import java.io.File
-import com.dumch.tool.config.ConfigStore
 
 class RagDatabaseTest {
     private fun reset() {

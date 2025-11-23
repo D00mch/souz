@@ -1,10 +1,10 @@
 package tool
 
-import com.dumch.giga.GigaMessageRole
-import com.dumch.giga.GigaRequest
-import com.dumch.giga.gigaJsonMapper
-import com.dumch.tool.LocalRegexClassifier
-import com.dumch.tool.ToolCategory
+import ru.abledo.giga.GigaMessageRole
+import ru.abledo.giga.GigaRequest
+import ru.abledo.giga.gigaJsonMapper
+import ru.abledo.tool.LocalRegexClassifier
+import ru.abledo.tool.ToolCategory
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals

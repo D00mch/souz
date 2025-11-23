@@ -1,7 +1,7 @@
 package giga
 
-import com.dumch.giga.GigaResponse
-import com.dumch.giga.objectMapper
+import ru.abledo.giga.GigaResponse
+import ru.abledo.giga.objectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlin.test.Test
 import kotlin.test.assertEquals

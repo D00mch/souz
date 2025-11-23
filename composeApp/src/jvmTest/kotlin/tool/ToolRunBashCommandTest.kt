@@ -1,6 +1,6 @@
 package tool
 
-import com.dumch.tool.ToolRunBashCommand
+import ru.abledo.tool.ToolRunBashCommand
 import kotlin.test.Test
 import kotlin.test.assertTrue
 

@@ -1,7 +1,7 @@
 package tool.dataAnalytics
 
-import com.dumch.tool.ToolRunBashCommand
-import com.dumch.tool.dataAnalytics.ToolCreatePlotFromCsv
+import ru.abledo.tool.ToolRunBashCommand
+import ru.abledo.tool.dataAnalytics.ToolCreatePlotFromCsv
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

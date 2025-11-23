@@ -1,8 +1,8 @@
 package giga
 
-import com.dumch.db.DesktopInfoRepository
-import com.dumch.giga.*
-import com.dumch.tool.ToolCategory
+import ru.abledo.db.DesktopInfoRepository
+import ru.abledo.giga.*
+import ru.abledo.tool.ToolCategory
 import io.mockk.*
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
