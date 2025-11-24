@@ -1,7 +1,5 @@
 package ru.abledo.db
 
-import kotlin.concurrent.atomics.AtomicReference
-import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
@@ -11,7 +9,6 @@ class KeysProvider(private val configStore: ConfigStore) {
     var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
 
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
-        @OptIn(ExperimentalAtomicApi::class)
         object : ReadWriteProperty<Any?, String?> {
 
             override fun getValue(thisRef: Any?, property: KProperty<*>): String? =
