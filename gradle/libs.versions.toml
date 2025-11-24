@@ -1,0 +1,77 @@
+[versions]
+androidx-lifecycle = "2.9.5"
+composeHotReload = "1.0.0-rc04"
+composeMultiplatform = "1.9.3"
+jackson = "2.17.0"
+jave = "3.5.0"
+jnativehook = "2.2.2"
+jna = "5.14.0"
+junit = "4.13.2"
+grpc = "1.65.0"
+grpcKotlin = "1.4.1"
+kdroidfilter-platformtools = "0.6.1"
+kodeinDi = "7.26.1"
+kotlin = "2.2.20"
+kotlinx-coroutines = "1.10.2"
+ktor = "3.2.2"
+logback = "1.5.18"
+lucene = "9.9.2"
+mockk = "1.13.11"
+protobuf = "3.25.3"
+slfj = "2.0.17"
+
+[libraries]
+androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
+androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
+jackson = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jackson" }
+jave-core = { module = "ws.schild:jave-core", version.ref = "jave" }
+jave-nativebinOsxm1 = { module = "ws.schild:jave-nativebin-osxm1", version.ref = "jave" }
+jnativehook = { module = "com.github.kwhat:jnativehook", version.ref = "jnativehook" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
+junit = { module = "junit:junit", version.ref = "junit" }
+grpc-kotlinStub = { module = "io.grpc:grpc-kotlin-stub", version.ref = "grpcKotlin" }
+grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
+grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
+grpc-nettyShaded = { module = "io.grpc:grpc-netty-shaded", version.ref = "grpc" }
+kodein-di-framework-compose = { module = "org.kodein.di:kodein-di-framework-compose", version.ref = "kodeinDi" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+kotlinx-coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+ktor-clientAuth = { module = "io.ktor:ktor-client-auth", version.ref = "ktor" }
+ktor-clientCio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
+ktor-clientCore = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-clientContentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-clientLogging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
+ktor-serializationKotlinxJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+ktor-serializationJackson = { module = "io.ktor:ktor-serialization-jackson", version.ref = "ktor" }
+logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+lucene-core = { module = "org.apache.lucene:lucene-core", version.ref = "lucene" }
+mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+platformtools-darkmodedetector = { module = "io.github.kdroidfilter:platformtools.darkmodedetector", version.ref = "kdroidfilter-platformtools" }
+protobuf-kotlin = { module = "com.google.protobuf:protobuf-kotlin", version.ref = "protobuf" }
+slfj = { module = "org.slf4j:jul-to-slf4j", version.ref = "slfj" }
+
+[bundles]
+ktorClient = [
+    "ktor-clientAuth",
+    "ktor-clientContentNegotiation",
+    "ktor-clientCio",
+    "ktor-clientCore",
+    "ktor-clientLogging",
+    "ktor-serializationKotlinxJson"
+]
+grpc = [
+    "grpc-kotlinStub",
+    "grpc-nettyShaded",
+    "grpc-protobuf",
+    "grpc-stub",
+    "protobuf-kotlin"
+]
+
+[plugins]
+composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "composeHotReload" }
+composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
+composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
