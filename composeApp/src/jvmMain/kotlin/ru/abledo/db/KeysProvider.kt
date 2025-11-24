@@ -13,25 +13,16 @@ class KeysProvider(private val configStore: ConfigStore) {
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
         @OptIn(ExperimentalAtomicApi::class)
         object : ReadWriteProperty<Any?, String?> {
-            var cached = AtomicReference<String?>(null)
 
             override fun getValue(thisRef: Any?, property: KProperty<*>): String? =
-                cached.load()
-                    ?: configStore.get(configKey)
+                configStore.get(configKey)
                     ?: System.getenv(envKey)
                     ?: System.getProperty(sysPropKey)
 
             override fun setValue(thisRef: Any?, property: KProperty<*>, value: String?) {
                 when (value) {
-                    null, "" -> {
-                        cached.store(null)
-                        configStore.rm(configKey)
-                    }
-
-                    else -> {
-                        cached.store(value)
-                        configStore.put(configKey, value)
-                    }
+                    null, "" -> configStore.rm(configKey)
+                    else -> configStore.put(configKey, value)
                 }
             }
         }
