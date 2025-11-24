@@ -1,6 +1,8 @@
 package ru.abledo.db
 
-import ru.abledo.giga.GigaAuth
+import org.kodein.di.DI
+import org.kodein.di.instance
+import ru.abledo.di.mainDiModule
 import ru.abledo.giga.GigaRequest
 import ru.abledo.giga.GigaResponse
 import ru.abledo.giga.GigaRestChatAPI
@@ -61,7 +63,8 @@ class DesktopInfoRepository(
 
 suspend fun main() {
 //    ConfigStore.rm("rag_repo_last_run") // to reset
-    val api = GigaRestChatAPI(GigaAuth)
+    val di = DI.invoke { import(mainDiModule) }
+    val api: GigaRestChatAPI by di.instance()
     val repo = DesktopInfoRepository(api, VectorDB)
     repo.storeDesktopDataDaily()
     println(repo.getDesktopData().size)

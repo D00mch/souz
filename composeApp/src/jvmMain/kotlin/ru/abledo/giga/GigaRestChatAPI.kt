@@ -17,12 +17,20 @@ import io.ktor.http.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import org.slf4j.LoggerFactory
+import ru.abledo.db.ConfigStore
+import ru.abledo.db.KeysProvider
 import java.io.File
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
-class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
+class GigaRestChatAPI(
+    private val auth: GigaAuth,
+    private val keysProvider: KeysProvider,
+) : GigaChatAPI {
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
+
+    private val apiKey: String
+        get() = keysProvider.gigaChatKey ?: throw IllegalStateException("GIGA_KEY is not set")
 
     private val client = HttpClient(CIO) {
         gigaDefaults()
@@ -268,8 +276,6 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
     }
 
     private suspend fun refreshAccessToken(): String {
-        val apiKey = System.getenv("GIGA_KEY") ?: System.getProperty("GIGA_KEY")
-            ?: throw IllegalStateException("GIGA_KEY is not set")
         val newToken = auth.requestToken(apiKey, "GIGACHAT_API_PERS")
         System.setProperty("GIGA_ACCESS_TOKEN", newToken)
         return newToken
@@ -280,10 +286,10 @@ class GigaRestChatAPI(private val auth: GigaAuth) : GigaChatAPI {
         private val EMBEDDINGS_URL = "https://gigachat.devices.sberbank.ru/api/v1/embeddings"
         private val BALANCE_URL = "https://gigachat.devices.sberbank.ru/api/v1/balance"
 
-        val INSTANCE = GigaRestChatAPI(GigaAuth)
+        val INSTANCE = GigaRestChatAPI(GigaAuth, KeysProvider(ConfigStore))
     }
 }
- 
+
 suspend fun main() {
     val api = GigaRestChatAPI.INSTANCE
 

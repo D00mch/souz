@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import org.kodein.di.DI
 import org.kodein.di.DIAware
+import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.abledo.agent.GraphBasedAgent
 import ru.abledo.audio.ActiveSoundRecorderImpl
@@ -45,6 +46,9 @@ class MainViewModel(
     private val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), appScope)
     private val agentRef = AtomicReference<GraphBasedAgent?>(null)
+
+    private val api: GigaRestChatAPI by di.instance()
+    private val gigaVoiceAPI: GigaVoiceAPI by di.instance()
 
     init {
         ioLaunch { initializeAgent() }
@@ -80,7 +84,6 @@ class MainViewModel(
         )
 
         launch { audioRecorder.logState() }
-        val gigaVoiceAPI = GigaVoiceAPI(GigaAuth)
         val desktopInfoRepo = DesktopInfoRepository(GigaRestChatAPI.INSTANCE, VectorDB)
         appScope.launchDbSetup(desktopInfoRepo)
 
@@ -90,7 +93,6 @@ class MainViewModel(
                     enumModel.alias.equals(envModel, ignoreCase = true)
             }
         } ?: GigaModel.Max
-        val api = GigaRestChatAPI(GigaAuth)
 
         withNativeHook(hotkeyListener) {
             val userInputFlow = audioRecorder.audioFlow
