@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Text
 import androidx.compose.material.TextFieldDefaults
@@ -16,9 +18,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
 import ru.abledo.ui.AppTheme
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onClose: () -> Unit) {
     val di = localDI()
     val viewModel = viewModel { SettingsViewModel(di) }
     val state = viewModel.uiState.collectAsState().value
@@ -26,6 +32,7 @@ fun SettingsScreen() {
         state,
         onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
         onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
+        onClose = onClose,
     )
 }
 
@@ -34,13 +41,23 @@ fun SettingsScreen(
     state: SettingsState,
     onGigaChatKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
+    onClose: () -> Unit,
 ) {
     Column(
         modifier = Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            IconButton(onClick = onClose) {
+                Icon(imageVector = Icons.Rounded.Close, contentDescription = "Закрыть настройки")
+            }
+        }
+
         LabeledTextField(
             label = "GigaChat key",
             value = state.gigaChatKey,
@@ -98,6 +115,7 @@ fun SettingsScreenPreview() {
             state = SettingsState("key1", "key2"),
             onGigaChatKeyInput = {},
             onSaluteSpeechKeyInput = {},
+            onClose = {},
         )
     }
 }

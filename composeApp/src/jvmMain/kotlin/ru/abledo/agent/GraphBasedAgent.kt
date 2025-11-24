@@ -24,6 +24,9 @@ import kotlinx.coroutines.flow.StateFlow
 import org.slf4j.LoggerFactory
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import org.kodein.di.DI
+import org.kodein.di.instance
+import ru.abledo.di.mainDiModule
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.ceil
@@ -239,8 +242,9 @@ val SYSTEM_PROMPT = """
 """.trimIndent()
 
 suspend fun main() {
-    val api = GigaRestChatAPI(GigaAuth)
-    val desktopRepo = DesktopInfoRepository(GigaRestChatAPI(GigaAuth), VectorDB)
+    val di = DI.invoke { import(mainDiModule) }
+    val api: GigaRestChatAPI by di.instance()
+    val desktopRepo = DesktopInfoRepository(api, VectorDB)
     val graph = GraphBasedAgent(GigaModel.Pro.alias, api, desktopRepo)
     val result = graph.execute("Hey")
     println(result)
