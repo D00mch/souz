@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,9 +32,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
@@ -69,87 +75,209 @@ fun MainScreen(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = state.statusMessage,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            Color(0xFF0F1729),
+                            Color(0xFF111827),
+                            Color(0xFF0B1020)
+                        ),
+                        start = Offset.Zero,
+                        end = Offset(800f, 1400f)
+                    )
                 )
-                IconButton(onClick = onOpenSettings) {
-                    Icon(imageVector = Icons.Rounded.Settings, contentDescription = "Открыть настройки")
-                }
-            }
+        ) {
+            GlowLayer(
+                color = Color(0xFF6FE8FF),
+                blur = 220.dp,
+                size = 320.dp,
+                offset = Offset(-120f, 140f)
+            )
+            GlowLayer(
+                color = Color(0xFFB48CFF),
+                blur = 260.dp,
+                size = 280.dp,
+                offset = Offset(480f, -60f)
+            )
 
-            Box(
+            Column(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .clip(glassShape)
-                    .background(
-                        Brush.verticalGradient(
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "AbleDo · Голосовой компаньон",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color.White.copy(alpha = 0.72f)
+                        )
+                        Text(
+                            text = state.statusMessage,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = 0.08f))
+                            .border(
+                                width = 1.dp,
+                                color = Color.White.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = "Открыть настройки",
+                            tint = Color.White
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clip(glassShape)
+                        .drawGlassSurface(glassShape)
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.linearGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.5f),
+                                    Color.White.copy(alpha = 0.18f)
+                                )
+                            ),
+                            shape = glassShape
+                        )
+                        .padding(24.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(scrollState),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = state.displayedText,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = Color.White.copy(alpha = 0.92f),
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val primaryBrush = Brush.horizontalGradient(
                             listOf(
-                                Color(0xCCFFFFFF),
-                                Color(0xA0FFFFFF)
+                                Color(0xFF7CE9FF),
+                                Color(0xFF7C93FF)
                             )
                         )
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                        shape = glassShape
-                    )
-                    .padding(20.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(scrollState),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = state.displayedText,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.surface,
-                    )
-                }
-            }
+                        Button(
+                            onClick = onStart,
+                            enabled = !state.isListening,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(primaryBrush)
+                        ) {
+                            Icon(imageVector = Icons.Rounded.Mic, contentDescription = null, tint = Color(0xFF0B1020))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Начать", color = Color(0xFF0B1020))
+                        }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onStart, enabled = !state.isListening) {
-                        Icon(imageVector = Icons.Rounded.Mic, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Начать")
+                        Button(
+                            onClick = onStop,
+                            enabled = state.isListening,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.12f)),
+                            modifier = Modifier.clip(RoundedCornerShape(14.dp))
+                        ) {
+                            Icon(imageVector = Icons.Rounded.Stop, contentDescription = null, tint = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Остановить", color = Color.White)
+                        }
                     }
 
-                    Button(onClick = onStop, enabled = state.isListening) {
-                        Icon(imageVector = Icons.Rounded.Stop, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Остановить")
+                    IconButton(
+                        onClick = onClear,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = 0.08f))
+                            .border(
+                                width = 1.dp,
+                                color = Color.White.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                    ) {
+                        Icon(imageVector = Icons.Rounded.Clear, contentDescription = null, tint = Color.White)
                     }
-                }
-
-                IconButton(onClick = onClear) {
-                    Icon(imageVector = Icons.Rounded.Clear, contentDescription = null)
                 }
             }
         }
     }
 }
+
+@Composable
+private fun GlowLayer(color: Color, blur: Dp, size: Dp, offset: Offset) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .drawWithCache {
+                onDrawBehind {
+                    withTransform({ translate(offset.x, offset.y) }) {
+                        drawRect(
+                            brush = Brush.radialGradient(
+                                colors = listOf(color.copy(alpha = 0.35f), Color.Transparent),
+                                radius = size.toPx()
+                            )
+                        )
+                    }
+                }
+            }
+            .blur(blur)
+    )
+}
+
+private fun Modifier.drawGlassSurface(shape: RoundedCornerShape): Modifier = this
+    .background(
+        brush = Brush.linearGradient(
+            listOf(
+                Color.White.copy(alpha = 0.14f),
+                Color.White.copy(alpha = 0.06f)
+            ),
+            start = Offset.Zero,
+            end = Offset(800f, 900f)
+        ),
+        shape = shape
+    )
+    .drawWithCache {
+        val highlightBrush = Brush.radialGradient(
+            listOf(Color.White.copy(alpha = 0.24f), Color.Transparent),
+            radius = size.minDimension / 1.5f,
+            center = Offset(size.width * 0.25f, size.height * 0.2f)
+        )
+        onDrawWithContent {
+            drawContent()
+            drawRect(highlightBrush)
+        }
+    }
 
 @Preview
 @Composable
