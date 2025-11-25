@@ -88,12 +88,15 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "ru.abledo"
+            packageName = "Abledo"
             packageVersion = "1.0.0"
 
             modules("java.naming") // native build crash without it
 
             macOS {
+                bundleID = "ru.abledo"
+                iconFile.set(File("src/jvmMain/resources/icon.icns"))
+
                 infoPlist {
                     extraKeysRawXml = """
                         <key>NSMicrophoneUsageDescription</key>
