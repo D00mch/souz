@@ -2,7 +2,6 @@ package ru.abledo.ui.main
 
 import androidx.lifecycle.viewModelScope
 import com.github.kwhat.jnativehook.GlobalScreen
-import com.github.kwhat.jnativehook.NativeHookException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,6 +12,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import org.kodein.di.DI
 import org.kodein.di.DIAware
@@ -34,6 +34,7 @@ import ru.abledo.giga.GigaModel
 import ru.abledo.giga.GigaRestChatAPI
 import ru.abledo.giga.GigaVoiceAPI
 import ru.abledo.keys.HotkeyListener
+import ru.abledo.permissions.AppRelauncher
 import ru.abledo.ui.BaseViewModel
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.minutes
@@ -46,6 +47,7 @@ class MainViewModel(
     private val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), appScope)
     private val agentRef = AtomicReference<GraphBasedAgent?>(null)
+    private var permissionWatcherJob: Job? = null
 
     private val api: GigaRestChatAPI by di.instance()
     private val gigaVoiceAPI: GigaVoiceAPI by di.instance()
@@ -94,7 +96,13 @@ class MainViewModel(
             }
         } ?: GigaModel.Max
 
-        withNativeHook(hotkeyListener) {
+        if (!registerNativeHook()) {
+            handleMissingInputMonitoringPermission()
+            return@coroutineScope
+        }
+
+        try {
+            GlobalScreen.addNativeKeyListener(hotkeyListener)
             val userInputFlow = audioRecorder.audioFlow
                 .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
                 .catch { l.error("Error in audio flow: ${it.message}") }
@@ -121,6 +129,8 @@ class MainViewModel(
                     l.error("Agent flow terminated: ${e.message}", e)
                 }
             }
+        } finally {
+            GlobalScreen.unregisterNativeHook()
         }
     }
 
@@ -148,10 +158,45 @@ class MainViewModel(
         setState { copy(displayedText = clearedText) }
     }
 
+    private fun registerNativeHook(): Boolean = runCatching {
+        GlobalScreen.registerNativeHook()
+        true
+    }.getOrElse { e ->
+        l.error("Failed to initialize hotkey listener: ${e.message}")
+        false
+    }
+
+    private fun handleMissingInputMonitoringPermission() {
+        permissionWatcherJob?.cancel()
+        permissionWatcherJob = viewModelScope.launch {
+            setState {
+                copy(
+                    statusMessage = "Разрешите доступ к мониторингу ввода в настройках macOS — " +
+                            "после подтверждения приложение перезапустится автоматически"
+                )
+            }
+
+            while (isActive) {
+                delay(4_000)
+                if (canRegisterNativeHookNow()) {
+                    l.info("Input monitoring permission granted, relaunching application")
+                    AppRelauncher.relaunch()
+                }
+            }
+        }
+    }
+
+    private fun canRegisterNativeHookNow(): Boolean = runCatching {
+        GlobalScreen.registerNativeHook()
+        GlobalScreen.unregisterNativeHook()
+        true
+    }.getOrElse { false }
+
     override fun onCleared() {
         super.onCleared()
         appScope.cancel()
         agentRef.get()?.cancelActiveJob()
+        permissionWatcherJob?.cancel()
     }
 }
 
@@ -164,14 +209,3 @@ private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch {
     }
 }
 
-private suspend fun withNativeHook(hotkeyListener: HotkeyListener, block: suspend () -> Unit) {
-    try {
-        GlobalScreen.registerNativeHook()
-        GlobalScreen.addNativeKeyListener(hotkeyListener)
-        block()
-    } catch (e: NativeHookException) {
-        LoggerFactory.getLogger(MainViewModel::class.java).error("Failed to initialize hotkey listener: ${e.message}")
-    } finally {
-        GlobalScreen.unregisterNativeHook()
-    }
-}
