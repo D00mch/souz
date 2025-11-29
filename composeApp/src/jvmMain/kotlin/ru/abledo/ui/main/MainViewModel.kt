@@ -29,7 +29,6 @@ import ru.abledo.audio.stopPlayText
 import ru.abledo.db.DesktopDataExtractor
 import ru.abledo.db.DesktopInfoRepository
 import ru.abledo.db.VectorDB
-import ru.abledo.giga.GigaAuth
 import ru.abledo.giga.GigaModel
 import ru.abledo.giga.GigaRestChatAPI
 import ru.abledo.giga.GigaVoiceAPI
@@ -207,18 +206,6 @@ private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch {
         delay(5.minutes)
         val browserHistory = DesktopDataExtractor.browserHistory(10)
         repo.storeDesktopInfo(browserHistory)
-    }
-}
-
-private suspend fun withNativeHook(hotkeyListener: HotkeyListener, block: suspend () -> Unit) {
-    try {
-        GlobalScreen.registerNativeHook()
-        GlobalScreen.addNativeKeyListener(hotkeyListener)
-        block()
-    } catch (e: NativeHookException) {
-        LoggerFactory.getLogger(MainViewModel::class.java).error("Failed to initialize hotkey listener: ${e.message}")
-    } finally {
-        GlobalScreen.unregisterNativeHook()
     }
 }
 
