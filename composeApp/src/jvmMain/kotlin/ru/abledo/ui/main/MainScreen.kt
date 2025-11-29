@@ -11,6 +11,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,7 +36,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
-import ru.abledo.ui.GlassTheme // <--- Импорт нашей темы
+import ru.abledo.ui.glassColors
+import ru.abledo.ui.glassShape
 
 // --- ЛЕЙАУТ КОНСТАНТЫ (Их можно оставить здесь, это размеры элементов) ---
 private val TopButtonSize = 22.dp
@@ -114,10 +116,10 @@ fun MainScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         IconButton(onClick = onOpenSettings, modifier = Modifier.size(TopButtonSize)) {
-                            Icon(Icons.Rounded.Settings, null, tint = GlassTheme.colors.textPrimary.copy(alpha = 0.6f), modifier = Modifier.size(TopIconSize))
+                            Icon(Icons.Rounded.Settings, null, tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f), modifier = Modifier.size(TopIconSize))
                         }
                         IconButton(onClick = onClear, modifier = Modifier.size(TopButtonSize)) {
-                            Icon(Icons.Rounded.Close, null, tint = GlassTheme.colors.textPrimary.copy(alpha = 0.8f), modifier = Modifier.size(TopIconSize))
+                            Icon(Icons.Rounded.Close, null, tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f), modifier = Modifier.size(TopIconSize))
                         }
                     }
 
@@ -144,11 +146,10 @@ fun MainScreen(
                             Text(
                                 text = textContent,
                                 style = TextStyle(
-                                    fontFamily = GlassTheme.typography, // Шрифт из темы
                                     fontSize = dynamicFontSize,
                                     lineHeight = dynamicFontSize * 1.3,
                                     fontWeight = FontWeight.Medium,
-                                    color = GlassTheme.colors.textPrimary, // Цвет из темы
+                                    color = MaterialTheme.glassColors.textPrimary, // Цвет из темы
                                     textAlign = TextAlign.Center,
                                     shadow = Shadow(Color.Black.copy(0.2f), Offset(0f, 1f), 5f)
                                 )
@@ -183,13 +184,13 @@ fun MainScreen(
 
 @Composable
 fun GlassCard(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    // Используем цвета и форму из GlassTheme
+    // Используем цвета и форму из темы
     Box(
         modifier = modifier
-            .shadow(elevation = 0.dp, shape = GlassTheme.shape)
-            .clip(GlassTheme.shape)
-            .background(Brush.verticalGradient(listOf(GlassTheme.colors.backgroundTop, GlassTheme.colors.backgroundBottom)))
-            .border(1.dp, Brush.verticalGradient(listOf(GlassTheme.colors.borderGlowTop, GlassTheme.colors.borderGlowBottom)), GlassTheme.shape),
+            .shadow(elevation = 0.dp, shape = MaterialTheme.glassShape)
+            .clip(MaterialTheme.glassShape)
+            .background(Brush.verticalGradient(listOf(MaterialTheme.glassColors.backgroundTop, MaterialTheme.glassColors.backgroundBottom)))
+            .border(1.dp, Brush.verticalGradient(listOf(MaterialTheme.glassColors.borderGlowTop, MaterialTheme.glassColors.borderGlowBottom)), MaterialTheme.glassShape),
         content = content
     )
 }
@@ -202,14 +203,14 @@ fun MagicOrb(isActive: Boolean) {
     val pulseScale by infiniteTransition.animateFloat(1f, if (isActive) 1.15f else 1.05f, infiniteRepeatable(tween(if (isActive) 600 else 2500, easing = FastOutSlowInEasing), RepeatMode.Reverse))
 
     // Используем цвета из темы
-    val color1 = if (isActive) GlassTheme.colors.orbCyan else GlassTheme.colors.orbIndigo
-    val color2 = if (isActive) GlassTheme.colors.orbWhite else Color(0xFF818CF8) // Светлый индиго можно оставить хардкодом или добавить в тему
+    val color1 = if (isActive) MaterialTheme.glassColors.orbCyan else MaterialTheme.glassColors.orbIndigo
+    val color2 = if (isActive) MaterialTheme.glassColors.orbWhite else Color(0xFF818CF8) // Светлый индиго можно оставить хардкодом или добавить в тему
 
     Box(contentAlignment = Alignment.Center, modifier = Modifier.scale(pulseScale)) {
         Canvas(Modifier.size(70.dp)) { drawCircle(Brush.radialGradient(listOf(color1.copy(alpha = 0.3f), Color.Transparent), center, size.minDimension/1.5f)) }
         Canvas(Modifier.size(56.dp).rotate(angle)) { drawCircle(Brush.sweepGradient(listOf(Color.Transparent, color1.copy(0.1f), color1)), style = Stroke(3.dp.toPx())) }
         Canvas(Modifier.size(46.dp).rotate(-angle * 1.5f)) { drawCircle(Brush.sweepGradient(listOf(color2, color2.copy(0.1f), Color.Transparent)), style = Stroke(2.dp.toPx())) }
-        Box(Modifier.size(35.dp).background(Brush.radialGradient(listOf(GlassTheme.colors.orbWhite.copy(0.9f), color1), radius=100f), CircleShape))
+        Box(Modifier.size(35.dp).background(Brush.radialGradient(listOf(MaterialTheme.glassColors.orbWhite.copy(0.9f), color1), radius=100f), CircleShape))
     }
 }
 
