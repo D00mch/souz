@@ -17,8 +17,10 @@ object ToolRunBashCommand : ToolSetup<ToolRunBashCommand.Input> {
         )
     )
 
-    override fun invoke(input: Input): String {
-        val process = ProcessBuilder("bash", "-c", input.command)
+    override fun invoke(input: Input): String = sh(input.command, *input.args.toTypedArray())
+
+    fun sh(str: String, vararg args: String): String {
+        val process = ProcessBuilder("bash", "-c", str, "", *args)
             .redirectErrorStream(true)
             .start()
         val output = process.inputStream.bufferedReader().use(BufferedReader::readText)
@@ -26,8 +28,6 @@ object ToolRunBashCommand : ToolSetup<ToolRunBashCommand.Input> {
         if (exitCode != 0) throw ShellException(output, exitCode)
         return output.trim()
     }
-
-    fun sh(str: String) = invoke(Input(str))
 
     fun apple(script: String): String {
         val scriptInvocation = """
@@ -46,7 +46,8 @@ EOF
 
     data class Input(
         @InputParamDescription("The bash command to run, e.g., 'ls', 'echo Hello', './gradlew tasks'")
-        val command: String
+        val command: String,
+        val args: List<String> = emptyList()
     )
 }
 

@@ -6,17 +6,21 @@ import java.io.IOException
 import java.io.InputStream
 
 object FilesToolUtil {
-    private val projectRoot = File(".").canonicalFile
+    val homeStr: String get() = System.getenv("HOME") ?: System.getProperty("user.home")
+    val homeDirectory: File get() = File(homeStr).canonicalFile
 
+    /**
+     * Generally, we don't want Agent to mess around /
+     */
     fun isPathSafe(file: File): Boolean {
         val canonicalPath = file.canonicalFile
-        return canonicalPath.startsWith(projectRoot)
+        return canonicalPath.startsWith(homeDirectory)
     }
 
     @Throws(BadInputException::class)
     fun requirePathIsSave(file: File) {
         if (!isPathSafe(file)) {
-            throw BadInputException("Access denied: File path must be within project directory")
+            throw BadInputException("Access denied: File path must be within the home directory")
         }
     }
 
@@ -28,6 +32,14 @@ object FilesToolUtil {
         resourceStream(path).bufferedReader().use { it.readText() }
 
     fun applyDefaultEnvs(s: String): String {
-        return s.replace("\$HOME", System.getenv("HOME"))
+        if (s.startsWith("~")) {
+            return s.replace("~", homeStr)
+        }
+        return s.replace("\$HOME", homeStr)
+            .replace("HOME", homeStr)
     }
+}
+
+fun main() {
+    println(System.getProperty("user.home") == System.getenv("HOME"))
 }

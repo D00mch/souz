@@ -7,7 +7,7 @@ import kotlin.io.relativeTo
 object ToolListFiles : ToolSetup<ToolListFiles.Input> {
     data class Input(
         @InputParamDescription("Relative path to list files from")
-        val path: String = ".",
+        val path: String = FilesToolUtil.homeDirectory.absolutePath,
         @InputParamDescription("Max depth to traverse (1 = direct children only; <=0 = unlimited)")
         val depth: Int = Integer.MAX_VALUE
     )
@@ -15,8 +15,8 @@ object ToolListFiles : ToolSetup<ToolListFiles.Input> {
     override val description = "Runs bash ls command at a given path. Dot (.) means current directory"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "List files in current folder",
-            params = mapOf("path" to ".")
+            request = "List files in the home directory",
+            params = mapOf("path" to "${'$'}HOME", "depth" to 1),
         )
     )
     override val returnParameters = ReturnParameters(

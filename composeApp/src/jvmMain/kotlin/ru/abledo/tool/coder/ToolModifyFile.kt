@@ -27,7 +27,7 @@ object ToolModifyFile : ToolSetup<ToolModifyFile.Input> {
     )
 
     override fun invoke(input: Input): String {
-        val file = File(input.path)
+        val file = File(FilesToolUtil.applyDefaultEnvs(input.path))
         if (input.oldText == input.newText || input.path.isBlank() || input.oldText.isEmpty()) {
             throw BadInputException("Invalid input parameters")
         } else if (!file.exists()) {
