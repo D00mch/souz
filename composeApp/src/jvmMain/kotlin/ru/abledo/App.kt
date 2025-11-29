@@ -1,11 +1,12 @@
 package ru.abledo
 
 import androidx.compose.desktop.ui.tooling.preview.Preview
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.DpSize // <--- Import
 import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.abledo.ui.AppTheme
@@ -15,7 +16,9 @@ import ru.abledo.db.KeysProvider
 
 @Composable
 @Preview
-fun App() {
+fun App(
+    onWindowResize: (DpSize) -> Unit
+) {
     val di = localDI()
     val keysProvider: KeysProvider by di.instance()
     val shouldStartInSettings = remember(keysProvider) {
@@ -26,14 +29,19 @@ fun App() {
     }
 
     AppTheme {
-        when (currentScreen) {
-            Screen.Main -> MainScreen(onOpenSettings = { currentScreen = Screen.Settings })
-            Screen.Settings -> SettingsScreen(onClose = { currentScreen = Screen.Main })
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color.Transparent
+        ) {
+            when (currentScreen) {
+                Screen.Main -> MainScreen(
+                    onOpenSettings = { currentScreen = Screen.Settings },
+                    onResizeRequest = onWindowResize
+                )
+                Screen.Settings -> SettingsScreen(onClose = { currentScreen = Screen.Main })
+            }
         }
     }
 }
 
-private enum class Screen {
-    Main,
-    Settings,
-}
+private enum class Screen { Main, Settings }
