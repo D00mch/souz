@@ -6,7 +6,7 @@ import java.io.IOException
 import java.io.InputStream
 
 object FilesToolUtil {
-    private val homeDirectory = File(System.getProperty("user.home")).canonicalFile
+    val homeDirectory = File(System.getProperty("user.home")).canonicalFile
 
     /**
      * Generally, we don't want Agent to mess around /
