@@ -13,6 +13,8 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import org.slf4j.LoggerFactory
+import ru.abledo.tool.coder.ToolFindInFiles
+import kotlin.test.assertContains
 
 class ToolTest {
 
@@ -39,6 +41,13 @@ class ToolTest {
         )
         val l = LoggerFactory.getLogger(ToolTest::class.java)
         l.info(resources)
+    }
+
+    @Test
+    fun `test ToolFindInFiles`() {
+        val resources = ToolFindInFiles(ToolFindInFiles.Input("src/jvmTest/resources", "Alice"))
+        println(resources)
+        assertContains(resources, "sample.csv")
     }
 
     @Test
