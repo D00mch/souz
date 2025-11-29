@@ -52,13 +52,13 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
 
             ToolCategory.DESKTOP to listOf(
                 ToolWindowsManager.toGiga(),
-                ToolHotkeyMac().toGiga(), // we should provide deliberate tools
+                //ToolHotkeyMac().toGiga(), // we should provide deliberate tools
                 ToolOpenNote(ToolRunBashCommand).toGiga(),
-                ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
-                ToolMediaControl(ToolRunBashCommand).toGiga(),
+                //ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
+                //ToolMediaControl(ToolRunBashCommand).toGiga(),
                 ToolOpen(ToolRunBashCommand).toGiga(),
                 ToolCreateNote(ToolRunBashCommand).toGiga(),
-                ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
+                //ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
 //              ToolOpenFolder(ToolRunBashCommand).toGiga(), // ToolOpen can do it
 //                ToolMouseClickMac().toGiga(),
