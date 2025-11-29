@@ -1,5 +1,7 @@
 package ru.abledo.tool.coder
 
+import ch.qos.logback.core.testUtil.FileToBufferUtil
+import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.runBlocking
 import ru.abledo.giga.objectMapper
 import ru.abledo.tool.FewShotExample
@@ -9,6 +11,7 @@ import ru.abledo.tool.ReturnProperty
 import ru.abledo.tool.ToolRunBashCommand
 import ru.abledo.tool.ToolSetup
 import ru.abledo.tool.files.FilesToolUtil
+import java.io.File
 
 object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
     data class Input(
@@ -47,11 +50,10 @@ object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 
     override suspend fun suspendInvoke(input: Input): String {
-        val (path, query) = input
+        val path = FilesToolUtil.applyDefaultEnvs(input.path)
         val script = FilesToolUtil.resourceAsText("scripts/find_in_files.sh")
-        val result = ToolRunBashCommand.sh(script, path, query)
+        val result = ToolRunBashCommand.sh(script, path, input.query)
             .lineSequence()
-            .filter { it.isNotBlank() }
             .windowed(size = 2, step = 2, partialWindows = false)
             .map { (filePath, matchingContent) -> listOf(filePath, matchingContent) }
             .toList()
@@ -60,6 +62,15 @@ object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
 }
 
 fun main() {
-    val result = ToolFindInFiles.invoke(ToolFindInFiles.Input("/Users/m1/wiki", "vr"))
+    val result = ToolFindInFiles.invoke(ToolFindInFiles.Input("HOME", " vr "))
     println("result: $result")
+    val results: List<List<String>> = objectMapper.readValue(result)
+    results.forEach { (path, query) ->
+        val safe = FilesToolUtil.isPathSafe(File(path))
+        if (safe) {
+            println("Safe!: $path")
+        } else {
+            println("!Safe: $path")
+        }
+    }
 }

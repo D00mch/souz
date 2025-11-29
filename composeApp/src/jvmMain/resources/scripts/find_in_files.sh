@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
-search_path="${1:-$HOME}"
-search_query="${2:- VR }"
+search_path="${0:-$HOME}"
+search_query="${1:- VR }"
 
 # Use Spotlight (mdfind) to get candidate files, then grep for matching lines
 mdfind -0 -onlyin "$search_path" "$search_query" 2>/dev/null | \
