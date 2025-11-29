@@ -9,6 +9,7 @@ import ru.abledo.tool.browser.ToolFocusOnTab
 import ru.abledo.tool.browser.ToolSafariInfo
 import ru.abledo.tool.coder.ToolRequestSelection
 import ru.abledo.db.ConfigStore
+import ru.abledo.tool.browser.ToolChromeInfo
 import ru.abledo.tool.config.ToolInstructionStore
 import ru.abledo.tool.config.ToolSoundConfig
 import ru.abledo.tool.config.ToolSoundConfigDiff
@@ -40,6 +41,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolSafariInfo(ToolRunBashCommand).toGiga(),
                 ToolBrowserHotkeys().toGiga(),
                 ToolFocusOnTab(ToolRunBashCommand).toGiga(),
+                ToolChromeInfo(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.CONFIG to listOf(
