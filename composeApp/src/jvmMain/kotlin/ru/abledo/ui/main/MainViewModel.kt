@@ -38,6 +38,7 @@ import ru.abledo.permissions.AppRelauncher
 import ru.abledo.ui.BaseViewModel
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.minutes
+import ru.abledo.tool.ToolRunBashCommand
 
 class MainViewModel(
     override val di: DI,
@@ -209,3 +210,53 @@ private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch {
     }
 }
 
+private suspend fun withNativeHook(hotkeyListener: HotkeyListener, block: suspend () -> Unit) {
+    try {
+        GlobalScreen.registerNativeHook()
+        GlobalScreen.addNativeKeyListener(hotkeyListener)
+        block()
+    } catch (e: NativeHookException) {
+        LoggerFactory.getLogger(MainViewModel::class.java).error("Failed to initialize hotkey listener: ${e.message}")
+    } finally {
+        GlobalScreen.unregisterNativeHook()
+    }
+}
+
+enum class BrowserType {
+    SAFARI, CHROME, OTHER, UNKNOWN
+}
+
+fun detectDefaultBrowser(bash: ToolRunBashCommand): BrowserType {
+    val cmd = "plutil -convert xml1 -o - ~/Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
+    val xmlOutput = bash.sh(cmd)
+
+    val bundleId = parsePlistForHttpHandler(xmlOutput) ?: "com.apple.Safari" // Если настройки нет, по умолчанию это Safari
+
+    return when {
+        bundleId.contains("chrome", ignoreCase = true) -> BrowserType.CHROME
+        bundleId.contains("safari", ignoreCase = true) -> BrowserType.SAFARI
+        else -> BrowserType.OTHER
+    }
+}
+
+private fun parsePlistForHttpHandler(xml: String): String? {
+    val dicts = xml.split("</dict>")
+
+    for (dict in dicts) {
+        if (dict.contains("<key>LSHandlerURLScheme</key>") &&
+            dict.contains("<string>http</string>")) {
+
+            val pattern = "<key>LSHandlerRoleAll</key>\\s*<string>(.*?)</string>".toRegex(RegexOption.DOT_MATCHES_ALL)
+            val match = pattern.find(dict)
+
+            if (match != null) {
+                return match.groupValues[1]
+            }
+        }
+    }
+    return null
+}
+
+fun main() {
+    println(detectDefaultBrowser(ToolRunBashCommand))
+}

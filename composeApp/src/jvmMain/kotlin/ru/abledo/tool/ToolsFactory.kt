@@ -9,6 +9,7 @@ import ru.abledo.tool.browser.ToolFocusOnTab
 import ru.abledo.tool.browser.ToolSafariInfo
 import ru.abledo.tool.coder.ToolRequestSelection
 import ru.abledo.db.ConfigStore
+import ru.abledo.tool.browser.ToolChromeInfo
 import ru.abledo.tool.config.ToolInstructionStore
 import ru.abledo.tool.config.ToolSoundConfig
 import ru.abledo.tool.config.ToolSoundConfigDiff
@@ -40,6 +41,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolSafariInfo(ToolRunBashCommand).toGiga(),
                 ToolBrowserHotkeys().toGiga(),
                 ToolFocusOnTab(ToolRunBashCommand).toGiga(),
+                ToolChromeInfo(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.CONFIG to listOf(
@@ -50,13 +52,13 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
 
             ToolCategory.DESKTOP to listOf(
                 ToolWindowsManager.toGiga(),
-                ToolHotkeyMac().toGiga(), // we should provide deliberate tools
+                //ToolHotkeyMac().toGiga(), // we should provide deliberate tools
                 ToolOpenNote(ToolRunBashCommand).toGiga(),
-                ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
-                ToolMediaControl(ToolRunBashCommand).toGiga(),
+                //ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
+                //ToolMediaControl(ToolRunBashCommand).toGiga(),
                 ToolOpen(ToolRunBashCommand).toGiga(),
                 ToolCreateNote(ToolRunBashCommand).toGiga(),
-                ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
+                //ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
 //              ToolOpenFolder(ToolRunBashCommand).toGiga(), // ToolOpen can do it
 //                ToolMouseClickMac().toGiga(),
