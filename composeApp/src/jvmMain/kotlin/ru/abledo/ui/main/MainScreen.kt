@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -39,7 +40,7 @@ import org.kodein.di.compose.localDI
 import ru.abledo.ui.AppTheme
 
 @Composable
-fun MainScreen() {
+fun MainScreen(onOpenSettings: () -> Unit) {
     val di = localDI()
     val viewModel = viewModel { MainViewModel(di) }
     val state by viewModel.uiState.collectAsState()
@@ -48,7 +49,8 @@ fun MainScreen() {
         state = state,
         onStart = { viewModel.send(MainEvent.StartListening) },
         onStop = { viewModel.send(MainEvent.StopListening) },
-        onClear = { viewModel.send(MainEvent.ClearContext) }
+        onClear = { viewModel.send(MainEvent.ClearContext) },
+        onOpenSettings = onOpenSettings
     )
 }
 
@@ -58,6 +60,7 @@ fun MainScreen(
     onStart: () -> Unit,
     onStop: () -> Unit,
     onClear: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val glassShape = RoundedCornerShape(20.dp)
     val scrollState = rememberScrollState()
@@ -72,11 +75,20 @@ fun MainScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = state.statusMessage,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = state.statusMessage,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(onClick = onOpenSettings) {
+                    Icon(imageVector = Icons.Rounded.Settings, contentDescription = "Открыть настройки")
+                }
+            }
 
             Box(
                 modifier = Modifier
@@ -148,6 +160,7 @@ fun MainScreenPreview() {
             onStart = {},
             onStop = {},
             onClear = {},
+            onOpenSettings = {},
         )
     }
 }

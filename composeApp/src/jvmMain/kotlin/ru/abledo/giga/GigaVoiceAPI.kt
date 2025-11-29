@@ -7,15 +7,22 @@ import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.request.*
 import io.ktor.http.*
+import org.kodein.di.DI
+import org.kodein.di.instance
 import java.io.File
 import org.slf4j.LoggerFactory
+import ru.abledo.db.KeysProvider
+import ru.abledo.di.mainDiModule
 
 private val l = LoggerFactory.getLogger("GigaVoiceAPI")
 
-class GigaVoiceAPI(private val auth: GigaAuth) {
+class GigaVoiceAPI(
+    private val auth: GigaAuth,
+    private val keysProvider: KeysProvider,
+) {
     private val client = HttpClient(CIO) {
         var token = ""
-        val voiceKey = System.getenv("VOICE_KEY")
+        val voiceKey = keysProvider.saluteSpeechKey ?: throw IllegalStateException("VOICE_KEY is not set")
         gigaDefaults()
         install(Auth) {
             bearer {
@@ -52,7 +59,8 @@ class GigaVoiceAPI(private val auth: GigaAuth) {
 }
 
 suspend fun main() {
-    val api = GigaVoiceAPI(GigaAuth)
+    val di = DI.invoke { import(mainDiModule) }
+    val api: GigaVoiceAPI by di.instance()
     val result = api.recognize(File("capture2.ogg").readBytes())
     l.info("$result")
 }

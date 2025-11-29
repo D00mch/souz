@@ -7,7 +7,7 @@ import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
-import ru.abledo.db.ConfigStore
+import ru.abledo.db.KeysProvider
 import ru.abledo.giga.GigaRestChatAPI
 import ru.abledo.ui.BaseViewModel
 
@@ -16,14 +16,14 @@ class SettingsViewModel(
 ) : BaseViewModel<SettingsState, SettingsEvent, SettingsEffect>(), DIAware {
 
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
-    private val configStore: ConfigStore by di.instance()
+    private val keysProvider: KeysProvider by di.instance()
 
     init {
         viewModelScope.launch {
             setState {
                 copy(
-                    gigaChatKey = configStore.get(GIGA_CHAT_KEY) ?: "",
-                    saluteSpeechKey = configStore.get(SALUTE_SPEECH_KEY) ?: ""
+                    gigaChatKey = keysProvider.gigaChatKey ?: "",
+                    saluteSpeechKey = keysProvider.saluteSpeechKey ?: ""
                 )
             }
         }
@@ -35,11 +35,11 @@ class SettingsViewModel(
         l.debug { "handleEvent: $event" }
         when(event) {
             is SettingsEvent.InputGigaChatKey -> {
-                configStore.put(GIGA_CHAT_KEY, event.key)
+                keysProvider.gigaChatKey = event.key
                 setState { copy(gigaChatKey = event.key) }
             }
             is SettingsEvent.InputSaluteSpeechKey -> {
-                configStore.put(SALUTE_SPEECH_KEY, event.key)
+                keysProvider.saluteSpeechKey = event.key
                 setState { copy(saluteSpeechKey = event.key) }
             }
             SettingsEvent.GoToMain -> {
@@ -52,10 +52,5 @@ class SettingsViewModel(
         when (effect) {
             SettingsEffect.CloseScreen -> l.debug { "ignore effect: $effect" }
         }
-    }
-
-    companion object {
-        const val GIGA_CHAT_KEY = "GIGA_CHAT_KEY"
-        const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
     }
 }
