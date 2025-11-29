@@ -49,17 +49,17 @@ object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
     override suspend fun suspendInvoke(input: Input): String {
         val (path, query) = input
         val script = FilesToolUtil.resourceAsText("scripts/find_in_files.sh")
-        val result = ArrayList<List<String>>()
-        val found = ToolRunBashCommand.sh(script, path, query)
-            .lines()
-            .chunked(2)
-            .map { (filePath, matchingContent) ->
-                result.add(listOf(filePath, matchingContent))
-            }
-        return objectMapper.writeValueAsString(found)
+        val result = ToolRunBashCommand.sh(script, path, query)
+            .lineSequence()
+            .filter { it.isNotBlank() }
+            .windowed(size = 2, step = 2, partialWindows = false)
+            .map { (filePath, matchingContent) -> listOf(filePath, matchingContent) }
+            .toList()
+        return objectMapper.writeValueAsString(result)
     }
 }
 
 fun main() {
-    ToolFindInFiles.invoke(ToolFindInFiles.Input("/Users/m1/wiki", "vr"))
+    val result = ToolFindInFiles.invoke(ToolFindInFiles.Input("/Users/m1/wiki", "vr"))
+    println("result: $result")
 }
