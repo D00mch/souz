@@ -1,11 +1,15 @@
 package ru.abledo
 
 import androidx.compose.desktop.ui.tooling.preview.Preview
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.abledo.ui.AppTheme
@@ -26,9 +30,14 @@ fun App() {
     }
 
     AppTheme {
-        when (currentScreen) {
-            Screen.Main -> MainScreen(onOpenSettings = { currentScreen = Screen.Settings })
-            Screen.Settings -> SettingsScreen(onClose = { currentScreen = Screen.Main })
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color.Transparent
+        ) {
+            when (currentScreen) {
+                Screen.Main -> MainScreen(onOpenSettings = { currentScreen = Screen.Settings })
+                Screen.Settings -> SettingsScreen(onClose = { currentScreen = Screen.Main })
+            }
         }
     }
 }

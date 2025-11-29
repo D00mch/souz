@@ -1,5 +1,6 @@
 package ru.abledo.ui
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -12,19 +13,13 @@ import io.github.kdroidfilter.platformtools.darkmodedetector.isSystemInDarkMode
 
 @Composable
 fun AppTheme(
-    forceDark: Boolean = false,
+    useDarkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val isDark = isSystemInDarkMode()
-    val colorScheme = if (forceDark || isDark) DarkColors else LightColors
+    val colors = if (useDarkTheme) DarkColors else LightColors
 
-    MaterialTheme(colorScheme = colorScheme) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = colorScheme.background
-        ) {
-            content()
-        }
+    MaterialTheme(colorScheme = colors) {
+        content()
     }
 }
 

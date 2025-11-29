@@ -8,7 +8,7 @@ import ru.abledo.ui.VMState
  * State for the main screen that mirrors the floating glass panel experience.
  */
 data class MainState(
-    val displayedText: String = "Готов работать",
+    val displayedText: String = "От меня сейчас что требуется?",
     val isListening: Boolean = false,
     val statusMessage: String = "Ожидание горячей клавиши"
 ) : VMState

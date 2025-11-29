@@ -2,6 +2,7 @@ package ru.abledo.ui.main
 
 import androidx.lifecycle.viewModelScope
 import com.github.kwhat.jnativehook.GlobalScreen
+import com.github.kwhat.jnativehook.NativeHookException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
