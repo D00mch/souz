@@ -1,6 +1,7 @@
 package ru.abledo.ui.main
 
 import androidx.compose.animation.core.*
+import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -38,6 +39,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
 
+// --- ЦВЕТА ---
 private val GlassBackgroundTop = Color(0x509CAAB8)
 private val GlassBackgroundBottom = Color(0x667D8C9B)
 private val BorderGlowTop = Color(0x40FFFFFF)
@@ -45,6 +47,7 @@ private val BorderGlowBottom = Color(0x05FFFFFF)
 private val TextPrimary = Color(0xD9FFFFFF)
 private val WindowShape = RoundedCornerShape(22.dp)
 
+// --- РАЗМЕРЫ ---
 private val TopButtonSize = 22.dp
 private val TopIconSize = 16.dp
 private val BaseWidth = 500.dp
@@ -52,6 +55,7 @@ private val BaseHeight = 260.dp
 private val MaxHeight = 900.dp
 private val MaxWidth = 650.dp
 
+// --- ШРИФТЫ ---
 private val SfDisplay = FontFamily(
     Font("SF Pro Display", FontWeight.Medium),
     Font("SF Pro Display", FontWeight.Normal),
@@ -62,7 +66,6 @@ private val SfDisplay = FontFamily(
 @Composable
 fun MainScreen(
     onOpenSettings: () -> Unit,
-    // Добавляем коллбэк для запроса изменения размера окна
     onResizeRequest: (DpSize) -> Unit
 ) {
     val di = localDI()
@@ -95,25 +98,21 @@ fun MainScreen(
     LaunchedEffect(textContent) {
         val textLen = textContent.length
 
-        // Эвристика: примерно вычисляем нужную высоту
-        // База 260 + (символы * коэффициент)
-        // Чем больше текста, тем выше окно.
+        // Эвристика: База 260 + (символы * коэффициент)
         val calculatedHeight = (260 + (textLen * 0.8)).dp
 
         var targetWidth = BaseWidth
         var targetHeight = calculatedHeight
 
-        // Ограничиваем высоту
+        // Ограничиваем высоту и расширяем ширину при необходимости
         if (targetHeight > MaxHeight) {
             targetHeight = MaxHeight
-            // Если уперлись в потолок высоты, начинаем расширять ширину
             targetWidth = MaxWidth
         } else if (targetHeight < BaseHeight) {
             targetHeight = BaseHeight
             targetWidth = BaseWidth
         }
 
-        // Отправляем запрос в main.kt
         onResizeRequest(DpSize(targetWidth, targetHeight))
     }
 
@@ -160,7 +159,7 @@ fun MainScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxHeight() // Растягиваем на всю доступную высоту
+                                .fillMaxHeight()
                                 .verticalScroll(scrollState)
                                 .padding(horizontal = 32.dp),
                             contentAlignment = Alignment.Center
@@ -241,5 +240,30 @@ fun LiquidScrollbar(scrollState: ScrollState, modifier: Modifier = Modifier) {
         val scrollbarY = scrollProgress * (viewportHeight - safeScrollbarHeight)
         drawRoundRect(Color(0x10FFFFFF), cornerRadius = CornerRadius(4.dp.toPx()), size = size)
         drawRoundRect(Brush.verticalGradient(listOf(Color(0xA0FFFFFF), Color(0x40FFFFFF))), topLeft = Offset(0f, scrollbarY), size = Size(size.width, safeScrollbarHeight), cornerRadius = CornerRadius(4.dp.toPx()))
+    }
+}
+
+@Preview
+@Composable
+fun MainScreenPreview() {
+    val sampleText = "Это пример текста для проверки работы окна. " +
+            "Оно должно красиво масштабироваться и выглядеть как нативное приложение macOS."
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF336699))
+    ) {
+        MainScreen(
+            state = MainState(
+                displayedText = sampleText,
+                statusMessage = "Ready",
+                isListening = false
+            ),
+            onToggleListening = {},
+            onClear = {},
+            onOpenSettings = {},
+            onResizeRequest = {}
+        )
     }
 }
