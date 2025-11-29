@@ -6,7 +6,6 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Settings
@@ -28,9 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.platform.Font
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -38,30 +35,15 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
+import ru.abledo.ui.GlassTheme // <--- Импорт нашей темы
 
-// --- ЦВЕТА ---
-private val GlassBackgroundTop = Color(0x509CAAB8)
-private val GlassBackgroundBottom = Color(0x667D8C9B)
-private val BorderGlowTop = Color(0x40FFFFFF)
-private val BorderGlowBottom = Color(0x05FFFFFF)
-private val TextPrimary = Color(0xD9FFFFFF)
-private val WindowShape = RoundedCornerShape(22.dp)
-
-// --- РАЗМЕРЫ ---
+// --- ЛЕЙАУТ КОНСТАНТЫ (Их можно оставить здесь, это размеры элементов) ---
 private val TopButtonSize = 22.dp
 private val TopIconSize = 16.dp
 private val BaseWidth = 500.dp
 private val BaseHeight = 260.dp
 private val MaxHeight = 900.dp
 private val MaxWidth = 650.dp
-
-// --- ШРИФТЫ ---
-private val SfDisplay = FontFamily(
-    Font("SF Pro Display", FontWeight.Medium),
-    Font("SF Pro Display", FontWeight.Normal),
-    Font("San Francisco", FontWeight.Medium),
-    Font("Helvetica Neue", FontWeight.Medium)
-)
 
 @Composable
 fun MainScreen(
@@ -94,17 +76,13 @@ fun MainScreen(
 ) {
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
 
-    // --- ЛОГИКА ДИНАМИЧЕСКОГО РАЗМЕРА ---
+    // --- ЛОГИКА РЕСАЙЗА ---
     LaunchedEffect(textContent) {
         val textLen = textContent.length
-
-        // Эвристика: База 260 + (символы * коэффициент)
         val calculatedHeight = (260 + (textLen * 0.8)).dp
-
         var targetWidth = BaseWidth
         var targetHeight = calculatedHeight
 
-        // Ограничиваем высоту и расширяем ширину при необходимости
         if (targetHeight > MaxHeight) {
             targetHeight = MaxHeight
             targetWidth = MaxWidth
@@ -112,7 +90,6 @@ fun MainScreen(
             targetHeight = BaseHeight
             targetWidth = BaseWidth
         }
-
         onResizeRequest(DpSize(targetWidth, targetHeight))
     }
 
@@ -137,10 +114,10 @@ fun MainScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         IconButton(onClick = onOpenSettings, modifier = Modifier.size(TopButtonSize)) {
-                            Icon(Icons.Rounded.Settings, null, tint = TextPrimary.copy(alpha = 0.6f), modifier = Modifier.size(TopIconSize))
+                            Icon(Icons.Rounded.Settings, null, tint = GlassTheme.colors.textPrimary.copy(alpha = 0.6f), modifier = Modifier.size(TopIconSize))
                         }
                         IconButton(onClick = onClear, modifier = Modifier.size(TopButtonSize)) {
-                            Icon(Icons.Rounded.Close, null, tint = TextPrimary.copy(alpha = 0.8f), modifier = Modifier.size(TopIconSize))
+                            Icon(Icons.Rounded.Close, null, tint = GlassTheme.colors.textPrimary.copy(alpha = 0.8f), modifier = Modifier.size(TopIconSize))
                         }
                     }
 
@@ -167,11 +144,11 @@ fun MainScreen(
                             Text(
                                 text = textContent,
                                 style = TextStyle(
-                                    fontFamily = SfDisplay,
+                                    fontFamily = GlassTheme.typography, // Шрифт из темы
                                     fontSize = dynamicFontSize,
                                     lineHeight = dynamicFontSize * 1.3,
                                     fontWeight = FontWeight.Medium,
-                                    color = TextPrimary,
+                                    color = GlassTheme.colors.textPrimary, // Цвет из темы
                                     textAlign = TextAlign.Center,
                                     shadow = Shadow(Color.Black.copy(0.2f), Offset(0f, 1f), 5f)
                                 )
@@ -183,6 +160,7 @@ fun MainScreen(
                     }
                 }
 
+                // НИЖНЯЯ ЧАСТЬ
                 Box(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp),
                     contentAlignment = Alignment.Center
@@ -201,14 +179,17 @@ fun MainScreen(
     }
 }
 
+// --- КОМПОНЕНТЫ ---
+
 @Composable
 fun GlassCard(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+    // Используем цвета и форму из GlassTheme
     Box(
         modifier = modifier
-            .shadow(elevation = 0.dp, shape = WindowShape)
-            .clip(WindowShape)
-            .background(Brush.verticalGradient(listOf(GlassBackgroundTop, GlassBackgroundBottom)))
-            .border(1.dp, Brush.verticalGradient(listOf(BorderGlowTop, BorderGlowBottom)), WindowShape),
+            .shadow(elevation = 0.dp, shape = GlassTheme.shape)
+            .clip(GlassTheme.shape)
+            .background(Brush.verticalGradient(listOf(GlassTheme.colors.backgroundTop, GlassTheme.colors.backgroundBottom)))
+            .border(1.dp, Brush.verticalGradient(listOf(GlassTheme.colors.borderGlowTop, GlassTheme.colors.borderGlowBottom)), GlassTheme.shape),
         content = content
     )
 }
@@ -219,14 +200,16 @@ fun MagicOrb(isActive: Boolean) {
     val spinDuration = if (isActive) 1500 else 8000
     val angle by infiniteTransition.animateFloat(0f, 360f, infiniteRepeatable(tween(spinDuration, easing = LinearEasing)))
     val pulseScale by infiniteTransition.animateFloat(1f, if (isActive) 1.15f else 1.05f, infiniteRepeatable(tween(if (isActive) 600 else 2500, easing = FastOutSlowInEasing), RepeatMode.Reverse))
-    val color1 = if (isActive) Color(0xFF00FFFF) else Color(0xFF6366F1)
-    val color2 = if (isActive) Color(0xFFFFFFFF) else Color(0xFF818CF8)
+
+    // Используем цвета из темы
+    val color1 = if (isActive) GlassTheme.colors.orbCyan else GlassTheme.colors.orbIndigo
+    val color2 = if (isActive) GlassTheme.colors.orbWhite else Color(0xFF818CF8) // Светлый индиго можно оставить хардкодом или добавить в тему
 
     Box(contentAlignment = Alignment.Center, modifier = Modifier.scale(pulseScale)) {
         Canvas(Modifier.size(70.dp)) { drawCircle(Brush.radialGradient(listOf(color1.copy(alpha = 0.3f), Color.Transparent), center, size.minDimension/1.5f)) }
         Canvas(Modifier.size(56.dp).rotate(angle)) { drawCircle(Brush.sweepGradient(listOf(Color.Transparent, color1.copy(0.1f), color1)), style = Stroke(3.dp.toPx())) }
         Canvas(Modifier.size(46.dp).rotate(-angle * 1.5f)) { drawCircle(Brush.sweepGradient(listOf(color2, color2.copy(0.1f), Color.Transparent)), style = Stroke(2.dp.toPx())) }
-        Box(Modifier.size(35.dp).background(Brush.radialGradient(listOf(Color.White.copy(0.9f), color1), radius=100f), CircleShape))
+        Box(Modifier.size(35.dp).background(Brush.radialGradient(listOf(GlassTheme.colors.orbWhite.copy(0.9f), color1), radius=100f), CircleShape))
     }
 }
 
@@ -246,24 +229,13 @@ fun LiquidScrollbar(scrollState: ScrollState, modifier: Modifier = Modifier) {
 @Preview
 @Composable
 fun MainScreenPreview() {
-    val sampleText = "Это пример текста для проверки работы окна. " +
-            "Оно должно красиво масштабироваться и выглядеть как нативное приложение macOS."
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF336699))
-    ) {
-        MainScreen(
-            state = MainState(
-                displayedText = sampleText,
-                statusMessage = "Ready",
-                isListening = false
-            ),
-            onToggleListening = {},
-            onClear = {},
-            onOpenSettings = {},
-            onResizeRequest = {}
-        )
+    // Оборачиваем в AppTheme, чтобы подтянулись цвета из DefaultGlassColors
+    ru.abledo.ui.AppTheme {
+        Box(Modifier.fillMaxSize().background(Color(0xFF336699))) {
+            MainScreen(
+                state = MainState(displayedText = "Theme extracted!", statusMessage = "", isListening = false),
+                onToggleListening = {}, onClear = {}, onOpenSettings = {}, onResizeRequest = {}
+            )
+        }
     }
 }
