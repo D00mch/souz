@@ -17,7 +17,7 @@ import ru.abledo.db.KeysProvider
 @Composable
 @Preview
 fun App(
-    onWindowResize: (DpSize) -> Unit // <--- Добавили параметр
+    onWindowResize: (DpSize) -> Unit
 ) {
     val di = localDI()
     val keysProvider: KeysProvider by di.instance()
@@ -36,7 +36,7 @@ fun App(
             when (currentScreen) {
                 Screen.Main -> MainScreen(
                     onOpenSettings = { currentScreen = Screen.Settings },
-                    onResizeRequest = onWindowResize // <--- Передаем дальше
+                    onResizeRequest = onWindowResize
                 )
                 Screen.Settings -> SettingsScreen(onClose = { currentScreen = Screen.Main })
             }

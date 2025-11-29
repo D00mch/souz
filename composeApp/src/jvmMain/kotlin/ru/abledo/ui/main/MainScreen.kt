@@ -38,7 +38,6 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
 
-// --- КОНСТАНТЫ ---
 private val GlassBackgroundTop = Color(0x509CAAB8)
 private val GlassBackgroundBottom = Color(0x667D8C9B)
 private val BorderGlowTop = Color(0x40FFFFFF)
@@ -48,8 +47,6 @@ private val WindowShape = RoundedCornerShape(22.dp)
 
 private val TopButtonSize = 22.dp
 private val TopIconSize = 16.dp
-
-// --- РАЗМЕРЫ ОКНА (Логика ресайза) ---
 private val BaseWidth = 500.dp
 private val BaseHeight = 260.dp
 private val MaxHeight = 900.dp
@@ -120,7 +117,6 @@ fun MainScreen(
         onResizeRequest(DpSize(targetWidth, targetHeight))
     }
 
-    // --- UI ---
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -188,7 +184,6 @@ fun MainScreen(
                     }
                 }
 
-                // НИЖНЯЯ ЧАСТЬ (ORB)
                 Box(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp),
                     contentAlignment = Alignment.Center
@@ -207,9 +202,6 @@ fun MainScreen(
     }
 }
 
-// ... (Остальные компоненты GlassCard, MagicOrb, LiquidScrollbar остаются без изменений)
-// Просто скопируйте их из предыдущего ответа, если удалили.
-// Или скажите, и я продублирую весь файл целиком.
 @Composable
 fun GlassCard(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
     Box(
