@@ -1,12 +1,13 @@
 package ru.abledo.tool.files
 
+import io.ktor.client.plugins.cache.storage.FileStorage
 import ru.abledo.tool.*
 import java.io.File
 
 object ToolFindTextInFiles : ToolSetup<ToolFindTextInFiles.Input> {
     data class Input(
         @InputParamDescription("Directory path to search in (recursive)")
-        val path: String = ".",
+        val path: String = FilesToolUtil.homeStr,
         @InputParamDescription("Text to search for inside files")
         val text: String
     )
@@ -30,7 +31,7 @@ object ToolFindTextInFiles : ToolSetup<ToolFindTextInFiles.Input> {
     )
 
     override fun invoke(input: Input): String {
-        val baseDir = File(input.path)
+        val baseDir = FilesToolUtil.applyDefaultEnvs(input.path).let { File(it) }
         if (!baseDir.exists() || !baseDir.isDirectory) {
             throw BadInputException("Invalid directory path: ${input.path}")
         }

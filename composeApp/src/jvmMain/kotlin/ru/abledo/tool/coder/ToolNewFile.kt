@@ -25,7 +25,7 @@ object ToolNewFile : ToolSetup<ToolNewFile.Input> {
     )
 
     override fun invoke(input: Input): String {
-        val file = File(input.path)
+        val file = File(FilesToolUtil.applyDefaultEnvs(input.path))
         if (file.exists()) {
             throw BadInputException("File already exists: ${input.path}")
         }

@@ -10,6 +10,7 @@ import ru.abledo.tool.browser.ToolSafariInfo
 import ru.abledo.tool.coder.ToolRequestSelection
 import ru.abledo.db.ConfigStore
 import ru.abledo.tool.browser.ToolChromeInfo
+import ru.abledo.tool.coder.ToolFindInFiles
 import ru.abledo.tool.config.ToolInstructionStore
 import ru.abledo.tool.config.ToolSoundConfig
 import ru.abledo.tool.config.ToolSoundConfigDiff
@@ -23,6 +24,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
             ToolCategory.CODER to listOf(
                 ToolReadFile.toGiga(),
                 ToolListFiles.toGiga(),
+                ToolFindInFiles.toGiga(),
                 ToolNewFile.toGiga(),
                 ToolDeleteFile.toGiga(),
                 ToolModifyFile.toGiga(),

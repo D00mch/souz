@@ -25,7 +25,7 @@ object ToolReadFile : ToolSetup<ToolReadFile.Input> {
 
     override fun invoke(input: Input): String {
         val path = input.path
-        val file = File(path)
+        val file = File(FilesToolUtil.applyDefaultEnvs(path))
         if (!file.exists() || file.isDirectory) {
             throw BadInputException("Invalid file path: $path")
         }

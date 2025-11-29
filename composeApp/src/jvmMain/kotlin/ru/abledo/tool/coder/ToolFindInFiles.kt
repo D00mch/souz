@@ -15,14 +15,17 @@ import java.io.File
 
 object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
     data class Input(
-        @InputParamDescription("Relative path to search for files. Defaults to user HOME. ")
+        @InputParamDescription("Relative path to search for files. Defaults to user HOME. Try to avoid using ~ or HOME")
         val path: String = FilesToolUtil.homeDirectory.absolutePath,
         @InputParamDescription("A text substring we are searching for")
         val query: String,
     )
 
     override val name: String = "FindInFiles"
-    override val description: String = "Search for files with the content matching the specified query"
+    override val description: String = """
+        Search for files with the content matching the specified query. Use ListFiles function to get the idea where to
+        search next. Don't search ~ or HOME, it will take a lot of time
+    """.trimIndent()
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
             request = "Do I wave written articles related to VR",
