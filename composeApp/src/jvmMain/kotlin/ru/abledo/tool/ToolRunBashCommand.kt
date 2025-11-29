@@ -20,7 +20,7 @@ object ToolRunBashCommand : ToolSetup<ToolRunBashCommand.Input> {
     override fun invoke(input: Input): String = sh(input.command, *input.args.toTypedArray())
 
     fun sh(str: String, vararg args: String): String {
-        val process = ProcessBuilder("bash", "-c", str, *args)
+        val process = ProcessBuilder("bash", "-c", str, "", *args)
             .redirectErrorStream(true)
             .start()
         val output = process.inputStream.bufferedReader().use(BufferedReader::readText)

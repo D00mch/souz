@@ -15,7 +15,7 @@ import java.io.File
 
 object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
     data class Input(
-        @InputParamDescription("Relative path to search for files. Defaults to user HOME")
+        @InputParamDescription("Relative path to search for files. Defaults to user HOME. ")
         val path: String = FilesToolUtil.homeDirectory.absolutePath,
         @InputParamDescription("A text substring we are searching for")
         val query: String,
@@ -27,7 +27,7 @@ object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
         FewShotExample(
             request = "Do I wave written articles related to VR",
             params = mapOf(
-                "path" to "${'$'}HOME",
+                "path" to "~",
                 "queries" to "VR"
             )
         )
@@ -62,7 +62,7 @@ object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
 }
 
 fun main() {
-    val result = ToolFindInFiles.invoke(ToolFindInFiles.Input("HOME", " vr "))
+    val result = ToolFindInFiles.invoke(ToolFindInFiles.Input("~/wiki", " vr "))
     println("result: $result")
     val results: List<List<String>> = objectMapper.readValue(result)
     results.forEach { (path, query) ->
