@@ -1,7 +1,6 @@
 package ru.abledo.ui.main
 
 import androidx.compose.animation.core.*
-import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -32,30 +31,30 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.platform.Font
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
 
-// --- ЦВЕТА ---
+// --- КОНСТАНТЫ ---
 private val GlassBackgroundTop = Color(0x509CAAB8)
 private val GlassBackgroundBottom = Color(0x667D8C9B)
 private val BorderGlowTop = Color(0x40FFFFFF)
 private val BorderGlowBottom = Color(0x05FFFFFF)
 private val TextPrimary = Color(0xD9FFFFFF)
-
 private val WindowShape = RoundedCornerShape(22.dp)
 
-// --- РАЗМЕРЫ (СДЕЛАЛИ КОМПАКТНЕЕ) ---
 private val TopButtonSize = 22.dp
 private val TopIconSize = 16.dp
-private val CardMinWidth = 500.dp // Чуть уже (было 600)
-private val CardMinHeight = 260.dp // Значительно меньше по высоте (было 350)
-private val CardMaxHeight = 800.dp
 
-// --- ШРИФТЫ ---
+// --- РАЗМЕРЫ ОКНА (Логика ресайза) ---
+private val BaseWidth = 500.dp
+private val BaseHeight = 260.dp
+private val MaxHeight = 900.dp
+private val MaxWidth = 650.dp
+
 private val SfDisplay = FontFamily(
     Font("SF Pro Display", FontWeight.Medium),
     Font("SF Pro Display", FontWeight.Normal),
@@ -64,7 +63,11 @@ private val SfDisplay = FontFamily(
 )
 
 @Composable
-fun MainScreen(onOpenSettings: () -> Unit) {
+fun MainScreen(
+    onOpenSettings: () -> Unit,
+    // Добавляем коллбэк для запроса изменения размера окна
+    onResizeRequest: (DpSize) -> Unit
+) {
     val di = localDI()
     val viewModel = viewModel { MainViewModel(di) }
     val state by viewModel.uiState.collectAsState()
@@ -76,7 +79,8 @@ fun MainScreen(onOpenSettings: () -> Unit) {
             else viewModel.send(MainEvent.StartListening)
         },
         onClear = { viewModel.send(MainEvent.ClearContext) },
-        onOpenSettings = onOpenSettings
+        onOpenSettings = onOpenSettings,
+        onResizeRequest = onResizeRequest
     )
 }
 
@@ -86,32 +90,53 @@ fun MainScreen(
     onToggleListening: () -> Unit,
     onClear: () -> Unit,
     onOpenSettings: () -> Unit,
+    onResizeRequest: (DpSize) -> Unit
 ) {
+    val textContent = state.displayedText.ifEmpty { state.statusMessage }
+
+    // --- ЛОГИКА ДИНАМИЧЕСКОГО РАЗМЕРА ---
+    LaunchedEffect(textContent) {
+        val textLen = textContent.length
+
+        // Эвристика: примерно вычисляем нужную высоту
+        // База 260 + (символы * коэффициент)
+        // Чем больше текста, тем выше окно.
+        val calculatedHeight = (260 + (textLen * 0.8)).dp
+
+        var targetWidth = BaseWidth
+        var targetHeight = calculatedHeight
+
+        // Ограничиваем высоту
+        if (targetHeight > MaxHeight) {
+            targetHeight = MaxHeight
+            // Если уперлись в потолок высоты, начинаем расширять ширину
+            targetWidth = MaxWidth
+        } else if (targetHeight < BaseHeight) {
+            targetHeight = BaseHeight
+            targetWidth = BaseWidth
+        }
+
+        // Отправляем запрос в main.kt
+        onResizeRequest(DpSize(targetWidth, targetHeight))
+    }
+
+    // --- UI ---
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         GlassCard(
-            modifier = Modifier
-                .width(CardMinWidth)
-                .heightIn(min = CardMinHeight, max = CardMaxHeight)
-                .wrapContentHeight()
-                .padding(20.dp)
+            modifier = Modifier.fillMaxSize().padding(20.dp)
         ) {
-            Column(
-                modifier = Modifier.wrapContentHeight()
-            ) {
-                // 1. ВЕРХНЯЯ ЧАСТЬ (Кнопки + Текст + Скролл)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f, fill = false) // fill=false позволяет сжиматься
-                ) {
-                    // Кнопки (Сделали отступы компактнее)
+            Column(modifier = Modifier.fillMaxSize()) {
+
+                // ВЕРХНЯЯ ЧАСТЬ
+                Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    // Кнопки
                     Row(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(top = 16.dp, end = 16.dp) // Было 20.dp
+                            .padding(top = 16.dp, end = 16.dp)
                             .zIndex(1f),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -124,30 +149,24 @@ fun MainScreen(
                         }
                     }
 
-                    // --- ТЕКСТОВАЯ ОБЛАСТЬ ---
+                    // Текст + Скролл
                     val scrollState = rememberScrollState()
-                    val textContent = state.displayedText.ifEmpty { state.statusMessage }
-
                     val dynamicFontSize = remember(textContent) {
                         when (textContent.length) {
-                            in 0..60 -> 30.sp
-                            in 61..150 -> 26.sp
-                            in 151..300 -> 20.sp
+                            in 0..60 -> 32.sp
+                            in 61..150 -> 28.sp
+                            in 151..400 -> 24.sp
                             else -> 20.sp
                         }
                     }
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 32.dp, bottom = 0.dp) // Уменьшили верхний отступ (было 50)
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 32.dp)) {
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .heightIn(max = CardMaxHeight - 150.dp)
+                                .fillMaxHeight() // Растягиваем на всю доступную высоту
                                 .verticalScroll(scrollState)
-                                .padding(horizontal = 32.dp), // Чуть меньше боковые отступы
+                                .padding(horizontal = 32.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -159,42 +178,26 @@ fun MainScreen(
                                     fontWeight = FontWeight.Medium,
                                     color = TextPrimary,
                                     textAlign = TextAlign.Center,
-                                    shadow = Shadow(
-                                        color = Color.Black.copy(alpha = 0.2f),
-                                        offset = Offset(0f, 1f),
-                                        blurRadius = 5f
-                                    )
+                                    shadow = Shadow(Color.Black.copy(0.2f), Offset(0f, 1f), 5f)
                                 )
                             )
                         }
-
                         if (scrollState.maxValue > 0) {
-                            LiquidScrollbar(
-                                scrollState = scrollState,
-                                modifier = Modifier
-                                    .padding(end = 6.dp, top = 10.dp, bottom = 10.dp)
-                                    .width(4.dp)
-                                    .fillMaxHeight()
-                            )
+                            LiquidScrollbar(scrollState, Modifier.padding(end=6.dp, top=10.dp, bottom=10.dp).width(4.dp).fillMaxHeight())
                         }
                     }
                 }
 
-                // 2. НИЖНЯЯ ЧАСТЬ (Orb)
+                // НИЖНЯЯ ЧАСТЬ (ORB)
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 5.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .size(85.dp)
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) { onToggleListening() }
+                            .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onToggleListening() }
                     ) {
                         MagicOrb(isActive = state.isListening)
                     }
@@ -204,58 +207,21 @@ fun MainScreen(
     }
 }
 
-// --- LIQUID SCROLLBAR ---
+// ... (Остальные компоненты GlassCard, MagicOrb, LiquidScrollbar остаются без изменений)
+// Просто скопируйте их из предыдущего ответа, если удалили.
+// Или скажите, и я продублирую весь файл целиком.
 @Composable
-fun LiquidScrollbar(
-    scrollState: ScrollState,
-    modifier: Modifier = Modifier
-) {
-    Canvas(modifier = modifier) {
-        val totalHeight = size.height
-        val viewportHeight = totalHeight
-        val contentHeight = scrollState.maxValue + viewportHeight
-        val scrollbarHeight = (viewportHeight / contentHeight) * viewportHeight
-        val safeScrollbarHeight = scrollbarHeight.coerceAtLeast(40f)
-        val scrollProgress = scrollState.value.toFloat() / scrollState.maxValue.toFloat()
-        val scrollbarY = scrollProgress * (viewportHeight - safeScrollbarHeight)
-
-        drawRoundRect(Color(0x10FFFFFF), cornerRadius = CornerRadius(4.dp.toPx()), size = size)
-        drawRoundRect(
-            brush = Brush.verticalGradient(listOf(Color(0xA0FFFFFF), Color(0x40FFFFFF))),
-            topLeft = Offset(0f, scrollbarY),
-            size = Size(size.width, safeScrollbarHeight),
-            cornerRadius = CornerRadius(4.dp.toPx())
-        )
-    }
-}
-
-// --- СТЕКЛО ---
-@Composable
-fun GlassCard(
-    modifier: Modifier = Modifier,
-    content: @Composable BoxScope.() -> Unit
-) {
+fun GlassCard(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
     Box(
         modifier = modifier
             .shadow(elevation = 0.dp, shape = WindowShape)
             .clip(WindowShape)
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(GlassBackgroundTop, GlassBackgroundBottom)
-                )
-            )
-            .border(
-                width = 1.dp,
-                brush = Brush.verticalGradient(
-                    colors = listOf(BorderGlowTop, BorderGlowBottom)
-                ),
-                shape = WindowShape
-            ),
+            .background(Brush.verticalGradient(listOf(GlassBackgroundTop, GlassBackgroundBottom)))
+            .border(1.dp, Brush.verticalGradient(listOf(BorderGlowTop, BorderGlowBottom)), WindowShape),
         content = content
     )
 }
 
-// --- MAGIC ORB ---
 @Composable
 fun MagicOrb(isActive: Boolean) {
     val infiniteTransition = rememberInfiniteTransition()
@@ -273,13 +239,15 @@ fun MagicOrb(isActive: Boolean) {
     }
 }
 
-@Preview
 @Composable
-fun MainScreenPreview() {
-    Box(Modifier.fillMaxSize().background(Color(0xFF336699))) {
-        MainScreen(
-            state = MainState(displayedText = "Compact Mode", statusMessage = "", isListening = false),
-            onToggleListening = {}, onClear = {}, onOpenSettings = {}
-        )
+fun LiquidScrollbar(scrollState: ScrollState, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val totalHeight = size.height; val viewportHeight = totalHeight; val contentHeight = scrollState.maxValue + viewportHeight
+        val scrollbarHeight = (viewportHeight / contentHeight) * viewportHeight
+        val safeScrollbarHeight = scrollbarHeight.coerceAtLeast(40f)
+        val scrollProgress = scrollState.value.toFloat() / scrollState.maxValue.toFloat()
+        val scrollbarY = scrollProgress * (viewportHeight - safeScrollbarHeight)
+        drawRoundRect(Color(0x10FFFFFF), cornerRadius = CornerRadius(4.dp.toPx()), size = size)
+        drawRoundRect(Brush.verticalGradient(listOf(Color(0xA0FFFFFF), Color(0x40FFFFFF))), topLeft = Offset(0f, scrollbarY), size = Size(size.width, safeScrollbarHeight), cornerRadius = CornerRadius(4.dp.toPx()))
     }
 }
