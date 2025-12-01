@@ -5,14 +5,14 @@ import ru.abledo.tool.ToolRunBashCommand
 import ru.abledo.tool.browser.ToolSafariInfo
 import com.fasterxml.jackson.module.kotlin.readValue
 import ru.abledo.tool.browser.ToolChromeInfo
+import ru.abledo.tool.browser.detectDefaultBrowser
 import ru.abledo.tool.config.ToolInstructionStore
 import ru.abledo.tool.config.ToolInstructionStore.Companion.buildInstruction
 import ru.abledo.tool.desktop.ToolShowApps
 import ru.abledo.tool.files.ToolListFiles
-import ru.abledo.ui.main.detectDefaultBrowser
 import java.util.ArrayList
 import kotlin.collections.map
-import ru.abledo.ui.main.BrowserType
+import ru.abledo.tool.browser.BrowserType
 
 /**
  * Collects various desktop information and converts it to a list of data
@@ -43,22 +43,9 @@ object DesktopDataExtractor {
         // Собираем всё вместе: приложения + файлы + браузер + история + инструкции
         return installed +
                 files().toList() +
-                detectBrowserName() + // <--- Добавили определение имени браузера
                 browserHistory(50) +
                 instructions
         // + notes()
-    }
-
-    fun detectBrowserName(): List<StorredData> {
-        return runCatching {
-            val type = detectDefaultBrowser(ToolRunBashCommand)
-            val prettyName = when (type) {
-                BrowserType.CHROME -> "Google Chrome"
-                BrowserType.SAFARI -> "Safari"
-                else -> type.name // Fallback для UNKNOWN или OTHER
-            }
-            listOf(StorredData(prettyName, StorredType.DEFAULT_BROWSER))
-        }.getOrElse { emptyList() }
     }
 
     fun files(): Sequence<StorredData> = runCatching {
@@ -72,7 +59,7 @@ object DesktopDataExtractor {
 
     fun browserHistory(count: Int = 10): List<StorredData> {
         return runCatching {
-            val browserType = detectDefaultBrowser(ToolRunBashCommand)
+            val browserType = ToolRunBashCommand.detectDefaultBrowser()
 
             val rawHistory = when (browserType) {
                 BrowserType.CHROME -> {

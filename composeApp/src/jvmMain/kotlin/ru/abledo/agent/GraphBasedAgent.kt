@@ -4,7 +4,6 @@ import ru.abledo.agent.engine.*
 import ru.abledo.agent.node.NodesCommon
 import ru.abledo.agent.node.NodesLLM
 import ru.abledo.db.DesktopInfoRepository
-import ru.abledo.db.StorredData
 import ru.abledo.db.VectorDB
 import ru.abledo.db.asString
 import ru.abledo.giga.*
@@ -13,7 +12,6 @@ import ru.abledo.tool.ToolsFactory
 import ru.abledo.tool.UserMessageClassifier
 import ru.abledo.tool.LocalRegexClassifier
 import ru.abledo.tool.ToolRunBashCommand
-import ru.abledo.tool.browser.ToolSafariInfo
 import ru.abledo.tool.desktop.ToolShowApps
 import io.ktor.util.logging.debug
 import kotlinx.coroutines.Deferred
@@ -27,6 +25,8 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.abledo.di.mainDiModule
+import ru.abledo.tool.browser.detectDefaultBrowser
+import ru.abledo.tool.browser.prettyName
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.ceil
@@ -41,7 +41,6 @@ class GraphBasedAgent(
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
     private val apiClassifier: UserMessageClassifier = ApiClassifier(llmApi)
     private val localClassifier: UserMessageClassifier = LocalRegexClassifier
-    private val safariInfoTool = ToolSafariInfo(ToolRunBashCommand)
 
     // Make sure summarization only happens after all tool requests from LLM are answered
     private val nodeSummarize: Node<GigaResponse.Chat, String> by graph(name = "Go to user") {
@@ -57,11 +56,13 @@ class GraphBasedAgent(
     }
 
     private val nodeAppendAdditionalData: Node<String, String> = Node("appendActualInformation") { ctx ->
-        val additionalMessage = appendActualInformation(ctx.input)
+        val additionalMessage: GigaRequest.Message? = appendActualInformation(ctx.input)
         if (additionalMessage == null) {
             ctx
         } else {
-            val history = ArrayList(ctx.history).apply { add(additionalMessage) }
+            val history: List<GigaRequest.Message> = ctx.history
+                .filterNot { msg -> msg.role == GigaMessageRole.user && msg.content.startsWith(INFO_PREFIX) }
+                .plus(additionalMessage)
             ctx.map(history = history)
         }
     }
@@ -173,25 +174,40 @@ class GraphBasedAgent(
 
     private suspend fun appendActualInformation(userText: String): GigaRequest.Message? {
         if (userText.isBlank()) return null
-        val msgEmbeddings: List<StorredData> = runCatching { desktopInfoRepository.search(userText) }
-            .getOrElse {
-                l.error("Error while searching desktop info: {}", it.message)
-                emptyList()
-            }
-        val openedApps = runCatching {
-            ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
-        }.getOrElse { "[]" }
-        val safariOpenedTabs = runCatching {
-            safariInfoTool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.tabs))
-        }.getOrElse { "{}" }
+
+        val msgRelatedDataInTheStore: String = try {
+            desktopInfoRepository.search(userText).asString()
+        } catch (e: Exception) {
+            l.error("Error while searching desktop info: {}", e.message)
+            ""
+        }
+
+        val openedApps = try {
+            val msg = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
+            "Эти приложения сейчас открыты: $msg"
+        } catch (e: Exception) {
+            l.error("Error while fetching opened apps: {}", e.message)
+            ""
+        }
+
+        val browserName = try {
+            val defaultBrowser = ToolRunBashCommand.detectDefaultBrowser()
+            "Дефолтный браузер — ${defaultBrowser.prettyName}"
+        } catch (e: Exception) {
+            l.error("Error while fetching opened tabs: {}", e.message)
+            ""
+        }
+
         return GigaRequest.Message(
             role = GigaMessageRole.user,
-            content = "Информация о моей системе: ${msgEmbeddings.asString()}" +
-                    ", Эти приложения сейчас открыты: $openedApps," +
-                    ", Эти вкладки в Safari открыты: $safariOpenedTabs"
+            content = listOf(INFO_PREFIX, msgRelatedDataInTheStore, openedApps, browserName)
+                .filter { it.isNotBlank() }
+                .joinToString(separator = ";\n")
         )
     }
 }
+
+private const val INFO_PREFIX = "Информация о моей системе\n\n"
 
 private const val HISTORY_SUMMARIZE_THRESHOLD = 0.8
 private const val APPROX_CHARS_PER_TOKEN = 4.0

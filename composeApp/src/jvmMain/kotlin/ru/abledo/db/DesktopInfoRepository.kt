@@ -37,7 +37,7 @@ class DesktopInfoRepository(
     }
 
     suspend fun storeDesktopInfo(data: List<StorredData>) {
-        val shortened = data.map { it.copy(text = it.text.take(500)) } // get 400 with long texts
+        val shortened = data.map { it.copy(text = it.text.take(500)) } // get 500 symbols of long texts
         val embeddings = when (val resp = api.embeddings(GigaRequest.Embeddings(input = shortened.map { it.text }))) {
             is GigaResponse.Embeddings.Ok -> resp.data.map { it.embedding }
             is GigaResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
@@ -68,5 +68,4 @@ suspend fun main() {
     val repo = DesktopInfoRepository(api, VectorDB)
     repo.storeDesktopDataDaily()
     println(repo.getDesktopData().size)
-    println(repo.search("Покажи портрет жены."))
 }
