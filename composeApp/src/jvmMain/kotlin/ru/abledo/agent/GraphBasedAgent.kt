@@ -104,7 +104,8 @@ class GraphBasedAgent(
         val result: Deferred<AgentContext<String>> = coroutineScope {
             async {
                 buildGraph().start(ctx) { step, node, ctx ->
-                    l.debug { "Step: ${step.index}, node: ${node.name}, input: ${ctx.input}" }
+                    val prettyInput = logObjectMapper.writeValueAsString(ctx.input)
+                    l.debug { "Step: ${step.index}, node: ${node.name}, input: $prettyInput" }
                 }
             }
         }
