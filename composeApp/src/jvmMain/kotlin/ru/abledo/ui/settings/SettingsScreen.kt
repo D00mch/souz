@@ -90,13 +90,13 @@ fun SettingsScreen(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = "Settings",
+                            text = "Настройки",
                             style = MaterialTheme.typography.headlineLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.glassColors.textPrimary
                         )
                         Text(
-                            text = "Configure keys and behaviour",
+                            text = "Ключи и поведение",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f)
                         )
@@ -111,13 +111,13 @@ fun SettingsScreen(
                 }
 
                 LabeledTextField(
-                    label = "GigaChat key",
+                    label = "GigaChat ключ",
                     value = state.gigaChatKey,
                     onValueChange = onGigaChatKeyInput,
                     modifier = Modifier.fillMaxWidth()
                 )
                 LabeledTextField(
-                    label = "SaluteSpeech key",
+                    label = "SaluteSpeech ключ",
                     value = state.saluteSpeechKey,
                     onValueChange = onSaluteSpeechKeyInput,
                     modifier = Modifier.fillMaxWidth()
@@ -137,7 +137,7 @@ fun SettingsScreen(
                         )
                     )
                     Text(
-                        text = "Use few shot examples",
+                        text = "Класть примеры использования тулов в контекст",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.glassColors.textPrimary
                     )
