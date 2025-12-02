@@ -23,7 +23,8 @@ class SettingsViewModel(
             setState {
                 copy(
                     gigaChatKey = keysProvider.gigaChatKey ?: "",
-                    saluteSpeechKey = keysProvider.saluteSpeechKey ?: ""
+                    saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
+                    useFewShotExamples = keysProvider.useFewShotExamples,
                 )
             }
         }
@@ -41,6 +42,10 @@ class SettingsViewModel(
             is SettingsEvent.InputSaluteSpeechKey -> {
                 keysProvider.saluteSpeechKey = event.key
                 setState { copy(saluteSpeechKey = event.key) }
+            }
+            is SettingsEvent.InputUseFewShotExamples -> {
+                keysProvider.useFewShotExamples = event.enabled
+                setState { copy(useFewShotExamples = event.enabled) }
             }
             SettingsEvent.GoToMain -> {
                 send(SettingsEffect.CloseScreen)

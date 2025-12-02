@@ -61,7 +61,7 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
                     ?.filter { !it.isOptional && !it.type.isMarkedNullable }
                     ?.mapNotNull { it.name } ?: emptyList()
             ),
-            fewShotExamples = if (settings.fewShotsDelegate) {
+            fewShotExamples = if (settings.useFewShotExamples) {
                 toolSetup.fewShotExamples.map { GigaRequest.FewShotExample(it.request, it.params) }
             } else {
                 emptyList()

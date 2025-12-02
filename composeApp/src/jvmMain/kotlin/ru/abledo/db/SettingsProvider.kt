@@ -8,7 +8,9 @@ class SettingsProvider(private val configStore: ConfigStore) {
 
     var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
     var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
-    val fewShotsDelegate: Boolean get() = _fewShotsDelegate?.lowercase() == "true"
+    var useFewShotExamples: Boolean
+        get() = _fewShotsDelegate?.lowercase() == "true"
+        set(value) { _fewShotsDelegate = value.toString() }
 
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
         object : ReadWriteProperty<Any?, String?> {

@@ -38,7 +38,10 @@ fun App(
                     onOpenSettings = { currentScreen = Screen.Settings },
                     onResizeRequest = onWindowResize
                 )
-                Screen.Settings -> SettingsScreen(onClose = { currentScreen = Screen.Main })
+                Screen.Settings -> SettingsScreen(
+                    onClose = { currentScreen = Screen.Main },
+                    onResizeRequest = onWindowResize
+                )
             }
         }
     }
