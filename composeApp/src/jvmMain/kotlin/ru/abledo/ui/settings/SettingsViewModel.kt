@@ -7,7 +7,7 @@ import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
-import ru.abledo.db.KeysProvider
+import ru.abledo.db.SettingsProvider
 import ru.abledo.giga.GigaRestChatAPI
 import ru.abledo.ui.BaseViewModel
 
@@ -16,14 +16,15 @@ class SettingsViewModel(
 ) : BaseViewModel<SettingsState, SettingsEvent, SettingsEffect>(), DIAware {
 
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
-    private val keysProvider: KeysProvider by di.instance()
+    private val keysProvider: SettingsProvider by di.instance()
 
     init {
         viewModelScope.launch {
             setState {
                 copy(
                     gigaChatKey = keysProvider.gigaChatKey ?: "",
-                    saluteSpeechKey = keysProvider.saluteSpeechKey ?: ""
+                    saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
+                    useFewShotExamples = keysProvider.useFewShotExamples,
                 )
             }
         }
@@ -41,6 +42,10 @@ class SettingsViewModel(
             is SettingsEvent.InputSaluteSpeechKey -> {
                 keysProvider.saluteSpeechKey = event.key
                 setState { copy(saluteSpeechKey = event.key) }
+            }
+            is SettingsEvent.InputUseFewShotExamples -> {
+                keysProvider.useFewShotExamples = event.enabled
+                setState { copy(useFewShotExamples = event.enabled) }
             }
             SettingsEvent.GoToMain -> {
                 send(SettingsEffect.CloseScreen)

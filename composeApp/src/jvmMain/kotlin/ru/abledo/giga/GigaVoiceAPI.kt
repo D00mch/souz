@@ -11,14 +11,14 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import java.io.File
 import org.slf4j.LoggerFactory
-import ru.abledo.db.KeysProvider
+import ru.abledo.db.SettingsProvider
 import ru.abledo.di.mainDiModule
 
 private val l = LoggerFactory.getLogger("GigaVoiceAPI")
 
 class GigaVoiceAPI(
     private val auth: GigaAuth,
-    private val keysProvider: KeysProvider,
+    private val keysProvider: SettingsProvider,
 ) {
     private val client = HttpClient(CIO) {
         var token = ""

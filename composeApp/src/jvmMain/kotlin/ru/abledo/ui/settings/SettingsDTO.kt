@@ -7,12 +7,14 @@ import ru.abledo.ui.VMState
 data class SettingsState(
     val gigaChatKey: String = "",
     val saluteSpeechKey: String = "",
+    val useFewShotExamples: Boolean = false,
 ): VMState
 
 sealed interface SettingsEvent : VMEvent {
     object GoToMain : SettingsEvent
     data class InputGigaChatKey(val key: String): SettingsEvent
     data class InputSaluteSpeechKey(val key: String): SettingsEvent
+    data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
 }
 
 sealed interface SettingsEffect : VMSideEffect {

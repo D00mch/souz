@@ -12,7 +12,7 @@ import org.kodein.di.instance
 import ru.abledo.ui.AppTheme
 import ru.abledo.ui.main.MainScreen
 import ru.abledo.ui.settings.SettingsScreen
-import ru.abledo.db.KeysProvider
+import ru.abledo.db.SettingsProvider
 
 @Composable
 @Preview
@@ -20,7 +20,7 @@ fun App(
     onWindowResize: (DpSize) -> Unit
 ) {
     val di = localDI()
-    val keysProvider: KeysProvider by di.instance()
+    val keysProvider: SettingsProvider by di.instance()
     val shouldStartInSettings = remember(keysProvider) {
         keysProvider.gigaChatKey.isNullOrEmpty() || keysProvider.saluteSpeechKey.isNullOrEmpty()
     }
@@ -38,7 +38,10 @@ fun App(
                     onOpenSettings = { currentScreen = Screen.Settings },
                     onResizeRequest = onWindowResize
                 )
-                Screen.Settings -> SettingsScreen(onClose = { currentScreen = Screen.Main })
+                Screen.Settings -> SettingsScreen(
+                    onClose = { currentScreen = Screen.Main },
+                    onResizeRequest = onWindowResize
+                )
             }
         }
     }

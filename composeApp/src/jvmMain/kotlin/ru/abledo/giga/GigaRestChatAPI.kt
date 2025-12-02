@@ -18,14 +18,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import org.slf4j.LoggerFactory
 import ru.abledo.db.ConfigStore
-import ru.abledo.db.KeysProvider
+import ru.abledo.db.SettingsProvider
 import java.io.File
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
 class GigaRestChatAPI(
     private val auth: GigaAuth,
-    private val keysProvider: KeysProvider,
+    private val keysProvider: SettingsProvider,
 ) : GigaChatAPI {
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
 
@@ -286,7 +286,7 @@ class GigaRestChatAPI(
         private val EMBEDDINGS_URL = "https://gigachat.devices.sberbank.ru/api/v1/embeddings"
         private val BALANCE_URL = "https://gigachat.devices.sberbank.ru/api/v1/balance"
 
-        val INSTANCE = GigaRestChatAPI(GigaAuth, KeysProvider(ConfigStore))
+        val INSTANCE = GigaRestChatAPI(GigaAuth, SettingsProvider(ConfigStore))
     }
 }
 

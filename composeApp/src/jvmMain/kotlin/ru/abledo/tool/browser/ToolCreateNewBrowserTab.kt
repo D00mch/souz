@@ -1,8 +1,6 @@
 package ru.abledo.tool.browser
 
 import ru.abledo.tool.*
-import ru.abledo.ui.main.detectDefaultBrowser
-import ru.abledo.ui.main.BrowserType
 
 class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<ToolCreateNewBrowserTab.Input> {
     data class Input(
@@ -35,7 +33,7 @@ class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<
         if (input.url.isBlank()) throw BadInputException("The url is empty. Can't open it")
 
         // 1. Определяем браузер по умолчанию
-        val browserType = detectDefaultBrowser(bash)
+        val browserType = bash.detectDefaultBrowser()
 
         // 2. Формируем команду в зависимости от браузера
         val command = when (browserType) {

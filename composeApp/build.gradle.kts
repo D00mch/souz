@@ -103,6 +103,8 @@ compose.desktop {
                         <string>Needed for voice capture.</string>
                         <key>NSSystemAdministrationUsageDescription</key>
                         <string>Needed to observe input for shortcuts.</string>
+                        <key>NSAppleEventsUsageDescription</key>
+                        <string>Needed to control Chrome for browser automation.</string>
                     """.trimIndent()
                 }
             }
