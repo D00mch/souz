@@ -64,9 +64,14 @@ fun SettingsScreen(
             onValueChange = onGigaChatKeyInput,
             modifier = Modifier.fillMaxWidth()
         )
-
         LabeledTextField(
             label = "SaluteSpeech key",
+            value = state.saluteSpeechKey,
+            onValueChange = onSaluteSpeechKeyInput,
+            modifier = Modifier.fillMaxWidth()
+        )
+        LabeledTextField(
+            label = "Use fewShotExamples",
             value = state.saluteSpeechKey,
             onValueChange = onSaluteSpeechKeyInput,
             modifier = Modifier.fillMaxWidth()

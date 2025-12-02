@@ -1,14 +1,12 @@
 package ru.abledo.giga
 
-import ru.abledo.tool.InputParamDescription
-import ru.abledo.tool.ShellException
-import ru.abledo.tool.ToolRunBashCommand
-import ru.abledo.tool.ToolSetup
-import ru.abledo.tool.ToolSetupWithAttachments
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import ru.abledo.db.ConfigStore
+import ru.abledo.db.SettingsProvider
+import ru.abledo.tool.*
 import ru.abledo.tool.desktop.ToolHotkeyMac
 import ru.abledo.tool.desktop.ToolMediaControl
 import ru.abledo.tool.desktop.ToolMouseClickMac
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlin.reflect.KCallable
 import kotlin.reflect.KClass
 import kotlin.reflect.full.declaredMembers
@@ -25,6 +23,7 @@ interface GigaToolSetup {
 val gigaJsonMapper = jacksonObjectMapper()
 
 inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
+    val settings = SettingsProvider(ConfigStore) // consider DI
     val toolSetup = this
     return object : GigaToolSetup {
         override val fn: GigaRequest.Function = GigaRequest.Function(
@@ -62,7 +61,11 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
                     ?.filter { !it.isOptional && !it.type.isMarkedNullable }
                     ?.mapNotNull { it.name } ?: emptyList()
             ),
-            fewShotExamples = toolSetup.fewShotExamples.map { GigaRequest.FewShotExample(it.request, it.params) },
+            fewShotExamples = if (settings.fewShotsDelegate) {
+                toolSetup.fewShotExamples.map { GigaRequest.FewShotExample(it.request, it.params) }
+            } else {
+                emptyList()
+            },
             returnParameters = GigaRequest.Parameters(
                 type = toolSetup.returnParameters.type,
                 properties = toolSetup.returnParameters.properties.mapValues {
@@ -111,7 +114,7 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): GigaT
 }
 
 fun Exception.toGigaToolMessage(): GigaRequest.Message {
-    val msg = when(this) {
+    val msg = when (this) {
         is ShellException -> "The function was executed with shell, the exit code: $exitCode, output: $message"
         else -> "Can:t invoke function: ${message ?: toString()}"
     }
@@ -126,3 +129,5 @@ fun main() {
     ToolMediaControl(ToolRunBashCommand).toGiga()
     ToolMouseClickMac().toGiga()
 }
+
+const val FEW_SHOTS = "USE_FEW_SHOTS"
