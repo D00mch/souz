@@ -68,9 +68,8 @@ class ToolMail(private val bash: ToolRunBashCommand) : ToolSetup<ToolMail.Input>
     )
 
     override val returnParameters = ReturnParameters(
-        properties = mapOf(
-            "result" to ReturnProperty("string", "Output from the Mail application (content, status, or error)")
-        )
+        type = "string",
+        properties = emptyMap()
     )
 
     override fun invoke(input: Input): String {
@@ -144,20 +143,30 @@ EOF
 
     private fun replyMessageCommand(id: Int, content: String): String = """
 osascript <<'EOF'
+set targetId to $id
+
 tell application "Mail"
-    activate
-    try
-        set targetMsg to (first message of inbox whose id is $id)
-        set replyMsg to reply targetMsg with opening window
-        
-        -- Insert content at the beginning
-        tell replyMsg
-            set content to "$content" & return & return & content
-        end tell
-        return "Reply draft created successfully."
-    on error
-        return "Error: Could not find message $id or create reply."
-    end try
+	activate 
+	
+	try
+		set targetMessage to (first message of inbox whose id is targetId)
+		set newReply to reply targetMessage with opening window
+		
+	on error
+		display dialog "Письмо с ID $id не найдено во Входящих." buttons {"OK"}
+		return
+	end try
+end tell
+
+delay 1
+
+tell application "System Events"
+	tell process "Mail"
+		keystroke "$content"
+		
+		keystroke return
+		keystroke return
+	end tell
 end tell
 EOF
     """.trimIndent()
@@ -178,6 +187,6 @@ EOF
 
 fun main() {
     val tool = ToolMail(ToolRunBashCommand)
-    val result = tool.invoke(ToolMail.Input(ToolMail.MailAction.list_messages))
+    val result = tool.invoke(ToolMail.Input(ToolMail.MailAction.reply_message, messageId = 81, content = "Спасибо, получил"))
     println(result)
 }
