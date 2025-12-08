@@ -120,7 +120,7 @@ class GigaRestChatAPI(
         val response = client.post(EMBEDDINGS_URL) {
             setBody(body)
         }
-        println(response.status)
+        l.info("embeddings status: ${response.status}")
         when {
             response.status.isSuccess() -> response.body<GigaResponse.Embeddings.Ok>()
             response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->

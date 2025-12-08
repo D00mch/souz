@@ -43,8 +43,7 @@ class MainViewModel(
 ) : BaseViewModel<MainState, MainEvent, MainEffect>(), DIAware {
 
     private val l = LoggerFactory.getLogger(MainViewModel::class.java)
-    private val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), appScope)
+    private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), viewModelScope)
     private val agentRef = AtomicReference<GraphBasedAgent?>(null)
     private var permissionWatcherJob: Job? = null
 
@@ -86,7 +85,7 @@ class MainViewModel(
 
         launch { audioRecorder.logState() }
         val desktopInfoRepo = DesktopInfoRepository(GigaRestChatAPI.INSTANCE, VectorDB)
-        appScope.launchDbSetup(desktopInfoRepo)
+        viewModelScope.launchDbSetup(desktopInfoRepo)
 
         val model = System.getenv("GIGA_MODEL")?.let { envModel ->
             GigaModel.entries.firstOrNull { enumModel ->
@@ -130,6 +129,13 @@ class MainViewModel(
             }
         } finally {
             GlobalScreen.unregisterNativeHook()
+        }
+    }
+
+    private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch(Dispatchers.IO) {
+        while (isActive) {
+            repo.storeDesktopDataDaily()
+            delay(5.minutes)
         }
     }
 
@@ -193,18 +199,7 @@ class MainViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        appScope.cancel()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
     }
 }
-
-private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch {
-    repo.storeDesktopDataDaily()
-    while (true) {
-        delay(5.minutes)
-        val browserHistory = DesktopDataExtractor.browserHistory(10)
-        repo.storeDesktopInfo(browserHistory)
-    }
-}
-

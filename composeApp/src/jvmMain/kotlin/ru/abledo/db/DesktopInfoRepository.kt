@@ -2,11 +2,13 @@ package ru.abledo.db
 
 import org.kodein.di.DI
 import org.kodein.di.instance
+import org.slf4j.LoggerFactory
 import ru.abledo.di.mainDiModule
 import ru.abledo.giga.GigaRequest
 import ru.abledo.giga.GigaResponse
 import ru.abledo.giga.GigaRestChatAPI
 import java.time.LocalDate
+import kotlin.random.Random
 
 /**
  * Orchestrates extraction of desktop data, embedding via LLM and persistence
@@ -16,6 +18,7 @@ class DesktopInfoRepository(
     private val api: GigaRestChatAPI,
     private val db: VectorDB,
 ) {
+    private val l = LoggerFactory.getLogger(DesktopInfoRepository::class.java)
 
     companion object {
         private const val LAST_RUN_KEY = "rag_repo_last_run"
@@ -30,6 +33,11 @@ class DesktopInfoRepository(
         if (ConfigStore.get(LAST_RUN_KEY, "") == today) return
         db.clearAllData()
         val data = DesktopDataExtractor.all()
+        if (data.isEmpty()) {
+            l.info("DesktopDataExtractor.all() is empty!")
+        } else {
+            l.info("About to store data, random sample: {}", data[Random.nextInt(data.size)])
+        }
         data.chunked(500).forEach { chunk ->
             storeDesktopInfo(chunk)
         }
@@ -42,7 +50,11 @@ class DesktopInfoRepository(
             is GigaResponse.Embeddings.Ok -> resp.data.map { it.embedding }
             is GigaResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
         }
-        db.insert(shortened, embeddings)
+        try {
+            db.insert(shortened, embeddings)
+        } catch (e: Exception) {
+            l.error("Can't insert data in vector storage, $e", e)
+        }
     }
 
     @Suppress("unused")
