@@ -17,7 +17,7 @@ class ToolCalendar(private val bash: ToolRunBashCommand) : ToolSetup<ToolCalenda
         val action: CalendarAction,
 
         @InputParamDescription("Name of the calendar to use (default: 'Calendar' or 'Home')")
-        val calendarName: String? = "Home",
+        val calendarName: String? = "Calendar",
 
         @InputParamDescription("Title/Summary of the event")
         val title: String? = null,
@@ -44,7 +44,7 @@ class ToolCalendar(private val bash: ToolRunBashCommand) : ToolSetup<ToolCalenda
             request = "Какие встречи у меня сегодня?",
             params = mapOf(
                 "action" to CalendarAction.list_today_events,
-                "calendarName" to "Work"
+                "calendarName" to "Calendar"
             )
         ),
         FewShotExample(
@@ -64,7 +64,7 @@ class ToolCalendar(private val bash: ToolRunBashCommand) : ToolSetup<ToolCalenda
     )
 
     override fun invoke(input: Input): String {
-        val calName = input.calendarName ?: "Home"
+        val calName = input.calendarName ?: "Calendar"
 
         return when (input.action) {
             CalendarAction.list_today_events -> {
@@ -72,7 +72,6 @@ class ToolCalendar(private val bash: ToolRunBashCommand) : ToolSetup<ToolCalenda
             }
 
             CalendarAction.create_event -> {
-                // ИСПРАВЛЕНИЕ: Умная обработка ошибок
                 if (input.title == null) {
                     return "Error: 'title' is required."
                 }
@@ -113,7 +112,6 @@ class ToolCalendar(private val bash: ToolRunBashCommand) : ToolSetup<ToolCalenda
         }
     }
 
-    // ... (Методы AppleScript остаются без изменений) ...
     private fun listTodayEventsCommand(calendarName: String): String = """
 osascript <<'EOF'
 set calName to "$calendarName"
