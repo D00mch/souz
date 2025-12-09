@@ -59,8 +59,9 @@ class ToolCalendar(private val bash: ToolRunBashCommand) : ToolSetup<ToolCalenda
     )
 
     override val returnParameters = ReturnParameters(
-        type = "string",
-        properties = emptyMap()
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Operation status")
+        )
     )
 
     override fun invoke(input: Input): String {

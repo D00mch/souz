@@ -36,7 +36,7 @@ class ToolMail(private val bash: ToolRunBashCommand) : ToolSetup<ToolMail.Input>
     )
 
     override val name: String = "MailAppTool"
-    override val description: String = "Interact with Mails: unread count, list messages, read message, reply message, send new message"
+    override val description: String = "Interact with MacOS Mail app: unread count, list messages, read message, reply message, send new message"
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -68,8 +68,9 @@ class ToolMail(private val bash: ToolRunBashCommand) : ToolSetup<ToolMail.Input>
     )
 
     override val returnParameters = ReturnParameters(
-        type = "string",
-        properties = emptyMap()
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Mail operation result")
+        )
     )
 
     override fun invoke(input: Input): String {
