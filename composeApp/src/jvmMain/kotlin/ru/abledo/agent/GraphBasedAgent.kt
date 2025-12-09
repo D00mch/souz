@@ -27,6 +27,8 @@ import org.kodein.di.instance
 import ru.abledo.di.mainDiModule
 import ru.abledo.tool.browser.detectDefaultBrowser
 import ru.abledo.tool.browser.prettyName
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.ceil
@@ -199,9 +201,12 @@ class GraphBasedAgent(
             ""
         }
 
+        val currentDateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+        val dateInfo = "Текущие дата и время: $currentDateTime"
+
         return GigaRequest.Message(
             role = GigaMessageRole.user,
-            content = listOf(INFO_PREFIX, msgRelatedDataInTheStore, openedApps, browserName)
+            content = listOf(INFO_PREFIX, msgRelatedDataInTheStore, openedApps, browserName, dateInfo)
                 .filter { it.isNotBlank() }
                 .joinToString(separator = ";\n")
         )

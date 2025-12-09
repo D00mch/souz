@@ -54,7 +54,6 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
 
             ToolCategory.DESKTOP to listOf(
                 ToolWindowsManager.toGiga(),
-                ToolMail(ToolRunBashCommand).toGiga(),
                 //ToolHotkeyMac().toGiga(), // we should provide deliberate tools
                 ToolOpenNote(ToolRunBashCommand).toGiga(),
                 //ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
@@ -62,11 +61,19 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolOpen(ToolRunBashCommand).toGiga(),
                 ToolCreateNote(ToolRunBashCommand).toGiga(),
                 //ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
+                //ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
+                //ToolMouseClickMac().toGiga(),
+                //ToolCollectButtons(ToolRunBashCommand).toGiga(), // too slow, only for mouse
+                //ToolShowApps.toGiga(), // we get it by default anyway
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
-//              ToolOpenFolder(ToolRunBashCommand).toGiga(), // ToolOpen can do it
-//                ToolMouseClickMac().toGiga(),
-//                ToolCollectButtons(ToolRunBashCommand).toGiga(), // too slow, only for mouse
-//                ToolShowApps.toGiga(), // we get it by default anyway
+            ).associateBy { it.fn.name },
+
+            ToolCategory.CALENDAR to listOf(
+                ToolCalendar(ToolRunBashCommand).toGiga(),
+            ).associateBy { it.fn.name },
+
+            ToolCategory.MAIL to listOf(
+                ToolMail(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
 //            ToolCategory.IO to listOf(
