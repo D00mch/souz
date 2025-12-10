@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -75,18 +76,20 @@ fun MainScreen(
         onClear = { viewModel.send(MainEvent.ClearContext) },
         onOpenSettings = onOpenSettings,
         onResizeRequest = onResizeRequest,
-        onStopSpeech = { viewModel.send(MainEvent.StopSpeech) }
+        onStopSpeech = { viewModel.send(MainEvent.StopSpeech) },
+        onShowLastText = { viewModel.send(MainEvent.ShowLastText) },
     )
 }
 
 @Composable
 fun MainScreen(
     state: MainState,
-    onToggleListening: () -> Unit,
-    onClear: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit,
-    onStopSpeech: () -> Unit,
+    onToggleListening: () -> Unit = {},
+    onClear: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onResizeRequest: (DpSize) -> Unit = {},
+    onStopSpeech: () -> Unit = {},
+    onShowLastText: () -> Unit = {},
 ) {
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
 
@@ -126,6 +129,16 @@ fun MainScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        if (state.lastText != null) {
+                            IconButton(onClick = onShowLastText, modifier = Modifier.size(TopButtonSize)) {
+                                Icon(
+                                    Icons.Rounded.SkipPrevious,
+                                    null,
+                                    tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(TopIconSize)
+                                )
+                            }
+                        }
                         IconButton(onClick = onStopSpeech, modifier = Modifier.size(TopButtonSize)) {
                             Icon(
                                 Icons.AutoMirrored.Rounded.VolumeOff,
@@ -261,7 +274,6 @@ fun MainScreenPreview() {
         Box(Modifier.fillMaxSize().background(Color(0xFF336699))) {
             MainScreen(
                 state = MainState(displayedText = "Theme extracted!", statusMessage = "", isListening = false),
-                onToggleListening = {}, onClear = {}, onOpenSettings = {}, onResizeRequest = {}, onStopSpeech = {},
             )
         }
     }

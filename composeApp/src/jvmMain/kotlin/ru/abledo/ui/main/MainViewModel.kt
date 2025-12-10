@@ -39,7 +39,7 @@ class MainViewModel(
         ioLaunch { initializeAgent() }
     }
 
-    override fun initialState(): MainState = MainState()
+    override fun initialState(): MainState = MainState(displayedText = DEFAULT_START_TEXT)
 
     override suspend fun handleEvent(event: MainEvent) {
         when (event) {
@@ -47,6 +47,7 @@ class MainViewModel(
             MainEvent.StopListening -> stopRecording()
             MainEvent.ClearContext -> clearContext()
             MainEvent.StopSpeech -> stopPlayText()
+            MainEvent.ShowLastText -> setPreviousText()
         }
     }
 
@@ -144,18 +145,27 @@ class MainViewModel(
         setState { copy(statusMessage = "Ожидание горячей клавиши") }
     }
 
+    private suspend fun setPreviousText() {
+        val prevText = currentState.lastText ?: return
+        setState { copy(displayedText = prevText, lastText = null, userExpectCloseOnX = false) }
+    }
+
     private suspend fun clearContext() {
         agentRef.get()?.clearContext()
         when(currentState.userExpectCloseOnX) {
             false -> {
                 val currentText = currentState.displayedText
-                val clearedText = "Контекст очищен. Нажмите еще раз, чтобы скрыть."
-                setState { copy(displayedText = clearedText, lastText = currentText, userExpectCloseOnX = true) }
+                val clearedText = "$DEFAULT_CLEARED_TEXT. Нажмите еще раз, чтобы скрыть."
+                val lastText = if (currentText == DEFAULT_CLEARED_TEXT || currentText == DEFAULT_START_TEXT) {
+                    null
+                } else {
+                    currentText
+                }
+                setState { copy(displayedText = clearedText, lastText = lastText, userExpectCloseOnX = true) }
             }
 
             true -> {
-                val clearedText = "Контекст очищен"
-                setState { copy(displayedText = clearedText, userExpectCloseOnX = false) }
+                setState { copy(displayedText = DEFAULT_CLEARED_TEXT, userExpectCloseOnX = false) }
                 send(MainEffect.Hide)
             }
         }
@@ -199,5 +209,10 @@ class MainViewModel(
         super.onCleared()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
+    }
+
+    private companion object {
+        const val DEFAULT_CLEARED_TEXT = "Контекст очищен"
+        const val DEFAULT_START_TEXT = "Что делаем?"
     }
 }
