@@ -50,7 +50,8 @@ private val MaxWidth = 650.dp
 @Composable
 fun MainScreen(
     onOpenSettings: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit
+    onResizeRequest: (DpSize) -> Unit,
+    onCloseWindow: () -> Unit,
 ) {
     val di = localDI()
     val viewModel = viewModel { MainViewModel(di) }
@@ -64,7 +65,8 @@ fun MainScreen(
         },
         onClear = { viewModel.send(MainEvent.ClearContext) },
         onOpenSettings = onOpenSettings,
-        onResizeRequest = onResizeRequest
+        onResizeRequest = onResizeRequest,
+        onCloseWindow = onCloseWindow,
     )
 }
 
@@ -74,7 +76,8 @@ fun MainScreen(
     onToggleListening: () -> Unit,
     onClear: () -> Unit,
     onOpenSettings: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit
+    onResizeRequest: (DpSize) -> Unit,
+    onCloseWindow: () -> Unit,
 ) {
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
 
@@ -118,7 +121,13 @@ fun MainScreen(
                         IconButton(onClick = onOpenSettings, modifier = Modifier.size(TopButtonSize)) {
                             Icon(Icons.Rounded.Settings, null, tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f), modifier = Modifier.size(TopIconSize))
                         }
-                        IconButton(onClick = onClear, modifier = Modifier.size(TopButtonSize)) {
+                        IconButton(
+                            onClick = {
+                                onClear()
+                                onCloseWindow()
+                            },
+                            modifier = Modifier.size(TopButtonSize)
+                        ) {
                             Icon(Icons.Rounded.Close, null, tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f), modifier = Modifier.size(TopIconSize))
                         }
                     }
@@ -235,7 +244,7 @@ fun MainScreenPreview() {
         Box(Modifier.fillMaxSize().background(Color(0xFF336699))) {
             MainScreen(
                 state = MainState(displayedText = "Theme extracted!", statusMessage = "", isListening = false),
-                onToggleListening = {}, onClear = {}, onOpenSettings = {}, onResizeRequest = {}
+                onToggleListening = {}, onClear = {}, onOpenSettings = {}, onResizeRequest = {}, onCloseWindow = {}
             )
         }
     }

@@ -73,7 +73,8 @@ fun main() {
                             }
 
                             windowState.size = targetSize
-                        }
+                        },
+                        onCloseWindow = { isWindowVisible = false }
                     )
                 }
             }
