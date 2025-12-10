@@ -40,7 +40,6 @@ import org.kodein.di.compose.localDI
 import ru.abledo.ui.glassColors
 import ru.abledo.ui.glassShape
 
-// --- ЛЕЙАУТ КОНСТАНТЫ (Их можно оставить здесь, это размеры элементов) ---
 private val TopButtonSize = 22.dp
 private val TopIconSize = 16.dp
 private val BaseWidth = 500.dp
@@ -91,7 +90,7 @@ fun MainScreen(
 ) {
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
 
-    // --- ЛОГИКА РЕСАЙЗА ---
+    // resize logic
     LaunchedEffect(textContent) {
         val textLen = textContent.length
         val calculatedHeight = (260 + (textLen * 0.8)).dp
@@ -117,9 +116,8 @@ fun MainScreen(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // ВЕРХНЯЯ ЧАСТЬ
+                // top bar
                 Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                    // Кнопки
                     Row(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
@@ -157,7 +155,7 @@ fun MainScreen(
                         }
                     }
 
-                    // Текст + Скролл
+                    // text, scroll
                     val scrollState = rememberScrollState()
                     val dynamicFontSize = remember(textContent) {
                         when (textContent.length) {
@@ -195,7 +193,6 @@ fun MainScreen(
                     }
                 }
 
-                // НИЖНЯЯ ЧАСТЬ
                 Box(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp),
                     contentAlignment = Alignment.Center
@@ -214,11 +211,8 @@ fun MainScreen(
     }
 }
 
-// --- КОМПОНЕНТЫ ---
-
 @Composable
 fun GlassCard(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    // Используем цвета и форму из темы
     Box(
         modifier = modifier
             .shadow(elevation = 0.dp, shape = MaterialTheme.glassShape)
@@ -236,9 +230,8 @@ fun MagicOrb(isActive: Boolean) {
     val angle by infiniteTransition.animateFloat(0f, 360f, infiniteRepeatable(tween(spinDuration, easing = LinearEasing)))
     val pulseScale by infiniteTransition.animateFloat(1f, if (isActive) 1.15f else 1.05f, infiniteRepeatable(tween(if (isActive) 600 else 2500, easing = FastOutSlowInEasing), RepeatMode.Reverse))
 
-    // Используем цвета из темы
     val color1 = if (isActive) MaterialTheme.glassColors.orbCyan else MaterialTheme.glassColors.orbIndigo
-    val color2 = if (isActive) MaterialTheme.glassColors.orbWhite else Color(0xFF818CF8) // Светлый индиго можно оставить хардкодом или добавить в тему
+    val color2 = if (isActive) MaterialTheme.glassColors.orbWhite else Color(0xFF818CF8)
 
     Box(contentAlignment = Alignment.Center, modifier = Modifier.scale(pulseScale)) {
         Canvas(Modifier.size(70.dp)) { drawCircle(Brush.radialGradient(listOf(color1.copy(alpha = 0.3f), Color.Transparent), center, size.minDimension/1.5f)) }
@@ -264,7 +257,6 @@ fun LiquidScrollbar(scrollState: ScrollState, modifier: Modifier = Modifier) {
 @Preview
 @Composable
 fun MainScreenPreview() {
-    // Оборачиваем в AppTheme, чтобы подтянулись цвета из DefaultGlassColors
     ru.abledo.ui.AppTheme {
         Box(Modifier.fillMaxSize().background(Color(0xFF336699))) {
             MainScreen(
