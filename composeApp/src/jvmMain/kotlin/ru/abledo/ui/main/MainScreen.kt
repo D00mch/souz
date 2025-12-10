@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
@@ -50,7 +51,8 @@ private val MaxWidth = 650.dp
 @Composable
 fun MainScreen(
     onOpenSettings: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit
+    onResizeRequest: (DpSize) -> Unit,
+    onCloseWindow: () -> Unit,
 ) {
     val di = localDI()
     val viewModel = viewModel { MainViewModel(di) }
@@ -64,7 +66,9 @@ fun MainScreen(
         },
         onClear = { viewModel.send(MainEvent.ClearContext) },
         onOpenSettings = onOpenSettings,
-        onResizeRequest = onResizeRequest
+        onResizeRequest = onResizeRequest,
+        onCloseWindow = onCloseWindow,
+        onStopSpeech = { viewModel.send(MainEvent.StopSpeech) }
     )
 }
 
@@ -74,7 +78,9 @@ fun MainScreen(
     onToggleListening: () -> Unit,
     onClear: () -> Unit,
     onOpenSettings: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit
+    onResizeRequest: (DpSize) -> Unit,
+    onCloseWindow: () -> Unit,
+    onStopSpeech: () -> Unit,
 ) {
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
 
@@ -115,11 +121,35 @@ fun MainScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        IconButton(onClick = onOpenSettings, modifier = Modifier.size(TopButtonSize)) {
-                            Icon(Icons.Rounded.Settings, null, tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f), modifier = Modifier.size(TopIconSize))
+                        IconButton(onClick = onStopSpeech, modifier = Modifier.size(TopButtonSize)) {
+                            Icon(
+                                Icons.AutoMirrored.Rounded.VolumeOff,
+                                null,
+                                tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
+                                modifier = Modifier.size(TopIconSize)
+                            )
                         }
-                        IconButton(onClick = onClear, modifier = Modifier.size(TopButtonSize)) {
-                            Icon(Icons.Rounded.Close, null, tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f), modifier = Modifier.size(TopIconSize))
+                        IconButton(onClick = onOpenSettings, modifier = Modifier.size(TopButtonSize)) {
+                            Icon(
+                                Icons.Rounded.Settings,
+                                null,
+                                tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
+                                modifier = Modifier.size(TopIconSize)
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                onClear()
+                                onCloseWindow()
+                            },
+                            modifier = Modifier.size(TopButtonSize)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Close,
+                                null,
+                                tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f),
+                                modifier = Modifier.size(TopIconSize)
+                            )
                         }
                     }
 
@@ -235,7 +265,8 @@ fun MainScreenPreview() {
         Box(Modifier.fillMaxSize().background(Color(0xFF336699))) {
             MainScreen(
                 state = MainState(displayedText = "Theme extracted!", statusMessage = "", isListening = false),
-                onToggleListening = {}, onClear = {}, onOpenSettings = {}, onResizeRequest = {}
+                onToggleListening = {}, onClear = {}, onOpenSettings = {}, onResizeRequest = {}, onCloseWindow = {},
+                onStopSpeech = {},
             )
         }
     }

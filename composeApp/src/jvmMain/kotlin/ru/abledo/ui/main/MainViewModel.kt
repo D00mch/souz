@@ -2,31 +2,16 @@ package ru.abledo.ui.main
 
 import androidx.lifecycle.viewModelScope
 import com.github.kwhat.jnativehook.GlobalScreen
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
 import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.abledo.agent.GraphBasedAgent
-import ru.abledo.audio.ActiveSoundRecorderImpl
-import ru.abledo.audio.InMemoryAudioRecorder
-import ru.abledo.audio.playMacPing
-import ru.abledo.audio.playText
-import ru.abledo.audio.playTextRand
-import ru.abledo.audio.rawToOpusOgg
-import ru.abledo.audio.stopPlayText
-import ru.abledo.db.DesktopDataExtractor
+import ru.abledo.audio.*
 import ru.abledo.db.DesktopInfoRepository
 import ru.abledo.db.VectorDB
 import ru.abledo.giga.GigaModel
@@ -61,6 +46,7 @@ class MainViewModel(
             MainEvent.StartListening -> startRecording()
             MainEvent.StopListening -> stopRecording()
             MainEvent.ClearContext -> clearContext()
+            MainEvent.StopSpeech -> stopPlayText()
         }
     }
 
