@@ -16,6 +16,8 @@ import ru.abledo.tool.config.ToolSoundConfig
 import ru.abledo.tool.config.ToolSoundConfigDiff
 import ru.abledo.tool.dataAnalytics.ToolCreatePlotFromCsv
 import ru.abledo.tool.desktop.*
+import ru.abledo.tool.calendar.*
+import ru.abledo.tool.mail.*
 import ru.abledo.tool.files.*
 
 class ToolsFactory(private val repo: DesktopInfoRepository) {
@@ -69,11 +71,17 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
             ).associateBy { it.fn.name },
 
             ToolCategory.CALENDAR to listOf(
-                ToolCalendar(ToolRunBashCommand).toGiga(),
+                ToolCalendarListTodayEvents(ToolRunBashCommand).toGiga(),
+                ToolCalendarCreateEvent(ToolRunBashCommand).toGiga(),
+                ToolCalendarDeleteEvent(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.MAIL to listOf(
-                ToolMail(ToolRunBashCommand).toGiga(),
+                ToolMailUnreadMessagesCount(ToolRunBashCommand).toGiga(),
+                ToolMailListMessages(ToolRunBashCommand).toGiga(),
+                ToolMailReadMessage(ToolRunBashCommand).toGiga(),
+                ToolMailReplyMessage(ToolRunBashCommand).toGiga(),
+                ToolMailSendNewMessage(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
 //            ToolCategory.IO to listOf(
