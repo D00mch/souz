@@ -7,8 +7,13 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeMute
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.SurroundSound
+import androidx.compose.material.icons.rounded.VolumeMute
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +72,7 @@ fun MainScreen(
         onOpenSettings = onOpenSettings,
         onResizeRequest = onResizeRequest,
         onCloseWindow = onCloseWindow,
+        onStopSpeech = { viewModel.send(MainEvent.StopSpeech) }
     )
 }
 
@@ -78,6 +84,7 @@ fun MainScreen(
     onOpenSettings: () -> Unit,
     onResizeRequest: (DpSize) -> Unit,
     onCloseWindow: () -> Unit,
+    onStopSpeech: () -> Unit,
 ) {
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
 
@@ -118,8 +125,21 @@ fun MainScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        IconButton(onClick = onStopSpeech, modifier = Modifier.size(TopButtonSize)) {
+                            Icon(
+                                Icons.AutoMirrored.Rounded.VolumeOff,
+                                null,
+                                tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
+                                modifier = Modifier.size(TopIconSize)
+                            )
+                        }
                         IconButton(onClick = onOpenSettings, modifier = Modifier.size(TopButtonSize)) {
-                            Icon(Icons.Rounded.Settings, null, tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f), modifier = Modifier.size(TopIconSize))
+                            Icon(
+                                Icons.Rounded.Settings,
+                                null,
+                                tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
+                                modifier = Modifier.size(TopIconSize)
+                            )
                         }
                         IconButton(
                             onClick = {
@@ -128,7 +148,12 @@ fun MainScreen(
                             },
                             modifier = Modifier.size(TopButtonSize)
                         ) {
-                            Icon(Icons.Rounded.Close, null, tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f), modifier = Modifier.size(TopIconSize))
+                            Icon(
+                                Icons.Rounded.Close,
+                                null,
+                                tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f),
+                                modifier = Modifier.size(TopIconSize)
+                            )
                         }
                     }
 
@@ -244,7 +269,8 @@ fun MainScreenPreview() {
         Box(Modifier.fillMaxSize().background(Color(0xFF336699))) {
             MainScreen(
                 state = MainState(displayedText = "Theme extracted!", statusMessage = "", isListening = false),
-                onToggleListening = {}, onClear = {}, onOpenSettings = {}, onResizeRequest = {}, onCloseWindow = {}
+                onToggleListening = {}, onClear = {}, onOpenSettings = {}, onResizeRequest = {}, onCloseWindow = {},
+                onStopSpeech = {},
             )
         }
     }

@@ -17,6 +17,7 @@ sealed interface MainEvent : VMEvent {
     object StartListening : MainEvent
     object StopListening : MainEvent
     object ClearContext : MainEvent
+    object StopSpeech : MainEvent
 }
 
 sealed interface MainEffect : VMSideEffect {
