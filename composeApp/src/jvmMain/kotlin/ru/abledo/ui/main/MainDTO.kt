@@ -10,7 +10,9 @@ import ru.abledo.ui.VMState
 data class MainState(
     val displayedText: String = "От меня сейчас что требуется?",
     val isListening: Boolean = false,
-    val statusMessage: String = "Ожидание горячей клавиши"
+    val statusMessage: String = "Ожидание горячей клавиши",
+    val lastText: String? = null,
+    val userExpectCloseOnX: Boolean = false
 ) : VMState
 
 sealed interface MainEvent : VMEvent {
@@ -22,4 +24,5 @@ sealed interface MainEvent : VMEvent {
 
 sealed interface MainEffect : VMSideEffect {
     data class ShowError(val message: String) : MainEffect
+    object Hide : MainEffect
 }

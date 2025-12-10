@@ -58,6 +58,15 @@ fun MainScreen(
     val viewModel = viewModel { MainViewModel(di) }
     val state by viewModel.uiState.collectAsState()
 
+    LaunchedEffect(viewModel) {
+        viewModel.effects.collect { effect ->
+            when(effect) {
+                MainEffect.Hide -> onCloseWindow()
+                is MainEffect.ShowError -> Unit
+            }
+        }
+    }
+
     MainScreen(
         state = state,
         onToggleListening = {
@@ -67,7 +76,6 @@ fun MainScreen(
         onClear = { viewModel.send(MainEvent.ClearContext) },
         onOpenSettings = onOpenSettings,
         onResizeRequest = onResizeRequest,
-        onCloseWindow = onCloseWindow,
         onStopSpeech = { viewModel.send(MainEvent.StopSpeech) }
     )
 }
@@ -79,7 +87,6 @@ fun MainScreen(
     onClear: () -> Unit,
     onOpenSettings: () -> Unit,
     onResizeRequest: (DpSize) -> Unit,
-    onCloseWindow: () -> Unit,
     onStopSpeech: () -> Unit,
 ) {
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
@@ -138,10 +145,7 @@ fun MainScreen(
                             )
                         }
                         IconButton(
-                            onClick = {
-                                onClear()
-                                onCloseWindow()
-                            },
+                            onClick = { onClear() },
                             modifier = Modifier.size(TopButtonSize)
                         ) {
                             Icon(
@@ -265,8 +269,7 @@ fun MainScreenPreview() {
         Box(Modifier.fillMaxSize().background(Color(0xFF336699))) {
             MainScreen(
                 state = MainState(displayedText = "Theme extracted!", statusMessage = "", isListening = false),
-                onToggleListening = {}, onClear = {}, onOpenSettings = {}, onResizeRequest = {}, onCloseWindow = {},
-                onStopSpeech = {},
+                onToggleListening = {}, onClear = {}, onOpenSettings = {}, onResizeRequest = {}, onStopSpeech = {},
             )
         }
     }

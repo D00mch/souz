@@ -53,6 +53,7 @@ class MainViewModel(
     override suspend fun handleSideEffect(effect: MainEffect) {
         when (effect) {
             is MainEffect.ShowError -> l.error(effect.message)
+            MainEffect.Hide -> Unit
         }
     }
 
@@ -145,8 +146,19 @@ class MainViewModel(
 
     private suspend fun clearContext() {
         agentRef.get()?.clearContext()
-        val clearedText = "Контекст очищен"
-        setState { copy(displayedText = clearedText) }
+        when(currentState.userExpectCloseOnX) {
+            false -> {
+                val currentText = currentState.displayedText
+                val clearedText = "Контекст очищен. Нажмите еще раз, чтобы скрыть."
+                setState { copy(displayedText = clearedText, lastText = currentText, userExpectCloseOnX = true) }
+            }
+
+            true -> {
+                val clearedText = "Контекст очищен"
+                setState { copy(displayedText = clearedText, userExpectCloseOnX = false) }
+                send(MainEffect.Hide)
+            }
+        }
     }
 
     private fun registerNativeHook(): Boolean = runCatching {
