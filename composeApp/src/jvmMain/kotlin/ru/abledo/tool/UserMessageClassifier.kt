@@ -16,8 +16,8 @@ enum class ToolCategory {
     DESKTOP,
     IO,
     DATAANALYTICS,
-    CALENDAR, // Добавлено
-    MAIL      // Добавлено
+    CALENDAR,
+    MAIL
 }
 
 object LocalRegexClassifier : UserMessageClassifier {
