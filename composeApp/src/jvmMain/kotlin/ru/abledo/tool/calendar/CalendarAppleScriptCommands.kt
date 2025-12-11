@@ -65,4 +65,24 @@ EOF
         end tell
 EOF
     """.trimIndent()
+
+    fun listCalendarsCommand(): String = """
+osascript <<'EOF'
+tell application "Calendar"
+    try
+        -- Получаем имена всех календарей
+        set calNames to name of every calendar
+        
+        set output to "Available calendars:" & return
+        repeat with cName in calNames
+            set output to output & "- " & cName & return
+        end repeat
+        return output
+    on error errMsg
+        return "Error listing calendars: " & errMsg
+    end try
+end tell
+EOF
+    """.trimIndent()
 }
+

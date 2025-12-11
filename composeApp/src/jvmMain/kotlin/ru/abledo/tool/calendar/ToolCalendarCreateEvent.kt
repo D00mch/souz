@@ -19,10 +19,10 @@ class ToolCalendarCreateEvent(private val bash: ToolRunBashCommand) : ToolSetup<
         val title: String,
 
         @InputParamDescription("REQUIRED for create_event. Absolute date-time string (e.g. '2025-12-07 14:00:00'). Calculate based on current time.")
-        val startDateTime: String? = null,
+        val startDateTime: String,
 
         @InputParamDescription("Duration of the event in minutes (default 60)")
-        val durationMinutes: Int? = 60,
+        val durationMinutes: Int = 60,
 
         @InputParamDescription("Location of the event")
         val location: String? = null,
