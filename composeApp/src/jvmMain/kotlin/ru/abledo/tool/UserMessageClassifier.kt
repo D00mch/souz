@@ -16,6 +16,8 @@ enum class ToolCategory {
     DESKTOP,
     IO,
     DATAANALYTICS,
+    CALENDAR,
+    MAIL
 }
 
 object LocalRegexClassifier : UserMessageClassifier {
@@ -27,6 +29,7 @@ object LocalRegexClassifier : UserMessageClassifier {
         }
         val lastUser = chat.messages.lastOrNull { it.role == GigaMessageRole.user }
             ?: return null
+
         val text = lastUser.content
             .substringAfter("new message:\n", lastUser.content)
             .lowercase()
@@ -39,7 +42,9 @@ object LocalRegexClassifier : UserMessageClassifier {
 
         val sorted = scores.entries.sortedByDescending { it.value }
         val best = sorted.firstOrNull() ?: return null
+
         if (best.value == 0.0) return null
+
         val second = sorted.getOrNull(1)?.value ?: 0.0
         return if (best.value > second) best.key else null
     }
@@ -78,5 +83,15 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("построй|созда|сделай|проанализ|график|chart|graph|plot|что на графике"), 2.0),
             WeightedRegex(Regex("find|скольк|корреляц|correlation|причин"), 1.0),
         ),
+        ToolCategory.CALENDAR to listOf(
+            WeightedRegex(Regex("календар|calendar|расписани|schedule"), 2.0),
+            WeightedRegex(Regex("событи|event|встреч|meeting|напоминани|reminder"), 2.0),
+            WeightedRegex(Regex("завтра|сегодня|послезавтра|дат|date|планируй|запланируй"), 1.0),
+        ),
+        ToolCategory.MAIL to listOf(
+            WeightedRegex(Regex("почт|mail|email|e-mail|gmail|outlook|inbox|входящ|исходящ"), 2.0),
+            WeightedRegex(Regex("письм|letter|рассылк|спам|непрочитан"), 2.0),
+            WeightedRegex(Regex("отправ|send|ответ|reply|прочти|read"), 1.0),
+        )
     )
 }

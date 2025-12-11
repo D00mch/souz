@@ -39,7 +39,7 @@ object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
     override val returnParameters = ReturnParameters(
         properties = mapOf(
             "result" to ReturnProperty(
-                "object", """JSON array of arrays of file path and matching line. Example:
+                "string", """JSON array of arrays of file path and matching line. Example:
 ```json
 [
     ["/Users/m1/wiki/vr_article.md", "Занимаюсь спортом в VR уже 4 года"]

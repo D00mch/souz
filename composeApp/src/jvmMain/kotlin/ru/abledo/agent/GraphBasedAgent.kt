@@ -27,6 +27,8 @@ import org.kodein.di.instance
 import ru.abledo.di.mainDiModule
 import ru.abledo.tool.browser.detectDefaultBrowser
 import ru.abledo.tool.browser.prettyName
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.ceil
@@ -204,9 +206,12 @@ class GraphBasedAgent(
             ""
         }
 
+        val currentDateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+        val dateInfo = "Текущие дата и время: $currentDateTime"
+
         return GigaRequest.Message(
             role = GigaMessageRole.user,
-            content = listOf(INFO_PREFIX, msgRelatedDataInTheStore, openedApps, browserName)
+            content = listOf(INFO_PREFIX, msgRelatedDataInTheStore, openedApps, browserName, dateInfo)
                 .filter { it.isNotBlank() }
                 .joinToString(separator = ";\n")
         )
@@ -230,7 +235,7 @@ private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(
 
 private fun String.estimateTokenCount(): Int = ceil(length / APPROX_CHARS_PER_TOKEN).toInt()
 
-private val CLASSIFIER_PROMPT = """
+val CLASSIFIER_PROMPT = """
 Ты — алгоритм классификации. Выбери категорию запроса.
 Категории:
 - coder: если слышишь "кодер", или когда нужно объяснить, изменить или написать код, провести рефакторинг;
@@ -238,6 +243,8 @@ private val CLASSIFIER_PROMPT = """
 - desktop: манипуляции с рабочем столом, окнами и экранами, открытие и использование приложений, работа с заметками, открытие папок и файлов;
 - config: изменение или сохранение настроек, вроде скорости речи, запоминание и исполнение инструкций;
 - dataAnalytics: когда надо создать график или найти корреляцию между двумя переменными;
+- mail: получение и отправка писем, список писем, чтение писем, ответ на письмо, прочтение сообщений из почты;
+- calendar: создание и удаление событий в календаре;
 Примеры:
 добавь вызов логов в данную функцию -> coder
 что делается выделенный код-> coder
@@ -251,8 +258,12 @@ private val CLASSIFIER_PROMPT = """
 перемести окно на передний план -> desktop
 запомни инструкцию при слове тишина уменьшай громкость -> config
 построй график дохода по клиенту -> dataAnalytics
+какие письма у меня непрочитанные -> mail
+ответь на письмо Артура: 'Спасибо, получил' -> mail
+что у меня сегодня по плану -> calendar
+поставь событие на 10 вечера в календаре -> calendar
 
-Ответ с только одним словом: coder, browser, desktop, config, or dataAnalytics.
+Ответ с только одним словом: coder, browser, desktop, config, calendar, mail, or dataAnalytics.
 """.trimIndent()
 
 val SYSTEM_PROMPT = """

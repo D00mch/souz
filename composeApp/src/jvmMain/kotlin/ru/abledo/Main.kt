@@ -52,7 +52,7 @@ fun main() {
                 state = windowState,
                 transparent = true,
                 undecorated = true,
-                resizable = false,
+                resizable = true,
                 alwaysOnTop = true
             ) {
                 WindowDraggableArea(modifier = Modifier.fillMaxSize()) {

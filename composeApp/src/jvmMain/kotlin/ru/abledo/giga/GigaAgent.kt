@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import ru.abledo.agent.CLASSIFIER_PROMPT
 import java.util.concurrent.atomic.AtomicBoolean
 
 class GigaAgent(
@@ -338,31 +339,6 @@ class GigaAgent(
     companion object {
         private const val SUMMARIZE_THRESHOLD = 0.8
         private const val MAX_TOOLS_CYCLES = 8
-
-        private val CLASSIFIER_PROMPT = """
-Ты — алгоритм классификации. Выбери категорию запроса.
-Категории:
-- coder: если слышишь "кодер", или когда нужно объяснить, изменить или написать код, провести рефакторинг;
-- browser: веб-страницы, вкладки, или браузерные горячие клавиши, или когда надо получить общую информацию о новостях или погоде;
-- desktop: манипуляции с рабочем столом, окнами и экранами, открытие и использование приложений, работа с заметками, открытие папок и файлов;
-- config: изменение или сохранение настроек, вроде скорости речи, запоминание и исполнение инструкций;            
-- dataAnalytics: когда надо создать график или найти корреляцию между двумя переменными;
-Примеры:
-добавь вызов логов в данную функцию -> coder
-что делается выделенный код-> coder
-открой сайт сбербанка -> browser
-найди в закладках обзор фондового рынка -> browser
-расскажи кратко о чем рассказано на текущей странице -> browser
-напиши Анюте сообщение: это тест приложения
-открой фото тёти фроси -> desktop
-открой папку отчеты -> desktop
-открой приложение Intellij IDEA -> desktop
-перемести окно на передний план -> desktop
-запомни инструкцию при слове тишина уменьшай громкость -> config
-построй график дохода по клиенту -> dataAnalytics
-
-Ответ с только одним словом: coder, browser, desktop, config, or dataAnalytics.
-""".trimIndent()
 
         private val SYSTEM_PROMPT = """
 Ты — помощник, управляющий компьютером. Будь полезным. Говори только по существу.

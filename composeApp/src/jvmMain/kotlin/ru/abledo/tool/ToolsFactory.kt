@@ -16,6 +16,8 @@ import ru.abledo.tool.config.ToolSoundConfig
 import ru.abledo.tool.config.ToolSoundConfigDiff
 import ru.abledo.tool.dataAnalytics.ToolCreatePlotFromCsv
 import ru.abledo.tool.desktop.*
+import ru.abledo.tool.calendar.*
+import ru.abledo.tool.mail.*
 import ru.abledo.tool.files.*
 
 class ToolsFactory(private val repo: DesktopInfoRepository) {
@@ -54,7 +56,6 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
 
             ToolCategory.DESKTOP to listOf(
                 ToolWindowsManager.toGiga(),
-                ToolMail(ToolRunBashCommand).toGiga(),
                 //ToolHotkeyMac().toGiga(), // we should provide deliberate tools
                 ToolOpenNote(ToolRunBashCommand).toGiga(),
                 //ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
@@ -62,11 +63,26 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolOpen(ToolRunBashCommand).toGiga(),
                 ToolCreateNote(ToolRunBashCommand).toGiga(),
                 //ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
+                //ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
+                //ToolMouseClickMac().toGiga(),
+                //ToolCollectButtons(ToolRunBashCommand).toGiga(), // too slow, only for mouse
+                //ToolShowApps.toGiga(), // we get it by default anyway
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
-//              ToolOpenFolder(ToolRunBashCommand).toGiga(), // ToolOpen can do it
-//                ToolMouseClickMac().toGiga(),
-//                ToolCollectButtons(ToolRunBashCommand).toGiga(), // too slow, only for mouse
-//                ToolShowApps.toGiga(), // we get it by default anyway
+            ).associateBy { it.fn.name },
+
+            ToolCategory.CALENDAR to listOf(
+                ToolCalendarListTodayEvents(ToolRunBashCommand).toGiga(),
+                ToolCalendarCreateEvent(ToolRunBashCommand).toGiga(),
+                ToolCalendarDeleteEvent(ToolRunBashCommand).toGiga(),
+                ToolCalendarListCalendars(ToolRunBashCommand).toGiga(),
+            ).associateBy { it.fn.name },
+
+            ToolCategory.MAIL to listOf(
+                ToolMailUnreadMessagesCount(ToolRunBashCommand).toGiga(),
+                ToolMailListMessages(ToolRunBashCommand).toGiga(),
+                ToolMailReadMessage(ToolRunBashCommand).toGiga(),
+                ToolMailReplyMessage(ToolRunBashCommand).toGiga(),
+                ToolMailSendNewMessage(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
 //            ToolCategory.IO to listOf(
