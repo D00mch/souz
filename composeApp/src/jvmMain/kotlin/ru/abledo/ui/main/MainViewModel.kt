@@ -11,6 +11,7 @@ import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.abledo.agent.GraphBasedAgent
+import ru.abledo.agent.engine.AgentContext
 import ru.abledo.audio.*
 import ru.abledo.db.DesktopInfoRepository
 import ru.abledo.db.VectorDB
@@ -146,11 +147,15 @@ class MainViewModel(
     }
 
     private suspend fun setPreviousText() {
+        currentState.lastKnownAgentContext?.let { ctx ->
+            agentRef.get()?.setContext(ctx)
+        }
         val prevText = currentState.lastText ?: return
         setState { copy(displayedText = prevText, lastText = null, userExpectCloseOnX = false) }
     }
 
     private suspend fun clearContext() {
+        val lastKnownAgentContext: AgentContext<String>? = agentRef.get()?.currentContext?.value
         agentRef.get()?.clearContext()
         when(currentState.userExpectCloseOnX) {
             false -> {
@@ -161,7 +166,14 @@ class MainViewModel(
                 } else {
                     currentText
                 }
-                setState { copy(displayedText = clearedText, lastText = lastText, userExpectCloseOnX = true) }
+                setState {
+                    copy(
+                        displayedText = clearedText,
+                        lastText = lastText,
+                        lastKnownAgentContext = lastKnownAgentContext ?: currentState.lastKnownAgentContext,
+                        userExpectCloseOnX = true
+                    )
+                }
             }
 
             true -> {
@@ -207,6 +219,7 @@ class MainViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        stopPlayText()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
     }

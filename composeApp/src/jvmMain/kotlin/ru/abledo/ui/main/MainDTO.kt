@@ -1,5 +1,6 @@
 package ru.abledo.ui.main
 
+import ru.abledo.agent.engine.AgentContext
 import ru.abledo.ui.VMEvent
 import ru.abledo.ui.VMSideEffect
 import ru.abledo.ui.VMState
@@ -12,7 +13,8 @@ data class MainState(
     val isListening: Boolean = false,
     val statusMessage: String = "Ожидание горячей клавиши",
     val lastText: String? = null,
-    val userExpectCloseOnX: Boolean = false
+    val lastKnownAgentContext: AgentContext<String>? = null,
+    val userExpectCloseOnX: Boolean = false,
 ) : VMState
 
 sealed interface MainEvent : VMEvent {
