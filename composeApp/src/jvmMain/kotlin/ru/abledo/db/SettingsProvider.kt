@@ -8,6 +8,7 @@ class SettingsProvider(private val configStore: ConfigStore) {
 
     var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
     var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
+    var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
     var useFewShotExamples: Boolean
         get() = _fewShotsDelegate?.lowercase() == "true"
         set(value) { _fewShotsDelegate = value.toString() }
@@ -32,5 +33,6 @@ class SettingsProvider(private val configStore: ConfigStore) {
         private const val GIGA_CHAT_KEY = "GIGA_CHAT_KEY"
         private const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
+        private const val SUPPORT_EMAIL = "SUPPORT_EMAIL"
     }
 }
