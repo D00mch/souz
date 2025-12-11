@@ -11,6 +11,7 @@ import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.abledo.agent.GraphBasedAgent
+import ru.abledo.agent.engine.AgentContext
 import ru.abledo.audio.*
 import ru.abledo.db.DesktopInfoRepository
 import ru.abledo.db.VectorDB
@@ -39,7 +40,7 @@ class MainViewModel(
         ioLaunch { initializeAgent() }
     }
 
-    override fun initialState(): MainState = MainState()
+    override fun initialState(): MainState = MainState(displayedText = DEFAULT_START_TEXT)
 
     override suspend fun handleEvent(event: MainEvent) {
         when (event) {
@@ -47,12 +48,14 @@ class MainViewModel(
             MainEvent.StopListening -> stopRecording()
             MainEvent.ClearContext -> clearContext()
             MainEvent.StopSpeech -> stopPlayText()
+            MainEvent.ShowLastText -> setPreviousText()
         }
     }
 
     override suspend fun handleSideEffect(effect: MainEffect) {
         when (effect) {
             is MainEffect.ShowError -> l.error(effect.message)
+            MainEffect.Hide -> Unit
         }
     }
 
@@ -143,10 +146,41 @@ class MainViewModel(
         setState { copy(statusMessage = "Ожидание горячей клавиши") }
     }
 
+    private suspend fun setPreviousText() {
+        currentState.lastKnownAgentContext?.let { ctx ->
+            agentRef.get()?.setContext(ctx)
+        }
+        val prevText = currentState.lastText ?: return
+        setState { copy(displayedText = prevText, lastText = null, userExpectCloseOnX = false) }
+    }
+
     private suspend fun clearContext() {
+        val lastKnownAgentContext: AgentContext<String>? = agentRef.get()?.currentContext?.value
         agentRef.get()?.clearContext()
-        val clearedText = "Контекст очищен"
-        setState { copy(displayedText = clearedText) }
+        when(currentState.userExpectCloseOnX) {
+            false -> {
+                val currentText = currentState.displayedText
+                val clearedText = "$DEFAULT_CLEARED_TEXT. Нажмите еще раз, чтобы скрыть."
+                val lastText = if (currentText == DEFAULT_CLEARED_TEXT || currentText == DEFAULT_START_TEXT) {
+                    null
+                } else {
+                    currentText
+                }
+                setState {
+                    copy(
+                        displayedText = clearedText,
+                        lastText = lastText,
+                        lastKnownAgentContext = lastKnownAgentContext ?: currentState.lastKnownAgentContext,
+                        userExpectCloseOnX = true
+                    )
+                }
+            }
+
+            true -> {
+                setState { copy(displayedText = DEFAULT_CLEARED_TEXT, userExpectCloseOnX = false) }
+                send(MainEffect.Hide)
+            }
+        }
     }
 
     private fun registerNativeHook(): Boolean = runCatching {
@@ -185,7 +219,13 @@ class MainViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        stopPlayText()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
+    }
+
+    private companion object {
+        const val DEFAULT_CLEARED_TEXT = "Контекст очищен"
+        const val DEFAULT_START_TEXT = "Что делаем?"
     }
 }

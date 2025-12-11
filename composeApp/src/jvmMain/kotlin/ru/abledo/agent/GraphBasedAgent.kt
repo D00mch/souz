@@ -93,6 +93,11 @@ class GraphBasedAgent(
         return _ctx.tryEmit(initialCtx)
     }
 
+    fun setContext(ctx: AgentContext<String>): Boolean {
+        cancelActiveJob()
+        return _ctx.tryEmit(ctx)
+    }
+
     fun cancelActiveJob() {
         runningJob.get()?.cancel(CancellationException("Cleared by force"))
     }

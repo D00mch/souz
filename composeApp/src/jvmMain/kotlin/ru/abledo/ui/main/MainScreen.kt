@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,7 +41,6 @@ import org.kodein.di.compose.localDI
 import ru.abledo.ui.glassColors
 import ru.abledo.ui.glassShape
 
-// --- ЛЕЙАУТ КОНСТАНТЫ (Их можно оставить здесь, это размеры элементов) ---
 private val TopButtonSize = 22.dp
 private val TopIconSize = 16.dp
 private val BaseWidth = 500.dp
@@ -58,6 +58,15 @@ fun MainScreen(
     val viewModel = viewModel { MainViewModel(di) }
     val state by viewModel.uiState.collectAsState()
 
+    LaunchedEffect(viewModel) {
+        viewModel.effects.collect { effect ->
+            when(effect) {
+                MainEffect.Hide -> onCloseWindow()
+                is MainEffect.ShowError -> Unit
+            }
+        }
+    }
+
     MainScreen(
         state = state,
         onToggleListening = {
@@ -67,24 +76,24 @@ fun MainScreen(
         onClear = { viewModel.send(MainEvent.ClearContext) },
         onOpenSettings = onOpenSettings,
         onResizeRequest = onResizeRequest,
-        onCloseWindow = onCloseWindow,
-        onStopSpeech = { viewModel.send(MainEvent.StopSpeech) }
+        onStopSpeech = { viewModel.send(MainEvent.StopSpeech) },
+        onShowLastText = { viewModel.send(MainEvent.ShowLastText) },
     )
 }
 
 @Composable
 fun MainScreen(
     state: MainState,
-    onToggleListening: () -> Unit,
-    onClear: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit,
-    onCloseWindow: () -> Unit,
-    onStopSpeech: () -> Unit,
+    onToggleListening: () -> Unit = {},
+    onClear: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onResizeRequest: (DpSize) -> Unit = {},
+    onStopSpeech: () -> Unit = {},
+    onShowLastText: () -> Unit = {},
 ) {
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
 
-    // --- ЛОГИКА РЕСАЙЗА ---
+    // resize logic
     LaunchedEffect(textContent) {
         val textLen = textContent.length
         val calculatedHeight = (260 + (textLen * 0.8)).dp
@@ -110,9 +119,8 @@ fun MainScreen(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // ВЕРХНЯЯ ЧАСТЬ
+                // top bar
                 Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                    // Кнопки
                     Row(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
@@ -121,6 +129,16 @@ fun MainScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        if (state.lastText != null) {
+                            IconButton(onClick = onShowLastText, modifier = Modifier.size(TopButtonSize)) {
+                                Icon(
+                                    Icons.Rounded.SkipPrevious,
+                                    null,
+                                    tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(TopIconSize)
+                                )
+                            }
+                        }
                         IconButton(onClick = onStopSpeech, modifier = Modifier.size(TopButtonSize)) {
                             Icon(
                                 Icons.AutoMirrored.Rounded.VolumeOff,
@@ -138,10 +156,7 @@ fun MainScreen(
                             )
                         }
                         IconButton(
-                            onClick = {
-                                onClear()
-                                onCloseWindow()
-                            },
+                            onClick = { onClear() },
                             modifier = Modifier.size(TopButtonSize)
                         ) {
                             Icon(
@@ -153,7 +168,7 @@ fun MainScreen(
                         }
                     }
 
-                    // Текст + Скролл
+                    // text, scroll
                     val scrollState = rememberScrollState()
                     val dynamicFontSize = remember(textContent) {
                         when (textContent.length) {
@@ -191,7 +206,6 @@ fun MainScreen(
                     }
                 }
 
-                // НИЖНЯЯ ЧАСТЬ
                 Box(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp),
                     contentAlignment = Alignment.Center
@@ -210,11 +224,8 @@ fun MainScreen(
     }
 }
 
-// --- КОМПОНЕНТЫ ---
-
 @Composable
 fun GlassCard(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    // Используем цвета и форму из темы
     Box(
         modifier = modifier
             .shadow(elevation = 0.dp, shape = MaterialTheme.glassShape)
@@ -232,9 +243,8 @@ fun MagicOrb(isActive: Boolean) {
     val angle by infiniteTransition.animateFloat(0f, 360f, infiniteRepeatable(tween(spinDuration, easing = LinearEasing)))
     val pulseScale by infiniteTransition.animateFloat(1f, if (isActive) 1.15f else 1.05f, infiniteRepeatable(tween(if (isActive) 600 else 2500, easing = FastOutSlowInEasing), RepeatMode.Reverse))
 
-    // Используем цвета из темы
     val color1 = if (isActive) MaterialTheme.glassColors.orbCyan else MaterialTheme.glassColors.orbIndigo
-    val color2 = if (isActive) MaterialTheme.glassColors.orbWhite else Color(0xFF818CF8) // Светлый индиго можно оставить хардкодом или добавить в тему
+    val color2 = if (isActive) MaterialTheme.glassColors.orbWhite else Color(0xFF818CF8)
 
     Box(contentAlignment = Alignment.Center, modifier = Modifier.scale(pulseScale)) {
         Canvas(Modifier.size(70.dp)) { drawCircle(Brush.radialGradient(listOf(color1.copy(alpha = 0.3f), Color.Transparent), center, size.minDimension/1.5f)) }
@@ -260,13 +270,10 @@ fun LiquidScrollbar(scrollState: ScrollState, modifier: Modifier = Modifier) {
 @Preview
 @Composable
 fun MainScreenPreview() {
-    // Оборачиваем в AppTheme, чтобы подтянулись цвета из DefaultGlassColors
     ru.abledo.ui.AppTheme {
         Box(Modifier.fillMaxSize().background(Color(0xFF336699))) {
             MainScreen(
                 state = MainState(displayedText = "Theme extracted!", statusMessage = "", isListening = false),
-                onToggleListening = {}, onClear = {}, onOpenSettings = {}, onResizeRequest = {}, onCloseWindow = {},
-                onStopSpeech = {},
             )
         }
     }
