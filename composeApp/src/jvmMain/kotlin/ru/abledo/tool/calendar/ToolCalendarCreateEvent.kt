@@ -76,7 +76,7 @@ class ToolCalendarCreateEvent(private val bash: ToolRunBashCommand) : ToolSetup<
                 dateObj.dayOfMonth,
                 dateObj.hour,
                 dateObj.minute,
-                input.durationMinutes ?: 30,
+                input.durationMinutes,
                 safeLoc,
                 safeDesc,
             )

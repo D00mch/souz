@@ -38,7 +38,7 @@ class ToolCalendarDeleteEvent(private val bash: ToolRunBashCommand) : ToolSetup<
 
     override fun invoke(input: Input): String {
         if (input.title.isBlank()) throw BadInputException("'title' is required to delete an event.")
-        val calName = input.calendarName ?: "Calendar"
+        val calName = input.calendarName
         val escapedTitle = input.title.replace("\"", "\\\"")
         return bash.sh(CalendarAppleScriptCommands.deleteEventCommand(calName, escapedTitle))
     }

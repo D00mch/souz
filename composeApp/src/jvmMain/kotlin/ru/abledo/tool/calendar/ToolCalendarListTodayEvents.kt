@@ -32,7 +32,7 @@ class ToolCalendarListTodayEvents(private val bash: ToolRunBashCommand) : ToolSe
     )
 
     override fun invoke(input: Input): String {
-        val calName = input.calendarName ?: "Calendar"
+        val calName = input.calendarName
         return bash.sh(CalendarAppleScriptCommands.listTodayEventsCommand(calName))
     }
 }
