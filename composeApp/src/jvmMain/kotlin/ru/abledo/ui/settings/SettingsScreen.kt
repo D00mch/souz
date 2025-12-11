@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.Button
 import androidx.compose.material.Checkbox
 import androidx.compose.material.CheckboxDefaults
 import androidx.compose.material.OutlinedTextField
@@ -25,6 +26,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.DpSize
@@ -49,6 +51,8 @@ fun SettingsScreen(
         onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
         onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
         onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
+        onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
+        onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
         onResizeRequest = onResizeRequest,
         onClose = onClose,
     )
@@ -60,6 +64,8 @@ fun SettingsScreen(
     onGigaChatKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
+    onSupportEmailInput: (String) -> Unit,
+    onSendLogs: () -> Unit,
     onResizeRequest: (DpSize) -> Unit = {},
     onClose: () -> Unit,
 ) {
@@ -142,6 +148,36 @@ fun SettingsScreen(
                         color = MaterialTheme.glassColors.textPrimary
                     )
                 }
+
+                LabeledTextField(
+                    label = "Email поддержки",
+                    value = state.supportEmail,
+                    onValueChange = onSupportEmailInput,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onSendLogs,
+                        enabled = !state.isSendingLogs,
+                    ) {
+                        Text(
+                            text = if (state.isSendingLogs) "Отправка логов..." else "Отправить логи",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.glassColors.textPrimary
+                        )
+                    }
+                    state.sendLogsMessage?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.glassColors.textPrimary,
+                            textAlign = TextAlign.Start
+                        )
+                    }
+                }
             }
         }
     }
@@ -189,6 +225,8 @@ fun SettingsScreenPreview() {
             onGigaChatKeyInput = {},
             onSaluteSpeechKeyInput = {},
             onUseFewShotExamplesChange = {},
+            onSupportEmailInput = {},
+            onSendLogs = {},
             onResizeRequest = {},
             onClose = {},
         )
