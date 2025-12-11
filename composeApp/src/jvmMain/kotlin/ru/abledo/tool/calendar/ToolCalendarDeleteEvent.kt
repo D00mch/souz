@@ -11,7 +11,7 @@ import ru.abledo.tool.ToolSetup
 class ToolCalendarDeleteEvent(private val bash: ToolRunBashCommand) : ToolSetup<ToolCalendarDeleteEvent.Input> {
     data class Input(
         @InputParamDescription("Name of the calendar to use (default: 'Calendar' or 'Home')")
-        val calendarName: String? = "Calendar",
+        val calendarName: String = "Calendar",
 
         @InputParamDescription("Title/Summary of the event")
         val title: String,

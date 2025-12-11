@@ -29,21 +29,47 @@ internal object CalendarAppleScriptCommands {
 EOF
     """.trimIndent()
 
-    fun createEventCommand(calName: String, title: String, startStr: String, durationMin: Int, loc: String, desc: String): String = """
-        osascript <<'EOF'
-        tell application "Calendar"
-            try
-                set targetCal to calendar "$calName"
-                set startDate to date "$startStr"
-                set endDate to startDate + ($durationMin * minutes)
-                tell targetCal
-                    make new event with properties {summary:"$title", start date:startDate, end date:endDate, location:"$loc", description:"$desc"}
-                end tell
-                return "Event '$title' created successfully at " & (startDate as string)
-            on error errMsg
-                return "Error creating event: " & errMsg
-            end try
+    fun createEventCommand(
+        calName: String,
+        title: String,
+        year: Int,
+        month: Int,
+        day: Int,
+        hour: Int,
+        minute: Int,
+        durationMin: Int,
+        loc: String,
+        desc: String
+    ): String = """
+osascript <<'EOF'
+tell application "Calendar"
+    try
+        set targetCals to calendars whose name is "$calName"
+        if (count of targetCals) is 0 then
+            -- Fallback: если не нашли по имени, пробуем "Calendar" или просто первый попавшийся
+            set targetCal to first calendar
+        else
+            set targetCal to first item of targetCals
+        end if
+        
+        set startDate to current date
+        set year of startDate to $year
+        set month of startDate to $month
+        set day of startDate to $day
+        set time of startDate to ($hour * hours + $minute * minutes)
+        set seconds of startDate to 0
+        
+        set endDate to startDate + ($durationMin * minutes)
+        
+        tell targetCal
+            make new event with properties {summary:"$title", start date:startDate, end date:endDate, location:"$loc", description:"$desc"}
         end tell
+        
+        return "Event '$title' created successfully at " & (startDate as string)
+    on error errMsg
+        return "Error creating event: " & errMsg
+    end try
+end tell
 EOF
     """.trimIndent()
 
@@ -66,23 +92,37 @@ EOF
 EOF
     """.trimIndent()
 
-    fun listCalendarsCommand(): String = """
-osascript <<'EOF'
-tell application "Calendar"
-    try
-        -- Получаем имена всех календарей
-        set calNames to name of every calendar
-        
-        set output to "Available calendars:" & return
-        repeat with cName in calNames
-            set output to output & "- " & cName & return
-        end repeat
-        return output
-    on error errMsg
-        return "Error listing calendars: " & errMsg
-    end try
-end tell
-EOF
+
+    fun listCalendarsCommand(filter: String? = null): String {
+        val safeFilter = filter?.replace("\"", "\\\"") ?: ""
+
+        return """
+            osascript <<'EOF'
+            set filterStr to "$safeFilter"
+            
+            tell application "Calendar"
+                try
+                    if filterStr is "" then
+                        set calNames to name of every calendar
+                    else
+                        set calNames to name of every calendar whose name contains filterStr
+                    end if
+                    
+                    if (count of calNames) is 0 then
+                        return "No calendars found."
+                    end if
+            
+                    set output to "Found calendars:" & return
+                    repeat with cName in calNames
+                        set output to output & "- " & cName & return
+                    end repeat
+                    return output
+                on error errMsg
+                    return "Error listing calendars: " & errMsg
+                end try
+            end tell
+            EOF
     """.trimIndent()
+    }
 }
 
