@@ -46,7 +46,6 @@ tell application "Calendar"
     try
         set targetCals to calendars whose name is "$calName"
         if (count of targetCals) is 0 then
-            -- Fallback: если не нашли по имени, пробуем "Calendar" или просто первый попавшийся
             set targetCal to first calendar
         else
             set targetCal to first item of targetCals

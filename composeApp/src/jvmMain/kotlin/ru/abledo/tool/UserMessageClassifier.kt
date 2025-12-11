@@ -30,7 +30,6 @@ object LocalRegexClassifier : UserMessageClassifier {
         val lastUser = chat.messages.lastOrNull { it.role == GigaMessageRole.user }
             ?: return null
 
-        // Берем текст после "new message:\n", если такой префикс есть, иначе весь текст
         val text = lastUser.content
             .substringAfter("new message:\n", lastUser.content)
             .lowercase()
@@ -44,11 +43,9 @@ object LocalRegexClassifier : UserMessageClassifier {
         val sorted = scores.entries.sortedByDescending { it.value }
         val best = sorted.firstOrNull() ?: return null
 
-        // Если лучший скор 0, значит совпадений не найдено
         if (best.value == 0.0) return null
 
         val second = sorted.getOrNull(1)?.value ?: 0.0
-        // Возвращаем категорию, только если она явно лидирует
         return if (best.value > second) best.key else null
     }
 

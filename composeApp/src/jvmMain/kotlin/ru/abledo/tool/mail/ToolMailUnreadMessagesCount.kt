@@ -9,7 +9,6 @@ import ru.abledo.tool.ToolSetup
 
 class ToolMailUnreadMessagesCount(private val bash: ToolRunBashCommand) : ToolSetup<ToolMailUnreadMessagesCount.Input> {
 
-    // Добавляем обязательный параметр limit
     data class Input(
         @InputParamDescription("The maximum limit for counting unread messages (e.g., 50)")
         val limit: Int
