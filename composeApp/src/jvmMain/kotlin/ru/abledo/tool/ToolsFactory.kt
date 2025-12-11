@@ -74,6 +74,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolCalendarListTodayEvents(ToolRunBashCommand).toGiga(),
                 ToolCalendarCreateEvent(ToolRunBashCommand).toGiga(),
                 ToolCalendarDeleteEvent(ToolRunBashCommand).toGiga(),
+                ToolCalendarListCalendars(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.MAIL to listOf(
