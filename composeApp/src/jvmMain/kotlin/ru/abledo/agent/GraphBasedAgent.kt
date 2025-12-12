@@ -202,14 +202,6 @@ class GraphBasedAgent(
             ""
         }
 
-        val openedApps = try {
-            val msg = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
-            "Эти приложения сейчас открыты: $msg"
-        } catch (e: Exception) {
-            l.error("Error while fetching opened apps: {}", e.message)
-            ""
-        }
-
         val browserName = try {
             val defaultBrowser = ToolRunBashCommand.detectDefaultBrowser()
             "Дефолтный браузер — ${defaultBrowser.prettyName}"
@@ -223,7 +215,7 @@ class GraphBasedAgent(
 
         return GigaRequest.Message(
             role = GigaMessageRole.user,
-            content = listOf(INFO_PREFIX, msgRelatedDataInTheStore, openedApps, browserName, dateInfo)
+            content = listOf(INFO_PREFIX, msgRelatedDataInTheStore, browserName, dateInfo)
                 .filter { it.isNotBlank() }
                 .joinToString(separator = ";\n")
         )
