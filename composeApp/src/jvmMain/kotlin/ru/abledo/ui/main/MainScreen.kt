@@ -126,7 +126,6 @@ fun MainScreen(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // top bar
                 Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     Row(
                         modifier = Modifier
@@ -175,7 +174,6 @@ fun MainScreen(
                         }
                     }
 
-                    // text, scroll
                     val scrollState = rememberScrollState()
                     val dynamicFontSize = remember(textContent) {
                         when (textContent.length) {
