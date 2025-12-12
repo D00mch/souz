@@ -107,7 +107,7 @@ class GigaAgentTest {
             ragRepo = mockRagRepo(),
             settings = GigaAgent.Settings(
                 toolsByCategory = mapOf(
-                    ToolCategory.CODER to mapOf("ListFiles" to dummyTool("ListFiles"))
+                    ToolCategory.FILES to mapOf("ListFiles" to dummyTool("ListFiles"))
                 ),
                 model = GigaModel.Pro,
                 stream = false,
@@ -198,7 +198,7 @@ class GigaAgentTest {
             ragRepo = mockRagRepo(),
             settings = GigaAgent.Settings(
                 toolsByCategory = mapOf(
-                    ToolCategory.CODER to mapOf("ListFiles" to dummyTool("ListFiles")),
+                    ToolCategory.FILES to mapOf("ListFiles" to dummyTool("ListFiles")),
                     ToolCategory.BROWSER to mapOf("OpenUrl" to dummyTool("OpenUrl"))
                 ),
                 model = GigaModel.Pro,

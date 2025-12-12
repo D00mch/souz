@@ -10,7 +10,7 @@ fun interface UserMessageClassifier {
 }
 
 enum class ToolCategory {
-    CODER,
+    FILES,
     BROWSER,
     CONFIG,
     DESKTOP,
@@ -52,14 +52,11 @@ object LocalRegexClassifier : UserMessageClassifier {
     private data class WeightedRegex(val regex: Regex, val weight: Double)
 
     private val CATEGORY_PATTERNS: Map<ToolCategory, List<WeightedRegex>> = mapOf(
-        ToolCategory.CODER to listOf(
-            WeightedRegex(Regex("кодер|coder"), 2.0),
-            WeightedRegex(
-                Regex("readme|ридми|разработ|рефактор|отрефактор|баг|композиц|наслед|абстракт|ооп|полиморф|лисков|чистый код"),
-                2.0
-            ),
-            WeightedRegex(Regex("реализ|ошибк|open closed|абстракц|код"), 1.0),
-            WeightedRegex(Regex("вынес|напис|поправ|измен|додел|чищ|удобн|созда"), 0.5),
+        ToolCategory.FILES to listOf(
+            WeightedRegex(Regex("прочитай в файле|открой файл|покажи файл|найди файл|путь к файл"), 2.0),
+            WeightedRegex(Regex("создай файл|удали файл|покажи содержим|перенеси файл|поиск по файлам"), 2.0),
+            WeightedRegex(Regex("файл|file|перепиши|исправь в"), 1.5),
+            WeightedRegex(Regex("поправь|поправить|исправить|прочитай|папк|folder|каталог|директори|directory"), 1.0),
         ),
         ToolCategory.BROWSER to listOf(
             WeightedRegex(Regex("http[s]?://|браузер|browser|safari|Закладк"), 2.0),
@@ -71,7 +68,7 @@ object LocalRegexClassifier : UserMessageClassifier {
         ),
         ToolCategory.DESKTOP to listOf(
             WeightedRegex(Regex("перенеси окно|перейди на экран|перетащи окно|размести приложения по"), 2.0),
-            WeightedRegex(Regex("окн|window|desktop"), 1.5),
+            WeightedRegex(Regex("окн|window|desktop|\\*.com|\\*.ru|dotcom|дотком|точка ру"), 1.5),
             WeightedRegex(Regex("папк|folder|заметк|note|телеграм|telegram|покаж|фокус|увелич|располож|сверн|сообщение"), 1.5),
             WeightedRegex(Regex("прилож|app|mouse|мыш|screen|скрин|экран"), 1.0),
         ),

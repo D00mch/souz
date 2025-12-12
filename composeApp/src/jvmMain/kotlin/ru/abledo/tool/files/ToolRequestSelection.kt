@@ -1,4 +1,4 @@
-package ru.abledo.tool.coder
+package ru.abledo.tool.files
 
 import ru.abledo.keys.MrRobot
 import ru.abledo.tool.FewShotExample
