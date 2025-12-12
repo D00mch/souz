@@ -57,6 +57,11 @@ class GraphBasedAgent(
         ctx.map(activeTools = functions) { it }
     }
 
+    /**
+     * Makes sure we have additional information (AD) in the history, 2 cases possible:
+     * - Swap the previous AD with the current one;
+     * - Append AD before the previous message (so agent is not focused on the AD).
+     */
     private val nodeAppendAdditionalData: Node<String, String> = Node("appendActualInformation") { ctx ->
         val additionalMessage: GigaRequest.Message? = appendActualInformation(ctx.input)
         if (additionalMessage == null) {
