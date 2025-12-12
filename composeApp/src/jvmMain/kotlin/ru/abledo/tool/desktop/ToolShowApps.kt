@@ -12,7 +12,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
 
 object ToolShowApps : ToolSetup<ToolShowApps.Input> {
     data class Input(
-        @InputParamDescription("Action to perform")
+        @InputParamDescription("What apps to show")
         val state: AppState,
     )
 
