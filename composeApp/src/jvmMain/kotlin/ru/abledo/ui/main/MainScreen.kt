@@ -3,6 +3,7 @@ package ru.abledo.ui.main
 import androidx.compose.animation.core.*
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -29,17 +30,23 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
 import ru.abledo.ui.glassColors
 import ru.abledo.ui.glassShape
+import java.awt.Cursor
 
 private val TopButtonSize = 22.dp
 private val TopIconSize = 16.dp
@@ -264,6 +271,93 @@ fun LiquidScrollbar(scrollState: ScrollState, modifier: Modifier = Modifier) {
         val scrollbarY = scrollProgress * (viewportHeight - safeScrollbarHeight)
         drawRoundRect(Color(0x10FFFFFF), cornerRadius = CornerRadius(4.dp.toPx()), size = size)
         drawRoundRect(Brush.verticalGradient(listOf(Color(0xA0FFFFFF), Color(0x40FFFFFF))), topLeft = Offset(0f, scrollbarY), size = Size(size.width, safeScrollbarHeight), cornerRadius = CornerRadius(4.dp.toPx()))
+    }
+}
+
+@Composable
+fun ResizeOverlay(
+    windowState: WindowState,
+    offsetPadding: androidx.compose.ui.unit.Dp = 0.dp
+) {
+    val handleThickness = 12.dp
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = offsetPadding, start = offsetPadding)
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxHeight()
+                .width(handleThickness)
+                .offset(x = -handleThickness / 2)
+                .pointerHoverIcon(PointerIcon(Cursor(Cursor.W_RESIZE_CURSOR)))
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        val currentPos = windowState.position
+                        if (currentPos is WindowPosition.Absolute) {
+                            val delta = dragAmount.x.toDp()
+                            val newWidth = windowState.size.width - delta
+                            val newX = currentPos.x + delta
+
+                            windowState.position = currentPos.copy(x = newX)
+                            windowState.size = DpSize(newWidth, windowState.size.height)
+                        }
+                    }
+                }
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(handleThickness)
+                .offset(y = -handleThickness / 2)
+                .pointerHoverIcon(PointerIcon(Cursor(Cursor.N_RESIZE_CURSOR)))
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        val currentPos = windowState.position
+                        if (currentPos is WindowPosition.Absolute) {
+                            val delta = dragAmount.y.toDp()
+                            val newHeight = windowState.size.height - delta
+                            val newY = currentPos.y + delta
+
+                            windowState.position = currentPos.copy(y = newY)
+                            windowState.size = DpSize(windowState.size.width, newHeight)
+                        }
+                    }
+                }
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .size(handleThickness)
+                .offset(x = -handleThickness / 2, y = -handleThickness / 2)
+                .pointerHoverIcon(PointerIcon(Cursor(Cursor.NW_RESIZE_CURSOR)))
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        val currentPos = windowState.position
+                        if (currentPos is WindowPosition.Absolute) {
+                            val deltaX = dragAmount.x.toDp()
+                            val deltaY = dragAmount.y.toDp()
+
+                            val newWidth = windowState.size.width - deltaX
+                            val newHeight = windowState.size.height - deltaY
+
+                            val newX = currentPos.x + deltaX
+                            val newY = currentPos.y + deltaY
+
+                            windowState.position = currentPos.copy(x = newX, y = newY)
+                            windowState.size = DpSize(newWidth, newHeight)
+                        }
+                    }
+                }
+        )
     }
 }
 

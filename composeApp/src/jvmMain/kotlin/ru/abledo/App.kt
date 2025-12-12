@@ -13,6 +13,18 @@ import ru.abledo.ui.AppTheme
 import ru.abledo.ui.main.MainScreen
 import ru.abledo.ui.settings.SettingsScreen
 import ru.abledo.db.SettingsProvider
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.WindowState
+import java.awt.Cursor
 
 @Composable
 @Preview
