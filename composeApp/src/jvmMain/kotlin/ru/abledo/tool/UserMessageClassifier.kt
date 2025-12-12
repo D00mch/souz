@@ -68,7 +68,7 @@ object LocalRegexClassifier : UserMessageClassifier {
         ),
         ToolCategory.DESKTOP to listOf(
             WeightedRegex(Regex("перенеси окно|перейди на экран|перетащи окно|размести приложения по"), 2.0),
-            WeightedRegex(Regex("окн|window|desktop|\\*.com"), 1.5),
+            WeightedRegex(Regex("окн|window|desktop|\\*.com|\\*.ru|dotcom|дотком|точка ру"), 1.5),
             WeightedRegex(Regex("папк|folder|заметк|note|телеграм|telegram|покаж|фокус|увелич|располож|сверн|сообщение"), 1.5),
             WeightedRegex(Regex("прилож|app|mouse|мыш|screen|скрин|экран"), 1.0),
         ),
