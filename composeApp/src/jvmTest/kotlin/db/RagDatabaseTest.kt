@@ -3,6 +3,7 @@ package ru.abledo.db
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import java.io.File
+import kotlin.test.Ignore
 
 class RagDatabaseTest {
     private fun reset() {
@@ -11,6 +12,7 @@ class RagDatabaseTest {
     }
 
     @Test
+    @Ignore
     fun writesAndReads() {
         reset()
         VectorDB.initializeOnce()

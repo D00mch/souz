@@ -53,10 +53,10 @@ object LocalRegexClassifier : UserMessageClassifier {
 
     private val CATEGORY_PATTERNS: Map<ToolCategory, List<WeightedRegex>> = mapOf(
         ToolCategory.FILES to listOf(
-            WeightedRegex(Regex("файл|file|папк|folder|каталог|директори|directory"), 2.0),
-            WeightedRegex(Regex("прочитай в файле|открой файл|содержим|покажи файл|найди файл"), 2.0),
-            WeightedRegex(Regex("создай файл|удали файл|измени файл|перенеси файл|перепиши"), 1.5),
-            WeightedRegex(Regex("текст в файле|поиск по файлам|путь к файл"), 1.0),
+            WeightedRegex(Regex("прочитай в файле|открой файл|покажи файл|найди файл|путь к файл"), 2.0),
+            WeightedRegex(Regex("создай файл|удали файл|покажи содержим|перенеси файл|поиск по файлам"), 2.0),
+            WeightedRegex(Regex("файл|file|перепиши|исправь в"), 1.5),
+            WeightedRegex(Regex("поправь|поправить|исправить|прочитай|папк|folder|каталог|директори|directory"), 1.0),
         ),
         ToolCategory.BROWSER to listOf(
             WeightedRegex(Regex("http[s]?://|браузер|browser|safari|Закладк"), 2.0),
@@ -68,7 +68,7 @@ object LocalRegexClassifier : UserMessageClassifier {
         ),
         ToolCategory.DESKTOP to listOf(
             WeightedRegex(Regex("перенеси окно|перейди на экран|перетащи окно|размести приложения по"), 2.0),
-            WeightedRegex(Regex("окн|window|desktop"), 1.5),
+            WeightedRegex(Regex("окн|window|desktop|\\*.com"), 1.5),
             WeightedRegex(Regex("папк|folder|заметк|note|телеграм|telegram|покаж|фокус|увелич|располож|сверн|сообщение"), 1.5),
             WeightedRegex(Regex("прилож|app|mouse|мыш|screen|скрин|экран"), 1.0),
         ),
