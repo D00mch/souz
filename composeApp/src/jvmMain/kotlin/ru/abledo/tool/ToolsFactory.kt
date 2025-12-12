@@ -7,10 +7,8 @@ import ru.abledo.tool.browser.ToolBrowserHotkeys
 import ru.abledo.tool.browser.ToolCreateNewBrowserTab
 import ru.abledo.tool.browser.ToolFocusOnTab
 import ru.abledo.tool.browser.ToolSafariInfo
-import ru.abledo.tool.coder.ToolRequestSelection
 import ru.abledo.db.ConfigStore
 import ru.abledo.tool.browser.ToolChromeInfo
-import ru.abledo.tool.coder.ToolFindInFiles
 import ru.abledo.tool.config.ToolInstructionStore
 import ru.abledo.tool.config.ToolSoundConfig
 import ru.abledo.tool.config.ToolSoundConfigDiff
@@ -23,7 +21,7 @@ import ru.abledo.tool.files.*
 class ToolsFactory(private val repo: DesktopInfoRepository) {
     val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> by lazy {
         mapOf(
-            ToolCategory.CODER to listOf(
+            ToolCategory.FILES to listOf(
                 ToolReadFile.toGiga(),
                 ToolListFiles.toGiga(),
                 ToolFindInFiles.toGiga(),
@@ -31,7 +29,6 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolDeleteFile.toGiga(),
                 ToolModifyFile.toGiga(),
                 ToolFindTextInFiles.toGiga(),
-                ToolRequestSelection.toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.DATAANALYTICS to listOf(

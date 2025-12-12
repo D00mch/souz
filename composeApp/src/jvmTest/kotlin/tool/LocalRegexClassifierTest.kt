@@ -28,14 +28,14 @@ class LocalRegexClassifierTest {
     fun `classifies coder creation`() = runBlocking {
         val classifier = LocalRegexClassifier
         val category = classifier.classify(body("Кодер, поправь ридми"))
-        assertEquals(ToolCategory.CODER, category)
+        assertEquals(ToolCategory.FILES, category)
     }
 
     @Test
     fun `classifies coder read`() = runBlocking {
         val classifier = LocalRegexClassifier
         val category = classifier.classify(body("Можешь поправить баги в тестах?"))
-        assertEquals(ToolCategory.CODER, category)
+        assertEquals(ToolCategory.FILES, category)
     }
 
     @Test
@@ -101,7 +101,7 @@ class LocalRegexClassifierTest {
         val cases = listOf(
             "Напиши в телеграм Артуру что я на демо" to ToolCategory.DESKTOP,
             "Открой приложение Интеллиджи Айдеа" to ToolCategory.DESKTOP,
-            "Что делает выбранный участок кода?" to ToolCategory.CODER,
+            "Что делает выбранный участок кода?" to ToolCategory.FILES,
             "Открой сайт сбера" to ToolCategory.BROWSER,
             "Найди в закладках и открой страницу с обзором фондового рынка" to ToolCategory.BROWSER,
             "Расскажи кратко о чем рассказано на текущей странице" to ToolCategory.BROWSER,

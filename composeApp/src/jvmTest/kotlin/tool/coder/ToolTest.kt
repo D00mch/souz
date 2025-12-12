@@ -13,7 +13,7 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import org.slf4j.LoggerFactory
-import ru.abledo.tool.coder.ToolFindInFiles
+import ru.abledo.tool.files.ToolFindInFiles
 import kotlin.test.assertContains
 
 class ToolTest {

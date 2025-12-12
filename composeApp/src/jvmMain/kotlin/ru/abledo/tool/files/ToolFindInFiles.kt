@@ -1,4 +1,4 @@
-package ru.abledo.tool.coder
+package ru.abledo.tool.files
 
 import ch.qos.logback.core.testUtil.FileToBufferUtil
 import com.fasterxml.jackson.module.kotlin.readValue

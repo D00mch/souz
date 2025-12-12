@@ -10,7 +10,7 @@ fun interface UserMessageClassifier {
 }
 
 enum class ToolCategory {
-    CODER,
+    FILES,
     BROWSER,
     CONFIG,
     DESKTOP,
@@ -52,14 +52,11 @@ object LocalRegexClassifier : UserMessageClassifier {
     private data class WeightedRegex(val regex: Regex, val weight: Double)
 
     private val CATEGORY_PATTERNS: Map<ToolCategory, List<WeightedRegex>> = mapOf(
-        ToolCategory.CODER to listOf(
-            WeightedRegex(Regex("кодер|coder"), 2.0),
-            WeightedRegex(
-                Regex("readme|ридми|разработ|рефактор|отрефактор|баг|композиц|наслед|абстракт|ооп|полиморф|лисков|чистый код"),
-                2.0
-            ),
-            WeightedRegex(Regex("реализ|ошибк|open closed|абстракц|код"), 1.0),
-            WeightedRegex(Regex("вынес|напис|поправ|измен|додел|чищ|удобн|созда"), 0.5),
+        ToolCategory.FILES to listOf(
+            WeightedRegex(Regex("файл|file|папк|folder|каталог|директори|directory"), 2.0),
+            WeightedRegex(Regex("прочитай в файле|открой файл|содержим|покажи файл|найди файл"), 2.0),
+            WeightedRegex(Regex("создай файл|удали файл|измени файл|перенеси файл|перепиши"), 1.5),
+            WeightedRegex(Regex("текст в файле|поиск по файлам|путь к файл"), 1.0),
         ),
         ToolCategory.BROWSER to listOf(
             WeightedRegex(Regex("http[s]?://|браузер|browser|safari|Закладк"), 2.0),
