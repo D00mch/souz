@@ -114,9 +114,7 @@ fun MainScreen(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        GlassCard(
-            modifier = Modifier.fillMaxSize().padding(20.dp)
-        ) {
+        GlassCard(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
 
                 // top bar
