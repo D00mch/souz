@@ -64,20 +64,21 @@ class GraphBasedAgent(
         } else {
             var substituted = false
 
-            val historySubstituted = ctx.history.map { msg ->
+            val newHistory = ArrayList<GigaRequest.Message>(ctx.history)
+            ctx.history.forEach { msg ->
                 if (msg.role == GigaMessageRole.user && msg.content.startsWith(INFO_PREFIX)) {
                     substituted = true
-                    additionalMessage
+                    newHistory.add(additionalMessage)
                 } else {
-                    msg
+                    newHistory.add(msg)
                 }
             }
-            val resultingHistory = if (substituted) {
-                historySubstituted
-            } else {
-                historySubstituted.plus(additionalMessage)
+
+            if (!substituted && ctx.history.size > 1) {
+                newHistory.apply { add(size - 1, additionalMessage) }
             }
-            ctx.map(history = resultingHistory)
+
+            ctx.map(history = newHistory)
         }
     }
 
