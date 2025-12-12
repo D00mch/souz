@@ -24,21 +24,7 @@ class ToolBrowserHotkeys : ToolSetup<ToolBrowserHotkeys.Input> {
     }
 
     data class Input(
-        @InputParamDescription(
-            """Select a browser hotkey to press. Options:
-            \"new_tab\"               -> cmd+t
-            \"open_just_closed_tab\"   -> cmd+shift+t
-            \"close_tab\"             -> cmd+w
-            \"cancel_last_action\"    -> cmd+z
-            \"full_screen_toggle\"    -> ctrl+cmd+f
-            \"scroll_down\"           -> space
-            \"arrow_left\"            -> left arrow
-            \"arrow_right\"           -> right arrow
-            \"arrow_up\"              -> up arrow
-            \"arrow_down\"            -> down arrow
-            \"page_up\"              -> page up
-            \"page_down\"            -> page down"""
-        )
+        @InputParamDescription("Select a browser hotkey to press")
         val hotKey: HotKey,
     )
 
