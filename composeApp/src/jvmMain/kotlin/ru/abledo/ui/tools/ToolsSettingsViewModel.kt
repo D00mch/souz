@@ -99,5 +99,6 @@ class ToolsSettingsViewModel(
         )
         toolsSettings.save(settingsState)
         setState { copy(isSaving = false) }
+        send(ToolsSettingsEffect.SettingsSaved("Настройки инструментов сохранены"))
     }
 }

@@ -11,7 +11,9 @@ sealed interface ToolsSettingsEvent : VMEvent {
     object SaveSettings : ToolsSettingsEvent
 }
 
-sealed interface ToolsSettingsEffect : VMSideEffect
+sealed interface ToolsSettingsEffect : VMSideEffect {
+    data class SettingsSaved(val message: String) : ToolsSettingsEffect
+}
 
 data class ToolsScreenState(
     val categories: List<ToolsCategoryUi> = emptyList(),

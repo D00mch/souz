@@ -19,6 +19,8 @@ import androidx.compose.material.Button
 import androidx.compose.material.Checkbox
 import androidx.compose.material.CheckboxDefaults
 import androidx.compose.material.Divider
+import androidx.compose.material.SnackbarHost
+import androidx.compose.material.SnackbarHostState
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -29,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +56,18 @@ fun ToolsScreen(
     val di = localDI()
     val viewModel = viewModel { ToolsSettingsViewModel(di) }
     val state by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(viewModel) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is ToolsSettingsEffect.SettingsSaved -> {
+                    snackbarHostState.showSnackbar(effect.message)
+                    onClose()
+                }
+            }
+        }
+    }
 
     ToolsScreen(
         state = state,
@@ -64,6 +79,7 @@ fun ToolsScreen(
         },
         onSave = { viewModel.send(ToolsSettingsEvent.SaveSettings) },
         onResizeRequest = onResizeRequest,
+        snackbarHostState = snackbarHostState,
         onClose = onClose,
     )
 }
@@ -76,6 +92,7 @@ fun ToolsScreen(
     onSave: () -> Unit,
     onResizeRequest: (DpSize) -> Unit = {},
     onClose: () -> Unit,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     LaunchedEffect(Unit) { onResizeRequest(ToolsWindowSize) }
 
@@ -143,6 +160,13 @@ fun ToolsScreen(
                 }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 24.dp)
+        )
     }
 }
 
