@@ -40,7 +40,7 @@ class MainViewModel(
         ioLaunch { initializeAgent() }
     }
 
-    override fun initialState(): MainState = MainState(displayedText = DEFAULT_START_TEXT)
+    override fun initialState(): MainState = MainState()
 
     override suspend fun handleEvent(event: MainEvent) {
         when (event) {
@@ -135,7 +135,7 @@ class MainViewModel(
         setState { copy(isListening = false, statusMessage = "Обработка входа") }
         delay(300)
         playTextRand(speed = 120, "ok", "okey", "окей", "ок")
-        setState { copy(statusMessage = "Ожидание горячей клавиши") }
+        setState { copy(statusMessage = MainState.randomStatusTip()) }
     }
 
     private suspend fun setPreviousText() {
@@ -154,7 +154,7 @@ class MainViewModel(
             false -> {
                 val currentText = currentState.displayedText
                 val clearedText = "$DEFAULT_CLEARED_TEXT. Нажмите еще раз, чтобы скрыть."
-                val lastText = if (currentText == DEFAULT_CLEARED_TEXT || currentText == DEFAULT_START_TEXT) {
+                val lastText = if (currentText == DEFAULT_CLEARED_TEXT || MainState.START_TIPS.contains(currentText)) {
                     null
                 } else {
                     currentText
@@ -219,6 +219,5 @@ class MainViewModel(
 
     private companion object {
         const val DEFAULT_CLEARED_TEXT = "Контекст очищен"
-        const val DEFAULT_START_TEXT = "Что делаем?"
     }
 }
