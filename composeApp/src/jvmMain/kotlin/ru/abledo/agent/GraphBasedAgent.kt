@@ -69,7 +69,7 @@ class GraphBasedAgent(
         } else {
             var substituted = false
 
-            val newHistory = ArrayList<GigaRequest.Message>(ctx.history)
+            val newHistory = ArrayList<GigaRequest.Message>()
             ctx.history.forEach { msg ->
                 if (msg.role == GigaMessageRole.user && msg.content.startsWith(INFO_PREFIX)) {
                     substituted = true
