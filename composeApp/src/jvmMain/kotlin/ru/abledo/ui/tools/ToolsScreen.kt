@@ -4,6 +4,7 @@ import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.TooltipPlacement
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Button
@@ -99,65 +101,82 @@ fun ToolsScreen(
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         GlassCard(modifier = Modifier.fillMaxSize()) {
             val scrollState = rememberScrollState()
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 24.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "Tools",
-                            style = MaterialTheme.typography.headlineLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.glassColors.textPrimary
-                        )
-                        Text(
-                            text = "Выберите доступные категории и функции",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f)
-                        )
-                    }
-                    IconButton(onClick = onClose) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "Закрыть",
-                            tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f)
-                        )
-                    }
-                }
 
-                state.categories.forEach { category ->
-                    CategorySection(
-                        category = category,
-                        onCategoryToggle = onCategoryToggle,
-                        onToolToggle = onToolToggle,
-                    )
-                }
-
-                Divider(color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.2f))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    Button(
-                        onClick = onSave,
-                        enabled = !state.isSaving,
+            Box(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(scrollState)
+                            .padding(horizontal = 24.dp, vertical = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(18.dp),
                     ) {
-                        Text(
-                            text = if (state.isSaving) "Сохранение..." else "Save",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.glassColors.textPrimary,
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "Tools",
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.glassColors.textPrimary
+                                )
+                                Text(
+                                    text = "Выберите доступные категории и функции",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f)
+                                )
+                            }
+                            IconButton(onClick = onClose) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Закрыть",
+                                    tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+
+                        state.categories.forEach { category ->
+                            CategorySection(
+                                category = category,
+                                onCategoryToggle = onCategoryToggle,
+                                onToolToggle = onToolToggle,
+                            )
+                        }
+                    }
+
+                    Divider(
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.2f)
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        Button(
+                            onClick = onSave,
+                            enabled = !state.isSaving,
+                        ) {
+                            Text(
+                                text = if (state.isSaving) "Сохранение..." else "Save",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.glassColors.textPrimary,
+                            )
+                        }
                     }
                 }
+
+                VerticalScrollbar(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(vertical = 24.dp),
+                    adapter = rememberScrollbarAdapter(scrollState)
+                )
             }
         }
 
