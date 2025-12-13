@@ -65,6 +65,8 @@ kotlin {
 
             // search index
             implementation(libs.lucene.core)
+            implementation(libs.tika.core)
+            implementation(libs.tika.parsersStandardPackage)
         }
 
         jvmTest.dependencies {
