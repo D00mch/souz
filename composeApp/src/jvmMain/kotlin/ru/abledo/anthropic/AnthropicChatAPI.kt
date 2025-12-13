@@ -222,6 +222,8 @@ class AnthropicChatAPI(
         }
     }
 
+    override suspend fun balance(): GigaResponse.Balance = fallback.balance()
+
     override suspend fun uploadFile(file: File): GigaResponse.UploadFile {
         val mime = Files.probeContentType(file.toPath()) ?: "application/octet-stream"
         val response = client.submitFormWithBinaryData(

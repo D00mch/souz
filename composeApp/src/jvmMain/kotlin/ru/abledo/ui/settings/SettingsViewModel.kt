@@ -8,6 +8,7 @@ import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.abledo.db.SettingsProvider
+import ru.abledo.giga.GigaResponse
 import ru.abledo.giga.GigaRestChatAPI
 import ru.abledo.ui.BaseViewModel
 import ru.abledo.ui.settings.SettingsEvent.InputSupportEmail
@@ -19,6 +20,7 @@ class SettingsViewModel(
 
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
     private val keysProvider: SettingsProvider by di.instance()
+    private val chatApi: GigaRestChatAPI by di.instance()
     private val supportLogSender = SupportLogSender()
 
     init {
@@ -31,6 +33,7 @@ class SettingsViewModel(
                     supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
                 )
             }
+            fetchBalance()
         }
     }
 
@@ -42,6 +45,7 @@ class SettingsViewModel(
             is SettingsEvent.InputGigaChatKey -> {
                 keysProvider.gigaChatKey = event.key
                 setState { copy(gigaChatKey = event.key) }
+                fetchBalance()
             }
             is SettingsEvent.InputSaluteSpeechKey -> {
                 keysProvider.saluteSpeechKey = event.key
@@ -56,6 +60,7 @@ class SettingsViewModel(
                 setState { copy(supportEmail = event.email, sendLogsMessage = null) }
             }
             is SendLogsToSupport -> sendLogs()
+            SettingsEvent.RefreshBalance -> fetchBalance()
             SettingsEvent.GoToMain -> {
                 send(SettingsEffect.CloseScreen)
             }
@@ -91,5 +96,33 @@ class SettingsViewModel(
                     )
                 }
             }
+    }
+
+    private fun fetchBalance() = ioLaunch {
+        val key = currentState.gigaChatKey
+        if (key.isBlank()) {
+            setState { copy(balance = emptyList(), balanceError = "Укажите GigaChat ключ", isBalanceLoading = false) }
+            return@ioLaunch
+        }
+
+        setState { copy(isBalanceLoading = true, balanceError = null) }
+
+        when (val result = chatApi.balance()) {
+            is GigaResponse.Balance.Ok -> setState {
+                copy(
+                    balance = result.balance,
+                    isBalanceLoading = false,
+                    balanceError = null,
+                )
+            }
+
+            is GigaResponse.Balance.Error -> setState {
+                copy(
+                    balance = emptyList(),
+                    isBalanceLoading = false,
+                    balanceError = result.message,
+                )
+            }
+        }
     }
 }
