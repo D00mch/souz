@@ -56,8 +56,8 @@ class NodesClassificationPromptTest {
         toolsSettings.save(
             ToolsSettingsState(
                 categories = mapOf(
-                    ToolCategory.FILES to ToolCategorySettings(enabled = true, allowedTools = mapOf("Read" to true)),
-                    ToolCategory.BROWSER to ToolCategorySettings(enabled = false, allowedTools = mapOf("Open" to true)),
+                    ToolCategory.FILES to ToolCategorySettings(enabled = true, settings = mapOf("Read" to true)),
+                    ToolCategory.BROWSER to ToolCategorySettings(enabled = false, settings = mapOf("Open" to true)),
                 )
             )
         )
@@ -76,8 +76,8 @@ class NodesClassificationPromptTest {
         toolsSettings.save(
             ToolsSettingsState(
                 categories = mapOf(
-                    ToolCategory.FILES to ToolCategorySettings(enabled = true, allowedTools = mapOf("Read" to true)),
-                    ToolCategory.BROWSER to ToolCategorySettings(enabled = true, allowedTools = mapOf("Open" to false)),
+                    ToolCategory.FILES to ToolCategorySettings(enabled = true, settings = mapOf("Read" to true)),
+                    ToolCategory.BROWSER to ToolCategorySettings(enabled = true, settings = mapOf("Open" to false)),
                 )
             )
         )

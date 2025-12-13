@@ -2,6 +2,7 @@ package ru.abledo.ui.tools
 
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.TooltipPlacement
 import androidx.compose.foundation.VerticalScrollbar
@@ -53,10 +54,12 @@ private val ToolsWindowSize = DpSize(width = 640.dp, height = 720.dp)
 @Composable
 fun ToolsScreen(
     onClose: () -> Unit,
+    onOpenToolDetails: (ToolCategory, ToolUi) -> Unit = { _, _ -> },
     onResizeRequest: (DpSize) -> Unit = {},
+    viewModelKey: String = "ToolsScreen",
 ) {
     val di = localDI()
-    val viewModel = viewModel { ToolsSettingsViewModel(di) }
+    val viewModel = viewModel(key = viewModelKey) { ToolsSettingsViewModel(di) }
     val state by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -79,6 +82,7 @@ fun ToolsScreen(
         onToolToggle = { category, toolName, enabled ->
             viewModel.send(ToolsSettingsEvent.ToggleTool(category, toolName, enabled))
         },
+        onToolClick = onOpenToolDetails,
         onSave = { viewModel.send(ToolsSettingsEvent.SaveSettings) },
         onResizeRequest = onResizeRequest,
         snackbarHostState = snackbarHostState,
@@ -91,6 +95,7 @@ fun ToolsScreen(
     state: ToolsScreenState,
     onCategoryToggle: (ToolCategory, Boolean) -> Unit,
     onToolToggle: (ToolCategory, String, Boolean) -> Unit,
+    onToolClick: (ToolCategory, ToolUi) -> Unit,
     onSave: () -> Unit,
     onResizeRequest: (DpSize) -> Unit = {},
     onClose: () -> Unit,
@@ -143,6 +148,7 @@ fun ToolsScreen(
                                 category = category,
                                 onCategoryToggle = onCategoryToggle,
                                 onToolToggle = onToolToggle,
+                                onToolClick = onToolClick,
                             )
                         }
                     }
@@ -194,6 +200,7 @@ private fun CategorySection(
     category: ToolsCategoryUi,
     onCategoryToggle: (ToolCategory, Boolean) -> Unit,
     onToolToggle: (ToolCategory, String, Boolean) -> Unit,
+    onToolClick: (ToolCategory, ToolUi) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -225,6 +232,7 @@ private fun CategorySection(
                     category = category.category,
                     tool = tool,
                     onToolToggle = onToolToggle,
+                    onToolClick = onToolClick,
                 )
             }
         }
@@ -238,6 +246,7 @@ private fun ToolRow(
     category: ToolCategory,
     tool: ToolUi,
     onToolToggle: (ToolCategory, String, Boolean) -> Unit,
+    onToolClick: (ToolCategory, ToolUi) -> Unit,
 ) {
     TooltipArea(
         tooltip = {
@@ -258,7 +267,9 @@ private fun ToolRow(
         tooltipPlacement = TooltipPlacement.CursorPoint(offset = DpOffset(8.dp, 8.dp)),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.0001f)),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -276,6 +287,15 @@ private fun ToolRow(
                 text = tool.name,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.glassColors.textPrimary.copy(alpha = if (categoryEnabled) 1f else 0.5f),
+                modifier = Modifier
+                    .padding(vertical = 6.dp)
+                    .weight(1f)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.0001f))
+                    .clip(RoundedCornerShape(4.dp))
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                    .let { base ->
+                        if (categoryEnabled) base.clickable { onToolClick(category, tool) } else base
+                    },
             )
         }
     }
@@ -307,6 +327,7 @@ private fun ToolsScreenPreview() {
             ),
             onCategoryToggle = { _, _ -> },
             onToolToggle = { _, _, _ -> },
+            onToolClick = { _, _ -> },
             onSave = {},
             onResizeRequest = {},
             onClose = {},

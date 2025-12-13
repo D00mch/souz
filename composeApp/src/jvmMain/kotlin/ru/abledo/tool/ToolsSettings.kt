@@ -3,15 +3,22 @@
 package ru.abledo.tool
 
 import ru.abledo.db.ConfigStore
+import ru.abledo.giga.GigaRequest
 import ru.abledo.giga.GigaToolSetup
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 private const val TOOLS_SETTINGS_KEY = "TOOLS_SETTINGS"
 
+data class ToolSettingsEntry(
+    val enabled: Boolean = true,
+    val description: String? = null,
+    val examples: List<FewShotExample>? = null,
+)
+
 data class ToolCategorySettings(
     val enabled: Boolean = true,
-    val allowedTools: Map<String, Boolean> = emptyMap(),
+    val settings: Map<String, ToolSettingsEntry> = emptyMap(),
 )
 
 data class ToolsSettingsState(
@@ -53,8 +60,9 @@ class ToolsSettings(
 
             val allowed = HashMap<String, GigaToolSetup>(tools.size)
             for ((toolName, setup) in tools) {
-                if (categorySavedSettings?.allowedTools?.get(toolName) != false) {
-                    allowed[toolName] = setup
+                val toolSettings = categorySavedSettings?.settings?.get(toolName)
+                if (toolSettings?.enabled != false) {
+                    allowed[toolName] = applyOverrides(setup, toolSettings)
                 }
             }
 
@@ -72,7 +80,7 @@ class ToolsSettings(
         categories = toolsByCategory.mapValues { (_, tools) ->
             ToolCategorySettings(
                 enabled = true,
-                allowedTools = tools.keys.associateWith { true },
+                settings = tools.keys.associateWith { ToolSettingsEntry() },
             )
         },
     )
@@ -85,15 +93,43 @@ class ToolsSettings(
 
         val mergedCategories: Map<ToolCategory, ToolCategorySettings> = defaults.categories.mapValues { (category, defaultCat) ->
             val savedCategory = stored.categories[category]
-            val mergedTools = defaultCat.allowedTools.mapValues { (toolName, defaultValue) ->
-                savedCategory?.allowedTools?.get(toolName) ?: defaultValue
+            val mergedTools = defaultCat.settings.mapValues { (toolName, defaultValue) ->
+                val savedTool = savedCategory?.settings?.get(toolName)
+                ToolSettingsEntry(
+                    enabled = savedTool?.enabled ?: defaultValue.enabled,
+                    description = savedTool?.description ?: defaultValue.description,
+                    examples = savedTool?.examples ?: defaultValue.examples,
+                )
             }
             ToolCategorySettings(
                 enabled = savedCategory?.enabled ?: defaultCat.enabled,
-                allowedTools = mergedTools,
+                settings = mergedTools,
             )
         }
 
         return ToolsSettingsState(categories = mergedCategories)
+    }
+
+    private fun applyOverrides(
+        setup: GigaToolSetup,
+        savedToolSettings: ToolSettingsEntry?,
+    ): GigaToolSetup {
+        if (savedToolSettings == null) return setup
+        val description = savedToolSettings.description ?: setup.fn.description
+
+        if (description == setup.fn.description && savedToolSettings.examples == null) {
+            return setup
+        }
+
+        val examples: List<GigaRequest.FewShotExample> = savedToolSettings.examples
+            ?.map { GigaRequest.FewShotExample(it.request, it.params) }
+            ?: emptyList()
+
+        return object : GigaToolSetup by setup {
+            override val fn = setup.fn.copy(
+                description = description,
+                fewShotExamples = examples + setup.fn.fewShotExamples,
+            )
+        }
     }
 }
