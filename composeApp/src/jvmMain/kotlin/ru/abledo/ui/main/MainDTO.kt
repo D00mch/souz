@@ -9,16 +9,16 @@ import ru.abledo.ui.VMState
  * State for the main screen that mirrors the floating glass panel experience.
  */
 data class MainState(
-    val displayedText: String,
+    val displayedText: String = randomStatusTip,
     val isListening: Boolean = false,
-    val statusMessage: String = randomStatusTip(),
+    val statusMessage: String = "",
     val lastText: String? = null,
     val lastKnownAgentContext: AgentContext<String>? = null,
     val userExpectCloseOnX: Boolean = false,
 ) : VMState {
 
     companion object {
-        private val START_TIPS = listOf(
+        val START_TIPS = listOf(
             "Погода в Москве.",
             "Попроси меня, и я скажу, когда у тебя следующая встреча.",
             "Хочешь, я проверю почту?",
@@ -37,6 +37,8 @@ data class MainState(
             "Сохранить инструкцию для ассистента?",
             "Прочитать письмо и подготовить ответ?"
         )
+
+        private val randomStatusTip: String = START_TIPS.random()
 
         fun randomStatusTip(): String = START_TIPS.random()
     }
