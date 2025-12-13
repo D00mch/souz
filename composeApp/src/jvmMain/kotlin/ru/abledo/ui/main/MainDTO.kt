@@ -15,7 +15,7 @@ data class MainState(
     val lastText: String? = null,
     val lastKnownAgentContext: AgentContext<String>? = null,
     val userExpectCloseOnX: Boolean = false,
-) : VMState
+) : VMState {
 
     companion object {
         private val START_TIPS = listOf(
@@ -23,7 +23,6 @@ data class MainState(
             "Попроси меня, и я скажу, когда у тебя следующая встреча.",
             "Хочешь, я проверю почту?",
             "Найти файл, прочитать его или создать новый?",
-            "Открыть приложение или показать запущенные окна?",
             "Нужно отправить письмо или ответить на входящее?",
             "Найти письмо в почте или показать непрочитанные?",
             "Создать событие в календаре или отменить встречу?",
@@ -31,19 +30,17 @@ data class MainState(
             "Создать новую вкладку или переключиться на нужную в браузере?",
             "Найти вкладку в Safari или Chrome?",
             "Построить график из CSV-файла?",
-            "Загрузить файл или скачать результат?",
             "Открыть заметку или создать новую?",
             "Найти текст внутри файлов?",
             "Удалить лишний файл?",
             "Отправить сообщение в Telegram?",
-            "Изменить настройки звука?",
             "Сохранить инструкцию для ассистента?",
-            "Показать горячие клавиши в браузере?",
             "Прочитать письмо и подготовить ответ?"
         )
 
         fun randomStatusTip(): String = START_TIPS.random()
     }
+}
 
 sealed interface MainEvent : VMEvent {
     object StartListening : MainEvent
