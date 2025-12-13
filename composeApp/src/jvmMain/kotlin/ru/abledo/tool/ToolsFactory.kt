@@ -30,6 +30,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolModifyFile.toGiga(),
                 ToolFindTextInFiles.toGiga(),
                 ToolExtractText().toGiga(),
+                ToolReadPdfPages().toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.DATAANALYTICS to listOf(
