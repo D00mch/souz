@@ -32,6 +32,7 @@ class MainViewModel(
     private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), viewModelScope)
     private val agentRef = AtomicReference<GraphBasedAgent?>(null)
     private var permissionWatcherJob: Job? = null
+    private val startStatusTip = MainState.randomStatusTip()
 
     private val api: GigaRestChatAPI by di.instance()
     private val gigaVoiceAPI: GigaVoiceAPI by di.instance()
@@ -40,7 +41,10 @@ class MainViewModel(
         ioLaunch { initializeAgent() }
     }
 
-    override fun initialState(): MainState = MainState(displayedText = DEFAULT_START_TEXT)
+    override fun initialState(): MainState = MainState(
+        displayedText = DEFAULT_START_TEXT,
+        statusMessage = startStatusTip
+    )
 
     override suspend fun handleEvent(event: MainEvent) {
         when (event) {
@@ -143,7 +147,7 @@ class MainViewModel(
         setState { copy(isListening = false, statusMessage = "Обработка входа") }
         delay(300)
         playTextRand(speed = 120, "ok", "okey", "окей", "ок")
-        setState { copy(statusMessage = "Ожидание горячей клавиши") }
+        setState { copy(statusMessage = startStatusTip) }
     }
 
     private suspend fun setPreviousText() {
