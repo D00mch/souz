@@ -99,6 +99,8 @@ class SettingsViewModel(
     }
 
     private fun fetchBalance() = ioLaunch {
+        if (currentState.isBalanceLoading) return@ioLaunch
+
         val key = currentState.gigaChatKey
         if (key.isBlank()) {
             setState { copy(balance = emptyList(), balanceError = "Укажите GigaChat ключ", isBalanceLoading = false) }
