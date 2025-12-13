@@ -29,6 +29,8 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolDeleteFile.toGiga(),
                 ToolModifyFile.toGiga(),
                 ToolFindTextInFiles.toGiga(),
+                ToolExtractText().toGiga(),
+                ToolReadPdfPages().toGiga(),
                 ToolOpen(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
@@ -82,13 +84,6 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolMailReplyMessage(ToolRunBashCommand).toGiga(),
                 ToolMailSendNewMessage(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
-
-//            ToolCategory.IO to listOf(
-//                ToolUploadFile().toGiga(),
-//                ToolDownloadFile().toGiga(),
-////                ToolDesktopScreenShot().toGiga(),
-//                ToolReadScreenText().toGiga(),
-//            ).associateBy { it.fn.name },
         )
     }
 }

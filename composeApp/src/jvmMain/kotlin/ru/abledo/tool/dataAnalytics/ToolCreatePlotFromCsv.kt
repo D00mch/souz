@@ -63,7 +63,7 @@ class ToolCreatePlotFromCsv(private val bash: ToolRunBashCommand) : ToolSetup<To
             }
         }
 
-        val scriptPath = File("scripts/plot_csv.py").absolutePath
+        val scriptPath = File("src/jvmMain/resources/scripts//plot_csv.py").absolutePath
         val csvPath = csv.absolutePath
         val outputPath = File(input.output ?: "plot.png").absolutePath
         val command = "python3 \"$scriptPath\" \"$csvPath\" \"${input.xColumn}\" \"${input.yColumn}\" \"$outputPath\""
@@ -73,5 +73,5 @@ class ToolCreatePlotFromCsv(private val bash: ToolRunBashCommand) : ToolSetup<To
 
 fun main() {
     val tool = ToolCreatePlotFromCsv(ToolRunBashCommand)
-    println(tool.invoke(ToolCreatePlotFromCsv.Input("/Users/m1/Downloads/sales_report.csv", "Клиент", "Доход")))
+    println(tool.invoke(ToolCreatePlotFromCsv.Input("/Users/duxx/Отчеты/sales_report.csv", "Клиент", "Доход")))
 }

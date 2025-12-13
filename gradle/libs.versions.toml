@@ -19,6 +19,7 @@ lucene = "9.9.2"
 mockk = "1.13.11"
 protobuf = "3.25.3"
 slfj = "2.0.17"
+tika = "2.9.1"
 
 [libraries]
 androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
@@ -52,6 +53,8 @@ mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 platformtools-darkmodedetector = { module = "io.github.kdroidfilter:platformtools.darkmodedetector", version.ref = "kdroidfilter-platformtools" }
 protobuf-kotlin = { module = "com.google.protobuf:protobuf-kotlin", version.ref = "protobuf" }
 slfj = { module = "org.slf4j:jul-to-slf4j", version.ref = "slfj" }
+tika-core = { module = "org.apache.tika:tika-core", version.ref = "tika" }
+tika-parsersStandardPackage = { module = "org.apache.tika:tika-parsers-standard-package", version.ref = "tika" }
 
 [bundles]
 ktorClient = [
