@@ -42,6 +42,7 @@ private val SettingsWindowSize = DpSize(width = 560.dp, height = 520.dp)
 @Composable
 fun SettingsScreen(
     onClose: () -> Unit,
+    onOpenTools: () -> Unit,
     onResizeRequest: (DpSize) -> Unit = {}
 ) {
     val di = localDI()
@@ -55,6 +56,7 @@ fun SettingsScreen(
         onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
         onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
         onRefreshBalance = { viewModel.send(SettingsEvent.RefreshBalance) },
+        onOpenTools = onOpenTools,
         onResizeRequest = onResizeRequest,
         onClose = onClose,
     )
@@ -69,6 +71,7 @@ fun SettingsScreen(
     onSupportEmailInput: (String) -> Unit,
     onSendLogs: () -> Unit,
     onRefreshBalance: () -> Unit,
+    onOpenTools: () -> Unit,
     onResizeRequest: (DpSize) -> Unit = {},
     onClose: () -> Unit,
 ) {
@@ -133,6 +136,13 @@ fun SettingsScreen(
                     error = state.balanceError,
                     onRefreshBalance = onRefreshBalance,
                 )
+                Button(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Инструменты",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.glassColors.textPrimary,
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -305,6 +315,7 @@ fun SettingsScreenPreview() {
             onSupportEmailInput = {},
             onSendLogs = {},
             onRefreshBalance = {},
+            onOpenTools = {},
             onResizeRequest = {},
             onClose = {},
         )

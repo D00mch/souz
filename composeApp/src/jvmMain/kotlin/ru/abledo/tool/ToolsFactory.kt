@@ -29,6 +29,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolDeleteFile.toGiga(),
                 ToolModifyFile.toGiga(),
                 ToolFindTextInFiles.toGiga(),
+                ToolOpen(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.DATAANALYTICS to listOf(

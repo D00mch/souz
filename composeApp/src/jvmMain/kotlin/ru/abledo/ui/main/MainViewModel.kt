@@ -15,7 +15,6 @@ import ru.abledo.agent.engine.AgentContext
 import ru.abledo.audio.*
 import ru.abledo.db.DesktopInfoRepository
 import ru.abledo.db.VectorDB
-import ru.abledo.giga.GigaModel
 import ru.abledo.giga.GigaRestChatAPI
 import ru.abledo.giga.GigaVoiceAPI
 import ru.abledo.keys.HotkeyListener
@@ -28,12 +27,13 @@ class MainViewModel(
     override val di: DI,
 ) : BaseViewModel<MainState, MainEvent, MainEffect>(), DIAware {
 
+
     private val l = LoggerFactory.getLogger(MainViewModel::class.java)
     private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), viewModelScope)
     private val agentRef = AtomicReference<GraphBasedAgent?>(null)
     private var permissionWatcherJob: Job? = null
 
-    private val api: GigaRestChatAPI by di.instance()
+    private val graphAgent by di.instance<GraphBasedAgent>()
     private val gigaVoiceAPI: GigaVoiceAPI by di.instance()
 
     init {
@@ -76,13 +76,6 @@ class MainViewModel(
         val desktopInfoRepo = DesktopInfoRepository(GigaRestChatAPI.INSTANCE, VectorDB)
         viewModelScope.launchDbSetup(desktopInfoRepo)
 
-        val model = System.getenv("GIGA_MODEL")?.let { envModel ->
-            GigaModel.entries.firstOrNull { enumModel ->
-                enumModel.name.equals(envModel, ignoreCase = true) ||
-                    enumModel.alias.equals(envModel, ignoreCase = true)
-            }
-        } ?: GigaModel.Max
-
         if (!registerNativeHook()) {
             handleMissingInputMonitoringPermission()
             return@coroutineScope
@@ -101,7 +94,6 @@ class MainViewModel(
                     resp.result.joinToString("\n")
                 }
 
-            val graphAgent = GraphBasedAgent(model.alias, api, desktopInfoRepo)
             agentRef.set(graphAgent)
 
             while (isActive) {
@@ -157,6 +149,7 @@ class MainViewModel(
     private suspend fun clearContext() {
         val lastKnownAgentContext: AgentContext<String>? = agentRef.get()?.currentContext?.value
         agentRef.get()?.clearContext()
+        stopPlayText()
         when(currentState.userExpectCloseOnX) {
             false -> {
                 val currentText = currentState.displayedText

@@ -7,10 +7,18 @@ import io.mockk.*
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import org.kodein.di.DI
+import org.kodein.di.instance
+import ru.abledo.agent.nodes.NodesClassification
+import ru.abledo.di.mainDiModule
+import kotlin.getValue
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class GigaAgentTest {
+    private val di = DI.invoke { import(mainDiModule) }
+    val nodesClassification: NodesClassification by di.instance()
+
     @Test
     fun `singleResponse emits assistant reply`() = runBlocking {
         val api = mockk<GigaChatAPI>()
@@ -45,6 +53,7 @@ class GigaAgentTest {
             userMessages = flowOf("hi"),
             api = api,
             ragRepo = mockRagRepo(),
+            nodesClassification = nodesClassification,
             settings = GigaAgent.Settings(toolsByCategory = emptyMap(), model = GigaModel.Pro, stream = false),
         )
         val results = agent.run().toList()
@@ -105,6 +114,7 @@ class GigaAgentTest {
             userMessages = flowOf("list"),
             api = api,
             ragRepo = mockRagRepo(),
+            nodesClassification = nodesClassification,
             settings = GigaAgent.Settings(
                 toolsByCategory = mapOf(
                     ToolCategory.FILES to mapOf("ListFiles" to dummyTool("ListFiles"))
@@ -158,6 +168,7 @@ class GigaAgentTest {
             userMessages = flowOf("hi"),
             api = api,
             ragRepo = mockRagRepo(),
+            nodesClassification = nodesClassification,
             settings = GigaAgent.Settings(toolsByCategory = emptyMap(), model = GigaModel.Pro, stream = true),
         )
         val results = agent.run().toList()
@@ -196,6 +207,7 @@ class GigaAgentTest {
             userMessages = flowOf("создай файл readme"),
             api = api,
             ragRepo = mockRagRepo(),
+            nodesClassification = nodesClassification,
             settings = GigaAgent.Settings(
                 toolsByCategory = mapOf(
                     ToolCategory.FILES to mapOf("ListFiles" to dummyTool("ListFiles")),
@@ -248,6 +260,7 @@ class GigaAgentTest {
             userMessages = flowOf("hi"),
             api = api,
             ragRepo = mockRagRepo(),
+            nodesClassification = nodesClassification,
             settings = GigaAgent.Settings(
                 toolsByCategory = emptyMap(),
                 model = GigaModel.Pro,
@@ -267,6 +280,7 @@ class GigaAgentTest {
             userMessages = flowOf<String>(),
             api = mockk(),
             ragRepo = mockRagRepo(),
+            nodesClassification = nodesClassification,
             settings = GigaAgent.Settings(toolsByCategory = emptyMap(), model = GigaModel.Pro, stream = true),
         )
         val conversation = ArrayDeque<GigaRequest.Message>().apply {
@@ -303,6 +317,7 @@ class GigaAgentTest {
             userMessages = flowOf<String>(),
             api = mockk(),
             ragRepo = mockRagRepo(),
+            nodesClassification = nodesClassification,
             settings = GigaAgent.Settings(toolsByCategory = emptyMap(), model = GigaModel.Pro, stream = true),
         )
         val conversation = ArrayDeque<GigaRequest.Message>().apply {
