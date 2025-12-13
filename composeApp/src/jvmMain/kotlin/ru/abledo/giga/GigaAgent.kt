@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import ru.abledo.agent.CLASSIFIER_PROMPT
+import ru.abledo.agent.nodes.NodesClassification
 import java.util.concurrent.atomic.AtomicBoolean
 
 class GigaAgent(
@@ -24,6 +24,7 @@ class GigaAgent(
     private val api: GigaChatAPI,
     private val ragRepo: DesktopInfoRepository,
     private val settings: Settings,
+    private val nodesClassification: NodesClassification,
     private val apiClassifier: UserMessageClassifier = ApiClassifier(api),
     private val localClassifier: UserMessageClassifier = LocalRegexClassifier,
 ) {
@@ -228,7 +229,7 @@ class GigaAgent(
         val smallHistory = conversation.takeLast(if (conversation.size > 3) 2 else 0)
             .joinToString("\n") { it.content }
         val messages = ArrayDeque<GigaRequest.Message>().apply {
-            add(GigaRequest.Message(GigaMessageRole.system, CLASSIFIER_PROMPT))
+            add(GigaRequest.Message(GigaMessageRole.system, nodesClassification.buildPrompt(toolsByCategory)))
             add(GigaRequest.Message(GigaMessageRole.user, "History:\n$smallHistory\n"))
             add(GigaRequest.Message(GigaMessageRole.user, "New message:\n$userText"))
         }
@@ -357,8 +358,9 @@ class GigaAgent(
             userMessages: Flow<String>,
             api: GigaChatAPI,
             desktopRepo: DesktopInfoRepository,
+            nodesClassification: NodesClassification,
             model: GigaModel = GigaModel.Max,
             settings: Settings = Settings(ToolsFactory(desktopRepo).toolsByCategory, model, stream = false)
-        ): GigaAgent = GigaAgent(userMessages, api, desktopRepo, settings)
+        ): GigaAgent = GigaAgent(userMessages, api, desktopRepo, settings, nodesClassification)
     }
 }

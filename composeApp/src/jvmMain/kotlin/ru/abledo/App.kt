@@ -12,6 +12,7 @@ import org.kodein.di.instance
 import ru.abledo.ui.AppTheme
 import ru.abledo.ui.main.MainScreen
 import ru.abledo.ui.settings.SettingsScreen
+import ru.abledo.ui.tools.ToolsScreen
 import ru.abledo.db.SettingsProvider
 
 @Composable
@@ -42,6 +43,11 @@ fun App(
                 )
                 Screen.Settings -> SettingsScreen(
                     onClose = { currentScreen = Screen.Main },
+                    onOpenTools = { currentScreen = Screen.Tools },
+                    onResizeRequest = onWindowResize
+                )
+                Screen.Tools -> ToolsScreen(
+                    onClose = { currentScreen = Screen.Settings },
                     onResizeRequest = onWindowResize
                 )
             }
@@ -49,4 +55,4 @@ fun App(
     }
 }
 
-private enum class Screen { Main, Settings }
+private enum class Screen { Main, Settings, Tools }

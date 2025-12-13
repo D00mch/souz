@@ -1,30 +1,24 @@
 package ru.abledo.agent
 
-import com.fasterxml.jackson.annotation.JsonInclude
-import ru.abledo.agent.engine.*
-import ru.abledo.agent.node.NodesCommon
-import ru.abledo.agent.node.NodesLLM
-import ru.abledo.db.DesktopInfoRepository
-import ru.abledo.db.VectorDB
-import ru.abledo.db.asString
-import ru.abledo.giga.*
-import ru.abledo.tool.ToolCategory
-import ru.abledo.tool.ToolsFactory
-import ru.abledo.tool.UserMessageClassifier
-import ru.abledo.tool.LocalRegexClassifier
-import ru.abledo.tool.ToolRunBashCommand
-import io.ktor.util.logging.debug
+import com.fasterxml.jackson.databind.ObjectMapper
+import io.ktor.util.logging.*
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import org.slf4j.LoggerFactory
-import com.fasterxml.jackson.databind.SerializationFeature
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.kodein.di.DI
 import org.kodein.di.instance
+import org.slf4j.LoggerFactory
+import ru.abledo.agent.engine.*
+import ru.abledo.agent.node.NodesCommon
+import ru.abledo.agent.node.NodesLLM
+import ru.abledo.agent.nodes.NodesClassification
+import ru.abledo.db.DesktopInfoRepository
+import ru.abledo.db.asString
 import ru.abledo.di.mainDiModule
+import ru.abledo.giga.*
+import ru.abledo.tool.*
 import ru.abledo.tool.browser.detectDefaultBrowser
 import ru.abledo.tool.browser.prettyName
 import java.time.LocalDateTime
@@ -34,29 +28,23 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.ceil
 
 class GraphBasedAgent(
-    private val model: String,
-    private val llmApi: GigaChatAPI,
-    private val desktopInfoRepository: DesktopInfoRepository,
+    di: DI,
+    private val model: GigaModel,
+    private val logObjectMapper: ObjectMapper,
 ) {
     private val l = LoggerFactory.getLogger(GraphBasedAgent::class.java)
-    private val nodesLLM = NodesLLM(llmApi)
-    private val logObjectMapper = jacksonObjectMapper()
-        .setSerializationInclusion(JsonInclude.Include.NON_NULL)
-        .enable(SerializationFeature.INDENT_OUTPUT)
-    private val apiClassifier: UserMessageClassifier = ApiClassifier(llmApi)
-    private val localClassifier: UserMessageClassifier = LocalRegexClassifier
+
+    private val toolsFactory: ToolsFactory  by di.instance()
+    private val nodesLLM: NodesLLM  by di.instance()
+    private val nodesClassify: NodesClassification by di.instance()
+    private val nodeClassify = nodesClassify.node
+    private val desktopInfoRepository: DesktopInfoRepository  by di.instance()
 
     // Make sure summarization only happens after all tool requests from LLM are answered
     private val nodeSummarize: Node<GigaResponse.Chat, String> by graph(name = "Go to user") {
         nodeInput.edgeTo { ctx -> if (ctx.historyIsTooBig()) nodesLLM.summarize else NodesCommon.respToString }
         nodesLLM.summarize.edgeTo(NodesCommon.respToString)
         NodesCommon.respToString.edgeTo(nodeFinish)
-    }
-
-    private val nodeClassify: Node<String, String> = Node("classify") { ctx: AgentContext<String> ->
-        val category = classify(ctx.input, ctx.history)
-        val functions = category?.let { functionsByCategory[it] } ?: allFunctions
-        ctx.map(activeTools = functions) { it }
     }
 
     /**
@@ -85,12 +73,10 @@ class GraphBasedAgent(
     }
 
     private val settings = AgentSettings(
-        model = model,
+        model = model.alias,
         temperature = 0.7f,
-        toolsByCategory = ToolsFactory(desktopInfoRepository).toolsByCategory
+        toolsByCategory = toolsFactory.toolsByCategory
     )
-    private val functionsByCategory: Map<ToolCategory, List<GigaRequest.Function>> =
-        settings.toolsByCategory.mapValues { entry -> entry.value.values.map { setup -> setup.fn } }
     private val allFunctions: List<GigaRequest.Function> = settings.tools.values.map { it.fn }
     private val initialCtx = AgentContext(
         input = "",
@@ -154,47 +140,6 @@ class GraphBasedAgent(
 
     private fun isToolUse(input: GigaResponse.Chat.Ok): Boolean = input.choices.any { it.message.functionCall != null }
 
-    private suspend fun classify(
-        userText: String,
-        history: List<GigaRequest.Message>,
-    ): ToolCategory? {
-        val body = buildClassifierBody(userText, history)
-        val bodyJson = gigaJsonMapper.writeValueAsString(body)
-        l.debug("Classifying user message: {}, \nbody: \n{}", userText, logObjectMapper.writeValueAsString(body))
-        return try {
-            val categoryByLocal = localClassifier.classify(bodyJson)
-            val categoryByApi = apiClassifier.classify(bodyJson)
-            if (categoryByApi != categoryByLocal) {
-                l.info("Categories do not match: Local: {}, API: {}", categoryByLocal, categoryByApi)
-                null
-            } else {
-                categoryByLocal
-            }
-        } catch (e: Exception) {
-            l.error("Error in apiClassifier: {}", e.message)
-            null
-        }
-    }
-
-    private fun buildClassifierBody(
-        userText: String,
-        history: List<GigaRequest.Message>,
-    ): GigaRequest.Chat {
-        val smallHistory = history
-            .takeLast(if (history.size > 3) 2 else 0)
-            .joinToString("\n") { it.content }
-        val messages = listOf(
-            GigaRequest.Message(GigaMessageRole.system, CLASSIFIER_PROMPT),
-            GigaRequest.Message(GigaMessageRole.user, "History:\n$smallHistory\n"),
-            GigaRequest.Message(GigaMessageRole.user, "New message:\n$userText"),
-        )
-        return GigaRequest.Chat(
-            model = settings.model,
-            messages = messages,
-            functions = emptyList(),
-        )
-    }
-
     private suspend fun appendActualInformation(userText: String): GigaRequest.Message? {
         if (userText.isBlank()) return null
 
@@ -242,37 +187,6 @@ private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(
 
 private fun String.estimateTokenCount(): Int = ceil(length / APPROX_CHARS_PER_TOKEN).toInt()
 
-val CLASSIFIER_PROMPT = """
-Ты — алгоритм классификации. Выбери категорию запроса.
-Категории:
-- files: навигация по файловой системе, чтение и поиск текста в файлах, создание, удаление или изменение файлов;
-- browser: веб-страницы, вкладки, или браузерные горячие клавиши, или когда надо получить общую информацию о новостях или погоде;
-- desktop: манипуляции с рабочим столом, окнами и экранами, открытие и использование приложений, работа с заметками, открытие папок и файлов;
-- config: изменение или сохранение настроек, вроде скорости речи, запоминание и исполнение инструкций;
-- dataAnalytics: когда надо создать график или найти корреляцию между двумя переменными;
-- mail: получение и отправка писем, список писем, чтение писем, ответ на письмо, прочтение сообщений из почты;
-- calendar: создание и удаление событий в календаре;
-Примеры:
-покажи содержимое файла README -> files
-найди "ошибка" в логах в папке downloads -> files
-открой сайт сбербанка -> browser
-найди в закладках обзор фондового рынка -> browser
-расскажи кратко о чем рассказано на текущей странице -> browser
-напиши Анюте сообщение: это тест приложения
-открой фото тёти фроси -> desktop
-открой папку отчеты -> desktop
-открой приложение Intellij IDEA -> desktop
-перемести окно на передний план -> desktop
-запомни инструкцию при слове тишина уменьшай громкость -> config
-построй график дохода по клиенту -> dataAnalytics
-какие письма у меня непрочитанные -> mail
-ответь на письмо Артура: 'Спасибо, получил' -> mail
-что у меня сегодня по плану -> calendar
-поставь событие на 10 вечера в календаре -> calendar
-
-Ответ с только одним словом: files, browser, desktop, config, calendar, mail, or dataAnalytics.
-""".trimIndent()
-
 val SYSTEM_PROMPT = """
 Ты — помощник, управляющий компьютером. Будь полезным. Говори только по существу.
 Если получил команду, выполняй, потом говори, что сделал.
@@ -283,16 +197,7 @@ val SYSTEM_PROMPT = """
 
 suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
-    val api: GigaRestChatAPI by di.instance()
-    val desktopRepo = DesktopInfoRepository(api, VectorDB)
-    val graph = GraphBasedAgent(GigaModel.Pro.alias, api, desktopRepo)
+    val graph: GraphBasedAgent by di.instance()
     val result = graph.execute("Hey")
     println(result)
 }
-
-/*
-TODO:
-1. Stream
-2. RAG
-3. Classification
- */
