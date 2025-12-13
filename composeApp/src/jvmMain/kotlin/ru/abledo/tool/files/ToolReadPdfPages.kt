@@ -28,7 +28,7 @@ class ToolReadPdfPages : ToolSetup<ToolReadPdfPages.Input> {
         FewShotExample(
             request = "Прочитай первые 5 страниц книги",
             params = mapOf("filePath" to "/docs/book.pdf", "startPage" to 1, "endPage" to 5)
-        )
+        ),
     )
 
     override val returnParameters = ReturnParameters(
@@ -98,4 +98,15 @@ class ToolReadPdfPages : ToolSetup<ToolReadPdfPages.Input> {
             "Unexpected error: ${e.toString()}"
         }
     }
+}
+
+fun main() {
+    val result = ToolReadPdfPages().invoke(
+        ToolReadPdfPages.Input(
+            filePath = "/Users/duxx/Книги/100 ошибок в го.pdf",
+            startPage = 27,
+            endPage = 75
+        )
+    )
+    println(result)
 }
