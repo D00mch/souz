@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.DpSize
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
+import ru.abledo.giga.GigaResponse
 import ru.abledo.ui.AppTheme
 import ru.abledo.ui.glassColors
 import ru.abledo.ui.main.GlassCard
@@ -53,6 +54,7 @@ fun SettingsScreen(
         onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
         onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
         onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
+        onRefreshBalance = { viewModel.send(SettingsEvent.RefreshBalance) },
         onResizeRequest = onResizeRequest,
         onClose = onClose,
     )
@@ -66,6 +68,7 @@ fun SettingsScreen(
     onUseFewShotExamplesChange: (Boolean) -> Unit,
     onSupportEmailInput: (String) -> Unit,
     onSendLogs: () -> Unit,
+    onRefreshBalance: () -> Unit,
     onResizeRequest: (DpSize) -> Unit = {},
     onClose: () -> Unit,
 ) {
@@ -124,6 +127,12 @@ fun SettingsScreen(
                     onValueChange = onSaluteSpeechKeyInput,
                     modifier = Modifier.fillMaxWidth()
                 )
+                TokensBalanceSection(
+                    isLoading = state.isBalanceLoading,
+                    balance = state.balance,
+                    error = state.balanceError,
+                    onRefreshBalance = onRefreshBalance,
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -180,6 +189,78 @@ fun SettingsScreen(
 }
 
 @Composable
+private fun TokensBalanceSection(
+    isLoading: Boolean,
+    balance: List<GigaResponse.BalanceItem>,
+    error: String?,
+    onRefreshBalance: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Остаток токенов",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.glassColors.textPrimary,
+            )
+
+            Button(onClick = onRefreshBalance, enabled = !isLoading) {
+                Text(
+                    text = if (isLoading) "Обновление..." else "Обновить",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.glassColors.textPrimary,
+                )
+            }
+        }
+
+        when {
+            isLoading -> Text(
+                text = "Запрашиваем баланс...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.glassColors.textPrimary,
+            )
+
+            error != null -> Text(
+                text = error,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+
+            balance.isEmpty() -> Text(
+                text = "Нет данных о балансе",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f),
+            )
+
+            else -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                balance.forEach { item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = item.usage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.glassColors.textPrimary,
+                        )
+                        Text(
+                            text = item.value.toString(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.glassColors.textPrimary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun LabeledTextField(
     label: String,
     value: String,
@@ -223,6 +304,7 @@ fun SettingsScreenPreview() {
             onUseFewShotExamplesChange = {},
             onSupportEmailInput = {},
             onSendLogs = {},
+            onRefreshBalance = {},
             onResizeRequest = {},
             onClose = {},
         )
