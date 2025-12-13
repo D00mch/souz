@@ -55,7 +55,7 @@ class NodesLLM(llmApi: GigaChatAPI) {
             is GigaResponse.Chat.Ok -> summaryResponse.choices.mapNotNull { it.toMessage() }.last()
         }
 
-        val newHistory = listOf(ctx.systemPrompt.toSystemPromptMessage(), ctx.history.last(), msg)
+        val newHistory = listOf(ctx.systemPrompt.toSystemPromptMessage(), msg)
         ctx.map(history = newHistory) { summaryResponse }
     }
 

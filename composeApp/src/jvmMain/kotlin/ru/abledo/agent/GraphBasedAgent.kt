@@ -57,15 +57,33 @@ class GraphBasedAgent(
         ctx.map(activeTools = functions) { it }
     }
 
+    /**
+     * Makes sure we have additional information (AD) in the history, 2 cases possible:
+     * - Swap the previous AD with the current one;
+     * - Append AD before the previous message (so agent is not focused on the AD).
+     */
     private val nodeAppendAdditionalData: Node<String, String> = Node("appendActualInformation") { ctx ->
         val additionalMessage: GigaRequest.Message? = appendActualInformation(ctx.input)
         if (additionalMessage == null) {
             ctx
         } else {
-            val history: List<GigaRequest.Message> = ctx.history
-                .filterNot { msg -> msg.role == GigaMessageRole.user && msg.content.startsWith(INFO_PREFIX) }
-                .plus(additionalMessage)
-            ctx.map(history = history)
+            var substituted = false
+
+            val newHistory = ArrayList<GigaRequest.Message>()
+            ctx.history.forEach { msg ->
+                if (msg.role == GigaMessageRole.user && msg.content.startsWith(INFO_PREFIX)) {
+                    substituted = true
+                    newHistory.add(additionalMessage)
+                } else {
+                    newHistory.add(msg)
+                }
+            }
+
+            if (!substituted && ctx.history.size > 1) {
+                newHistory.apply { add(size - 1, additionalMessage) }
+            }
+
+            ctx.map(history = newHistory)
         }
     }
 
@@ -190,14 +208,6 @@ class GraphBasedAgent(
             ""
         }
 
-        val openedApps = try {
-            val msg = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
-            "Эти приложения сейчас открыты: $msg"
-        } catch (e: Exception) {
-            l.error("Error while fetching opened apps: {}", e.message)
-            ""
-        }
-
         val browserName = try {
             val defaultBrowser = ToolRunBashCommand.detectDefaultBrowser()
             "Дефолтный браузер — ${defaultBrowser.prettyName}"
@@ -211,7 +221,7 @@ class GraphBasedAgent(
 
         return GigaRequest.Message(
             role = GigaMessageRole.user,
-            content = listOf(INFO_PREFIX, msgRelatedDataInTheStore, openedApps, browserName, dateInfo)
+            content = listOf(INFO_PREFIX, msgRelatedDataInTheStore, browserName, dateInfo)
                 .filter { it.isNotBlank() }
                 .joinToString(separator = ";\n")
         )

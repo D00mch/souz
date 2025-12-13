@@ -63,7 +63,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 //ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
                 //ToolMouseClickMac().toGiga(),
                 //ToolCollectButtons(ToolRunBashCommand).toGiga(), // too slow, only for mouse
-                //ToolShowApps.toGiga(), // we get it by default anyway
+                ToolShowApps.toGiga(),
                 ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 

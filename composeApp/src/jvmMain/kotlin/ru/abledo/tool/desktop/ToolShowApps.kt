@@ -12,7 +12,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
 
 object ToolShowApps : ToolSetup<ToolShowApps.Input> {
     data class Input(
-        @InputParamDescription("Action to perform")
+        @InputParamDescription("What apps to show")
         val state: AppState,
     )
 
@@ -32,7 +32,7 @@ object ToolShowApps : ToolSetup<ToolShowApps.Input> {
     )
     override val returnParameters: ReturnParameters = ReturnParameters(
         properties = mapOf(
-            "result" to ReturnProperty("object", """JSON of apps like:
+            "result" to ReturnProperty("string", """JSON of apps like:
 ```json
 [{
   "app-bundle-id" : "com.google.Chrome",
