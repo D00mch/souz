@@ -1,5 +1,6 @@
 package ru.abledo.agent
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import ru.abledo.agent.engine.*
 import ru.abledo.agent.node.NodesCommon
 import ru.abledo.agent.node.NodesLLM
@@ -12,7 +13,6 @@ import ru.abledo.tool.ToolsFactory
 import ru.abledo.tool.UserMessageClassifier
 import ru.abledo.tool.LocalRegexClassifier
 import ru.abledo.tool.ToolRunBashCommand
-import ru.abledo.tool.desktop.ToolShowApps
 import io.ktor.util.logging.debug
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
@@ -40,7 +40,9 @@ class GraphBasedAgent(
 ) {
     private val l = LoggerFactory.getLogger(GraphBasedAgent::class.java)
     private val nodesLLM = NodesLLM(llmApi)
-    private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
+    private val logObjectMapper = jacksonObjectMapper()
+        .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+        .enable(SerializationFeature.INDENT_OUTPUT)
     private val apiClassifier: UserMessageClassifier = ApiClassifier(llmApi)
     private val localClassifier: UserMessageClassifier = LocalRegexClassifier
 
