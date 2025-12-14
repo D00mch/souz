@@ -13,6 +13,7 @@ import ru.abledo.giga.GigaRequest
 import ru.abledo.giga.GigaToolSetup
 import ru.abledo.tool.ToolCategory
 import ru.abledo.tool.ToolCategorySettings
+import ru.abledo.tool.ToolSettingsEntry
 import ru.abledo.tool.ToolsFactory
 import ru.abledo.tool.ToolsSettings
 import ru.abledo.tool.ToolsSettingsState
@@ -56,8 +57,8 @@ class NodesClassificationPromptTest {
         toolsSettings.save(
             ToolsSettingsState(
                 categories = mapOf(
-                    ToolCategory.FILES to ToolCategorySettings(enabled = true, settings = mapOf("Read" to true)),
-                    ToolCategory.BROWSER to ToolCategorySettings(enabled = false, settings = mapOf("Open" to true)),
+                    ToolCategory.FILES to ToolCategorySettings(enabled = true, settings = mapOf("Read" to ToolSettingsEntry(true))),
+                    ToolCategory.BROWSER to ToolCategorySettings(enabled = false, settings = mapOf("Read" to ToolSettingsEntry(true))),
                 )
             )
         )
@@ -76,8 +77,8 @@ class NodesClassificationPromptTest {
         toolsSettings.save(
             ToolsSettingsState(
                 categories = mapOf(
-                    ToolCategory.FILES to ToolCategorySettings(enabled = true, settings = mapOf("Read" to true)),
-                    ToolCategory.BROWSER to ToolCategorySettings(enabled = true, settings = mapOf("Open" to false)),
+                    ToolCategory.FILES to ToolCategorySettings(enabled = true, settings = mapOf("Read" to ToolSettingsEntry(true))),
+                    ToolCategory.BROWSER to ToolCategorySettings(enabled = false, settings = mapOf("Read" to ToolSettingsEntry(false))),
                 )
             )
         )
