@@ -1,5 +1,6 @@
 package ru.abledo.ui.tools
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -25,6 +27,8 @@ import androidx.compose.material.Divider
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +36,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -101,6 +108,7 @@ fun ToolsScreen(
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         GlassCard(modifier = Modifier.fillMaxSize()) {
             val scrollState = rememberScrollState()
+            val expandedByCategory = remember { mutableStateMapOf<ToolCategory, Boolean>() }
 
             Box(modifier = Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -139,12 +147,17 @@ fun ToolsScreen(
                         }
 
                         state.categories.forEach { category ->
-                            CategorySection(
-                                category = category,
-                                onCategoryToggle = onCategoryToggle,
-                                onToolToggle = onToolToggle,
-                                onToolClick = onToolClick,
-                            )
+                            key(category.category) {
+                                val expanded = expandedByCategory[category.category] ?: true
+                                CategorySection(
+                                    category = category,
+                                    expanded = expanded,
+                                    onExpandedChange = { expandedByCategory[category.category] = it },
+                                    onCategoryToggle = onCategoryToggle,
+                                    onToolToggle = onToolToggle,
+                                    onToolClick = onToolClick,
+                                )
+                            }
                         }
                     }
 
@@ -187,6 +200,8 @@ fun ToolsScreen(
 @Composable
 private fun CategorySection(
     category: ToolsCategoryUi,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     onCategoryToggle: (ToolCategory, Boolean) -> Unit,
     onToolToggle: (ToolCategory, String, Boolean) -> Unit,
     onToolClick: (ToolCategory, ToolUi) -> Unit,
@@ -212,17 +227,29 @@ private fun CategorySection(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.glassColors.textPrimary,
             )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            IconButton(onClick = { onExpandedChange(!expanded) }) {
+                Icon(
+                    imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = if (expanded) "Свернуть" else "Развернуть",
+                    tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f),
+                )
+            }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(start = 12.dp)) {
-            category.tools.forEach { tool ->
-                ToolRow(
-                    categoryEnabled = category.enabled,
-                    category = category.category,
-                    tool = tool,
-                    onToolToggle = onToolToggle,
-                    onToolClick = onToolClick,
-                )
+        AnimatedVisibility(visible = expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(start = 12.dp)) {
+                category.tools.forEach { tool ->
+                    ToolRow(
+                        categoryEnabled = category.enabled,
+                        category = category.category,
+                        tool = tool,
+                        onToolToggle = onToolToggle,
+                        onToolClick = onToolClick,
+                    )
+                }
             }
         }
     }
