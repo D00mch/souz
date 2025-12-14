@@ -22,8 +22,8 @@ private val paramsTypeRef = object : TypeReference<Map<String, Any>>() {}
 
 class ToolDetailsViewModel(
     override val di: DI,
-    private val category: ToolCategory,
-    private val toolName: String,
+    private val theCategory: ToolCategory,
+    private val theToolName: String,
 ) : BaseViewModel<ToolDetailsState, ToolDetailsEvent, ToolDetailsEffect>(), DIAware {
 
     private val toolsFactory: ToolsFactory by di.instance()
@@ -54,23 +54,23 @@ class ToolDetailsViewModel(
     }
 
     private suspend fun load() {
-        val setup = toolsFactory.toolsByCategory[category]?.get(toolName)
+        val setup = toolsFactory.toolsByCategory[theCategory]?.get(theToolName)
         if (setup == null) {
             setState { copy(error = "Tool is missing in the factory") }
             return
         }
 
         val settingsState = toolsSettings.load(toolsFactory.toolsByCategory)
-        val categorySettings = settingsState.categories[category]
-        val toolSettings = categorySettings?.settings?.get(toolName)
+        val categorySettings = settingsState.categories[theCategory]
+        val toolSettings = categorySettings?.settings?.get(theToolName)
 
         val defaultExamples = setup.fn.fewShotExamples.map { FewShotExample(it.request, it.params) }
         val defaultDescription = setup.fn.description
 
         setState {
             copy(
-                category = category,
-                toolName = toolName,
+                category = theCategory,
+                toolName = theToolName,
                 description = toolSettings?.description ?: defaultDescription,
                 enabled = toolSettings?.enabled ?: true,
                 examples = (toolSettings?.examples ?: defaultExamples).map { it.toUi() },
@@ -164,16 +164,16 @@ class ToolDetailsViewModel(
 
         val settingsState = toolsSettings.load(toolsFactory.toolsByCategory)
         val updatedCategories = settingsState.categories.toMutableMap()
-        val categorySettings = updatedCategories[category] ?: ToolCategorySettings()
+        val categorySettings = updatedCategories[theCategory] ?: ToolCategorySettings()
         val allowedTools = categorySettings.settings.toMutableMap()
 
-        allowedTools[toolName] = ToolSettingsEntry(
+        allowedTools[theToolName] = ToolSettingsEntry(
             enabled = currentState.enabled,
             description = currentState.description,
             examples = parsedExamples.examples,
         )
 
-        updatedCategories[category] = categorySettings.copy(settings = allowedTools)
+        updatedCategories[theCategory] = categorySettings.copy(settings = allowedTools)
 
         toolsSettings.save(ToolsSettingsState(categories = updatedCategories))
         setState { copy(isSaving = false) }
