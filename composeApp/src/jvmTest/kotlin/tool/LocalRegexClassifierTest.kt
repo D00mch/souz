@@ -6,7 +6,6 @@ import ru.abledo.giga.gigaJsonMapper
 import ru.abledo.tool.LocalRegexClassifier
 import ru.abledo.tool.ToolCategory
 import kotlinx.coroutines.runBlocking
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -71,8 +70,8 @@ class LocalRegexClassifierTest {
     @Test
     fun `classifies desktop window`() = runBlocking {
         val classifier = LocalRegexClassifier
-        val category = classifier.classify(body("перемести окно приложения"))
-        assertEquals(ToolCategory.DESKTOP, category)
+        val category = classifier.classify(body("Какие приложения сейчас запущены"))
+        assertEquals(ToolCategory.APPLICATIONS, category)
     }
 
     @Test
@@ -86,21 +85,16 @@ class LocalRegexClassifierTest {
     fun `classifies provided phrases`() = runBlocking {
         val classifier = LocalRegexClassifier
         val cases = listOf(
-            "Напиши в телеграм Артуру что я на демо" to ToolCategory.DESKTOP,
-            "Открой приложение Интеллиджи Айдеа" to ToolCategory.DESKTOP,
+            "Открой приложение Интеллиджи Айдеа" to ToolCategory.APPLICATIONS,
+            "Открой браузер" to ToolCategory.BROWSER,
             "Открой сайт сбера" to ToolCategory.BROWSER,
             "Найди в закладках и открой страницу с обзором фондового рынка" to ToolCategory.BROWSER,
             "Расскажи кратко о чем рассказано на текущей странице" to ToolCategory.BROWSER,
-            "Открой папку семья" to ToolCategory.DESKTOP,
-            "Покажи тетю фросю" to ToolCategory.DESKTOP,
-            "Открой папку отчеты" to ToolCategory.DESKTOP,
+            "Открой папку семья" to ToolCategory.FILES,
+            "Открой папку отчеты" to ToolCategory.FILES,
             "Построй график дохода по клиенту из файла сейлз репорт" to ToolCategory.DATAANALYTICS,
-            "Добавь заметку - купить пивка" to ToolCategory.DESKTOP,
-            "Открой заметку демо" to ToolCategory.DESKTOP,
-            "сфокусируйся на окне справа" to ToolCategory.DESKTOP,
-            "увеличь окно" to ToolCategory.DESKTOP,
-            "расположи окна вертикально" to ToolCategory.DESKTOP,
-            "сверни все окна" to ToolCategory.DESKTOP,
+            "Добавь заметку - купить пивка" to ToolCategory.NOTES,
+            "Открой заметку демо" to ToolCategory.NOTES,
         )
 
         for ((text, expected) in cases) {

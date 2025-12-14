@@ -8,7 +8,7 @@ import ru.abledo.tool.browser.ToolChromeInfo
 import ru.abledo.tool.browser.detectDefaultBrowser
 import ru.abledo.tool.config.ToolInstructionStore
 import ru.abledo.tool.config.ToolInstructionStore.Companion.buildInstruction
-import ru.abledo.tool.desktop.ToolShowApps
+import ru.abledo.tool.application.ToolShowApps
 import ru.abledo.tool.files.ToolListFiles
 import java.util.ArrayList
 import kotlin.collections.map

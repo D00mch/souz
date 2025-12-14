@@ -1,7 +1,7 @@
 package ru.abledo.giga
 
 import ru.abledo.tool.ToolRunBashCommand
-import ru.abledo.tool.desktop.ToolOpen
+import ru.abledo.tool.application.ToolOpen
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.call.*

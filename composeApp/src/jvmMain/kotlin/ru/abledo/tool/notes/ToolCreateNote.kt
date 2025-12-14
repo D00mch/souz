@@ -1,6 +1,12 @@
-package ru.abledo.tool.desktop
+package ru.abledo.tool.notes
 
-import ru.abledo.tool.*
+import ru.abledo.tool.BadInputException
+import ru.abledo.tool.FewShotExample
+import ru.abledo.tool.InputParamDescription
+import ru.abledo.tool.ReturnParameters
+import ru.abledo.tool.ReturnProperty
+import ru.abledo.tool.ToolRunBashCommand
+import ru.abledo.tool.ToolSetup
 
 class ToolCreateNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolCreateNote.Input> {
     data class Input(

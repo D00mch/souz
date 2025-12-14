@@ -1,4 +1,4 @@
-package ru.abledo.tool.desktop
+package ru.abledo.tool.application
 
 import ru.abledo.giga.objectMapper
 import ru.abledo.tool.FewShotExample
@@ -9,6 +9,7 @@ import ru.abledo.tool.ToolRunBashCommand
 import ru.abledo.tool.ToolSetup
 import ru.abledo.tool.files.FilesToolUtil
 import com.fasterxml.jackson.annotation.JsonProperty
+import ru.abledo.tool.desktop.ToolWindowsManager
 
 object ToolShowApps : ToolSetup<ToolShowApps.Input> {
     data class Input(

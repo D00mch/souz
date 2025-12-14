@@ -2,6 +2,7 @@ package ru.abledo.tool.desktop
 
 import ru.abledo.tool.*
 import org.slf4j.LoggerFactory
+import ru.abledo.tool.application.ToolOpen
 import java.util.concurrent.TimeUnit
 
 object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
