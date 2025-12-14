@@ -1,5 +1,6 @@
 package ru.abledo.ui.settings
 
+import ru.abledo.agent.DEFAULT_SYSTEM_PROMPT
 import ru.abledo.ui.VMEvent
 import ru.abledo.ui.VMSideEffect
 import ru.abledo.ui.VMState
@@ -15,6 +16,7 @@ data class SettingsState(
     val isBalanceLoading: Boolean = false,
     val balance: List<GigaResponse.BalanceItem> = emptyList(),
     val balanceError: String? = null,
+    val systemPrompt: String = DEFAULT_SYSTEM_PROMPT,
 ): VMState
 
 sealed interface SettingsEvent : VMEvent {
@@ -23,12 +25,15 @@ sealed interface SettingsEvent : VMEvent {
     data class InputSaluteSpeechKey(val key: String): SettingsEvent
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
     data class InputSupportEmail(val email: String): SettingsEvent
+    data class InputSystemPrompt(val prompt: String): SettingsEvent
+    object ResetSystemPrompt: SettingsEvent
     object SendLogsToSupport: SettingsEvent
     object RefreshBalance: SettingsEvent
 }
 
 sealed interface SettingsEffect : VMSideEffect {
     object CloseScreen: SettingsEffect
+    object NotifyOnSystemPrompt: SettingsEffect
 }
 
 const val DEFAULT_SUPPORT_EMAIL = "arturdumchev@yandex.ru"

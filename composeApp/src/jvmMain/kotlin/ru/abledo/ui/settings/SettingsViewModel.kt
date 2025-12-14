@@ -7,11 +7,15 @@ import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
+import ru.abledo.agent.DEFAULT_SYSTEM_PROMPT
+import ru.abledo.agent.GraphBasedAgent
 import ru.abledo.db.SettingsProvider
 import ru.abledo.giga.GigaResponse
 import ru.abledo.giga.GigaRestChatAPI
 import ru.abledo.ui.BaseViewModel
+import ru.abledo.ui.settings.SettingsEvent.InputSystemPrompt
 import ru.abledo.ui.settings.SettingsEvent.InputSupportEmail
+import ru.abledo.ui.settings.SettingsEvent.ResetSystemPrompt
 import ru.abledo.ui.settings.SettingsEvent.SendLogsToSupport
 
 class SettingsViewModel(
@@ -21,6 +25,7 @@ class SettingsViewModel(
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
     private val keysProvider: SettingsProvider by di.instance()
     private val chatApi: GigaRestChatAPI by di.instance()
+    private val graphBasedAgent: GraphBasedAgent by di.instance()
     private val supportLogSender = SupportLogSender()
 
     init {
@@ -31,6 +36,7 @@ class SettingsViewModel(
                     saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                     useFewShotExamples = keysProvider.useFewShotExamples,
                     supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
+                    systemPrompt = keysProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT,
                 )
             }
             fetchBalance()
@@ -59,6 +65,16 @@ class SettingsViewModel(
                 keysProvider.supportEmail = event.email
                 setState { copy(supportEmail = event.email, sendLogsMessage = null) }
             }
+            is InputSystemPrompt -> {
+                graphBasedAgent.updateSystemPrompt(event.prompt)
+                setState { copy(systemPrompt = event.prompt) }
+                send(SettingsEffect.NotifyOnSystemPrompt)
+            }
+            ResetSystemPrompt -> {
+                graphBasedAgent.resetSystemPrompt()
+                send(SettingsEffect.NotifyOnSystemPrompt)
+                setState { copy(systemPrompt = DEFAULT_SYSTEM_PROMPT) }
+            }
             is SendLogsToSupport -> sendLogs()
             SettingsEvent.RefreshBalance -> fetchBalance()
             SettingsEvent.GoToMain -> {
@@ -67,10 +83,9 @@ class SettingsViewModel(
         }
     }
 
-    override suspend fun handleSideEffect(effect: SettingsEffect) {
-        when (effect) {
-            SettingsEffect.CloseScreen -> l.debug { "ignore effect: $effect" }
-        }
+    override suspend fun handleSideEffect(effect: SettingsEffect) = when (effect) {
+        SettingsEffect.CloseScreen,
+        SettingsEffect.NotifyOnSystemPrompt -> l.debug { "ignore effect: $effect" }
     }
 
     private fun sendLogs() = ioLaunch {

@@ -59,6 +59,9 @@ fun App(
                         onClose = { currentScreen = Main },
                         onOpenTools = { currentScreen = Tools() },
                         onResizeRequest = onWindowResize,
+                        onShowSnack = { message ->
+                            snackbarScope.launch { snackbarHostState.showSnackbar(message) }
+                        },
                     )
                     is Tools -> ToolsScreen(
                         onClose = { currentScreen = Settings },
