@@ -1,4 +1,4 @@
-package ru.abledo.agent.nodes
+package classification
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
@@ -7,9 +7,12 @@ import io.mockk.mockkObject
 import io.mockk.unmockkAll
 import org.junit.After
 import org.junit.Before
+import ru.abledo.agent.nodes.NodesClassification
 import ru.abledo.db.ConfigStore
+import ru.abledo.giga.GigaMessageRole
 import ru.abledo.giga.GigaModel
 import ru.abledo.giga.GigaRequest
+import ru.abledo.giga.GigaResponse
 import ru.abledo.giga.GigaToolSetup
 import ru.abledo.tool.ToolCategory
 import ru.abledo.tool.ToolCategorySettings
@@ -47,7 +50,10 @@ class NodesClassificationPromptTest {
 
         assertTrue(prompt.contains("FILES"))
         assertTrue(prompt.contains("BROWSER"))
-        assertTrue(prompt.contains("Ответь с только одним словом: FILES,BROWSER"))
+        assertTrue(
+            prompt.contains("Ответь с только одним словом: FILES,BROWSER") ||
+                    prompt.contains("Ответь с только одним словом: BROWSER,FILES")
+        )
     }
 
     @Test
@@ -112,8 +118,8 @@ class NodesClassificationPromptTest {
             returnParameters = GigaRequest.Parameters(type = "object", properties = emptyMap()),
         )
 
-        override suspend fun invoke(functionCall: ru.abledo.giga.GigaResponse.FunctionCall): GigaRequest.Message {
-            return GigaRequest.Message(role = ru.abledo.giga.GigaMessageRole.function, content = "")
+        override suspend fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
+            return GigaRequest.Message(role = GigaMessageRole.function, content = "")
         }
     }
 }

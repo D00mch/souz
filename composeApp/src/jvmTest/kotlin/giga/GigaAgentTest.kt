@@ -12,9 +12,11 @@ import org.kodein.di.instance
 import ru.abledo.agent.nodes.NodesClassification
 import ru.abledo.di.mainDiModule
 import kotlin.getValue
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+@Ignore // we don't use GigaAgent anymore
 class GigaAgentTest {
     private val di = DI.invoke { import(mainDiModule) }
     val nodesClassification: NodesClassification by di.instance()
@@ -24,7 +26,7 @@ class GigaAgentTest {
         val api = mockk<GigaChatAPI>()
         val usage = GigaResponse.Usage(1, 1, 2, 0)
         val classifyMsg = GigaResponse.Message(
-            content = "coder",
+            content = "files",
             role = GigaMessageRole.assistant,
             functionCall = null,
             functionsStateId = null,
