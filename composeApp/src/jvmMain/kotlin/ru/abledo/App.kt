@@ -1,14 +1,22 @@
 package ru.abledo
 
 import androidx.compose.desktop.ui.tooling.preview.Preview
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.SnackbarHost
+import androidx.compose.material.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize // <--- Import
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
+import kotlinx.coroutines.launch
 import org.kodein.di.compose.localDI
 import org.kodein.di.instance
+import ru.abledo.Screen.*
 import ru.abledo.ui.AppTheme
 import ru.abledo.ui.main.MainScreen
 import ru.abledo.ui.settings.SettingsScreen
@@ -32,36 +40,48 @@ fun App(
     var currentScreen by remember(shouldStartInSettings) {
         mutableStateOf<Screen>(if (shouldStartInSettings) Screen.Settings else Screen.Main)
     }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
 
     AppTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = Color.Transparent
         ) {
-            when (val screen = currentScreen) {
-                Screen.Main -> MainScreen(
-                    onOpenSettings = { currentScreen = Screen.Settings },
-                    onResizeRequest = onWindowResize,
-                    onCloseWindow = onCloseWindow
-                )
-                Screen.Settings -> SettingsScreen(
-                    onClose = { currentScreen = Screen.Main },
-                    onOpenTools = { currentScreen = Screen.Tools() },
-                    onResizeRequest = onWindowResize
-                )
-                is Screen.Tools -> ToolsScreen(
-                    onClose = { currentScreen = Screen.Settings },
-                    onOpenToolDetails = { category, tool ->
-                        currentScreen = Screen.ToolDetails(category, tool.name)
-                    },
-                    onResizeRequest = onWindowResize,
-                    viewModelKey = screen.id,
-                )
-                is Screen.ToolDetails -> ToolDetailsScreen(
-                    category = screen.category,
-                    toolName = screen.toolName,
-                    onClose = { currentScreen = Screen.Tools() },
-                    onResizeRequest = onWindowResize,
+            Box(modifier = Modifier.fillMaxSize()) {
+                when (val screen = currentScreen) {
+                    Screen.Main -> MainScreen(
+                        onOpenSettings = { currentScreen = Screen.Settings },
+                        onResizeRequest = onWindowResize,
+                        onCloseWindow = onCloseWindow
+                    )
+                    Screen.Settings -> SettingsScreen(
+                        onClose = { currentScreen = Screen.Main },
+                        onOpenTools = { currentScreen = Screen.Tools() },
+                        onResizeRequest = onWindowResize
+                    )
+                    is Screen.Tools -> ToolsScreen(
+                        onClose = { currentScreen = Screen.Settings },
+                        onResizeRequest = onWindowResize,
+                        onShowSnackbar = { message ->
+                            snackbarScope.launch { snackbarHostState.showSnackbar(message) }
+                        },
+                        viewModelKey = screen.id,
+                    )
+                    is Screen.ToolDetails -> ToolDetailsScreen(
+                        category = screen.category,
+                        toolName = screen.toolName,
+                        onClose = { currentScreen = Tools() },
+                        onResizeRequest = onWindowResize,
+                    )
+
+                }
+
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 24.dp)
                 )
             }
         }

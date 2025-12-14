@@ -16,22 +16,42 @@ EOF
 """.trimIndent()
 
     fun listMessagesCommand(limit: Int): String = """
-        osascript <<'EOF'
-        tell application "Mail"
+osascript <<'EOF'
+tell application "Mail"
+    try
+        set output to ""
+        set requestLimit to $limit
+        set msgList to {}
+
+        try
+            set msgList to messages 1 thru requestLimit of inbox
+        on error
+            set msgList to messages of inbox
+        end try
+
+        if (count of msgList) is 0 then
+            return "Inbox is empty."
+        end if
+        
+        if class of msgList is not list then
+            set msgList to {msgList}
+        end if
+        
+        repeat with msg in msgList
             try
-                set output to ""
-                set msgList to messages 1 thru $limit of inbox
-                repeat with msg in msgList
-                    set msgId to id of msg
-                    set msgSubject to subject of msg
-                    set msgSender to extract name from sender of msg
-                    set output to output & "ID: " & msgId & " | From: " & msgSender & " | Subject: " & msgSubject & linefeed
-                end repeat
-                return output
+                set msgId to id of msg
+                set msgSubject to subject of msg
+                set msgSender to extract name from sender of msg
+                set output to output & "ID: " & msgId & " | From: " & msgSender & " | Subject: " & msgSubject & linefeed
             on error
-                return "No messages found or Inbox is empty."
             end try
-        end tell
+        end repeat
+        
+        return output
+    on error errMsg
+        return "Error reading mail: " & errMsg
+    end try
+end tell
 EOF
     """.trimIndent()
 
