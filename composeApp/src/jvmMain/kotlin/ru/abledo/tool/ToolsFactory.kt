@@ -21,7 +21,9 @@ import ru.abledo.tool.calendar.*
 import ru.abledo.tool.mail.*
 import ru.abledo.tool.files.*
 import ru.abledo.tool.notes.ToolCreateNote
+import ru.abledo.tool.notes.ToolDeleteNote
 import ru.abledo.tool.notes.ToolOpenNote
+import ru.abledo.tool.notes.ToolSearchNotes
 
 typealias FunctionName = String
 
@@ -65,6 +67,8 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
             ToolCategory.NOTES to listOf(
                 ToolOpenNote(ToolRunBashCommand).toGiga(),
                 ToolCreateNote(ToolRunBashCommand).toGiga(),
+                ToolDeleteNote(ToolRunBashCommand).toGiga(),
+                ToolSearchNotes(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.APPLICATIONS to listOf(
