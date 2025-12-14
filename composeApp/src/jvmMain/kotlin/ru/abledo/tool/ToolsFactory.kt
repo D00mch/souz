@@ -85,6 +85,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolMailReadMessage(ToolRunBashCommand).toGiga(),
                 ToolMailReplyMessage(ToolRunBashCommand).toGiga(),
                 ToolMailSendNewMessage(ToolRunBashCommand).toGiga(),
+                ToolMailSearch(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
         )
     }
