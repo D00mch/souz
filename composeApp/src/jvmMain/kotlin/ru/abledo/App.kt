@@ -38,7 +38,7 @@ fun App(
         keysProvider.gigaChatKey.isNullOrEmpty() || keysProvider.saluteSpeechKey.isNullOrEmpty()
     }
     var currentScreen by remember(shouldStartInSettings) {
-        mutableStateOf<Screen>(if (shouldStartInSettings) Screen.Settings else Screen.Main)
+        mutableStateOf(if (shouldStartInSettings) Settings else Main)
     }
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
@@ -50,25 +50,25 @@ fun App(
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 when (val screen = currentScreen) {
-                    Screen.Main -> MainScreen(
-                        onOpenSettings = { currentScreen = Screen.Settings },
+                    Main -> MainScreen(
+                        onOpenSettings = { currentScreen = Settings },
                         onResizeRequest = onWindowResize,
                         onCloseWindow = onCloseWindow
                     )
-                    Screen.Settings -> SettingsScreen(
-                        onClose = { currentScreen = Screen.Main },
-                        onOpenTools = { currentScreen = Screen.Tools() },
+                    Settings -> SettingsScreen(
+                        onClose = { currentScreen = Main },
+                        onOpenTools = { currentScreen = Tools() },
                         onResizeRequest = onWindowResize
                     )
-                    is Screen.Tools -> ToolsScreen(
-                        onClose = { currentScreen = Screen.Settings },
+                    is Tools -> ToolsScreen(
+                        onClose = { currentScreen = Settings },
                         onResizeRequest = onWindowResize,
                         onShowSnackbar = { message ->
                             snackbarScope.launch { snackbarHostState.showSnackbar(message) }
                         },
                         viewModelKey = screen.id,
                     )
-                    is Screen.ToolDetails -> ToolDetailsScreen(
+                    is ToolDetails -> ToolDetailsScreen(
                         category = screen.category,
                         toolName = screen.toolName,
                         onClose = { currentScreen = Tools() },
