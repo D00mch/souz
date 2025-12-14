@@ -1,4 +1,4 @@
-package ru.abledo.tool.desktop
+package ru.abledo.tool.notes
 
 import ru.abledo.tool.*
 

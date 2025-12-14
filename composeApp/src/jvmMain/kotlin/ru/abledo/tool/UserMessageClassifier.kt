@@ -13,10 +13,11 @@ enum class ToolCategory {
     FILES,
     BROWSER,
     CONFIG,
-    DESKTOP,
+    NOTES,
+    APPLICATIONS,
     DATAANALYTICS,
     CALENDAR,
-    MAIL
+    MAIL,
 }
 
 object LocalRegexClassifier : UserMessageClassifier {
@@ -52,24 +53,29 @@ object LocalRegexClassifier : UserMessageClassifier {
 
     private val CATEGORY_PATTERNS: Map<ToolCategory, List<WeightedRegex>> = mapOf(
         ToolCategory.FILES to listOf(
-            WeightedRegex(Regex("прочитай в файле|открой файл|покажи файл|найди файл|путь к файл"), 2.0),
+            WeightedRegex(Regex("прочитай в файле|открой файл|покажи файл|найди файл|путь к файл|открой папк"), 2.0),
             WeightedRegex(Regex("создай файл|удали файл|покажи содержим|перенеси файл|поиск по файлам"), 2.0),
             WeightedRegex(Regex("файл|file|перепиши|исправь в"), 1.5),
             WeightedRegex(Regex("поправь|поправить|исправить|прочитай|папк|folder|каталог|директори|directory"), 1.0),
         ),
         ToolCategory.BROWSER to listOf(
-            WeightedRegex(Regex("http[s]?://|браузер|browser|safari|Закладк"), 2.0),
-            WeightedRegex(Regex("вкладк|tab|сайт|страниц|истори"), 1.0),
+            WeightedRegex(Regex("открой сайт|http[s]?://|браузер|browser|safari|Закладк|открой.*вкладк"), 2.0),
+            WeightedRegex(Regex("website|вебсайт|вкладк|сайт|страниц|истори.*браузера"), 1.0),
+            WeightedRegex(Regex("tab|страниц|истори"), 1.0),
         ),
         ToolCategory.CONFIG to listOf(
             WeightedRegex(Regex("настрой|config|запомни инструкцию|сохрани инструкцию"), 2.0),
             WeightedRegex(Regex("громк|volume|скорост|speed|instruction|ускорь речь|замедли речь|скорость речь"), 1.0),
         ),
-        ToolCategory.DESKTOP to listOf(
-            WeightedRegex(Regex("перенеси окно|перейди на экран|перетащи окно|размести приложения по"), 2.0),
-            WeightedRegex(Regex("окн|window|desktop|\\*.com|\\*.ru|dotcom|дотком|точка ру"), 1.5),
-            WeightedRegex(Regex("папк|folder|заметк|note|телеграм|telegram|покаж|фокус|увелич|располож|сверн|сообщение"), 1.5),
-            WeightedRegex(Regex("прилож|app|mouse|мыш|screen|скрин|экран"), 1.0),
+        ToolCategory.NOTES to listOf(
+            WeightedRegex(Regex("создай заметку|oткрой заметку|посмотри в заметках"), 2.0),
+            WeightedRegex(Regex("заметк|a note|the note"), 1.5),
+            WeightedRegex(Regex("note|todo"), 1.0),
+        ),
+        ToolCategory.APPLICATIONS to listOf(
+            WeightedRegex(Regex("приложения открыты|открытые приложения|что запущено|прилож.*запущен"), 2.0),
+            WeightedRegex(Regex("запущен|прилолож"), 1.5),
+            WeightedRegex(Regex("открой"), 1.0),
         ),
         ToolCategory.DATAANALYTICS to listOf(
             WeightedRegex(Regex("построй|созда|сделай|проанализ|график|chart|graph|plot|что на графике"), 2.0),
@@ -84,6 +90,6 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("почт|mail|email|e-mail|gmail|outlook|inbox|входящ|исходящ"), 2.0),
             WeightedRegex(Regex("письм|letter|рассылк|спам|непрочитан"), 2.0),
             WeightedRegex(Regex("отправ|send|ответ|reply|прочти|read"), 1.0),
-        )
+        ),
     )
 }

@@ -1,7 +1,8 @@
-package ru.abledo.tool.desktop
+package ru.abledo.tool.application
 
 import ru.abledo.tool.*
 import org.slf4j.LoggerFactory
+import ru.abledo.tool.desktop.ToolOpenFolder
 import java.io.File
 
 class ToolOpen(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpen.Input> {

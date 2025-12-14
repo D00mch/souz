@@ -8,7 +8,10 @@ import ru.abledo.tool.browser.ToolCreateNewBrowserTab
 import ru.abledo.tool.browser.ToolFocusOnTab
 import ru.abledo.tool.browser.ToolSafariInfo
 import ru.abledo.db.ConfigStore
+import ru.abledo.tool.application.ToolOpen
+import ru.abledo.tool.application.ToolShowApps
 import ru.abledo.tool.browser.ToolChromeInfo
+import ru.abledo.tool.browser.ToolOpenDefaultBrowser
 import ru.abledo.tool.config.ToolInstructionStore
 import ru.abledo.tool.config.ToolSoundConfig
 import ru.abledo.tool.config.ToolSoundConfigDiff
@@ -17,6 +20,11 @@ import ru.abledo.tool.desktop.*
 import ru.abledo.tool.calendar.*
 import ru.abledo.tool.mail.*
 import ru.abledo.tool.files.*
+import ru.abledo.tool.notes.ToolCreateNote
+import ru.abledo.tool.notes.ToolDeleteNote
+import ru.abledo.tool.notes.ToolListNotes
+import ru.abledo.tool.notes.ToolOpenNote
+import ru.abledo.tool.notes.ToolSearchNotes
 
 typealias FunctionName = String
 
@@ -48,6 +56,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolBrowserHotkeys().toGiga(),
                 ToolFocusOnTab(ToolRunBashCommand).toGiga(),
                 ToolChromeInfo(ToolRunBashCommand).toGiga(),
+                ToolOpenDefaultBrowser(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.CONFIG to listOf(
@@ -56,20 +65,17 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolInstructionStore(ConfigStore, repo).toGiga(),
             ).associateBy { it.fn.name },
 
-            ToolCategory.DESKTOP to listOf(
-                ToolWindowsManager.toGiga(),
-                //ToolHotkeyMac().toGiga(), // we should provide deliberate tools
+            ToolCategory.NOTES to listOf(
                 ToolOpenNote(ToolRunBashCommand).toGiga(),
-                //ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
-                //ToolMediaControl(ToolRunBashCommand).toGiga(),
-                ToolOpen(ToolRunBashCommand).toGiga(),
                 ToolCreateNote(ToolRunBashCommand).toGiga(),
-                //ToolMinimizeWindows(ToolRunBashCommand).toGiga(),
-                //ToolOpenTelegramSavedMessages(ToolRunBashCommand).toGiga(),
-                //ToolMouseClickMac().toGiga(),
-                //ToolCollectButtons(ToolRunBashCommand).toGiga(), // too slow, only for mouse
+                ToolDeleteNote(ToolRunBashCommand).toGiga(),
+                ToolListNotes(ToolRunBashCommand).toGiga(),
+                ToolSearchNotes(ToolRunBashCommand).toGiga(),
+            ).associateBy { it.fn.name },
+
+            ToolCategory.APPLICATIONS to listOf(
                 ToolShowApps.toGiga(),
-                ToolSendTelegramMessage(ToolRunBashCommand).toGiga(),
+                ToolOpen(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.CALENDAR to listOf(
