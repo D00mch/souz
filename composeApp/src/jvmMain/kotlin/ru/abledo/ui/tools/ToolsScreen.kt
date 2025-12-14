@@ -60,7 +60,7 @@ fun ToolsScreen(
     onClose: () -> Unit,
     onOpenToolDetails: (ToolCategory, ToolUi) -> Unit = { _, _ -> },
     onResizeRequest: (DpSize) -> Unit = {},
-    onShowSnackbar: (String) -> Unit = {},
+    onShowSnack: (String) -> Unit = {},
     viewModelKey: String = "ToolsScreen",
 ) {
     val di = localDI()
@@ -71,7 +71,7 @@ fun ToolsScreen(
         viewModel.effects.collect { effect ->
             when (effect) {
                 is ToolsSettingsEffect.SettingsSaved -> {
-                    onShowSnackbar(effect.message)
+                    onShowSnack(effect.message)
                 }
             }
         }

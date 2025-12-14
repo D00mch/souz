@@ -58,7 +58,7 @@ fun App(
                     Settings -> SettingsScreen(
                         onClose = { currentScreen = Main },
                         onOpenTools = { currentScreen = Tools() },
-                        onResizeRequest = onWindowResize
+                        onResizeRequest = onWindowResize,
                     )
                     is Tools -> ToolsScreen(
                         onClose = { currentScreen = Settings },
@@ -66,7 +66,7 @@ fun App(
                         onOpenToolDetails = { category, tool ->
                             currentScreen = ToolDetails(category, tool.name)
                         },
-                        onShowSnackbar = { message ->
+                        onShowSnack = { message ->
                             snackbarScope.launch { snackbarHostState.showSnackbar(message) }
                         },
                         viewModelKey = screen.id,
