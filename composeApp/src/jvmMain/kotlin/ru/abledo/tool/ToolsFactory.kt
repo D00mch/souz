@@ -22,6 +22,7 @@ import ru.abledo.tool.mail.*
 import ru.abledo.tool.files.*
 import ru.abledo.tool.notes.ToolCreateNote
 import ru.abledo.tool.notes.ToolDeleteNote
+import ru.abledo.tool.notes.ToolListNotes
 import ru.abledo.tool.notes.ToolOpenNote
 import ru.abledo.tool.notes.ToolSearchNotes
 
@@ -68,6 +69,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolOpenNote(ToolRunBashCommand).toGiga(),
                 ToolCreateNote(ToolRunBashCommand).toGiga(),
                 ToolDeleteNote(ToolRunBashCommand).toGiga(),
+                ToolListNotes(ToolRunBashCommand).toGiga(),
                 ToolSearchNotes(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
