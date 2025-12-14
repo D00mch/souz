@@ -15,6 +15,7 @@ import ru.abledo.agent.node.NodesCommon
 import ru.abledo.agent.node.NodesLLM
 import ru.abledo.agent.nodes.NodesClassification
 import ru.abledo.db.DesktopInfoRepository
+import ru.abledo.db.SettingsProvider
 import ru.abledo.db.asString
 import ru.abledo.di.mainDiModule
 import ru.abledo.giga.*
@@ -39,6 +40,7 @@ class GraphBasedAgent(
     private val nodesClassify: NodesClassification by di.instance()
     private val nodeClassify = nodesClassify.node
     private val desktopInfoRepository: DesktopInfoRepository  by di.instance()
+    private val settingsProvider: SettingsProvider by di.instance()
 
     // Make sure summarization only happens after all tool requests from LLM are answered
     private val nodeSummarize: Node<GigaResponse.Chat, String> by graph(name = "Go to user") {
@@ -78,27 +80,30 @@ class GraphBasedAgent(
         toolsByCategory = toolsFactory.toolsByCategory
     )
     private val allFunctions: List<GigaRequest.Function> = settings.tools.values.map { it.fn }
-    private val initialCtx = AgentContext(
-        input = "",
-        settings = settings,
-        history = emptyList(),
-        activeTools = allFunctions,
-        systemPrompt = SYSTEM_PROMPT
-    )
 
-    private val _ctx: MutableStateFlow<AgentContext<String>> = MutableStateFlow(initialCtx)
+    private val _ctx: MutableStateFlow<AgentContext<String>> = MutableStateFlow(createInitialCtx())
     val currentContext: StateFlow<AgentContext<String>> = _ctx
 
     private val runningJob = AtomicReference<Deferred<*>>()
 
     fun clearContext(): Boolean {
         cancelActiveJob()
-        return _ctx.tryEmit(initialCtx)
+        return _ctx.tryEmit(createInitialCtx())
     }
 
     fun setContext(ctx: AgentContext<String>): Boolean {
         cancelActiveJob()
         return _ctx.tryEmit(ctx)
+    }
+
+    fun updateSystemPrompt(prompt: String) {
+        settingsProvider.systemPrompt = prompt
+        _ctx.tryEmit(currentContext.value.copy(systemPrompt = prompt))
+    }
+
+    fun resetSystemPrompt() {
+        settingsProvider.systemPrompt = null
+        _ctx.tryEmit(currentContext.value.copy(systemPrompt = DEFAULT_SYSTEM_PROMPT))
     }
 
     fun cancelActiveJob() {
@@ -139,6 +144,14 @@ class GraphBasedAgent(
     }
 
     private fun isToolUse(input: GigaResponse.Chat.Ok): Boolean = input.choices.any { it.message.functionCall != null }
+
+    private fun createInitialCtx(): AgentContext<String> = AgentContext(
+        input = "",
+        settings = settings,
+        history = emptyList(),
+        activeTools = allFunctions,
+        systemPrompt = settingsProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT
+    )
 
     private suspend fun appendActualInformation(userText: String): GigaRequest.Message? {
         if (userText.isBlank()) return null
@@ -187,7 +200,7 @@ private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(
 
 private fun String.estimateTokenCount(): Int = ceil(length / APPROX_CHARS_PER_TOKEN).toInt()
 
-val SYSTEM_PROMPT = """
+val DEFAULT_SYSTEM_PROMPT = """
 Ты — помощник, управляющий компьютером. Будь полезным. Говори только по существу.
 Если получил команду, выполняй, потом говори, что сделал.
 Если какую-то задачу можно решить c помощью имеющихся функций, сделай, а не проси пользователя сделать это.

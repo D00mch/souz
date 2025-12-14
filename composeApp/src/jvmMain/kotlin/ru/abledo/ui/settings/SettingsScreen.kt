@@ -32,10 +32,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.DpSize
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
+import ru.abledo.agent.DEFAULT_SYSTEM_PROMPT
 import ru.abledo.giga.GigaResponse
 import ru.abledo.ui.AppTheme
 import ru.abledo.ui.glassColors
 import ru.abledo.ui.main.GlassCard
+import ru.abledo.ui.tools.ToolsSettingsEffect
 
 private val SettingsWindowSize = DpSize(width = 560.dp, height = 520.dp)
 
@@ -43,17 +45,31 @@ private val SettingsWindowSize = DpSize(width = 560.dp, height = 520.dp)
 fun SettingsScreen(
     onClose: () -> Unit,
     onOpenTools: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit = {}
+    onResizeRequest: (DpSize) -> Unit = {},
+    onShowSnack: (String) -> Unit = {},
+
 ) {
     val di = localDI()
     val viewModel = viewModel { SettingsViewModel(di) }
     val state = viewModel.uiState.collectAsState().value
+
+    LaunchedEffect(viewModel) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                SettingsEffect.CloseScreen -> Unit
+                SettingsEffect.NotifyOnSystemPrompt -> onShowSnack("Сохранено. Применится после первой суммаризации")
+            }
+        }
+    }
+
     SettingsScreen(
         state,
         onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
         onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
         onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
         onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
+        onSystemPromptChange = { prompt -> viewModel.send(SettingsEvent.InputSystemPrompt(prompt)) },
+        onSystemPromptReset = { viewModel.send(SettingsEvent.ResetSystemPrompt) },
         onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
         onRefreshBalance = { viewModel.send(SettingsEvent.RefreshBalance) },
         onOpenTools = onOpenTools,
@@ -69,6 +85,8 @@ fun SettingsScreen(
     onSaluteSpeechKeyInput: (String) -> Unit,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
     onSupportEmailInput: (String) -> Unit,
+    onSystemPromptChange: (String) -> Unit,
+    onSystemPromptReset: () -> Unit,
     onSendLogs: () -> Unit,
     onRefreshBalance: () -> Unit,
     onOpenTools: () -> Unit,
@@ -164,6 +182,33 @@ fun SettingsScreen(
                     onValueChange = onSupportEmailInput,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LabeledTextField(
+                        label = "Системный промпт",
+                        value = state.systemPrompt,
+                        onValueChange = onSystemPromptChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = false,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Button(
+                            onClick = onSystemPromptReset,
+                            enabled = state.systemPrompt != DEFAULT_SYSTEM_PROMPT
+                        ) {
+                            Text(
+                                text = "Сбросить по умолчанию",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.glassColors.textPrimary,
+                            )
+                        }
+                    }
+                }
                 
                 TokensBalanceSection(
                     isLoading = state.isBalanceLoading,
@@ -276,7 +321,8 @@ private fun LabeledTextField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    singleLine: Boolean = true,
 ) {
     Column(
         modifier = modifier,
@@ -291,7 +337,7 @@ private fun LabeledTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
+            singleLine = singleLine,
             colors = TextFieldDefaults.outlinedTextFieldColors(
                 textColor = MaterialTheme.glassColors.textPrimary,
                 cursorColor = MaterialTheme.colorScheme.primary,
@@ -314,6 +360,8 @@ fun SettingsScreenPreview() {
             onSaluteSpeechKeyInput = {},
             onUseFewShotExamplesChange = {},
             onSupportEmailInput = {},
+            onSystemPromptChange = {},
+            onSystemPromptReset = {},
             onSendLogs = {},
             onRefreshBalance = {},
             onOpenTools = {},
