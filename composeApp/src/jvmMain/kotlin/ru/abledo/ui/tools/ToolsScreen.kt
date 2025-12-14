@@ -72,7 +72,6 @@ fun ToolsScreen(
             when (effect) {
                 is ToolsSettingsEffect.SettingsSaved -> {
                     onShowSnackbar(effect.message)
-                    onClose()
                 }
             }
         }
@@ -148,7 +147,7 @@ fun ToolsScreen(
 
                         state.categories.forEach { category ->
                             key(category.category) {
-                                val expanded = expandedByCategory[category.category] ?: true
+                                val expanded = expandedByCategory[category.category] ?: false
                                 CategorySection(
                                     category = category,
                                     expanded = expanded,
@@ -226,6 +225,9 @@ private fun CategorySection(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.glassColors.textPrimary,
+                modifier = Modifier.clickable {
+                    onExpandedChange(!expanded)
+                }
             )
 
             Spacer(modifier = Modifier.weight(1f))
