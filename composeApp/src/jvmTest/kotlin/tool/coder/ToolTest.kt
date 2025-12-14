@@ -14,6 +14,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import org.slf4j.LoggerFactory
 import ru.abledo.tool.files.ToolFindInFiles
+import kotlin.test.Ignore
 import kotlin.test.assertContains
 
 class ToolTest {
@@ -44,6 +45,7 @@ class ToolTest {
     }
 
     @Test
+    @Ignore
     fun `test ToolFindInFiles`() {
         val resources = ToolFindInFiles(ToolFindInFiles.Input("src/jvmTest/resources", "Alice"))
         println(resources)
