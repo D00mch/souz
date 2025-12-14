@@ -11,6 +11,7 @@ import ru.abledo.db.ConfigStore
 import ru.abledo.tool.application.ToolOpen
 import ru.abledo.tool.application.ToolShowApps
 import ru.abledo.tool.browser.ToolChromeInfo
+import ru.abledo.tool.browser.ToolOpenDefaultBrowser
 import ru.abledo.tool.config.ToolInstructionStore
 import ru.abledo.tool.config.ToolSoundConfig
 import ru.abledo.tool.config.ToolSoundConfigDiff
@@ -52,6 +53,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
                 ToolBrowserHotkeys().toGiga(),
                 ToolFocusOnTab(ToolRunBashCommand).toGiga(),
                 ToolChromeInfo(ToolRunBashCommand).toGiga(),
+                ToolOpenDefaultBrowser(ToolRunBashCommand).toGiga(),
             ).associateBy { it.fn.name },
 
             ToolCategory.CONFIG to listOf(
