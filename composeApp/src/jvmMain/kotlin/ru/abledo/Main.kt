@@ -18,6 +18,7 @@ import org.kodein.di.compose.withDI
 import ru.abledo.di.mainDiModule
 
 fun main() {
+    // Rm from dock (app is agent now); should be first line
     System.setProperty("apple.awt.UIElement", "true")
 
     application {
