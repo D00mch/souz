@@ -45,7 +45,6 @@ class ToolTest {
     }
 
     @Test
-    @Ignore
     fun `test ToolFindInFiles`() {
         val resources = ToolFindInFiles(ToolFindInFiles.Input("src/jvmTest/resources", "Alice"))
         println(resources)
