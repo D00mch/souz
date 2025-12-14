@@ -69,7 +69,6 @@ class MainViewModel(
                 }
             },
             onDoubleClick = { agentRef.get()?.cancelActiveJob() },
-            onHotKey = { viewModelScope.launch { clearContext() } }
         )
 
         launch { audioRecorder.logState() }

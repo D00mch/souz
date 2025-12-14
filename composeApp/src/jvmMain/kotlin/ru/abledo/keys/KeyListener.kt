@@ -2,7 +2,6 @@ package ru.abledo.keys
 
 import com.github.kwhat.jnativehook.GlobalScreen
 import com.github.kwhat.jnativehook.NativeHookException
-import com.github.kwhat.jnativehook.NativeInputEvent
 import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent
 import com.github.kwhat.jnativehook.keyboard.NativeKeyListener
 import kotlin.system.exitProcess
@@ -12,7 +11,6 @@ import kotlinx.coroutines.*
 class HotkeyListener(
     private val onPressed: (Boolean) -> Unit,
     private val onDoubleClick: () -> Unit,
-    private val onHotKey: () -> Unit = {},
 ) : NativeKeyListener {
     private var isAltPressed = false
     private var isHotkeyActive = false
@@ -26,13 +24,6 @@ class HotkeyListener(
     }
 
     override fun nativeKeyPressed(e: NativeKeyEvent) {
-        if (e.keyCode == NativeKeyEvent.VC_SLASH &&
-            e.modifiers and NativeInputEvent.SHIFT_MASK != 0
-        ) {
-            onHotKey()
-            return
-        }
-
         if (e.rawCode == OPTION_RAW_CODE && e.keyCode == VK.SHIFT) {
             pressTime = System.currentTimeMillis()
             isAltPressed = true
@@ -76,7 +67,6 @@ fun main() {
             l.info(msg)
         },
         onDoubleClick = { l.info("double click") },
-        onHotKey = { l.info("recreate") }
     )
 
     try {
