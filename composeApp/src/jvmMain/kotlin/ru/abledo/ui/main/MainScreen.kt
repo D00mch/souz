@@ -170,8 +170,9 @@ fun MainScreen(
                     val scrollState = rememberScrollState()
                     val dynamicFontSize = remember(textContent) {
                         when (textContent.length) {
-                            in 0..60 -> 32.sp
-                            in 61..150 -> 28.sp
+                            in 0..30 -> 30.sp
+                            in 31..60 -> 28.sp
+                            in 61..150 -> 26.sp
                             in 151..400 -> 24.sp
                             else -> 20.sp
                         }
