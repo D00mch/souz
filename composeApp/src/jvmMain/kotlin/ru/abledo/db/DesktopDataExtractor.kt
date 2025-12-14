@@ -44,8 +44,8 @@ object DesktopDataExtractor {
         return installed +
                 files().toList() +
                 browserHistory(50) +
-                instructions
-        // + notes()
+                instructions +
+                notes()
     }
 
     fun files(): Sequence<StorredData> = runCatching {
@@ -111,7 +111,7 @@ return xs as text
     }.getOrElse { emptyList() }
 }
 
-fun List<StorredData>.asString(): String = groupBy { it.type }.entries.joinToString(", ") { (type, dataList) ->
+fun List<StorredData>.asString(): String = groupBy { it.type }.entries.joinToString(":\n\n") { (type, dataList) ->
     val prefix = when (type) {
         StorredType.FILES -> "Файлы на моём компьютере"
         StorredType.BROWSER_HISTORY -> "История браузера"
@@ -120,9 +120,9 @@ fun List<StorredData>.asString(): String = groupBy { it.type }.entries.joinToStr
         StorredType.INSTALLED_APPS -> "Установленные приложения"
         StorredType.INSTRUCTIONS -> "Сохраненные инструкции — выполняй их, если услышишь одно слово"
     }
-    "$prefix: ${dataList.map { it.text }}"
+    "$prefix:\n${dataList.joinToString(";\n") { it.text }}"
 }
 
 fun main() {
-    println(DesktopDataExtractor.all().asString())
+    println(DesktopDataExtractor.notes().asString())
 }
