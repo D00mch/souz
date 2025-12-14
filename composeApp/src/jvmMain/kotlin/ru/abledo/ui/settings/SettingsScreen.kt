@@ -130,12 +130,6 @@ fun SettingsScreen(
                     onValueChange = onSaluteSpeechKeyInput,
                     modifier = Modifier.fillMaxWidth()
                 )
-                TokensBalanceSection(
-                    isLoading = state.isBalanceLoading,
-                    balance = state.balance,
-                    error = state.balanceError,
-                    onRefreshBalance = onRefreshBalance,
-                )
                 Button(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "Инструменты",
@@ -169,6 +163,13 @@ fun SettingsScreen(
                     value = state.supportEmail,
                     onValueChange = onSupportEmailInput,
                     modifier = Modifier.fillMaxWidth()
+                )
+                
+                TokensBalanceSection(
+                    isLoading = state.isBalanceLoading,
+                    balance = state.balance,
+                    error = state.balanceError,
+                    onRefreshBalance = onRefreshBalance,
                 )
 
                 Column(
