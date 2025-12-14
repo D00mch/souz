@@ -145,7 +145,7 @@ fun ToolsScreen(
                             }
                         }
 
-                        state.categories.forEach { category ->
+                        state.categories.forEachIndexed { index, category ->
                             key(category.category) {
                                 val expanded = expandedByCategory[category.category] ?: false
                                 CategorySection(
@@ -155,6 +155,16 @@ fun ToolsScreen(
                                     onCategoryToggle = onCategoryToggle,
                                     onToolToggle = onToolToggle,
                                     onToolClick = onToolClick,
+                                )
+                            }
+
+                            if (index != state.categories.lastIndex) {
+                                Divider(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 36.dp, top = 8.dp, bottom = 8.dp),
+                                    thickness = 1.dp,
+                                    color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.10f),
                                 )
                             }
                         }
