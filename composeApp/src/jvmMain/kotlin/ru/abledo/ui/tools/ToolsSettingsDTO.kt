@@ -1,5 +1,6 @@
 package ru.abledo.ui.tools
 
+import ru.abledo.tool.FewShotExample
 import ru.abledo.tool.ToolCategory
 import ru.abledo.ui.VMEvent
 import ru.abledo.ui.VMState
@@ -30,4 +31,6 @@ data class ToolUi(
     val name: String,
     val description: String,
     val enabled: Boolean,
+    val descriptionOverride: String? = null,
+    val examplesOverride: List<FewShotExample>? = null,
 )

@@ -18,8 +18,10 @@ import ru.abledo.tool.calendar.*
 import ru.abledo.tool.mail.*
 import ru.abledo.tool.files.*
 
+typealias FunctionName = String
+
 class ToolsFactory(private val repo: DesktopInfoRepository) {
-    val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> by lazy {
+    val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
         mapOf(
             ToolCategory.FILES to listOf(
                 ToolReadFile.toGiga(),

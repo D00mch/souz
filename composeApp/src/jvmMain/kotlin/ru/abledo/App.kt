@@ -16,11 +16,15 @@ import androidx.compose.ui.Alignment
 import kotlinx.coroutines.launch
 import org.kodein.di.compose.localDI
 import org.kodein.di.instance
+import ru.abledo.Screen.*
 import ru.abledo.ui.AppTheme
 import ru.abledo.ui.main.MainScreen
 import ru.abledo.ui.settings.SettingsScreen
+import ru.abledo.ui.tools.ToolDetailsScreen
 import ru.abledo.ui.tools.ToolsScreen
 import ru.abledo.db.SettingsProvider
+import ru.abledo.tool.ToolCategory
+import java.util.UUID
 
 @Composable
 @Preview
@@ -34,7 +38,7 @@ fun App(
         keysProvider.gigaChatKey.isNullOrEmpty() || keysProvider.saluteSpeechKey.isNullOrEmpty()
     }
     var currentScreen by remember(shouldStartInSettings) {
-        mutableStateOf(if (shouldStartInSettings) Screen.Settings else Screen.Main)
+        mutableStateOf(if (shouldStartInSettings) Settings else Main)
     }
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
@@ -45,24 +49,35 @@ fun App(
             color = Color.Transparent
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                when (currentScreen) {
-                    Screen.Main -> MainScreen(
-                        onOpenSettings = { currentScreen = Screen.Settings },
+                when (val screen = currentScreen) {
+                    Main -> MainScreen(
+                        onOpenSettings = { currentScreen = Settings },
                         onResizeRequest = onWindowResize,
                         onCloseWindow = onCloseWindow
                     )
-                    Screen.Settings -> SettingsScreen(
-                        onClose = { currentScreen = Screen.Main },
-                        onOpenTools = { currentScreen = Screen.Tools },
+                    Settings -> SettingsScreen(
+                        onClose = { currentScreen = Main },
+                        onOpenTools = { currentScreen = Tools() },
                         onResizeRequest = onWindowResize
                     )
-                    Screen.Tools -> ToolsScreen(
-                        onClose = { currentScreen = Screen.Settings },
+                    is Tools -> ToolsScreen(
+                        onClose = { currentScreen = Settings },
                         onResizeRequest = onWindowResize,
+                        onOpenToolDetails = { category, tool ->
+                            currentScreen = ToolDetails(category, tool.name)
+                        },
                         onShowSnackbar = { message ->
                             snackbarScope.launch { snackbarHostState.showSnackbar(message) }
                         },
+                        viewModelKey = screen.id,
                     )
+                    is ToolDetails -> ToolDetailsScreen(
+                        category = screen.category,
+                        toolName = screen.toolName,
+                        onClose = { currentScreen = Tools() },
+                        onResizeRequest = onWindowResize,
+                    )
+
                 }
 
                 SnackbarHost(
@@ -76,4 +91,9 @@ fun App(
     }
 }
 
-private enum class Screen { Main, Settings, Tools }
+private sealed interface Screen {
+    data object Main : Screen
+    data object Settings : Screen
+    data class Tools(val id: String = UUID.randomUUID().toString()) : Screen
+    data class ToolDetails(val category: ToolCategory, val toolName: String) : Screen
+}

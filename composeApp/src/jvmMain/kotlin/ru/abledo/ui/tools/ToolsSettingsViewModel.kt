@@ -8,6 +8,7 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.abledo.tool.ToolCategory
 import ru.abledo.tool.ToolCategorySettings
+import ru.abledo.tool.ToolSettingsEntry
 import ru.abledo.tool.ToolsFactory
 import ru.abledo.tool.ToolsSettings
 import ru.abledo.ui.BaseViewModel
@@ -49,11 +50,14 @@ class ToolsSettingsViewModel(
         toolsFactory.toolsByCategory.map { (category, tools) ->
             val categorySettings = settingsState.categories[category] ?: ToolCategorySettings()
             val uiTools = tools.values.map { setup ->
-                val enabled = categorySettings.allowedTools[setup.fn.name] ?: true
+                val toolSettings = categorySettings.settings[setup.fn.name]
+                val enabled = toolSettings?.enabled ?: true
                 ToolUi(
                     name = setup.fn.name,
-                    description = setup.fn.description,
+                    description = toolSettings?.description ?: setup.fn.description,
                     enabled = enabled,
+                    descriptionOverride = toolSettings?.description,
+                    examplesOverride = toolSettings?.examples,
                 )
             }.sortedBy { it.name }
 
@@ -93,7 +97,13 @@ class ToolsSettingsViewModel(
             categories = currentState.categories.associate { category ->
                 category.category to ToolCategorySettings(
                     enabled = category.enabled,
-                    allowedTools = category.tools.associate { it.name to it.enabled },
+                    settings = category.tools.associate {
+                        it.name to ToolSettingsEntry(
+                            enabled = it.enabled,
+                            description = it.descriptionOverride,
+                            examples = it.examplesOverride,
+                        )
+                    },
                 )
             }
         )
