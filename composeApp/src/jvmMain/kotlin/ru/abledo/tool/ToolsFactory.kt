@@ -37,7 +37,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
             ).associateBy { it.fn.name },
 
             ToolCategory.DATAANALYTICS to listOf(
-                ToolCreatePlotFromCsv(ToolRunBashCommand).toGiga(),
+                ToolCreatePlotFromCsv().toGiga(),
                 ToolUploadFile().toGiga(),
                 ToolDownloadFile().toGiga(),
             ).associateBy { it.fn.name },
