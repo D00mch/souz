@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.debounce
 import org.kodein.di.compose.localDI
 import ru.abledo.agent.DEFAULT_SYSTEM_PROMPT
 import ru.abledo.giga.GigaResponse
@@ -42,7 +43,8 @@ fun SettingsScreen(
     val state = viewModel.uiState.collectAsState().value
 
     LaunchedEffect(viewModel) {
-        viewModel.effects.collect { effect ->
+        @Suppress("OPT_IN_USAGE")
+        viewModel.effects.debounce(2000).collect { effect ->
             when (effect) {
                 SettingsEffect.CloseScreen -> Unit
                 SettingsEffect.NotifyOnSystemPrompt -> onShowSnack("Сохранено. Применится после первой суммаризации")
