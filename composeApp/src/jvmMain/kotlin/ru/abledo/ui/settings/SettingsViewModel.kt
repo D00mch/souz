@@ -109,12 +109,14 @@ class SettingsViewModel(
 
         val calendars = result
             .lines()
+            .asSequence()
             .map { it.trim() }
             .filter { it.startsWith("- ") }
             .map { it.removePrefix("- ").trim() }
             .filter { it.isNotBlank() }
             .distinct()
             .sorted()
+            .toList()
 
         setState {
             copy(
