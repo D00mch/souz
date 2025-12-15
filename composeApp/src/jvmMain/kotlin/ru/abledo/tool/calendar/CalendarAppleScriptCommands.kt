@@ -3,30 +3,51 @@ package ru.abledo.tool.calendar
 internal object CalendarAppleScriptCommands {
     fun listTodayEventsCommand(calendarName: String): String = """
         osascript <<'EOF'
-        set calName to "$calendarName"
+        set calName to "$calendarName" 
         set output to "Events for today in " & calName & ":" & return
         set todayStart to current date
         set time of todayStart to 0
         set todayEnd to todayStart + (24 * hours)
+
         tell application "Calendar"
             try
-                tell calendar calName
+                set targetCals to (calendars whose name is calName)
+                
+                if (count of targetCals) is 0 then
+                    return "Error: Calendar '" & calName & "' not found. Check the name."
+                end if
+                
+                set targetCal to first item of targetCals
+                
+        
+                tell targetCal
                     set todaysEvents to (every event whose start date is greater than or equal to todayStart and start date is less than todayEnd)
+                    
                     if (count of todaysEvents) is 0 then
-                        return "No events found today."
+                        return "No events found today in '" & calName & "'."
                     end if
+                    
                     repeat with anEvent in todaysEvents
                         set evtTitle to summary of anEvent
-                        set evtTime to time string of (start date of anEvent)
+                        
+                        -- Получаем время. Обработка ошибок нужна, если это событие "на весь день"
+                        try
+                            set evtTime to time string of (start date of anEvent)
+                        on error
+                            set evtTime to "All Day"
+                        end try
+                        
                         set output to output & "- " & evtTime & ": " & evtTitle & return
                     end repeat
                 end tell
+                
                 return output
-            on error
-                return "Error: Calendar '" & calName & "' not found."
+                
+            on error errMsg
+                return "System Error: " & errMsg
             end try
         end tell
-EOF
+    EOF
     """.trimIndent()
 
     fun createEventCommand(
@@ -91,14 +112,11 @@ EOF
 EOF
     """.trimIndent()
 
-
     fun listCalendarsCommand(filter: String? = null): String {
         val safeFilter = filter?.replace("\"", "\\\"") ?: ""
-
         return """
             osascript <<'EOF'
             set filterStr to "$safeFilter"
-            
             tell application "Calendar"
                 try
                     if filterStr is "" then
@@ -106,11 +124,9 @@ EOF
                     else
                         set calNames to name of every calendar whose name contains filterStr
                     end if
-                    
                     if (count of calNames) is 0 then
                         return "No calendars found."
                     end if
-            
                     set output to "Found calendars:" & return
                     repeat with cName in calNames
                         set output to output & "- " & cName & return
@@ -121,7 +137,6 @@ EOF
                 end try
             end tell
             EOF
-    """.trimIndent()
+        """.trimIndent()
     }
 }
-

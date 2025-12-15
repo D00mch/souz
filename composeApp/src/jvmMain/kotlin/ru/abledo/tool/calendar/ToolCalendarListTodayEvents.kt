@@ -9,8 +9,8 @@ import ru.abledo.tool.ToolSetup
 
 class ToolCalendarListTodayEvents(private val bash: ToolRunBashCommand) : ToolSetup<ToolCalendarListTodayEvents.Input> {
     data class Input(
-        @InputParamDescription("Name of the calendar to use (default: 'Calendar' or 'Home')")
-        val calendarName: String = "Calendar",
+        @InputParamDescription("Name of the calendar to use. Use default if user doesn't want to specify.")
+        val calendarName: String = "",
     )
 
     override val name: String = "CalendarListTodayEvents"

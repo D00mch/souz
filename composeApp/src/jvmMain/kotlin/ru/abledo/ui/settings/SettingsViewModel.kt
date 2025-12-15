@@ -2,6 +2,7 @@ package ru.abledo.ui.settings
 
 import androidx.lifecycle.viewModelScope
 import io.ktor.util.logging.debug
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.kodein.di.DI
 import org.kodein.di.DIAware
@@ -12,11 +13,10 @@ import ru.abledo.agent.GraphBasedAgent
 import ru.abledo.db.SettingsProvider
 import ru.abledo.giga.GigaResponse
 import ru.abledo.giga.GigaRestChatAPI
+import ru.abledo.tool.ToolRunBashCommand
+import ru.abledo.tool.calendar.CalendarAppleScriptCommands
 import ru.abledo.ui.BaseViewModel
-import ru.abledo.ui.settings.SettingsEvent.InputSystemPrompt
-import ru.abledo.ui.settings.SettingsEvent.InputSupportEmail
-import ru.abledo.ui.settings.SettingsEvent.ResetSystemPrompt
-import ru.abledo.ui.settings.SettingsEvent.SendLogsToSupport
+import ru.abledo.ui.settings.SettingsEvent.*
 
 class SettingsViewModel(
     override val di: DI,
@@ -37,9 +37,11 @@ class SettingsViewModel(
                     useFewShotExamples = keysProvider.useFewShotExamples,
                     supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
                     systemPrompt = keysProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT,
+                    defaultCalendar = keysProvider.defaultCalendar
                 )
             }
             fetchBalance()
+            fetchCalendars()
         }
     }
 
@@ -48,16 +50,16 @@ class SettingsViewModel(
     override suspend fun handleEvent(event: SettingsEvent) {
         l.debug { "handleEvent: $event" }
         when(event) {
-            is SettingsEvent.InputGigaChatKey -> {
+            is InputGigaChatKey -> {
                 keysProvider.gigaChatKey = event.key
                 setState { copy(gigaChatKey = event.key) }
                 fetchBalance()
             }
-            is SettingsEvent.InputSaluteSpeechKey -> {
+            is InputSaluteSpeechKey -> {
                 keysProvider.saluteSpeechKey = event.key
                 setState { copy(saluteSpeechKey = event.key) }
             }
-            is SettingsEvent.InputUseFewShotExamples -> {
+            is InputUseFewShotExamples -> {
                 keysProvider.useFewShotExamples = event.enabled
                 setState { copy(useFewShotExamples = event.enabled) }
             }
@@ -76,10 +78,15 @@ class SettingsViewModel(
                 setState { copy(systemPrompt = DEFAULT_SYSTEM_PROMPT) }
             }
             is SendLogsToSupport -> sendLogs()
-            SettingsEvent.RefreshBalance -> fetchBalance()
-            SettingsEvent.GoToMain -> {
+            RefreshBalance -> fetchBalance()
+            GoToMain -> {
                 send(SettingsEffect.CloseScreen)
             }
+            is SelectDefaultCalendar -> {
+                keysProvider.defaultCalendar = event.name
+                setState { copy(defaultCalendar = event.name) }
+            }
+            FetchCalendars -> fetchCalendars()
         }
     }
 
@@ -88,7 +95,38 @@ class SettingsViewModel(
         SettingsEffect.NotifyOnSystemPrompt -> l.debug { "ignore effect: $effect" }
     }
 
-    private fun sendLogs() = ioLaunch {
+    private fun fetchCalendars() = viewModelScope.launch(Dispatchers.IO) {
+        setState { copy(isLoadingCalendars = true) }
+
+        val cmd = CalendarAppleScriptCommands.listCalendarsCommand("")
+
+        val result = runCatching {
+            ToolRunBashCommand.sh(cmd)
+        }.getOrElse {
+            l.error("Error fetching calendars", it)
+            ""
+        }
+
+        val calendars = result
+            .lines()
+            .asSequence()
+            .map { it.trim() }
+            .filter { it.startsWith("- ") }
+            .map { it.removePrefix("- ").trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+            .toList()
+
+        setState {
+            copy(
+                availableCalendars = calendars,
+                isLoadingCalendars = false
+            )
+        }
+    }
+
+    private fun sendLogs() = viewModelScope.launch(Dispatchers.IO) {
         val email = currentState.supportEmail.ifBlank { DEFAULT_SUPPORT_EMAIL }
         setState { copy(isSendingLogs = true, sendLogsMessage = null, supportEmail = email) }
 
@@ -113,13 +151,13 @@ class SettingsViewModel(
             }
     }
 
-    private fun fetchBalance() = ioLaunch {
-        if (currentState.isBalanceLoading) return@ioLaunch
+    private fun fetchBalance() = viewModelScope.launch(Dispatchers.IO) {
+        if (currentState.isBalanceLoading) return@launch
 
         val key = currentState.gigaChatKey
         if (key.isBlank()) {
             setState { copy(balance = emptyList(), balanceError = "Укажите GigaChat ключ", isBalanceLoading = false) }
-            return@ioLaunch
+            return@launch
         }
 
         setState { copy(isBalanceLoading = true, balanceError = null) }
