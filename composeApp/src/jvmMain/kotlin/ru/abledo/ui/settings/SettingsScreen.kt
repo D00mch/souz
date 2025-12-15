@@ -1,35 +1,25 @@
 package ru.abledo.ui.settings
 
 import androidx.compose.desktop.ui.tooling.preview.Preview
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Button
-import androidx.compose.material.Checkbox
-import androidx.compose.material.CheckboxDefaults
-import androidx.compose.material.OutlinedTextField
-import androidx.compose.material.Text
-import androidx.compose.material.TextFieldDefaults
+import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
 import ru.abledo.agent.DEFAULT_SYSTEM_PROMPT
@@ -37,9 +27,8 @@ import ru.abledo.giga.GigaResponse
 import ru.abledo.ui.AppTheme
 import ru.abledo.ui.glassColors
 import ru.abledo.ui.main.GlassCard
-import ru.abledo.ui.tools.ToolsSettingsEffect
 
-private val SettingsWindowSize = DpSize(width = 560.dp, height = 520.dp)
+private val SettingsWindowSize = DpSize(width = 560.dp, height = 650.dp)
 
 @Composable
 fun SettingsScreen(
@@ -47,7 +36,6 @@ fun SettingsScreen(
     onOpenTools: () -> Unit,
     onResizeRequest: (DpSize) -> Unit = {},
     onShowSnack: (String) -> Unit = {},
-
 ) {
     val di = localDI()
     val viewModel = viewModel { SettingsViewModel(di) }
@@ -67,6 +55,7 @@ fun SettingsScreen(
         onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
         onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
         onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
+        onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
         onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
         onSystemPromptChange = { prompt -> viewModel.send(SettingsEvent.InputSystemPrompt(prompt)) },
         onSystemPromptReset = { viewModel.send(SettingsEvent.ResetSystemPrompt) },
@@ -84,6 +73,7 @@ fun SettingsScreen(
     onGigaChatKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
+    onDefaultCalendarChange: (String?) -> Unit,
     onSupportEmailInput: (String) -> Unit,
     onSystemPromptChange: (String) -> Unit,
     onSystemPromptReset: () -> Unit,
@@ -148,6 +138,7 @@ fun SettingsScreen(
                     onValueChange = onSaluteSpeechKeyInput,
                     modifier = Modifier.fillMaxWidth()
                 )
+
                 Button(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "Инструменты",
@@ -155,6 +146,7 @@ fun SettingsScreen(
                         color = MaterialTheme.glassColors.textPrimary,
                     )
                 }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -175,6 +167,13 @@ fun SettingsScreen(
                         color = MaterialTheme.glassColors.textPrimary
                     )
                 }
+
+                CalendarDropdown(
+                    selectedCalendar = state.defaultCalendar,
+                    availableCalendars = state.availableCalendars,
+                    isLoading = state.isLoadingCalendars,
+                    onCalendarSelected = onDefaultCalendarChange
+                )
 
                 LabeledTextField(
                     label = "Email поддержки",
@@ -209,7 +208,7 @@ fun SettingsScreen(
                         }
                     }
                 }
-                
+
                 TokensBalanceSection(
                     isLoading = state.isBalanceLoading,
                     balance = state.balance,
@@ -217,6 +216,7 @@ fun SettingsScreen(
                     onRefreshBalance = onRefreshBalance,
                 )
 
+                // --- ЛОГИ ---
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -241,6 +241,91 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun CalendarDropdown(
+    selectedCalendar: String?,
+    availableCalendars: List<String>,
+    isLoading: Boolean,
+    onCalendarSelected: (String?) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Календарь по умолчанию",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.glassColors.textPrimary
+        )
+
+        Box {
+            OutlinedButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    backgroundColor = Color.Transparent,
+                    contentColor = MaterialTheme.glassColors.textPrimary
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f))
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = when {
+                            isLoading -> "Загрузка календарей..."
+                            selectedCalendar.isNullOrBlank() -> "Не выбран (системный по умолчанию)"
+                            else -> selectedCalendar
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.glassColors.textPrimary
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Выбрать календарь",
+                        tint = MaterialTheme.glassColors.textPrimary
+                    )
+                }
+            }
+
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.fillMaxWidth(0.6f)
+            ) {
+                // Опция "Сбросить"
+                DropdownMenuItem(onClick = {
+                    onCalendarSelected(null)
+                    expanded = false
+                }) {
+                    Text("Не выбран (системный)")
+                }
+
+                if (availableCalendars.isEmpty() && !isLoading) {
+                    DropdownMenuItem(enabled = false, onClick = {}) {
+                        Text("Нет доступных календарей")
+                    }
+                }
+
+                availableCalendars.forEach { calendarName ->
+                    DropdownMenuItem(onClick = {
+                        onCalendarSelected(calendarName)
+                        expanded = false
+                    }) {
+                        Text(calendarName)
+                    }
+                }
+            }
+        }
+        Text(
+            text = "Агент будет использовать этот календарь для создания событий, если вы не укажете иное.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+        )
     }
 }
 
@@ -355,10 +440,11 @@ private fun LabeledTextField(
 fun SettingsScreenPreview() {
     AppTheme {
         SettingsScreen(
-            state = SettingsState("key1", "key2", true),
+            state = SettingsState(gigaChatKey = "key1", saluteSpeechKey = "key2", useFewShotExamples = true),
             onGigaChatKeyInput = {},
             onSaluteSpeechKeyInput = {},
             onUseFewShotExamplesChange = {},
+            onDefaultCalendarChange = {},
             onSupportEmailInput = {},
             onSystemPromptChange = {},
             onSystemPromptReset = {},

@@ -171,12 +171,25 @@ class GraphBasedAgent(
             ""
         }
 
+        val defaultCalendarName = settingsProvider.defaultCalendar
+        val calendarInfo = if (!defaultCalendarName.isNullOrBlank()) {
+            "Default calendar: $defaultCalendarName"
+        } else {
+            ""
+        }
+
         val currentDateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
         val dateInfo = "Текущие дата и время: $currentDateTime"
 
         return GigaRequest.Message(
             role = GigaMessageRole.user,
-            content = listOf(INFO_PREFIX, msgRelatedDataInTheStore, browserName, dateInfo)
+            content = listOf(
+                INFO_PREFIX,
+                msgRelatedDataInTheStore,
+                browserName,
+                calendarInfo,
+                dateInfo
+            )
                 .filter { it.isNotBlank() }
                 .joinToString(separator = ";\n")
         )

@@ -10,6 +10,10 @@ class SettingsProvider(private val configStore: ConfigStore) {
     var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
     var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
     var systemPrompt: String? by keyDelegate(configKey = SYSTEM_PROMPT, envKey = SYSTEM_PROMPT)
+
+    // Новое поле для хранения выбранного календаря
+    var defaultCalendar: String? by keyDelegate(configKey = DEFAULT_CALENDAR, envKey = DEFAULT_CALENDAR)
+
     var useFewShotExamples: Boolean
         get() = _fewShotsDelegate?.lowercase() == "true"
         set(value) { _fewShotsDelegate = value.toString() }
@@ -36,5 +40,6 @@ class SettingsProvider(private val configStore: ConfigStore) {
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         private const val SUPPORT_EMAIL = "SUPPORT_EMAIL"
         private const val SYSTEM_PROMPT = "SYSTEM_PROMPT"
+        private const val DEFAULT_CALENDAR = "DEFAULT_CALENDAR"
     }
 }

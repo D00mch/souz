@@ -17,6 +17,11 @@ data class SettingsState(
     val balance: List<GigaResponse.BalanceItem> = emptyList(),
     val balanceError: String? = null,
     val systemPrompt: String = DEFAULT_SYSTEM_PROMPT,
+
+    // Новые поля для календаря
+    val defaultCalendar: String? = null,
+    val availableCalendars: List<String> = emptyList(),
+    val isLoadingCalendars: Boolean = false
 ): VMState
 
 sealed interface SettingsEvent : VMEvent {
@@ -29,6 +34,8 @@ sealed interface SettingsEvent : VMEvent {
     object ResetSystemPrompt: SettingsEvent
     object SendLogsToSupport: SettingsEvent
     object RefreshBalance: SettingsEvent
+    data class SelectDefaultCalendar(val name: String?) : SettingsEvent
+    object FetchCalendars : SettingsEvent
 }
 
 sealed interface SettingsEffect : VMSideEffect {
