@@ -17,8 +17,6 @@ data class SettingsState(
     val balance: List<GigaResponse.BalanceItem> = emptyList(),
     val balanceError: String? = null,
     val systemPrompt: String = DEFAULT_SYSTEM_PROMPT,
-
-    // Новые поля для календаря
     val defaultCalendar: String? = null,
     val availableCalendars: List<String> = emptyList(),
     val isLoadingCalendars: Boolean = false
