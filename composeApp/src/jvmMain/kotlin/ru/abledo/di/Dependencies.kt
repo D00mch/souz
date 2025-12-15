@@ -15,10 +15,11 @@ import ru.abledo.db.SettingsProvider
 import ru.abledo.db.VectorDB
 import ru.abledo.giga.ApiClassifier
 import ru.abledo.giga.GigaAuth
-import ru.abledo.giga.GigaChatAPI
 import ru.abledo.giga.GigaModel
 import ru.abledo.giga.GigaRestChatAPI
 import ru.abledo.giga.GigaVoiceAPI
+import ru.abledo.keys.MacSelectedText
+import ru.abledo.keys.SelectedText
 import ru.abledo.tool.LocalRegexClassifier
 import ru.abledo.tool.ToolsFactory
 import ru.abledo.tool.ToolsSettings
@@ -40,6 +41,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             .setSerializationInclusion(JsonInclude.Include.NON_NULL)
             .enable(SerializationFeature.INDENT_OUTPUT)
     }
+
+    // Native
+    bindSingleton<SelectedText> { MacSelectedText }
 
     // DB
     bindSingleton { ConfigStore }
