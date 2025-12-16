@@ -1,4 +1,4 @@
-package ru.abledo.db
+package ru.gigadesk.db
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

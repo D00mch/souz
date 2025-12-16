@@ -80,7 +80,7 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "ru.abledo.MainKt"
+        mainClass = "ru.gigadesk.MainKt"
 
         buildTypes {
             release {
@@ -92,13 +92,13 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "AbleDo"
+            packageName = "GigaDesk"
             packageVersion = "1.0.0"
 
             modules("java.naming") // native build crash without it
 
             macOS {
-                bundleID = "ru.abledo"
+                bundleID = "ru.gigadesk"
                 iconFile.set(File("src/jvmMain/resources/icon.icns"))
 
                 infoPlist {

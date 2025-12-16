@@ -3,11 +3,11 @@ package giga
 import kotlinx.coroutines.runBlocking
 import org.kodein.di.DI
 import org.kodein.di.instance
-import ru.abledo.giga.GigaVoiceAPI
+import ru.gigadesk.giga.GigaVoiceAPI
 import java.io.File
 import kotlin.test.assertTrue
-import ru.abledo.audio.InMemoryOpusRecorder
-import ru.abledo.di.mainDiModule
+import ru.gigadesk.audio.InMemoryOpusRecorder
+import ru.gigadesk.di.mainDiModule
 import kotlin.test.Ignore
 
 
