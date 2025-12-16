@@ -29,7 +29,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
@@ -53,6 +55,7 @@ fun MainScreen(
     onOpenSettings: () -> Unit,
     onResizeRequest: (DpSize) -> Unit,
     onCloseWindow: () -> Unit,
+    onShowSnack: (String) -> Unit = {},
 ) {
     val di = localDI()
     val viewModel = viewModel { MainViewModel(di) }
@@ -78,6 +81,7 @@ fun MainScreen(
         onResizeRequest = onResizeRequest,
         onStopSpeech = { viewModel.send(MainEvent.StopSpeech) },
         onShowLastText = { viewModel.send(MainEvent.ShowLastText) },
+        onShowSnack = onShowSnack
     )
 }
 
@@ -90,7 +94,9 @@ fun MainScreen(
     onResizeRequest: (DpSize) -> Unit = {},
     onStopSpeech: () -> Unit = {},
     onShowLastText: () -> Unit = {},
+    onShowSnack: (String) -> Unit = {},
 ) {
+    val clipboardManager = LocalClipboardManager.current
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
 
     // resize logic
@@ -184,7 +190,14 @@ fun MainScreen(
                                 .weight(1f)
                                 .fillMaxHeight()
                                 .verticalScroll(scrollState)
-                                .padding(horizontal = 32.dp),
+                                .padding(horizontal = 32.dp)
+                                .clickable(
+                                    indication = null,
+                                    interactionSource = remember { MutableInteractionSource() }
+                                ) {
+                                    clipboardManager.setText(AnnotatedString(textContent))
+                                    onShowSnack("Скопировано")
+                                  },
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
