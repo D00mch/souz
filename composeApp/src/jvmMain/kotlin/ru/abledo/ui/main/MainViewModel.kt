@@ -18,6 +18,7 @@ import ru.abledo.db.VectorDB
 import ru.abledo.giga.GigaRestChatAPI
 import ru.abledo.giga.GigaVoiceAPI
 import ru.abledo.keys.HotkeyListener
+import ru.abledo.keys.SelectedText
 import ru.abledo.permissions.AppRelauncher
 import ru.abledo.ui.BaseViewModel
 import java.util.concurrent.atomic.AtomicReference
@@ -30,6 +31,7 @@ class MainViewModel(
 
     private val l = LoggerFactory.getLogger(MainViewModel::class.java)
     private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), viewModelScope)
+    private val selectedText: SelectedText by di.instance()
     private val agentRef = AtomicReference<GraphBasedAgent?>(null)
     private var permissionWatcherJob: Job? = null
 
@@ -98,7 +100,10 @@ class MainViewModel(
             while (isActive) {
                 runCatching {
                     userInputFlow.collect { userInput ->
-                        val text = graphAgent.execute(userInput)
+                        val selectedPostfix = selectedText.getOrNull()
+                            ?.let { "\nThe selected text below:\n$it" }
+                            ?: ""
+                        val text = graphAgent.execute(userInput + selectedPostfix)
                         l.info(text)
                         setState { copy(displayedText = text, statusMessage = "Ответ готов") }
                         playText(text)
