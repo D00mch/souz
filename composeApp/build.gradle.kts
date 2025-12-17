@@ -99,7 +99,7 @@ compose.desktop {
 
             macOS {
                 bundleID = "ru.gigadesk"
-                iconFile.set(File("src/jvmMain/resources/icon.icns"))
+                iconFile.set(File("src/jvmMain/resources/icon-light.icns"))
 
                 infoPlist {
                     extraKeysRawXml = """
@@ -115,6 +115,7 @@ compose.desktop {
 
             // macOS dark mode support, works only on the release build, not in debug
             jvmArgs("-Dapple.awt.application.appearance=system")
+            jvmArgs("-Xdock:icon=src/jvmMain/resources/icon-light.icns")
         }
     }
 }
