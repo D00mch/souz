@@ -6,7 +6,6 @@ import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
-import java.time.LocalDate
 
 class ToolCalendarListEvents(private val bash: ToolRunBashCommand) : ToolSetup<ToolCalendarListEvents.Input> {
 

@@ -145,7 +145,6 @@ EOF
         val targetDateLogic = if (dateStr.isNullOrBlank()) {
             "set targetDate to current date"
         } else {
-            // Разбираем YYYY-MM-DD. AppleScript плохо парсит строки, поэтому делаем это вручную для надежности
             try {
                 val parts = dateStr.split("-")
                 val y = parts[0].toInt()
@@ -158,7 +157,6 @@ EOF
                 set day of targetDate to $d
                 """.trimIndent()
             } catch (e: Exception) {
-                // Если формат кривой, фоллбэк на сегодня
                 "set targetDate to current date"
             }
         }
@@ -167,21 +165,17 @@ EOF
         osascript <<'EOF'
         set calName to "$calendarName"
         
-        -- Логика установки даты
         $targetDateLogic
         
-        -- Сбрасываем время в 00:00:00
         set time of targetDate to 0
         set dayStart to targetDate
         set dayEnd to dayStart + (24 * hours)
         
-        -- Форматируем дату для заголовка (просто строка)
         set dateString to (year of dayStart as string) & "-" & (month of dayStart as integer) & "-" & (day of dayStart as integer)
         set output to "Events for " & dateString & " in calendar '" & calName & "':" & return
         
         tell application "Calendar"
             try
-                -- 1. Ищем календарь (с учетом аккаунтов)
                 set targetCals to (calendars whose name is calName)
                 if (count of targetCals) is 0 then
                     return "Error: Calendar '" & calName & "' not found."
@@ -189,25 +183,20 @@ EOF
                 set targetCal to first item of targetCals
         
                 tell targetCal
-                    -- 2. Получаем события в диапазоне
                     set foundEvents to (every event whose start date is greater than or equal to dayStart and start date is less than dayEnd)
                     
                     if (count of foundEvents) is 0 then
                         return "No events found for this date."
                     end if
                     
-                    -- 3. Перебираем события
                     repeat with anEvent in foundEvents
-                        -- ВАЖНО: Явно проверяем флаг "весь день"
                         set isAllDay to allday event of anEvent
                         set evtTitle to summary of anEvent
                         
                         if isAllDay then
                             set timeStr to "[All Day]"
                         else
-                            -- Получаем дату начала
                             set sDate to start date of anEvent
-                            -- time string возвращает "14:00:00" или "2:00 PM" в зависимости от настроек системы
                             set timeStr to time string of sDate
                         end if
                         
