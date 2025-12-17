@@ -15,10 +15,11 @@ import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.db.VectorDB
 import ru.gigadesk.giga.ApiClassifier
 import ru.gigadesk.giga.GigaAuth
-import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.GigaVoiceAPI
+import ru.gigadesk.keys.MacSelectedText
+import ru.gigadesk.keys.SelectedText
 import ru.gigadesk.tool.LocalRegexClassifier
 import ru.gigadesk.tool.ToolsFactory
 import ru.gigadesk.tool.ToolsSettings
@@ -40,6 +41,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             .setSerializationInclusion(JsonInclude.Include.NON_NULL)
             .enable(SerializationFeature.INDENT_OUTPUT)
     }
+
+    // Native
+    bindSingleton<SelectedText> { MacSelectedText }
 
     // DB
     bindSingleton { ConfigStore }

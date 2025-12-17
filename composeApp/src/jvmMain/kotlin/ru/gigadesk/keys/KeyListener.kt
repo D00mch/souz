@@ -63,7 +63,13 @@ fun main() {
     val l = LoggerFactory.getLogger("HotkeyListener")
     val hotkeyListener = HotkeyListener(
         onPressed = { pressed ->
-            val msg = if (pressed) "onStart" else "onStop"
+            val msg = if (pressed) {
+                "onStart"
+            } else {
+                val selectedText = MacSelectedText.getOrNull()
+                println("selectedText: $selectedText")
+                "onStop"
+            }
             l.info(msg)
         },
         onDoubleClick = { l.info("double click") },

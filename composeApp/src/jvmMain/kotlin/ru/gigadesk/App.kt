@@ -53,7 +53,10 @@ fun App(
                     Main -> MainScreen(
                         onOpenSettings = { currentScreen = Settings },
                         onResizeRequest = onWindowResize,
-                        onCloseWindow = onCloseWindow
+                        onCloseWindow = onCloseWindow,
+                        onShowSnack = { message ->
+                            snackbarScope.launch { snackbarHostState.showSnackbar(message) }
+                        },
                     )
                     Settings -> SettingsScreen(
                         onClose = { currentScreen = Main },
