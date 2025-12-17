@@ -1,7 +1,7 @@
 package giga
 
-import ru.abledo.giga.*
-import ru.abledo.tool.files.ToolListFiles
+import ru.gigadesk.giga.*
+import ru.gigadesk.tool.files.ToolListFiles
 import com.fasterxml.jackson.module.kotlin.contains
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory

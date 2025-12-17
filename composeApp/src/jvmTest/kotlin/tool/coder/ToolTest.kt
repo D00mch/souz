@@ -1,19 +1,19 @@
 package tool.coder
 
-import ru.abledo.tool.BadInputException
-import ru.abledo.tool.files.ToolDeleteFile
-import ru.abledo.tool.files.ToolFindTextInFiles
-import ru.abledo.tool.files.ToolListFiles
-import ru.abledo.tool.files.ToolModifyFile
-import ru.abledo.tool.files.ToolNewFile
-import ru.abledo.tool.files.ToolReadFile
+import ru.gigadesk.tool.BadInputException
+import ru.gigadesk.tool.files.ToolDeleteFile
+import ru.gigadesk.tool.files.ToolFindTextInFiles
+import ru.gigadesk.tool.files.ToolListFiles
+import ru.gigadesk.tool.files.ToolModifyFile
+import ru.gigadesk.tool.files.ToolNewFile
+import ru.gigadesk.tool.files.ToolReadFile
 import org.junit.Assert.assertThrows
 import java.io.File
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import org.slf4j.LoggerFactory
-import ru.abledo.tool.files.ToolFindInFiles
+import ru.gigadesk.tool.files.ToolFindInFiles
 import kotlin.test.Ignore
 import kotlin.test.assertContains
 

@@ -80,7 +80,7 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "ru.abledo.MainKt"
+        mainClass = "ru.gigadesk.MainKt"
 
         buildTypes {
             release {
@@ -92,14 +92,14 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "AbleDo"
+            packageName = "GigaDesk"
             packageVersion = "1.0.0"
 
             modules("java.naming") // native build crash without it
 
             macOS {
-                bundleID = "ru.abledo"
-                iconFile.set(File("src/jvmMain/resources/icon.icns"))
+                bundleID = "ru.gigadesk"
+                iconFile.set(File("src/jvmMain/resources/icon-light.icns"))
 
                 infoPlist {
                     extraKeysRawXml = """
@@ -115,6 +115,7 @@ compose.desktop {
 
             // macOS dark mode support, works only on the release build, not in debug
             jvmArgs("-Dapple.awt.application.appearance=system")
+            jvmArgs("-Xdock:icon=src/jvmMain/resources/icon-light.icns")
         }
     }
 }

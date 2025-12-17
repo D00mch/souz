@@ -1,6 +1,6 @@
 package tool
 
-import ru.abledo.tool.ToolRunBashCommand
+import ru.gigadesk.tool.ToolRunBashCommand
 import kotlin.test.Test
 import kotlin.test.assertTrue
 

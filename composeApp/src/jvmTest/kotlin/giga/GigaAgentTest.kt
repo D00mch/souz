@@ -1,16 +1,16 @@
 package giga
 
-import ru.abledo.db.DesktopInfoRepository
-import ru.abledo.giga.*
-import ru.abledo.tool.ToolCategory
+import ru.gigadesk.db.DesktopInfoRepository
+import ru.gigadesk.giga.*
+import ru.gigadesk.tool.ToolCategory
 import io.mockk.*
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.kodein.di.DI
 import org.kodein.di.instance
-import ru.abledo.agent.nodes.NodesClassification
-import ru.abledo.di.mainDiModule
+import ru.gigadesk.agent.nodes.NodesClassification
+import ru.gigadesk.di.mainDiModule
 import kotlin.getValue
 import kotlin.test.Ignore
 import kotlin.test.Test

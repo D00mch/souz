@@ -1,4 +1,4 @@
-rootProject.name = "abledo"
+rootProject.name = "gigadesk"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {
