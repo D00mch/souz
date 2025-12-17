@@ -1,4 +1,4 @@
-# gigadesk 
+# Gigadesk 
 
 A desktop Agent app to help with routines.
 
