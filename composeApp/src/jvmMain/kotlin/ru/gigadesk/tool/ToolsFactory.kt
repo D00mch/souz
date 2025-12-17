@@ -79,7 +79,7 @@ class ToolsFactory(private val repo: DesktopInfoRepository) {
             ).associateBy { it.fn.name },
 
             ToolCategory.CALENDAR to listOf(
-                ToolCalendarListTodayEvents(ToolRunBashCommand).toGiga(),
+                //ToolCalendarListTodayEvents(ToolRunBashCommand).toGiga(),
                 ToolCalendarCreateEvent(ToolRunBashCommand).toGiga(),
                 ToolCalendarDeleteEvent(ToolRunBashCommand).toGiga(),
                 ToolCalendarListCalendars(ToolRunBashCommand).toGiga(),
