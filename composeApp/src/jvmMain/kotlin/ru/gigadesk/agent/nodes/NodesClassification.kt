@@ -10,6 +10,7 @@ import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaToolSetup
 import ru.gigadesk.giga.gigaJsonMapper
 import ru.gigadesk.tool.ToolCategory
+import ru.gigadesk.tool.ToolCategory.*
 import ru.gigadesk.tool.ToolsFactory
 import ru.gigadesk.tool.ToolsSettings
 import ru.gigadesk.tool.UserMessageClassifier
@@ -109,34 +110,38 @@ class NodesClassification(
     }
 
     private fun ToolCategory.description(): String = when(this) {
-        ToolCategory.FILES -> """
+        FILES -> """
 навигация по файловой системе, чтение и поиск текста в файлах, создание, удаление или изменение файлов и папок"""
 
-        ToolCategory.BROWSER -> """
+        BROWSER -> """
 веб-страницы, вкладки, или браузерные горячие клавиши, или когда надо получить общую информацию о новостях или погоде"""
 
-        ToolCategory.CONFIG -> """
+        CONFIG -> """
 изменение или сохранение настроек, вроде скорости речи, запоминание и исполнение инструкций"""
 
-        ToolCategory.DATAANALYTICS -> """
+        DATAANALYTICS -> """
 когда надо создать график или найти корреляцию между двумя переменными"""
 
-        ToolCategory.CALENDAR -> """
+        CALENDAR -> """
 создание и удаление событий в календаре"""
 
-        ToolCategory.MAIL -> """
+        MAIL -> """
 получение и отправка писем, список писем, чтение писем, ответ на письмо, прочтение сообщений из почты"""
 
-        ToolCategory.NOTES -> """
+        NOTES -> """
 работа с заметками"""
 
-        ToolCategory.APPLICATIONS -> """
+        APPLICATIONS -> """
 работа с приложениями"""
+
+        TEXT_REPLACE -> """
+работа с текстом, который сейчас выделен пользователем (находится под selection)
+"""
     }
         .trimIndent()
 
     private fun ToolCategory.examples(): List<String> = when (this) {
-        ToolCategory.FILES -> listOf(
+        FILES -> listOf(
             "покажи содержимое файла README",
             "найди слово \"ошибка\" в логах в папке Downloads",
             "отредактируй файл",
@@ -145,50 +150,56 @@ class NodesClassification(
             "открой папку Загрузки",
         )
 
-        ToolCategory.BROWSER -> listOf(
+        BROWSER -> listOf(
             "открой сайт сбербанка",
             "найди в закладках обзор фондового рынка",
             "расскажи кратко о чем рассказано на текущей странице",
             "скачай с текущей страницы pdf и сохрани в Загрузки"
         )
 
-        ToolCategory.CONFIG -> listOf(
+        CONFIG -> listOf(
             "запомни: когда я говорю \"тишина\" — уменьшай громкость на 20%",
             "включи режим разработчика",
             "измени язык интерфейса на английский",
             "покажи текущие настройки приложения"
         )
 
-        ToolCategory.NOTES -> listOf(
+        NOTES -> listOf(
             "создай заметку",
             "найди заметку"
         )
 
-        ToolCategory.APPLICATIONS -> listOf(
+        APPLICATIONS -> listOf(
             "открой приложение Хром",
             "открой приложение Outlook",
             "какие приложения сейчас открыты",
         )
 
-        ToolCategory.DATAANALYTICS -> listOf(
+        DATAANALYTICS -> listOf(
             "построй график дохода по клиенту за последние 6 месяцев",
             "посчитай средний чек по дням и покажи таблицу",
             "сделай сводную: расходы по категориям за ноябрь",
             "найди аномалии в продажах за последнюю неделю"
         )
 
-        ToolCategory.CALENDAR -> listOf(
+        CALENDAR -> listOf(
             "что у меня сегодня по плану",
             "поставь встречу завтра в 15:00 на 30 минут: созвон с Артуром",
             "перенеси встречу \"демо\" на пятницу на 11:00",
             "когда у меня ближайшее свободное окно на час?"
         )
 
-        ToolCategory.MAIL -> listOf(
+        MAIL -> listOf(
             "какие письма у меня непрочитанные",
             "найди письмо от Артура про договор",
             "ответь на письмо Артура: \"Спасибо, получил\"",
             "сделай краткое резюме последнего письма от банка"
+        )
+
+        TEXT_REPLACE -> listOf(
+            "исправь грамматические ошибки в выделенном тексте",
+            "сделай текст, который я заселектил, более официальным",
+            "можешь поправить текс письма, что я выделил"
         )
     }
 }

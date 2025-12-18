@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 interface SelectedText {
     fun getOrNull(): String?
+    fun replace(txt: String): Boolean
 }
 
 class AXUIElementRef : PointerType {
@@ -30,6 +31,13 @@ private interface AppServices : Library {
         attribute: CFStringRef,
         value: PointerByReference
     ): Int
+
+    // AXError AXUIElementSetAttributeValue(AXUIElementRef, CFStringRef, CFTypeRef)
+    fun AXUIElementSetAttributeValue(
+        element: AXUIElementRef,
+        attribute: CFStringRef,
+        value: CoreFoundation.CFTypeRef
+    ): Int
 }
 
 object MacSelectedText : SelectedText {
@@ -43,11 +51,40 @@ object MacSelectedText : SelectedText {
         Runtime.getRuntime().addShutdownHook(Thread { releaseStatics() })
     }
 
-    private fun releaseStatics() {
-        if (!released.compareAndSet(false, true)) return
-        // CFStringRef extends PointerType, so .pointer is the owned CF object.
-        cfRelease(AX_FOCUSED_UI_ELEMENT.pointer)
-        cfRelease(AX_SELECTED_TEXT.pointer)
+    override fun replace(txt: String): Boolean {
+        if (!AppServices.INSTANCE.AXIsProcessTrusted()) return false
+
+        val sys = AppServices.INSTANCE.AXUIElementCreateSystemWide()
+        try {
+            val focusedRef = PointerByReference()
+            if (AppServices.INSTANCE.AXUIElementCopyAttributeValue(
+                    sys,
+                    AX_FOCUSED_UI_ELEMENT,
+                    focusedRef
+                ) != 0
+            ) return false
+
+            val focusedPtr = focusedRef.value ?: return false
+            val focused = AXUIElementRef(focusedPtr)
+
+            try {
+                val cfNewText = CFStringRef.createCFString(txt)
+                try {
+                    val err = AppServices.INSTANCE.AXUIElementSetAttributeValue(
+                        focused,
+                        AX_SELECTED_TEXT,
+                        CoreFoundation.CFTypeRef(cfNewText.pointer)
+                    )
+                    return err == 0
+                } finally {
+                    cfRelease(cfNewText.pointer)
+                }
+            } finally {
+                cfRelease(focusedPtr)
+            }
+        } finally {
+            cfRelease(sys.pointer)
+        }
     }
 
     override fun getOrNull(): String? {
@@ -87,6 +124,13 @@ object MacSelectedText : SelectedText {
         } finally {
             cfRelease(sys.pointer) // wrap it too
         }
+    }
+
+    private fun releaseStatics() {
+        if (!released.compareAndSet(false, true)) return
+        // CFStringRef extends PointerType, so .pointer is the owned CF object.
+        cfRelease(AX_FOCUSED_UI_ELEMENT.pointer)
+        cfRelease(AX_SELECTED_TEXT.pointer)
     }
 
     private fun cfRelease(p: Pointer?) {

@@ -17,6 +17,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.nodes.NodesClassification
+import ru.gigadesk.keys.SelectedText
 import java.util.concurrent.atomic.AtomicBoolean
 
 class GigaAgent(
@@ -359,8 +360,9 @@ class GigaAgent(
             api: GigaChatAPI,
             desktopRepo: DesktopInfoRepository,
             nodesClassification: NodesClassification,
+            selectedText: SelectedText,
             model: GigaModel = GigaModel.Max,
-            settings: Settings = Settings(ToolsFactory(desktopRepo).toolsByCategory, model, stream = false)
+            settings: Settings = Settings(ToolsFactory(desktopRepo, selectedText).toolsByCategory, model, stream = false)
         ): GigaAgent = GigaAgent(userMessages, api, desktopRepo, settings, nodesClassification)
     }
 }

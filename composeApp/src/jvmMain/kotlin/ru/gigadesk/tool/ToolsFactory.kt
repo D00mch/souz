@@ -8,6 +8,7 @@ import ru.gigadesk.tool.browser.ToolCreateNewBrowserTab
 import ru.gigadesk.tool.browser.ToolFocusOnTab
 import ru.gigadesk.tool.browser.ToolSafariInfo
 import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.keys.SelectedText
 import ru.gigadesk.tool.application.ToolOpen
 import ru.gigadesk.tool.application.ToolShowApps
 import ru.gigadesk.tool.browser.ToolChromeInfo
@@ -25,74 +26,86 @@ import ru.gigadesk.tool.notes.ToolDeleteNote
 import ru.gigadesk.tool.notes.ToolListNotes
 import ru.gigadesk.tool.notes.ToolOpenNote
 import ru.gigadesk.tool.notes.ToolSearchNotes
+import ru.gigadesk.tool.textReplace.ToolTextReplace
 
 typealias FunctionName = String
 
-class ToolsFactory(private val repo: DesktopInfoRepository) {
+class ToolsFactory(
+    private val repo: DesktopInfoRepository,
+    private val selectedText: SelectedText,
+) {
     val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
-        mapOf(
-            ToolCategory.FILES to listOf(
-                ToolReadFile.toGiga(),
-                ToolListFiles.toGiga(),
-                ToolFindInFiles.toGiga(),
-                ToolNewFile.toGiga(),
-                ToolDeleteFile.toGiga(),
-                ToolModifyFile.toGiga(),
-                ToolFindTextInFiles.toGiga(),
-                ToolExtractText().toGiga(),
-                ToolReadPdfPages().toGiga(),
-                ToolOpen(ToolRunBashCommand).toGiga(),
-            ).associateBy { it.fn.name },
+        ToolCategory.entries.associateWith { category ->
+            category.tools().associateBy { it.fn.name }
+        }
+    }
 
-            ToolCategory.DATAANALYTICS to listOf(
-                ToolCreatePlotFromCsv().toGiga(),
-                ToolUploadFile().toGiga(),
-                ToolDownloadFile().toGiga(),
-            ).associateBy { it.fn.name },
+    private fun ToolCategory.tools(): List<GigaToolSetup> = when (this) {
+        ToolCategory.FILES -> listOf(
+            ToolReadFile.toGiga(),
+            ToolListFiles.toGiga(),
+            ToolFindInFiles.toGiga(),
+            ToolNewFile.toGiga(),
+            ToolDeleteFile.toGiga(),
+            ToolModifyFile.toGiga(),
+            ToolFindTextInFiles.toGiga(),
+            ToolExtractText().toGiga(),
+            ToolReadPdfPages().toGiga(),
+            ToolOpen(ToolRunBashCommand).toGiga(),
+        )
 
-            ToolCategory.BROWSER to listOf(
-                ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
-                ToolSafariInfo(ToolRunBashCommand).toGiga(),
-                ToolBrowserHotkeys().toGiga(),
-                ToolFocusOnTab(ToolRunBashCommand).toGiga(),
-                ToolChromeInfo(ToolRunBashCommand).toGiga(),
-                ToolOpenDefaultBrowser(ToolRunBashCommand).toGiga(),
-            ).associateBy { it.fn.name },
+        ToolCategory.BROWSER -> listOf(
+            ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
+            ToolSafariInfo(ToolRunBashCommand).toGiga(),
+            ToolBrowserHotkeys().toGiga(),
+            ToolFocusOnTab(ToolRunBashCommand).toGiga(),
+            ToolChromeInfo(ToolRunBashCommand).toGiga(),
+            ToolOpenDefaultBrowser(ToolRunBashCommand).toGiga(),
+        )
 
-            ToolCategory.CONFIG to listOf(
-                ToolSoundConfig(ConfigStore).toGiga(),
-                ToolSoundConfigDiff(ConfigStore).toGiga(),
-                ToolInstructionStore(ConfigStore, repo).toGiga(),
-            ).associateBy { it.fn.name },
+        ToolCategory.CONFIG -> listOf(
+            ToolSoundConfig(ConfigStore).toGiga(),
+            ToolSoundConfigDiff(ConfigStore).toGiga(),
+            ToolInstructionStore(ConfigStore, repo).toGiga(),
+        )
 
-            ToolCategory.NOTES to listOf(
-                ToolOpenNote(ToolRunBashCommand).toGiga(),
-                ToolCreateNote(ToolRunBashCommand).toGiga(),
-                ToolDeleteNote(ToolRunBashCommand).toGiga(),
-                ToolListNotes(ToolRunBashCommand).toGiga(),
-                ToolSearchNotes(ToolRunBashCommand).toGiga(),
-            ).associateBy { it.fn.name },
+        ToolCategory.NOTES -> listOf(
+            ToolOpenNote(ToolRunBashCommand).toGiga(),
+            ToolCreateNote(ToolRunBashCommand).toGiga(),
+            ToolDeleteNote(ToolRunBashCommand).toGiga(),
+            ToolListNotes(ToolRunBashCommand).toGiga(),
+            ToolSearchNotes(ToolRunBashCommand).toGiga(),
+        )
 
-            ToolCategory.APPLICATIONS to listOf(
-                ToolShowApps.toGiga(),
-                ToolOpen(ToolRunBashCommand).toGiga(),
-            ).associateBy { it.fn.name },
+        ToolCategory.APPLICATIONS -> listOf(
+            ToolShowApps.toGiga(),
+            ToolOpen(ToolRunBashCommand).toGiga(),
+        )
 
-            ToolCategory.CALENDAR to listOf(
-                ToolCalendarListTodayEvents(ToolRunBashCommand).toGiga(),
-                ToolCalendarCreateEvent(ToolRunBashCommand).toGiga(),
-                ToolCalendarDeleteEvent(ToolRunBashCommand).toGiga(),
-                ToolCalendarListCalendars(ToolRunBashCommand).toGiga(),
-            ).associateBy { it.fn.name },
+        ToolCategory.DATAANALYTICS -> listOf(
+            ToolCreatePlotFromCsv().toGiga(),
+            ToolUploadFile().toGiga(),
+            ToolDownloadFile().toGiga(),
+        )
 
-            ToolCategory.MAIL to listOf(
-                ToolMailUnreadMessagesCount(ToolRunBashCommand).toGiga(),
-                ToolMailListMessages(ToolRunBashCommand).toGiga(),
-                ToolMailReadMessage(ToolRunBashCommand).toGiga(),
-                ToolMailReplyMessage(ToolRunBashCommand).toGiga(),
-                ToolMailSendNewMessage(ToolRunBashCommand).toGiga(),
-                ToolMailSearch(ToolRunBashCommand).toGiga(),
-            ).associateBy { it.fn.name },
+        ToolCategory.CALENDAR -> listOf(
+            ToolCalendarListTodayEvents(ToolRunBashCommand).toGiga(),
+            ToolCalendarCreateEvent(ToolRunBashCommand).toGiga(),
+            ToolCalendarDeleteEvent(ToolRunBashCommand).toGiga(),
+            ToolCalendarListCalendars(ToolRunBashCommand).toGiga(),
+        )
+
+        ToolCategory.MAIL -> listOf(
+            ToolMailUnreadMessagesCount(ToolRunBashCommand).toGiga(),
+            ToolMailListMessages(ToolRunBashCommand).toGiga(),
+            ToolMailReadMessage(ToolRunBashCommand).toGiga(),
+            ToolMailReplyMessage(ToolRunBashCommand).toGiga(),
+            ToolMailSendNewMessage(ToolRunBashCommand).toGiga(),
+            ToolMailSearch(ToolRunBashCommand).toGiga(),
+        )
+
+        ToolCategory.TEXT_REPLACE -> listOf(
+            ToolTextReplace(selectedText).toGiga(),
         )
     }
 }
