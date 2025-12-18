@@ -45,7 +45,8 @@ import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
-import ru.gigadesk.ui.main.GlassCard
+//import ru.gigadesk.ui.main.GlassCard
+import ru.gigadesk.ui.main.RealLiquidGlassCard
 
 private val ToolDetailsWindowSize = DpSize(width = 680.dp, height = 760.dp)
 
@@ -103,7 +104,7 @@ fun ToolDetailsScreen(
     LaunchedEffect(Unit) { onResizeRequest(ToolDetailsWindowSize) }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        GlassCard(modifier = Modifier.fillMaxSize()) {
+        RealLiquidGlassCard(modifier = Modifier.fillMaxSize()) {
             val scrollState = rememberScrollState()
 
             Column(
