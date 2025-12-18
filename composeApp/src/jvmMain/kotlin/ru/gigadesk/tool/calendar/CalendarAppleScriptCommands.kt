@@ -139,4 +139,78 @@ EOF
             EOF
         """.trimIndent()
     }
+
+    fun listEventsCommand(calendarName: String, dateStr: String? = null): String {
+        // Если дата не передана, скрипт будет использовать текущую
+        val targetDateLogic = if (dateStr.isNullOrBlank()) {
+            "set targetDate to current date"
+        } else {
+            try {
+                val parts = dateStr.split("-")
+                val y = parts[0].toInt()
+                val m = parts[1].toInt()
+                val d = parts[2].toInt()
+                """
+                set targetDate to current date
+                set year of targetDate to $y
+                set month of targetDate to $m
+                set day of targetDate to $d
+                """.trimIndent()
+            } catch (e: Exception) {
+                "set targetDate to current date"
+            }
+        }
+
+        return """
+        osascript <<'EOF'
+        set calName to "$calendarName"
+        
+        $targetDateLogic
+        
+        set time of targetDate to 0
+        set dayStart to targetDate
+        set dayEnd to dayStart + (24 * hours)
+        
+        set dateString to (year of dayStart as string) & "-" & (month of dayStart as integer) & "-" & (day of dayStart as integer)
+        set output to "Events for " & dateString & " in calendar '" & calName & "':" & return
+        
+        tell application "Calendar"
+            try
+                set targetCals to (calendars whose name is calName)
+                if (count of targetCals) is 0 then
+                    return "Error: Calendar '" & calName & "' not found."
+                end if
+                set targetCal to first item of targetCals
+        
+                tell targetCal
+                    set foundEvents to (every event whose start date is greater than or equal to dayStart and start date is less than dayEnd)
+                    
+                    if (count of foundEvents) is 0 then
+                        return "No events found for this date."
+                    end if
+                    
+                    repeat with anEvent in foundEvents
+                        set isAllDay to allday event of anEvent
+                        set evtTitle to summary of anEvent
+                        
+                        if isAllDay then
+                            set timeStr to "[All Day]"
+                        else
+                            set sDate to start date of anEvent
+                            set timeStr to time string of sDate
+                        end if
+                        
+                        set output to output & "- " & timeStr & ": " & evtTitle & return
+                    end repeat
+                end tell
+                
+                return output
+                
+            on error errMsg
+                return "System Error: " & errMsg
+            end try
+        end tell
+EOF
+        """.trimIndent()
+    }
 }
