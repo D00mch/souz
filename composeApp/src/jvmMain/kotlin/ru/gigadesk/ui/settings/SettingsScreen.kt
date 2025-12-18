@@ -27,7 +27,7 @@ import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
-import ru.gigadesk.ui.main.GlassCard
+import ru.gigadesk.ui.main.RealLiquidGlassCard
 
 private val SettingsWindowSize = DpSize(width = 560.dp, height = 650.dp)
 
@@ -91,7 +91,7 @@ fun SettingsScreen(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        GlassCard(modifier = Modifier.fillMaxSize()) {
+        RealLiquidGlassCard(modifier = Modifier.fillMaxSize()) {
             val scrollState = rememberScrollState()
 
             Column(

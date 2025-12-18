@@ -51,7 +51,7 @@ import org.kodein.di.compose.localDI
 import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
-import ru.gigadesk.ui.main.GlassCard
+import ru.gigadesk.ui.main.RealLiquidGlassCard
 
 private val ToolsWindowSize = DpSize(width = 640.dp, height = 720.dp)
 
@@ -105,7 +105,7 @@ fun ToolsScreen(
     LaunchedEffect(Unit) { onResizeRequest(ToolsWindowSize) }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        GlassCard(modifier = Modifier.fillMaxSize()) {
+        RealLiquidGlassCard(modifier = Modifier.fillMaxSize()) {
             val scrollState = rememberScrollState()
             val expandedByCategory = remember { mutableStateMapOf<ToolCategory, Boolean>() }
 
