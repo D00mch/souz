@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
@@ -35,13 +36,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
-import org.jetbrains.skia.FilterTileMode
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.kodein.di.compose.localDI
 import kotlin.random.Random
 
@@ -52,6 +52,13 @@ private val BaseWidth = 500.dp
 private val BaseHeight = 260.dp
 private val MaxHeight = 900.dp
 private val MaxWidth = 650.dp
+
+// --- КОНФИГ АНИМАЦИИ ---
+data class BlurTextConfig(
+    val wordDelayMillis: Long = 20,
+    val blurDurationMillis: Int = 500,
+    val initialBlurRadius: Dp = 10.dp
+)
 
 @Composable
 fun MainScreen(
@@ -102,6 +109,7 @@ fun MainScreen(
     val clipboardManager = LocalClipboardManager.current
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
     val windowInfo = LocalWindowInfo.current
+    // Получаем состояние фокуса окна
     val isFocused = windowInfo.isWindowFocused
 
     LaunchedEffect(textContent) {
@@ -160,15 +168,22 @@ fun MainScreen(
                     }
                 }
 
-                // --- Текст ---
+                // --- Текст с анимацией Blur и Focus Fade ---
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     val scrollState = rememberScrollState()
+
                     val dynamicFontSize = remember(textContent) {
                         when (textContent.length) {
                             in 0..30 -> 32.sp
                             in 31..60 -> 28.sp
                             in 61..150 -> 24.sp
                             else -> 20.sp
+                        }
+                    }
+
+                    LaunchedEffect(textContent.length) {
+                        if (state.isListening || textContent.isNotEmpty()) {
+                            scrollState.animateScrollTo(scrollState.maxValue)
                         }
                     }
 
@@ -187,9 +202,16 @@ fun MainScreen(
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
+                            BlurAnimatedText(
                                 text = textContent,
-                                style = TextStyle(
+                                // Передаем состояние фокуса окна
+                                isFocused = isFocused,
+                                config = BlurTextConfig(
+                                    wordDelayMillis = if (textContent.length > 300) 2 else 25,
+                                    blurDurationMillis = 500,
+                                    initialBlurRadius = 12.dp
+                                ),
+                                textStyle = TextStyle(
                                     fontSize = dynamicFontSize,
                                     lineHeight = dynamicFontSize * 1.4,
                                     fontWeight = FontWeight.SemiBold,
@@ -200,7 +222,8 @@ fun MainScreen(
                                         offset = Offset(0f, 2f),
                                         blurRadius = 4f
                                     )
-                                )
+                                ),
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
 
@@ -229,6 +252,92 @@ fun MainScreen(
     }
 }
 
+// --- КОМПОНЕНТЫ ДЛЯ ТЕКСТА ---
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun BlurAnimatedText(
+    text: String,
+    isFocused: Boolean = true, // Новый параметр фокуса
+    config: BlurTextConfig,
+    textStyle: TextStyle,
+    modifier: Modifier = Modifier
+) {
+    val words = remember(text) { text.split(" ") }
+    var visibleWordsCount by remember { mutableStateOf(0) }
+
+    // Анимация прозрачности ВСЕГО текста при потере фокуса
+    // Если фокус есть = 1f (полная яркость), если нет = 0.35f (приглушенно)
+    val containerAlpha by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0.35f,
+        animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing)
+    )
+
+    LaunchedEffect(words) {
+        visibleWordsCount = 0
+        words.forEachIndexed { index, _ ->
+            delay(config.wordDelayMillis)
+            visibleWordsCount = index + 1
+        }
+    }
+
+    FlowRow(
+        // Применяем alpha ко всему контейнеру
+        modifier = modifier.alpha(containerAlpha),
+        horizontalArrangement = Arrangement.Center,
+        verticalArrangement = Arrangement.Top
+    ) {
+        words.forEachIndexed { index, word ->
+            if (index < visibleWordsCount) {
+                AnimatedWord(
+                    word = word,
+                    config = config,
+                    style = textStyle
+                )
+                if (index < words.size - 1) {
+                    Spacer(Modifier.width(4.sp.value.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AnimatedWord(
+    word: String,
+    config: BlurTextConfig,
+    style: TextStyle
+) {
+    // Индивидуальная анимация появления слова
+    val alpha = remember { Animatable(0f) }
+    val blur = remember { Animatable(config.initialBlurRadius.value) }
+
+    LaunchedEffect(Unit) {
+        launch {
+            alpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = config.blurDurationMillis, easing = LinearOutSlowInEasing)
+            )
+        }
+        launch {
+            blur.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = config.blurDurationMillis, easing = LinearOutSlowInEasing)
+            )
+        }
+    }
+
+    Text(
+        text = word,
+        style = style,
+        modifier = Modifier
+            .alpha(alpha.value)
+            .blur(blur.value.dp)
+    )
+}
+
+// --- GLASS UI КОМПОНЕНТЫ ---
+
 @Composable
 fun MinimalGlassButton(
     onClick: () -> Unit,
@@ -251,43 +360,30 @@ fun MinimalGlassButton(
     }
 }
 
-/**
- * Хелпер для генерации "Шума" (Зерна).
- * Создает маленькую текстуру с рандомными пикселями один раз при запуске.
- */
 @Composable
 fun rememberNoiseBrush(): ShaderBrush {
     return remember {
-        val size = 256 // Увеличили размер паттерна, чтобы тайлинг был незаметен
+        val size = 256
         val imageBitmap = ImageBitmap(size, size)
         val canvas = Canvas(imageBitmap)
         val paint = Paint().apply {
             color = Color.White
-            // Чем выше alpha здесь, тем "злее" шум.
-            // 0.2f - оптимально для заметного, но не перекрывающего текст зерна.
             alpha = 0.2f
         }
         val rnd = Random(System.currentTimeMillis())
 
-        // Рисуем шум попиксельно
         for (x in 0 until size) {
             for (y in 0 until size) {
-                // Частота заполнения: 20% пикселей будут белыми точками
                 if (rnd.nextFloat() > 0.8f) {
                     canvas.drawRect(Rect(x.toFloat(), y.toFloat(), x + 1f, y + 1f), paint)
                 }
             }
         }
-
-        // Создаем шейдер, который будет повторять этот паттерн
         val shader = ImageShader(imageBitmap, TileMode.Repeated, TileMode.Repeated)
         ShaderBrush(shader)
     }
 }
 
-/**
- * RealLiquidGlassCard с High-Frequency Noise (Мелкое зерно)
- */
 @Composable
 fun RealLiquidGlassCard(
     modifier: Modifier = Modifier,
@@ -297,24 +393,21 @@ fun RealLiquidGlassCard(
 ) {
     val shape = RoundedCornerShape(cornerRadius)
     val borderThickness = 1.5.dp
-
-    // Получаем кисть с мелким шумом
     val noiseBrush = rememberNoiseBrush()
 
-    // Анимация подложки
+    // Затемнение подложки при потере фокуса
     val backdropAlpha by animateFloatAsState(
         targetValue = if (isWindowFocused) 0.75f else 0.0f,
         animationSpec = tween(400)
     )
 
-    // Анимация видимости шума
+    // Исчезновение "шума" при потере фокуса
     val noiseAlpha by animateFloatAsState(
-        targetValue = if (isWindowFocused) 0.25f else 0.0f, // 0.25f достаточно для четкого зерна
+        targetValue = if (isWindowFocused) 0.25f else 0.0f,
         animationSpec = tween(400)
     )
 
     Box(modifier = modifier) {
-        // 1. Темная подложка
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -322,14 +415,9 @@ fun RealLiquidGlassCard(
                 .background(Color.Black.copy(alpha = backdropAlpha))
         )
 
-        // 2. Слой "Шума" (High Frequency Grain)
         if (noiseAlpha > 0f) {
             Canvas(modifier = Modifier.matchParentSize().clip(shape).alpha(noiseAlpha)) {
-                // Заливаем прямоугольник кистью с тайлингом.
-                // Это гарантирует, что 1 пиксель шума занимает ровно 1 пиксель экрана.
                 drawRect(brush = noiseBrush)
-
-                // Виньетка поверх шума для глубины
                 drawRect(
                     brush = Brush.radialGradient(
                         colors = listOf(Color.Transparent, Color.Black.copy(0.5f)),
@@ -339,11 +427,8 @@ fun RealLiquidGlassCard(
             }
         }
 
-        // 3. Блики и Границы
         Canvas(modifier = Modifier.matchParentSize().clip(shape)) {
             val strokeWidth = borderThickness.toPx()
-
-            // Контур
             drawRoundRect(
                 brush = Brush.linearGradient(
                     0.0f to Color.White.copy(alpha = 0.8f),
@@ -356,7 +441,6 @@ fun RealLiquidGlassCard(
                 style = Stroke(width = strokeWidth)
             )
 
-            // Диагональный блик (Sheen)
             drawPath(
                 path = Path().apply {
                     moveTo(0f, size.height * 0.2f)
@@ -373,7 +457,6 @@ fun RealLiquidGlassCard(
             )
         }
 
-        // Хитбокс
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -468,7 +551,7 @@ fun PreviewSmartFocusGlass() {
         Box(Modifier.fillMaxSize().background(Color.Gray)) {
             MainScreen(
                 state = MainState(
-                    displayedText = "Кликни по окну, чтобы сделать его темнее и увидеть 'шум' (эмуляция матового стекла).",
+                    displayedText = "Кликните в другое окно, и этот текст станет полупрозрачным.",
                     statusMessage = "",
                     isListening = false
                 )
