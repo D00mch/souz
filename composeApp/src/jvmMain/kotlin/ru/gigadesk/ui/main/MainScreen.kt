@@ -32,15 +32,19 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.delay
+import com.mikepenz.markdown.compose.Markdown
+import com.mikepenz.markdown.model.DefaultMarkdownColors
+import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import kotlinx.coroutines.launch
 import org.kodein.di.compose.localDI
 import kotlin.random.Random
@@ -51,14 +55,7 @@ private val TopIconSize = 16.dp
 private val BaseWidth = 500.dp
 private val BaseHeight = 260.dp
 private val MaxHeight = 900.dp
-private val MaxWidth = 650.dp
-
-// --- КОНФИГ АНИМАЦИИ ---
-data class BlurTextConfig(
-    val wordDelayMillis: Long = 20,
-    val blurDurationMillis: Int = 500,
-    val initialBlurRadius: Dp = 10.dp
-)
+private val MaxWidth = 700.dp
 
 @Composable
 fun MainScreen(
@@ -75,12 +72,12 @@ fun MainScreen(
         viewModel.effects.collect { effect ->
             when (effect) {
                 MainEffect.Hide -> onCloseWindow()
-                is MainEffect.ShowError -> Unit
+                is MainEffect.ShowError -> Unit // Можно обработать ошибку
             }
         }
     }
 
-    MainScreen(
+    MainScreenContent(
         state = state,
         onToggleListening = {
             if (state.isListening) viewModel.send(MainEvent.StopListening)
@@ -96,7 +93,7 @@ fun MainScreen(
 }
 
 @Composable
-fun MainScreen(
+fun MainScreenContent(
     state: MainState,
     onToggleListening: () -> Unit = {},
     onClear: () -> Unit = {},
@@ -109,12 +106,15 @@ fun MainScreen(
     val clipboardManager = LocalClipboardManager.current
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
     val windowInfo = LocalWindowInfo.current
-    // Получаем состояние фокуса окна
     val isFocused = windowInfo.isWindowFocused
 
     LaunchedEffect(textContent) {
         val textLen = textContent.length
-        val calculatedHeight = (280 + (textLen * 0.8)).dp
+        // Чуть увеличиваем высоту, если есть код (он занимает больше места)
+        val hasCode = textContent.contains("```")
+        val multiplier = if (hasCode) 1.2 else 0.8
+
+        val calculatedHeight = (280 + (textLen * multiplier)).dp
         var targetWidth = BaseWidth
         var targetHeight = calculatedHeight
 
@@ -163,75 +163,41 @@ fun MainScreen(
                         Icon(Icons.Rounded.Settings, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                     }
                     Spacer(Modifier.width(8.dp))
-                    MinimalGlassButton(onClick = onClear, isDestructive = true) {
+                    MinimalGlassButton(onClick = onClear) {
                         Icon(Icons.Rounded.Close, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                     }
                 }
 
-                // --- Текст с анимацией Blur и Focus Fade ---
+                // --- Контент с Markdown ---
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    val scrollState = rememberScrollState()
 
+                    // Динамический размер шрифта
                     val dynamicFontSize = remember(textContent) {
                         when (textContent.length) {
-                            in 0..30 -> 32.sp
-                            in 31..60 -> 28.sp
-                            in 61..150 -> 24.sp
-                            else -> 20.sp
+                            in 0..50 -> 22.sp
+                            in 51..200 -> 18.sp
+                            else -> 15.sp
                         }
                     }
 
-                    LaunchedEffect(textContent.length) {
-                        if (state.isListening || textContent.isNotEmpty()) {
-                            scrollState.animateScrollTo(scrollState.maxValue)
-                        }
-                    }
-
-                    Row(modifier = Modifier.fillMaxSize().padding(top = 5.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .verticalScroll(scrollState)
-                                .padding(horizontal = 24.dp)
-                                .clickable(
-                                    indication = null,
-                                    interactionSource = remember { MutableInteractionSource() }
-                                ) {
-                                    clipboardManager.setText(AnnotatedString(textContent))
-                                    onShowSnack("Скопировано")
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            BlurAnimatedText(
-                                text = textContent,
-                                // Передаем состояние фокуса окна
-                                isFocused = isFocused,
-                                config = BlurTextConfig(
-                                    wordDelayMillis = if (textContent.length > 300) 2 else 25,
-                                    blurDurationMillis = 500,
-                                    initialBlurRadius = 12.dp
-                                ),
-                                textStyle = TextStyle(
-                                    fontSize = dynamicFontSize,
-                                    lineHeight = dynamicFontSize * 1.4,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White,
-                                    textAlign = TextAlign.Center,
-                                    shadow = Shadow(
-                                        color = Color.Black,
-                                        offset = Offset(0f, 2f),
-                                        blurRadius = 4f
-                                    )
-                                ),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-
-                        if (scrollState.maxValue > 0) {
-                            Box(modifier = Modifier.width(8.dp).fillMaxHeight().padding(vertical = 20.dp, horizontal = 2.dp)) {
-                                GlassScrollbar(scrollState)
-                            }
-                        }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(top = 5.dp, start = 24.dp, end = 24.dp)
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
+                                clipboardManager.setText(AnnotatedString(textContent))
+                                onShowSnack("Скопировано")
+                            },
+                        contentAlignment = Alignment.TopStart
+                    ) {
+                        MarkdownViewer(
+                            text = textContent,
+                            baseFontSize = dynamicFontSize,
+                            isWindowFocused = isFocused
+                        )
                     }
                 }
 
@@ -252,96 +218,105 @@ fun MainScreen(
     }
 }
 
-// --- КОМПОНЕНТЫ ДЛЯ ТЕКСТА ---
+// --- ИНТЕГРАЦИЯ MARKDOWN ---
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun BlurAnimatedText(
+fun MarkdownViewer(
     text: String,
-    isFocused: Boolean = true, // Новый параметр фокуса
-    config: BlurTextConfig,
-    textStyle: TextStyle,
-    modifier: Modifier = Modifier
+    baseFontSize: androidx.compose.ui.unit.TextUnit,
+    isWindowFocused: Boolean
 ) {
-    val words = remember(text) { text.split(" ") }
-    var visibleWordsCount by remember { mutableStateOf(0) }
+    val scrollState = rememberScrollState()
 
-    // Анимация прозрачности ВСЕГО текста при потере фокуса
-    // Если фокус есть = 1f (полная яркость), если нет = 0.35f (приглушенно)
+    // Анимация появления
+    val alphaAnim = remember { Animatable(0f) }
+    val blurAnim = remember { Animatable(10f) }
+
+    LaunchedEffect(text) {
+        alphaAnim.snapTo(0f)
+        blurAnim.snapTo(10f)
+        launch { alphaAnim.animateTo(1f, tween(500)) }
+        launch { blurAnim.animateTo(0f, tween(500)) }
+        scrollState.animateScrollTo(0)
+    }
+
     val containerAlpha by animateFloatAsState(
-        targetValue = if (isFocused) 1f else 0.35f,
-        animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing)
+        targetValue = if (isWindowFocused) 1f else 0.5f,
+        animationSpec = tween(600)
     )
 
-    LaunchedEffect(words) {
-        visibleWordsCount = 0
-        words.forEachIndexed { index, _ ->
-            delay(config.wordDelayMillis)
-            visibleWordsCount = index + 1
-        }
-    }
+    // Базовый стиль текста (белый)
+    val baseStyle = TextStyle(
+        color = Color.White,
+        fontSize = baseFontSize,
+        lineHeight = baseFontSize * 1.4
+    )
 
-    FlowRow(
-        // Применяем alpha ко всему контейнеру
-        modifier = modifier.alpha(containerAlpha),
-        horizontalArrangement = Arrangement.Center,
-        verticalArrangement = Arrangement.Top
-    ) {
-        words.forEachIndexed { index, word ->
-            if (index < visibleWordsCount) {
-                AnimatedWord(
-                    word = word,
-                    config = config,
-                    style = textStyle
-                )
-                if (index < words.size - 1) {
-                    Spacer(Modifier.width(4.sp.value.dp))
-                }
-            }
-        }
-    }
-}
+    // Стиль для кода
+    val codeStyle = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontSize = baseFontSize * 0.9,
+        color = Color(0xFFE0E0E0)
+    )
 
-@Composable
-fun AnimatedWord(
-    word: String,
-    config: BlurTextConfig,
-    style: TextStyle
-) {
-    // Индивидуальная анимация появления слова
-    val alpha = remember { Animatable(0f) }
-    val blur = remember { Animatable(config.initialBlurRadius.value) }
+    // Настройка типографики
+    val customTypography = DefaultMarkdownTypography(
+        h1 = MaterialTheme.typography.headlineMedium.copy(color = Color.White, fontWeight = FontWeight.Bold),
+        h2 = MaterialTheme.typography.titleLarge.copy(color = Color.White, fontWeight = FontWeight.Bold),
+        h3 = MaterialTheme.typography.titleMedium.copy(color = Color.White, fontWeight = FontWeight.Bold),
+        h4 = MaterialTheme.typography.titleSmall.copy(color = Color.White, fontWeight = FontWeight.Bold),
+        h5 = MaterialTheme.typography.bodyLarge.copy(color = Color.White, fontWeight = FontWeight.Bold),
+        h6 = MaterialTheme.typography.bodyMedium.copy(color = Color.White, fontWeight = FontWeight.Bold),
 
-    LaunchedEffect(Unit) {
-        launch {
-            alpha.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = config.blurDurationMillis, easing = LinearOutSlowInEasing)
-            )
-        }
-        launch {
-            blur.animateTo(
-                targetValue = 0f,
-                animationSpec = tween(durationMillis = config.blurDurationMillis, easing = LinearOutSlowInEasing)
-            )
-        }
-    }
+        paragraph = baseStyle,
+        text = baseStyle,
 
-    Text(
-        text = word,
-        style = style,
+        code = codeStyle,
+        inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color.White.copy(0.1f)),
+
+        quote = baseStyle.copy(color = Color.Gray, fontStyle = FontStyle.Italic),
+
+        bullet = baseStyle.copy(fontWeight = FontWeight.Bold),
+        list = baseStyle,
+        ordered = baseStyle,
+
+        link = baseStyle.copy(color = Color(0xFF82B1FF), textDecoration = TextDecoration.Underline)
+        // Параметр image удален
+    )
+
+    // Цвета
+    val customColors = DefaultMarkdownColors(
+        text = Color.White,
+        codeText = Color(0xFFE0E0E0),
+        codeBackground = Color.Black.copy(alpha = 0.4f),
+        inlineCodeText = Color(0xFF81D4FA),
+        inlineCodeBackground = Color.White.copy(alpha = 0.1f),
+        dividerColor = Color.White.copy(alpha = 0.2f),
+        linkText = Color(0xFF82B1FF)
+    )
+
+    Column(
         modifier = Modifier
-            .alpha(alpha.value)
-            .blur(blur.value.dp)
-    )
+            .fillMaxSize()
+            .alpha(containerAlpha * alphaAnim.value)
+            .blur(blurAnim.value.dp)
+            .verticalScroll(scrollState)
+    ) {
+        Markdown(
+            content = text,
+            colors = customColors,
+            typography = customTypography,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(40.dp))
+    }
 }
 
-// --- GLASS UI КОМПОНЕНТЫ ---
+// --- UI КОМПОНЕНТЫ (Без изменений, но оставлены для компиляции) ---
 
 @Composable
 fun MinimalGlassButton(
     onClick: () -> Unit,
-    isDestructive: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val backgroundColor = Color.White.copy(0.05f)
@@ -395,19 +370,18 @@ fun RealLiquidGlassCard(
     val borderThickness = 1.5.dp
     val noiseBrush = rememberNoiseBrush()
 
-    // Затемнение подложки при потере фокуса
     val backdropAlpha by animateFloatAsState(
         targetValue = if (isWindowFocused) 0.75f else 0.0f,
         animationSpec = tween(400)
     )
 
-    // Исчезновение "шума" при потере фокуса
     val noiseAlpha by animateFloatAsState(
         targetValue = if (isWindowFocused) 0.25f else 0.0f,
         animationSpec = tween(400)
     )
 
     Box(modifier = modifier) {
+        // Подложка
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -415,6 +389,7 @@ fun RealLiquidGlassCard(
                 .background(Color.Black.copy(alpha = backdropAlpha))
         )
 
+        // Шум
         if (noiseAlpha > 0f) {
             Canvas(modifier = Modifier.matchParentSize().clip(shape).alpha(noiseAlpha)) {
                 drawRect(brush = noiseBrush)
@@ -427,6 +402,7 @@ fun RealLiquidGlassCard(
             }
         }
 
+        // Границы и блики
         Canvas(modifier = Modifier.matchParentSize().clip(shape)) {
             val strokeWidth = borderThickness.toPx()
             drawRoundRect(
@@ -441,6 +417,7 @@ fun RealLiquidGlassCard(
                 style = Stroke(width = strokeWidth)
             )
 
+            // Блик сверху
             drawPath(
                 path = Path().apply {
                     moveTo(0f, size.height * 0.2f)
@@ -457,6 +434,7 @@ fun RealLiquidGlassCard(
             )
         }
 
+        // Интерактивная область (чтобы клики не проходили сквозь)
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -528,31 +506,15 @@ fun LiquidOrb(isActive: Boolean, onClick: () -> Unit) {
     }
 }
 
-@Composable
-fun GlassScrollbar(scrollState: ScrollState) {
-    Canvas(modifier = Modifier.fillMaxSize().alpha(if(scrollState.maxValue > 0) 1f else 0f)) {
-        val indicatorHeight = (size.height / (scrollState.maxValue + size.height)) * size.height
-        val safeHeight = indicatorHeight.coerceAtLeast(30f)
-        val indicatorY = (scrollState.value.toFloat() / scrollState.maxValue.toFloat()) * (size.height - safeHeight)
-
-        drawRoundRect(
-            brush = Brush.verticalGradient(listOf(Color.White, Color.White.copy(0.5f))),
-            topLeft = Offset(0f, indicatorY),
-            size = Size(4.dp.toPx(), safeHeight),
-            cornerRadius = CornerRadius(10f)
-        )
-    }
-}
-
 @Preview
 @Composable
 fun PreviewSmartFocusGlass() {
     MaterialTheme {
         Box(Modifier.fillMaxSize().background(Color.Gray)) {
-            MainScreen(
+            MainScreenContent(
                 state = MainState(
-                    displayedText = "Кликните в другое окно, и этот текст станет полупрозрачным.",
-                    statusMessage = "",
+                    displayedText = "### Заголовок\nВот пример кода:\n```python\ndef hello():\n    print('Hello')\n```\n* Пункт 1\n* Пункт 2",
+                    statusMessage = "Готов",
                     isListening = false
                 )
             )

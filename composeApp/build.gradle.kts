@@ -69,6 +69,7 @@ kotlin {
             implementation(libs.tika.parsersStandardPackage)
             implementation(libs.commons.csv)
             implementation(libs.bundles.letsPlot)
+            implementation("com.mikepenz:multiplatform-markdown-renderer:0.27.0")
         }
 
         jvmTest.dependencies {

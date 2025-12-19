@@ -28,7 +28,6 @@ class MainViewModel(
     override val di: DI,
 ) : BaseViewModel<MainState, MainEvent, MainEffect>(), DIAware {
 
-
     private val l = LoggerFactory.getLogger(MainViewModel::class.java)
     private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), viewModelScope)
     private val selectedText: SelectedText by di.instance()
@@ -103,10 +102,19 @@ class MainViewModel(
                         val selectedPostfix = selectedText.getOrNull()
                             ?.let { "\nThe selected text below:\n$it" }
                             ?: ""
-                        val text = graphAgent.execute(userInput + selectedPostfix)
-                        l.info(text)
-                        setState { copy(displayedText = text, statusMessage = "Ответ готов") }
-                        playText(text)
+
+                        // 1. Получаем сырой ответ от агента
+                        val rawText = graphAgent.execute(userInput + selectedPostfix)
+                        l.info(rawText)
+
+                        // 2. Исправляем форматирование (добавляем переносы строк для Markdown)
+                        val formattedText = sanitizeLlmResponse(rawText)
+
+                        // 3. Отдаем в UI уже исправленный текст
+                        setState { copy(displayedText = formattedText, statusMessage = "Ответ готов") }
+
+                        // Озвучиваем (можно rawText или formattedText, для TTS разницы почти нет)
+                        playText(formattedText)
                     }
                 }.onFailure { e ->
                     l.error("Agent flow terminated: ${e.message}", e)
@@ -219,6 +227,25 @@ class MainViewModel(
         stopPlayText()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
+    }
+
+    /**
+     * Исправляет распространенные проблемы форматирования ответов LLM для корректного рендеринга Markdown.
+     * Добавляет переносы строк перед заголовками, списками и блоками кода, если они отсутствуют.
+     */
+    private fun sanitizeLlmResponse(input: String): String {
+        var result = input
+
+        // 1. Заголовки (###): Если перед # нет переноса строки, добавляем два
+        result = result.replace(Regex("(?<!\\n)(#{1,6}\\s)"), "\n\n$1")
+
+        // 2. Списки (*, -, •): Если перед маркером нет переноса, добавляем один
+        result = result.replace(Regex("(?<!\\n)([\\*\\-\\•]\\s)"), "\n$1")
+
+        // 3. Блоки кода (```): Если перед началом блока нет переноса, добавляем один
+        result = result.replace(Regex("(?<!\\n)(```)"), "\n$1")
+
+        return result
     }
 
     private companion object {
