@@ -28,6 +28,7 @@ import ru.gigadesk.tool.notes.ToolListNotes
 import ru.gigadesk.tool.notes.ToolOpenNote
 import ru.gigadesk.tool.notes.ToolSearchNotes
 import ru.gigadesk.tool.textReplace.ToolTextReplace
+import ru.gigadesk.tool.textReplace.ToolTextUnderSelection
 
 typealias FunctionName = String
 
@@ -108,6 +109,7 @@ class ToolsFactory(
 
         ToolCategory.TEXT_REPLACE -> listOf(
             ToolTextReplace(selectedText, keys).toGiga(),
+            ToolTextUnderSelection(selectedText, keys).toGiga(),
         )
     }
 }

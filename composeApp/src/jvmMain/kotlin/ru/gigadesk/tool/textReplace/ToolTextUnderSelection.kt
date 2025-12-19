@@ -2,6 +2,7 @@ package ru.gigadesk.tool.textReplace
 
 import ru.gigadesk.keys.HotKey
 import ru.gigadesk.keys.Keys
+import ru.gigadesk.keys.MrRobot
 import ru.gigadesk.keys.SelectedText
 import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.ReturnParameters
@@ -20,11 +21,11 @@ class ToolTextUnderSelection(
 
     override fun invoke(input: Input): String {
         val textIsSelectedByOS = selectedText.getOrNull()
-        return textIsSelectedByOS ?: TODO()
+        return textIsSelectedByOS ?: getDataFromSelectionWithKeys()
     }
 
     private fun getDataFromSelectionWithKeys(): String {
-        keys.press(HotKey.paste)  // move data to clipboard
-        TODO()
+        keys.press(HotKey.copy)  // move data to clipboard
+        return MrRobot.clipboardGet() ?: "Error: \"Nothing in selection\""
     }
 }
