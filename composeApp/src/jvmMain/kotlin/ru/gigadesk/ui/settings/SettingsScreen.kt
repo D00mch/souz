@@ -5,17 +5,15 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
@@ -87,11 +85,19 @@ fun SettingsScreen(
 ) {
     LaunchedEffect(Unit) { onResizeRequest(SettingsWindowSize) }
 
+    // Получаем состояние фокуса окна
+    val windowInfo = LocalWindowInfo.current
+    val isFocused = windowInfo.isWindowFocused
+
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        RealLiquidGlassCard(modifier = Modifier.fillMaxSize()) {
+        // Передаем isWindowFocused в RealLiquidGlassCard
+        RealLiquidGlassCard(
+            modifier = Modifier.fillMaxSize(),
+            isWindowFocused = isFocused
+        ) {
             val scrollState = rememberScrollState()
 
             Column(
@@ -267,10 +273,11 @@ fun CalendarDropdown(
                 onClick = { expanded = !expanded },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    backgroundColor = Color.Transparent,
+                    containerColor = Color.Transparent,
                     contentColor = MaterialTheme.glassColors.textPrimary
                 ),
-                border = BorderStroke(1.dp, MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f))
+                border = BorderStroke(1.dp, MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f)),
+                shape = MaterialTheme.shapes.extraSmall
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -299,27 +306,30 @@ fun CalendarDropdown(
                 onDismissRequest = { expanded = false },
                 modifier = Modifier.fillMaxWidth(0.6f)
             ) {
-                // Опция "Сбросить"
-                DropdownMenuItem(onClick = {
-                    onCalendarSelected(null)
-                    expanded = false
-                }) {
-                    Text("Не выбран (системный)")
-                }
+                DropdownMenuItem(
+                    text = { Text("Не выбран (системный)") },
+                    onClick = {
+                        onCalendarSelected(null)
+                        expanded = false
+                    }
+                )
 
                 if (availableCalendars.isEmpty() && !isLoading) {
-                    DropdownMenuItem(enabled = false, onClick = {}) {
-                        Text("Нет доступных календарей")
-                    }
+                    DropdownMenuItem(
+                        text = { Text("Нет доступных календарей") },
+                        enabled = false,
+                        onClick = {}
+                    )
                 }
 
                 availableCalendars.forEach { calendarName ->
-                    DropdownMenuItem(onClick = {
-                        onCalendarSelected(calendarName)
-                        expanded = false
-                    }) {
-                        Text(calendarName)
-                    }
+                    DropdownMenuItem(
+                        text = { Text(calendarName) },
+                        onClick = {
+                            onCalendarSelected(calendarName)
+                            expanded = false
+                        }
+                    )
                 }
             }
         }
@@ -425,8 +435,9 @@ private fun LabeledTextField(
             onValueChange = onValueChange,
             modifier = Modifier.fillMaxWidth(),
             singleLine = singleLine,
-            colors = TextFieldDefaults.outlinedTextFieldColors(
-                textColor = MaterialTheme.glassColors.textPrimary,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = MaterialTheme.glassColors.textPrimary,
+                unfocusedTextColor = MaterialTheme.glassColors.textPrimary,
                 cursorColor = MaterialTheme.colorScheme.primary,
                 focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
                 unfocusedBorderColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f),
