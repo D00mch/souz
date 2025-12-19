@@ -92,10 +92,11 @@ class ToolsFactory(
         )
 
         ToolCategory.CALENDAR -> listOf(
-            ToolCalendarListTodayEvents(ToolRunBashCommand).toGiga(),
+            //ToolCalendarListTodayEvents(ToolRunBashCommand).toGiga(),
             ToolCalendarCreateEvent(ToolRunBashCommand).toGiga(),
             ToolCalendarDeleteEvent(ToolRunBashCommand).toGiga(),
             ToolCalendarListCalendars(ToolRunBashCommand).toGiga(),
+            ToolCalendarListEvents(ToolRunBashCommand).toGiga(),
         )
 
         ToolCategory.MAIL -> listOf(
