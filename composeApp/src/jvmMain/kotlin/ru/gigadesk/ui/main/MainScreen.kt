@@ -303,7 +303,7 @@ fun RealLiquidGlassCard(
 
     // Анимация подложки
     val backdropAlpha by animateFloatAsState(
-        targetValue = if (isWindowFocused) 0.85f else 0.0f,
+        targetValue = if (isWindowFocused) 0.75f else 0.0f,
         animationSpec = tween(400)
     )
 
