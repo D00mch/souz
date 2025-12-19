@@ -11,6 +11,7 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.di.mainDiModule
+import ru.gigadesk.keys.SelectedText
 
 private val logAgent = LoggerFactory.getLogger("Agent")
 
@@ -18,7 +19,14 @@ suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val desktopInfoRepo: DesktopInfoRepository by di.instance()
     val nodesClassification: NodesClassification by di.instance()
-    val agent = GigaAgent.instance(userInputFlow(), GigaRestChatAPI.INSTANCE, desktopInfoRepo, nodesClassification)
+    val selectedText: SelectedText by di.instance()
+    val agent = GigaAgent.instance(
+        userInputFlow(),
+        GigaRestChatAPI.INSTANCE,
+        desktopInfoRepo,
+        nodesClassification,
+        selectedText
+    )
     agent.run().collect { text -> logAgent.info(text) }
 }
 

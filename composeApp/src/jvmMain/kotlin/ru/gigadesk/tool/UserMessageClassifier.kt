@@ -15,9 +15,11 @@ enum class ToolCategory {
     CONFIG,
     NOTES,
     APPLICATIONS,
+    @Suppress("SpellCheckingInspection")
     DATAANALYTICS,
     CALENDAR,
     MAIL,
+    TEXT_REPLACE,
 }
 
 object LocalRegexClassifier : UserMessageClassifier {
@@ -91,5 +93,12 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("письм|letter|рассылк|спам|непрочитан"), 2.0),
             WeightedRegex(Regex("отправ|send|ответ|reply|прочти|read"), 1.0),
         ),
+        ToolCategory.TEXT_REPLACE to listOf(
+            WeightedRegex(Regex("измени стиль текста|(измени|поменяй) выделенный текст"), 2.0),
+            WeightedRegex(Regex("исправь (выделенный текст|текст, который .* выделил|текст в (селекше|selecti))"), 2.0),
+            WeightedRegex(Regex("выдел.* текст|текст (в|под)selection|(поменяй|измени) стиль текста"), 1.5),
+            WeightedRegex(Regex("текст .* выделил"), 1.5),
+            WeightedRegex(Regex("выделенн|(в|под)selection|поменяй стиль|стиль текста|селект"), 1.0),
+        )
     )
 }

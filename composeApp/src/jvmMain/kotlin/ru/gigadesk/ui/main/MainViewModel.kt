@@ -100,9 +100,11 @@ class MainViewModel(
             while (isActive) {
                 runCatching {
                     userInputFlow.collect { userInput ->
-                        val selectedPostfix = selectedText.getOrNull()
-                            ?.let { "\nThe selected text below:\n$it" }
-                            ?: ""
+                        val selectedPostfix = viewModelScope.async {
+                            selectedText.getOrNull()
+                                ?.let { "\nThe selected text below:\n$it" }
+                                ?: ""
+                        }.await()
                         val text = graphAgent.execute(userInput + selectedPostfix)
                         l.info(text)
                         setState { copy(displayedText = text, statusMessage = "Ответ готов") }
