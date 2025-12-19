@@ -3,6 +3,7 @@ package ru.gigadesk.giga
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.keys.Keys
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.desktop.ToolHotkeyMac
 import ru.gigadesk.tool.desktop.ToolMediaControl
@@ -125,7 +126,7 @@ fun Exception.toGigaToolMessage(): GigaRequest.Message {
 }
 
 fun main() {
-    ToolHotkeyMac().toGiga()
+    ToolHotkeyMac(Keys()).toGiga()
     ToolMediaControl(ToolRunBashCommand).toGiga()
     ToolMouseClickMac().toGiga()
 }

@@ -3,6 +3,7 @@ package ru.gigadesk.tool
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.giga.GigaToolSetup
 import ru.gigadesk.giga.toGiga
+import ru.gigadesk.keys.Keys
 import ru.gigadesk.tool.browser.ToolBrowserHotkeys
 import ru.gigadesk.tool.browser.ToolCreateNewBrowserTab
 import ru.gigadesk.tool.browser.ToolFocusOnTab
@@ -33,6 +34,7 @@ typealias FunctionName = String
 class ToolsFactory(
     private val repo: DesktopInfoRepository,
     private val selectedText: SelectedText,
+    private val keys: Keys = Keys(),
 ) {
     val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
@@ -57,7 +59,7 @@ class ToolsFactory(
         ToolCategory.BROWSER -> listOf(
             ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
             ToolSafariInfo(ToolRunBashCommand).toGiga(),
-            ToolBrowserHotkeys().toGiga(),
+            ToolBrowserHotkeys(keys).toGiga(),
             ToolFocusOnTab(ToolRunBashCommand).toGiga(),
             ToolChromeInfo(ToolRunBashCommand).toGiga(),
             ToolOpenDefaultBrowser(ToolRunBashCommand).toGiga(),
@@ -105,7 +107,7 @@ class ToolsFactory(
         )
 
         ToolCategory.TEXT_REPLACE -> listOf(
-            ToolTextReplace(selectedText).toGiga(),
+            ToolTextReplace(selectedText, keys).toGiga(),
         )
     }
 }

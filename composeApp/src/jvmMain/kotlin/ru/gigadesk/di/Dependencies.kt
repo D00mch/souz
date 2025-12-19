@@ -18,6 +18,7 @@ import ru.gigadesk.giga.GigaAuth
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.GigaVoiceAPI
+import ru.gigadesk.keys.Keys
 import ru.gigadesk.keys.MacSelectedText
 import ru.gigadesk.keys.SelectedText
 import ru.gigadesk.tool.LocalRegexClassifier
@@ -44,6 +45,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     // Native
     bindSingleton<SelectedText> { MacSelectedText }
+    bindSingleton { Keys() }
 
     // DB
     bindSingleton { ConfigStore }
@@ -79,6 +81,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             instance(),
         )
     }
-    bindSingleton { ToolsFactory(instance(), instance()) }
+    bindSingleton { ToolsFactory(instance(), instance(), instance()) }
     bindSingleton { GraphBasedAgent(di, instance(), instance(DiTags.TAG_LOG)) }
 }

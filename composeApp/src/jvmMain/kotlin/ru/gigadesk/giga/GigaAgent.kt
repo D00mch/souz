@@ -3,9 +3,6 @@ package ru.gigadesk.giga
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.StorredData
 import ru.gigadesk.db.asString
-import ru.gigadesk.tool.*
-import ru.gigadesk.tool.browser.ToolSafariInfo
-import ru.gigadesk.tool.application.ToolShowApps
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlinx.coroutines.Dispatchers
@@ -17,7 +14,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.nodes.NodesClassification
+import ru.gigadesk.keys.Keys
 import ru.gigadesk.keys.SelectedText
+import ru.gigadesk.tool.*
+import ru.gigadesk.tool.application.ToolShowApps
+import ru.gigadesk.tool.browser.ToolSafariInfo
 import java.util.concurrent.atomic.AtomicBoolean
 
 class GigaAgent(
@@ -362,7 +363,11 @@ class GigaAgent(
             nodesClassification: NodesClassification,
             selectedText: SelectedText,
             model: GigaModel = GigaModel.Max,
-            settings: Settings = Settings(ToolsFactory(desktopRepo, selectedText).toolsByCategory, model, stream = false)
+            settings: Settings = Settings(
+                ToolsFactory(desktopRepo, selectedText, Keys()).toolsByCategory,
+                model,
+                stream = false
+            )
         ): GigaAgent = GigaAgent(userMessages, api, desktopRepo, settings, nodesClassification)
     }
 }

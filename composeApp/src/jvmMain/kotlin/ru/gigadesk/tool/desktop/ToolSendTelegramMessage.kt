@@ -1,12 +1,14 @@
 package ru.gigadesk.tool.desktop
 
-import ru.gigadesk.keys.*
+import ru.gigadesk.keys.HotKey
+import ru.gigadesk.keys.Keys
 import ru.gigadesk.tool.*
 import java.lang.Thread.sleep
 
-class ToolSendTelegramMessage(private val bash: ToolRunBashCommand) : ToolSetup<ToolSendTelegramMessage.Input> {
-    private val cg = CoreGraphics.INSTANCE
-    private val cf = CoreFoundation.INSTANCE
+class ToolSendTelegramMessage(
+    private val bash: ToolRunBashCommand,
+    private val keys: Keys,
+) : ToolSetup<ToolSendTelegramMessage.Input> {
 
     data class Input(
         @InputParamDescription("Messenger contact name")
@@ -46,66 +48,37 @@ class ToolSendTelegramMessage(private val bash: ToolRunBashCommand) : ToolSetup<
         sleep(1000)
 
         // Open find window
-        press(VK.ESC)
+        keys.press(HotKey.escape)
         sleep(100)
-        press(VK.ESC)
+        keys.press(HotKey.escape)
         sleep(100)
-        find()
+        keys.press(HotKey.find)
         sleep(300)
 
         // Paste the name
         setClipboard(input.name)
-        paste()
+        keys.press(HotKey.paste)
         sleep(2000)
 
         // Press enter
-        press(VK.RETURN)
+        keys.press(HotKey.enter)
         sleep(1000)
-        press(VK.RETURN) // to select the first result
+        keys.press(HotKey.enter) // to select the first result
 
         // Step 7: write the message
         setClipboard(input.message)
 
         sleep(1000)
-        paste()
+        keys.press(HotKey.paste)
 
         // Step 8: wait for 1 second
         sleep(1000)
 
         // Step 9: press enter
-        press(VK.RETURN)
+        keys.press(HotKey.enter)
         sleep(1000)
 
         return "Sent message to ${input.name}"
-    }
-
-    private fun post(key: Int, down: Boolean) {
-        val evt = cg.CGEventCreateKeyboardEvent(null, key, down)
-        cg.CGEventPost(CG.kCGHIDEventTap, evt)
-        cf.CFRelease(evt)
-    }
-
-    private fun keyDown(k: Int) = post(k, true)
-    private fun keyUp(k: Int) = post(k, false)
-    private fun press(k: Int) {
-        keyDown(k)
-        keyUp(k)
-    }
-
-    private fun paste() {
-        keyDown(VK.CMD)
-        sleep(50)
-        press(VK.V)
-        sleep(50)
-        keyUp(VK.CMD)
-    }
-
-    private fun find() {
-        keyDown(VK.CMD)
-        sleep(50)
-        press(VK.F)
-        sleep(50)
-        keyUp(VK.CMD)
     }
 
     private fun setClipboard(text: String) {
@@ -115,6 +88,6 @@ class ToolSendTelegramMessage(private val bash: ToolRunBashCommand) : ToolSetup<
 }
 
 fun main() {
-    val tool = ToolSendTelegramMessage(ToolRunBashCommand)
+    val tool = ToolSendTelegramMessage(ToolRunBashCommand, Keys())
     println(tool.invoke(ToolSendTelegramMessage.Input("Шамиль", "привет, пишу нашим агентом! Сработало!")))
 }
