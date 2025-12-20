@@ -69,6 +69,7 @@ kotlin {
             implementation(libs.tika.parsersStandardPackage)
             implementation(libs.commons.csv)
             implementation(libs.bundles.letsPlot)
+            implementation(libs.markdown)
         }
 
         jvmTest.dependencies {

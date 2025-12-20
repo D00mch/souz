@@ -100,15 +100,16 @@ class MainViewModel(
             while (isActive) {
                 runCatching {
                     userInputFlow.collect { userInput ->
-                        val selectedPostfix = viewModelScope.async {
-                            selectedText.getOrNull()
-                                ?.let { "\nThe selected text below:\n$it" }
-                                ?: ""
-                        }.await()
-                        val text = graphAgent.execute(userInput + selectedPostfix)
-                        l.info(text)
-                        setState { copy(displayedText = text, statusMessage = "Ответ готов") }
-                        playText(text)
+                        val selectedPostfix = selectedText.getOrNull()
+                            ?.let { "\nThe selected text below:\n$it" }
+                            ?: ""
+
+                        val rawText = graphAgent.execute(userInput + selectedPostfix)
+                        val safeText = sanitizeLlmResponse(rawText)
+                        l.info(safeText)
+
+                        setState { copy(displayedText = safeText, statusMessage = "Ответ готов") }
+                        playText(safeText)
                     }
                 }.onFailure { e ->
                     l.error("Agent flow terminated: ${e.message}", e)
@@ -221,6 +222,20 @@ class MainViewModel(
         stopPlayText()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
+    }
+
+    private fun sanitizeLlmResponse(input: String): String {
+        if (input.isBlank()) return ""
+
+        var result = input
+
+        result = result.replace("```", "\n```\n")
+
+        while (result.contains("\n\n\n")) {
+            result = result.replace("\n\n\n", "\n\n")
+        }
+
+        return result.trim()
     }
 
     private companion object {

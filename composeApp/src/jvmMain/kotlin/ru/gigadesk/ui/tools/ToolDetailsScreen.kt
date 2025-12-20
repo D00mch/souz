@@ -1,40 +1,19 @@
 package ru.gigadesk.ui.tools
 
 import androidx.compose.desktop.ui.tooling.preview.Preview
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Button
-import androidx.compose.material.Checkbox
-import androidx.compose.material.CheckboxDefaults
-import androidx.compose.material.Divider
-import androidx.compose.material.IconButton
-import androidx.compose.material.OutlinedTextField
-import androidx.compose.material.SnackbarHost
-import androidx.compose.material.SnackbarHostState
-import androidx.compose.material.Text
-import androidx.compose.material.TextFieldDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Save
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.material3.* // Используем только Material 3
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
@@ -45,7 +24,7 @@ import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
-import ru.gigadesk.ui.main.GlassCard
+import ru.gigadesk.ui.main.RealLiquidGlassCard
 
 private val ToolDetailsWindowSize = DpSize(width = 680.dp, height = 760.dp)
 
@@ -102,8 +81,15 @@ fun ToolDetailsScreen(
 ) {
     LaunchedEffect(Unit) { onResizeRequest(ToolDetailsWindowSize) }
 
+    // Получаем фокус для эффекта стекла
+    val windowInfo = LocalWindowInfo.current
+    val isFocused = windowInfo.isWindowFocused
+
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        GlassCard(modifier = Modifier.fillMaxSize()) {
+        RealLiquidGlassCard(
+            modifier = Modifier.fillMaxSize(),
+            isWindowFocused = isFocused // Передаем параметр
+        ) {
             val scrollState = rememberScrollState()
 
             Column(
@@ -113,6 +99,7 @@ fun ToolDetailsScreen(
                     .padding(horizontal = 24.dp, vertical = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
+                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -149,6 +136,7 @@ fun ToolDetailsScreen(
                     }
                 }
 
+                // Title & Enable switch
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "${state.category?.name} / ${state.toolName}",
@@ -177,22 +165,26 @@ fun ToolDetailsScreen(
                     }
                 }
 
+                // Description Field
                 OutlinedTextField(
                     modifier = Modifier.fillMaxWidth(),
                     value = state.description,
                     onValueChange = onDescriptionChange,
-                    label = { Text("Описание", color = MaterialTheme.colorScheme.onBackground) },
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                    label = { Text("Описание") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MaterialTheme.glassColors.textPrimary,
+                        unfocusedTextColor = MaterialTheme.glassColors.textPrimary,
+                        cursorColor = MaterialTheme.colorScheme.primary,
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.4f),
                         focusedLabelColor = MaterialTheme.colorScheme.primary,
-                        cursorColor = MaterialTheme.colorScheme.primary,
-                        textColor = MaterialTheme.glassColors.textPrimary,
+                        unfocusedLabelColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
                     ),
                 )
 
-                Divider(color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.15f))
+                HorizontalDivider(color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.15f))
 
+                // Examples Section
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -241,6 +233,7 @@ fun ToolDetailsScreen(
                     )
                 }
 
+                // Footer Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -324,13 +317,15 @@ private fun ExampleEditor(
             modifier = Modifier.fillMaxWidth(),
             value = example.request,
             onValueChange = onRequestChange,
-            label = { Text("Request", color = MaterialTheme.colorScheme.onBackground) },
-            colors = TextFieldDefaults.outlinedTextFieldColors(
+            label = { Text("Request") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = MaterialTheme.glassColors.textPrimary,
+                unfocusedTextColor = MaterialTheme.glassColors.textPrimary,
+                cursorColor = MaterialTheme.colorScheme.primary,
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
                 unfocusedBorderColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.4f),
                 focusedLabelColor = MaterialTheme.colorScheme.primary,
-                cursorColor = MaterialTheme.colorScheme.primary,
-                textColor = MaterialTheme.glassColors.textPrimary,
+                unfocusedLabelColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
             ),
         )
 
@@ -338,13 +333,15 @@ private fun ExampleEditor(
             modifier = Modifier.fillMaxWidth(),
             value = example.paramsJson,
             onValueChange = onParamsChange,
-            label = { Text("Params (JSON)", color = MaterialTheme.colorScheme.onBackground) },
-            colors = TextFieldDefaults.outlinedTextFieldColors(
+            label = { Text("Params (JSON)") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = MaterialTheme.glassColors.textPrimary,
+                unfocusedTextColor = MaterialTheme.glassColors.textPrimary,
+                cursorColor = MaterialTheme.colorScheme.primary,
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
                 unfocusedBorderColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.4f),
                 focusedLabelColor = MaterialTheme.colorScheme.primary,
-                cursorColor = MaterialTheme.colorScheme.primary,
-                textColor = MaterialTheme.glassColors.textPrimary,
+                unfocusedLabelColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
             ),
         )
 
@@ -357,7 +354,7 @@ private fun ExampleEditor(
             )
         }
 
-        Divider(color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.08f))
+        HorizontalDivider(color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.08f))
     }
 }
 

@@ -3,45 +3,26 @@ package ru.gigadesk.ui.tools
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.TooltipPlacement
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Button
-import androidx.compose.material.Checkbox
-import androidx.compose.material.CheckboxDefaults
-import androidx.compose.material.Divider
-import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.remember
+import androidx.compose.material3.* // Используем Material 3
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
@@ -51,7 +32,7 @@ import org.kodein.di.compose.localDI
 import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
-import ru.gigadesk.ui.main.GlassCard
+import ru.gigadesk.ui.main.RealLiquidGlassCard
 
 private val ToolsWindowSize = DpSize(width = 640.dp, height = 720.dp)
 
@@ -104,8 +85,15 @@ fun ToolsScreen(
 ) {
     LaunchedEffect(Unit) { onResizeRequest(ToolsWindowSize) }
 
+    // Получаем фокус окна
+    val windowInfo = LocalWindowInfo.current
+    val isFocused = windowInfo.isWindowFocused
+
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        GlassCard(modifier = Modifier.fillMaxSize()) {
+        RealLiquidGlassCard(
+            modifier = Modifier.fillMaxSize(),
+            isWindowFocused = isFocused // Передаем статус фокуса
+        ) {
             val scrollState = rememberScrollState()
             val expandedByCategory = remember { mutableStateMapOf<ToolCategory, Boolean>() }
 
@@ -159,7 +147,8 @@ fun ToolsScreen(
                             }
 
                             if (index != state.categories.lastIndex) {
-                                Divider(
+                                // Material 3 HorizontalDivider
+                                HorizontalDivider(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(start = 36.dp, top = 8.dp, bottom = 8.dp),
@@ -170,7 +159,7 @@ fun ToolsScreen(
                         }
                     }
 
-                    Divider(
+                    HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 24.dp),
                         color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.2f)
                     )
@@ -202,7 +191,6 @@ fun ToolsScreen(
                 )
             }
         }
-
     }
 }
 
@@ -287,7 +275,7 @@ private fun ToolRow(
                 Text(
                     text = tool.description,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.glassColors.textPrimary,
+                    color = MaterialTheme.colorScheme.onSurface, // Исправил цвет текста тултипа для читаемости на surface
                 )
             }
         },
@@ -297,6 +285,7 @@ private fun ToolRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // Используем Box или просто background, в Material 3 surface.copy прозрачность ок
                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.0001f)),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),

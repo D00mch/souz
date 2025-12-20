@@ -47,7 +47,7 @@ fun main() {
 
             Window(
                 onCloseRequest = { isWindowVisible = false },
-                visible = isWindowVisible, // Привязываем видимость к переменной
+                visible = isWindowVisible,
                 title = "gigadesk AI",
                 state = windowState,
                 transparent = true,
@@ -61,7 +61,6 @@ fun main() {
                             val currentSize = windowState.size
                             val currentPos = windowState.position
 
-                            // Resize logic
                             if (currentPos is WindowPosition.Absolute) {
                                 val widthDelta = targetSize.width - currentSize.width
                                 val heightDelta = targetSize.height - currentSize.height
