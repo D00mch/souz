@@ -28,6 +28,7 @@ class MainViewModel(
     override val di: DI,
 ) : BaseViewModel<MainState, MainEvent, MainEffect>(), DIAware {
 
+
     private val l = LoggerFactory.getLogger(MainViewModel::class.java)
     private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), viewModelScope)
     private val selectedText: SelectedText by di.instance()
@@ -99,11 +100,10 @@ class MainViewModel(
             while (isActive) {
                 runCatching {
                     userInputFlow.collect { userInput ->
-                        val selectedPostfix = viewModelScope.async {
-                            selectedText.getOrNull()
-                                ?.let { "\nThe selected text below:\n$it" }
-                                ?: ""
-                        }.await()
+                        val selectedPostfix = selectedText.getOrNull()
+                            ?.let { "\nThe selected text below:\n$it" }
+                            ?: ""
+
                         val rawText = graphAgent.execute(userInput + selectedPostfix)
                         val safeText = sanitizeLlmResponse(rawText)
                         l.info(safeText)
