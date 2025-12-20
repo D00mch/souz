@@ -51,7 +51,6 @@ import kotlinx.coroutines.launch
 import org.kodein.di.compose.localDI
 import kotlin.random.Random
 
-// --- КОНСТАНТЫ ---
 private val TopButtonSize = 28.dp
 private val TopIconSize = 16.dp
 private val BaseWidth = 500.dp
@@ -59,7 +58,6 @@ private val BaseHeight = 260.dp
 private val MaxHeight = 900.dp
 private val MaxWidth = 700.dp
 
-// --- МОДЕЛЬ ДЛЯ РУЧНОГО ПАРСИНГА ---
 sealed class MarkdownPart {
     data class TextContent(val content: String) : MarkdownPart()
     data class CodeContent(val language: String, val code: String) : MarkdownPart()
@@ -144,7 +142,6 @@ fun MainScreenContent(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // --- Верхний бар ---
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -174,7 +171,6 @@ fun MainScreenContent(
                     }
                 }
 
-                // --- Контент с Markdown ---
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
 
                     val dynamicFontSize = remember(textContent) {
@@ -191,7 +187,6 @@ fun MainScreenContent(
                             .padding(top = 5.dp, start = 24.dp, end = 24.dp),
                         contentAlignment = Alignment.TopStart
                     ) {
-                        // ЕДИНСТВЕННЫЙ SelectionContainer на верхнем уровне
                         SelectionContainer {
                             MarkdownViewer(
                                 text = textContent,
@@ -203,7 +198,6 @@ fun MainScreenContent(
                     }
                 }
 
-                // --- Orb ---
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -220,8 +214,6 @@ fun MainScreenContent(
     }
 }
 
-// --- ЛОГИКА РЕНДЕРИНГА ---
-
 @Composable
 fun MarkdownViewer(
     text: String,
@@ -233,7 +225,6 @@ fun MarkdownViewer(
     val alphaAnim = remember { Animatable(0f) }
     val blurAnim = remember { Animatable(10f) }
 
-    // Парсим текст на блоки (Текст / Код) вручную
     val parts = remember(text) { parseMarkdownContent(text) }
 
     LaunchedEffect(text) {
@@ -249,7 +240,6 @@ fun MarkdownViewer(
         animationSpec = tween(600)
     )
 
-    // Стили для текста
     val baseStyle = TextStyle(
         color = Color.White,
         fontSize = baseFontSize,
@@ -293,8 +283,11 @@ fun MarkdownViewer(
             .alpha(containerAlpha * alphaAnim.value)
             .blur(blurAnim.value.dp)
             .verticalScroll(scrollState)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { /* Ничего не делаем, просто перехватываем клик */ }
     ) {
-        // Проходимся по нашим вручную распаршенным блокам
         parts.forEach { part ->
             when (part) {
                 is MarkdownPart.TextContent -> {
@@ -319,15 +312,9 @@ fun MarkdownViewer(
     }
 }
 
-// --- ПАРСЕР СТРОГОГО РЕЖИМА ---
 fun parseMarkdownContent(input: String): List<MarkdownPart> {
     val parts = mutableListOf<MarkdownPart>()
 
-    // Новая регулярка:
-    // 1. ``` - начало
-    // 2. ([\w\+\-\.\s]*) - группа языка. Берет буквы, цифры, +, -, точки и пробелы.
-    // 3. \n - ОБЯЗАТЕЛЬНЫЙ перенос строки. Это отсекает "python" от тела кода.
-    // 4. ([\s\S]*?) - ленивый захват тела кода до закрывающих кавычек
     val regex = Regex("```([\\w\\+\\-\\.\\s]*)\\n([\\s\\S]*?)```")
 
     var lastIndex = 0
@@ -338,7 +325,7 @@ fun parseMarkdownContent(input: String): List<MarkdownPart> {
         }
 
         val rawLang = match.groupValues[1].trim()
-        val code = match.groupValues[2].trimEnd() // Убираем перенос строки в конце, если есть
+        val code = match.groupValues[2].trimEnd()
 
         parts.add(MarkdownPart.CodeContent(rawLang, code))
         lastIndex = match.range.last + 1
@@ -354,7 +341,6 @@ fun parseMarkdownContent(input: String): List<MarkdownPart> {
     return parts
 }
 
-// --- КОМПОНЕНТ ДЛЯ КОДА ---
 @Composable
 fun CodeBlockWithCopy(
     code: String,
@@ -421,7 +407,6 @@ fun CodeBlockWithCopy(
     }
 }
 
-// --- UI КОМПОНЕНТЫ (LiquidOrb, GlassCard, etc - без изменений) ---
 @Composable
 fun MinimalGlassButton(
     onClick: () -> Unit,
