@@ -236,7 +236,7 @@ fun MarkdownViewer(
     }
 
     val containerAlpha by animateFloatAsState(
-        targetValue = if (isWindowFocused) 1f else 0.5f,
+        targetValue = if (isWindowFocused) 1f else 0.3f,
         animationSpec = tween(600)
     )
 
