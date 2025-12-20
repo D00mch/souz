@@ -220,7 +220,7 @@ fun MainScreenContent(
     }
 }
 
-// --- НОВАЯ ЛОГИКА РЕНДЕРИНГА ---
+// --- ЛОГИКА РЕНДЕРИНГА ---
 
 @Composable
 fun MarkdownViewer(
@@ -269,7 +269,7 @@ fun MarkdownViewer(
         h6 = MaterialTheme.typography.bodyMedium.copy(color = Color.White, fontWeight = FontWeight.Bold),
         text = baseStyle,
         paragraph = baseStyle,
-        code = codeStyle, // Это для inline кода (`code`)
+        code = codeStyle,
         inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color.White.copy(0.1f)),
         quote = baseStyle.copy(color = Color.Gray, fontStyle = FontStyle.Italic),
         bullet = baseStyle.copy(fontWeight = FontWeight.Bold),
@@ -298,7 +298,6 @@ fun MarkdownViewer(
         parts.forEach { part ->
             when (part) {
                 is MarkdownPart.TextContent -> {
-                    // Обычный текст отдаем библиотеке для рендеринга заголовков/списков/жирного
                     Markdown(
                         content = part.content,
                         colors = customColors,
@@ -307,7 +306,6 @@ fun MarkdownViewer(
                     )
                 }
                 is MarkdownPart.CodeContent -> {
-                    // Код рисуем своим компонентом
                     CodeBlockWithCopy(
                         code = part.code,
                         language = part.language,
@@ -321,32 +319,31 @@ fun MarkdownViewer(
     }
 }
 
-// --- ПАРСЕР (Разбивает текст на куски кода и не кода) ---
+// --- ПАРСЕР СТРОГОГО РЕЖИМА ---
 fun parseMarkdownContent(input: String): List<MarkdownPart> {
     val parts = mutableListOf<MarkdownPart>()
-    // Регулярка ищет блоки ```язык ... ```
-    // ([\w\-]*)? - захват языка (опционально)
-    // \n? - перенос строки (опционально)
-    // ([\s\S]*?) - контент (лениво)
-    val regex = Regex("```([\\w\\-]*)?\\n?([\\s\\S]*?)```")
+
+    // Новая регулярка:
+    // 1. ``` - начало
+    // 2. ([\w\+\-\.\s]*) - группа языка. Берет буквы, цифры, +, -, точки и пробелы.
+    // 3. \n - ОБЯЗАТЕЛЬНЫЙ перенос строки. Это отсекает "python" от тела кода.
+    // 4. ([\s\S]*?) - ленивый захват тела кода до закрывающих кавычек
+    val regex = Regex("```([\\w\\+\\-\\.\\s]*)\\n([\\s\\S]*?)```")
 
     var lastIndex = 0
     regex.findAll(input).forEach { match ->
-        // Текст ДО блока кода
         val textBefore = input.substring(lastIndex, match.range.first)
         if (textBefore.isNotBlank()) {
             parts.add(MarkdownPart.TextContent(textBefore))
         }
 
-        // Сам блок кода
-        val language = match.groupValues[1].trim()
-        val code = match.groupValues[2].trimEnd() // Убираем лишние переносы в конце кода
-        parts.add(MarkdownPart.CodeContent(language, code))
+        val rawLang = match.groupValues[1].trim()
+        val code = match.groupValues[2].trimEnd() // Убираем перенос строки в конце, если есть
 
+        parts.add(MarkdownPart.CodeContent(rawLang, code))
         lastIndex = match.range.last + 1
     }
 
-    // Текст ПОСЛЕ последнего блока кода
     if (lastIndex < input.length) {
         val textAfter = input.substring(lastIndex)
         if (textAfter.isNotBlank()) {
@@ -366,6 +363,7 @@ fun CodeBlockWithCopy(
     onShowSnack: (String) -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
+    val displayLang = if (!language.isNullOrBlank()) language.uppercase() else "CODE"
 
     Box(
         modifier = Modifier
@@ -385,7 +383,7 @@ fun CodeBlockWithCopy(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (!language.isNullOrBlank()) language.uppercase() else "CODE",
+                    text = displayLang,
                     style = TextStyle(
                         color = Color.White.copy(0.4f),
                         fontSize = 10.sp,
@@ -424,7 +422,6 @@ fun CodeBlockWithCopy(
 }
 
 // --- UI КОМПОНЕНТЫ (LiquidOrb, GlassCard, etc - без изменений) ---
-// (Вставь сюда оставшиеся компоненты MinimalGlassButton, RealLiquidGlassCard, LiquidOrb...)
 @Composable
 fun MinimalGlassButton(
     onClick: () -> Unit,
