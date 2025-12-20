@@ -103,18 +103,13 @@ class MainViewModel(
                             ?.let { "\nThe selected text below:\n$it" }
                             ?: ""
 
-                        // 1. Получаем сырой ответ от агента
+                        // 1. Получаем ответ
                         val rawText = graphAgent.execute(userInput + selectedPostfix)
-                        l.info(rawText)
+                        val safeText = sanitizeLlmResponse(rawText)
+                        l.info(safeText)
 
-                        // 2. Исправляем форматирование (добавляем переносы строк для Markdown)
-                        val formattedText = sanitizeLlmResponse(rawText)
-
-                        // 3. Отдаем в UI уже исправленный текст
-                        setState { copy(displayedText = formattedText, statusMessage = "Ответ готов") }
-
-                        // Озвучиваем (можно rawText или formattedText, для TTS разницы почти нет)
-                        playText(formattedText)
+                        setState { copy(displayedText = safeText, statusMessage = "Ответ готов") }
+                        playText(safeText)
                     }
                 }.onFailure { e ->
                     l.error("Agent flow terminated: ${e.message}", e)
@@ -229,23 +224,22 @@ class MainViewModel(
         permissionWatcherJob?.cancel()
     }
 
-    /**
-     * Исправляет распространенные проблемы форматирования ответов LLM для корректного рендеринга Markdown.
-     * Добавляет переносы строк перед заголовками, списками и блоками кода, если они отсутствуют.
-     */
     private fun sanitizeLlmResponse(input: String): String {
+        if (input.isBlank()) return ""
+
         var result = input
 
-        // 1. Заголовки (###): Если перед # нет переноса строки, добавляем два
-        result = result.replace(Regex("(?<!\\n)(#{1,6}\\s)"), "\n\n$1")
+        // 1. Самое важное: окружаем ВСЕ тройные кавычки переносами строк.
+        // Было: "код```### Заголовок" -> Стало: "код\n```\n### Заголовок"
+        result = result.replace("```", "\n```\n")
 
-        // 2. Списки (*, -, •): Если перед маркером нет переноса, добавляем один
-        result = result.replace(Regex("(?<!\\n)([\\*\\-\\•]\\s)"), "\n$1")
+        // 2. Убираем множественные пустые строки, которые могли появиться из-за шага 1
+        // (чтобы не было дырок в тексте)
+        while (result.contains("\n\n\n")) {
+            result = result.replace("\n\n\n", "\n\n")
+        }
 
-        // 3. Блоки кода (```): Если перед началом блока нет переноса, добавляем один
-        result = result.replace(Regex("(?<!\\n)(```)"), "\n$1")
-
-        return result
+        return result.trim()
     }
 
     private companion object {
