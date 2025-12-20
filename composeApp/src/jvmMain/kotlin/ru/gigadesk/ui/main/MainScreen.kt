@@ -7,9 +7,11 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.Icon
@@ -33,8 +35,8 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
@@ -57,6 +59,12 @@ private val BaseHeight = 260.dp
 private val MaxHeight = 900.dp
 private val MaxWidth = 700.dp
 
+// --- МОДЕЛЬ ДЛЯ РУЧНОГО ПАРСИНГА ---
+sealed class MarkdownPart {
+    data class TextContent(val content: String) : MarkdownPart()
+    data class CodeContent(val language: String, val code: String) : MarkdownPart()
+}
+
 @Composable
 fun MainScreen(
     onOpenSettings: () -> Unit,
@@ -72,7 +80,7 @@ fun MainScreen(
         viewModel.effects.collect { effect ->
             when (effect) {
                 MainEffect.Hide -> onCloseWindow()
-                is MainEffect.ShowError -> Unit // Можно обработать ошибку
+                is MainEffect.ShowError -> Unit
             }
         }
     }
@@ -103,18 +111,16 @@ fun MainScreenContent(
     onShowLastText: () -> Unit = {},
     onShowSnack: (String) -> Unit = {},
 ) {
-    val clipboardManager = LocalClipboardManager.current
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
 
     LaunchedEffect(textContent) {
         val textLen = textContent.length
-        // Чуть увеличиваем высоту, если есть код (он занимает больше места)
         val hasCode = textContent.contains("```")
         val multiplier = if (hasCode) 1.2 else 0.8
-
         val calculatedHeight = (280 + (textLen * multiplier)).dp
+
         var targetWidth = BaseWidth
         var targetHeight = calculatedHeight
 
@@ -171,7 +177,6 @@ fun MainScreenContent(
                 // --- Контент с Markdown ---
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
 
-                    // Динамический размер шрифта
                     val dynamicFontSize = remember(textContent) {
                         when (textContent.length) {
                             in 0..50 -> 22.sp
@@ -183,21 +188,18 @@ fun MainScreenContent(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(top = 5.dp, start = 24.dp, end = 24.dp)
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) {
-                                clipboardManager.setText(AnnotatedString(textContent))
-                                onShowSnack("Скопировано")
-                            },
+                            .padding(top = 5.dp, start = 24.dp, end = 24.dp),
                         contentAlignment = Alignment.TopStart
                     ) {
-                        MarkdownViewer(
-                            text = textContent,
-                            baseFontSize = dynamicFontSize,
-                            isWindowFocused = isFocused
-                        )
+                        // ЕДИНСТВЕННЫЙ SelectionContainer на верхнем уровне
+                        SelectionContainer {
+                            MarkdownViewer(
+                                text = textContent,
+                                baseFontSize = dynamicFontSize,
+                                isWindowFocused = isFocused,
+                                onShowSnack = onShowSnack
+                            )
+                        }
                     }
                 }
 
@@ -218,19 +220,21 @@ fun MainScreenContent(
     }
 }
 
-// --- ИНТЕГРАЦИЯ MARKDOWN ---
+// --- НОВАЯ ЛОГИКА РЕНДЕРИНГА ---
 
 @Composable
 fun MarkdownViewer(
     text: String,
     baseFontSize: androidx.compose.ui.unit.TextUnit,
-    isWindowFocused: Boolean
+    isWindowFocused: Boolean,
+    onShowSnack: (String) -> Unit
 ) {
     val scrollState = rememberScrollState()
-
-    // Анимация появления
     val alphaAnim = remember { Animatable(0f) }
     val blurAnim = remember { Animatable(10f) }
+
+    // Парсим текст на блоки (Текст / Код) вручную
+    val parts = remember(text) { parseMarkdownContent(text) }
 
     LaunchedEffect(text) {
         alphaAnim.snapTo(0f)
@@ -245,21 +249,17 @@ fun MarkdownViewer(
         animationSpec = tween(600)
     )
 
-    // Базовый стиль текста (белый)
+    // Стили для текста
     val baseStyle = TextStyle(
         color = Color.White,
         fontSize = baseFontSize,
         lineHeight = baseFontSize * 1.4
     )
-
-    // Стиль для кода
     val codeStyle = TextStyle(
         fontFamily = FontFamily.Monospace,
         fontSize = baseFontSize * 0.9,
         color = Color(0xFFE0E0E0)
     )
-
-    // Настройка типографики
     val customTypography = DefaultMarkdownTypography(
         h1 = MaterialTheme.typography.headlineMedium.copy(color = Color.White, fontWeight = FontWeight.Bold),
         h2 = MaterialTheme.typography.titleLarge.copy(color = Color.White, fontWeight = FontWeight.Bold),
@@ -267,24 +267,16 @@ fun MarkdownViewer(
         h4 = MaterialTheme.typography.titleSmall.copy(color = Color.White, fontWeight = FontWeight.Bold),
         h5 = MaterialTheme.typography.bodyLarge.copy(color = Color.White, fontWeight = FontWeight.Bold),
         h6 = MaterialTheme.typography.bodyMedium.copy(color = Color.White, fontWeight = FontWeight.Bold),
-
-        paragraph = baseStyle,
         text = baseStyle,
-
-        code = codeStyle,
+        paragraph = baseStyle,
+        code = codeStyle, // Это для inline кода (`code`)
         inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color.White.copy(0.1f)),
-
         quote = baseStyle.copy(color = Color.Gray, fontStyle = FontStyle.Italic),
-
         bullet = baseStyle.copy(fontWeight = FontWeight.Bold),
         list = baseStyle,
         ordered = baseStyle,
-
         link = baseStyle.copy(color = Color(0xFF82B1FF), textDecoration = TextDecoration.Underline)
-        // Параметр image удален
     )
-
-    // Цвета
     val customColors = DefaultMarkdownColors(
         text = Color.White,
         codeText = Color(0xFFE0E0E0),
@@ -302,18 +294,137 @@ fun MarkdownViewer(
             .blur(blurAnim.value.dp)
             .verticalScroll(scrollState)
     ) {
-        Markdown(
-            content = text,
-            colors = customColors,
-            typography = customTypography,
-            modifier = Modifier.fillMaxWidth()
-        )
+        // Проходимся по нашим вручную распаршенным блокам
+        parts.forEach { part ->
+            when (part) {
+                is MarkdownPart.TextContent -> {
+                    // Обычный текст отдаем библиотеке для рендеринга заголовков/списков/жирного
+                    Markdown(
+                        content = part.content,
+                        colors = customColors,
+                        typography = customTypography,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                is MarkdownPart.CodeContent -> {
+                    // Код рисуем своим компонентом
+                    CodeBlockWithCopy(
+                        code = part.code,
+                        language = part.language,
+                        style = codeStyle,
+                        onShowSnack = onShowSnack
+                    )
+                }
+            }
+        }
         Spacer(Modifier.height(40.dp))
     }
 }
 
-// --- UI КОМПОНЕНТЫ (Без изменений, но оставлены для компиляции) ---
+// --- ПАРСЕР (Разбивает текст на куски кода и не кода) ---
+fun parseMarkdownContent(input: String): List<MarkdownPart> {
+    val parts = mutableListOf<MarkdownPart>()
+    // Регулярка ищет блоки ```язык ... ```
+    // ([\w\-]*)? - захват языка (опционально)
+    // \n? - перенос строки (опционально)
+    // ([\s\S]*?) - контент (лениво)
+    val regex = Regex("```([\\w\\-]*)?\\n?([\\s\\S]*?)```")
 
+    var lastIndex = 0
+    regex.findAll(input).forEach { match ->
+        // Текст ДО блока кода
+        val textBefore = input.substring(lastIndex, match.range.first)
+        if (textBefore.isNotBlank()) {
+            parts.add(MarkdownPart.TextContent(textBefore))
+        }
+
+        // Сам блок кода
+        val language = match.groupValues[1].trim()
+        val code = match.groupValues[2].trimEnd() // Убираем лишние переносы в конце кода
+        parts.add(MarkdownPart.CodeContent(language, code))
+
+        lastIndex = match.range.last + 1
+    }
+
+    // Текст ПОСЛЕ последнего блока кода
+    if (lastIndex < input.length) {
+        val textAfter = input.substring(lastIndex)
+        if (textAfter.isNotBlank()) {
+            parts.add(MarkdownPart.TextContent(textAfter))
+        }
+    }
+
+    return parts
+}
+
+// --- КОМПОНЕНТ ДЛЯ КОДА ---
+@Composable
+fun CodeBlockWithCopy(
+    code: String,
+    language: String?,
+    style: TextStyle,
+    onShowSnack: (String) -> Unit
+) {
+    val clipboardManager = LocalClipboardManager.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.Black.copy(alpha = 0.4f))
+            .border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(8.dp))
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(0.05f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (!language.isNullOrBlank()) language.uppercase() else "CODE",
+                    style = TextStyle(
+                        color = Color.White.copy(0.4f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                )
+
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .clickable {
+                            clipboardManager.setText(AnnotatedString(code))
+                            onShowSnack("Код скопирован")
+                        }
+                        .padding(4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.ContentCopy,
+                        contentDescription = "Copy code",
+                        tint = Color.White.copy(0.6f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = code,
+                style = style,
+                modifier = Modifier.padding(12.dp)
+            )
+        }
+    }
+}
+
+// --- UI КОМПОНЕНТЫ (LiquidOrb, GlassCard, etc - без изменений) ---
+// (Вставь сюда оставшиеся компоненты MinimalGlassButton, RealLiquidGlassCard, LiquidOrb...)
 @Composable
 fun MinimalGlassButton(
     onClick: () -> Unit,
@@ -381,7 +492,6 @@ fun RealLiquidGlassCard(
     )
 
     Box(modifier = modifier) {
-        // Подложка
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -389,7 +499,6 @@ fun RealLiquidGlassCard(
                 .background(Color.Black.copy(alpha = backdropAlpha))
         )
 
-        // Шум
         if (noiseAlpha > 0f) {
             Canvas(modifier = Modifier.matchParentSize().clip(shape).alpha(noiseAlpha)) {
                 drawRect(brush = noiseBrush)
@@ -402,7 +511,6 @@ fun RealLiquidGlassCard(
             }
         }
 
-        // Границы и блики
         Canvas(modifier = Modifier.matchParentSize().clip(shape)) {
             val strokeWidth = borderThickness.toPx()
             drawRoundRect(
@@ -417,7 +525,6 @@ fun RealLiquidGlassCard(
                 style = Stroke(width = strokeWidth)
             )
 
-            // Блик сверху
             drawPath(
                 path = Path().apply {
                     moveTo(0f, size.height * 0.2f)
@@ -434,7 +541,6 @@ fun RealLiquidGlassCard(
             )
         }
 
-        // Интерактивная область (чтобы клики не проходили сквозь)
         Box(
             modifier = Modifier
                 .matchParentSize()
