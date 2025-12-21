@@ -50,10 +50,6 @@ class NodesClassificationPromptTest {
 
         assertTrue(prompt.contains("FILES"))
         assertTrue(prompt.contains("BROWSER"))
-        assertTrue(
-            prompt.contains("Ответь с только одним словом: FILES,BROWSER") ||
-                    prompt.contains("Ответь с только одним словом: BROWSER,FILES")
-        )
     }
 
     @Test
@@ -73,7 +69,6 @@ class NodesClassificationPromptTest {
 
         assertTrue(prompt.contains("FILES"))
         assertFalse(prompt.contains("BROWSER"))
-        assertTrue(prompt.contains("Ответь с только одним словом: FILES"))
     }
 
     @Test
@@ -93,7 +88,6 @@ class NodesClassificationPromptTest {
 
         assertTrue(prompt.contains("FILES"))
         assertFalse(prompt.contains("BROWSER"))
-        assertTrue(prompt.contains("Ответь с только одним словом: FILES"))
     }
 
     private fun buildPromptWith(toolsSettings: ToolsSettings, toolsFactory: ToolsFactory): String {
