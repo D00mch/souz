@@ -100,9 +100,11 @@ class MainViewModel(
             while (isActive) {
                 runCatching {
                     userInputFlow.collect { userInput ->
-                        val selectedPostfix = selectedText.getOrNull()
-                            ?.let { "\nThe selected text below:\n$it" }
-                            ?: ""
+                        val selectedPostfix = viewModelScope.async {
+                            selectedText.getOrNull()
+                                ?.let { "\nThe selected text below:\n$it" }
+                                ?: ""
+                        }.await()
 
                         val rawText = graphAgent.execute(userInput + selectedPostfix)
                         val safeText = sanitizeLlmResponse(rawText)
