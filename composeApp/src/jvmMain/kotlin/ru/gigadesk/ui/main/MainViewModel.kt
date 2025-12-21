@@ -28,6 +28,7 @@ class MainViewModel(
     override val di: DI,
 ) : BaseViewModel<MainState, MainEvent, MainEffect>(), DIAware {
 
+
     private val l = LoggerFactory.getLogger(MainViewModel::class.java)
     private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), viewModelScope)
     private val selectedText: SelectedText by di.instance()
@@ -103,21 +104,12 @@ class MainViewModel(
                             ?.let { "\nThe selected text below:\n$it" }
                             ?: ""
 
-                        // 1. Получаем сырой ответ от LLM
                         val rawText = graphAgent.execute(userInput + selectedPostfix)
+                        val safeText = sanitizeLlmResponse(rawText)
+                        l.info(safeText)
 
-                        // 2. Готовим текст для ОТОБРАЖЕНИЯ (можно чуть причесать, если надо, или оставить raw)
-                        val uiText = sanitizeLlmResponse(rawText)
-                        l.info(uiText)
-
-                        // 3. Готовим текст для ОЗВУЧКИ (удаляем код)
-                        val speechText = prepareTextForSpeech(uiText)
-
-                        // Обновляем UI полным текстом
-                        setState { copy(displayedText = uiText, statusMessage = "Ответ готов") }
-
-                        // Озвучиваем только текст без кода
-                        playText(speechText)
+                        setState { copy(displayedText = safeText, statusMessage = "Ответ готов") }
+                        playText(safeText)
                     }
                 }.onFailure { e ->
                     l.error("Agent flow terminated: ${e.message}", e)
@@ -234,29 +226,14 @@ class MainViewModel(
 
     private fun sanitizeLlmResponse(input: String): String {
         if (input.isBlank()) return ""
+
         var result = input
-        // Окружаем тройные кавычки переносами строк, чтобы парсер UI не сходил с ума
+
         result = result.replace("```", "\n```\n")
 
-        // Убираем лишние пустые строки
         while (result.contains("\n\n\n")) {
             result = result.replace("\n\n\n", "\n\n")
         }
-        return result.trim()
-    }
-
-    private fun prepareTextForSpeech(text: String): String {
-        // 1. Удаляем блоки кода (всё что между ``` и ```)
-        // [\\s\\S]*? - жадный поиск любого символа включая перенос строки
-        var result = text.replace(Regex("```[\\s\\S]*?```"), "")
-
-        // 2. Удаляем инлайн код (всё что между ` и `), например названия переменных
-        // `variable_name` -> ""
-        result = result.replace(Regex("`[^`]+`"), "")
-
-        // 3. Заменяем множественные пробелы и переносы на один пробел,
-        // чтобы TTS читал плавно
-        result = result.replace(Regex("\\s+"), " ")
 
         return result.trim()
     }
