@@ -27,7 +27,7 @@ class LocalRegexClassifierTest {
     @Test
     fun `classifies coder creation`() = runBlocking {
         val classifier = LocalRegexClassifier
-        val category = classifier.classify(body("Поправь файл ридми"))
+        val category = classifier.classify(body("Поправь файл ридми")).category
         assertEquals(ToolCategory.FILES, category)
     }
 
@@ -35,6 +35,7 @@ class LocalRegexClassifierTest {
     fun `classifies coder read`() = runBlocking {
         val classifier = LocalRegexClassifier
         val category = classifier.classify(body("Можешь поправить текст в zsh"))
+            .category
         assertEquals(ToolCategory.FILES, category)
     }
 
@@ -42,6 +43,7 @@ class LocalRegexClassifierTest {
     fun `classifies browser url`() = runBlocking {
         val classifier = LocalRegexClassifier
         val category = classifier.classify(body("открой http://example.com"))
+            .category
         assertEquals(ToolCategory.BROWSER, category)
     }
 
@@ -49,6 +51,7 @@ class LocalRegexClassifierTest {
     fun `classifies browser tabs`() = runBlocking {
         val classifier = LocalRegexClassifier
         val category = classifier.classify(body("Открой только что закрытую вкладку"))
+            .category
         assertEquals(ToolCategory.BROWSER, category)
     }
 
@@ -57,6 +60,7 @@ class LocalRegexClassifierTest {
         val classifier = LocalRegexClassifier
         val category =
             classifier.classify(body("Запомни инструкцию: когда я говорю «Ускорь», ускорь скорость речь на 40 слов в минуту"))
+                .category
         assertEquals(ToolCategory.CONFIG, category)
     }
 
@@ -64,6 +68,7 @@ class LocalRegexClassifierTest {
     fun `classifies config speed`() = runBlocking {
         val classifier = LocalRegexClassifier
         val category = classifier.classify(body("Замедли скорость речи"))
+            .category
         assertEquals(ToolCategory.CONFIG, category)
     }
 
@@ -71,6 +76,7 @@ class LocalRegexClassifierTest {
     fun `classifies desktop window`() = runBlocking {
         val classifier = LocalRegexClassifier
         val category = classifier.classify(body("Какие приложения сейчас запущены"))
+            .category
         assertEquals(ToolCategory.APPLICATIONS, category)
     }
 
@@ -78,6 +84,7 @@ class LocalRegexClassifierTest {
     fun `returns null on tie`() = runBlocking {
         val classifier = LocalRegexClassifier
         val category = classifier.classify(body("прочитай readme и открой example.com"))
+            .category
         assertEquals(null, category)
     }
     
@@ -99,6 +106,7 @@ class LocalRegexClassifierTest {
 
         for ((text, expected) in cases) {
             val category = classifier.classify(body(text))
+                .category
             assertEquals(expected, category, text)
         }
     }

@@ -44,23 +44,25 @@ class NodesClassification(
     private suspend fun classify(
         userText: String,
         history: List<GigaRequest.Message>,
-        categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>>
+        categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>>,
+        retriesCount: Int = 2
     ): ToolCategory? {
         val body = buildClassifierBody(userText, history, categoryStates)
         val bodyJson = gigaJsonMapper.writeValueAsString(body)
         l.debug("Classifying user message: {}, \nbody: \n{}", userText, logObjectMapper.writeValueAsString(body))
-        return try {
-            val categoryByLocal = localClassifier.classify(bodyJson)
-            val categoryByApi = apiClassifier.classify(bodyJson)
-            if (categoryByApi != categoryByLocal) {
-                l.info("Categories do not match: Local: {}, API: {}", categoryByLocal, categoryByApi)
-                null
+        try {
+            val (localCategory, _) = localClassifier.classify(bodyJson)
+            if (retriesCount <= 0) return localCategory
+            val (apiCategory, apiConfidence) = apiClassifier.classify(bodyJson)
+            if (apiConfidence > 50 || apiCategory == localCategory) {
+                return apiCategory
             } else {
-                categoryByLocal
+                l.info("Categories mismatch: Local: $localCategory, API: $apiCategory. Api confidence $apiConfidence")
+                return null
             }
         } catch (e: Exception) {
             l.error("Error in apiClassifier: {}", e.message)
-            null
+            return classify(userText, history, categoryStates, retriesCount.dec())
         }
     }
 
@@ -104,7 +106,10 @@ class NodesClassification(
             Ты — алгоритм классификации. Выбери категорию запроса.
             $categoriesInfoSection
             $examplesSection
-            Ответь с только одним словом: ${allowedCategories.joinToString(",") { it.name }}
+            Ответь двумя словами: `<имя категории> <число, показывающее уверенность в правильном выборе>.
+            Имя категории — одно из: ${allowedCategories.joinToString(",") { it.name }}.
+            Число — от 0 до 100. 0 — вообще не уверен, 50 — сомневаюсь, 75 — почти уверен, 100 — абсолютно уверен.
+            Пример ответа: FILES 75  
         """.trimIndent()
 
     }
@@ -136,6 +141,10 @@ class NodesClassification(
 
         TEXT_REPLACE -> """
 работа с текстом, который сейчас выделен пользователем (находится под selection)
+"""
+
+        CHAT -> """
+вопрос на общие знания, не относящиеся к работе с рабочим столом, или просто болтовня
 """
     }
         .trimIndent()
@@ -200,6 +209,11 @@ class NodesClassification(
             "исправь грамматические ошибки в выделенном тексте",
             "сделай текст, который я заселектил, более официальным",
             "можешь поправить текс письма, что я выделил"
+        )
+
+        CHAT -> listOf(
+            "как дела", "кто такой Шерлок Холмс",
+            "сколько градусов по Цельсию в 80 по Фаренгейту",
         )
     }
 }

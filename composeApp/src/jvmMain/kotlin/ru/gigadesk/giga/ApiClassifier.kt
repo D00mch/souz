@@ -13,18 +13,21 @@ class ApiClassifier(
     private val l = LoggerFactory.getLogger(ApiClassifier::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
 
-    override suspend fun classify(body: String): ToolCategory? {
+    private val unknown = UserMessageClassifier.Reply(null, 0.0)
+
+    override suspend fun classify(body: String): UserMessageClassifier.Reply {
         val req: GigaRequest.Chat = gigaJsonMapper.readValue(body)
         l.debug("Classifying via API, body:\n{}", logObjectMapper.writeValueAsString(req))
         return when (val resp = api.message(req)) {
             is GigaResponse.Chat.Error -> {
                 l.error("Classification error: {}", resp.message)
-                null
+                unknown
             }
             is GigaResponse.Chat.Ok -> {
-                val cat = resp.choices.firstOrNull()?.message?.content?.trim()?.uppercase()
-                l.info("Category: {}", cat)
-                ToolCategory.valueOf(cat ?: "DESKTOP")
+                val (cat, confidence) = resp.choices.firstOrNull()?.message?.content?.trim()?.uppercase()?.split(" ")
+                    ?: return unknown
+                l.info("Category: {}, {}", cat, confidence)
+                UserMessageClassifier.Reply(ToolCategory.valueOf(cat), confidence.toDouble())
             }
         }
     }

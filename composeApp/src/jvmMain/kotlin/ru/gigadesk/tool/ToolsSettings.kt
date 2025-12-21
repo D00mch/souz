@@ -66,7 +66,8 @@ class ToolsSettings(
                 }
             }
 
-            if (allowed.isNotEmpty()) {
+            val allToolsAreDisabled = tools.isNotEmpty() && allowed.isEmpty()
+            if (!allToolsAreDisabled) {
                 result[category] = allowed
             }
         }
