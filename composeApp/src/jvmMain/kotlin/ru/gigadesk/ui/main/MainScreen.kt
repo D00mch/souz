@@ -3,6 +3,7 @@ package ru.gigadesk.ui.main
 import androidx.compose.animation.core.*
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -30,6 +31,9 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
@@ -51,6 +55,7 @@ import kotlinx.coroutines.launch
 import org.kodein.di.compose.localDI
 import kotlin.random.Random
 
+// --- КОНСТАНТЫ ---
 private val TopButtonSize = 28.dp
 private val TopIconSize = 16.dp
 private val BaseWidth = 500.dp
@@ -142,6 +147,7 @@ fun MainScreenContent(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
 
+                // --- Верхний бар ---
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -171,6 +177,7 @@ fun MainScreenContent(
                     }
                 }
 
+                // --- Контент с Markdown ---
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
 
                     val dynamicFontSize = remember(textContent) {
@@ -187,17 +194,17 @@ fun MainScreenContent(
                             .padding(top = 5.dp, start = 24.dp, end = 24.dp),
                         contentAlignment = Alignment.TopStart
                     ) {
-                        SelectionContainer {
-                            MarkdownViewer(
-                                text = textContent,
-                                baseFontSize = dynamicFontSize,
-                                isWindowFocused = isFocused,
-                                onShowSnack = onShowSnack
-                            )
-                        }
+                        // Здесь нет SelectionContainer, он внутри Viewer
+                        MarkdownViewer(
+                            text = textContent,
+                            baseFontSize = dynamicFontSize,
+                            isWindowFocused = isFocused,
+                            onShowSnack = onShowSnack
+                        )
                     }
                 }
 
+                // --- Orb ---
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -213,6 +220,8 @@ fun MainScreenContent(
         }
     }
 }
+
+// --- ИСПРАВЛЕННАЯ ЛОГИКА РЕНДЕРИНГА ---
 
 @Composable
 fun MarkdownViewer(
@@ -240,6 +249,7 @@ fun MarkdownViewer(
         animationSpec = tween(600)
     )
 
+    // Стили
     val baseStyle = TextStyle(
         color = Color.White,
         fontSize = baseFontSize,
@@ -277,44 +287,57 @@ fun MarkdownViewer(
         linkText = Color(0xFF82B1FF)
     )
 
-    Column(
+    SelectionContainer(
         modifier = Modifier
             .fillMaxSize()
             .alpha(containerAlpha * alphaAnim.value)
             .blur(blurAnim.value.dp)
-            .verticalScroll(scrollState)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { /* Ничего не делаем, просто перехватываем клик */ }
     ) {
-        parts.forEach { part ->
-            when (part) {
-                is MarkdownPart.TextContent -> {
-                    Markdown(
-                        content = part.content,
-                        colors = customColors,
-                        typography = customTypography,
-                        modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                // --- ВАЖНОЕ ИСПРАВЛЕНИЕ ---
+                // 1. Ставим курсор текста, чтобы пользователь понимал, что тут можно выделять
+                .pointerHoverIcon(PointerIcon.Text)
+                // 2. detectTapGestures перехватывает клики на фоне (мимо текста),
+                // предотвращая провал клика в Window Manager (что вызывает драг окна).
+                // При этом клики ПО ТЕКСТУ обрабатываются самим Text (ребенком),
+                // так как дети имеют приоритет в обработке жестов.
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { /* Перехватываем клик, чтобы не двигать окно */ }
                     )
                 }
-                is MarkdownPart.CodeContent -> {
-                    CodeBlockWithCopy(
-                        code = part.code,
-                        language = part.language,
-                        style = codeStyle,
-                        onShowSnack = onShowSnack
-                    )
+        ) {
+            parts.forEach { part ->
+                when (part) {
+                    is MarkdownPart.TextContent -> {
+                        Markdown(
+                            content = part.content,
+                            colors = customColors,
+                            typography = customTypography,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    is MarkdownPart.CodeContent -> {
+                        CodeBlockWithCopy(
+                            code = part.code,
+                            language = part.language,
+                            style = codeStyle,
+                            onShowSnack = onShowSnack
+                        )
+                    }
                 }
             }
+            Spacer(Modifier.height(40.dp))
         }
-        Spacer(Modifier.height(40.dp))
     }
 }
 
+// --- ПАРСЕР ---
 fun parseMarkdownContent(input: String): List<MarkdownPart> {
     val parts = mutableListOf<MarkdownPart>()
-
     val regex = Regex("```([\\w\\+\\-\\.\\s]*)\\n([\\s\\S]*?)```")
 
     var lastIndex = 0
@@ -341,6 +364,7 @@ fun parseMarkdownContent(input: String): List<MarkdownPart> {
     return parts
 }
 
+// --- КОМПОНЕНТ ДЛЯ КОДА ---
 @Composable
 fun CodeBlockWithCopy(
     code: String,
@@ -407,6 +431,8 @@ fun CodeBlockWithCopy(
     }
 }
 
+// --- UI КОМПОНЕНТЫ ---
+// (Остальные функции без изменений: MinimalGlassButton, rememberNoiseBrush, RealLiquidGlassCard, LiquidOrb)
 @Composable
 fun MinimalGlassButton(
     onClick: () -> Unit,
