@@ -3,6 +3,7 @@ package ru.gigadesk.ui.main
 import androidx.compose.animation.core.*
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -30,6 +31,9 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
@@ -187,14 +191,12 @@ fun MainScreenContent(
                             .padding(top = 5.dp, start = 24.dp, end = 24.dp),
                         contentAlignment = Alignment.TopStart
                     ) {
-                        SelectionContainer {
-                            MarkdownViewer(
-                                text = textContent,
-                                baseFontSize = dynamicFontSize,
-                                isWindowFocused = isFocused,
-                                onShowSnack = onShowSnack
-                            )
-                        }
+                        MarkdownViewer(
+                            text = textContent,
+                            baseFontSize = dynamicFontSize,
+                            isWindowFocused = isFocused,
+                            onShowSnack = onShowSnack
+                        )
                     }
                 }
 
@@ -277,44 +279,50 @@ fun MarkdownViewer(
         linkText = Color(0xFF82B1FF)
     )
 
-    Column(
+    SelectionContainer(
         modifier = Modifier
             .fillMaxSize()
             .alpha(containerAlpha * alphaAnim.value)
             .blur(blurAnim.value.dp)
-            .verticalScroll(scrollState)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { /* Ничего не делаем, просто перехватываем клик */ }
     ) {
-        parts.forEach { part ->
-            when (part) {
-                is MarkdownPart.TextContent -> {
-                    Markdown(
-                        content = part.content,
-                        colors = customColors,
-                        typography = customTypography,
-                        modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .pointerHoverIcon(PointerIcon.Text)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { /* Перехватываем клик, чтобы не двигать окно */ }
                     )
                 }
-                is MarkdownPart.CodeContent -> {
-                    CodeBlockWithCopy(
-                        code = part.code,
-                        language = part.language,
-                        style = codeStyle,
-                        onShowSnack = onShowSnack
-                    )
+        ) {
+            parts.forEach { part ->
+                when (part) {
+                    is MarkdownPart.TextContent -> {
+                        Markdown(
+                            content = part.content,
+                            colors = customColors,
+                            typography = customTypography,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    is MarkdownPart.CodeContent -> {
+                        CodeBlockWithCopy(
+                            code = part.code,
+                            language = part.language,
+                            style = codeStyle,
+                            onShowSnack = onShowSnack
+                        )
+                    }
                 }
             }
+            Spacer(Modifier.height(40.dp))
         }
-        Spacer(Modifier.height(40.dp))
     }
 }
 
 fun parseMarkdownContent(input: String): List<MarkdownPart> {
     val parts = mutableListOf<MarkdownPart>()
-
     val regex = Regex("```([\\w\\+\\-\\.\\s]*)\\n([\\s\\S]*?)```")
 
     var lastIndex = 0
