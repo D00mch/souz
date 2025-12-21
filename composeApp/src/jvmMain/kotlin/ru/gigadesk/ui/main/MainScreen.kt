@@ -55,7 +55,6 @@ import kotlinx.coroutines.launch
 import org.kodein.di.compose.localDI
 import kotlin.random.Random
 
-// --- КОНСТАНТЫ ---
 private val TopButtonSize = 28.dp
 private val TopIconSize = 16.dp
 private val BaseWidth = 500.dp
@@ -147,7 +146,6 @@ fun MainScreenContent(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // --- Верхний бар ---
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -177,7 +175,6 @@ fun MainScreenContent(
                     }
                 }
 
-                // --- Контент с Markdown ---
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
 
                     val dynamicFontSize = remember(textContent) {
@@ -194,7 +191,6 @@ fun MainScreenContent(
                             .padding(top = 5.dp, start = 24.dp, end = 24.dp),
                         contentAlignment = Alignment.TopStart
                     ) {
-                        // Здесь нет SelectionContainer, он внутри Viewer
                         MarkdownViewer(
                             text = textContent,
                             baseFontSize = dynamicFontSize,
@@ -204,7 +200,6 @@ fun MainScreenContent(
                     }
                 }
 
-                // --- Orb ---
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -220,8 +215,6 @@ fun MainScreenContent(
         }
     }
 }
-
-// --- ИСПРАВЛЕННАЯ ЛОГИКА РЕНДЕРИНГА ---
 
 @Composable
 fun MarkdownViewer(
@@ -249,7 +242,6 @@ fun MarkdownViewer(
         animationSpec = tween(600)
     )
 
-    // Стили
     val baseStyle = TextStyle(
         color = Color.White,
         fontSize = baseFontSize,
@@ -297,13 +289,7 @@ fun MarkdownViewer(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
-                // --- ВАЖНОЕ ИСПРАВЛЕНИЕ ---
-                // 1. Ставим курсор текста, чтобы пользователь понимал, что тут можно выделять
                 .pointerHoverIcon(PointerIcon.Text)
-                // 2. detectTapGestures перехватывает клики на фоне (мимо текста),
-                // предотвращая провал клика в Window Manager (что вызывает драг окна).
-                // При этом клики ПО ТЕКСТУ обрабатываются самим Text (ребенком),
-                // так как дети имеют приоритет в обработке жестов.
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = { /* Перехватываем клик, чтобы не двигать окно */ }
@@ -335,7 +321,6 @@ fun MarkdownViewer(
     }
 }
 
-// --- ПАРСЕР ---
 fun parseMarkdownContent(input: String): List<MarkdownPart> {
     val parts = mutableListOf<MarkdownPart>()
     val regex = Regex("```([\\w\\+\\-\\.\\s]*)\\n([\\s\\S]*?)```")
@@ -364,7 +349,6 @@ fun parseMarkdownContent(input: String): List<MarkdownPart> {
     return parts
 }
 
-// --- КОМПОНЕНТ ДЛЯ КОДА ---
 @Composable
 fun CodeBlockWithCopy(
     code: String,
@@ -431,8 +415,6 @@ fun CodeBlockWithCopy(
     }
 }
 
-// --- UI КОМПОНЕНТЫ ---
-// (Остальные функции без изменений: MinimalGlassButton, rememberNoiseBrush, RealLiquidGlassCard, LiquidOrb)
 @Composable
 fun MinimalGlassButton(
     onClick: () -> Unit,
