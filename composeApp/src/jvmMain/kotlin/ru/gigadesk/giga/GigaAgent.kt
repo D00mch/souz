@@ -17,6 +17,7 @@ import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.keys.Keys
 import ru.gigadesk.keys.SelectedText
 import ru.gigadesk.tool.*
+import ru.gigadesk.tool.LocalRegexClassifier.classify
 import ru.gigadesk.tool.application.ToolShowApps
 import ru.gigadesk.tool.browser.ToolSafariInfo
 import java.util.concurrent.atomic.AtomicBoolean
@@ -211,13 +212,14 @@ class GigaAgent(
         val bodyJson = gigaJsonMapper.writeValueAsString(body)
         l.debug("Classifying user message: $userText, \nbody: \n${logObjectMapper.writeValueAsString(body)}")
         try {
-            val categoryByLocal = localClassifier.classify(bodyJson)
-            val categoryByApi = apiClassifier.classify(bodyJson)
-            if (categoryByApi != categoryByLocal) {
-                l.info("Categories do not match: Local: $categoryByLocal, API: $categoryByApi")
+            val (localCategory, _) = localClassifier.classify(bodyJson)
+            val (apiCategory, apiConfidence) = apiClassifier.classify(bodyJson)
+            if (apiConfidence > 50 || apiCategory == localCategory) {
+                return apiCategory
+            } else {
+                l.info("Categories mismatch: Local: $localCategory, API: $apiCategory. Api confidence $apiConfidence")
                 return null
             }
-            return categoryByLocal
         } catch (e: Exception) {
             l.error("Error in apiClassifier: ${e.message}")
             return null

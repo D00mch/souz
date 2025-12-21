@@ -112,5 +112,7 @@ class ToolsFactory(
             ToolTextReplace(selectedText, keys).toGiga(),
             ToolTextUnderSelection(selectedText, keys).toGiga(),
         )
+
+        ToolCategory.CHAT -> listOf()
     }
 }
