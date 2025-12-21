@@ -15,7 +15,6 @@ import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.db.VectorDB
 import ru.gigadesk.giga.ApiClassifier
 import ru.gigadesk.giga.GigaAuth
-import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.keys.Keys
@@ -31,8 +30,6 @@ private object DiTags {
     const val TAG_LOG = "log"
     const val TAG_API = "api"
     const val TAG_LOCAL = "local"
-
-    const val ENV_GIGA_MODEL = "GIGA_MODEL"
 }
 
 val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
@@ -55,14 +52,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolsSettings(instance(), instance()) }
 
     // API
-    bindSingleton<GigaModel> {
-        System.getenv(DiTags.ENV_GIGA_MODEL)?.let { envModel ->
-            GigaModel.entries.firstOrNull { enumModel ->
-                enumModel.name.equals(envModel, ignoreCase = true) ||
-                        enumModel.alias.equals(envModel, ignoreCase = true)
-            }
-        } ?: GigaModel.Max
-    }
     bindSingleton { GigaAuth }
     bindSingleton { GigaRestChatAPI(instance(), instance()) }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
@@ -82,5 +71,5 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         )
     }
     bindSingleton { ToolsFactory(instance(), instance(), instance()) }
-    bindSingleton { GraphBasedAgent(di, instance(), instance(DiTags.TAG_LOG)) }
+    bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
 }

@@ -1,6 +1,7 @@
 package ru.gigadesk.ui.settings
 
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
+import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.ui.VMEvent
 import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
@@ -10,9 +11,11 @@ data class SettingsState(
     val gigaChatKey: String = "",
     val saluteSpeechKey: String = "",
     val useFewShotExamples: Boolean = false,
+    val gigaModel: GigaModel = GigaModel.Max,
     val supportEmail: String = DEFAULT_SUPPORT_EMAIL,
     val isSendingLogs: Boolean = false,
     val sendLogsMessage: String? = null,
+    val sendLogsPath: String? = null,
     val isBalanceLoading: Boolean = false,
     val balance: List<GigaResponse.BalanceItem> = emptyList(),
     val balanceError: String? = null,
@@ -27,6 +30,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputGigaChatKey(val key: String): SettingsEvent
     data class InputSaluteSpeechKey(val key: String): SettingsEvent
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
+    data class SelectModel(val model: GigaModel): SettingsEvent
     data class InputSupportEmail(val email: String): SettingsEvent
     data class InputSystemPrompt(val prompt: String): SettingsEvent
     object ResetSystemPrompt: SettingsEvent
