@@ -16,9 +16,9 @@ import androidx.compose.ui.window.rememberWindowState
 import org.jetbrains.compose.resources.painterResource
 import org.kodein.di.compose.withDI
 import ru.gigadesk.di.mainDiModule
+import ru.gigadesk.audio.stopPlayText
 
 fun main() {
-    // Rm from dock (app is agent now); should be first line
     System.setProperty("apple.awt.UIElement", "true")
 
     application {
@@ -32,6 +32,12 @@ fun main() {
                 menu = {
                     Item("Показать/Скрыть", onClick = { isWindowVisible = !isWindowVisible })
                     Separator()
+
+                    Item("Выключить звук", onClick = {
+                        stopPlayText()
+                    })
+                    Separator()
+
                     Item("Выход", onClick = ::exitApplication)
                 }
             )
