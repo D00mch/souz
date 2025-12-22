@@ -2,16 +2,16 @@ package ru.gigadesk.tool.textReplace
 
 import ru.gigadesk.keys.HotKey
 import ru.gigadesk.keys.Keys
-import ru.gigadesk.keys.SelectedText
+import ru.gigadesk.keys.MrRobot
 import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
+import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 
 class ToolTextReplace(
-    private val selectedText: SelectedText,
-    private val keys: Keys,
+    private val bash: ToolRunBashCommand
 ) : ToolSetup<ToolTextReplace.Input> {
 
     data class Input(
@@ -36,11 +36,14 @@ class ToolTextReplace(
     )
 
     override fun invoke(input: Input): String {
-        val textIsSelectedByOS = selectedText.getOrNull() != null
-        when (textIsSelectedByOS) {
-            true -> selectedText.replace(input.newText)
-            false -> keys.press(HotKey.paste)
-        }
+        MrRobot.clipboardPut(input.newText)
+        bash.apple(SCRIPT)
         return "ok"
     }
 }
+
+private const val SCRIPT = """
+tell application "System Events"
+	keystroke "v" using command down
+end tell
+        """

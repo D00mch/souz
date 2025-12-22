@@ -85,6 +85,7 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
                 GigaRequest.Message(
                     role = GigaMessageRole.function,
                     content = gigaResult,
+                    name = functionCall.name,
                 )
             } catch (e: Exception) {
                 e.toGigaToolMessage()

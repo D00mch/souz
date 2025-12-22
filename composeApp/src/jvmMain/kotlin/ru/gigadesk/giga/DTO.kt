@@ -132,6 +132,7 @@ object GigaRequest {
         val content: String, // Could be String or FunctionCall object
         @JsonProperty("functions_state_id") val functionsStateId: String? = null,
         val attachments: List<String>? = null,
+        val name: String? = null,
     )
 
     data class Function(

@@ -66,8 +66,6 @@ fun main() {
             val msg = if (pressed) {
                 "onStart"
             } else {
-                val selectedText = MacSelectedText.getOrNull()
-                println("selectedText: $selectedText")
                 "onStop"
             }
             l.info(msg)
