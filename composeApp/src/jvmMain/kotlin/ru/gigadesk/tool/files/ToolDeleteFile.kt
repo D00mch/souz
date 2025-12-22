@@ -9,7 +9,7 @@ object ToolDeleteFile : ToolSetup<ToolDeleteFile.Input> {
         val path: String
     )
     override val name = "DeleteFile"
-    override val description = "Deletes a file at the given path."
+    override val description = "Deletes a file at the given path. Use ~ as the Home dir"
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Удали temp.txt",

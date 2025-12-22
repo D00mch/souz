@@ -50,7 +50,7 @@ class ToolsFactory(
             ToolNewFile.toGiga(),
             ToolDeleteFile.toGiga(),
             ToolModifyFile.toGiga(),
-            ToolFindTextInFiles.toGiga(),
+            // ToolFindTextInFiles.toGiga(), // we already have ToolFindInFiles
             ToolExtractText().toGiga(),
             ToolReadPdfPages().toGiga(),
             ToolOpen(ToolRunBashCommand).toGiga(),

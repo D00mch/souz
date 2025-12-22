@@ -12,7 +12,7 @@ object ToolListFiles : ToolSetup<ToolListFiles.Input> {
         val depth: Int = Integer.MAX_VALUE
     )
     override val name = "ListFiles"
-    override val description = "Runs bash ls command at a given path. Dot (.) means current directory"
+    override val description = "Runs bash ls command at a given path. Use ~ to start from the home directory"
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "List files in the home directory",
