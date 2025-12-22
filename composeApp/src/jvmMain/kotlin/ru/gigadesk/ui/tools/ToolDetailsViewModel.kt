@@ -64,7 +64,9 @@ class ToolDetailsViewModel(
         val categorySettings = settingsState.categories[theCategory]
         val toolSettings = categorySettings?.settings?.get(theToolName)
 
-        val defaultExamples = setup.fn.fewShotExamples.map { FewShotExample(it.request, it.params) }
+        val defaultExamples = setup.fn.fewShotExamples
+            ?.map { FewShotExample(it.request, it.params) }
+            ?: emptyList()
         val defaultDescription = setup.fn.description
 
         setState {
