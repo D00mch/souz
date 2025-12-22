@@ -88,7 +88,7 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
                     name = functionCall.name,
                 )
             } catch (e: Exception) {
-                e.toGigaToolMessage()
+                e.toGigaToolMessage(functionCall.name)
             }
         }
     }
@@ -106,16 +106,17 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): GigaT
                 GigaRequest.Message(
                     role = GigaMessageRole.function,
                     content = gigaResult,
-                    attachments = toolSetup.attachments
+                    attachments = toolSetup.attachments,
+                    name = functionCall.name
                 )
             } catch (e: Exception) {
-                e.toGigaToolMessage()
+                e.toGigaToolMessage(functionCall.name)
             }
         }
     }
 }
 
-fun Exception.toGigaToolMessage(): GigaRequest.Message {
+fun Exception.toGigaToolMessage(name: String?): GigaRequest.Message {
     val msg = when (this) {
         is ShellException -> "The function was executed with shell, the exit code: $exitCode, output: $message"
         else -> "Can:t invoke function: ${message ?: toString()}"
@@ -123,6 +124,7 @@ fun Exception.toGigaToolMessage(): GigaRequest.Message {
     return GigaRequest.Message(
         role = GigaMessageRole.function,
         content = objectMapper.writeValueAsString(mapOf("result" to msg)),
+        name = name,
     )
 }
 
