@@ -1,14 +1,7 @@
 package ru.gigadesk.tool.textReplace
 
-import ru.gigadesk.keys.HotKey
-import ru.gigadesk.keys.Keys
 import ru.gigadesk.keys.MrRobot
-import ru.gigadesk.tool.FewShotExample
-import ru.gigadesk.tool.InputParamDescription
-import ru.gigadesk.tool.ReturnParameters
-import ru.gigadesk.tool.ReturnProperty
-import ru.gigadesk.tool.ToolRunBashCommand
-import ru.gigadesk.tool.ToolSetup
+import ru.gigadesk.tool.*
 
 class ToolTextReplace(
     private val bash: ToolRunBashCommand

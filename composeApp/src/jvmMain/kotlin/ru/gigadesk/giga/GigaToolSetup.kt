@@ -131,5 +131,3 @@ fun main() {
     ToolMediaControl(ToolRunBashCommand).toGiga()
     ToolMouseClickMac().toGiga()
 }
-
-const val FEW_SHOTS = "USE_FEW_SHOTS"

@@ -11,7 +11,6 @@ import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaMessageRole
-import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaToolSetup

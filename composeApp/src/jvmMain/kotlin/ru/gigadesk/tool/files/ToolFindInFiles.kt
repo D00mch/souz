@@ -66,7 +66,7 @@ fun main() {
     val result = ToolFindInFiles.invoke(ToolFindInFiles.Input("~/wiki", " vr "))
     println("result: $result")
     val results: List<List<String>> = objectMapper.readValue(result)
-    results.forEach { (path, query) ->
+    results.forEach { (path, _) ->
         val safe = FilesToolUtil.isPathSafe(File(path))
         if (safe) {
             println("Safe!: $path")

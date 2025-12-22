@@ -267,6 +267,7 @@ class GigaAgent(
         conversation.add(msg)
     }
 
+    @Suppress("unused")
     fun requestCleanUp() {
         recreateRequested.set(true)
         stopRequested.set(true)
