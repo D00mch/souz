@@ -172,6 +172,7 @@ enum class GigaMessageRole { system, user, assistant, function }
 val objectMapper = jacksonObjectMapper()
     .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
+@Suppress("unused")
 class GigaException(body: GigaResponse.Chat.Error, override val cause: Throwable? = null) : Exception(cause)
 
 fun String.toSystemPromptMessage() = GigaRequest.Message(
