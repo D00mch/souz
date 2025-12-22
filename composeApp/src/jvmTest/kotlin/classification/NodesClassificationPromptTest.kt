@@ -9,8 +9,8 @@ import org.junit.After
 import org.junit.Before
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaMessageRole
-import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaToolSetup
@@ -92,12 +92,12 @@ class NodesClassificationPromptTest {
 
     private fun buildPromptWith(toolsSettings: ToolsSettings, toolsFactory: ToolsFactory): String {
         val classification = NodesClassification(
-            model = GigaModel.Max,
             logObjectMapper = ObjectMapper(),
             apiClassifier = mockk(relaxed = true),
             localClassifier = mockk(relaxed = true),
             toolsFactory = toolsFactory,
             toolsSettings = toolsSettings,
+            settingsProvider = SettingsProvider(ConfigStore)
         )
 
         val filteredTools = toolsSettings.applyFilter(toolsFactory.toolsByCategory)

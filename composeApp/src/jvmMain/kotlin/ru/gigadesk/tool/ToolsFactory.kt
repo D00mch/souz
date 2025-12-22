@@ -9,7 +9,6 @@ import ru.gigadesk.tool.browser.ToolCreateNewBrowserTab
 import ru.gigadesk.tool.browser.ToolFocusOnTab
 import ru.gigadesk.tool.browser.ToolSafariInfo
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.keys.SelectedText
 import ru.gigadesk.tool.application.ToolOpen
 import ru.gigadesk.tool.application.ToolShowApps
 import ru.gigadesk.tool.browser.ToolChromeInfo
@@ -27,6 +26,7 @@ import ru.gigadesk.tool.notes.ToolDeleteNote
 import ru.gigadesk.tool.notes.ToolListNotes
 import ru.gigadesk.tool.notes.ToolOpenNote
 import ru.gigadesk.tool.notes.ToolSearchNotes
+import ru.gigadesk.tool.textReplace.ToolGetClipboard
 import ru.gigadesk.tool.textReplace.ToolTextReplace
 import ru.gigadesk.tool.textReplace.ToolTextUnderSelection
 
@@ -34,7 +34,6 @@ typealias FunctionName = String
 
 class ToolsFactory(
     private val repo: DesktopInfoRepository,
-    private val selectedText: SelectedText,
     private val keys: Keys = Keys(),
 ) {
     val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
@@ -51,7 +50,7 @@ class ToolsFactory(
             ToolNewFile.toGiga(),
             ToolDeleteFile.toGiga(),
             ToolModifyFile.toGiga(),
-            ToolFindTextInFiles.toGiga(),
+            // ToolFindTextInFiles.toGiga(), // we already have ToolFindInFiles
             ToolExtractText().toGiga(),
             ToolReadPdfPages().toGiga(),
             ToolOpen(ToolRunBashCommand).toGiga(),
@@ -108,10 +107,14 @@ class ToolsFactory(
             ToolMailSearch(ToolRunBashCommand).toGiga(),
         )
 
-        ToolCategory.TEXT_REPLACE -> listOf(
-            ToolTextReplace(selectedText, keys).toGiga(),
-            ToolTextUnderSelection(selectedText, keys).toGiga(),
-        )
+        ToolCategory.TEXT_REPLACE -> {
+            val clip = ToolGetClipboard()
+            listOf(
+                clip.toGiga(),
+                ToolTextReplace(ToolRunBashCommand).toGiga(),
+                ToolTextUnderSelection(ToolRunBashCommand, clip).toGiga(),
+            )
+        }
 
         ToolCategory.CHAT -> listOf()
     }

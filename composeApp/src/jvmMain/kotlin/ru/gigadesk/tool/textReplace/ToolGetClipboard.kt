@@ -1,0 +1,26 @@
+package ru.gigadesk.tool.textReplace
+
+import ru.gigadesk.keys.MrRobot
+import ru.gigadesk.tool.FewShotExample
+import ru.gigadesk.tool.ReturnParameters
+import ru.gigadesk.tool.ReturnProperty
+import ru.gigadesk.tool.ToolSetup
+
+class ToolGetClipboard : ToolSetup<ToolGetClipboard.Input> {
+    object Input
+
+    override val name: String = "GetClipboard"
+    override val description: String = "Returns the data in the clipboard"
+    override val fewShotExamples = listOf(FewShotExample(request = "Что в буффере обмена?", params = emptyMap()))
+    override val returnParameters: ReturnParameters = ReturnParameters(
+        properties = mapOf("result" to ReturnProperty("string", "The text from clipboard in quot")),
+    )
+
+    override fun invoke(input: Input): String {
+        return getDataFromSelectionWithKeys()
+    }
+
+    private fun getDataFromSelectionWithKeys(): String {
+        return MrRobot.clipboardGet() ?: "Error: \"Nothing in selection\""
+    }
+}

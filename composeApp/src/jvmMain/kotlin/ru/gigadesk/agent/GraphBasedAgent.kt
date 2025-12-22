@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalAtomicApi::class)
+
 package ru.gigadesk.agent
 
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -24,13 +26,13 @@ import ru.gigadesk.tool.browser.detectDefaultBrowser
 import ru.gigadesk.tool.browser.prettyName
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.atomics.AtomicReference
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.ceil
 
 class GraphBasedAgent(
     di: DI,
-    private val model: GigaModel,
     private val logObjectMapper: ObjectMapper,
 ) {
     private val l = LoggerFactory.getLogger(GraphBasedAgent::class.java)
@@ -74,17 +76,19 @@ class GraphBasedAgent(
         }
     }
 
-    private val settings = AgentSettings(
-        model = model.alias,
-        temperature = 0.7f,
-        toolsByCategory = toolsFactory.toolsByCategory
+    private val settings = AtomicReference(
+        AgentSettings(
+            model = settingsProvider.gigaModel.alias,
+            temperature = 0.7f,
+            toolsByCategory = toolsFactory.toolsByCategory
+        )
     )
-    private val allFunctions: List<GigaRequest.Function> = settings.tools.values.map { it.fn }
+    private val allFunctions: List<GigaRequest.Function> = settings.load().tools.values.map { it.fn }
 
     private val _ctx: MutableStateFlow<AgentContext<String>> = MutableStateFlow(createInitialCtx())
     val currentContext: StateFlow<AgentContext<String>> = _ctx
 
-    private val runningJob = AtomicReference<Deferred<*>>()
+    private val runningJob = AtomicReference<Deferred<*>?>(null)
 
     fun clearContext(): Boolean {
         cancelActiveJob()
@@ -106,8 +110,15 @@ class GraphBasedAgent(
         _ctx.tryEmit(currentContext.value.copy(systemPrompt = DEFAULT_SYSTEM_PROMPT))
     }
 
+    fun updateModel(model: GigaModel) {
+        settingsProvider.gigaModel = model
+        val newSettings = settings.load().copy(model = model.alias)
+        settings.store(newSettings)
+        _ctx.tryEmit(currentContext.value.copy(settings = newSettings))
+    }
+
     fun cancelActiveJob() {
-        runningJob.get()?.cancel(CancellationException("Cleared by force"))
+        runningJob.load()?.cancel(CancellationException("Cleared by force"))
     }
 
     /** Execute one job at a time */
@@ -122,7 +133,7 @@ class GraphBasedAgent(
                 }
             }
         }
-        runningJob.set(result)
+        runningJob.store(result)
         val newContext = result.await()
         _ctx.emit(newContext)
         return newContext.input
@@ -147,7 +158,7 @@ class GraphBasedAgent(
 
     private fun createInitialCtx(): AgentContext<String> = AgentContext(
         input = "",
-        settings = settings,
+        settings = settings.load(),
         history = emptyList(),
         activeTools = allFunctions,
         systemPrompt = settingsProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT

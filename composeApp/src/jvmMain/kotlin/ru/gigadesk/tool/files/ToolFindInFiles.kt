@@ -1,6 +1,5 @@
 package ru.gigadesk.tool.files
 
-import ch.qos.logback.core.testUtil.FileToBufferUtil
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.runBlocking
 import ru.gigadesk.giga.objectMapper
@@ -10,7 +9,6 @@ import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
-import ru.gigadesk.tool.files.FilesToolUtil
 import java.io.File
 
 object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
@@ -68,7 +66,7 @@ fun main() {
     val result = ToolFindInFiles.invoke(ToolFindInFiles.Input("~/wiki", " vr "))
     println("result: $result")
     val results: List<List<String>> = objectMapper.readValue(result)
-    results.forEach { (path, query) ->
+    results.forEach { (path, _) ->
         val safe = FilesToolUtil.isPathSafe(File(path))
         if (safe) {
             println("Safe!: $path")

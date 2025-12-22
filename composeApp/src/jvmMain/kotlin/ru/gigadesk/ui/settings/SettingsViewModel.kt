@@ -35,6 +35,7 @@ class SettingsViewModel(
                     gigaChatKey = keysProvider.gigaChatKey ?: "",
                     saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                     useFewShotExamples = keysProvider.useFewShotExamples,
+                    gigaModel = keysProvider.gigaModel,
                     supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
                     systemPrompt = keysProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT,
                     defaultCalendar = keysProvider.defaultCalendar
@@ -63,9 +64,13 @@ class SettingsViewModel(
                 keysProvider.useFewShotExamples = event.enabled
                 setState { copy(useFewShotExamples = event.enabled) }
             }
+            is SelectModel -> {
+                graphBasedAgent.updateModel(event.model)
+                setState { copy(gigaModel = event.model) }
+            }
             is InputSupportEmail -> {
                 keysProvider.supportEmail = event.email
-                setState { copy(supportEmail = event.email, sendLogsMessage = null) }
+                setState { copy(supportEmail = event.email, sendLogsMessage = null, sendLogsPath = null) }
             }
             is InputSystemPrompt -> {
                 graphBasedAgent.updateSystemPrompt(event.prompt)
@@ -128,7 +133,15 @@ class SettingsViewModel(
 
     private fun sendLogs() = viewModelScope.launch(Dispatchers.IO) {
         val email = currentState.supportEmail.ifBlank { DEFAULT_SUPPORT_EMAIL }
-        setState { copy(isSendingLogs = true, sendLogsMessage = null, supportEmail = email) }
+        val resolvedLogDir = runCatching { supportLogSender.logDirectory().toAbsolutePath().toString() }.getOrNull()
+        setState {
+            copy(
+                isSendingLogs = true,
+                sendLogsMessage = null,
+                supportEmail = email,
+                sendLogsPath = resolvedLogDir
+            )
+        }
 
         val result = runCatching { supportLogSender.sendLatestLogs(email) }
         result
@@ -138,6 +151,7 @@ class SettingsViewModel(
                         isSendingLogs = false,
                         sendLogsMessage = sendResult.message,
                         supportEmail = sendResult.recipient,
+                        sendLogsPath = sendResult.logArchive.toAbsolutePath().toString(),
                     )
                 }
             }
@@ -146,6 +160,7 @@ class SettingsViewModel(
                     copy(
                         isSendingLogs = false,
                         sendLogsMessage = error.message ?: "Не удалось отправить логи",
+                        sendLogsPath = resolvedLogDir,
                     )
                 }
             }

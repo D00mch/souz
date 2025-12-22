@@ -8,8 +8,8 @@ import java.util.*
 object GigaResponse {
 
     data class Token(
-        @JsonProperty("access_token") val accessToken: String,
-        @JsonProperty("expires_at") val expiresAt: Date
+        @field:JsonProperty("access_token") val accessToken: String,
+        @field:JsonProperty("expires_at") val expiresAt: Date
     )
 
     sealed interface Chat {
@@ -18,23 +18,23 @@ object GigaResponse {
     }
 
     data class Usage(
-        @JsonProperty("prompt_tokens") val promptTokens: Int,
-        @JsonProperty("completion_tokens") val completionTokens: Int,
-        @JsonProperty("total_tokens") val totalTokens: Int,
-        @JsonProperty("precached_prompt_tokens") val precachedTokens: Int
+        @field:JsonProperty("prompt_tokens") val promptTokens: Int,
+        @field:JsonProperty("completion_tokens") val completionTokens: Int,
+        @field:JsonProperty("total_tokens") val totalTokens: Int,
+        @field:JsonProperty("precached_prompt_tokens") val precachedTokens: Int
     )
 
     data class Choice(
         val message: Message,
         val index: Int,
-        @JsonProperty("finish_reason") val finishReason: FinishReason?
+        @field:JsonProperty("finish_reason") val finishReason: FinishReason?
     )
 
     data class Message(
         val content: String,
         val role: GigaMessageRole,
-        @JsonProperty("function_call") val functionCall: FunctionCall? = null,
-        @JsonProperty("functions_state_id") val functionsStateId: String?,
+        @field:JsonProperty("function_call") val functionCall: FunctionCall? = null,
+        @field:JsonProperty("functions_state_id") val functionsStateId: String?,
     )
 
     data class FunctionCall(
@@ -45,7 +45,7 @@ object GigaResponse {
     data class RecognizeResponse(
         val result: List<String>,
         val emotions: List<Emotion>,
-        @JsonProperty("person_identity") val personIdentity: PersonIdentity,
+        @field:JsonProperty("person_identity") val personIdentity: PersonIdentity,
         val status: Int
     )
 
@@ -58,25 +58,25 @@ object GigaResponse {
     data class PersonIdentity(
         val age: String,
         val gender: String,
-        @JsonProperty("age_score") val ageScore: Double,
-        @JsonProperty("gender_score") val genderScore: Double
+        @field:JsonProperty("age_score") val ageScore: Double,
+        @field:JsonProperty("gender_score") val genderScore: Double
     )
 
     data class UploadFile(
         val bytes: Long,
-        @JsonProperty("created_at") val createdAt: Long,
+        @field:JsonProperty("created_at") val createdAt: Long,
         val filename: String,
         val id: String,
-        @JsonProperty("object") val objectType: String,
+        @field:JsonProperty("object") val objectType: String,
         val purpose: String,
-        @JsonProperty("access_policy") val accessPolicy: String,
+        @field:JsonProperty("access_policy") val accessPolicy: String,
     )
 
     sealed interface Embeddings {
         data class Ok(
             val data: List<Embedding>,
             val model: String,
-            @JsonProperty("object") val objectType: String,
+            @field:JsonProperty("object") val objectType: String,
         ) : Embeddings
 
         data class Error(val status: Int, val message: String) : Embeddings
@@ -85,7 +85,7 @@ object GigaResponse {
     data class Embedding(
         val embedding: List<Double>,
         val index: Int,
-        @JsonProperty("object") val objectType: String? = null,
+        @field:JsonProperty("object") val objectType: String? = null,
     )
 
     data class BalanceItem(
@@ -118,28 +118,29 @@ object GigaRequest {
     data class Chat(
         val model: String = GigaModel.Max.alias,
         val messages: List<Message>,
-        @JsonProperty("function_call")
+        @field:JsonProperty("function_call")
         val functionCall: String = "auto",
         val functions: List<Function> = emptyList(),
         val temperature: Float? = null,
         val stream: Boolean = false,
         val maxTokens: Int = MAX_TOKENS,
-        @JsonProperty("update_interval") val updateInterval: Int? = 1,
+        @field:JsonProperty("update_interval") val updateInterval: Int? = 1,
     )
 
     data class Message(
         val role: GigaMessageRole,
         val content: String, // Could be String or FunctionCall object
-        @JsonProperty("functions_state_id") val functionsStateId: String? = null,
+        @field:JsonProperty("functions_state_id") val functionsStateId: String? = null,
         val attachments: List<String>? = null,
+        val name: String? = null,
     )
 
     data class Function(
         val name: String,
         val description: String,
         val parameters: Parameters,
-        @JsonProperty("few_shot_examples") val fewShotExamples: List<FewShotExample> = emptyList(),
-        @JsonProperty("return_parameters") val returnParameters: Parameters
+        @field:JsonProperty("few_shot_examples") val fewShotExamples: List<FewShotExample> = emptyList(),
+        @field:JsonProperty("return_parameters") val returnParameters: Parameters
     )
 
     data class Parameters(
@@ -151,7 +152,7 @@ object GigaRequest {
     data class Property(
         val type: String,
         val description: String? = null,
-        @JsonProperty("enum") val enum: List<String>? = null
+        @field:JsonProperty("enum") val enum: List<String>? = null
     )
 
     data class FewShotExample(
@@ -171,6 +172,7 @@ enum class GigaMessageRole { system, user, assistant, function }
 val objectMapper = jacksonObjectMapper()
     .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
+@Suppress("unused")
 class GigaException(body: GigaResponse.Chat.Error, override val cause: Throwable? = null) : Exception(cause)
 
 fun String.toSystemPromptMessage() = GigaRequest.Message(

@@ -15,9 +15,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.keys.Keys
-import ru.gigadesk.keys.SelectedText
 import ru.gigadesk.tool.*
-import ru.gigadesk.tool.LocalRegexClassifier.classify
 import ru.gigadesk.tool.application.ToolShowApps
 import ru.gigadesk.tool.browser.ToolSafariInfo
 import java.util.concurrent.atomic.AtomicBoolean
@@ -269,6 +267,7 @@ class GigaAgent(
         conversation.add(msg)
     }
 
+    @Suppress("unused")
     fun requestCleanUp() {
         recreateRequested.set(true)
         stopRequested.set(true)
@@ -363,10 +362,9 @@ class GigaAgent(
             api: GigaChatAPI,
             desktopRepo: DesktopInfoRepository,
             nodesClassification: NodesClassification,
-            selectedText: SelectedText,
             model: GigaModel = GigaModel.Max,
             settings: Settings = Settings(
-                ToolsFactory(desktopRepo, selectedText, Keys()).toolsByCategory,
+                ToolsFactory(desktopRepo, Keys()).toolsByCategory,
                 model,
                 stream = false
             )

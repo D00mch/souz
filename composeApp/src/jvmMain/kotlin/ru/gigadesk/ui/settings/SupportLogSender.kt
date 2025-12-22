@@ -16,7 +16,7 @@ import kotlin.io.path.name
 class SupportLogSender(
     private val defaultRecipient: String = DEFAULT_SUPPORT_EMAIL,
 ) {
-    data class Result(val message: String, val recipient: String)
+    data class Result(val message: String, val recipient: String, val logArchive: Path, val logDirectory: Path)
 
     fun sendLatestLogs(recipient: String?): Result {
         val targetRecipient = recipient?.takeIf { it.isNotBlank() } ?: defaultRecipient
@@ -44,8 +44,12 @@ class SupportLogSender(
         return Result(
             message = sendEmailWithAttachment(targetRecipient, zipped),
             recipient = targetRecipient,
+            logArchive = zipped,
+            logDirectory = logDir,
         )
     }
+
+    fun logDirectory(): Path = resolveLogDir()
 
     private fun resolveLogDir(): Path {
         val logDir = System.getenv(LOG_DIR_ENV)

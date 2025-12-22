@@ -5,10 +5,10 @@ import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.agent.engine.Node
 import ru.gigadesk.giga.GigaMessageRole
-import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaToolSetup
 import ru.gigadesk.giga.gigaJsonMapper
+import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.tool.ToolCategory.*
 import ru.gigadesk.tool.ToolsFactory
@@ -16,7 +16,7 @@ import ru.gigadesk.tool.ToolsSettings
 import ru.gigadesk.tool.UserMessageClassifier
 
 class NodesClassification(
-    private val model: GigaModel,
+    private val settingsProvider: SettingsProvider,
     private val logObjectMapper: ObjectMapper,
     private val apiClassifier: UserMessageClassifier,
     private val localClassifier: UserMessageClassifier,
@@ -80,7 +80,7 @@ class NodesClassification(
             GigaRequest.Message(GigaMessageRole.user, "New message:\n$userText"),
         )
         return GigaRequest.Chat(
-            model = model.alias,
+            model = settingsProvider.gigaModel.alias,
             messages = messages,
             functions = emptyList(),
         )

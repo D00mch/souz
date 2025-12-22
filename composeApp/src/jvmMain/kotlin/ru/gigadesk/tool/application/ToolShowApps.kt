@@ -69,8 +69,8 @@ The "app-pid" only returned for running apps with `${AppState.running}` input.
 }
 
 private data class Result(
-    @JsonProperty("app-bundle-id") val appBundleId: String,
-    @JsonProperty("app-name") val appName: String,
+    @field:JsonProperty("app-bundle-id") val appBundleId: String,
+    @field:JsonProperty("app-name") val appName: String,
 )
 
 fun main() {

@@ -1,5 +1,8 @@
 package ru.gigadesk.giga
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.application.ToolOpen
 import com.fasterxml.jackson.module.kotlin.readValue
@@ -26,6 +29,7 @@ import kotlin.time.Duration.Companion.seconds
 class GigaRestChatAPI(
     private val auth: GigaAuth,
     private val keysProvider: SettingsProvider,
+    private val logObjectMapper: ObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
 ) : GigaChatAPI {
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
 
@@ -70,7 +74,15 @@ class GigaRestChatAPI(
             setBody(body)
         }
         when {
-            response.status.isSuccess() -> response.body<GigaResponse.Chat.Ok>()
+            response.status.isSuccess() -> {
+                val result = response.body<GigaResponse.Chat.Ok>()
+                println("Chat." +
+                        "\n-- History.len: ${body.messages.size}, Functions.len: ${body.functions.size}," +
+                        "\n-- Tokens spent: ${result.usage.promptTokens}, model: ${result.model}" +
+                        "\n-- Choice.len: ${result.choices.size}, Last choice:" +
+                        "\n${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}")
+                result
+            }
             response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
                 GigaResponse.Chat.Error(response.status.value, "Authentication error: ${response.status.description}")
 

@@ -35,6 +35,7 @@ object FilesToolUtil {
         if (s.startsWith("~")) {
             return s.replace("~", homeStr)
         }
+        if (s == "home") return homeStr
         return s.replace("\$HOME", homeStr)
             .replace("HOME", homeStr)
     }

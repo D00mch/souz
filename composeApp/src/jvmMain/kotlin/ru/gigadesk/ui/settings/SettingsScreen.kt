@@ -2,6 +2,7 @@ package ru.gigadesk.ui.settings
 
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,7 +14,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ClipboardManager
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
@@ -23,6 +27,7 @@ import kotlinx.coroutines.flow.debounce
 import org.kodein.di.compose.localDI
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.giga.GigaResponse
+import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
@@ -55,6 +60,7 @@ fun SettingsScreen(
         onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
         onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
         onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
+        onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
         onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
         onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
         onSystemPromptChange = { prompt -> viewModel.send(SettingsEvent.InputSystemPrompt(prompt)) },
@@ -64,6 +70,7 @@ fun SettingsScreen(
         onOpenTools = onOpenTools,
         onResizeRequest = onResizeRequest,
         onClose = onClose,
+        onShowSnack = onShowSnack,
     )
 }
 
@@ -73,6 +80,7 @@ fun SettingsScreen(
     onGigaChatKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
+    onModelChange: (GigaModel) -> Unit,
     onDefaultCalendarChange: (String?) -> Unit,
     onSupportEmailInput: (String) -> Unit,
     onSystemPromptChange: (String) -> Unit,
@@ -82,12 +90,14 @@ fun SettingsScreen(
     onOpenTools: () -> Unit,
     onResizeRequest: (DpSize) -> Unit = {},
     onClose: () -> Unit,
+    onShowSnack: (String) -> Unit = {},
 ) {
     LaunchedEffect(Unit) { onResizeRequest(SettingsWindowSize) }
 
     // Получаем состояние фокуса окна
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
+    val clipboardManager = LocalClipboardManager.current
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -147,9 +157,14 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                ModelDropdown(
+                    selectedModel = state.gigaModel,
+                    onModelSelected = onModelChange,
+                )
+
                 Button(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "Инструменты",
+                        text = "Настройка инструментов",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.glassColors.textPrimary,
                     )
@@ -181,13 +196,6 @@ fun SettingsScreen(
                     availableCalendars = state.availableCalendars,
                     isLoading = state.isLoadingCalendars,
                     onCalendarSelected = onDefaultCalendarChange
-                )
-
-                LabeledTextField(
-                    label = "Email поддержки",
-                    value = state.supportEmail,
-                    onValueChange = onSupportEmailInput,
-                    modifier = Modifier.fillMaxWidth()
                 )
 
                 Column(
@@ -224,30 +232,51 @@ fun SettingsScreen(
                     onRefreshBalance = onRefreshBalance,
                 )
 
-                // --- ЛОГИ ---
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = onSendLogs,
-                        enabled = !state.isSendingLogs,
-                    ) {
-                        Text(
-                            text = if (state.isSendingLogs) "Отправка логов..." else "Отправить логи",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.glassColors.textPrimary
-                        )
-                    }
-                    state.sendLogsMessage?.let { message ->
-                        Text(
-                            text = message,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.glassColors.textPrimary,
-                            textAlign = TextAlign.Start
-                        )
+                LogsView(state, onSupportEmailInput, onSendLogs, clipboardManager, onShowSnack)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LogsView(
+    state: SettingsState,
+    onSupportEmailInput: (String) -> Unit,
+    onSendLogs: () -> Unit,
+    clipboardManager: ClipboardManager,
+    onShowSnack: (String) -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        LabeledTextField(
+            label = "Email поддержки",
+            value = state.supportEmail,
+            onValueChange = onSupportEmailInput,
+        )
+        Button(
+            onClick = onSendLogs,
+            enabled = !state.isSendingLogs,
+        ) {
+            Text(
+                text = if (state.isSendingLogs) "Отправка логов..." else "Отправить логи",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.glassColors.textPrimary
+            )
+        }
+        state.sendLogsMessage?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.glassColors.textPrimary,
+                textAlign = TextAlign.Start,
+                modifier = Modifier.clickable(enabled = state.sendLogsPath != null) {
+                    state.sendLogsPath?.let { path ->
+                        clipboardManager.setText(AnnotatedString(path))
+                        onShowSnack("Путь к логам скопирован")
                     }
                 }
-            }
+            )
         }
     }
 }
@@ -414,6 +443,71 @@ private fun TokensBalanceSection(
 }
 
 @Composable
+private fun ModelDropdown(
+    selectedModel: GigaModel,
+    onModelSelected: (GigaModel) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Модель",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.glassColors.textPrimary
+        )
+        Box {
+            OutlinedButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.glassColors.textPrimary
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f)),
+                shape = MaterialTheme.shapes.extraSmall
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${selectedModel.name} (${selectedModel.alias})",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.glassColors.textPrimary
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Выбрать модель",
+                        tint = MaterialTheme.glassColors.textPrimary
+                    )
+                }
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.fillMaxWidth(0.6f)
+            ) {
+                GigaModel.entries.forEach { model ->
+                    DropdownMenuItem(
+                        text = { Text("${model.name} (${model.alias})") },
+                        onClick = {
+                            onModelSelected(model)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+        Text(
+            text = "Выберите модель, которая будет использована для запросов.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+        )
+    }
+}
+
+@Composable
 private fun LabeledTextField(
     label: String,
     value: String,
@@ -457,6 +551,7 @@ fun SettingsScreenPreview() {
             onGigaChatKeyInput = {},
             onSaluteSpeechKeyInput = {},
             onUseFewShotExamplesChange = {},
+            onModelChange = {},
             onDefaultCalendarChange = {},
             onSupportEmailInput = {},
             onSystemPromptChange = {},
@@ -466,6 +561,7 @@ fun SettingsScreenPreview() {
             onOpenTools = {},
             onResizeRequest = {},
             onClose = {},
+            onShowSnack = {},
         )
     }
 }

@@ -18,7 +18,6 @@ import ru.gigadesk.db.VectorDB
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.keys.HotkeyListener
-import ru.gigadesk.keys.SelectedText
 import ru.gigadesk.permissions.AppRelauncher
 import ru.gigadesk.ui.BaseViewModel
 import java.util.concurrent.atomic.AtomicReference
@@ -30,7 +29,6 @@ class MainViewModel(
 
     private val l = LoggerFactory.getLogger(MainViewModel::class.java)
     private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), viewModelScope)
-    private val selectedText: SelectedText by di.instance()
     private val agentRef = AtomicReference<GraphBasedAgent?>(null)
     private var permissionWatcherJob: Job? = null
 
@@ -99,13 +97,7 @@ class MainViewModel(
             while (isActive) {
                 runCatching {
                     userInputFlow.collect { userInput ->
-                        val selectedPostfix = viewModelScope.async {
-                            selectedText.getOrNull()
-                                ?.let { "\nThe selected text below:\n$it" }
-                                ?: ""
-                        }.await()
-
-                        val rawText = graphAgent.execute(userInput + selectedPostfix)
+                        val rawText = graphAgent.execute(userInput)
                         l.info(rawText)
                         val speechText = prepareTextForSpeech(rawText)
                         setState { copy(displayedText = rawText, statusMessage = "Ответ готов") }
