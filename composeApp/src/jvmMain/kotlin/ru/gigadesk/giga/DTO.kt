@@ -139,8 +139,8 @@ object GigaRequest {
         val name: String,
         val description: String,
         val parameters: Parameters,
-        @field:JsonProperty("few_shot_examples") val fewShotExamples: List<FewShotExample> = emptyList(),
-        @field:JsonProperty("return_parameters") val returnParameters: Parameters
+        @field:JsonProperty("few_shot_examples") val fewShotExamples: List<FewShotExample>? = null,
+        @field:JsonProperty("return_parameters") val returnParameters: Parameters? = null,
     )
 
     data class Parameters(

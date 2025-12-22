@@ -65,14 +65,15 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
             fewShotExamples = if (settings.useFewShotExamples) {
                 toolSetup.fewShotExamples.map { GigaRequest.FewShotExample(it.request, it.params) }
             } else {
-                emptyList()
+                null
             },
-            returnParameters = GigaRequest.Parameters(
-                type = toolSetup.returnParameters.type,
-                properties = toolSetup.returnParameters.properties.mapValues {
-                    GigaRequest.Property(it.value.type, it.value.description)
-                }
-            )
+            returnParameters = null
+//                    GigaRequest.Parameters(
+//                             type = toolSetup.returnParameters.type,
+//                             properties = toolSetup.returnParameters.properties.mapValues {
+//                                       GigaRequest.Property(it.value.type, it.value.description)
+//                             }
+//                    )
         )
 
         override suspend fun invoke(

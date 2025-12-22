@@ -129,7 +129,7 @@ class ToolsSettings(
         return object : GigaToolSetup by setup {
             override val fn = setup.fn.copy(
                 description = description,
-                fewShotExamples = examples + setup.fn.fewShotExamples,
+                fewShotExamples = examples + (setup.fn.fewShotExamples ?: emptyList()),
             )
         }
     }
