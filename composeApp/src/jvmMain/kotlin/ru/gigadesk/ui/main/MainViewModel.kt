@@ -28,7 +28,6 @@ class MainViewModel(
     override val di: DI,
 ) : BaseViewModel<MainState, MainEvent, MainEffect>(), DIAware {
 
-
     private val l = LoggerFactory.getLogger(MainViewModel::class.java)
     private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), viewModelScope)
     private val selectedText: SelectedText by di.instance()
@@ -107,11 +106,10 @@ class MainViewModel(
                         }.await()
 
                         val rawText = graphAgent.execute(userInput + selectedPostfix)
-                        val safeText = sanitizeLlmResponse(rawText)
-                        l.info(safeText)
-
-                        setState { copy(displayedText = safeText, statusMessage = "Ответ готов") }
-                        playText(safeText)
+                        l.info(rawText)
+                        val speechText = prepareTextForSpeech(rawText)
+                        setState { copy(displayedText = rawText, statusMessage = "Ответ готов") }
+                        playText(speechText)
                     }
                 }.onFailure { e ->
                     l.error("Agent flow terminated: ${e.message}", e)
@@ -226,16 +224,12 @@ class MainViewModel(
         permissionWatcherJob?.cancel()
     }
 
-    private fun sanitizeLlmResponse(input: String): String {
-        if (input.isBlank()) return ""
-
-        var result = input
-
-        result = result.replace("```", "\n```\n")
-
-        while (result.contains("\n\n\n")) {
-            result = result.replace("\n\n\n", "\n\n")
-        }
+    private fun prepareTextForSpeech(text: String): String {
+        var result = text.replace(Regex("```[\\s\\S]*?```"), "")
+        //result = result.replace(Regex("`[^`]+`"), "")
+        result = result.replace(Regex("[\"«»„“”]"), "")
+        result = result.replace(Regex("[*#]"), "")
+        result = result.replace(Regex("\\s+"), " ")
 
         return result.trim()
     }
