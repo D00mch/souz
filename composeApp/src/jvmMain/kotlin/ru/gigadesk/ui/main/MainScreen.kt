@@ -468,23 +468,44 @@ fun RealLiquidGlassCard(
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(cornerRadius)
-    val borderThickness = 1.5.dp
     val noiseBrush = rememberNoiseBrush()
 
     val backdropAlpha by animateFloatAsState(
-        targetValue = if (isWindowFocused) 0.75f else 0.0f,
-        animationSpec = tween(400)
+        targetValue = if (isWindowFocused) 0.85f else 0.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioLowBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "BackdropAlpha"
+    )
+
+    // 2. Анимация масштаба фона (Эффект глубины)
+    val backdropScale by animateFloatAsState(
+        targetValue = if (isWindowFocused) 1f else 0.92f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "BackdropScale"
+    )
+
+    val borderThickness by animateDpAsState(
+        targetValue = if (isWindowFocused) 2.dp else 1.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "BorderThickness"
     )
 
     val noiseAlpha by animateFloatAsState(
         targetValue = if (isWindowFocused) 0.25f else 0.0f,
-        animationSpec = tween(400)
+        animationSpec = tween(500),
+        label = "NoiseAlpha"
     )
 
     Box(modifier = modifier) {
         Box(
             modifier = Modifier
                 .matchParentSize()
+                .scale(backdropScale)
                 .clip(shape)
                 .background(Color.Black.copy(alpha = backdropAlpha))
         )
@@ -494,7 +515,7 @@ fun RealLiquidGlassCard(
                 drawRect(brush = noiseBrush)
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(0.5f)),
+                        colors = listOf(Color.Transparent, Color.Black.copy(0.6f)),
                         radius = size.maxDimension / 1.0f
                     )
                 )
@@ -505,9 +526,9 @@ fun RealLiquidGlassCard(
             val strokeWidth = borderThickness.toPx()
             drawRoundRect(
                 brush = Brush.linearGradient(
-                    0.0f to Color.White.copy(alpha = 0.8f),
+                    0.0f to Color.White.copy(alpha = if(isWindowFocused) 0.9f else 0.4f), // Ярче при фокусе
                     0.5f to Color.White.copy(alpha = 0.0f),
-                    1.0f to Color.White.copy(alpha = 0.3f),
+                    1.0f to Color.White.copy(alpha = if(isWindowFocused) 0.4f else 0.1f),
                     start = Offset(0f, 0f),
                     end = Offset(size.width, size.height)
                 ),
@@ -524,7 +545,10 @@ fun RealLiquidGlassCard(
                     close()
                 },
                 brush = Brush.linearGradient(
-                    colors = listOf(Color.White.copy(0.05f), Color.Transparent),
+                    colors = listOf(
+                        Color.White.copy(if (isWindowFocused) 0.1f else 0.02f),
+                        Color.Transparent
+                    ),
                     start = Offset(0f, 0f),
                     end = Offset(size.width / 2, size.height / 2)
                 )
