@@ -66,7 +66,7 @@ class GigaRestChatAPI(
         }
     }
 
-    val uuid = UUID.randomUUID().toString()
+    private val uuid = UUID.randomUUID().toString() // для того, чтобы работал кеш
 
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
         val response = client.post(URL) {
@@ -76,11 +76,14 @@ class GigaRestChatAPI(
         when {
             response.status.isSuccess() -> {
                 val result = response.body<GigaResponse.Chat.Ok>()
-                println("Chat." +
-                        "\n-- History.len: ${body.messages.size}, Functions.len: ${body.functions.size}," +
-                        "\n-- Tokens spent: ${result.usage.promptTokens}, model: ${result.model}" +
-                        "\n-- Choice.len: ${result.choices.size}, Last choice:" +
-                        "\n${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}")
+                println(
+                    """
+                    |"Chat: -- History.len: ${body.messages.size},  Functions.len: ${body.functions.size}
+                    |       -- Tokens spent: ${result.usage.totalTokens},  cached: ${result.usage.precachedTokens}
+                    |       -- Choice.len: ${result.choices.size},  Last choice:"
+                    |${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}
+                    """.trimMargin()
+                )
                 result
             }
             response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
