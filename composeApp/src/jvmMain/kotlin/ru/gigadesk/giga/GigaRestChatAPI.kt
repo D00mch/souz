@@ -24,8 +24,11 @@ import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
 import java.io.File
 import java.util.UUID
+import kotlin.concurrent.atomics.AtomicReference
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.time.Duration.Companion.seconds
 
+@OptIn(ExperimentalAtomicApi::class)
 class GigaRestChatAPI(
     private val auth: GigaAuth,
     private val keysProvider: SettingsProvider,
@@ -68,6 +71,8 @@ class GigaRestChatAPI(
 
     private val uuid = UUID.randomUUID().toString() // для того, чтобы работал кеш
 
+    private val currentSessionTokensUsage = AtomicReference(GigaResponse.Usage(0, 0, 0, 0))
+
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
         val response = client.post(URL) {
             header("X-Session-ID", uuid)
@@ -76,13 +81,19 @@ class GigaRestChatAPI(
         when {
             response.status.isSuccess() -> {
                 val result = response.body<GigaResponse.Chat.Ok>()
+
+                val newCurrentTokensUsage = currentSessionTokensUsage.load() + result.usage
+                currentSessionTokensUsage.store(newCurrentTokensUsage)
+
+                val (_, _, spent, cached) = result.usage
+                val (_, _, sSpent, sCached) = newCurrentTokensUsage
                 println(
                     """
-                    |"Chat: -- History.len: ${body.messages.size},  Functions.len: ${body.functions.size}
-                    |       -- Tokens spent: ${result.usage.totalTokens},  cached: ${result.usage.precachedTokens}
-                    |       -- Choice.len: ${result.choices.size},  Last choice:"
-                    |${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}
-                    """.trimMargin()
+                |"Chat: -- History.len: ${body.messages.size},  Functions.len: ${body.functions.size}
+                |       -- Tokens spent: $spent, cached: $cached, per session spent: $sSpent, cached: $sCached
+                |       -- Choice.len: ${result.choices.size}, Last choice:"
+                |${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}
+                """.trimMargin()
                 )
                 result
             }

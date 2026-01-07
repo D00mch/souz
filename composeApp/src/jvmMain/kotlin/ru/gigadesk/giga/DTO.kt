@@ -179,3 +179,10 @@ fun String.toSystemPromptMessage() = GigaRequest.Message(
     role = GigaMessageRole.system,
     content = this
 )
+
+operator fun GigaResponse.Usage.plus(usage: GigaResponse.Usage): GigaResponse.Usage = GigaResponse.Usage(
+    promptTokens = this.promptTokens + usage.promptTokens,
+    completionTokens = this.completionTokens + usage.completionTokens,
+    totalTokens = this.totalTokens + usage.totalTokens,
+    precachedTokens = this.precachedTokens + usage.precachedTokens
+)
