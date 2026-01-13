@@ -5,6 +5,7 @@ import ru.gigadesk.tool.files.ToolDeleteFile
 import ru.gigadesk.tool.files.ToolFindTextInFiles
 import ru.gigadesk.tool.files.ToolListFiles
 import ru.gigadesk.tool.files.ToolModifyFile
+import ru.gigadesk.tool.files.ToolMoveFile
 import ru.gigadesk.tool.files.ToolNewFile
 import ru.gigadesk.tool.files.ToolReadFile
 import org.junit.Assert.assertThrows
@@ -53,11 +54,12 @@ class ToolTest {
     }
 
     @Test
-    fun `test ToolNewFile, ToolModifyFile, ToolDeleteFile lifecycle`() {
+    fun `test ToolNewFile, ToolModifyFile, ToolMoveFile, ToolDeleteFile lifecycle`() {
         val content = "Test"
         val resources = "src/jvmTest/resources"
         val newFileName = "${UUID.randomUUID()}.txt"
         val path = "$resources/$newFileName"
+        val movedPath = "$resources/moved-$newFileName"
 
         // create new file
         ToolNewFile(ToolNewFile.Input(path, text = content))
@@ -68,14 +70,19 @@ class ToolTest {
         val newContent = "New"
         ToolModifyFile(ToolModifyFile.Input(path, oldText = content, newText = newContent))
 
+        // move
+        ToolMoveFile(ToolMoveFile.Input(path, movedPath))
+        val movedContent = ToolReadFile(ToolReadFile.Input(movedPath))
+        assertEquals(newContent, movedContent)
+
         // find
         val findResult = ToolFindTextInFiles(ToolFindTextInFiles.Input(path = resources, newContent))
-        assertEquals("[$newFileName]", findResult)
+        assertEquals("[moved-$newFileName]", findResult)
 
         // delete
-        ToolDeleteFile(ToolDeleteFile.Input(path))
+        ToolDeleteFile(ToolDeleteFile.Input(movedPath))
         assertThrows(BadInputException::class.java) {
-            ToolReadFile(ToolReadFile.Input(path))
+            ToolReadFile(ToolReadFile.Input(movedPath))
         }
     }
 }
