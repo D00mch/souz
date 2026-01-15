@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.TooltipArea
-import androidx.compose.foundation.TooltipPlacement
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,10 +20,10 @@ import androidx.compose.material3.* // Используем Material 3
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -147,7 +146,6 @@ fun ToolsScreen(
                             }
 
                             if (index != state.categories.lastIndex) {
-                                // Material 3 HorizontalDivider
                                 HorizontalDivider(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -203,7 +201,7 @@ private fun CategorySection(
     onToolToggle: (ToolCategory, String, Boolean) -> Unit,
     onToolClick: (ToolCategory, ToolUi) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -240,8 +238,10 @@ private fun CategorySection(
         }
 
         AnimatedVisibility(visible = expanded) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(start = 12.dp)) {
-                category.tools.forEach { tool ->
+            Column(
+                modifier = Modifier.padding(start = 16.dp)
+            ) {
+                category.tools.forEachIndexed { i, tool ->
                     ToolRow(
                         categoryEnabled = category.enabled,
                         category = category.category,
@@ -249,6 +249,18 @@ private fun CategorySection(
                         onToolToggle = onToolToggle,
                         onToolClick = onToolClick,
                     )
+
+
+                    if (i != category.tools.lastIndex) {
+                        HorizontalDivider(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .alpha(0.5f)
+                                .padding(start = 36.dp),
+                            thickness = 1.dp,
+                            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.10f),
+                        )
+                    }
                 }
             }
         }
@@ -270,7 +282,6 @@ private fun ToolRow(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surface)
-                    .padding(8.dp)
             ) {
                 Text(
                     text = tool.description,
@@ -280,15 +291,9 @@ private fun ToolRow(
             }
         },
         delayMillis = 200,
-        tooltipPlacement = TooltipPlacement.CursorPoint(offset = DpOffset(8.dp, 8.dp)),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                // Используем Box или просто background, в Material 3 surface.copy прозрачность ок
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.0001f)),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Checkbox(
                 checked = categoryEnabled && tool.enabled,
@@ -305,7 +310,6 @@ private fun ToolRow(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.glassColors.textPrimary.copy(alpha = if (categoryEnabled) 1f else 0.5f),
                 modifier = Modifier
-                    .padding(vertical = 6.dp)
                     .weight(1f)
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.0001f))
                     .clip(RoundedCornerShape(4.dp))
