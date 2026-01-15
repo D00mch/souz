@@ -23,6 +23,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,6 +41,7 @@ import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
+import sun.swing.SwingUtilities2.drawRect
 
 private val ToolsWindowSize = DpSize(width = 640.dp, height = 720.dp)
 
@@ -312,6 +319,9 @@ private fun ToolRow(
         ) {
             val textColor = MaterialTheme.glassColors.textPrimary
             val nameAlpha = if (categoryEnabled) 1f else 0.5f
+            val baseColor = textColor.copy(alpha = 0.5f * nameAlpha)
+            val fadeWidth = 28.dp
+
             Checkbox(
                 checked = categoryEnabled && tool.enabled,
                 onCheckedChange = { onToolToggle(category, tool.name, it) },
@@ -344,10 +354,27 @@ private fun ToolRow(
                 Text(
                     text = tool.description,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = textColor.copy(alpha = 0.65f * nameAlpha),
+                    color = baseColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        // key part: isolate into an offscreen buffer (transparent background)
+                        .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                        .drawWithCache {
+                            val w = fadeWidth.toPx().coerceAtMost(size.width)
+                            val mask = Brush.horizontalGradient(
+                                colors = listOf(Color.Black, Color.Transparent),
+                                startX = size.width - w,
+                                endX = size.width
+                            )
+                            onDrawWithContent {
+                                drawContent()
+                                // mask only the text layer, not the real background
+                                drawRect(brush = mask, blendMode = BlendMode.DstIn)
+                            }
+                        }
                 )
+
             }
         }
     }
