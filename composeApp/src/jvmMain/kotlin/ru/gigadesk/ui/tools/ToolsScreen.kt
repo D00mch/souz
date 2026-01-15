@@ -1,6 +1,11 @@
+@file:OptIn(ExperimentalSharedTransitionApi::class)
+
 package ru.gigadesk.ui.tools
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.TooltipArea
@@ -52,6 +57,8 @@ fun ToolsScreen(
     onResizeRequest: (DpSize) -> Unit = {},
     onShowSnack: (String) -> Unit = {},
     viewModelKey: String = "ToolsScreen",
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val di = localDI()
     val viewModel = viewModel(key = viewModelKey) { ToolsSettingsViewModel(di) }
@@ -85,6 +92,8 @@ fun ToolsScreen(
         onSave = { viewModel.send(ToolsSettingsEvent.SaveSettings) },
         onResizeRequest = onResizeRequest,
         onClose = onClose,
+        sharedTransitionScope = sharedTransitionScope,
+        animatedVisibilityScope = animatedVisibilityScope,
     )
 }
 
@@ -99,6 +108,8 @@ fun ToolsScreen(
     onSave: () -> Unit,
     onResizeRequest: (DpSize) -> Unit = {},
     onClose: () -> Unit,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     LaunchedEffect(Unit) { onResizeRequest(ToolsWindowSize) }
 
@@ -159,6 +170,8 @@ fun ToolsScreen(
                                     onCategoryToggle = onCategoryToggle,
                                     onToolToggle = onToolToggle,
                                     onToolClick = onToolClick,
+                                    sharedTransitionScope = sharedTransitionScope,
+                                    animatedVisibilityScope = animatedVisibilityScope,
                                 )
                             }
 
@@ -222,6 +235,8 @@ private fun CategorySection(
     onCategoryToggle: (ToolCategory, Boolean) -> Unit,
     onToolToggle: (ToolCategory, String, Boolean) -> Unit,
     onToolClick: (ToolCategory, ToolUi) -> Unit,
+    sharedTransitionScope: SharedTransitionScope?,
+    animatedVisibilityScope: AnimatedVisibilityScope?,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
         Row(
@@ -270,6 +285,8 @@ private fun CategorySection(
                         tool = tool,
                         onToolToggle = onToolToggle,
                         onToolClick = onToolClick,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
                     )
 
 
@@ -297,6 +314,8 @@ private fun ToolRow(
     tool: ToolUi,
     onToolToggle: (ToolCategory, String, Boolean) -> Unit,
     onToolClick: (ToolCategory, ToolUi) -> Unit,
+    sharedTransitionScope: SharedTransitionScope?,
+    animatedVisibilityScope: AnimatedVisibilityScope?,
 ) {
     TooltipArea(
         tooltip = {
@@ -349,6 +368,15 @@ private fun ToolRow(
                     color = textColor.copy(alpha = nameAlpha),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.sharedToolHeaderElement(
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        key = toolSharedTransitionKey(
+                            category = category,
+                            toolName = tool.name,
+                            suffix = "title",
+                        ),
+                    ),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
@@ -358,7 +386,15 @@ private fun ToolRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
-                        // key part: isolate into an offscreen buffer (transparent background)
+                        .sharedToolHeaderElement(
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            key = toolSharedTransitionKey(
+                                category = category,
+                                toolName = tool.name,
+                                suffix = "description",
+                            ),
+                        )
                         .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                         .drawWithCache {
                             val w = fadeWidth.toPx().coerceAtMost(size.width)
@@ -372,12 +408,34 @@ private fun ToolRow(
                                 // mask only the text layer, not the real background
                                 drawRect(brush = mask, blendMode = BlendMode.DstIn)
                             }
-                        }
+                        },
                 )
-
             }
         }
     }
+}
+
+private fun toolSharedTransitionKey(
+    category: ToolCategory,
+    toolName: String,
+    suffix: String,
+): String = "tool-${category.name}-${toolName}-$suffix"
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun Modifier.sharedToolHeaderElement(
+    sharedTransitionScope: SharedTransitionScope?,
+    animatedVisibilityScope: AnimatedVisibilityScope?,
+    key: String,
+): Modifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+    with(sharedTransitionScope) {
+        this@sharedToolHeaderElement.sharedElement(
+            sharedContentState = rememberSharedContentState(key = key),
+            animatedVisibilityScope = animatedVisibilityScope,
+        )
+    }
+} else {
+    this
 }
 
 @Preview
@@ -412,6 +470,8 @@ private fun ToolsScreenPreview() {
             onClose = {},
             onCategoryExpandedChange = { _, _ -> },
             onScrollPositionChange = {},
+            sharedTransitionScope = null,
+            animatedVisibilityScope = null,
         )
     }
 }
