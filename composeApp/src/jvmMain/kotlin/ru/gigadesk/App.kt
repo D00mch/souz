@@ -1,11 +1,7 @@
 package ru.gigadesk
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,23 +10,23 @@ import androidx.compose.material.SnackbarHost
 import androidx.compose.material.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.DpSize // <--- Import
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.Alignment
 import kotlinx.coroutines.launch
 import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.gigadesk.Screen.*
+import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.main.MainScreen
 import ru.gigadesk.ui.settings.SettingsScreen
 import ru.gigadesk.ui.tools.ToolDetailsScreen
 import ru.gigadesk.ui.tools.ToolsScreen
-import ru.gigadesk.db.SettingsProvider
-import ru.gigadesk.tool.ToolCategory
-import java.util.UUID
+import java.util.*
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -62,9 +58,10 @@ fun App(
                         targetState = currentScreen,
                         transitionSpec = {
                             ContentTransform(
-                                targetContentEnter = EnterTransition.None,
-                                initialContentExit = ExitTransition.None,
-                                sizeTransform = null,
+                                targetContentEnter = fadeIn(animationSpec = tween(5)),
+                                initialContentExit = fadeOut(animationSpec = tween(5)),
+                                targetContentZIndex = 1f,
+                                sizeTransform = SizeTransform(clip = false),
                             )
                         },
                     ) { screen ->
