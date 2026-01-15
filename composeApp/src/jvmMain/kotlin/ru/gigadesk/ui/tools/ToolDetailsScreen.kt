@@ -36,7 +36,9 @@ fun ToolDetailsScreen(
     onResizeRequest: (DpSize) -> Unit = {},
 ) {
     val di = localDI()
-    val viewModel = viewModel { ToolDetailsViewModel(di, category, toolName) }
+    val viewModel = viewModel(key = "${category.name}:$toolName") {
+        ToolDetailsViewModel(di, category, toolName)
+    }
     val state by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 

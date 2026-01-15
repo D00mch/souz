@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -295,6 +296,8 @@ private fun ToolRow(
         Row(
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val textColor = MaterialTheme.glassColors.textPrimary
+            val nameAlpha = if (categoryEnabled) 1f else 0.5f
             Checkbox(
                 checked = categoryEnabled && tool.enabled,
                 onCheckedChange = { onToolToggle(category, tool.name, it) },
@@ -305,10 +308,7 @@ private fun ToolRow(
                     checkmarkColor = MaterialTheme.colorScheme.onPrimary
                 ),
             )
-            Text(
-                text = tool.name,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.glassColors.textPrimary.copy(alpha = if (categoryEnabled) 1f else 0.5f),
+            Row(
                 modifier = Modifier
                     .weight(1f)
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.0001f))
@@ -317,7 +317,24 @@ private fun ToolRow(
                     .let { base ->
                         if (categoryEnabled) base.clickable { onToolClick(category, tool) } else base
                     },
-            )
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = tool.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor.copy(alpha = nameAlpha),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = tool.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor.copy(alpha = 0.65f * nameAlpha),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
