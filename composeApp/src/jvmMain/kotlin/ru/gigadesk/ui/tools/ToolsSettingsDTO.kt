@@ -9,6 +9,8 @@ import ru.gigadesk.ui.VMSideEffect
 sealed interface ToolsSettingsEvent : VMEvent {
     data class ToggleCategory(val category: ToolCategory, val enabled: Boolean) : ToolsSettingsEvent
     data class ToggleTool(val category: ToolCategory, val toolName: String, val enabled: Boolean) : ToolsSettingsEvent
+    data class UpdateCategoryExpanded(val category: ToolCategory, val expanded: Boolean) : ToolsSettingsEvent
+    data class UpdateScrollPosition(val position: Int) : ToolsSettingsEvent
     object SaveSettings : ToolsSettingsEvent
 }
 
@@ -19,6 +21,8 @@ sealed interface ToolsSettingsEffect : VMSideEffect {
 data class ToolsScreenState(
     val categories: List<ToolsCategoryUi> = emptyList(),
     val isSaving: Boolean = false,
+    val expandedByCategory: Map<ToolCategory, Boolean> = emptyMap(),
+    val scrollPosition: Int = 0,
 ) : VMState
 
 data class ToolsCategoryUi(

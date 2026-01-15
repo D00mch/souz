@@ -32,6 +32,8 @@ class ToolsSettingsViewModel(
         when (event) {
             is ToolsSettingsEvent.ToggleCategory -> updateCategory(event.category, event.enabled)
             is ToolsSettingsEvent.ToggleTool -> updateTool(event.category, event.toolName, event.enabled)
+            is ToolsSettingsEvent.UpdateCategoryExpanded -> updateCategoryExpanded(event.category, event.expanded)
+            is ToolsSettingsEvent.UpdateScrollPosition -> updateScrollPosition(event.position)
             ToolsSettingsEvent.SaveSettings -> saveSettings()
         }
     }
@@ -89,6 +91,19 @@ class ToolsSettingsViewModel(
             }
             copy(categories = updatedCategories)
         }
+    }
+
+    private suspend fun updateCategoryExpanded(category: ToolCategory, expanded: Boolean) {
+        setState {
+            val updatedExpanded = expandedByCategory.toMutableMap().apply {
+                put(category, expanded)
+            }
+            copy(expandedByCategory = updatedExpanded)
+        }
+    }
+
+    private suspend fun updateScrollPosition(position: Int) {
+        setState { copy(scrollPosition = position) }
     }
 
     private suspend fun saveSettings() {

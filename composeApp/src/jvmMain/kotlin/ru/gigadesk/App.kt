@@ -40,6 +40,7 @@ fun App(
     var currentScreen by remember(shouldStartInSettings) {
         mutableStateOf(if (shouldStartInSettings) Settings else Main)
     }
+    var toolsScreen by remember { mutableStateOf<Tools?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
 
@@ -60,7 +61,12 @@ fun App(
                     )
                     Settings -> SettingsScreen(
                         onClose = { currentScreen = Main },
-                        onOpenTools = { currentScreen = Tools() },
+                        onOpenTools = {
+                            if (toolsScreen == null) {
+                                toolsScreen = Tools()
+                            }
+                            currentScreen = toolsScreen ?: Tools()
+                        },
                         onResizeRequest = onWindowResize,
                         onShowSnack = { message ->
                             snackbarScope.launch { snackbarHostState.showSnackbar(message) }
@@ -80,7 +86,12 @@ fun App(
                     is ToolDetails -> ToolDetailsScreen(
                         category = screen.category,
                         toolName = screen.toolName,
-                        onClose = { currentScreen = Tools() },
+                        onClose = {
+                            if (toolsScreen == null) {
+                                toolsScreen = Tools()
+                            }
+                            currentScreen = toolsScreen ?: Tools()
+                        },
                         onResizeRequest = onWindowResize,
                     )
 

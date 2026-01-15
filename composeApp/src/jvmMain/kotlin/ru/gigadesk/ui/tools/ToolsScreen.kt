@@ -18,6 +18,7 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.* // Используем Material 3
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -28,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
 import org.kodein.di.compose.localDI
 import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
@@ -66,6 +68,12 @@ fun ToolsScreen(
         onToolToggle = { category, toolName, enabled ->
             viewModel.send(ToolsSettingsEvent.ToggleTool(category, toolName, enabled))
         },
+        onCategoryExpandedChange = { category, expanded ->
+            viewModel.send(ToolsSettingsEvent.UpdateCategoryExpanded(category, expanded))
+        },
+        onScrollPositionChange = { position ->
+            viewModel.send(ToolsSettingsEvent.UpdateScrollPosition(position))
+        },
         onToolClick = onOpenToolDetails,
         onSave = { viewModel.send(ToolsSettingsEvent.SaveSettings) },
         onResizeRequest = onResizeRequest,
@@ -78,6 +86,8 @@ fun ToolsScreen(
     state: ToolsScreenState,
     onCategoryToggle: (ToolCategory, Boolean) -> Unit,
     onToolToggle: (ToolCategory, String, Boolean) -> Unit,
+    onCategoryExpandedChange: (ToolCategory, Boolean) -> Unit,
+    onScrollPositionChange: (Int) -> Unit,
     onToolClick: (ToolCategory, ToolUi) -> Unit,
     onSave: () -> Unit,
     onResizeRequest: (DpSize) -> Unit = {},
@@ -94,8 +104,7 @@ fun ToolsScreen(
             modifier = Modifier.fillMaxSize(),
             isWindowFocused = isFocused // Передаем статус фокуса
         ) {
-            val scrollState = rememberScrollState()
-            val expandedByCategory = remember { mutableStateMapOf<ToolCategory, Boolean>() }
+            val scrollState = rememberScrollState(state.scrollPosition)
 
             Box(modifier = Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -135,11 +144,11 @@ fun ToolsScreen(
 
                         state.categories.forEachIndexed { index, category ->
                             key(category.category) {
-                                val expanded = expandedByCategory[category.category] ?: false
+                                val expanded = state.expandedByCategory[category.category] ?: false
                                 CategorySection(
                                     category = category,
                                     expanded = expanded,
-                                    onExpandedChange = { expandedByCategory[category.category] = it },
+                                    onExpandedChange = { onCategoryExpandedChange(category.category, it) },
                                     onCategoryToggle = onCategoryToggle,
                                     onToolToggle = onToolToggle,
                                     onToolClick = onToolClick,
@@ -188,6 +197,11 @@ fun ToolsScreen(
                         .padding(vertical = 24.dp),
                     adapter = rememberScrollbarAdapter(scrollState)
                 )
+            }
+            LaunchedEffect(scrollState) {
+                snapshotFlow { scrollState.value }
+                    .distinctUntilChanged()
+                    .collect { onScrollPositionChange(it) }
             }
         }
     }
@@ -369,6 +383,8 @@ private fun ToolsScreenPreview() {
             onSave = {},
             onResizeRequest = {},
             onClose = {},
+            onCategoryExpandedChange = { _, _ -> },
+            onScrollPositionChange = {},
         )
     }
 }
