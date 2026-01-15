@@ -2,10 +2,11 @@ package ru.gigadesk.ui.settings
 
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.giga.GigaModel
+import ru.gigadesk.giga.GigaResponse
+import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.ui.VMEvent
 import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
-import ru.gigadesk.giga.GigaResponse
 
 data class SettingsState(
     val gigaChatKey: String = "",
@@ -22,7 +23,9 @@ data class SettingsState(
     val systemPrompt: String = DEFAULT_SYSTEM_PROMPT,
     val defaultCalendar: String? = null,
     val availableCalendars: List<String> = emptyList(),
-    val isLoadingCalendars: Boolean = false
+    val isLoadingCalendars: Boolean = false,
+    val voiceSpeed: Int = ToolSoundConfig.DEFAULT_SPEED,
+    val voiceSpeedInput: String = ToolSoundConfig.DEFAULT_SPEED.toString(),
 ): VMState
 
 sealed interface SettingsEvent : VMEvent {
@@ -33,6 +36,7 @@ sealed interface SettingsEvent : VMEvent {
     data class SelectModel(val model: GigaModel): SettingsEvent
     data class InputSupportEmail(val email: String): SettingsEvent
     data class InputSystemPrompt(val prompt: String): SettingsEvent
+    data class InputVoiceSpeed(val speed: String): SettingsEvent
     object ResetSystemPrompt: SettingsEvent
     object SendLogsToSupport: SettingsEvent
     object RefreshBalance: SettingsEvent

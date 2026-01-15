@@ -59,6 +59,7 @@ fun SettingsScreen(
         state,
         onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
         onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
+        onVoiceSpeedInput = { speed -> viewModel.send(SettingsEvent.InputVoiceSpeed(speed)) },
         onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
         onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
         onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
@@ -79,6 +80,7 @@ fun SettingsScreen(
     state: SettingsState,
     onGigaChatKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
+    onVoiceSpeedInput: (String) -> Unit,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
     onModelChange: (GigaModel) -> Unit,
     onDefaultCalendarChange: (String?) -> Unit,
@@ -156,6 +158,20 @@ fun SettingsScreen(
                     onValueChange = onSaluteSpeechKeyInput,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LabeledTextField(
+                        label = "Скорость речи",
+                        value = state.voiceSpeedInput,
+                        onValueChange = onVoiceSpeedInput,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "Текущее значение: ${state.voiceSpeed}. Чем больше значение, тем быстрее речь.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                    )
+                }
 
                 ModelDropdown(
                     selectedModel = state.gigaModel,
@@ -550,6 +566,7 @@ fun SettingsScreenPreview() {
             state = SettingsState(gigaChatKey = "key1", saluteSpeechKey = "key2", useFewShotExamples = true),
             onGigaChatKeyInput = {},
             onSaluteSpeechKeyInput = {},
+            onVoiceSpeedInput = {},
             onUseFewShotExamplesChange = {},
             onModelChange = {},
             onDefaultCalendarChange = {},

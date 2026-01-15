@@ -10,9 +10,11 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.agent.GraphBasedAgent
+import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaRestChatAPI
+import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.calendar.CalendarAppleScriptCommands
 import ru.gigadesk.ui.BaseViewModel
@@ -30,6 +32,7 @@ class SettingsViewModel(
 
     init {
         viewModelScope.launch {
+            val voiceSpeed = ConfigStore.get(ToolSoundConfig.SPEED_KEY, ToolSoundConfig.DEFAULT_SPEED)
             setState {
                 copy(
                     gigaChatKey = keysProvider.gigaChatKey ?: "",
@@ -38,7 +41,9 @@ class SettingsViewModel(
                     gigaModel = keysProvider.gigaModel,
                     supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
                     systemPrompt = keysProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT,
-                    defaultCalendar = keysProvider.defaultCalendar
+                    defaultCalendar = keysProvider.defaultCalendar,
+                    voiceSpeed = voiceSpeed,
+                    voiceSpeedInput = voiceSpeed.toString(),
                 )
             }
             fetchBalance()
@@ -76,6 +81,14 @@ class SettingsViewModel(
                 graphBasedAgent.updateSystemPrompt(event.prompt)
                 setState { copy(systemPrompt = event.prompt) }
                 send(SettingsEffect.NotifyOnSystemPrompt)
+            }
+            is InputVoiceSpeed -> {
+                val normalized = event.speed.filter { it.isDigit() }
+                val newSpeed = normalized.toIntOrNull()
+                if (newSpeed != null) {
+                    ConfigStore.put(ToolSoundConfig.SPEED_KEY, newSpeed)
+                }
+                setState { copy(voiceSpeedInput = normalized, voiceSpeed = newSpeed ?: voiceSpeed) }
             }
             ResetSystemPrompt -> {
                 graphBasedAgent.resetSystemPrompt()
