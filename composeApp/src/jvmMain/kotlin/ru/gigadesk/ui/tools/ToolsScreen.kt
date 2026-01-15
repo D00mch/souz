@@ -312,7 +312,7 @@ private fun ToolRow(
                 )
             }
         },
-        delayMillis = 200,
+        delayMillis = 900,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
