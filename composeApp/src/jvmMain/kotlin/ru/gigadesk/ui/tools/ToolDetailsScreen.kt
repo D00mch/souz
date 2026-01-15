@@ -1,5 +1,10 @@
+@file:OptIn(ExperimentalSharedTransitionApi::class)
+
 package ru.gigadesk.ui.tools
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -26,7 +32,7 @@ import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
 
-private val ToolDetailsWindowSize = DpSize(width = 680.dp, height = 760.dp)
+private val ToolDetailsWindowSize = DpSize(width = 640.dp, height = 720.dp)
 
 @Composable
 fun ToolDetailsScreen(
@@ -34,6 +40,8 @@ fun ToolDetailsScreen(
     toolName: String,
     onClose: () -> Unit,
     onResizeRequest: (DpSize) -> Unit = {},
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val di = localDI()
     val viewModel = viewModel(key = "${category.name}:$toolName") {
@@ -63,6 +71,12 @@ fun ToolDetailsScreen(
         onResizeRequest = onResizeRequest,
         snackbarHostState = snackbarHostState,
         onClose = onClose,
+        sharedTransitionScope = sharedTransitionScope,
+        animatedVisibilityScope = animatedVisibilityScope,
+        sharedTransitionKey = toolSharedTransitionKey(
+            category = category,
+            toolName = toolName,
+        ),
     )
 }
 
@@ -80,6 +94,9 @@ fun ToolDetailsScreen(
     onResizeRequest: (DpSize) -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     onClose: () -> Unit,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    sharedTransitionKey: String? = null,
 ) {
     LaunchedEffect(Unit) { onResizeRequest(ToolDetailsWindowSize) }
 
@@ -140,11 +157,30 @@ fun ToolDetailsScreen(
 
                 // Title & Enable switch
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val toolTitle = listOfNotNull(state.category?.name, state.toolName)
+                        .joinToString(" / ")
                     Text(
-                        text = "${state.category?.name} / ${state.toolName}",
+                        text = toolTitle,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.glassColors.textPrimary,
+                        modifier = Modifier.sharedToolHeaderElement(
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            key = sharedTransitionKey?.let { "$it-title" },
+                        ),
+                    )
+                    Text(
+                        text = state.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.sharedToolHeaderElement(
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            key = sharedTransitionKey?.let { "$it-description" },
+                        ),
                     )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -360,6 +396,28 @@ private fun ExampleEditor(
     }
 }
 
+private fun toolSharedTransitionKey(
+    category: ToolCategory,
+    toolName: String,
+): String = "tool-${category.name}-$toolName"
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun Modifier.sharedToolHeaderElement(
+    sharedTransitionScope: SharedTransitionScope?,
+    animatedVisibilityScope: AnimatedVisibilityScope?,
+    key: String?,
+): Modifier = if (sharedTransitionScope != null && animatedVisibilityScope != null && key != null) {
+    with(sharedTransitionScope) {
+        this@sharedToolHeaderElement.sharedElement(
+            sharedContentState = rememberSharedContentState(key = key),
+            animatedVisibilityScope = animatedVisibilityScope,
+        )
+    }
+} else {
+    this
+}
+
 @Preview
 @Composable
 private fun ToolDetailsScreenPreview() {
@@ -385,6 +443,9 @@ private fun ToolDetailsScreenPreview() {
             onReset = {},
             onResizeRequest = {},
             onClose = {},
+            sharedTransitionScope = null,
+            animatedVisibilityScope = null,
+            sharedTransitionKey = null,
         )
     }
 }

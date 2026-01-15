@@ -1,5 +1,11 @@
 package ru.gigadesk
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +32,7 @@ import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.tool.ToolCategory
 import java.util.UUID
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 @Preview
 fun App(
@@ -49,60 +56,76 @@ fun App(
             modifier = Modifier.fillMaxSize(),
             color = Color.Transparent
         ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                when (val screen = currentScreen) {
-                    Main -> MainScreen(
-                        onOpenSettings = { currentScreen = Settings },
-                        onResizeRequest = onWindowResize,
-                        onCloseWindow = onCloseWindow,
-                        onShowSnack = { message ->
-                            snackbarScope.launch { snackbarHostState.showSnackbar(message) }
+            SharedTransitionLayout {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AnimatedContent(
+                        targetState = currentScreen,
+                        transitionSpec = {
+                            ContentTransform(
+                                targetContentEnter = EnterTransition.None,
+                                initialContentExit = ExitTransition.None,
+                                sizeTransform = null,
+                            )
                         },
-                    )
-                    Settings -> SettingsScreen(
-                        onClose = { currentScreen = Main },
-                        onOpenTools = {
-                            if (toolsScreen == null) {
-                                toolsScreen = Tools()
-                            }
-                            currentScreen = toolsScreen ?: Tools()
-                        },
-                        onResizeRequest = onWindowResize,
-                        onShowSnack = { message ->
-                            snackbarScope.launch { snackbarHostState.showSnackbar(message) }
-                        },
-                    )
-                    is Tools -> ToolsScreen(
-                        onClose = { currentScreen = Settings },
-                        onResizeRequest = onWindowResize,
-                        onOpenToolDetails = { category, tool ->
-                            currentScreen = ToolDetails(category, tool.name)
-                        },
-                        onShowSnack = { message ->
-                            snackbarScope.launch { snackbarHostState.showSnackbar(message) }
-                        },
-                        viewModelKey = screen.id,
-                    )
-                    is ToolDetails -> ToolDetailsScreen(
-                        category = screen.category,
-                        toolName = screen.toolName,
-                        onClose = {
-                            if (toolsScreen == null) {
-                                toolsScreen = Tools()
-                            }
-                            currentScreen = toolsScreen ?: Tools()
-                        },
-                        onResizeRequest = onWindowResize,
-                    )
+                    ) { screen ->
+                        when (screen) {
+                            Main -> MainScreen(
+                                onOpenSettings = { currentScreen = Settings },
+                                onResizeRequest = onWindowResize,
+                                onCloseWindow = onCloseWindow,
+                                onShowSnack = { message ->
+                                    snackbarScope.launch { snackbarHostState.showSnackbar(message) }
+                                },
+                            )
+                            Settings -> SettingsScreen(
+                                onClose = { currentScreen = Main },
+                                onOpenTools = {
+                                    if (toolsScreen == null) {
+                                        toolsScreen = Tools()
+                                    }
+                                    currentScreen = toolsScreen ?: Tools()
+                                },
+                                onResizeRequest = onWindowResize,
+                                onShowSnack = { message ->
+                                    snackbarScope.launch { snackbarHostState.showSnackbar(message) }
+                                },
+                            )
+                            is Tools -> ToolsScreen(
+                                onClose = { currentScreen = Settings },
+                                onResizeRequest = onWindowResize,
+                                onOpenToolDetails = { category, tool ->
+                                    currentScreen = ToolDetails(category, tool.name)
+                                },
+                                onShowSnack = { message ->
+                                    snackbarScope.launch { snackbarHostState.showSnackbar(message) }
+                                },
+                                viewModelKey = screen.id,
+                                sharedTransitionScope = this@SharedTransitionLayout,
+                                animatedVisibilityScope = this,
+                            )
+                            is ToolDetails -> ToolDetailsScreen(
+                                category = screen.category,
+                                toolName = screen.toolName,
+                                onClose = {
+                                    if (toolsScreen == null) {
+                                        toolsScreen = Tools()
+                                    }
+                                    currentScreen = toolsScreen ?: Tools()
+                                },
+                                onResizeRequest = onWindowResize,
+                                sharedTransitionScope = this@SharedTransitionLayout,
+                                animatedVisibilityScope = this,
+                            )
+                        }
+                    }
 
+                    SnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 24.dp)
+                    )
                 }
-
-                SnackbarHost(
-                    hostState = snackbarHostState,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 24.dp)
-                )
             }
         }
     }
