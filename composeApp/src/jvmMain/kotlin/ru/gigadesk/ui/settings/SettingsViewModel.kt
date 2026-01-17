@@ -10,6 +10,7 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.agent.GraphBasedAgent
+import ru.gigadesk.audio.Say
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaResponse
@@ -29,6 +30,7 @@ class SettingsViewModel(
     private val chatApi: GigaRestChatAPI by di.instance()
     private val graphBasedAgent: GraphBasedAgent by di.instance()
     private val supportLogSender = SupportLogSender()
+    private val say: Say by di.instance()
 
     init {
         viewModelScope.launch {
@@ -89,6 +91,10 @@ class SettingsViewModel(
                     ConfigStore.put(ToolSoundConfig.SPEED_KEY, newSpeed)
                 }
                 setState { copy(voiceSpeedInput = normalized, voiceSpeed = newSpeed ?: voiceSpeed) }
+            }
+            ChooseVoice -> {
+                runCatching { say.chooseVoice() }
+                    .onFailure { l.warn("Failed to open voice settings", it) }
             }
             ResetSystemPrompt -> {
                 graphBasedAgent.resetSystemPrompt()

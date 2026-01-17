@@ -20,6 +20,7 @@ import ru.gigadesk.Screen.*
 import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.main.MainScreen
+import ru.gigadesk.ui.setup.SetupScreen
 import ru.gigadesk.ui.settings.SettingsScreen
 import ru.gigadesk.ui.tools.ToolDetailsScreen
 import ru.gigadesk.ui.tools.ToolsScreen
@@ -32,7 +33,7 @@ fun App(
     onWindowResize: (DpSize) -> Unit,
     onCloseWindow: () -> Unit
 ) {
-    var currentScreen: Screen by remember { mutableStateOf(Main) }
+    var currentScreen: Screen by remember { mutableStateOf(Setup) }
     var toolsScreen by remember { mutableStateOf<Tools?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
@@ -56,6 +57,10 @@ fun App(
                         },
                     ) { screen ->
                         when (screen) {
+                            Setup -> SetupScreen(
+                                onOpenMain = { currentScreen = Main },
+                                onResizeRequest = onWindowResize,
+                            )
                             Main -> MainScreen(
                                 onOpenSettings = { currentScreen = Settings },
                                 onResizeRequest = onWindowResize,
@@ -119,6 +124,7 @@ fun App(
 }
 
 private sealed interface Screen {
+    data object Setup : Screen
     data object Main : Screen
     data object Settings : Screen
     data class Tools(val id: String = UUID.randomUUID().toString()) : Screen

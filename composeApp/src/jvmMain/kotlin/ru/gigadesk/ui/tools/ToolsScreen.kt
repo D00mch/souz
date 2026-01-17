@@ -46,7 +46,6 @@ import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
-import sun.swing.SwingUtilities2.drawRect
 
 private val ToolsWindowSize = DpSize(width = 640.dp, height = 720.dp)
 

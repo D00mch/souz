@@ -7,6 +7,7 @@ import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.ui.VMEvent
 import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
+import ru.gigadesk.ui.setup.SetupEvent
 
 data class SettingsState(
     val gigaChatKey: String = "",
@@ -37,6 +38,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputSupportEmail(val email: String): SettingsEvent
     data class InputSystemPrompt(val prompt: String): SettingsEvent
     data class InputVoiceSpeed(val speed: String): SettingsEvent
+    object ChooseVoice : SettingsEvent
     object ResetSystemPrompt: SettingsEvent
     object SendLogsToSupport: SettingsEvent
     object RefreshBalance: SettingsEvent
