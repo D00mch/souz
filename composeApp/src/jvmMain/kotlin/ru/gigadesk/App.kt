@@ -16,10 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import org.kodein.di.compose.localDI
-import org.kodein.di.instance
 import ru.gigadesk.Screen.*
-import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.main.MainScreen
@@ -35,14 +32,7 @@ fun App(
     onWindowResize: (DpSize) -> Unit,
     onCloseWindow: () -> Unit
 ) {
-    val di = localDI()
-    val keysProvider: SettingsProvider by di.instance()
-    val shouldStartInSettings = remember(keysProvider) {
-        keysProvider.gigaChatKey.isNullOrEmpty() || keysProvider.saluteSpeechKey.isNullOrEmpty()
-    }
-    var currentScreen by remember(shouldStartInSettings) {
-        mutableStateOf(if (shouldStartInSettings) Settings else Main)
-    }
+    var currentScreen: Screen by remember { mutableStateOf(Main) }
     var toolsScreen by remember { mutableStateOf<Tools?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
