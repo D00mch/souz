@@ -34,6 +34,7 @@ class MainViewModel(
 
     private val graphAgent by di.instance<GraphBasedAgent>()
     private val gigaVoiceAPI: GigaVoiceAPI by di.instance()
+    private val say: Say by di.instance()
 
     init {
         ioLaunch { initializeAgent() }
@@ -46,7 +47,7 @@ class MainViewModel(
             MainEvent.StartListening -> startRecording()
             MainEvent.StopListening -> stopRecording()
             MainEvent.ClearContext -> clearContext()
-            MainEvent.StopSpeech -> stopPlayText()
+            MainEvent.StopSpeech -> say.stopPlayText()
             MainEvent.ShowLastText -> setPreviousText()
         }
     }
@@ -101,7 +102,7 @@ class MainViewModel(
                         l.info(rawText)
                         val speechText = prepareTextForSpeech(rawText)
                         setState { copy(displayedText = rawText, statusMessage = "Ответ готов") }
-                        playText(speechText)
+                        say.playText(speechText)
                     }
                 }.onFailure { e ->
                     l.error("Agent flow terminated: ${e.message}", e)
@@ -121,9 +122,9 @@ class MainViewModel(
 
     private suspend fun startRecording() {
         if (currentState.isListening) return
-        stopPlayText()
+        say.stopPlayText()
         agentRef.get()?.cancelActiveJob()
-        playMacPing()
+        say.playMacPing()
         setState { copy(isListening = true, statusMessage = "Запись запущена") }
         audioRecorder.start()
     }
@@ -133,7 +134,7 @@ class MainViewModel(
         audioRecorder.stop()
         setState { copy(isListening = false, statusMessage = "Обработка входа") }
         delay(300)
-        playTextRand(speed = 120, "ok", "okey", "окей", "ок")
+        say.playTextRand(speed = 120, "ok", "okey", "окей", "ок")
         setState { copy(statusMessage = MainState.randomStatusTip()) }
     }
 
@@ -148,7 +149,7 @@ class MainViewModel(
     private suspend fun clearContext() {
         val lastKnownAgentContext: AgentContext<String>? = agentRef.get()?.currentContext?.value
         agentRef.get()?.clearContext()
-        stopPlayText()
+        say.stopPlayText()
         when(currentState.userExpectCloseOnX) {
             false -> {
                 val currentText = currentState.displayedText
@@ -211,7 +212,7 @@ class MainViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        stopPlayText()
+        say.stopPlayText()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
     }

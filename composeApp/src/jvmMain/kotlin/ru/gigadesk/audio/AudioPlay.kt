@@ -10,36 +10,39 @@ import java.util.Random
 
 private const val SPEED_KEY = ToolSoundConfig.SPEED_KEY
 
-private var sayProcess: Process? = null
+class Say {
+    private var sayProcess: Process? = null
+    private val random = Random()
 
-fun playText(text: String, speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)) {
-    stopPlayText()
-    val saveEnding = "$text "
-    sayProcess = ProcessBuilder("say", "-r", "$speed", saveEnding).start()
-    sayProcess?.waitFor()
-}
+    /** Global Voice command. Only one speech is possible at the time. Use [stopPlayText] to stop the current one */
+    fun playText(text: String, speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)) {
+        stopPlayText()
+        val saveEnding = "$text "
+        sayProcess = ProcessBuilder("say", "-r", "$speed", saveEnding).start()
+        sayProcess?.waitFor()
+    }
 
-fun stopPlayText() {
-    sayProcess?.destroyForcibly()
-    sayProcess = null
-}
+    /** Stops the speech started by [playText] */
+    fun stopPlayText() {
+        sayProcess?.destroyForcibly()
+        sayProcess = null
+    }
 
-private val random = Random()
+    fun playTextRand(speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED), vararg texts: String) {
+        val text = texts[random.nextInt(texts.size)]
+        playText(text, speed)
+    }
 
-fun playTextRand(speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED), vararg texts: String) {
-    val text = texts[random.nextInt(texts.size)]
-    playText(text, speed)
-}
-
-fun playMacPing() {
-    val audio = AudioSystem.getAudioInputStream(File("/System/Library/Sounds/Tink.aiff"))
-    val clip = AudioSystem.getClip()
-    clip.addLineListener { if (it.type == LineEvent.Type.STOP) clip.close() }
-    clip.open(audio)
-    clip.start()
+    fun playMacPing() {
+        val audio = AudioSystem.getAudioInputStream(File("/System/Library/Sounds/Tink.aiff"))
+        val clip = AudioSystem.getClip()
+        clip.addLineListener { if (it.type == LineEvent.Type.STOP) clip.close() }
+        clip.open(audio)
+        clip.start()
+    }
 }
 
 fun main() {
-    playMacPing()
-//    playText("Можешь оценить скорость моей речи, она достаточно быстрая?")
+    Say().playMacPing()
+//    Say().playText("Можешь оценить скорость моей речи, она достаточно быстрая?")
 }

@@ -9,6 +9,7 @@ import org.kodein.di.instance
 import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.agent.node.NodesLLM
 import ru.gigadesk.agent.nodes.NodesClassification
+import ru.gigadesk.audio.Say
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
@@ -37,6 +38,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             .setSerializationInclusion(JsonInclude.Include.NON_NULL)
             .enable(SerializationFeature.INDENT_OUTPUT)
     }
+    bindSingleton { Say() }
 
     // Native
     bindSingleton { Keys() }

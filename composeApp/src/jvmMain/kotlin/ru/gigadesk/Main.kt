@@ -14,15 +14,19 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import org.jetbrains.compose.resources.painterResource
+import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
+import org.kodein.di.instance
+import ru.gigadesk.audio.Say
 import ru.gigadesk.di.mainDiModule
-import ru.gigadesk.audio.stopPlayText
 
 fun main() {
     System.setProperty("apple.awt.UIElement", "true")
 
     application {
         withDI(mainDiModule) {
+            val di = localDI()
+            val say: Say by di.instance()
             var isWindowVisible by remember { mutableStateOf(true) }
 
             Tray(
@@ -34,7 +38,7 @@ fun main() {
                     Separator()
 
                     Item("Выключить звук", onClick = {
-                        stopPlayText()
+                        say.stopPlayText()
                     })
                     Separator()
 
