@@ -1,7 +1,6 @@
 package ru.gigadesk.ui.setup
 
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.kodein.di.DI
 import org.kodein.di.DIAware
@@ -15,7 +14,7 @@ class SetupViewModel(
     override val di: DI,
 ) : BaseViewModel<SetupState, SetupEvent, SetupEffect>(), DIAware {
 
-    private val logger = LoggerFactory.getLogger(SetupViewModel::class.java)
+    private val l = LoggerFactory.getLogger(SetupViewModel::class.java)
     private val settingsProvider: SettingsProvider by di.instance()
     private val say: Say by di.instance()
 
@@ -25,7 +24,7 @@ class SetupViewModel(
             val saluteSpeechKey = settingsProvider.saluteSpeechKey.orEmpty()
             updateKeysState(gigaChatKey, saluteSpeechKey)
             setState {
-                copy(canProceed = gigaChatKey.isNotBlank() && saluteSpeechKey.isNotBlank())
+                copy(shouldProceed = gigaChatKey.isNotBlank() && saluteSpeechKey.isNotBlank())
             }
         }
     }
@@ -38,12 +37,15 @@ class SetupViewModel(
                 settingsProvider.gigaChatKey = event.key
                 updateKeysState(event.key, currentState.saluteSpeechKey)
             }
+
             is SetupEvent.InputSaluteSpeechKey -> {
                 settingsProvider.saluteSpeechKey = event.key
                 updateKeysState(currentState.gigaChatKey, event.key)
             }
+
             SetupEvent.ChooseVoice -> runCatching { say.chooseVoice() }
-                .onFailure { logger.warn("Failed to open voice settings", it) }
+                .onFailure { l.warn("Failed to open voice settings", it) }
+
             SetupEvent.Proceed -> {
                 if (currentState.canProceed) {
                     send(SetupEffect.OpenMain)

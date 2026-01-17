@@ -9,6 +9,7 @@ data class SetupState(
     val saluteSpeechKey: String = "",
     val missingMessages: List<String> = emptyList(),
     val canProceed: Boolean = false,
+    val shouldProceed: Boolean = false,
 ) : VMState
 
 sealed interface SetupEvent : VMEvent {

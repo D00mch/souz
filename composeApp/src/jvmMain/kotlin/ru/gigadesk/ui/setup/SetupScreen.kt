@@ -49,7 +49,7 @@ fun SetupScreen(
             }
         }
     }
-    if (state.canProceed) onOpenMain()
+    if (state.shouldProceed) onOpenMain()
 
     SetupScreenContent(
         state = state,
@@ -141,7 +141,6 @@ fun SetupScreenContent(
                         color = MaterialTheme.glassColors.textPrimary
                     )
                 }
-
                 if (state.canProceed) {
                     Button(
                         onClick = onProceed,
