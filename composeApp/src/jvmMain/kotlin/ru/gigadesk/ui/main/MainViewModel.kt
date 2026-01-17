@@ -18,7 +18,6 @@ import ru.gigadesk.db.VectorDB
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.keys.HotkeyListener
-import ru.gigadesk.permissions.AppRelauncher
 import ru.gigadesk.ui.BaseViewModel
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.minutes
@@ -30,7 +29,6 @@ class MainViewModel(
     private val l = LoggerFactory.getLogger(MainViewModel::class.java)
     private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), viewModelScope)
     private val agentRef = AtomicReference<GraphBasedAgent?>(null)
-    private var permissionWatcherJob: Job? = null
 
     private val graphAgent by di.instance<GraphBasedAgent>()
     private val gigaVoiceAPI: GigaVoiceAPI by di.instance()
@@ -76,7 +74,11 @@ class MainViewModel(
         viewModelScope.launchDbSetup(desktopInfoRepo)
 
         if (!registerNativeHook()) {
-            handleMissingInputMonitoringPermission()
+            setState {
+                copy(
+                    statusMessage = "Нет доступа к мониторингу ввода. Разрешите доступ в настройках и перезапустите приложение."
+                )
+            }
             return@coroutineScope
         }
 
@@ -184,37 +186,10 @@ class MainViewModel(
         false
     }
 
-    private fun handleMissingInputMonitoringPermission() {
-        permissionWatcherJob?.cancel()
-        permissionWatcherJob = viewModelScope.launch {
-            setState {
-                copy(
-                    statusMessage = "Разрешите доступ к мониторингу ввода в настройках macOS — " +
-                            "после подтверждения приложение перезапустится автоматически"
-                )
-            }
-
-            while (isActive) {
-                delay(4_000)
-                if (canRegisterNativeHookNow()) {
-                    l.info("Input monitoring permission granted, relaunching application")
-                    AppRelauncher.relaunch()
-                }
-            }
-        }
-    }
-
-    private fun canRegisterNativeHookNow(): Boolean = runCatching {
-        GlobalScreen.registerNativeHook()
-        GlobalScreen.unregisterNativeHook()
-        true
-    }.getOrElse { false }
-
     override fun onCleared() {
         super.onCleared()
         say.stopPlayText()
         agentRef.get()?.cancelActiveJob()
-        permissionWatcherJob?.cancel()
     }
 
     private fun prepareTextForSpeech(text: String): String {

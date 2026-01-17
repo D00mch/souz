@@ -46,8 +46,8 @@ fun main() {
                 }
             )
 
-            val initialWidth = 460.dp
-            val initialHeight = 220.dp
+            val initialWidth = 560.dp
+            val initialHeight = 650.dp
 
             val windowState = rememberWindowState(
                 width = initialWidth,
