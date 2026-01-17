@@ -16,13 +16,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import org.kodein.di.compose.localDI
-import org.kodein.di.instance
 import ru.gigadesk.Screen.*
-import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.main.MainScreen
+import ru.gigadesk.ui.setup.SetupScreen
 import ru.gigadesk.ui.settings.SettingsScreen
 import ru.gigadesk.ui.tools.ToolDetailsScreen
 import ru.gigadesk.ui.tools.ToolsScreen
@@ -35,14 +33,7 @@ fun App(
     onWindowResize: (DpSize) -> Unit,
     onCloseWindow: () -> Unit
 ) {
-    val di = localDI()
-    val keysProvider: SettingsProvider by di.instance()
-    val shouldStartInSettings = remember(keysProvider) {
-        keysProvider.gigaChatKey.isNullOrEmpty() || keysProvider.saluteSpeechKey.isNullOrEmpty()
-    }
-    var currentScreen by remember(shouldStartInSettings) {
-        mutableStateOf(if (shouldStartInSettings) Settings else Main)
-    }
+    var currentScreen: Screen by remember { mutableStateOf(Setup) }
     var toolsScreen by remember { mutableStateOf<Tools?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
@@ -66,6 +57,10 @@ fun App(
                         },
                     ) { screen ->
                         when (screen) {
+                            Setup -> SetupScreen(
+                                onOpenMain = { currentScreen = Main },
+                                onResizeRequest = onWindowResize,
+                            )
                             Main -> MainScreen(
                                 onOpenSettings = { currentScreen = Settings },
                                 onResizeRequest = onWindowResize,
@@ -129,6 +124,7 @@ fun App(
 }
 
 private sealed interface Screen {
+    data object Setup : Screen
     data object Main : Screen
     data object Settings : Screen
     data class Tools(val id: String = UUID.randomUUID().toString()) : Screen

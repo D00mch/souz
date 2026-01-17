@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package ru.gigadesk.ui.main
 
 import androidx.compose.animation.core.*
@@ -158,12 +160,22 @@ fun MainScreenContent(
 
                     if (state.lastText != null) {
                         MinimalGlassButton(onClick = onShowLastText) {
-                            Icon(Icons.Rounded.SkipPrevious, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
+                            Icon(
+                                Icons.Rounded.SkipPrevious,
+                                null,
+                                tint = iconTint,
+                                modifier = Modifier.size(TopIconSize)
+                            )
                         }
                         Spacer(Modifier.width(8.dp))
                     }
                     MinimalGlassButton(onClick = onStopSpeech) {
-                        Icon(Icons.AutoMirrored.Rounded.VolumeOff, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
+                        Icon(
+                            Icons.AutoMirrored.Rounded.VolumeOff,
+                            null,
+                            tint = iconTint,
+                            modifier = Modifier.size(TopIconSize)
+                        )
                     }
                     Spacer(Modifier.width(8.dp))
                     MinimalGlassButton(onClick = onOpenSettings) {
@@ -200,16 +212,27 @@ fun MainScreenContent(
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 20.dp, top = 5.dp),
-                    contentAlignment = Alignment.Center
+                TooltipArea(
+                    tooltip = {
+                        Text(
+                            text = "Нажмите и удерживайте\nправый Alt для записи",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    },
+                    delayMillis = 900,
                 ) {
-                    LiquidOrb(
-                        isActive = state.isListening,
-                        onClick = onToggleListening
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 20.dp, top = 5.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        LiquidOrb(
+                            isActive = state.isListening,
+                            onClick = onToggleListening
+                        )
+                    }
                 }
             }
         }
@@ -306,6 +329,7 @@ fun MarkdownViewer(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
+
                     is MarkdownPart.CodeContent -> {
                         CodeBlockWithCopy(
                             code = part.code,
@@ -550,17 +574,20 @@ fun LiquidOrb(isActive: Boolean, onClick: () -> Unit) {
 
     val mainRotation by infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(if(isActive) 1000 else 3000, easing = LinearEasing))
+        animationSpec = infiniteRepeatable(tween(if (isActive) 1000 else 3000, easing = LinearEasing))
     )
 
     val turbulenceRotation by infiniteTransition.animateFloat(
         initialValue = 360f, targetValue = 0f,
-        animationSpec = infiniteRepeatable(tween(if(isActive) 1500 else 6000, easing = LinearEasing))
+        animationSpec = infiniteRepeatable(tween(if (isActive) 1500 else 6000, easing = LinearEasing))
     )
 
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f, targetValue = if (isActive) 1.25f else 1.08f,
-        animationSpec = infiniteRepeatable(tween(if(isActive) 500 else 2500, easing = FastOutSlowInEasing), RepeatMode.Reverse)
+        animationSpec = infiniteRepeatable(
+            tween(if (isActive) 500 else 2500, easing = FastOutSlowInEasing),
+            RepeatMode.Reverse
+        )
     )
 
     val cPurple = Color(0xFF7C4DFF)
@@ -573,17 +600,35 @@ fun LiquidOrb(isActive: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .size(52.dp)
             .scale(pulseScale)
-            .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onClick)
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onClick
+            )
     ) {
         Canvas(modifier = Modifier.fillMaxSize().scale(1.5f)) {
-            drawCircle(brush = Brush.radialGradient(listOf(cPurple.copy(alpha = if(isActive) 0.6f else 0.3f), Color.Transparent)))
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(
+                        cPurple.copy(alpha = if (isActive) 0.6f else 0.3f),
+                        Color.Transparent
+                    )
+                )
+            )
         }
         Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = mainRotation }) {
             drawCircle(brush = Brush.sweepGradient(listOf(cPurple, cMagenta, cDeep, cCyan, cPurple)))
         }
         Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = turbulenceRotation }) {
             drawCircle(
-                brush = Brush.sweepGradient(listOf(Color.Transparent, cCyan.copy(0.7f), cPurple.copy(0.5f), Color.Transparent)),
+                brush = Brush.sweepGradient(
+                    listOf(
+                        Color.Transparent,
+                        cCyan.copy(0.7f),
+                        cPurple.copy(0.5f),
+                        Color.Transparent
+                    )
+                ),
                 radius = size.minDimension / 2.1f, center = center + Offset(3f, -3f)
             )
         }

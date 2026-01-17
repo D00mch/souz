@@ -40,6 +40,14 @@ class Say {
         clip.open(audio)
         clip.start()
     }
+
+    /** Opens system settings with Spoken Content. */
+    fun chooseVoice() {
+        ProcessBuilder(
+            "open",
+            "x-apple.systempreferences:com.apple.preference.universalaccess?SpokenContent"
+        ).start()
+    }
 }
 
 fun main() {
