@@ -29,6 +29,7 @@ import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.ui.AppTheme
+import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
 
@@ -60,6 +61,7 @@ fun SettingsScreen(
         onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
         onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
         onVoiceSpeedInput = { speed -> viewModel.send(SettingsEvent.InputVoiceSpeed(speed)) },
+        onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
         onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
         onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
         onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
@@ -81,6 +83,7 @@ fun SettingsScreen(
     onGigaChatKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
+    onChooseVoice: () -> Unit,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
     onModelChange: (GigaModel) -> Unit,
     onDefaultCalendarChange: (String?) -> Unit,
@@ -170,6 +173,18 @@ fun SettingsScreen(
                         text = "Текущее значение: ${state.voiceSpeed}. Чем больше значение, тем быстрее речь.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                    )
+                }
+
+
+                OutlinedButton(
+                    onClick = onChooseVoice,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Выбрать голос",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.glassColors.textPrimary
                     )
                 }
 
@@ -523,41 +538,6 @@ private fun ModelDropdown(
     }
 }
 
-@Composable
-private fun LabeledTextField(
-    label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    singleLine: Boolean = true,
-) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.glassColors.textPrimary
-        )
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = singleLine,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = MaterialTheme.glassColors.textPrimary,
-                unfocusedTextColor = MaterialTheme.glassColors.textPrimary,
-                cursorColor = MaterialTheme.colorScheme.primary,
-                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                unfocusedBorderColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f),
-                focusedLabelColor = MaterialTheme.colorScheme.primary,
-                unfocusedLabelColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
-            ),
-        )
-    }
-}
-
 @Preview
 @Composable
 fun SettingsScreenPreview() {
@@ -567,6 +547,7 @@ fun SettingsScreenPreview() {
             onGigaChatKeyInput = {},
             onSaluteSpeechKeyInput = {},
             onVoiceSpeedInput = {},
+            onChooseVoice = {},
             onUseFewShotExamplesChange = {},
             onModelChange = {},
             onDefaultCalendarChange = {},
