@@ -14,6 +14,7 @@ import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.audio.*
 import ru.gigadesk.db.DesktopInfoRepository
+import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.db.VectorDB
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.GigaVoiceAPI
@@ -21,6 +22,7 @@ import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.permissions.AppRelauncher
 import ru.gigadesk.ui.BaseViewModel
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.max
 import kotlin.time.Duration.Companion.minutes
 
 class MainViewModel(
@@ -35,8 +37,11 @@ class MainViewModel(
     private val graphAgent by di.instance<GraphBasedAgent>()
     private val gigaVoiceAPI: GigaVoiceAPI by di.instance()
     private val say: Say by di.instance()
+    private val settingsProvider: SettingsProvider by di.instance()
+    private var onboardingSpeechStartedAt: Long? = null
 
     init {
+        viewModelScope.launch { maybeRunOnboarding() }
         ioLaunch { initializeAgent() }
     }
 
@@ -187,6 +192,14 @@ class MainViewModel(
     private fun handleMissingInputMonitoringPermission() {
         permissionWatcherJob?.cancel()
         permissionWatcherJob = viewModelScope.launch {
+            val startAt = onboardingSpeechStartedAt
+            if (startAt != null) {
+                val elapsed = System.currentTimeMillis() - startAt
+                val waitMs = max(0, ONBOARDING_PERMISSION_DELAY_MS - elapsed)
+                if (waitMs > 0) {
+                    delay(waitMs)
+                }
+            }
             setState {
                 copy(
                     statusMessage = "Разрешите доступ к мониторингу ввода в настройках macOS — " +
@@ -210,6 +223,17 @@ class MainViewModel(
         true
     }.getOrElse { false }
 
+    private suspend fun maybeRunOnboarding() {
+        if (!settingsProvider.needsOnboarding) return
+        settingsProvider.needsOnboarding = false
+        setState { copy(displayedText = ONBOARDING_DISPLAY_TEXT) }
+        val onboardingSpeech = prepareTextForSpeech(ONBOARDING_SPEECH_TEXT)
+        onboardingSpeechStartedAt = System.currentTimeMillis()
+        viewModelScope.launch(Dispatchers.IO) {
+            say.playText(onboardingSpeech)
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         say.stopPlayText()
@@ -229,5 +253,22 @@ class MainViewModel(
 
     private companion object {
         const val DEFAULT_CLEARED_TEXT = "Контекст очищен"
+        const val ONBOARDING_PERMISSION_DELAY_MS = 100000
+        const val ONBOARDING_SPEECH_TEXT = "Привет! Я ГигаДэ́ск! умный помощник на твоем компьютере... " +
+            "Сейчас я попрошу доступы к приложениям, системе и файлам, чтобы работать корректно... " +
+            "Я умею пользоваться браузером, работать с почтой и календарем, работать с файлами на вашем ПК, " +
+            "объяснить и переписать выделенный текст, открывать приложения, создавать заметки, отвечать на вопросы, " +
+            "строить графики, диаграммы на основе данных."
+        val ONBOARDING_DISPLAY_TEXT = """
+            Привет! Я GigaDesk, умный помощник на твоем компьютере.
+            Сейчас я попрошу доступы к приложениям, системе и файлам, чтобы работать корректно.
+            Я умею:
+            - Пользоваться браузером
+            - Работать с почтой и календарем
+            - Работать с файлами на вашем ПК
+            - Объяснить и переписать выделенный текст
+            - Открывать приложения, создавать заметки, отвечать на вопросы
+            - Строить графики, диаграммы на основе данных
+        """.trimIndent()
     }
 }
