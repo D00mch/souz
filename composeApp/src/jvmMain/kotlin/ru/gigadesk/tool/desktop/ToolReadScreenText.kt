@@ -1,6 +1,5 @@
 package ru.gigadesk.tool.desktop
 
-import ru.gigadesk.audio.playText
 import ru.gigadesk.image.ImageUtils
 import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
@@ -9,9 +8,11 @@ import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 import org.slf4j.LoggerFactory
+import ru.gigadesk.audio.Say
 import java.io.File
 
 class ToolReadScreenText(
+    private val say: Say,
     private val bash: ToolRunBashCommand = ToolRunBashCommand,
 ) : ToolSetup<ToolReadScreenText.Input> {
     private val l = LoggerFactory.getLogger(ToolReadScreenText::class.java)
@@ -90,7 +91,7 @@ class ToolReadScreenText(
             val main = blocks.values.maxByOrNull { (it.maxRight - it.minLeft) * (it.maxBottom - it.minTop) }
             val text = main?.words?.joinToString(" ")?.trim().orEmpty()
             return if (text.isNotBlank()) {
-                playText(text)
+                say.playText(text)
                 "Done"
             } else {
                 "No text found"
@@ -103,7 +104,7 @@ class ToolReadScreenText(
 }
 
 fun main() {
-    val tool = ToolReadScreenText()
+    val tool = ToolReadScreenText(Say())
     val result = tool.invoke(ToolReadScreenText.Input())
     println(result)
 }
