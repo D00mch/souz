@@ -7,6 +7,10 @@ import kotlin.reflect.KProperty
 class SettingsProvider(private val configStore: ConfigStore) {
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
+    private var _needsOnboardingDelegate: String? by keyDelegate(
+        configKey = NEEDS_ONBOARDING,
+        envKey = NEEDS_ONBOARDING
+    )
 
     var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
     var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
@@ -24,6 +28,10 @@ class SettingsProvider(private val configStore: ConfigStore) {
     var useFewShotExamples: Boolean
         get() = _fewShotsDelegate?.lowercase() == "true"
         set(value) { _fewShotsDelegate = value.toString() }
+
+    var needsOnboarding: Boolean
+        get() = _needsOnboardingDelegate?.toBooleanStrictOrNull() ?: false
+        set(value) { _needsOnboardingDelegate = value.toString() }
 
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
         object : ReadWriteProperty<Any?, String?> {
@@ -49,5 +57,6 @@ class SettingsProvider(private val configStore: ConfigStore) {
         private const val SYSTEM_PROMPT = "SYSTEM_PROMPT"
         private const val DEFAULT_CALENDAR = "DEFAULT_CALENDAR"
         private const val GIGA_MODEL = "GIGA_MODEL"
+        private const val NEEDS_ONBOARDING = "NEEDS_ONBOARDING"
     }
 }

@@ -48,6 +48,7 @@ class SetupViewModel(
 
             SetupEvent.Proceed -> {
                 if (currentState.canProceed) {
+                    settingsProvider.needsOnboarding = true
                     send(SetupEffect.OpenMain)
                 }
             }
