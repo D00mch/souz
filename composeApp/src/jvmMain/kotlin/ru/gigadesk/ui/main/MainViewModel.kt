@@ -41,7 +41,7 @@ class MainViewModel(
     private var onboardingSpeechStartedAt: Long? = null
 
     init {
-        viewModelScope.launch { maybeRunOnboarding() }
+        viewModelScope.launch { runOnboarding() }
         ioLaunch { initializeAgent() }
     }
 
@@ -223,7 +223,7 @@ class MainViewModel(
         true
     }.getOrElse { false }
 
-    private suspend fun maybeRunOnboarding() {
+    private suspend fun runOnboarding() {
         if (!settingsProvider.needsOnboarding) return
         settingsProvider.needsOnboarding = false
         setState { copy(displayedText = ONBOARDING_DISPLAY_TEXT) }
