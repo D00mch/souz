@@ -5,7 +5,6 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.composeHotReload)
-    id("com.toasttab.protokt.v1") version "1.0.0-beta.8"
 }
 
 kotlin {
@@ -45,7 +44,8 @@ kotlin {
             implementation(libs.kotlinx.coroutinesSwing)
 
             // proto
-            implementation(libs.bundles.grpc)
+            implementation(projects.proto)
+            implementation(libs.grpc.nettyShaded)
 
             // kotlin
             implementation(kotlin("reflect"))

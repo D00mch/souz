@@ -2,6 +2,7 @@ package ru.gigadesk.giga
 
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
+import com.fasterxml.jackson.module.kotlin.readValue
 import gigachat.v1.ChatServiceGrpcKt
 import gigachat.v1.Gigachatv1
 import io.grpc.ManagedChannel
@@ -201,7 +202,7 @@ class GigaGRPCChatApi(
             .setName(fn.name)
             .setDescription(fn.description)
             .setParameters(objectMapper.writeValueAsString(fn.parameters))
-            .addAllFewShotExamples(fn.fewShotExamples.map { it.toGRPC() })
+            .addAllFewShotExamples(fn.fewShotExamples?.map { it.toGRPC() } ?: emptyList())
             .build()
     }
 

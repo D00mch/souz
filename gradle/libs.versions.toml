@@ -22,6 +22,7 @@ lucene = "9.9.2"
 markdown = "0.27.0"
 mockk = "1.13.11"
 protobuf = "3.25.3"
+protobufGradlePlugin = "0.9.4"
 slfj = "2.0.17"
 tika = "2.9.1"
 
@@ -93,3 +94,5 @@ composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "com
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+protobuf = { id = "com.google.protobuf", version.ref = "protobufGradlePlugin" }
