@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.composeHotReload)
+    id("com.toasttab.protokt.v1") version "1.0.0-beta.8"
 }
 
 kotlin {
@@ -42,6 +43,9 @@ kotlin {
             implementation("org.jetbrains.compose.ui:ui-tooling-preview-desktop")
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
+
+            // proto
+            implementation(libs.bundles.grpc)
 
             // kotlin
             implementation(kotlin("reflect"))
