@@ -4,6 +4,8 @@ package ru.gigadesk.agent.node
 
 import io.ktor.util.logging.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -22,6 +24,8 @@ class NodesLLM(
 ) {
 
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
+
+    val sideEffects: Flow<String> = MutableSharedFlow()
 
     val requestToResponse: Node<GigaRequest.Chat, GigaResponse.Chat> = Node("llmCall") { ctx ->
         l.debug { "LLM input is ${ctx.input}" }
@@ -110,6 +114,12 @@ class NodesLLM(
                 response as GigaResponse.Chat.Ok
                 // TODO: -> debug
                 l.info("choices: ${response.choices}")
+
+                if (response.choices.firstOrNull()?.message?.content?.isNotEmpty() == true) {
+                    l.info("About to emit into sideEffects flow")
+                    (sideEffects as MutableSharedFlow).emit(response.choices.firstOrNull()?.message?.content!!)
+                }
+
                 response.choices.forEach { choice ->
                     val acc = choicesByIndex.getOrPut(choice.index) {
                         ChoiceAccumulator(choice.message.role)

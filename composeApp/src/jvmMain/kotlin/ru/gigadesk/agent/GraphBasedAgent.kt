@@ -7,6 +7,7 @@ import io.ktor.util.logging.*
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.kodein.di.DI
@@ -51,6 +52,8 @@ class GraphBasedAgent(
     val currentContext: StateFlow<AgentContext<String>> = _ctx
 
     private val runningJob = AtomicReference<Deferred<*>?>(null)
+
+    val sideEffects: Flow<String> = nodesLLM.sideEffects
 
     fun clearContext(): Boolean {
         cancelActiveJob()

@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
+
 package ru.gigadesk.ui.main
 
 import androidx.lifecycle.viewModelScope
@@ -36,9 +38,11 @@ class MainViewModel(
 
     private val graphAgent by di.instance<GraphBasedAgent>()
     private val gigaVoiceAPI: GigaVoiceAPI by di.instance()
-    private val say: Say by di.instance()
     private val settingsProvider: SettingsProvider by di.instance()
     private var onboardingSpeechStartedAt: Long? = null
+
+    private val say: Say by di.instance()
+    private val taskSideEffectJobs = ArrayList<Job>()
 
     init {
         viewModelScope.launch { runOnboarding() }
@@ -52,7 +56,7 @@ class MainViewModel(
             MainEvent.StartListening -> startRecording()
             MainEvent.StopListening -> stopRecording()
             MainEvent.ClearContext -> clearContext()
-            MainEvent.StopSpeech -> say.stopPlayText()
+            MainEvent.StopSpeech -> killTaskSideEffectJobs()
             MainEvent.ShowLastText -> setPreviousText()
         }
     }
@@ -103,11 +107,11 @@ class MainViewModel(
             while (isActive) {
                 runCatching {
                     userInputFlow.collect { userInput ->
+                        subscribeOnTaskSideEffects()
+
                         val rawText = graphAgent.execute(userInput)
                         l.info(rawText)
                         setState { copy(displayedText = rawText, statusMessage = "Ответ готов") }
-                        val speechText = prepareTextForSpeech(rawText)
-                        say.playText(speechText)
                     }
                 }.onFailure { e ->
                     l.error("Agent flow terminated: ${e.message}", e)
@@ -116,6 +120,21 @@ class MainViewModel(
         } finally {
             GlobalScreen.unregisterNativeHook()
         }
+    }
+
+    private fun subscribeOnTaskSideEffects() {
+        val job = viewModelScope.launch {
+            setState { copy(displayedText = "") }
+
+            graphAgent.sideEffects.collect { text ->
+                setState {
+                    val prevText = currentState.displayedText
+                    copy(displayedText = prevText + text)
+                }
+                say.queue(text)
+            }
+        }
+        viewModelScope.launch { taskSideEffectJobs.add(job) }
     }
 
     private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch(Dispatchers.IO) {
@@ -127,7 +146,7 @@ class MainViewModel(
 
     private suspend fun startRecording() {
         if (currentState.isListening) return
-        say.stopPlayText()
+        killTaskSideEffectJobs()
         agentRef.get()?.cancelActiveJob()
         say.playMacPing()
         setState { copy(isListening = true, statusMessage = "Запись запущена") }
@@ -140,7 +159,7 @@ class MainViewModel(
         setState { copy(isListening = false, statusMessage = "Обработка входа") }
         delay(300)
         say.playTextRand(speed = 120, "ok", "okey", "окей", "ок")
-        setState { copy(statusMessage = MainState.randomStatusTip()) }
+//        setState { copy(statusMessage = MainState.randomStatusTip()) }
     }
 
     private suspend fun setPreviousText() {
@@ -154,8 +173,8 @@ class MainViewModel(
     private suspend fun clearContext() {
         val lastKnownAgentContext: AgentContext<String>? = agentRef.get()?.currentContext?.value
         agentRef.get()?.clearContext()
-        say.stopPlayText()
-        when(currentState.userExpectCloseOnX) {
+        killTaskSideEffectJobs()
+        when (currentState.userExpectCloseOnX) {
             false -> {
                 val currentText = currentState.displayedText
                 val clearedText = "$DEFAULT_CLEARED_TEXT. Нажмите еще раз, чтобы скрыть."
@@ -236,7 +255,7 @@ class MainViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        say.stopPlayText()
+        killTaskSideEffectJobs()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
     }
@@ -249,6 +268,15 @@ class MainViewModel(
         result = result.replace(Regex("\\s+"), " ")
 
         return result.trim()
+    }
+
+    /** Stop the current voice process, rm the queue */
+    private fun killTaskSideEffectJobs() {
+        viewModelScope.launch {
+            say.clearQueue()
+            taskSideEffectJobs.forEach { it.cancel() }
+            taskSideEffectJobs.clear()
+        }
     }
 
     private companion object {
