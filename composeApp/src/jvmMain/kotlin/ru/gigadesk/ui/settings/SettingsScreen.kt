@@ -65,6 +65,9 @@ fun SettingsScreen(
         onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
         onUseGrpcDelegateChange = { enabled -> viewModel.send(SettingsEvent.InputUseGrpcDelegate(enabled)) },
         onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
+        onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
+        onInitialWindowWidthDpChange = { value -> viewModel.send(SettingsEvent.InputInitialWindowWidthDp(value)) },
+        onInitialWindowHeightDpChange = { value -> viewModel.send(SettingsEvent.InputInitialWindowHeightDp(value)) },
         onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
         onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
         onSystemPromptChange = { prompt -> viewModel.send(SettingsEvent.InputSystemPrompt(prompt)) },
@@ -88,6 +91,9 @@ fun SettingsScreen(
     onUseFewShotExamplesChange: (Boolean) -> Unit,
     onUseGrpcDelegateChange: (Boolean) -> Unit,
     onModelChange: (GigaModel) -> Unit,
+    onRequestTimeoutMillisChange: (String) -> Unit,
+    onInitialWindowWidthDpChange: (String) -> Unit,
+    onInitialWindowHeightDpChange: (String) -> Unit,
     onDefaultCalendarChange: (String?) -> Unit,
     onSupportEmailInput: (String) -> Unit,
     onSystemPromptChange: (String) -> Unit,
@@ -194,6 +200,48 @@ fun SettingsScreen(
                     selectedModel = state.gigaModel,
                     onModelSelected = onModelChange,
                 )
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LabeledTextField(
+                        label = "Таймаут запроса (мс)",
+                        value = state.requestTimeoutMillis.toString(),
+                        onValueChange = onRequestTimeoutMillisChange,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "Текущее значение: ${state.requestTimeoutMillis} мс.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LabeledTextField(
+                        label = "Ширина окна (dp)",
+                        value = state.initialWindowWidthDp.toString(),
+                        onValueChange = onInitialWindowWidthDpChange,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "Текущее значение: ${state.initialWindowWidthDp} dp.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LabeledTextField(
+                        label = "Высота окна (dp)",
+                        value = state.initialWindowHeightDp.toString(),
+                        onValueChange = onInitialWindowHeightDpChange,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "Текущее значение: ${state.initialWindowHeightDp} dp.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                    )
+                }
 
                 Button(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -574,6 +622,9 @@ fun SettingsScreenPreview() {
             onUseFewShotExamplesChange = {},
             onUseGrpcDelegateChange = {},
             onModelChange = {},
+            onRequestTimeoutMillisChange = {},
+            onInitialWindowWidthDpChange = {},
+            onInitialWindowHeightDpChange = {},
             onDefaultCalendarChange = {},
             onSupportEmailInput = {},
             onSystemPromptChange = {},

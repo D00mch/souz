@@ -8,6 +8,18 @@ class SettingsProvider(private val configStore: ConfigStore) {
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
     private var _useGrpcDelegate: String? by keyDelegate(configKey = USE_GRPC, envKey = USE_GRPC)
+    private var _requestTimeoutDelegate: String? by keyDelegate(
+        configKey = REQUEST_TIMEOUT_MILLIS,
+        envKey = REQUEST_TIMEOUT_MILLIS
+    )
+    private var _initialWindowWidthDelegate: String? by keyDelegate(
+        configKey = INITIAL_WINDOW_WIDTH_DP,
+        envKey = INITIAL_WINDOW_WIDTH_DP
+    )
+    private var _initialWindowHeightDelegate: String? by keyDelegate(
+        configKey = INITIAL_WINDOW_HEIGHT_DP,
+        envKey = INITIAL_WINDOW_HEIGHT_DP
+    )
     private var _needsOnboardingDelegate: String? by keyDelegate(
         configKey = NEEDS_ONBOARDING,
         envKey = NEEDS_ONBOARDING
@@ -38,6 +50,18 @@ class SettingsProvider(private val configStore: ConfigStore) {
         get() = _needsOnboardingDelegate?.toBooleanStrictOrNull() ?: false
         set(value) { _needsOnboardingDelegate = value.toString() }
 
+    var requestTimeoutMillis: Long
+        get() = _requestTimeoutDelegate?.toLongOrNull() ?: 10_000L
+        set(value) { _requestTimeoutDelegate = value.toString() }
+
+    var initialWindowWidthDp: Int
+        get() = _initialWindowWidthDelegate?.toIntOrNull() ?: 580
+        set(value) { _initialWindowWidthDelegate = value.toString() }
+
+    var initialWindowHeightDp: Int
+        get() = _initialWindowHeightDelegate?.toIntOrNull() ?: 780
+        set(value) { _initialWindowHeightDelegate = value.toString() }
+
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
         object : ReadWriteProperty<Any?, String?> {
 
@@ -64,5 +88,8 @@ class SettingsProvider(private val configStore: ConfigStore) {
         private const val DEFAULT_CALENDAR = "DEFAULT_CALENDAR"
         private const val GIGA_MODEL = "GIGA_MODEL"
         private const val NEEDS_ONBOARDING = "NEEDS_ONBOARDING"
+        private const val REQUEST_TIMEOUT_MILLIS = "REQUEST_TIMEOUT_MILLIS"
+        private const val INITIAL_WINDOW_WIDTH_DP = "INITIAL_WINDOW_WIDTH_DP"
+        private const val INITIAL_WINDOW_HEIGHT_DP = "INITIAL_WINDOW_HEIGHT_DP"
     }
 }

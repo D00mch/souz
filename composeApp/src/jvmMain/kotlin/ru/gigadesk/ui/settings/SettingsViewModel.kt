@@ -42,6 +42,9 @@ class SettingsViewModel(
                     useFewShotExamples = keysProvider.useFewShotExamples,
                     useGrpcDelegate = keysProvider.useGrpc,
                     gigaModel = keysProvider.gigaModel,
+                    requestTimeoutMillis = keysProvider.requestTimeoutMillis,
+                    initialWindowWidthDp = keysProvider.initialWindowWidthDp,
+                    initialWindowHeightDp = keysProvider.initialWindowHeightDp,
                     supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
                     systemPrompt = keysProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT,
                     defaultCalendar = keysProvider.defaultCalendar,
@@ -79,6 +82,42 @@ class SettingsViewModel(
             is SelectModel -> {
                 graphBasedAgent.updateModel(event.model)
                 setState { copy(gigaModel = event.model) }
+            }
+            is InputRequestTimeoutMillis -> {
+                val normalized = event.millis.filter { it.isDigit() }
+                val newTimeout = normalized.toLongOrNull()
+                if (newTimeout != null) {
+                    keysProvider.requestTimeoutMillis = newTimeout
+                }
+                setState {
+                    copy(
+                        requestTimeoutMillis = newTimeout ?: requestTimeoutMillis
+                    )
+                }
+            }
+            is InputInitialWindowWidthDp -> {
+                val normalized = event.width.filter { it.isDigit() }
+                val newWidth = normalized.toIntOrNull()
+                if (newWidth != null) {
+                    keysProvider.initialWindowWidthDp = newWidth
+                }
+                setState {
+                    copy(
+                        initialWindowWidthDp = newWidth ?: initialWindowWidthDp
+                    )
+                }
+            }
+            is InputInitialWindowHeightDp -> {
+                val normalized = event.height.filter { it.isDigit() }
+                val newHeight = normalized.toIntOrNull()
+                if (newHeight != null) {
+                    keysProvider.initialWindowHeightDp = newHeight
+                }
+                setState {
+                    copy(
+                        initialWindowHeightDp = newHeight ?: initialWindowHeightDp
+                    )
+                }
             }
             is InputSupportEmail -> {
                 keysProvider.supportEmail = event.email

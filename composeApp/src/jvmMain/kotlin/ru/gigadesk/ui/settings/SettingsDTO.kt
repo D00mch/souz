@@ -7,7 +7,6 @@ import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.ui.VMEvent
 import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
-import ru.gigadesk.ui.setup.SetupEvent
 
 data class SettingsState(
     val gigaChatKey: String = "",
@@ -15,6 +14,9 @@ data class SettingsState(
     val useFewShotExamples: Boolean = false,
     val useGrpcDelegate: Boolean = false,
     val gigaModel: GigaModel = GigaModel.Max,
+    val requestTimeoutMillis: Long = 10_000L,
+    val initialWindowWidthDp: Int = 580,
+    val initialWindowHeightDp: Int = 780,
     val supportEmail: String = DEFAULT_SUPPORT_EMAIL,
     val isSendingLogs: Boolean = false,
     val sendLogsMessage: String? = null,
@@ -37,6 +39,9 @@ sealed interface SettingsEvent : VMEvent {
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
     data class InputUseGrpcDelegate(val enabled: Boolean): SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
+    data class InputRequestTimeoutMillis(val millis: String) : SettingsEvent
+    data class InputInitialWindowWidthDp(val width: String) : SettingsEvent
+    data class InputInitialWindowHeightDp(val height: String) : SettingsEvent
     data class InputSupportEmail(val email: String): SettingsEvent
     data class InputSystemPrompt(val prompt: String): SettingsEvent
     data class InputVoiceSpeed(val speed: String): SettingsEvent

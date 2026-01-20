@@ -18,6 +18,7 @@ import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
 import org.kodein.di.instance
 import ru.gigadesk.audio.Say
+import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
 
 fun main() {
@@ -27,6 +28,7 @@ fun main() {
         withDI(mainDiModule) {
             val di = localDI()
             val say: Say by di.instance()
+            val settingsProvider: SettingsProvider by di.instance()
             var isWindowVisible by remember { mutableStateOf(true) }
 
             Tray(
@@ -46,8 +48,8 @@ fun main() {
                 }
             )
 
-            val initialWidth = 580.dp
-            val initialHeight = 780.dp
+            val initialWidth = settingsProvider.initialWindowWidthDp.dp
+            val initialHeight = settingsProvider.initialWindowHeightDp.dp
 
             val windowState = rememberWindowState(
                 width = initialWidth,
