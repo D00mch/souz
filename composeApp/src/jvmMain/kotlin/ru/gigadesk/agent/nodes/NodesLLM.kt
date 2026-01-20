@@ -32,7 +32,7 @@ class NodesLLM(
     val requestToResponse: Node<GigaRequest.Chat, GigaResponse.Chat> = Node("llmCall") { ctx ->
         l.debug { "LLM input is ${ctx.input}" }
         val response = withContext(Dispatchers.IO) {
-            if (settingsProvider.useGrpcDelegate) {
+            if (settingsProvider.useGrpc) {
                 streamResponse(ctx.input)
             } else {
                 llmApi.message(ctx.input)

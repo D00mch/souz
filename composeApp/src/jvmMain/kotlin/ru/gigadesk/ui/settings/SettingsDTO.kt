@@ -13,6 +13,7 @@ data class SettingsState(
     val gigaChatKey: String = "",
     val saluteSpeechKey: String = "",
     val useFewShotExamples: Boolean = false,
+    val useGrpcDelegate: Boolean = false,
     val gigaModel: GigaModel = GigaModel.Max,
     val supportEmail: String = DEFAULT_SUPPORT_EMAIL,
     val isSendingLogs: Boolean = false,
@@ -34,6 +35,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputGigaChatKey(val key: String): SettingsEvent
     data class InputSaluteSpeechKey(val key: String): SettingsEvent
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
+    data class InputUseGrpcDelegate(val enabled: Boolean): SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
     data class InputSupportEmail(val email: String): SettingsEvent
     data class InputSystemPrompt(val prompt: String): SettingsEvent

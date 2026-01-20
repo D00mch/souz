@@ -63,6 +63,7 @@ fun SettingsScreen(
         onVoiceSpeedInput = { speed -> viewModel.send(SettingsEvent.InputVoiceSpeed(speed)) },
         onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
         onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
+        onUseGrpcDelegateChange = { enabled -> viewModel.send(SettingsEvent.InputUseGrpcDelegate(enabled)) },
         onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
         onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
         onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
@@ -85,6 +86,7 @@ fun SettingsScreen(
     onVoiceSpeedInput: (String) -> Unit,
     onChooseVoice: () -> Unit,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
+    onUseGrpcDelegateChange: (Boolean) -> Unit,
     onModelChange: (GigaModel) -> Unit,
     onDefaultCalendarChange: (String?) -> Unit,
     onSupportEmailInput: (String) -> Unit,
@@ -217,6 +219,27 @@ fun SettingsScreen(
                     )
                     Text(
                         text = "Класть примеры использования тулов в контекст",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.glassColors.textPrimary
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Checkbox(
+                        checked = state.useGrpcDelegate,
+                        onCheckedChange = onUseGrpcDelegateChange,
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
+                            checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    )
+                    Text(
+                        text = "Использовать gRPC для запросов к модели",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.glassColors.textPrimary
                     )
@@ -549,6 +572,7 @@ fun SettingsScreenPreview() {
             onVoiceSpeedInput = {},
             onChooseVoice = {},
             onUseFewShotExamplesChange = {},
+            onUseGrpcDelegateChange = {},
             onModelChange = {},
             onDefaultCalendarChange = {},
             onSupportEmailInput = {},

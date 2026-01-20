@@ -40,6 +40,7 @@ class SettingsViewModel(
                     gigaChatKey = keysProvider.gigaChatKey ?: "",
                     saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                     useFewShotExamples = keysProvider.useFewShotExamples,
+                    useGrpcDelegate = keysProvider.useGrpc,
                     gigaModel = keysProvider.gigaModel,
                     supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
                     systemPrompt = keysProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT,
@@ -70,6 +71,10 @@ class SettingsViewModel(
             is InputUseFewShotExamples -> {
                 keysProvider.useFewShotExamples = event.enabled
                 setState { copy(useFewShotExamples = event.enabled) }
+            }
+            is InputUseGrpcDelegate -> {
+                keysProvider.useGrpc = event.enabled
+                setState { copy(useGrpcDelegate = event.enabled) }
             }
             is SelectModel -> {
                 graphBasedAgent.updateModel(event.model)
