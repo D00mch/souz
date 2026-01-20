@@ -39,7 +39,7 @@ class ToolReadPdfPages : ToolSetup<ToolReadPdfPages.Input> {
     )
 
     override fun invoke(input: Input): String {
-        val file = File(input.filePath)
+        val file = File(FilesToolUtil.applyDefaultEnvs(input.filePath))
         if (!file.exists()) return "Error: File not found at ${input.filePath}"
 
         if (file.extension.lowercase() != "pdf") return "Error: Expecting .pdf file"
