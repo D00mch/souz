@@ -53,6 +53,7 @@ class ToolsFactory(
             ToolMoveFile.toGiga(),
             // ToolFindTextInFiles.toGiga(), // we already have ToolFindInFiles
             ToolExtractText().toGiga(),
+            ToolFindFilesByName.toGiga(),
             ToolReadPdfPages().toGiga(),
             ToolOpen(ToolRunBashCommand).toGiga(),
         )
