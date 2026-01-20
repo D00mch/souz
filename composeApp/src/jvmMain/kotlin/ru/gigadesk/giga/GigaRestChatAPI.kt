@@ -103,11 +103,12 @@ class GigaRestChatAPI(
 
         val (_, _, spent, cached) = result.usage
         val (_, _, sSpent, sCached) = newCurrentTokensUsage
-        l.info(
+        l.info("Chat response: ")
+        println(
             """
-            |"Chat: -- History.len: ${body.messages.size},  Functions.len: ${body.functions.size}
-            |       -- Tokens spent: $spent, cached: $cached, per session spent: $sSpent, cached: $sCached
-            |       -- Choice.len: ${result.choices.size}, Last choice:"
+            |--  History.len: ${body.messages.size},  Functions.len: ${body.functions.size}
+            |--  Tokens spent: $spent, cached: $cached, per session spent: $sSpent, cached: $sCached
+            |--  Choice.len: ${result.choices.size}, Last choice:"
             |${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}
             """.trimMargin()
         )
