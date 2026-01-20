@@ -9,7 +9,6 @@ import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
-import java.io.File
 
 object ToolFindFilesByName : ToolSetup<ToolFindFilesByName.Input> {
     data class Input(
@@ -56,23 +55,18 @@ object ToolFindFilesByName : ToolSetup<ToolFindFilesByName.Input> {
     override suspend fun suspendInvoke(input: Input): String {
         val path = FilesToolUtil.applyDefaultEnvs(input.path)
 
-        // Команда mdfind:
-        // -onlyin "$1" -> ищет только в указанной папке (аргумент 1)
-        // -name "$2"   -> ищет файлы, имя которых содержит запрос (аргумент 2)
         val script = "mdfind -onlyin \"$1\" -name \"$2\""
 
         val result = ToolRunBashCommand.sh(script, path, input.fileName)
             .lineSequence()
-            .filter { it.isNotBlank() } // Убираем пустые строки, если есть
+            .filter { it.isNotBlank() }
             .toList()
 
         return objectMapper.writeValueAsString(result)
     }
 }
 
-// --- Функция Main для проверки ---
 fun main() {
-    // Пример: Ищем файлы, в названии которых есть "kotlin" внутри домашней папки
     val searchInput = ToolFindFilesByName.Input(
         path = "~",
         fileName = "родмап"
@@ -83,7 +77,6 @@ fun main() {
     val resultJson = ToolFindFilesByName.invoke(searchInput)
     println("Raw JSON result: $resultJson")
 
-    // Пробуем распарсить обратно, чтобы убедиться, что формат верный
     try {
         val fileList: List<String> = objectMapper.readValue(resultJson)
 
