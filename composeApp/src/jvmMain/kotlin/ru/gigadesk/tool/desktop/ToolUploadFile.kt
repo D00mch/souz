@@ -1,18 +1,20 @@
 package ru.gigadesk.tool.desktop
 
 import ru.gigadesk.giga.GigaChatAPI
-import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolSetupWithAttachments
 import kotlinx.coroutines.runBlocking
+import org.kodein.di.DI
+import org.kodein.di.instance
 import org.slf4j.LoggerFactory
+import ru.gigadesk.di.mainDiModule
 import java.io.File
 
 class ToolUploadFile(
-    private val api: GigaChatAPI = GigaRestChatAPI.INSTANCE,
+    private val api: GigaChatAPI,
 ) : ToolSetupWithAttachments<ToolUploadFile.Input> {
     private val l = LoggerFactory.getLogger(ToolUploadFile::class.java)
 
@@ -52,6 +54,8 @@ class ToolUploadFile(
 }
 
 fun main() {
-    val id = ToolUploadFile().invoke(ToolUploadFile.Input("/path/to/file"))
+    val di = DI.invoke { import(mainDiModule) }
+    val api: GigaChatAPI by di.instance()
+    val id = ToolUploadFile(api).invoke(ToolUploadFile.Input("/path/to/file"))
     println(id)
 }

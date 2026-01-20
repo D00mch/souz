@@ -15,7 +15,10 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import org.kodein.di.DI
+import org.kodein.di.instance
 import org.slf4j.LoggerFactory
+import ru.gigadesk.di.mainDiModule
 import kotlin.time.Duration.Companion.seconds
 import java.io.File
 import java.nio.file.Files
@@ -30,7 +33,7 @@ private data class ToolUseBlock(
 )
 
 class AnthropicChatAPI(
-    private val fallback: GigaRestChatAPI = GigaRestChatAPI.INSTANCE,
+    private val fallback: GigaRestChatAPI,
 ) : GigaChatAPI by fallback {
 
     private val l = LoggerFactory.getLogger(AnthropicChatAPI::class.java)
@@ -372,7 +375,9 @@ class AnthropicChatAPI(
 }
 
 suspend fun main() {
-    val api = AnthropicChatAPI(GigaRestChatAPI.INSTANCE)
+    val di = DI.invoke { import(mainDiModule) }
+    val fallback: GigaRestChatAPI by di.instance()
+    val api = AnthropicChatAPI(fallback)
 
 //    val result = api.uploadFile(File("/Users/m1/Pictures/портрет.jpeg"))
 //    println(result)

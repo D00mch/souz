@@ -7,12 +7,16 @@ import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.http.*
 import org.slf4j.LoggerFactory
+import ru.gigadesk.db.SettingsProvider
 
-object GigaAuth {
+class GigaAuth(
+    private val settingsProvider: SettingsProvider,
+) {
     private val l = LoggerFactory.getLogger(GigaAuth::class.java)
+
     suspend fun requestToken(apiKey: String, scope: String): String {
         val client = HttpClient(CIO) {
-            gigaDefaults()
+            gigaDefaults(settingsProvider)
         }
         val response = client.submitForm(
             url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",

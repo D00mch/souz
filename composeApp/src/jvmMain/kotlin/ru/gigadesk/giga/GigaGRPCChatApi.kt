@@ -20,6 +20,9 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
 import org.slf4j.LoggerFactory
 import org.slf4j.bridge.SLF4JBridgeHandler
+import org.kodein.di.DI
+import org.kodein.di.instance
+import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.tool.files.ToolListFiles
 import kotlin.time.measureTime
 
@@ -29,7 +32,7 @@ import kotlin.time.measureTime
  */
 class GigaGRPCChatApi(
     private val auth: GigaAuth,
-    private val gigaChatAPI: GigaRestChatAPI = GigaRestChatAPI.INSTANCE,
+    private val gigaChatAPI: GigaRestChatAPI,
 ) : GigaChatAPI by gigaChatAPI {
     private val l = LoggerFactory.getLogger(GigaGRPCChatApi::class.java)
 
@@ -261,10 +264,6 @@ class GigaGRPCChatApi(
         )
     }
 
-    companion object {
-        val INSTANCE = GigaGRPCChatApi(GigaAuth)
-    }
-
     private fun loadSslContext(): SslContext {
         val certPath = "certs/russiantrustedca.pem"
         val stream = Thread.currentThread().contextClassLoader.getResourceAsStream(certPath)
@@ -276,8 +275,9 @@ class GigaGRPCChatApi(
 }
 
 suspend fun main() {
-    val api = GigaGRPCChatApi.INSTANCE
-//  val api = GigaRestChatAPI.INSTANCE
+    val di = DI.invoke { import(mainDiModule) }
+    val api: GigaGRPCChatApi by di.instance()
+//  val api: GigaRestChatAPI by di.instance()
 
     val systemPrompt = GigaRequest.Message(
         role = GigaMessageRole.system,

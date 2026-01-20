@@ -17,8 +17,6 @@ import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.audio.*
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
-import ru.gigadesk.db.VectorDB
-import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.permissions.AppRelauncher
@@ -39,6 +37,7 @@ class MainViewModel(
 
     private val graphAgent by di.instance<GraphBasedAgent>()
     private val gigaVoiceAPI: GigaVoiceAPI by di.instance()
+    private val desktopInfoRepository: DesktopInfoRepository by di.instance()
     private val settingsProvider: SettingsProvider by di.instance()
     private var onboardingSpeechStartedAt: Long? = null
 
@@ -82,8 +81,7 @@ class MainViewModel(
         )
 
         launch { audioRecorder.logState() }
-        val desktopInfoRepo = DesktopInfoRepository(GigaRestChatAPI.INSTANCE, VectorDB)
-        viewModelScope.launchDbSetup(desktopInfoRepo)
+        viewModelScope.launchDbSetup(desktopInfoRepository)
 
         if (!registerNativeHook()) {
             handleMissingInputMonitoringPermission()

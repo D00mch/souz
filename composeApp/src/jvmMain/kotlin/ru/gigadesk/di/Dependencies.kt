@@ -54,7 +54,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolsSettings(instance(), instance()) }
 
     // API
-    bindSingleton { GigaAuth }
+    bindSingleton { GigaAuth(instance()) }
     bindSingleton<GigaGRPCChatApi> {
         GigaGRPCChatApi(instance(), instance())
     }
