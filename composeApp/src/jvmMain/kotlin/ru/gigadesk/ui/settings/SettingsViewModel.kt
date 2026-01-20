@@ -43,8 +43,11 @@ class SettingsViewModel(
                     useGrpcDelegate = keysProvider.useGrpc,
                     gigaModel = keysProvider.gigaModel,
                     requestTimeoutMillis = keysProvider.requestTimeoutMillis,
+                    requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
                     initialWindowWidthDp = keysProvider.initialWindowWidthDp,
+                    initialWindowWidthInput = keysProvider.initialWindowWidthDp.toString(),
                     initialWindowHeightDp = keysProvider.initialWindowHeightDp,
+                    initialWindowHeightInput = keysProvider.initialWindowHeightDp.toString(),
                     supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
                     systemPrompt = keysProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT,
                     defaultCalendar = keysProvider.defaultCalendar,
@@ -91,6 +94,7 @@ class SettingsViewModel(
                 }
                 setState {
                     copy(
+                        requestTimeoutInput = normalized,
                         requestTimeoutMillis = newTimeout ?: requestTimeoutMillis
                     )
                 }
@@ -103,6 +107,7 @@ class SettingsViewModel(
                 }
                 setState {
                     copy(
+                        initialWindowWidthInput = normalized,
                         initialWindowWidthDp = newWidth ?: initialWindowWidthDp
                     )
                 }
@@ -115,6 +120,7 @@ class SettingsViewModel(
                 }
                 setState {
                     copy(
+                        initialWindowHeightInput = normalized,
                         initialWindowHeightDp = newHeight ?: initialWindowHeightDp
                     )
                 }

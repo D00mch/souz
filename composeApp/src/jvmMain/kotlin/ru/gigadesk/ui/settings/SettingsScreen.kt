@@ -204,7 +204,7 @@ fun SettingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     LabeledTextField(
                         label = "Таймаут запроса (мс)",
-                        value = state.requestTimeoutMillis.toString(),
+                        value = state.requestTimeoutInput,
                         onValueChange = onRequestTimeoutMillisChange,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -218,7 +218,7 @@ fun SettingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     LabeledTextField(
                         label = "Ширина окна (dp)",
-                        value = state.initialWindowWidthDp.toString(),
+                        value = state.initialWindowWidthInput,
                         onValueChange = onInitialWindowWidthDpChange,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -232,7 +232,7 @@ fun SettingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     LabeledTextField(
                         label = "Высота окна (dp)",
-                        value = state.initialWindowHeightDp.toString(),
+                        value = state.initialWindowHeightInput,
                         onValueChange = onInitialWindowHeightDpChange,
                         modifier = Modifier.fillMaxWidth()
                     )
