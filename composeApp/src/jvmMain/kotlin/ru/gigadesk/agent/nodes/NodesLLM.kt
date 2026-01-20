@@ -160,14 +160,6 @@ class NodesLLM(
             finishReason = finishReason,
         )
     }
-
-    private operator fun GigaResponse.Usage.plus(other: GigaResponse.Usage): GigaResponse.Usage =
-        GigaResponse.Usage(
-            promptTokens = promptTokens + other.promptTokens,
-            completionTokens = completionTokens + other.completionTokens,
-            totalTokens = totalTokens + other.totalTokens,
-            precachedTokens = precachedTokens + other.precachedTokens,
-        )
 }
 
 private const val HISTORY_SUMMARIZE_THRESHOLD = 0.8
