@@ -20,8 +20,8 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
 import org.slf4j.LoggerFactory
 import org.slf4j.bridge.SLF4JBridgeHandler
-import ru.gigadesk.tool.ToolRunBashCommand
-import ru.gigadesk.tool.application.ToolOpen
+import ru.gigadesk.tool.files.ToolListFiles
+import kotlin.time.measureTime
 
 /**
  * Simple gRPC client for GigaChat ChatService.
@@ -301,32 +301,46 @@ class GigaGRPCChatApi(
 
 suspend fun main() {
     val api = GigaGRPCChatApi.INSTANCE
+//  val api = GigaRestChatAPI.INSTANCE
 
     val systemPrompt = GigaRequest.Message(
         role = GigaMessageRole.system,
         content = """
-                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. Если какую-то задачу можно решить 
-                c помощью имеющихся функций, сделай, а не проси пользователя сделать это. Если сомневаешься, уточни.
+            Ты отличный сказочник
             """.trimIndent()
     )
-
-    val result = api.messageStream(
-        GigaRequest.Chat(
-            model = GigaModel.Pro.alias,
-            stream = true,
-            messages = listOf(
-                systemPrompt,
-                GigaRequest.Message(
-                    role = GigaMessageRole.user,
-                    content = "Привет, как дела?",
-                ),
+    val request = GigaRequest.Chat(
+        model = GigaModel.Pro.alias,
+        stream = true,
+        messages = listOf(
+            systemPrompt,
+            GigaRequest.Message(
+                role = GigaMessageRole.user,
+                content = "Напиши сказку о Царе Салтане в 15 предложений",
             ),
-            functions = listOf(
-                ToolOpen(ToolRunBashCommand).toGiga(),
-            ).map { it.fn }
-        )
+        ),
+        functions = listOf(
+            ToolListFiles.toGiga(),
+        ).map { it.fn }
     )
-    result.collect {
-        println("Response: $it")
+
+    val allTime = measureTime {
+        if (api is GigaGRPCChatApi) {
+            val result = api.messageStream(request)
+
+            val millis = System.currentTimeMillis()
+            val first by lazy {
+                println("First response in ${System.currentTimeMillis() - millis}")
+            }
+            result.collect {
+                first
+                println("Response: $it")
+            }
+        } else {
+            api as GigaRestChatAPI
+            val response = api.message(request.copy(stream = false))
+            println(response)
+        }
     }
+    println("All time: $allTime")
 }
