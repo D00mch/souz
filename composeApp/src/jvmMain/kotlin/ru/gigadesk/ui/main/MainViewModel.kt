@@ -23,6 +23,7 @@ import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.permissions.AppRelauncher
 import ru.gigadesk.ui.BaseViewModel
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 import kotlin.time.Duration.Companion.minutes
@@ -126,13 +127,21 @@ class MainViewModel(
     private fun subscribeOnTaskSideEffects() {
         val job = viewModelScope.launch {
             setState { copy(displayedText = "") }
-
+            val isCodeBlockStarted = AtomicBoolean(false)
             graphAgent.sideEffects.collect { text ->
                 setState {
                     val prevText = currentState.displayedText
                     copy(displayedText = prevText + text)
                 }
-                say.queue(text)
+                if (text.contains(CODE_BLOCK)) {
+                    isCodeBlockStarted.set(!isCodeBlockStarted.get())
+                    if (isCodeBlockStarted.get()) {
+                        say.queue(prepareTextForSpeech(text.substringBefore(CODE_BLOCK)))
+                    }
+                }
+                if (!isCodeBlockStarted.get()) {
+                    say.queue(prepareTextForSpeech(text.substringAfter(CODE_BLOCK)))
+                }
             }
         }
         viewModelScope.launch { taskSideEffectJobs.add(job) }
@@ -160,7 +169,6 @@ class MainViewModel(
         setState { copy(isListening = false, statusMessage = "Обработка входа") }
         delay(300)
         say.playTextRand(speed = 120, "ok", "okey", "окей", "ок")
-//        setState { copy(statusMessage = MainState.randomStatusTip()) }
     }
 
     private suspend fun setPreviousText() {
@@ -262,7 +270,7 @@ class MainViewModel(
     }
 
     private fun prepareTextForSpeech(text: String): String {
-        var result = text.replace(Regex("```[\\s\\S]*?```"), "")
+        var result = text.replace(Regex("$CODE_BLOCK[\\s\\S]*?$CODE_BLOCK"), "")
         //result = result.replace(Regex("`[^`]+`"), "")
         result = result.replace(Regex("[\"«»„“”]"), "")
         result = result.replace(Regex("[*#]"), "")
@@ -281,6 +289,7 @@ class MainViewModel(
     }
 
     private companion object {
+        const val CODE_BLOCK = "```"
         const val DEFAULT_CLEARED_TEXT = "Контекст очищен"
         const val ONBOARDING_PERMISSION_DELAY_MS = 100000
         const val ONBOARDING_SPEECH_TEXT = "Привет! Я ГигаДэ́ск! умный помощник на твоем компьютере... " +
