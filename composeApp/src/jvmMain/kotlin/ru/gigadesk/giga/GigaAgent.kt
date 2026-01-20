@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import ru.gigadesk.agent.node.toMessage
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.keys.Keys
 import ru.gigadesk.tool.*
@@ -280,22 +281,6 @@ class GigaAgent(
 
     private fun GigaResponse.Chat.Ok.toRequestMessages(): Collection<GigaRequest.Message> {
         return choices.mapNotNull { it.toMessage() }
-    }
-
-    private fun GigaResponse.Choice.toMessage(): GigaRequest.Message? {
-        val msg = this.message
-        val content: String = when {
-            msg.content.isNotBlank() -> msg.content
-            msg.functionCall != null -> gigaJsonMapper.writeValueAsString(
-                mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
-            )
-            else -> return null
-        }
-        return GigaRequest.Message(
-            role = msg.role,
-            content = content,
-            functionsStateId = msg.functionsStateId
-        )
     }
 
     private suspend fun executeTool(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {

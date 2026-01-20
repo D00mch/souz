@@ -81,20 +81,7 @@ class GigaRestChatAPI(
         when {
             response.status.isSuccess() -> {
                 val result = response.body<GigaResponse.Chat.Ok>()
-
-                val newCurrentTokensUsage = currentSessionTokensUsage.load() + result.usage
-                currentSessionTokensUsage.store(newCurrentTokensUsage)
-
-                val (_, _, spent, cached) = result.usage
-                val (_, _, sSpent, sCached) = newCurrentTokensUsage
-                println(
-                    """
-                |"Chat: -- History.len: ${body.messages.size},  Functions.len: ${body.functions.size}
-                |       -- Tokens spent: $spent, cached: $cached, per session spent: $sSpent, cached: $sCached
-                |       -- Choice.len: ${result.choices.size}, Last choice:"
-                |${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}
-                """.trimMargin()
-                )
+                logTokenUsage(result, body)
                 result
             }
             response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
@@ -108,6 +95,22 @@ class GigaRestChatAPI(
     } catch (t: Throwable) {
         l.error("Error in REST chat", t)
         GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")
+    }
+
+    fun logTokenUsage(result: GigaResponse.Chat.Ok, body: GigaRequest.Chat) {
+        val newCurrentTokensUsage = currentSessionTokensUsage.load() + result.usage
+        currentSessionTokensUsage.store(newCurrentTokensUsage)
+
+        val (_, _, spent, cached) = result.usage
+        val (_, _, sSpent, sCached) = newCurrentTokensUsage
+        l.info(
+            """
+            |"Chat: -- History.len: ${body.messages.size},  Functions.len: ${body.functions.size}
+            |       -- Tokens spent: $spent, cached: $cached, per session spent: $sSpent, cached: $sCached
+            |       -- Choice.len: ${result.choices.size}, Last choice:"
+            |${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}
+            """.trimMargin()
+        )
     }
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {

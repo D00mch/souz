@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.agent.engine.Node
 import ru.gigadesk.agent.engine.graph
+import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.atomics.AtomicReference
@@ -19,10 +20,11 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.math.ceil
 
 class NodesLLM(
-    private val llmApi: GigaChatAPI,
+    private val llmApi: GigaRestChatAPI,
+    private val grpcChatApi: GigaGRPCChatApi,
     private val nodesCommon: NodesCommon,
+    private val settingsProvider: SettingsProvider,
 ) {
-
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
 
     val sideEffects: Flow<String> = MutableSharedFlow()
@@ -30,8 +32,7 @@ class NodesLLM(
     val requestToResponse: Node<GigaRequest.Chat, GigaResponse.Chat> = Node("llmCall") { ctx ->
         l.debug { "LLM input is ${ctx.input}" }
         val response = withContext(Dispatchers.IO) {
-            val useStream = llmApi is GigaGRPCChatApi
-            if (useStream) {
+            if (settingsProvider.useGrpcDelegate) {
                 streamResponse(ctx.input)
             } else {
                 llmApi.message(ctx.input)
@@ -80,29 +81,12 @@ class NodesLLM(
         nodesCommon.respToString.edgeTo(nodeFinish)
     }
 
-    private fun GigaResponse.Choice.toMessage(): GigaRequest.Message? {
-        val msg = this.message
-        val content: String = when {
-            msg.content.isNotBlank() -> msg.content
-            msg.functionCall != null -> gigaJsonMapper.writeValueAsString(
-                mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
-            )
-
-            else -> return null
-        }
-        return GigaRequest.Message(
-            role = msg.role,
-            content = content,
-            functionsStateId = msg.functionsStateId
-        )
-    }
-
     private suspend fun streamResponse(request: GigaRequest.Chat): GigaResponse.Chat {
         val streamResponse = AtomicReference<GigaResponse.Chat?>(null)
         val choicesByIndex = ConcurrentHashMap<Int, ChoiceAccumulator>()
 
         withContext(Dispatchers.IO) {
-            llmApi.messageStream(request).takeWhile { response ->
+            grpcChatApi.messageStream(request).takeWhile { response ->
                 l.info("Stream response type ${response::class.java}")
                 if (response is GigaResponse.Chat.Error) {
                     streamResponse.store(response)
@@ -112,12 +96,12 @@ class NodesLLM(
                 }
             }.collect { response ->
                 response as GigaResponse.Chat.Ok
-                // TODO: -> debug
-                l.info("choices: ${response.choices}")
+                l.debug("choices: {}", response.choices)
 
-                if (response.choices.firstOrNull()?.message?.content?.isNotEmpty() == true) {
-                    l.info("About to emit into sideEffects flow")
-                    (sideEffects as MutableSharedFlow).emit(response.choices.firstOrNull()?.message?.content!!)
+                val content = response.choices.firstOrNull()?.message?.content
+                if (content?.isNotEmpty() == true) {
+                    l.info("About to emit into sideEffects flow: {}", content)
+                    (sideEffects as MutableSharedFlow).emit(content)
                 }
 
                 response.choices.forEach { choice ->
@@ -133,37 +117,14 @@ class NodesLLM(
                     created = response.created,
                     model = response.model,
                     usage = response.usage,
-                ).also {
-                    streamResponse.store(it)
+                ).also { response ->
+                    llmApi.logTokenUsage(response, request)
+                    streamResponse.store(response)
                 }
             }
         }
 
         return streamResponse.load() ?: GigaResponse.Chat.Error(-1, "Connection error")
-    }
-
-    private fun ArrayList<GigaRequest.Message>.squeezeTexts() {
-        if (isEmpty()) return
-        val squeezed = ArrayDeque<GigaRequest.Message>(size)
-        for (msg in this) {
-            val last = squeezed.lastOrNull()
-            if (
-                last != null &&
-                last.role == GigaMessageRole.assistant &&
-                msg.role == GigaMessageRole.assistant &&
-                last.content.isNotBlank() &&
-                msg.content.isNotBlank() &&
-                (last.functionsStateId == msg.functionsStateId || msg.functionsStateId == null)
-            ) {
-                squeezed.removeLast()
-                val joined = if (last.content.isEmpty()) msg.content else last.content + "\n" + msg.content
-                squeezed.add(last.copy(content = joined))
-            } else {
-                squeezed.add(msg)
-            }
-        }
-        clear()
-        addAll(squeezed)
     }
 
     private class ChoiceAccumulator(
@@ -222,4 +183,20 @@ private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(
     val estimatedTokens = systemPrompt.estimateTokenCount() +
             history.sumOf { it.content.estimateTokenCount() }
     return estimatedTokens >= contextWindow * threshold
+}
+
+fun GigaResponse.Choice.toMessage(): GigaRequest.Message? {
+    val msg = this.message
+    val content: String = when {
+        msg.content.isNotBlank() -> msg.content
+        msg.functionCall != null -> gigaJsonMapper.writeValueAsString(
+            mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
+        )
+        else -> return null
+    }
+    return GigaRequest.Message(
+        role = msg.role,
+        content = content,
+        functionsStateId = msg.functionsStateId
+    )
 }

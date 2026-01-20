@@ -7,6 +7,7 @@ import kotlin.reflect.KProperty
 class SettingsProvider(private val configStore: ConfigStore) {
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
+    private var _useGrpcDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
     private var _needsOnboardingDelegate: String? by keyDelegate(
         configKey = NEEDS_ONBOARDING,
         envKey = NEEDS_ONBOARDING
@@ -28,6 +29,10 @@ class SettingsProvider(private val configStore: ConfigStore) {
     var useFewShotExamples: Boolean
         get() = _fewShotsDelegate?.lowercase() == "true"
         set(value) { _fewShotsDelegate = value.toString() }
+
+    var useGrpcDelegate: Boolean
+        get() = _useGrpcDelegate?.lowercase() == "true"
+        set(value) { _useGrpcDelegate = value.toString() }
 
     var needsOnboarding: Boolean
         get() = _needsOnboardingDelegate?.toBooleanStrictOrNull() ?: false
@@ -53,6 +58,7 @@ class SettingsProvider(private val configStore: ConfigStore) {
         private const val GIGA_CHAT_KEY = "GIGA_CHAT_KEY"
         private const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
+        private const val USE_GRPC = "USE_GRPC"
         private const val SUPPORT_EMAIL = "SUPPORT_EMAIL"
         private const val SYSTEM_PROMPT = "SYSTEM_PROMPT"
         private const val DEFAULT_CALENDAR = "DEFAULT_CALENDAR"

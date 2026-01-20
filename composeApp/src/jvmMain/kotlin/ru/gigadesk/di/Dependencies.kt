@@ -55,17 +55,20 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     // API
     bindSingleton { GigaAuth }
-    bindSingleton<GigaChatAPI> {
-        val restApi = GigaRestChatAPI(instance(), instance(), instance(DiTags.TAG_LOG))
-        GigaGRPCChatApi(instance(), restApi)
+    bindSingleton<GigaGRPCChatApi> {
+        GigaGRPCChatApi(instance(), instance())
     }
+    bindSingleton<GigaRestChatAPI> {
+        GigaRestChatAPI(instance(), instance(), instance(DiTags.TAG_LOG))
+    }
+    bindSingleton<GigaChatAPI> { instance<GigaRestChatAPI>() }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
 
     // LLM
     bindSingleton { NodesCommon(instance(), instance()) }
-    bindSingleton { NodesLLM(instance(), instance()) }
+    bindSingleton { NodesLLM(instance(), instance(), instance(), instance()) }
     bindSingleton {
         NodesClassification(
             instance(),
