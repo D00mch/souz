@@ -101,7 +101,7 @@ class NodesLLM(
                 val content = response.choices.firstOrNull()?.message?.content
                 if (content?.isNotEmpty() == true) {
                     l.info("About to emit into sideEffects flow: {}", content)
-                    (sideEffects as MutableSharedFlow).emit(content)
+                    (sideEffects as MutableSharedFlow).tryEmit(content)
                 }
 
                 response.choices.forEach { choice ->
