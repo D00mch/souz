@@ -7,6 +7,7 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.gigadesk.agent.GraphBasedAgent
+import ru.gigadesk.agent.node.NodesCommon
 import ru.gigadesk.agent.node.NodesLLM
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.audio.Say
@@ -16,6 +17,8 @@ import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.db.VectorDB
 import ru.gigadesk.giga.ApiClassifier
 import ru.gigadesk.giga.GigaAuth
+import ru.gigadesk.giga.GigaChatAPI
+import ru.gigadesk.giga.GigaGRPCChatApi
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.keys.Keys
@@ -52,13 +55,17 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     // API
     bindSingleton { GigaAuth }
-    bindSingleton { GigaRestChatAPI(instance(), instance(), instance(DiTags.TAG_LOG)) }
+    bindSingleton<GigaChatAPI> {
+        val restApi = GigaRestChatAPI(instance(), instance(), instance(DiTags.TAG_LOG))
+        GigaGRPCChatApi(instance(), restApi)
+    }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
 
     // LLM
-    bindSingleton { NodesLLM(instance()) }
+    bindSingleton { NodesCommon(instance(), instance()) }
+    bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton {
         NodesClassification(
             instance(),
@@ -69,6 +76,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             instance(),
         )
     }
-    bindSingleton { ToolsFactory(instance(), instance()) }
+    bindSingleton { ToolsFactory(instance(), instance(), instance()) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
 }

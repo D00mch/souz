@@ -13,8 +13,8 @@ import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaResponse
-import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.calendar.CalendarAppleScriptCommands
@@ -25,9 +25,9 @@ class SettingsViewModel(
     override val di: DI,
 ) : BaseViewModel<SettingsState, SettingsEvent, SettingsEffect>(), DIAware {
 
-    private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
+    private val l = LoggerFactory.getLogger(SettingsViewModel::class.java)
     private val keysProvider: SettingsProvider by di.instance()
-    private val chatApi: GigaRestChatAPI by di.instance()
+    private val chatApi: GigaChatAPI by di.instance()
     private val graphBasedAgent: GraphBasedAgent by di.instance()
     private val supportLogSender = SupportLogSender()
     private val say: Say by di.instance()

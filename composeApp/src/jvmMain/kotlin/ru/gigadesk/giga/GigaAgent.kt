@@ -364,7 +364,7 @@ class GigaAgent(
             nodesClassification: NodesClassification,
             model: GigaModel = GigaModel.Max,
             settings: Settings = Settings(
-                ToolsFactory(desktopRepo, Keys()).toolsByCategory,
+                ToolsFactory(desktopRepo, api, Keys()).toolsByCategory,
                 model,
                 stream = false
             )

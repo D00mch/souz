@@ -105,8 +105,8 @@ class MainViewModel(
                     userInputFlow.collect { userInput ->
                         val rawText = graphAgent.execute(userInput)
                         l.info(rawText)
-                        val speechText = prepareTextForSpeech(rawText)
                         setState { copy(displayedText = rawText, statusMessage = "Ответ готов") }
+                        val speechText = prepareTextForSpeech(rawText)
                         say.playText(speechText)
                     }
                 }.onFailure { e ->
