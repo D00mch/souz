@@ -18,7 +18,7 @@ class Say {
     fun playText(text: String, speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)) {
         stopPlayText()
         val saveEnding = "$text "
-        sayProcess = ProcessBuilder("say", "-r", "$speed", saveEnding).start()
+        sayProcess = ProcessBuilder("say", "-r", "$speed", "--", saveEnding).start()
         sayProcess?.waitFor()
     }
 
