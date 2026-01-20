@@ -63,32 +63,7 @@ class GigaGRPCChatApi(
         ChatServiceGrpcKt.ChatServiceCoroutineStub(channel)
 
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat {
-        val request = Gigachatv1.ChatRequest.newBuilder()
-            .setModel(body.model)
-            .setOptions(
-                Gigachatv1.ChatOptions.newBuilder()
-                    .apply {
-                        addAllFunctions(
-                            body.functions.map { it.toGRPC() }
-                        )
-                        maxTokens = body.maxTokens
-                        body.temperature?.let { temperature = it }
-                        body.updateInterval?.let { updateInterval = it.toFloat() }
-                    }
-                    .build()
-            )
-            .addAllMessages(body.messages.map { msg ->
-                Gigachatv1.Message.newBuilder()
-                    .setRole(msg.role.name)
-                    .setContent(msg.content)
-                    .apply {
-                        msg.functionsStateId?.let { id -> functionsStateId = id }
-                        msg.attachments?.let { att -> addAllAttachments(att) }
-                    }
-                    .build()
-            })
-            .build()
-
+        val request = request(body)
         val token = loadAccessToken()
         return try {
             stub.chat(request, headers(token)).toGigaResponse()
@@ -96,43 +71,17 @@ class GigaGRPCChatApi(
             l.error("Error in gRPC chat", e)
             suspend fun retryWithRefresh() =
                 stub.chat(request, headers(refreshAccessToken())).toGigaResponse()
-            when {
-                e is StatusException && e.status.code == Status.Code.UNAUTHENTICATED -> retryWithRefresh()
-                e is StatusRuntimeException && e.status.code == Status.Code.UNAUTHENTICATED -> retryWithRefresh()
+            when (e) {
+                is StatusException if e.status.code == Status.Code.UNAUTHENTICATED -> retryWithRefresh()
+                is StatusRuntimeException if e.status.code == Status.Code.UNAUTHENTICATED -> retryWithRefresh()
                 else -> throw e
             }
         }
     }
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> {
-        val request = Gigachatv1.ChatRequest.newBuilder()
-            .setModel(body.model)
-            .setOptions(
-                Gigachatv1.ChatOptions.newBuilder()
-                    .apply {
-                        addAllFunctions(
-                            body.functions.map { it.toGRPC() }
-                        )
-                        maxTokens = body.maxTokens
-                        body.temperature?.let { temperature = it }
-                        body.updateInterval?.let { updateInterval = it.toFloat() }
-                    }
-                    .build()
-            )
-            .addAllMessages(body.messages.map { msg ->
-                Gigachatv1.Message.newBuilder()
-                    .setRole(msg.role.name)
-                    .setContent(msg.content)
-                    .apply {
-                        msg.functionsStateId?.let { id -> functionsStateId = id }
-                        msg.attachments?.let { att -> addAllAttachments(att) }
-                    }
-                    .build()
-            })
-            .build()
-
         suspend fun stream(token: String): Flow<GigaResponse.Chat> {
-            return stub.chatStream(request, headers(token))
+            return stub.chatStream(request(body), headers(token))
                 .map { resp -> resp.mapResponse(body.model) }
         }
 
@@ -147,6 +96,33 @@ class GigaGRPCChatApi(
             }
         }
     }
+
+    private fun GigaGRPCChatApi.request(body: GigaRequest.Chat): Gigachatv1.ChatRequest =
+        Gigachatv1.ChatRequest.newBuilder()
+            .setModel(body.model)
+            .setOptions(
+                Gigachatv1.ChatOptions.newBuilder()
+                    .apply {
+                        addAllFunctions(
+                            body.functions.map { it.toGRPC() }
+                        )
+                        maxTokens = body.maxTokens
+                        body.temperature?.let { temperature = it }
+                        body.updateInterval?.let { updateInterval = it.toFloat() }
+                    }
+                    .build()
+            )
+            .addAllMessages(body.messages.map { msg ->
+                Gigachatv1.Message.newBuilder()
+                    .setRole(msg.role.name)
+                    .setContent(msg.content)
+                    .apply {
+                        msg.functionsStateId?.let { id -> functionsStateId = id }
+                        msg.attachments?.let { att -> addAllAttachments(att) }
+                    }
+                    .build()
+            })
+            .build()
 
     private fun Gigachatv1.ChatResponse.mapResponse(model: String): GigaResponse.Chat {
         val resp = this
@@ -324,6 +300,7 @@ suspend fun main() {
         ).map { it.fn }
     )
 
+    @Suppress("USELESS_IS_CHECK", "CAST_NEVER_SUCCEEDS")
     val allTime = measureTime {
         if (api is GigaGRPCChatApi) {
             val result = api.messageStream(request)
