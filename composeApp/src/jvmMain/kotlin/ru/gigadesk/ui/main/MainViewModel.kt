@@ -112,6 +112,7 @@ class MainViewModel(
                         val rawText = graphAgent.execute(userInput)
                         l.info(rawText)
                         setState { copy(displayedText = rawText, statusMessage = "Ответ готов") }
+                        if (!settingsProvider.useGrpc) say.playText(prepareTextForSpeech(rawText))
                     }
                 }.onFailure { e ->
                     l.error("Agent flow terminated: ${e.message}", e)
