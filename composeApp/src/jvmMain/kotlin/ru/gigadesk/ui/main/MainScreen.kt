@@ -24,7 +24,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
@@ -53,16 +52,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
-import kotlinx.coroutines.launch
 import org.kodein.di.compose.localDI
 import kotlin.random.Random
 
 private val TopButtonSize = 28.dp
 private val TopIconSize = 16.dp
-private val BaseWidth = 500.dp
-private val BaseHeight = 260.dp
-private val MaxHeight = 900.dp
-private val MaxWidth = 700.dp
+private val BaseWidth = 780.dp
+private val BaseHeight = 880.dp
 
 sealed class MarkdownPart {
     data class TextContent(val content: String) : MarkdownPart()
@@ -119,23 +115,8 @@ fun MainScreenContent(
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
 
-    LaunchedEffect(textContent) {
-        val textLen = textContent.length
-        val hasCode = textContent.contains("```")
-        val multiplier = if (hasCode) 1.2 else 0.8
-        val calculatedHeight = (280 + (textLen * multiplier)).dp
-
-        var targetWidth = BaseWidth
-        var targetHeight = calculatedHeight
-
-        if (targetHeight > MaxHeight) {
-            targetHeight = MaxHeight
-            targetWidth = MaxWidth
-        } else if (targetHeight < BaseHeight) {
-            targetHeight = BaseHeight
-            targetWidth = BaseWidth
-        }
-        onResizeRequest(DpSize(targetWidth, targetHeight))
+    LaunchedEffect(Unit) {
+        onResizeRequest(DpSize(BaseWidth, BaseHeight))
     }
 
     Box(
@@ -189,13 +170,7 @@ fun MainScreenContent(
 
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
 
-                    val dynamicFontSize = remember(textContent) {
-                        when (textContent.length) {
-                            in 0..50 -> 22.sp
-                            in 51..200 -> 18.sp
-                            else -> 15.sp
-                        }
-                    }
+                    val baseFontSize = 18.sp
 
                     Box(
                         modifier = Modifier
@@ -205,7 +180,7 @@ fun MainScreenContent(
                     ) {
                         MarkdownViewer(
                             text = textContent,
-                            baseFontSize = dynamicFontSize,
+                            baseFontSize = baseFontSize,
                             isWindowFocused = isFocused,
                             onShowSnack = onShowSnack
                         )
@@ -247,23 +222,18 @@ fun MarkdownViewer(
     onShowSnack: (String) -> Unit
 ) {
     val scrollState = rememberScrollState()
-    val alphaAnim = remember { Animatable(0f) }
-    val blurAnim = remember { Animatable(10f) }
+    val lastText = remember { mutableStateOf("") }
 
     val parts = remember(text) { parseMarkdownContent(text) }
 
     LaunchedEffect(text) {
-        alphaAnim.snapTo(0f)
-        blurAnim.snapTo(10f)
-        launch { alphaAnim.animateTo(1f, tween(500)) }
-        launch { blurAnim.animateTo(0f, tween(500)) }
-        scrollState.animateScrollTo(0)
+        val previousText = lastText.value
+        val isAppend = text.startsWith(previousText) && text.length >= previousText.length
+        if (!isAppend) {
+            scrollState.animateScrollTo(0)
+        }
+        lastText.value = text
     }
-
-    val containerAlpha by animateFloatAsState(
-        targetValue = if (isWindowFocused) 1f else 0.3f,
-        animationSpec = tween(600)
-    )
 
     val baseStyle = TextStyle(
         color = Color.White,
@@ -305,8 +275,6 @@ fun MarkdownViewer(
     SelectionContainer(
         modifier = Modifier
             .fillMaxSize()
-            .alpha(containerAlpha * alphaAnim.value)
-            .blur(blurAnim.value.dp)
     ) {
         Column(
             modifier = Modifier

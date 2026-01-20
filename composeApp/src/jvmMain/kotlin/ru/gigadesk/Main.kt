@@ -46,8 +46,8 @@ fun main() {
                 }
             )
 
-            val initialWidth = 460.dp
-            val initialHeight = 580.dp
+            val initialWidth = 580.dp
+            val initialHeight = 780.dp
 
             val windowState = rememberWindowState(
                 width = initialWidth,
@@ -68,20 +68,20 @@ fun main() {
                 WindowDraggableArea(modifier = Modifier.fillMaxSize()) {
                     App(
                         onWindowResize = { targetSize ->
-                            val currentSize = windowState.size
-                            val currentPos = windowState.position
-
-                            if (currentPos is WindowPosition.Absolute) {
-                                val widthDelta = targetSize.width - currentSize.width
-                                val heightDelta = targetSize.height - currentSize.height
-
-                                val newX = currentPos.x - widthDelta
-                                val newY = currentPos.y - heightDelta
-
-                                windowState.position = WindowPosition.Absolute(newX, newY)
-                            }
-
-                            windowState.size = targetSize
+//                            val currentSize = windowState.size
+//                            val currentPos = windowState.position
+//
+//                            if (currentPos is WindowPosition.Absolute) {
+//                                val widthDelta = targetSize.width - currentSize.width
+//                                val heightDelta = targetSize.height - currentSize.height
+//
+//                                val newX = currentPos.x - widthDelta
+//                                val newY = currentPos.y - heightDelta
+//
+//                                windowState.position = WindowPosition.Absolute(newX, newY)
+//                            }
+//
+//                            windowState.size = targetSize
                         },
                         onCloseWindow = { isWindowVisible = false }
                     )
