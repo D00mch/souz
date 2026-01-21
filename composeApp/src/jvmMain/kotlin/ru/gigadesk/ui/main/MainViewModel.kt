@@ -262,6 +262,7 @@ class MainViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        say.clearQueue()
         killTaskSideEffectJobs()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
