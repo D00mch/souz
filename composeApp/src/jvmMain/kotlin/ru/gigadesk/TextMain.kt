@@ -17,9 +17,10 @@ suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val desktopInfoRepo: DesktopInfoRepository by di.instance()
     val nodesClassification: NodesClassification by di.instance()
+    val gigaRestChatAPI: GigaRestChatAPI by di.instance()
     val agent = GigaAgent.instance(
         userInputFlow(),
-        GigaRestChatAPI.INSTANCE,
+        gigaRestChatAPI,
         desktopInfoRepo,
         nodesClassification,
     )

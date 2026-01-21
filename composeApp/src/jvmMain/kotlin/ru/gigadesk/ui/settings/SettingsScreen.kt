@@ -63,7 +63,11 @@ fun SettingsScreen(
         onVoiceSpeedInput = { speed -> viewModel.send(SettingsEvent.InputVoiceSpeed(speed)) },
         onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
         onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
+        onUseGrpcDelegateChange = { enabled -> viewModel.send(SettingsEvent.InputUseGrpcDelegate(enabled)) },
         onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
+        onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
+        onInitialWindowWidthDpChange = { value -> viewModel.send(SettingsEvent.InputInitialWindowWidthDp(value)) },
+        onInitialWindowHeightDpChange = { value -> viewModel.send(SettingsEvent.InputInitialWindowHeightDp(value)) },
         onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
         onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
         onSystemPromptChange = { prompt -> viewModel.send(SettingsEvent.InputSystemPrompt(prompt)) },
@@ -85,7 +89,11 @@ fun SettingsScreen(
     onVoiceSpeedInput: (String) -> Unit,
     onChooseVoice: () -> Unit,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
+    onUseGrpcDelegateChange: (Boolean) -> Unit,
     onModelChange: (GigaModel) -> Unit,
+    onRequestTimeoutMillisChange: (String) -> Unit,
+    onInitialWindowWidthDpChange: (String) -> Unit,
+    onInitialWindowHeightDpChange: (String) -> Unit,
     onDefaultCalendarChange: (String?) -> Unit,
     onSupportEmailInput: (String) -> Unit,
     onSystemPromptChange: (String) -> Unit,
@@ -193,6 +201,48 @@ fun SettingsScreen(
                     onModelSelected = onModelChange,
                 )
 
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LabeledTextField(
+                        label = "Таймаут запроса (мс)",
+                        value = state.requestTimeoutInput,
+                        onValueChange = onRequestTimeoutMillisChange,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "Текущее значение: ${state.requestTimeoutMillis} мс.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LabeledTextField(
+                        label = "Ширина окна (dp)",
+                        value = state.initialWindowWidthInput,
+                        onValueChange = onInitialWindowWidthDpChange,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "Текущее значение: ${state.initialWindowWidthDp} dp.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LabeledTextField(
+                        label = "Высота окна (dp)",
+                        value = state.initialWindowHeightInput,
+                        onValueChange = onInitialWindowHeightDpChange,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "Текущее значение: ${state.initialWindowHeightDp} dp.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                    )
+                }
+
                 Button(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "Настройка инструментов",
@@ -217,6 +267,27 @@ fun SettingsScreen(
                     )
                     Text(
                         text = "Класть примеры использования тулов в контекст",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.glassColors.textPrimary
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Checkbox(
+                        checked = state.useGrpcDelegate,
+                        onCheckedChange = onUseGrpcDelegateChange,
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
+                            checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    )
+                    Text(
+                        text = "Использовать gRPC для запросов к модели",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.glassColors.textPrimary
                     )
@@ -549,7 +620,11 @@ fun SettingsScreenPreview() {
             onVoiceSpeedInput = {},
             onChooseVoice = {},
             onUseFewShotExamplesChange = {},
+            onUseGrpcDelegateChange = {},
             onModelChange = {},
+            onRequestTimeoutMillisChange = {},
+            onInitialWindowWidthDpChange = {},
+            onInitialWindowHeightDpChange = {},
             onDefaultCalendarChange = {},
             onSupportEmailInput = {},
             onSystemPromptChange = {},

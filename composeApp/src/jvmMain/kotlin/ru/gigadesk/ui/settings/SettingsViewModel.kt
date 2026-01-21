@@ -13,8 +13,8 @@ import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaResponse
-import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.calendar.CalendarAppleScriptCommands
@@ -25,9 +25,9 @@ class SettingsViewModel(
     override val di: DI,
 ) : BaseViewModel<SettingsState, SettingsEvent, SettingsEffect>(), DIAware {
 
-    private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
+    private val l = LoggerFactory.getLogger(SettingsViewModel::class.java)
     private val keysProvider: SettingsProvider by di.instance()
-    private val chatApi: GigaRestChatAPI by di.instance()
+    private val chatApi: GigaChatAPI by di.instance()
     private val graphBasedAgent: GraphBasedAgent by di.instance()
     private val supportLogSender = SupportLogSender()
     private val say: Say by di.instance()
@@ -40,7 +40,14 @@ class SettingsViewModel(
                     gigaChatKey = keysProvider.gigaChatKey ?: "",
                     saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                     useFewShotExamples = keysProvider.useFewShotExamples,
+                    useGrpcDelegate = keysProvider.useGrpc,
                     gigaModel = keysProvider.gigaModel,
+                    requestTimeoutMillis = keysProvider.requestTimeoutMillis,
+                    requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
+                    initialWindowWidthDp = keysProvider.initialWindowWidthDp,
+                    initialWindowWidthInput = keysProvider.initialWindowWidthDp.toString(),
+                    initialWindowHeightDp = keysProvider.initialWindowHeightDp,
+                    initialWindowHeightInput = keysProvider.initialWindowHeightDp.toString(),
                     supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
                     systemPrompt = keysProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT,
                     defaultCalendar = keysProvider.defaultCalendar,
@@ -71,9 +78,52 @@ class SettingsViewModel(
                 keysProvider.useFewShotExamples = event.enabled
                 setState { copy(useFewShotExamples = event.enabled) }
             }
+            is InputUseGrpcDelegate -> {
+                keysProvider.useGrpc = event.enabled
+                setState { copy(useGrpcDelegate = event.enabled) }
+            }
             is SelectModel -> {
                 graphBasedAgent.updateModel(event.model)
                 setState { copy(gigaModel = event.model) }
+            }
+            is InputRequestTimeoutMillis -> {
+                val normalized = event.millis.filter { it.isDigit() }
+                val newTimeout = normalized.toLongOrNull()
+                if (newTimeout != null) {
+                    keysProvider.requestTimeoutMillis = newTimeout
+                }
+                setState {
+                    copy(
+                        requestTimeoutInput = normalized,
+                        requestTimeoutMillis = newTimeout ?: requestTimeoutMillis
+                    )
+                }
+            }
+            is InputInitialWindowWidthDp -> {
+                val normalized = event.width.filter { it.isDigit() }
+                val newWidth = normalized.toIntOrNull()
+                if (newWidth != null) {
+                    keysProvider.initialWindowWidthDp = newWidth
+                }
+                setState {
+                    copy(
+                        initialWindowWidthInput = normalized,
+                        initialWindowWidthDp = newWidth ?: initialWindowWidthDp
+                    )
+                }
+            }
+            is InputInitialWindowHeightDp -> {
+                val normalized = event.height.filter { it.isDigit() }
+                val newHeight = normalized.toIntOrNull()
+                if (newHeight != null) {
+                    keysProvider.initialWindowHeightDp = newHeight
+                }
+                setState {
+                    copy(
+                        initialWindowHeightInput = normalized,
+                        initialWindowHeightDp = newHeight ?: initialWindowHeightDp
+                    )
+                }
             }
             is InputSupportEmail -> {
                 keysProvider.supportEmail = event.email

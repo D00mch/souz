@@ -23,7 +23,7 @@ class GigaVoiceAPI(
     private val client = HttpClient(CIO) {
         var token = ""
         val voiceKey = keysProvider.saluteSpeechKey ?: throw IllegalStateException("VOICE_KEY is not set")
-        gigaDefaults()
+        gigaDefaults(keysProvider)
         install(Auth) {
             bearer {
                 loadTokens {

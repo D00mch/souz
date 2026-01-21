@@ -9,8 +9,19 @@ import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaToolSetup
 import ru.gigadesk.giga.toSystemPromptMessage
 import org.slf4j.LoggerFactory
+import ru.gigadesk.db.DesktopInfoRepository
+import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.asString
+import ru.gigadesk.tool.ToolRunBashCommand
+import ru.gigadesk.tool.browser.detectDefaultBrowser
+import ru.gigadesk.tool.browser.prettyName
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
-object NodesCommon {
+class NodesCommon(
+    private val desktopInfoRepository: DesktopInfoRepository,
+    private val settingsProvider: SettingsProvider,
+) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
     val stringToReq: Node<String, GigaRequest.Chat> = Node("String->Request") { ctx ->
@@ -33,6 +44,73 @@ object NodesCommon {
         val fnCallMessages = fnCallMessages(ctx)
         val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
         ctx.map(history = history) { ctx.toGigaRequest(history) }
+    }
+
+    /**
+     * Makes sure we have additional information (AD) in the history, 2 cases possible:
+     * - Swap the previous AD with the current one;
+     * - Append AD before the previous message (so agent is not focused on the AD).
+     */
+    val nodeAppendAdditionalData: Node<String, String> = Node("appendActualInformation") { ctx ->
+        val additionalMessage: GigaRequest.Message? = appendActualInformation(ctx.input)
+        if (additionalMessage == null) {
+            ctx
+        } else {
+
+            val newHistory = ArrayList<GigaRequest.Message>()
+            ctx.history.forEach { msg ->
+                val isAdditionalData = msg.role == GigaMessageRole.user && msg.content.startsWith(INFO_PREFIX)
+                if (!isAdditionalData) newHistory.add(msg)
+            }
+
+            if (ctx.history.size > 1) {
+                newHistory.apply { add(size - 1, additionalMessage) }
+            }
+
+            ctx.map(history = newHistory)
+        }
+    }
+
+    private suspend fun appendActualInformation(userText: String): GigaRequest.Message? {
+        if (userText.isBlank()) return null
+
+        val msgRelatedDataInTheStore: String = try {
+            desktopInfoRepository.search(userText).asString()
+        } catch (e: Exception) {
+            l.error("Error while searching desktop info: {}", e.message)
+            ""
+        }
+
+        val browserName = try {
+            val defaultBrowser = ToolRunBashCommand.detectDefaultBrowser()
+            "Дефолтный браузер — ${defaultBrowser.prettyName}"
+        } catch (e: Exception) {
+            l.error("Error while fetching opened tabs: {}", e.message)
+            ""
+        }
+
+        val defaultCalendarName = settingsProvider.defaultCalendar
+        val calendarInfo = if (!defaultCalendarName.isNullOrBlank()) {
+            "Default calendar: $defaultCalendarName"
+        } else {
+            ""
+        }
+
+        val currentDateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+        val dateInfo = "Текущие дата и время: $currentDateTime"
+
+        return GigaRequest.Message(
+            role = GigaMessageRole.user,
+            content = listOf(
+                INFO_PREFIX,
+                msgRelatedDataInTheStore,
+                browserName,
+                calendarInfo,
+                dateInfo
+            )
+                .filter { it.isNotBlank() }
+                .joinToString(separator = ";\n")
+        )
     }
 
     private suspend fun fnCallMessages(ctx: AgentContext<GigaResponse.Chat>): List<GigaRequest.Message> {
@@ -67,3 +145,5 @@ fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaR
         temperature = ctx.settings.temperature,
     )
 }
+
+private const val INFO_PREFIX = "Информация о моей системе\n\n"

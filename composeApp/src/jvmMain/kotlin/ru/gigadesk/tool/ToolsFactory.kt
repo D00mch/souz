@@ -9,6 +9,7 @@ import ru.gigadesk.tool.browser.ToolCreateNewBrowserTab
 import ru.gigadesk.tool.browser.ToolFocusOnTab
 import ru.gigadesk.tool.browser.ToolSafariInfo
 import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.tool.application.ToolOpen
 import ru.gigadesk.tool.application.ToolShowApps
 import ru.gigadesk.tool.browser.ToolChromeInfo
@@ -34,6 +35,7 @@ typealias FunctionName = String
 
 class ToolsFactory(
     private val repo: DesktopInfoRepository,
+    private val api: GigaChatAPI,
     private val keys: Keys = Keys(),
 ) {
     val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
@@ -88,8 +90,8 @@ class ToolsFactory(
 
         ToolCategory.DATAANALYTICS -> listOf(
             ToolCreatePlotFromCsv().toGiga(),
-            ToolUploadFile().toGiga(),
-            ToolDownloadFile().toGiga(),
+            ToolUploadFile(api).toGiga(),
+            ToolDownloadFile(api).toGiga(),
         )
 
         ToolCategory.CALENDAR -> listOf(

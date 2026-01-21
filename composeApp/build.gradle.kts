@@ -43,6 +43,10 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
 
+            // proto
+            implementation(projects.proto)
+            implementation(libs.grpc.nettyShaded)
+
             // kotlin
             implementation(kotlin("reflect"))
 

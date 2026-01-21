@@ -19,9 +19,11 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import org.kodein.di.DI
+import org.kodein.di.instance
 import org.slf4j.LoggerFactory
-import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.di.mainDiModule
 import java.io.File
 import java.util.UUID
 import kotlin.concurrent.atomics.AtomicReference
@@ -40,7 +42,7 @@ class GigaRestChatAPI(
         get() = keysProvider.gigaChatKey ?: throw IllegalStateException("GIGA_KEY is not set")
 
     private val client = HttpClient(CIO) {
-        gigaDefaults()
+        gigaDefaults(keysProvider)
         install(Logging) {
             val envLevel = System.getenv("GIGA_LOG_LEVEL")
                 ?.let { LogLevel.valueOf(it) } ?: LogLevel.INFO
@@ -81,20 +83,7 @@ class GigaRestChatAPI(
         when {
             response.status.isSuccess() -> {
                 val result = response.body<GigaResponse.Chat.Ok>()
-
-                val newCurrentTokensUsage = currentSessionTokensUsage.load() + result.usage
-                currentSessionTokensUsage.store(newCurrentTokensUsage)
-
-                val (_, _, spent, cached) = result.usage
-                val (_, _, sSpent, sCached) = newCurrentTokensUsage
-                println(
-                    """
-                |"Chat: -- History.len: ${body.messages.size},  Functions.len: ${body.functions.size}
-                |       -- Tokens spent: $spent, cached: $cached, per session spent: $sSpent, cached: $sCached
-                |       -- Choice.len: ${result.choices.size}, Last choice:"
-                |${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}
-                """.trimMargin()
-                )
+                logTokenUsage(result, body)
                 result
             }
             response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
@@ -108,6 +97,23 @@ class GigaRestChatAPI(
     } catch (t: Throwable) {
         l.error("Error in REST chat", t)
         GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")
+    }
+
+    fun logTokenUsage(result: GigaResponse.Chat.Ok, body: GigaRequest.Chat) {
+        val newCurrentTokensUsage = currentSessionTokensUsage.load() + result.usage
+        currentSessionTokensUsage.store(newCurrentTokensUsage)
+
+        val (_, _, spent, cached) = result.usage
+        val (_, _, sSpent, sCached) = newCurrentTokensUsage
+        l.info("Chat response: ")
+        println(
+            """
+            |--  History.len: ${body.messages.size},  Functions.len: ${body.functions.size}
+            |--  Tokens spent: $spent, cached: $cached, per session spent: $sSpent, cached: $sCached
+            |--  Choice.len: ${result.choices.size}, Last choice:"
+            |${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}
+            """.trimMargin()
+        )
     }
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
@@ -311,13 +317,12 @@ class GigaRestChatAPI(
         private val URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
         private val EMBEDDINGS_URL = "https://gigachat.devices.sberbank.ru/api/v1/embeddings"
         private val BALANCE_URL = "https://gigachat.devices.sberbank.ru/api/v1/balance"
-
-        val INSTANCE = GigaRestChatAPI(GigaAuth, SettingsProvider(ConfigStore))
     }
 }
 
 suspend fun main() {
-    val api = GigaRestChatAPI.INSTANCE
+    val di = DI.invoke { import(mainDiModule) }
+    val api: GigaRestChatAPI by di.instance()
 
     val systemPrompt = GigaRequest.Message(
         role = GigaMessageRole.system,

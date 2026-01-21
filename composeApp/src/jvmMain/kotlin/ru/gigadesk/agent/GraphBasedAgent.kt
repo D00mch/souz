@@ -7,6 +7,7 @@ import io.ktor.util.logging.*
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.kodein.di.DI
@@ -16,20 +17,13 @@ import ru.gigadesk.agent.engine.*
 import ru.gigadesk.agent.node.NodesCommon
 import ru.gigadesk.agent.node.NodesLLM
 import ru.gigadesk.agent.nodes.NodesClassification
-import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
-import ru.gigadesk.db.asString
 import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.giga.*
 import ru.gigadesk.tool.*
-import ru.gigadesk.tool.browser.detectDefaultBrowser
-import ru.gigadesk.tool.browser.prettyName
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.math.ceil
 
 class GraphBasedAgent(
     di: DI,
@@ -39,43 +33,12 @@ class GraphBasedAgent(
 
     private val toolsFactory: ToolsFactory  by di.instance()
     private val nodesLLM: NodesLLM  by di.instance()
+    private val nodesCommon: NodesCommon by di.instance()
     private val nodesClassify: NodesClassification by di.instance()
     private val nodeClassify = nodesClassify.node
-    private val desktopInfoRepository: DesktopInfoRepository  by di.instance()
     private val settingsProvider: SettingsProvider by di.instance()
 
     // Make sure summarization only happens after all tool requests from LLM are answered
-    private val nodeSummarize: Node<GigaResponse.Chat, String> by graph(name = "Go to user") {
-        nodeInput.edgeTo { ctx -> if (ctx.historyIsTooBig()) nodesLLM.summarize else NodesCommon.respToString }
-        nodesLLM.summarize.edgeTo(NodesCommon.respToString)
-        NodesCommon.respToString.edgeTo(nodeFinish)
-    }
-
-    /**
-     * Makes sure we have additional information (AD) in the history, 2 cases possible:
-     * - Swap the previous AD with the current one;
-     * - Append AD before the previous message (so agent is not focused on the AD).
-     */
-    private val nodeAppendAdditionalData: Node<String, String> = Node("appendActualInformation") { ctx ->
-        val additionalMessage: GigaRequest.Message? = appendActualInformation(ctx.input)
-        if (additionalMessage == null) {
-            ctx
-        } else {
-
-            val newHistory = ArrayList<GigaRequest.Message>()
-            ctx.history.forEach { msg ->
-                val isAdditionalData = msg.role == GigaMessageRole.user && msg.content.startsWith(INFO_PREFIX)
-                if (!isAdditionalData) newHistory.add(msg)
-            }
-
-            if (ctx.history.size > 1) {
-                newHistory.apply { add(size - 1, additionalMessage) }
-            }
-
-            ctx.map(history = newHistory)
-        }
-    }
-
     private val settings = AtomicReference(
         AgentSettings(
             model = settingsProvider.gigaModel.alias,
@@ -89,6 +52,8 @@ class GraphBasedAgent(
     val currentContext: StateFlow<AgentContext<String>> = _ctx
 
     private val runningJob = AtomicReference<Deferred<*>?>(null)
+
+    val sideEffects: Flow<String> = nodesLLM.sideEffects
 
     fun clearContext(): Boolean {
         cancelActiveJob()
@@ -141,17 +106,17 @@ class GraphBasedAgent(
 
     private fun buildGraph(): Graph<String, String> = buildGraph(name = "Agent") {
         nodeInput.edgeTo(nodeClassify)
-        nodeClassify.edgeTo(nodeAppendAdditionalData)
-        nodeAppendAdditionalData.edgeTo(NodesCommon.stringToReq)
-        NodesCommon.stringToReq.edgeTo(nodesLLM.requestToResponse)
+        nodeClassify.edgeTo(nodesCommon.nodeAppendAdditionalData)
+        nodesCommon.nodeAppendAdditionalData.edgeTo(nodesCommon.stringToReq)
+        nodesCommon.stringToReq.edgeTo(nodesLLM.requestToResponse)
         nodesLLM.requestToResponse.edgeTo { ctx ->
             when (val output = ctx.input) {
-                is GigaResponse.Chat.Error -> nodeSummarize
-                is GigaResponse.Chat.Ok -> if (isToolUse(output)) NodesCommon.toolUse else nodeSummarize
+                is GigaResponse.Chat.Error -> nodesLLM.nodeSummarize
+                is GigaResponse.Chat.Ok -> if (isToolUse(output)) nodesCommon.toolUse else nodesLLM.nodeSummarize
             }
         }
-        NodesCommon.toolUse.edgeTo(nodesLLM.requestToResponse)
-        nodeSummarize.edgeTo(nodeFinish)
+        nodesCommon.toolUse.edgeTo(nodesLLM.requestToResponse)
+        nodesLLM.nodeSummarize.edgeTo(nodeFinish)
     }
 
     private fun isToolUse(input: GigaResponse.Chat.Ok): Boolean = input.choices.any { it.message.functionCall != null }
@@ -163,66 +128,8 @@ class GraphBasedAgent(
         activeTools = allFunctions,
         systemPrompt = settingsProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT
     )
-
-    private suspend fun appendActualInformation(userText: String): GigaRequest.Message? {
-        if (userText.isBlank()) return null
-
-        val msgRelatedDataInTheStore: String = try {
-            desktopInfoRepository.search(userText).asString()
-        } catch (e: Exception) {
-            l.error("Error while searching desktop info: {}", e.message)
-            ""
-        }
-
-        val browserName = try {
-            val defaultBrowser = ToolRunBashCommand.detectDefaultBrowser()
-            "Дефолтный браузер — ${defaultBrowser.prettyName}"
-        } catch (e: Exception) {
-            l.error("Error while fetching opened tabs: {}", e.message)
-            ""
-        }
-
-        val defaultCalendarName = settingsProvider.defaultCalendar
-        val calendarInfo = if (!defaultCalendarName.isNullOrBlank()) {
-            "Default calendar: $defaultCalendarName"
-        } else {
-            ""
-        }
-
-        val currentDateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-        val dateInfo = "Текущие дата и время: $currentDateTime"
-
-        return GigaRequest.Message(
-            role = GigaMessageRole.user,
-            content = listOf(
-                INFO_PREFIX,
-                msgRelatedDataInTheStore,
-                browserName,
-                calendarInfo,
-                dateInfo
-            )
-                .filter { it.isNotBlank() }
-                .joinToString(separator = ";\n")
-        )
-    }
 }
 
-private const val INFO_PREFIX = "Информация о моей системе\n\n"
-
-private const val HISTORY_SUMMARIZE_THRESHOLD = 0.8
-private const val APPROX_CHARS_PER_TOKEN = 4.0
-
-private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(
-    threshold: Double = HISTORY_SUMMARIZE_THRESHOLD,
-): Boolean {
-    val model = GigaModel.entries.firstOrNull { it.alias == settings.model }
-    val contextWindow = model?.maxTokens ?: MAX_TOKENS
-    val estimatedTokens = systemPrompt.estimateTokenCount() +
-            history.sumOf { it.content.estimateTokenCount() }
-    return estimatedTokens >= contextWindow * threshold
-}
-
-private fun String.estimateTokenCount(): Int = ceil(length / APPROX_CHARS_PER_TOKEN).toInt()
 
 val DEFAULT_SYSTEM_PROMPT = """
 Ты — помощник, управляющий компьютером. Будь полезным. Говори только по существу.

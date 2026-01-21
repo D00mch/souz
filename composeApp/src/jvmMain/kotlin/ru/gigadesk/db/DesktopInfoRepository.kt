@@ -4,6 +4,7 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.di.mainDiModule
+import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaRestChatAPI
@@ -15,7 +16,7 @@ import kotlin.random.Random
  * into a Lucene index for similarity search.
  */
 class DesktopInfoRepository(
-    private val api: GigaRestChatAPI,
+    private val api: GigaChatAPI,
     private val db: VectorDB,
 ) {
     private val l = LoggerFactory.getLogger(DesktopInfoRepository::class.java)

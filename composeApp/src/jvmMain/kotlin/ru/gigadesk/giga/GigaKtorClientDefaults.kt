@@ -9,6 +9,7 @@ import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
+import ru.gigadesk.db.SettingsProvider
 import java.io.InputStream
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
@@ -16,14 +17,14 @@ import java.util.*
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
-fun HttpClientConfig<CIOEngineConfig>.gigaDefaults() {
+fun HttpClientConfig<CIOEngineConfig>.gigaDefaults(settingsProvider: SettingsProvider) {
     this.defaultRequest {
         header(HttpHeaders.ContentType, "application/json")
         header(HttpHeaders.Accept, "application/json")
         header("RqUID", UUID.randomUUID().toString())
     }
     install(HttpTimeout) {
-        requestTimeoutMillis = 10000
+        requestTimeoutMillis = settingsProvider.requestTimeoutMillis
     }
     install(ContentNegotiation) {
         jackson { this.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES) }

@@ -1,15 +1,17 @@
 package ru.gigadesk.tool.desktop
 
 import ru.gigadesk.giga.GigaChatAPI
-import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.image.ImageUtils
 import ru.gigadesk.tool.*
 import kotlinx.coroutines.runBlocking
+import org.kodein.di.DI
+import org.kodein.di.instance
 import org.slf4j.LoggerFactory
+import ru.gigadesk.di.mainDiModule
 import java.io.File
 
 class ToolDesktopScreenShot(
-    private val api: GigaChatAPI = GigaRestChatAPI.INSTANCE,
+    private val api: GigaChatAPI,
 ) : ToolSetupWithAttachments<ToolDesktopScreenShot.Input> {
     private val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
 
@@ -62,6 +64,8 @@ class ToolDesktopScreenShot(
 
 fun main() {
     val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
-    val id = ToolDesktopScreenShot().invoke(ToolDesktopScreenShot.Input("1"))
+    val di = DI.invoke { import(mainDiModule) }
+    val api: GigaChatAPI by di.instance()
+    val id = ToolDesktopScreenShot(api).invoke(ToolDesktopScreenShot.Input("1"))
     l.info(id)
 }
