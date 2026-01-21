@@ -4,12 +4,10 @@ package ru.gigadesk.ui.main
 
 import androidx.lifecycle.viewModelScope
 import com.github.kwhat.jnativehook.GlobalScreen
-import com.github.kwhat.jnativehook.GlobalScreen.registerNativeHook
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
-import org.intellij.markdown.MarkdownElementTypes.CODE_BLOCK
 import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
@@ -17,8 +15,6 @@ import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.audio.*
-import ru.gigadesk.audio.InMemoryOpusRecorder.startRecording
-import ru.gigadesk.audio.InMemoryOpusRecorder.stopRecording
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaVoiceAPI
@@ -135,7 +131,7 @@ class MainViewModel(
                     val prevText = currentState.displayedText
                     copy(displayedText = prevText + text)
                 }
-                if (text.contains(CODE_BLOCK) && !text.contains(completeCodeBlockRegexp)) {
+                if (text.contains(CODE_BLOCK)) {
                     isCodeBlockStarted.set(!isCodeBlockStarted.get())
                     if (isCodeBlockStarted.get()) {
                         say.queue(prepareTextForSpeech(text.substringBefore(CODE_BLOCK)))
@@ -272,7 +268,7 @@ class MainViewModel(
     }
 
     private fun prepareTextForSpeech(text: String): String {
-        var result = text.replace(completeCodeBlockRegexp, "")
+        var result = text.replace(Regex("$CODE_BLOCK[\\s\\S]*?$CODE_BLOCK"), "")
         //result = result.replace(Regex("`[^`]+`"), "")
         result = result.replace(Regex("[\"«»„“”]"), "")
         result = result.replace(Regex("[*#]"), "")
@@ -315,7 +311,5 @@ class MainViewModel(
             Для очистки контекста беседы - нажми X
             Для скрытия окна - нажми Х два раза
         """.trimIndent()
-
-        val completeCodeBlockRegexp = Regex("$CODE_BLOCK[\\s\\S]*?$CODE_BLOCK")
     }
 }
