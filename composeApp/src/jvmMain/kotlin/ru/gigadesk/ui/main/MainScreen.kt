@@ -170,23 +170,13 @@ fun MainScreenContent(
                             .padding(top = 5.dp, start = 24.dp, end = 24.dp),
                         contentAlignment = Alignment.TopStart
                     ) {
-                        if (state.isProcessing) {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                DashedSpinningWheel(
-                                    color = Color.White.copy(alpha = 0.8f),
-                                    modifier = Modifier.size(96.dp)
-                                )
-                            }
-                        } else {
-                            MarkdownViewer(
-                                text = textContent,
-                                baseFontSize = baseFontSize,
-                                onShowSnack = onShowSnack
-                            )
-                        }
+
+                        MarkdownViewer(
+                            text = textContent,
+                            baseFontSize = baseFontSize,
+                            onShowSnack = onShowSnack,
+                            modifier = Modifier.alpha(if (state.isProcessing) 0.5f else 1f)
+                        )
                     }
                 }
 
@@ -206,6 +196,12 @@ fun MainScreenContent(
                             .padding(bottom = 20.dp, top = 5.dp),
                         contentAlignment = Alignment.Center
                     ) {
+                        if (state.isProcessing) {
+                            DashedSpinningWheel(
+                                color = Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.size(80.dp)
+                            )
+                        }
                         LiquidOrb(
                             isActive = state.isListening,
                             onClick = onToggleListening
@@ -221,7 +217,8 @@ fun MainScreenContent(
 fun MarkdownViewer(
     text: String,
     baseFontSize: androidx.compose.ui.unit.TextUnit,
-    onShowSnack: (String) -> Unit
+    onShowSnack: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
     val lastText = remember { mutableStateOf("") }
@@ -275,7 +272,7 @@ fun MarkdownViewer(
     )
 
     SelectionContainer(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
     ) {
         Column(

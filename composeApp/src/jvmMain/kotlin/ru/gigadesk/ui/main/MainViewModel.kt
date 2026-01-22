@@ -108,6 +108,9 @@ class MainViewModel(
                     userInputFlow.collect { userInput ->
                         subscribeOnTaskSideEffects()
 
+                        // Show recognized text immediately
+                        setState { copy(displayedText = userInput, statusMessage = "Думаю...", isProcessing = true) }
+
                         val rawText = graphAgent.execute(userInput)
                         l.info(rawText)
                         setState { copy(displayedText = rawText, statusMessage = "Ответ готов", isProcessing = false) }
