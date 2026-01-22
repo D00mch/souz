@@ -26,7 +26,6 @@ import org.kodein.di.instance
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
-import java.time.Duration
 
 fun main() {
     System.setProperty("apple.awt.UIElement", "true")

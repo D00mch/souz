@@ -14,7 +14,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import ru.gigadesk.Screen.*
 import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
@@ -24,6 +27,8 @@ import ru.gigadesk.ui.settings.SettingsScreen
 import ru.gigadesk.ui.tools.ToolDetailsScreen
 import ru.gigadesk.ui.tools.ToolsScreen
 import java.util.*
+import java.net.HttpURLConnection
+import java.net.URI
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -35,6 +40,22 @@ fun App(
     var toolsScreen by remember { mutableStateOf<Tools?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
+    val isOnline = remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val online = withContext(Dispatchers.IO) { isInternetAvailable() }
+            if (online != isOnline.value) {
+                isOnline.value = online
+                if (!online) {
+                    snackbarScope.launch {
+                        snackbarHostState.showSnackbar("No internet connection.")
+                    }
+                }
+            }
+            delay(5_000)
+        }
+    }
 
     AppTheme {
         Surface(
@@ -122,4 +143,18 @@ private sealed interface Screen {
     data object Settings : Screen
     data class Tools(val id: String = UUID.randomUUID().toString()) : Screen
     data class ToolDetails(val category: ToolCategory, val toolName: String) : Screen
+}
+
+private fun isInternetAvailable(): Boolean {
+    return try {
+        val connection = URI("https://clients3.google.com/generate_204").toURL().openConnection() as HttpURLConnection
+        connection.connectTimeout = 1500
+        connection.readTimeout = 1500
+        connection.instanceFollowRedirects = false
+        connection.requestMethod = "GET"
+        connection.connect()
+        connection.responseCode == 204
+    } catch (e: Exception) {
+        false
+    }
 }
