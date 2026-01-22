@@ -32,6 +32,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
@@ -169,11 +170,23 @@ fun MainScreenContent(
                             .padding(top = 5.dp, start = 24.dp, end = 24.dp),
                         contentAlignment = Alignment.TopStart
                     ) {
-                        MarkdownViewer(
-                            text = textContent,
-                            baseFontSize = baseFontSize,
-                            onShowSnack = onShowSnack
-                        )
+                        if (state.isProcessing) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                DashedSpinningWheel(
+                                    color = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(96.dp)
+                                )
+                            }
+                        } else {
+                            MarkdownViewer(
+                                text = textContent,
+                                baseFontSize = baseFontSize,
+                                onShowSnack = onShowSnack
+                            )
+                        }
                     }
                 }
 
@@ -616,6 +629,36 @@ fun PreviewSmartFocusGlass() {
                     statusMessage = "Готов",
                     isListening = false
                 )
+            )
+        }
+    }
+}
+@Composable
+fun DashedSpinningWheel(
+    modifier: Modifier = Modifier,
+    color: Color = Color.White,
+    strokeWidth: Dp = 4.dp
+) {
+    val infiniteTransition = rememberInfiniteTransition()
+    val angle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        )
+    )
+
+    Canvas(modifier = modifier) {
+        val stroke = Stroke(
+            width = strokeWidth.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 20f), 0f),
+            cap = StrokeCap.Round
+        )
+        rotate(angle) {
+            drawCircle(
+                color = color,
+                style = stroke
             )
         }
     }

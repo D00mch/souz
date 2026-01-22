@@ -110,11 +110,12 @@ class MainViewModel(
 
                         val rawText = graphAgent.execute(userInput)
                         l.info(rawText)
-                        setState { copy(displayedText = rawText, statusMessage = "Ответ готов") }
+                        setState { copy(displayedText = rawText, statusMessage = "Ответ готов", isProcessing = false) }
                         if (!settingsProvider.useGrpc) say.queue(prepareTextForSpeech(rawText))
                     }
                 }.onFailure { e ->
                     l.error("Agent flow terminated: ${e.message}", e)
+                    setState { copy(isProcessing = false, statusMessage = "Ошибка: ${e.message}") }
                 }
             }
         } finally {
@@ -164,7 +165,7 @@ class MainViewModel(
     private suspend fun stopRecording() {
         if (!currentState.isListening) return
         audioRecorder.stop()
-        setState { copy(isListening = false, statusMessage = "Обработка входа") }
+        setState { copy(isListening = false, statusMessage = "Обработка входа", isProcessing = true) }
         delay(300)
         ioLaunch { say.playTextRand(speed = 120, "ok", "okey", "окей", "ок") }
     }
