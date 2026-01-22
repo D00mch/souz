@@ -23,7 +23,7 @@ object ToolMoveFile : ToolSetup<ToolMoveFile.Input> {
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Перемести report.txt в archive/report.txt",
-            params = mapOf("sourcePath" to "report.txt", "destinationPath" to "archive/report.txt")
+            params = mapOf("sourcePath" to "/Desktop/Скрины/report.txt", "destinationPath" to "Desktop/report.txt")
         )
     )
     override val returnParameters = ReturnParameters(
@@ -47,4 +47,9 @@ object ToolMoveFile : ToolSetup<ToolMoveFile.Input> {
         Files.move(sourceFile.toPath(), destinationFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
         return "File moved to ${input.destinationPath}"
     }
+}
+
+fun main() {
+    val result = ToolMoveFile.invoke(ToolMoveFile.Input("/Users/duxx/Desktop/кулак.mov", "/Users/duxx/Desktop/Скрины/кулак.mov"))
+    println(result)
 }
