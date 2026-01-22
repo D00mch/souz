@@ -56,7 +56,6 @@ class NodesCommon(
         if (additionalMessage == null) {
             ctx
         } else {
-
             val newHistory = ArrayList<GigaRequest.Message>()
             ctx.history.forEach { msg ->
                 val isAdditionalData = msg.role == GigaMessageRole.user && msg.content.startsWith(INFO_PREFIX)
@@ -146,4 +145,4 @@ fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaR
     )
 }
 
-private const val INFO_PREFIX = "Информация о моей системе\n\n"
+private const val INFO_PREFIX = "Используя данные ниже, помоги с вопросом. Данные \n\n"
