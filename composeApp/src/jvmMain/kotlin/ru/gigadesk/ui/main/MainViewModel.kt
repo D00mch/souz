@@ -106,15 +106,15 @@ class MainViewModel(
             while (isActive) {
                 runCatching {
                     userInputFlow.collect { userInput ->
-                        subscribeOnTaskSideEffects()
-
+                        subscribeOnTaskSideEffects(userInput)
                         val rawText = graphAgent.execute(userInput)
                         l.info(rawText)
-                        setState { copy(displayedText = rawText, statusMessage = "Ответ готов") }
+                        setState { copy(displayedText = rawText, statusMessage = "Ответ готов", isProcessing = false) }
                         if (!settingsProvider.useGrpc) say.queue(prepareTextForSpeech(rawText))
                     }
                 }.onFailure { e ->
                     l.error("Agent flow terminated: ${e.message}", e)
+                    setState { copy(isProcessing = false, statusMessage = "Ошибка: ${e.message}") }
                 }
             }
         } finally {
@@ -122,13 +122,13 @@ class MainViewModel(
         }
     }
 
-    private fun subscribeOnTaskSideEffects() {
+    private fun subscribeOnTaskSideEffects(userInput: String) {
         val job = viewModelScope.launch {
-            setState { copy(displayedText = "") }
+            setState { copy(displayedText = userInput) }
             val isCodeBlockStarted = AtomicBoolean(false)
             graphAgent.sideEffects.collect { text ->
                 setState {
-                    val prevText = currentState.displayedText
+                    val prevText = if (userInput == currentState.displayedText) "" else currentState.displayedText
                     copy(displayedText = prevText + text)
                 }
                 if (text.contains(CODE_BLOCK)) {
@@ -164,7 +164,7 @@ class MainViewModel(
     private suspend fun stopRecording() {
         if (!currentState.isListening) return
         audioRecorder.stop()
-        setState { copy(isListening = false, statusMessage = "Обработка входа") }
+        setState { copy(isListening = false, statusMessage = "Обработка входа", isProcessing = true) }
         delay(300)
         ioLaunch { say.playTextRand(speed = 120, "ok", "okey", "окей", "ок") }
     }

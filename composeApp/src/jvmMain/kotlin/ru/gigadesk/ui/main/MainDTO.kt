@@ -15,6 +15,7 @@ data class MainState(
     val lastText: String? = null,
     val lastKnownAgentContext: AgentContext<String>? = null,
     val userExpectCloseOnX: Boolean = false,
+    val isProcessing: Boolean = false,
 ) : VMState {
 
     companion object {
