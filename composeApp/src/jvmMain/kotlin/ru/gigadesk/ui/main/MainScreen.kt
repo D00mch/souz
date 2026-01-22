@@ -141,7 +141,7 @@ fun MainScreenContent(
                     Row(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
-                            .padding(end = 12.dp),
+                            .padding(end = 8.dp),
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -464,7 +464,7 @@ fun rememberNoiseBrush(): ShaderBrush {
 fun RealLiquidGlassCard(
     modifier: Modifier = Modifier,
     isWindowFocused: Boolean,
-    cornerRadius: Dp = 32.dp,
+    cornerRadius: Dp = 23.dp,
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(cornerRadius)
