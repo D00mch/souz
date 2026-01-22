@@ -106,11 +106,7 @@ class MainViewModel(
             while (isActive) {
                 runCatching {
                     userInputFlow.collect { userInput ->
-                        subscribeOnTaskSideEffects()
-
-                        // Show recognized text immediately
-                        setState { copy(displayedText = userInput, statusMessage = "Думаю...", isProcessing = true) }
-
+                        subscribeOnTaskSideEffects(userInput)
                         val rawText = graphAgent.execute(userInput)
                         l.info(rawText)
                         setState { copy(displayedText = rawText, statusMessage = "Ответ готов", isProcessing = false) }
@@ -126,13 +122,13 @@ class MainViewModel(
         }
     }
 
-    private fun subscribeOnTaskSideEffects() {
+    private fun subscribeOnTaskSideEffects(userInput: String) {
         val job = viewModelScope.launch {
-            setState { copy(displayedText = "") }
+            setState { copy(displayedText = userInput) }
             val isCodeBlockStarted = AtomicBoolean(false)
             graphAgent.sideEffects.collect { text ->
                 setState {
-                    val prevText = currentState.displayedText
+                    val prevText = if (userInput == currentState.displayedText) "" else currentState.displayedText
                     copy(displayedText = prevText + text)
                 }
                 if (text.contains(CODE_BLOCK)) {
