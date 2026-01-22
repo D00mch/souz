@@ -156,7 +156,7 @@ class MainViewModel(
         if (currentState.isListening) return
         killTaskSideEffectJobs()
         agentRef.get()?.cancelActiveJob()
-        say.playMacPing()
+        ioLaunch { say.playMacPing() }
         setState { copy(isListening = true, statusMessage = "Запись запущена") }
         audioRecorder.start()
     }
@@ -166,7 +166,7 @@ class MainViewModel(
         audioRecorder.stop()
         setState { copy(isListening = false, statusMessage = "Обработка входа") }
         delay(300)
-        say.playTextRand(speed = 120, "ok", "okey", "окей", "ок")
+        ioLaunch { say.playTextRand(speed = 120, "ok", "okey", "окей", "ок") }
     }
 
     private suspend fun setPreviousText() {
