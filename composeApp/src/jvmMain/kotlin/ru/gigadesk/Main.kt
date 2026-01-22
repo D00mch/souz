@@ -20,6 +20,7 @@ import org.kodein.di.instance
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
+import kotlin.math.roundToInt
 
 fun main() {
     System.setProperty("apple.awt.UIElement", "true")
@@ -69,21 +70,11 @@ fun main() {
             ) {
                 WindowDraggableArea(modifier = Modifier.fillMaxSize()) {
                     App(
+                        // TODO: unsued callback? How do I check the windows current size?
                         onWindowResize = { targetSize ->
-//                            val currentSize = windowState.size
-//                            val currentPos = windowState.position
-//
-//                            if (currentPos is WindowPosition.Absolute) {
-//                                val widthDelta = targetSize.width - currentSize.width
-//                                val heightDelta = targetSize.height - currentSize.height
-//
-//                                val newX = currentPos.x - widthDelta
-//                                val newY = currentPos.y - heightDelta
-//
-//                                windowState.position = WindowPosition.Absolute(newX, newY)
-//                            }
-//
-//                            windowState.size = targetSize
+                            windowState.size = targetSize
+                            settingsProvider.initialWindowWidthDp = targetSize.width.value.roundToInt()
+                            settingsProvider.initialWindowHeightDp = targetSize.height.value.roundToInt()
                         },
                         onCloseWindow = { isWindowVisible = false }
                     )

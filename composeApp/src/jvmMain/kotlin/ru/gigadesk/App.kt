@@ -59,11 +59,9 @@ fun App(
                         when (screen) {
                             Setup -> SetupScreen(
                                 onOpenMain = { currentScreen = Main },
-                                onResizeRequest = onWindowResize,
                             )
                             Main -> MainScreen(
                                 onOpenSettings = { currentScreen = Settings },
-                                onResizeRequest = onWindowResize,
                                 onCloseWindow = onCloseWindow,
                                 onShowSnack = { message ->
                                     snackbarScope.launch { snackbarHostState.showSnackbar(message) }
@@ -77,14 +75,12 @@ fun App(
                                     }
                                     currentScreen = toolsScreen ?: Tools()
                                 },
-                                onResizeRequest = onWindowResize,
                                 onShowSnack = { message ->
                                     snackbarScope.launch { snackbarHostState.showSnackbar(message) }
                                 },
                             )
                             is Tools -> ToolsScreen(
                                 onClose = { currentScreen = Settings },
-                                onResizeRequest = onWindowResize,
                                 onOpenToolDetails = { category, tool ->
                                     currentScreen = ToolDetails(category, tool.name)
                                 },
@@ -104,7 +100,6 @@ fun App(
                                     }
                                     currentScreen = toolsScreen ?: Tools()
                                 },
-                                onResizeRequest = onWindowResize,
                                 sharedTransitionScope = this@SharedTransitionLayout,
                                 animatedVisibilityScope = this,
                             )

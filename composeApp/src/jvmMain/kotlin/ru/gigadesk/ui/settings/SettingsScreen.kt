@@ -39,7 +39,6 @@ private val SettingsWindowSize = DpSize(width = 560.dp, height = 650.dp)
 fun SettingsScreen(
     onClose: () -> Unit,
     onOpenTools: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit = {},
     onShowSnack: (String) -> Unit = {},
 ) {
     val di = localDI()
@@ -76,7 +75,6 @@ fun SettingsScreen(
         onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
         onRefreshBalance = { viewModel.send(SettingsEvent.RefreshBalance) },
         onOpenTools = onOpenTools,
-        onResizeRequest = onResizeRequest,
         onClose = onClose,
         onShowSnack = onShowSnack,
     )
@@ -103,12 +101,9 @@ fun SettingsScreen(
     onSendLogs: () -> Unit,
     onRefreshBalance: () -> Unit,
     onOpenTools: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit = {},
     onClose: () -> Unit,
     onShowSnack: (String) -> Unit = {},
 ) {
-    LaunchedEffect(Unit) { onResizeRequest(SettingsWindowSize) }
-
     // Получаем состояние фокуса окна
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
@@ -649,7 +644,6 @@ fun SettingsScreenPreview() {
             onSendLogs = {},
             onRefreshBalance = {},
             onOpenTools = {},
-            onResizeRequest = {},
             onClose = {},
             onShowSnack = {},
         )
