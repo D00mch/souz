@@ -120,42 +120,60 @@ fun MainScreenContent(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                Row(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp, end = 12.dp)
-                        .zIndex(2f),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(top = 4.dp)
+                        .zIndex(2f)
                 ) {
-                    val iconTint = Color.White.copy(0.8f)
+                    Text(
+                        text = "gigadesk",
+                        modifier = Modifier.align(Alignment.Center),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.White.copy(alpha = 0.2f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
 
-                    if (state.lastText != null) {
-                        MinimalGlassButton(onClick = onShowLastText) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(end = 12.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val iconTint = Color.White.copy(0.8f)
+
+                        if (state.lastText != null) {
+                            MinimalGlassButton(onClick = onShowLastText) {
+                                Icon(
+                                    Icons.Rounded.SkipPrevious,
+                                    null,
+                                    tint = iconTint,
+                                    modifier = Modifier.size(TopIconSize)
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        MinimalGlassButton(onClick = onStopSpeech) {
                             Icon(
-                                Icons.Rounded.SkipPrevious,
+                                Icons.AutoMirrored.Rounded.VolumeOff,
                                 null,
                                 tint = iconTint,
                                 modifier = Modifier.size(TopIconSize)
                             )
                         }
                         Spacer(Modifier.width(8.dp))
-                    }
-                    MinimalGlassButton(onClick = onStopSpeech) {
-                        Icon(
-                            Icons.AutoMirrored.Rounded.VolumeOff,
-                            null,
-                            tint = iconTint,
-                            modifier = Modifier.size(TopIconSize)
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    MinimalGlassButton(onClick = onOpenSettings) {
-                        Icon(Icons.Rounded.Settings, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    MinimalGlassButton(onClick = onClear) {
-                        Icon(Icons.Rounded.Close, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
+                        MinimalGlassButton(onClick = onOpenSettings) {
+                            Icon(Icons.Rounded.Settings, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        MinimalGlassButton(onClick = onClear) {
+                            Icon(Icons.Rounded.Close, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
+                        }
                     }
                 }
 
