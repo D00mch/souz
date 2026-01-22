@@ -47,7 +47,7 @@ fun main() {
                     Separator()
 
                     Item("Выключить звук", onClick = {
-                        say.stopPlayText()
+                        say.clearQueue()
                     })
                     Separator()
 

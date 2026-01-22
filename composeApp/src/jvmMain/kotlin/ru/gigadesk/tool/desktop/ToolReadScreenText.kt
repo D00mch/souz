@@ -12,7 +12,6 @@ import ru.gigadesk.audio.Say
 import java.io.File
 
 class ToolReadScreenText(
-    private val say: Say,
     private val bash: ToolRunBashCommand = ToolRunBashCommand,
 ) : ToolSetup<ToolReadScreenText.Input> {
     private val l = LoggerFactory.getLogger(ToolReadScreenText::class.java)
@@ -91,7 +90,6 @@ class ToolReadScreenText(
             val main = blocks.values.maxByOrNull { (it.maxRight - it.minLeft) * (it.maxBottom - it.minTop) }
             val text = main?.words?.joinToString(" ")?.trim().orEmpty()
             return if (text.isNotBlank()) {
-                say.playText(text)
                 "Done"
             } else {
                 "No text found"
@@ -104,7 +102,7 @@ class ToolReadScreenText(
 }
 
 fun main() {
-    val tool = ToolReadScreenText(Say())
+    val tool = ToolReadScreenText()
     val result = tool.invoke(ToolReadScreenText.Input())
     println(result)
 }

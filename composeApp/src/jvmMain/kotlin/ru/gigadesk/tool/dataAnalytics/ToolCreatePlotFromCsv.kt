@@ -11,6 +11,7 @@ import org.jetbrains.letsPlot.geom.geomPoint
 import org.jetbrains.letsPlot.ggsize
 import org.jetbrains.letsPlot.label.labs
 import org.jetbrains.letsPlot.letsPlot
+import org.slf4j.LoggerFactory
 import ru.gigadesk.tool.BadInputException
 import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
@@ -28,6 +29,7 @@ enum class ChartType {
 }
 
 class ToolCreatePlotFromCsv : ToolSetup<ToolCreatePlotFromCsv.Input> {
+    private val l = LoggerFactory.getLogger(ToolCreatePlotFromCsv::class.java)
 
     data class Input(
         @InputParamDescription("Path to a CSV file (e.g. ~/Documents/data.csv)")
@@ -172,7 +174,7 @@ class ToolCreatePlotFromCsv : ToolSetup<ToolCreatePlotFromCsv.Input> {
                 Desktop.getDesktop().open(file)
             }
         } catch (e: Exception) {
-            System.err.println("Could not open image: ${e.message}")
+            l.error("Could not open image: ${e.message}")
         }
     }
 }

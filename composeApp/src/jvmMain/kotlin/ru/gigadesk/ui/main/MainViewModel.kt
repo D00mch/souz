@@ -111,7 +111,7 @@ class MainViewModel(
                         val rawText = graphAgent.execute(userInput)
                         l.info(rawText)
                         setState { copy(displayedText = rawText, statusMessage = "Ответ готов") }
-                        if (!settingsProvider.useGrpc) say.playText(prepareTextForSpeech(rawText))
+                        if (!settingsProvider.useGrpc) say.queue(prepareTextForSpeech(rawText))
                     }
                 }.onFailure { e ->
                     l.error("Agent flow terminated: ${e.message}", e)
@@ -256,7 +256,7 @@ class MainViewModel(
         val onboardingSpeech = prepareTextForSpeech(ONBOARDING_SPEECH_TEXT)
         onboardingSpeechStartedAt = System.currentTimeMillis()
         viewModelScope.launch(Dispatchers.IO) {
-            say.playText(onboardingSpeech)
+            say.queue(onboardingSpeech)
         }
     }
 

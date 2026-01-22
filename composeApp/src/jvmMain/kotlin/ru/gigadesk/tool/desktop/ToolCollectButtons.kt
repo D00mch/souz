@@ -7,13 +7,10 @@ import ru.gigadesk.tool.*
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
-import ru.gigadesk.audio.Say
 
 
 class ToolCollectButtons(
     private val bash: ToolRunBashCommand,
-    private val say: Say,
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 ) : ToolSetup<ToolCollectButtons.Input> {
     private val l = LoggerFactory.getLogger(ToolCollectButtons::class.java)
 
@@ -43,9 +40,6 @@ class ToolCollectButtons(
     override suspend fun suspendInvoke(input: Input): String {
         val count = input.buttonsCount.takeIf { it > 0 }
             ?: throw BadInputException("Invalid buttonsCount: ${input.buttonsCount}")
-        scope.launch {
-            say.playText("Щаа-щаа", 190)
-        }
         l.info("Collecting buttons from the frontmost application window")
         val result = bash.invoke(
             ToolRunBashCommand.Input(
@@ -169,7 +163,7 @@ class ToolCollectButtons(
 }
 
 fun main() {
-    val tool = ToolCollectButtons(ToolRunBashCommand, Say())
+    val tool = ToolCollectButtons(ToolRunBashCommand)
     println(tool.invoke(ToolCollectButtons.Input(3)))
     println(tool.toGiga().fn)
 }

@@ -27,14 +27,6 @@ class Say {
     private val managingScope = CoroutineScope(SupervisorJob() + newSingleThreadContext("say-manage"))
     private val voiceScope = CoroutineScope(SupervisorJob() + newSingleThreadContext("say"))
 
-    /** Global Voice command. Only one speech is possible at the time. Use [stopPlayText] to stop the current one */
-    fun playText(text: String, speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)) {
-        stopPlayText()
-        val saveEnding = "$text "
-        sayProcess = ProcessBuilder("say", "-r", "$speed", "--", saveEnding).start()
-        sayProcess?.waitFor()
-    }
-
     fun queue(text: String, speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)) = managingScope.launch {
         val j = voiceScope.launch { playText(text, speed) }
         jobs.add(j)
@@ -46,15 +38,23 @@ class Say {
         stopPlayText()
     }
 
+    /** Global Voice command. Only one speech is possible at the time. Use [stopPlayText] to stop the current one */
+    private fun playText(text: String, speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)) {
+        stopPlayText()
+        val saveEnding = "$text "
+        sayProcess = ProcessBuilder("say", "-r", "$speed", "--", saveEnding).start()
+        sayProcess?.waitFor()
+    }
+
     /** Stops the speech started by [playText] */
-    fun stopPlayText() {
+    private fun stopPlayText() {
         sayProcess?.destroyForcibly()
         sayProcess = null
     }
 
     fun playTextRand(speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED), vararg texts: String) {
         val text = texts[random.nextInt(texts.size)]
-        playText(text, speed)
+        queue(text, speed)
     }
 
     fun playMacPing() {
