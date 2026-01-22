@@ -36,6 +36,15 @@ class GigaGRPCChatApi(
 ) : GigaChatAPI by gigaChatAPI {
     private val l = LoggerFactory.getLogger(GigaGRPCChatApi::class.java)
 
+    private val maxInboundMessageSizeBytes: Int = run {
+        val envValue = System.getenv("GIGA_GRPC_MAX_INBOUND_MB")
+            ?: System.getProperty("GIGA_GRPC_MAX_INBOUND_MB")
+        val sizeMb = envValue?.toIntOrNull() ?: DEFAULT_MAX_INBOUND_MESSAGE_MB
+        val bytes = sizeMb * 1024 * 1024
+        l.info("gRPC max inbound message size: ${sizeMb}MB ($bytes bytes)")
+        bytes
+    }
+
     init {
         // Bridge JUL (used by gRPC) to SLF4J so logback handles all logs
         if (!SLF4JBridgeHandler.isInstalled()) {
@@ -60,6 +69,7 @@ class GigaGRPCChatApi(
     private val channel: ManagedChannel =
         NettyChannelBuilder.forAddress("gigachat.devices.sberbank.ru", 443)
             .sslContext(loadSslContext())
+            .maxInboundMessageSize(maxInboundMessageSizeBytes)
             .build()
 
     private val stub: ChatServiceGrpcKt.ChatServiceCoroutineStub =
@@ -273,6 +283,8 @@ class GigaGRPCChatApi(
         }
     }
 }
+
+private const val DEFAULT_MAX_INBOUND_MESSAGE_MB = 32
 
 suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
