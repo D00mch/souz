@@ -20,6 +20,10 @@ class SettingsProvider(private val configStore: ConfigStore) {
         configKey = INITIAL_WINDOW_HEIGHT_DP,
         envKey = INITIAL_WINDOW_HEIGHT_DP
     )
+    private var _temperatureDelegate: String? by keyDelegate(
+        configKey = TEMPERATURE,
+        envKey = TEMPERATURE
+    )
     private var _needsOnboardingDelegate: String? by keyDelegate(
         configKey = NEEDS_ONBOARDING,
         envKey = NEEDS_ONBOARDING
@@ -62,6 +66,10 @@ class SettingsProvider(private val configStore: ConfigStore) {
         get() = _initialWindowHeightDelegate?.toIntOrNull() ?: 780
         set(value) { _initialWindowHeightDelegate = value.toString() }
 
+    var temperature: Float
+        get() = _temperatureDelegate?.toFloatOrNull() ?: 0.7f
+        set(value) { _temperatureDelegate = value.toString() }
+
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
         object : ReadWriteProperty<Any?, String?> {
 
@@ -91,5 +99,6 @@ class SettingsProvider(private val configStore: ConfigStore) {
         private const val REQUEST_TIMEOUT_MILLIS = "REQUEST_TIMEOUT_MILLIS"
         private const val INITIAL_WINDOW_WIDTH_DP = "INITIAL_WINDOW_WIDTH_DP"
         private const val INITIAL_WINDOW_HEIGHT_DP = "INITIAL_WINDOW_HEIGHT_DP"
+        private const val TEMPERATURE = "TEMPERATURE"
     }
 }

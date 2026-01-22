@@ -16,6 +16,8 @@ data class SettingsState(
     val gigaModel: GigaModel = GigaModel.Max,
     val requestTimeoutMillis: Long = 10_000L,
     val requestTimeoutInput: String = "10000",
+    val temperature: Float = 0.7f,
+    val temperatureInput: String = "0.7",
     val initialWindowWidthDp: Int = 580,
     val initialWindowWidthInput: String = "580",
     val initialWindowHeightDp: Int = 780,
@@ -43,6 +45,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputUseGrpcDelegate(val enabled: Boolean): SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
     data class InputRequestTimeoutMillis(val millis: String) : SettingsEvent
+    data class InputTemperature(val temperature: String) : SettingsEvent
     data class InputInitialWindowWidthDp(val width: String) : SettingsEvent
     data class InputInitialWindowHeightDp(val height: String) : SettingsEvent
     data class InputSupportEmail(val email: String): SettingsEvent

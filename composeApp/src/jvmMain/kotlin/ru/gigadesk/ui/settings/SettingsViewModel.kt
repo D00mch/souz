@@ -44,6 +44,8 @@ class SettingsViewModel(
                     gigaModel = keysProvider.gigaModel,
                     requestTimeoutMillis = keysProvider.requestTimeoutMillis,
                     requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
+                    temperature = keysProvider.temperature,
+                    temperatureInput = keysProvider.temperature.toString(),
                     initialWindowWidthDp = keysProvider.initialWindowWidthDp,
                     initialWindowWidthInput = keysProvider.initialWindowWidthDp.toString(),
                     initialWindowHeightDp = keysProvider.initialWindowHeightDp,
@@ -96,6 +98,21 @@ class SettingsViewModel(
                     copy(
                         requestTimeoutInput = normalized,
                         requestTimeoutMillis = newTimeout ?: requestTimeoutMillis
+                    )
+                }
+            }
+            is InputTemperature -> {
+                val normalized = event.temperature.replace(',', '.')
+                    .filter { it.isDigit() || it == '.' }
+                val newTemperature = normalized.toFloatOrNull()
+                if (newTemperature != null) {
+                    keysProvider.temperature = newTemperature
+                    graphBasedAgent.updateTemperature(newTemperature)
+                }
+                setState {
+                    copy(
+                        temperatureInput = normalized,
+                        temperature = newTemperature ?: temperature
                     )
                 }
             }

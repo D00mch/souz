@@ -66,6 +66,7 @@ fun SettingsScreen(
         onUseGrpcDelegateChange = { enabled -> viewModel.send(SettingsEvent.InputUseGrpcDelegate(enabled)) },
         onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
         onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
+        onTemperatureInput = { value -> viewModel.send(SettingsEvent.InputTemperature(value)) },
         onInitialWindowWidthDpChange = { value -> viewModel.send(SettingsEvent.InputInitialWindowWidthDp(value)) },
         onInitialWindowHeightDpChange = { value -> viewModel.send(SettingsEvent.InputInitialWindowHeightDp(value)) },
         onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
@@ -92,6 +93,7 @@ fun SettingsScreen(
     onUseGrpcDelegateChange: (Boolean) -> Unit,
     onModelChange: (GigaModel) -> Unit,
     onRequestTimeoutMillisChange: (String) -> Unit,
+    onTemperatureInput: (String) -> Unit,
     onInitialWindowWidthDpChange: (String) -> Unit,
     onInitialWindowHeightDpChange: (String) -> Unit,
     onDefaultCalendarChange: (String?) -> Unit,
@@ -210,6 +212,20 @@ fun SettingsScreen(
                     )
                     Text(
                         text = "Текущее значение: ${state.requestTimeoutMillis} мс.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LabeledTextField(
+                        label = "Температура",
+                        value = state.temperatureInput,
+                        onValueChange = onTemperatureInput,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "Текущее значение: ${state.temperature}.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
                     )
@@ -623,6 +639,7 @@ fun SettingsScreenPreview() {
             onUseGrpcDelegateChange = {},
             onModelChange = {},
             onRequestTimeoutMillisChange = {},
+            onTemperatureInput = {},
             onInitialWindowWidthDpChange = {},
             onInitialWindowHeightDpChange = {},
             onDefaultCalendarChange = {},

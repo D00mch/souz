@@ -42,7 +42,7 @@ class GraphBasedAgent(
     private val settings = AtomicReference(
         AgentSettings(
             model = settingsProvider.gigaModel.alias,
-            temperature = 0.7f,
+            temperature = settingsProvider.temperature,
             toolsByCategory = toolsFactory.toolsByCategory
         )
     )
@@ -78,6 +78,12 @@ class GraphBasedAgent(
     fun updateModel(model: GigaModel) {
         settingsProvider.gigaModel = model
         val newSettings = settings.load().copy(model = model.alias)
+        settings.store(newSettings)
+        _ctx.tryEmit(currentContext.value.copy(settings = newSettings))
+    }
+
+    fun updateTemperature(temperature: Float) {
+        val newSettings = settings.load().copy(temperature = temperature)
         settings.store(newSettings)
         _ctx.tryEmit(currentContext.value.copy(settings = newSettings))
     }
