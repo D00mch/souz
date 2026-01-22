@@ -655,7 +655,6 @@ fun DashedSpinningWheel(
 ) {
     val infiniteTransition = rememberInfiniteTransition()
 
-    // Rotates the entire drawing container continuously
     val globalRotation by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
@@ -665,7 +664,6 @@ fun DashedSpinningWheel(
         )
     )
 
-    // A single cycle for expanding and shrinking the arc (0f -> 1f)
     val cycleProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -675,28 +673,16 @@ fun DashedSpinningWheel(
         )
     )
 
-    // Head: Starts fast, ends slow (FastOutSlowIn)
     val headOffset = FastOutSlowInEasing.transform(cycleProgress) * 360f
 
-    // Tail: Starts slow, ends fast (EaseIn)
-    // Custom EaseIn curve (CubicBezier 0.4, 0.0, 1.0, 1.0)
     val easeIn = remember { CubicBezierEasing(0.4f, 0.0f, 1.0f, 1.0f) }
     val tailOffset = easeIn.transform(cycleProgress) * 360f
-    
-    // Additional rotation to maintain movement (optional, similar to material)
-    // val baseStepRotation = cycleProgress * 270f 
+
 
     Canvas(modifier = modifier) {
         val strokeWidth = 2.1.dp.toPx()
         val diameter = size.minDimension
         val radius = diameter / 2
-        
-        // Net rotation = global (spinning container) + baseStep (advancing cycle)
-        // Arc start = tailOffset
-        // Arc sweep = headOffset - tailOffset
-        // To keep it clean, we just rotate by global + baseStep + tailOffset
-        // And draw expanding sweep
-        
         val currentTail = tailOffset
         val currentHead = headOffset
         val sweep = (currentHead - currentTail).coerceAtLeast(10f) // Min length
