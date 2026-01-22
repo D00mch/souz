@@ -12,9 +12,9 @@ import java.nio.file.StandardCopyOption
 
 object ToolMoveFile : ToolSetup<ToolMoveFile.Input> {
     data class Input(
-        @InputParamDescription("The full path of the file with name to move")
+        @InputParamDescription("The full path to the file (name included) to move")
         val sourcePath: String,
-        @InputParamDescription("The destination full path with name  where the file will be moved")
+        @InputParamDescription("The full destination path (including filename) where the file will be moved.")
         val destinationPath: String,
     )
 
@@ -23,7 +23,7 @@ object ToolMoveFile : ToolSetup<ToolMoveFile.Input> {
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Перемести report.txt в archive/report.txt",
-            params = mapOf("sourcePath" to "/Users/duxx/Desktop/Скрины/report.txt", "destinationPath" to "/Users/duxx/Desktop/report.txt")
+            params = mapOf("sourcePath" to "~/Desktop/Скрины/report.txt", "destinationPath" to "~/Desktop/report.txt")
         )
     )
     override val returnParameters = ReturnParameters(

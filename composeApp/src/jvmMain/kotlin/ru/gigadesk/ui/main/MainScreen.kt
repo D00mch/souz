@@ -55,8 +55,8 @@ import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import org.kodein.di.compose.localDI
 import kotlin.random.Random
 
-private val TopButtonSize = 28.dp
-private val TopIconSize = 16.dp
+private val TopButtonSize = 24.dp
+private val TopIconSize = 14.dp
 
 sealed class MarkdownPart {
     data class TextContent(val content: String) : MarkdownPart()
@@ -123,7 +123,7 @@ fun MainScreenContent(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 4.dp)
+                        .padding(top = 8.dp)
                         .zIndex(2f)
                 ) {
                     Text(
