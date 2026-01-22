@@ -18,7 +18,7 @@ class ToolMailSearch(private val bash: ToolRunBashCommand) : ToolSetup<ToolMailS
     )
 
     override val name: String = "MailSearch"
-    override val description: String = "Searches emails directly via Mail app (Subject & Sender). Slower than Spotlight but reliable."
+    override val description: String = "Searches emails directly via Mail app (Subject & Sender)."
 
     override val fewShotExamples = listOf(
         FewShotExample(
