@@ -20,7 +20,6 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.debounce
@@ -32,8 +31,6 @@ import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
-
-private val SettingsWindowSize = DpSize(width = 560.dp, height = 650.dp)
 
 @Composable
 fun SettingsScreen(
@@ -66,8 +63,6 @@ fun SettingsScreen(
         onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
         onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
         onTemperatureInput = { value -> viewModel.send(SettingsEvent.InputTemperature(value)) },
-        onInitialWindowWidthDpChange = { value -> viewModel.send(SettingsEvent.InputInitialWindowWidthDp(value)) },
-        onInitialWindowHeightDpChange = { value -> viewModel.send(SettingsEvent.InputInitialWindowHeightDp(value)) },
         onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
         onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
         onSystemPromptChange = { prompt -> viewModel.send(SettingsEvent.InputSystemPrompt(prompt)) },
@@ -92,8 +87,6 @@ fun SettingsScreen(
     onModelChange: (GigaModel) -> Unit,
     onRequestTimeoutMillisChange: (String) -> Unit,
     onTemperatureInput: (String) -> Unit,
-    onInitialWindowWidthDpChange: (String) -> Unit,
-    onInitialWindowHeightDpChange: (String) -> Unit,
     onDefaultCalendarChange: (String?) -> Unit,
     onSupportEmailInput: (String) -> Unit,
     onSystemPromptChange: (String) -> Unit,
@@ -221,34 +214,6 @@ fun SettingsScreen(
                     )
                     Text(
                         text = "Текущее значение: ${state.temperature}.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-                    )
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    LabeledTextField(
-                        label = "Ширина окна (dp)",
-                        value = state.initialWindowWidthInput,
-                        onValueChange = onInitialWindowWidthDpChange,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        text = "Текущее значение: ${state.initialWindowWidthDp} dp.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-                    )
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    LabeledTextField(
-                        label = "Высота окна (dp)",
-                        value = state.initialWindowHeightInput,
-                        onValueChange = onInitialWindowHeightDpChange,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        text = "Текущее значение: ${state.initialWindowHeightDp} dp.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
                     )
@@ -635,8 +600,6 @@ fun SettingsScreenPreview() {
             onModelChange = {},
             onRequestTimeoutMillisChange = {},
             onTemperatureInput = {},
-            onInitialWindowWidthDpChange = {},
-            onInitialWindowHeightDpChange = {},
             onDefaultCalendarChange = {},
             onSupportEmailInput = {},
             onSystemPromptChange = {},

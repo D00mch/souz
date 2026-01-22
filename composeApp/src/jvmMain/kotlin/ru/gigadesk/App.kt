@@ -13,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import ru.gigadesk.Screen.*
@@ -30,7 +29,6 @@ import java.util.*
 @Composable
 @Preview
 fun App(
-    onWindowResize: (DpSize) -> Unit,
     onCloseWindow: () -> Unit
 ) {
     var currentScreen: Screen by remember { mutableStateOf(Setup) }

@@ -46,10 +46,6 @@ class SettingsViewModel(
                     requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
                     temperature = keysProvider.temperature,
                     temperatureInput = keysProvider.temperature.toString(),
-                    initialWindowWidthDp = keysProvider.initialWindowWidthDp,
-                    initialWindowWidthInput = keysProvider.initialWindowWidthDp.toString(),
-                    initialWindowHeightDp = keysProvider.initialWindowHeightDp,
-                    initialWindowHeightInput = keysProvider.initialWindowHeightDp.toString(),
                     supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
                     systemPrompt = keysProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT,
                     defaultCalendar = keysProvider.defaultCalendar,
@@ -113,32 +109,6 @@ class SettingsViewModel(
                     copy(
                         temperatureInput = normalized,
                         temperature = newTemperature ?: temperature
-                    )
-                }
-            }
-            is InputInitialWindowWidthDp -> {
-                val normalized = event.width.filter { it.isDigit() }
-                val newWidth = normalized.toIntOrNull()
-                if (newWidth != null) {
-                    keysProvider.initialWindowWidthDp = newWidth
-                }
-                setState {
-                    copy(
-                        initialWindowWidthInput = normalized,
-                        initialWindowWidthDp = newWidth ?: initialWindowWidthDp
-                    )
-                }
-            }
-            is InputInitialWindowHeightDp -> {
-                val normalized = event.height.filter { it.isDigit() }
-                val newHeight = normalized.toIntOrNull()
-                if (newHeight != null) {
-                    keysProvider.initialWindowHeightDp = newHeight
-                }
-                setState {
-                    copy(
-                        initialWindowHeightInput = normalized,
-                        initialWindowHeightDp = newHeight ?: initialWindowHeightDp
                     )
                 }
             }

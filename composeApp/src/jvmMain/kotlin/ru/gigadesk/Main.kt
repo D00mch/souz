@@ -13,6 +13,8 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.painterResource
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
@@ -20,7 +22,6 @@ import org.kodein.di.instance
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
-import kotlin.math.roundToInt
 
 fun main() {
     System.setProperty("apple.awt.UIElement", "true")
@@ -68,14 +69,16 @@ fun main() {
                 resizable = true,
                 alwaysOnTop = true
             ) {
+                LaunchedEffect(windowState) {
+                    snapshotFlow { windowState.size }
+                        .distinctUntilChanged()
+                        .collect { size ->
+                            settingsProvider.initialWindowWidthDp = size.width.value.roundToInt()
+                            settingsProvider.initialWindowHeightDp = size.height.value.roundToInt()
+                        }
+                }
                 WindowDraggableArea(modifier = Modifier.fillMaxSize()) {
                     App(
-                        // TODO: unsued callback? How do I check the windows current size?
-                        onWindowResize = { targetSize ->
-                            windowState.size = targetSize
-                            settingsProvider.initialWindowWidthDp = targetSize.width.value.roundToInt()
-                            settingsProvider.initialWindowHeightDp = targetSize.height.value.roundToInt()
-                        },
                         onCloseWindow = { isWindowVisible = false }
                     )
                 }
