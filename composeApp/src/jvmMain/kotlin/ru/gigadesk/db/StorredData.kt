@@ -7,6 +7,7 @@ enum class StorredType {
     INSTALLED_APPS,
     INSTRUCTIONS,
     DEFAULT_BROWSER,
+    GENERAL_FACT,
 }
 
 data class StorredData(

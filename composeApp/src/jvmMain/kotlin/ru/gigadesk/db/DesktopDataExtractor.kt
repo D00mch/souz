@@ -45,6 +45,7 @@ object DesktopDataExtractor {
                 files().toList() +
                 browserHistory(50) +
                 instructions +
+                facts +
                 notes()
     }
 
@@ -109,12 +110,17 @@ return xs as text
         val raw = ToolRunBashCommand.apple(script)
         raw.lines().map { StorredData(it, StorredType.NOTES) }
     }.getOrElse { emptyList() }
+
+    val facts: List<StorredData> = listOf(
+        "Поиск по хабр, (замени <query> на слово поиска): https://habr.com/ru/search/?q=<query>",
+    ) .map { StorredData(it, StorredType.GENERAL_FACT) }
 }
 
 fun List<StorredData>.asString(): String = groupBy { it.type }.entries.joinToString(":\n\n") { (type, dataList) ->
     val prefix = when (type) {
         StorredType.FILES -> "Файлы на моём компьютере"
         StorredType.BROWSER_HISTORY -> "История браузера"
+        StorredType.GENERAL_FACT -> "Полезные сведения"
         StorredType.NOTES -> "Заметки"
         StorredType.DEFAULT_BROWSER -> "Используемый браузер"
         StorredType.INSTALLED_APPS -> "Установленные приложения"
