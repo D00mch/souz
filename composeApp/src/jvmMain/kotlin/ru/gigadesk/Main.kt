@@ -1,3 +1,5 @@
+@file:OptIn(FlowPreview::class)
+
 package ru.gigadesk
 
 import gigadesk.composeapp.generated.resources.Res
@@ -13,6 +15,8 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.painterResource
@@ -22,6 +26,7 @@ import org.kodein.di.instance
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
+import java.time.Duration
 
 fun main() {
     System.setProperty("apple.awt.UIElement", "true")
@@ -72,6 +77,7 @@ fun main() {
                 LaunchedEffect(windowState) {
                     snapshotFlow { windowState.size }
                         .distinctUntilChanged()
+                        .debounce(1000)
                         .collect { size ->
                             settingsProvider.initialWindowWidthDp = size.width.value.roundToInt()
                             settingsProvider.initialWindowHeightDp = size.height.value.roundToInt()
