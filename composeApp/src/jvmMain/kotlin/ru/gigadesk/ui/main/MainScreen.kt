@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -653,56 +654,11 @@ fun DashedSpinningWheel(
     modifier: Modifier = Modifier,
     color: Color = Color.White,
 ) {
-    val infiniteTransition = rememberInfiniteTransition()
-
-    val globalRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        )
+    CircularProgressIndicator(
+        modifier = modifier,
+        color = color,
+        strokeWidth = 2.1.dp
     )
-
-    val cycleProgress by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1400, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        )
-    )
-
-    val headOffset = FastOutSlowInEasing.transform(cycleProgress) * 360f
-
-    val easeIn = remember { CubicBezierEasing(0.4f, 0.0f, 1.0f, 1.0f) }
-    val tailOffset = easeIn.transform(cycleProgress) * 360f
-
-
-    Canvas(modifier = modifier) {
-        val strokeWidth = 2.1.dp.toPx()
-        val diameter = size.minDimension
-        val radius = diameter / 2
-        val currentTail = tailOffset
-        val currentHead = headOffset
-        val sweep = (currentHead - currentTail).coerceAtLeast(10f) // Min length
-        val start = currentTail
-        
-        rotate(globalRotation - 90f) { // -90 to start at top
-            drawArc(
-                color = color,
-                startAngle = start,
-                sweepAngle = sweep,
-                useCenter = false, 
-                style = Stroke(
-                    width = strokeWidth,
-                    cap = StrokeCap.Round
-                ),
-                topLeft = Offset(center.x - radius, center.y - radius),
-                size = Size(diameter, diameter)
-            )
-        }
-    }
 }
 
 
