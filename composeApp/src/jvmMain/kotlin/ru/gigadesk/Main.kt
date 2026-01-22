@@ -1,3 +1,5 @@
+@file:OptIn(FlowPreview::class)
+
 package ru.gigadesk
 
 import gigadesk.composeapp.generated.resources.Res
@@ -13,6 +15,10 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.painterResource
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
@@ -20,6 +26,7 @@ import org.kodein.di.instance
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
+import java.time.Duration
 
 fun main() {
     System.setProperty("apple.awt.UIElement", "true")
@@ -67,24 +74,17 @@ fun main() {
                 resizable = true,
                 alwaysOnTop = true
             ) {
+                LaunchedEffect(windowState) {
+                    snapshotFlow { windowState.size }
+                        .distinctUntilChanged()
+                        .debounce(1000)
+                        .collect { size ->
+                            settingsProvider.initialWindowWidthDp = size.width.value.roundToInt()
+                            settingsProvider.initialWindowHeightDp = size.height.value.roundToInt()
+                        }
+                }
                 WindowDraggableArea(modifier = Modifier.fillMaxSize()) {
                     App(
-                        onWindowResize = { targetSize ->
-//                            val currentSize = windowState.size
-//                            val currentPos = windowState.position
-//
-//                            if (currentPos is WindowPosition.Absolute) {
-//                                val widthDelta = targetSize.width - currentSize.width
-//                                val heightDelta = targetSize.height - currentSize.height
-//
-//                                val newX = currentPos.x - widthDelta
-//                                val newY = currentPos.y - heightDelta
-//
-//                                windowState.position = WindowPosition.Absolute(newX, newY)
-//                            }
-//
-//                            windowState.size = targetSize
-                        },
                         onCloseWindow = { isWindowVisible = false }
                     )
                 }

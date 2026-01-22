@@ -39,7 +39,6 @@ fun ToolDetailsScreen(
     category: ToolCategory,
     toolName: String,
     onClose: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
@@ -68,7 +67,6 @@ fun ToolDetailsScreen(
         onExampleParamsChange = { id, value -> viewModel.send(ToolDetailsEvent.UpdateExampleParams(id, value)) },
         onSave = { viewModel.send(ToolDetailsEvent.Save) },
         onReset = { viewModel.send(ToolDetailsEvent.ResetToDefault) },
-        onResizeRequest = onResizeRequest,
         snackbarHostState = snackbarHostState,
         onClose = onClose,
         sharedTransitionScope = sharedTransitionScope,
@@ -91,15 +89,12 @@ fun ToolDetailsScreen(
     onExampleParamsChange: (String, String) -> Unit,
     onSave: () -> Unit,
     onReset: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     onClose: () -> Unit,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     sharedTransitionKey: String? = null,
 ) {
-    LaunchedEffect(Unit) { onResizeRequest(ToolDetailsWindowSize) }
-
     // Получаем фокус для эффекта стекла
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
@@ -441,7 +436,6 @@ private fun ToolDetailsScreenPreview() {
             onExampleParamsChange = { _, _ -> },
             onSave = {},
             onReset = {},
-            onResizeRequest = {},
             onClose = {},
             sharedTransitionScope = null,
             animatedVisibilityScope = null,

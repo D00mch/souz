@@ -53,7 +53,6 @@ private val ToolsWindowSize = DpSize(width = 640.dp, height = 720.dp)
 fun ToolsScreen(
     onClose: () -> Unit,
     onOpenToolDetails: (ToolCategory, ToolUi) -> Unit = { _, _ -> },
-    onResizeRequest: (DpSize) -> Unit = {},
     onShowSnack: (String) -> Unit = {},
     viewModelKey: String = "ToolsScreen",
     sharedTransitionScope: SharedTransitionScope? = null,
@@ -89,7 +88,6 @@ fun ToolsScreen(
         },
         onToolClick = onOpenToolDetails,
         onSave = { viewModel.send(ToolsSettingsEvent.SaveSettings) },
-        onResizeRequest = onResizeRequest,
         onClose = onClose,
         sharedTransitionScope = sharedTransitionScope,
         animatedVisibilityScope = animatedVisibilityScope,
@@ -105,13 +103,10 @@ fun ToolsScreen(
     onScrollPositionChange: (Int) -> Unit,
     onToolClick: (ToolCategory, ToolUi) -> Unit,
     onSave: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit = {},
     onClose: () -> Unit,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
-    LaunchedEffect(Unit) { onResizeRequest(ToolsWindowSize) }
-
     // Получаем фокус окна
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
@@ -465,7 +460,6 @@ private fun ToolsScreenPreview() {
             onToolToggle = { _, _, _ -> },
             onToolClick = { _, _ -> },
             onSave = {},
-            onResizeRequest = {},
             onClose = {},
             onCategoryExpandedChange = { _, _ -> },
             onScrollPositionChange = {},

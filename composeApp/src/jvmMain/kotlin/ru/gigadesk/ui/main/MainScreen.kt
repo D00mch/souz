@@ -57,8 +57,6 @@ import kotlin.random.Random
 
 private val TopButtonSize = 28.dp
 private val TopIconSize = 16.dp
-private val BaseWidth = 780.dp
-private val BaseHeight = 880.dp
 
 sealed class MarkdownPart {
     data class TextContent(val content: String) : MarkdownPart()
@@ -68,7 +66,6 @@ sealed class MarkdownPart {
 @Composable
 fun MainScreen(
     onOpenSettings: () -> Unit,
-    onResizeRequest: (DpSize) -> Unit,
     onCloseWindow: () -> Unit,
     onShowSnack: (String) -> Unit = {},
 ) {
@@ -93,7 +90,6 @@ fun MainScreen(
         },
         onClear = { viewModel.send(MainEvent.ClearContext) },
         onOpenSettings = onOpenSettings,
-        onResizeRequest = onResizeRequest,
         onStopSpeech = { viewModel.send(MainEvent.StopSpeech) },
         onShowLastText = { viewModel.send(MainEvent.ShowLastText) },
         onShowSnack = onShowSnack
@@ -106,7 +102,6 @@ fun MainScreenContent(
     onToggleListening: () -> Unit = {},
     onClear: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
-    onResizeRequest: (DpSize) -> Unit = {},
     onStopSpeech: () -> Unit = {},
     onShowLastText: () -> Unit = {},
     onShowSnack: (String) -> Unit = {},
@@ -114,10 +109,6 @@ fun MainScreenContent(
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
-
-    LaunchedEffect(Unit) {
-        onResizeRequest(DpSize(BaseWidth, BaseHeight))
-    }
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -181,7 +172,6 @@ fun MainScreenContent(
                         MarkdownViewer(
                             text = textContent,
                             baseFontSize = baseFontSize,
-                            isWindowFocused = isFocused,
                             onShowSnack = onShowSnack
                         )
                     }
@@ -218,7 +208,6 @@ fun MainScreenContent(
 fun MarkdownViewer(
     text: String,
     baseFontSize: androidx.compose.ui.unit.TextUnit,
-    isWindowFocused: Boolean,
     onShowSnack: (String) -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -315,6 +304,7 @@ fun MarkdownViewer(
 
 fun parseMarkdownContent(input: String): List<MarkdownPart> {
     val parts = mutableListOf<MarkdownPart>()
+    @Suppress("RegExpRedundantEscape")
     val regex = Regex("```([\\w\\+\\-\\.\\s]*)\\n([\\s\\S]*?)```")
 
     var lastIndex = 0

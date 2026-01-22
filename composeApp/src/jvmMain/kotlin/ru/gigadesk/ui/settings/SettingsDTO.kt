@@ -18,10 +18,6 @@ data class SettingsState(
     val requestTimeoutInput: String = "10000",
     val temperature: Float = 0.7f,
     val temperatureInput: String = "0.7",
-    val initialWindowWidthDp: Int = 580,
-    val initialWindowWidthInput: String = "580",
-    val initialWindowHeightDp: Int = 780,
-    val initialWindowHeightInput: String = "780",
     val supportEmail: String = DEFAULT_SUPPORT_EMAIL,
     val isSendingLogs: Boolean = false,
     val sendLogsMessage: String? = null,
@@ -46,8 +42,6 @@ sealed interface SettingsEvent : VMEvent {
     data class SelectModel(val model: GigaModel): SettingsEvent
     data class InputRequestTimeoutMillis(val millis: String) : SettingsEvent
     data class InputTemperature(val temperature: String) : SettingsEvent
-    data class InputInitialWindowWidthDp(val width: String) : SettingsEvent
-    data class InputInitialWindowHeightDp(val height: String) : SettingsEvent
     data class InputSupportEmail(val email: String): SettingsEvent
     data class InputSystemPrompt(val prompt: String): SettingsEvent
     data class InputVoiceSpeed(val speed: String): SettingsEvent
