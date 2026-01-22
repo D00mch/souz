@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -652,29 +653,10 @@ fun PreviewSmartFocusGlass() {
 fun DashedSpinningWheel(
     modifier: Modifier = Modifier,
     color: Color = Color.White,
-    strokeWidth: Dp = 4.dp
 ) {
-    val infiniteTransition = rememberInfiniteTransition()
-    val angle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        )
+    CircularProgressIndicator(
+        modifier = modifier,
+        color = color,
+        strokeWidth = 2.1.dp
     )
-
-    Canvas(modifier = modifier) {
-        val stroke = Stroke(
-            width = strokeWidth.toPx(),
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 20f), 0f),
-            cap = StrokeCap.Round
-        )
-        rotate(angle) {
-            drawCircle(
-                color = color,
-                style = stroke
-            )
-        }
-    }
 }
