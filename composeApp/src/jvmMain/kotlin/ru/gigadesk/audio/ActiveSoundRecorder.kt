@@ -85,7 +85,7 @@ class ActiveSoundRecorderImpl(
 
     override fun startRecording() {
         if (!prepared.get()) prepare() // idempotent
-        val ch = Channel<ByteArray>(capacity = 1024)
+        val ch = Channel<ByteArray>(capacity = 3072)
 
         // Ensure pre-roll frames precede any live frames sent after activation.
         ringLock.withLock {
