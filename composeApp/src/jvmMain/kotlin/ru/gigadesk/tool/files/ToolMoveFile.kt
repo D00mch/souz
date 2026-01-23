@@ -22,8 +22,8 @@ object ToolMoveFile : ToolSetup<ToolMoveFile.Input> {
     override val description = "Moves a file from the source path to the destination path. Use ~ as the Home dir"
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Перемести report.txt в archive/report.txt",
-            params = mapOf("sourcePath" to "~/Desktop/Скрины/report.txt", "destinationPath" to "~/Desktop/report.txt")
+            request = "Перемести Снимок экрана 2026-01-22 в 23.23.52.png в папку Скрины на рабочем столе",
+            params = mapOf("sourcePath" to "~/Desktop/Снимок экрана 2026-01-22 в 23.23.52.png", "destinationPath" to "~/Desktop/Скрины/Снимок экрана 2026-01-22 в 23.23.52.png")
         )
     )
     override val returnParameters = ReturnParameters(
@@ -50,7 +50,7 @@ object ToolMoveFile : ToolSetup<ToolMoveFile.Input> {
 }
 
 fun main() {
-    val result = ToolMoveFile.invoke(ToolMoveFile.Input("/Users/duxx/Desktop/буль.rtf",
-        "/Users/duxx/Desktop/Ремонт/буль.rtf"))
+    val result = ToolMoveFile.invoke(ToolMoveFile.Input("/Users/duxx/Desktop/Снимок экрана 2026-01-22 в 23.23.52.png",
+        "/Users/duxx/Desktop/Скрины/Снимок экрана 2026-01-22 в 23.23.52.png"))
     println(result)
 }

@@ -10,6 +10,7 @@ import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.agent.node.NodesCommon
 import ru.gigadesk.agent.node.NodesLLM
 import ru.gigadesk.agent.nodes.NodesClassification
+import ru.gigadesk.agent.nodes.NodesPlanning
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.DesktopInfoRepository
@@ -79,6 +80,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             instance(),
         )
     }
+    bindSingleton { NodesPlanning(instance(), instance()) }
     bindSingleton { ToolsFactory(instance(), instance(), instance()) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
 }

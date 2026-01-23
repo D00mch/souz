@@ -16,6 +16,7 @@ data class MainState(
     val lastKnownAgentContext: AgentContext<String>? = null,
     val userExpectCloseOnX: Boolean = false,
     val isProcessing: Boolean = false,
+    val plan: ru.gigadesk.agent.planning.ExecutionPlan? = null,
 ) : VMState {
 
     companion object {

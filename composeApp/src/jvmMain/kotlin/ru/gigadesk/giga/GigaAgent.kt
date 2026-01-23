@@ -159,12 +159,13 @@ class GigaAgent(
 
     private suspend fun ProducerScope<String>.singleResponsePipeline(
         conversation: ArrayDeque<GigaRequest.Message>,
-        fns: List<GigaRequest.Function>,
+        initialFns: List<GigaRequest.Function>,
     ) {
+        var currentFns = initialFns
         for (i in 1..MAX_TOOLS_CYCLES) { // infinite loop protection
             if (!isActive) break
             val response: GigaResponse.Chat = try {
-                withContext(Dispatchers.IO) { chat(conversation, fns) }
+                withContext(Dispatchers.IO) { chat(conversation, currentFns) }
             } catch (e: Throwable) {
                 l.error("Error: loop $i: ${e.message}", e)
                 send("Не смогли достучаться до сервера. Будем пробовать снова?")
@@ -191,6 +192,28 @@ class GigaAgent(
                     // if no functions invoked, we can proceed to the next user's message
                     if (fnCallMessages.isEmpty()) break
                     conversation.addAll(fnCallMessages)
+                    
+                    // Dynamic Tool Expansion
+                    // Check if we just executed "get_tools_by_category"
+                    val toolDiscoveryCall = response.choices.mapNotNull { it.message.functionCall }
+                        .find { it.name == "get_tools_by_category" }
+                    
+                    if (toolDiscoveryCall != null) {
+                         try {
+                             val args = gigaJsonMapper.readTree(gigaJsonMapper.writeValueAsString(toolDiscoveryCall.arguments))
+                             val categoryName = args.get("category")?.asText()
+                             if (categoryName != null) {
+                                 val category = ToolCategory.valueOf(categoryName)
+                                 val newTools = functionsByCategory[category] ?: emptyList()
+                                 // Add new tools to the current set, avoiding duplicates
+                                 val existingNames = currentFns.map { it.name }.toSet()
+                                 currentFns = currentFns + newTools.filter { !existingNames.contains(it.name) }
+                                 l.info("Expanded tools with category $category. Total tools: ${currentFns.size}")
+                             }
+                         } catch (e: Exception) {
+                             l.error("Failed to expand tools from category", e)
+                         }
+                    }
                 }
             }
         }

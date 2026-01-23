@@ -17,6 +17,8 @@ import ru.gigadesk.agent.engine.*
 import ru.gigadesk.agent.node.NodesCommon
 import ru.gigadesk.agent.node.NodesLLM
 import ru.gigadesk.agent.nodes.NodesClassification
+import ru.gigadesk.agent.nodes.NodesPlanning
+import ru.gigadesk.agent.planning.StepStatus
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.giga.*
@@ -35,6 +37,7 @@ class GraphBasedAgent(
     private val nodesLLM: NodesLLM  by di.instance()
     private val nodesCommon: NodesCommon by di.instance()
     private val nodesClassify: NodesClassification by di.instance()
+    private val nodesPlanning: NodesPlanning by di.instance()
     private val nodeClassify = nodesClassify.node
     private val settingsProvider: SettingsProvider by di.instance()
 
@@ -111,8 +114,49 @@ class GraphBasedAgent(
     }
 
     private fun buildGraph(): Graph<String, String> = buildGraph(name = "Agent") {
-        nodeInput.edgeTo(nodeClassify)
-        nodeClassify.edgeTo(nodesCommon.nodeAppendAdditionalData)
+        nodeInput.edgeTo { ctx ->
+            if (ctx.plan != null && ctx.plan.isApproved && ctx.plan.steps.any { it.status == StepStatus.PENDING || it.status == StepStatus.IN_PROGRESS }) {
+                nodesPlanning.executor
+            } else if (ctx.plan != null && !ctx.plan.isApproved) {
+                // If we have a pending plan, skip classification and go straight to review
+                nodesPlanning.planReview
+            } else {
+                nodeClassify
+            }
+        }
+        nodeClassify.edgeTo { ctx ->
+            // If we have a pending unapproved plan, treat input as potential approval/modification
+            if (ctx.plan != null && !ctx.plan.isApproved) {
+                 nodesPlanning.planReview
+            } else if (ctx.isComplex) {
+                nodesPlanning.contextGathering
+            } else {
+                nodesCommon.nodeAppendAdditionalData
+            }
+        }
+        
+        // Planning Flow
+        nodesPlanning.contextGathering.edgeTo(nodesPlanning.planner)
+        nodesPlanning.planner.edgeTo(nodesPlanning.approval)
+        nodesPlanning.approval.edgeTo(nodeFinish) // Wait for user
+
+        // Plan Review (New Node)
+        nodesPlanning.planReview.edgeTo { ctx ->
+             if (ctx.plan?.isApproved == true) nodesPlanning.executor else nodesPlanning.planner
+        }
+
+        nodesPlanning.executor.edgeTo { ctx ->
+            val plan = ctx.plan
+            if (plan != null && plan.steps.any { it.status == StepStatus.FAILED }) {
+                nodesPlanning.planner // Replan
+            } else if (plan != null && plan.steps.any { it.status == StepStatus.PENDING }) {
+                nodesPlanning.executor // Loop
+            } else {
+                nodeFinish // Done
+            }
+        }
+
+        // Standard Flow
         nodesCommon.nodeAppendAdditionalData.edgeTo(nodesCommon.stringToReq)
         nodesCommon.stringToReq.edgeTo(nodesLLM.requestToResponse)
         nodesLLM.requestToResponse.edgeTo { ctx ->

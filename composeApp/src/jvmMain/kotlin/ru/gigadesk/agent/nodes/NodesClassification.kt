@@ -33,12 +33,12 @@ class NodesClassification(
             toolsSettings.applyFilter(toolsFactory.toolsByCategory)
         val category = classify(ctx.input, ctx.history, categoryStates)
 
-        val functions: List<GigaRequest.Function> = if (category == null) {
-            categoryStates.flatMap { it.value.values }.map { it.fn }
-        } else {
-            categoryStates[category]!!.values.map { it.fn }
+        val functions: List<GigaRequest.Function> = when (category) {
+            null -> categoryStates.flatMap { it.value.values }.map { it.fn }
+            COMPLEX_TASK -> categoryStates.flatMap { it.value.values }.map { it.fn }
+            else -> categoryStates[category]!!.values.map { it.fn }
         }
-        ctx.map(activeTools = functions) { it }
+        ctx.map(activeTools = functions, isComplex = (category == COMPLEX_TASK)) { it }
     }
 
     private suspend fun classify(
@@ -51,9 +51,20 @@ class NodesClassification(
         val bodyJson = gigaJsonMapper.writeValueAsString(body)
         l.debug("Classifying user message: {}, \nbody: \n{}", userText, logObjectMapper.writeValueAsString(body))
         try {
-            val (localCategory, _) = localClassifier.classify(bodyJson)
+            val (localCategory, localConfidence) = localClassifier.classify(bodyJson)
+            // Explicit override: If local classifier detects COMPLEX_TASK (via keywords), trust it immediately.
+            // This prevents the LLM from misclassifying explicitly complex requests as simple domain tasks (e.g. MAIL).
+            if (localCategory == COMPLEX_TASK) {
+                l.info("Forced COMPLEX_TASK by local classifier")
+                return COMPLEX_TASK
+            }
+
             if (retriesCount <= 0) return localCategory
             val (apiCategory, apiConfidence) = apiClassifier.classify(bodyJson)
+            
+            // If API also returns COMPLEX_TASK, return it.
+            if (apiCategory == COMPLEX_TASK) return COMPLEX_TASK
+
             if (apiConfidence > 50 || apiCategory == localCategory) {
                 return apiCategory
             } else {
@@ -87,7 +98,7 @@ class NodesClassification(
     }
 
     fun buildPrompt(toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>): String {
-        val allowedCategories = toolsByCategory.keys
+        val allowedCategories = toolsByCategory.keys + COMPLEX_TASK
         val categoriesInfoSection = allowedCategories.joinToString(
             prefix = "Категории:\n",
             separator = ";\n"
@@ -131,7 +142,7 @@ class NodesClassification(
 создание и удаление событий в календаре"""
 
         MAIL -> """
-получение и отправка писем, список писем, чтение писем, ответ на письмо, прочтение сообщений из почты"""
+получение и отправка писем, список писем, чтение писем, ответ на письмо, прочтение сообщений из почты. ВНИМАНИЕ: если в задаче требуется что-то еще кроме работы с почтой (например, создать встречу, заметку, открыть файл) - это COMPLEX_TASK, а не MAIL."""
 
         NOTES -> """
 работа с заметками"""
@@ -145,6 +156,10 @@ class NodesClassification(
 
         CHAT -> """
 вопрос на общие знания, не относящиеся к работе с рабочим столом, или просто болтовня
+"""
+
+        COMPLEX_TASK -> """
+сложная задача, требующая планирования и выполнения нескольких разнородных действий (например, почта + календарь, почта + заметки, поиск + анализ). Если запрос содержит "и", "после чего", "затем" и затрагивает разные домены - это COMPLEX_TASK.
 """
     }
         .trimIndent()
@@ -218,6 +233,13 @@ class NodesClassification(
             "сколько градусов по Цельсию в 80 по Фаренгейту",
             "как мне разбогатеть",
             "приведи пример кода",
+        )
+
+        COMPLEX_TASK -> listOf(
+            "найди письмо от начальника и создай встречу на время, которое он предложил",
+            "прочитай последние 5 писем и составь список задач в заметках",
+            "найди все скриншоты на рабочем столе и перемести их в папку 'Images'",
+            "найди отчет за прошлый месяц, проанализируй расходы и отправь резюме бухгалтеру"
         )
     }
 }

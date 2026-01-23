@@ -12,6 +12,7 @@ import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.tool.application.ToolOpen
 import ru.gigadesk.tool.application.ToolShowApps
+import ru.gigadesk.tool.meta.ToolGetToolsByCategory
 import ru.gigadesk.tool.browser.ToolChromeInfo
 import ru.gigadesk.tool.browser.ToolOpenDefaultBrowser
 import ru.gigadesk.tool.config.ToolInstructionStore
@@ -40,7 +41,10 @@ class ToolsFactory(
 ) {
     val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
-            category.tools().associateBy { it.fn.name }
+            // Add the meta-tool to every category as requested
+            val standardTools = category.tools()
+            val metaTool = ToolGetToolsByCategory(this).toGiga()
+            (standardTools + metaTool).associateBy { it.fn.name }
         }
     }
 
@@ -121,5 +125,6 @@ class ToolsFactory(
         }
 
         ToolCategory.CHAT -> listOf()
+        ToolCategory.COMPLEX_TASK -> listOf()
     }
 }

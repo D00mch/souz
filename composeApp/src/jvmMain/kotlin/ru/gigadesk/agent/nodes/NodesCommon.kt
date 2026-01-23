@@ -43,7 +43,44 @@ class NodesCommon(
     val toolUse: Node<GigaResponse.Chat, GigaRequest.Chat> = Node("toolUse") { ctx ->
         val fnCallMessages = fnCallMessages(ctx)
         val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
-        ctx.map(history = history) { ctx.toGigaRequest(history) }
+        
+        // Dynamic Tool Expansion: Check if get_tools_by_category was called
+        val expandedTools = expandToolsIfNeeded(ctx)
+        
+        ctx.map(history = history, activeTools = expandedTools) { ctx.toGigaRequest(history) }
+    }
+    
+    private fun expandToolsIfNeeded(ctx: AgentContext<GigaResponse.Chat>): List<GigaRequest.Function> {
+        val response = ctx.input as? GigaResponse.Chat.Ok ?: return ctx.activeTools
+        
+        val toolDiscoveryCalls = response.choices.mapNotNull { it.message.functionCall }
+            .filter { it.name == "get_tools_by_category" }
+        
+        if (toolDiscoveryCalls.isEmpty()) return ctx.activeTools
+        
+        val existingNames = ctx.activeTools.map { it.name }.toMutableSet()
+        val newTools = mutableListOf<GigaRequest.Function>()
+        
+        for (call in toolDiscoveryCalls) {
+            try {
+                val categoryName = call.arguments["category"]?.toString()
+                if (categoryName != null) {
+                    val category = ru.gigadesk.tool.ToolCategory.valueOf(categoryName)
+                    val categoryTools = ctx.settings.toolsByCategory[category]?.values?.map { it.fn } ?: emptyList()
+                    for (tool in categoryTools) {
+                        if (!existingNames.contains(tool.name)) {
+                            newTools.add(tool)
+                            existingNames.add(tool.name)
+                        }
+                    }
+                    l.info("Expanded tools with category $category. Added ${newTools.size} new tools.")
+                }
+            } catch (e: Exception) {
+                l.error("Failed to expand tools from category: ${e.message}")
+            }
+        }
+        
+        return ctx.activeTools + newTools
     }
 
     /**

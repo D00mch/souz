@@ -26,6 +26,7 @@ enum class ToolCategory {
     MAIL,
     TEXT_REPLACE,
     CHAT,
+    COMPLEX_TASK,
 }
 
 object LocalRegexClassifier : UserMessageClassifier {
@@ -99,7 +100,7 @@ object LocalRegexClassifier : UserMessageClassifier {
 
         ToolCategory.CALENDAR -> listOf(
             WeightedRegex(Regex("календар|calendar|расписани|schedule"), 2.0),
-            WeightedRegex(Regex("событи|event|встреч|meeting|напоминани|reminder"), 2.0),
+            WeightedRegex(Regex("событи|event|встреч|meeting|напоминани|reminder|созвон|call"), 2.0),
             WeightedRegex(Regex("завтра|сегодня|послезавтра|дат|date|планируй|запланируй"), 1.0),
         )
 
@@ -119,6 +120,18 @@ object LocalRegexClassifier : UserMessageClassifier {
 
         ToolCategory.CHAT -> listOf(
             WeightedRegex(Regex("Кто такой|Как думаешь|Сколько .* в|Что будет если"), 1.5)
+        )
+
+        ToolCategory.COMPLEX_TASK -> listOf(
+            WeightedRegex(Regex("спланируй|план|шаги|complex|сложная задача|алгоритм|по шагам"), 10.0),
+            WeightedRegex(Regex("plan|steps|algorithm"), 5.0),
+            // Multi-step implicit patterns (e.g. "find X, then do Y, then save Z")
+            // Increased weights significantly to override frequent repetition of domain keywords (like "email", "file")
+            WeightedRegex(Regex("после (чего|этого)|затем|потом|далее"), 20.0),
+            WeightedRegex(Regex(",\\s*(а потом|затем|после)"), 20.0),
+            WeightedRegex(Regex("сначала.*потом|найди.*сохрани|прочитай.*проанализируй"), 20.0),
+            // "Move" usually implies Find + Move -> Multi-step
+            WeightedRegex(Regex("перемести|перенеси|move|transfer"), 5.0),
         )
     }
 

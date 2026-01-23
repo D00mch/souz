@@ -24,10 +24,21 @@ class ApiClassifier(
                 unknown
             }
             is GigaResponse.Chat.Ok -> {
-                val (cat, confidence) = resp.choices.firstOrNull()?.message?.content?.trim()?.uppercase()?.split(" ")
+                val rawContent = resp.choices.firstOrNull()?.message?.content?.trim()?.uppercase()
                     ?: return unknown
+                // Strip angle brackets and other noise from LLM response
+                val cleanedContent = rawContent.replace(Regex("[<>]"), "").trim()
+                val parts = cleanedContent.split(Regex("\\s+"))
+                if (parts.size < 2) return unknown
+                val cat = parts[0]
+                val confidence = parts[1]
                 l.info("Category: {}, {}", cat, confidence)
-                UserMessageClassifier.Reply(ToolCategory.valueOf(cat), confidence.toDouble())
+                try {
+                    UserMessageClassifier.Reply(ToolCategory.valueOf(cat), confidence.toDoubleOrNull() ?: 0.0)
+                } catch (e: IllegalArgumentException) {
+                    l.warn("Unknown category: {}", cat)
+                    unknown
+                }
             }
         }
     }

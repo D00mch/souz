@@ -109,7 +109,15 @@ class MainViewModel(
                         subscribeOnTaskSideEffects(userInput)
                         val rawText = graphAgent.execute(userInput)
                         l.info(rawText)
-                        setState { copy(displayedText = rawText, statusMessage = "Ответ готов", isProcessing = false) }
+                        val ctx = graphAgent.currentContext.value
+                        setState { 
+                            copy(
+                                displayedText = rawText, 
+                                statusMessage = "Ответ готов", 
+                                isProcessing = false,
+                                plan = ctx.plan
+                            ) 
+                        }
                         if (!settingsProvider.useGrpc) say.queue(prepareTextForSpeech(rawText))
                     }
                 }.onFailure { e ->
