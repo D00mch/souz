@@ -13,6 +13,7 @@ Output MUST be a valid JSON object matching this structure:
     {
       "id": "step_1",
       "toolName": "exact_tool_name_from_available_tools",
+      "description": "User-friendly description of this step in Russian (e.g. 'Finding the file')",
       "arguments": { "arg1": "value" },
       "status": "PENDING",
       "userApprovalRequired": false
@@ -24,10 +25,12 @@ CRITICAL RULES:
 - Use ONLY tools from the "Available tools" list above. DO NOT invent tool names.
 - Break the task into logical, sequential steps.
 - Write "goal" and all descriptions in Russian for user readability.
+- `description` must be simple, concise, and in Russian. DO NOT mention technical tool names here.
 - `status` MUST be "PENDING" for all new steps.
 - `id` should be unique (step_1, step_2, etc).
 - `toolName` must EXACTLY match a tool name from the available tools list.
 - `userApprovalRequired` should be true if the action is sensitive (e.g., delete file, send email).
+- You can use the output of previous steps as arguments using syntax `{result of step_id}` (e.g. `filePath`="{result of step_1}"). Use this to pass file paths or content between steps.
 
 Output ONLY valid JSON. No markdown code fences, no explanations.
 """.trimIndent()

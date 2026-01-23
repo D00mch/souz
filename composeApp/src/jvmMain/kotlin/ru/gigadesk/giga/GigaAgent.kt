@@ -234,12 +234,13 @@ class GigaAgent(
         val bodyJson = gigaJsonMapper.writeValueAsString(body)
         l.debug("Classifying user message: $userText, \nbody: \n${logObjectMapper.writeValueAsString(body)}")
         try {
-            val (localCategory, _) = localClassifier.classify(bodyJson)
-            val (apiCategory, apiConfidence) = apiClassifier.classify(bodyJson)
-            if (apiConfidence > 50 || apiCategory == localCategory) {
-                return apiCategory
+            val localResult = localClassifier.classify(bodyJson)
+            val apiResult = apiClassifier.classify(bodyJson)
+            
+            if (apiResult.confidence > 50 || apiResult.primaryCategory == localResult.primaryCategory) {
+                return apiResult.primaryCategory
             } else {
-                l.info("Categories mismatch: Local: $localCategory, API: $apiCategory. Api confidence $apiConfidence")
+                l.info("Categories mismatch: Local: ${localResult.primaryCategory}, API: ${apiResult.primaryCategory}. Api confidence ${apiResult.confidence}")
                 return null
             }
         } catch (e: Exception) {

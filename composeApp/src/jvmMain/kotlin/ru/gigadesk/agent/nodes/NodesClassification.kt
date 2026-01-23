@@ -31,14 +31,18 @@ class NodesClassification(
     val node: Node<String, String> = Node("classify") { ctx: AgentContext<String> ->
         val categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>> =
             toolsSettings.applyFilter(toolsFactory.toolsByCategory)
-        val category = classify(ctx.input, ctx.history, categoryStates)
+        val (category, relevantCategories) = classify(ctx.input, ctx.history, categoryStates)
 
-        val functions: List<GigaRequest.Function> = when (category) {
-            null -> categoryStates.flatMap { it.value.values }.map { it.fn }
-            COMPLEX_TASK -> categoryStates.flatMap { it.value.values }.map { it.fn }
+        val functions: List<GigaRequest.Function> = when {
+            category == null -> categoryStates.flatMap { it.value.values }.map { it.fn }
+            category == COMPLEX_TASK -> categoryStates.flatMap { it.value.values }.map { it.fn }
             else -> categoryStates[category]!!.values.map { it.fn }
         }
-        ctx.map(activeTools = functions, isComplex = (category == COMPLEX_TASK)) { it }
+        ctx.map(
+            activeTools = functions, 
+            isComplex = (category == COMPLEX_TASK),
+            relevantCategories = relevantCategories
+        ) { it }
     }
 
     private suspend fun classify(
@@ -46,30 +50,43 @@ class NodesClassification(
         history: List<GigaRequest.Message>,
         categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>>,
         retriesCount: Int = 2
-    ): ToolCategory? {
+    ): Pair<ToolCategory?, List<ToolCategory>> {
         val body = buildClassifierBody(userText, history, categoryStates)
         val bodyJson = gigaJsonMapper.writeValueAsString(body)
         l.debug("Classifying user message: {}, \nbody: \n{}", userText, logObjectMapper.writeValueAsString(body))
         try {
-            val (localCategory, localConfidence) = localClassifier.classify(bodyJson)
+            val localResult = localClassifier.classify(bodyJson)
             // Explicit override: If local classifier detects COMPLEX_TASK (via keywords), trust it immediately.
-            // This prevents the LLM from misclassifying explicitly complex requests as simple domain tasks (e.g. MAIL).
-            if (localCategory == COMPLEX_TASK) {
+            if (localResult.primaryCategory == COMPLEX_TASK || localResult.categories.contains(COMPLEX_TASK)) {
                 l.info("Forced COMPLEX_TASK by local classifier")
-                return COMPLEX_TASK
+                return COMPLEX_TASK to localResult.categories
+            }
+            
+            // Heuristic: If we have multiple distinct categories (domains), treat as COMPLEX_TASK
+            if (localResult.categories.size > 1 && localResult.categories.all { it != COMPLEX_TASK }) {
+                 l.info("Multiple categories detected by local classifier: ${localResult.categories}. Promoting to COMPLEX_TASK.")
+                 return COMPLEX_TASK to localResult.categories
             }
 
-            if (retriesCount <= 0) return localCategory
-            val (apiCategory, apiConfidence) = apiClassifier.classify(bodyJson)
+            if (retriesCount <= 0) return localResult.primaryCategory to localResult.categories
             
-            // If API also returns COMPLEX_TASK, return it.
-            if (apiCategory == COMPLEX_TASK) return COMPLEX_TASK
+            val apiResult = apiClassifier.classify(bodyJson)
+            
+            // If API sees COMPLEX_TASK, or multiple categories, respect it
+            if (apiResult.primaryCategory == COMPLEX_TASK || apiResult.categories.contains(COMPLEX_TASK)) {
+                return COMPLEX_TASK to apiResult.categories
+            }
+            // If API returns multiple categories, it's implicitly complex
+             if (apiResult.categories.size > 1) {
+                 l.info("Multiple categories detected by API: ${apiResult.categories}. Promoting to COMPLEX_TASK.")
+                 return COMPLEX_TASK to apiResult.categories
+            }
 
-            if (apiConfidence > 50 || apiCategory == localCategory) {
-                return apiCategory
+            if (apiResult.confidence > 50 || apiResult.primaryCategory == localResult.primaryCategory) {
+                return apiResult.primaryCategory to apiResult.categories
             } else {
-                l.info("Categories mismatch: Local: $localCategory, API: $apiCategory. Api confidence $apiConfidence")
-                return null
+                l.info("Categories mismatch: Local: ${localResult.primaryCategory}, API: ${apiResult.primaryCategory}.")
+                return null to emptyList()
             }
         } catch (e: Exception) {
             l.error("Error in apiClassifier: {}", e.message)

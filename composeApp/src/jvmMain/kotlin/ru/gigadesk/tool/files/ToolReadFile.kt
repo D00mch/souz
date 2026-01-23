@@ -29,6 +29,13 @@ object ToolReadFile : ToolSetup<ToolReadFile.Input> {
         if (!file.exists() || file.isDirectory) {
             throw BadInputException("Invalid file path: $path")
         }
-        return file.readText()
+        // Limit to 20KB to avoid crashing LLM context
+        val limit = 20 * 1024
+        val content = file.readText()
+        return if (content.length > limit) {
+            content.take(limit) + "\n\n... [File content truncated. Total size: ${content.length} chars. Use specific tools to read sections.]"
+        } else {
+            content
+        }
     }
 }

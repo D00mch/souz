@@ -13,7 +13,7 @@ class ApiClassifier(
     private val l = LoggerFactory.getLogger(ApiClassifier::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
 
-    private val unknown = UserMessageClassifier.Reply(null, 0.0)
+    private val unknown = UserMessageClassifier.Reply(null, emptyList(), 0.0)
 
     override suspend fun classify(body: String): UserMessageClassifier.Reply {
         val req: GigaRequest.Chat = gigaJsonMapper.readValue(body)
@@ -28,17 +28,27 @@ class ApiClassifier(
                     ?: return unknown
                 // Strip angle brackets and other noise from LLM response
                 val cleanedContent = rawContent.replace(Regex("[<>]"), "").trim()
+                
+                // Parse format: CATEGORY1,CATEGORY2 CONFIDENCE
+                // E.g. "MAIL,CALENDAR 90" or just "MAIL 90"
                 val parts = cleanedContent.split(Regex("\\s+"))
                 if (parts.size < 2) return unknown
-                val cat = parts[0]
-                val confidence = parts[1]
-                l.info("Category: {}, {}", cat, confidence)
-                try {
-                    UserMessageClassifier.Reply(ToolCategory.valueOf(cat), confidence.toDoubleOrNull() ?: 0.0)
-                } catch (e: IllegalArgumentException) {
-                    l.warn("Unknown category: {}", cat)
-                    unknown
+                
+                val confidence = parts.last().toDoubleOrNull() ?: 0.0
+                val categoriesStr = cleanedContent.substringBeforeLast(" ").trim()
+                val categories = categoriesStr.split(",").mapNotNull { 
+                    try {
+                        ToolCategory.valueOf(it.trim())
+                    } catch (e: IllegalArgumentException) {
+                        l.warn("Unknown category: {}", it)
+                        null
+                    }
                 }
+                
+                val primary = categories.firstOrNull()
+                l.info("Categories: {}, Confidence: {}", categories, confidence)
+
+                UserMessageClassifier.Reply(primary, categories, confidence)
             }
         }
     }

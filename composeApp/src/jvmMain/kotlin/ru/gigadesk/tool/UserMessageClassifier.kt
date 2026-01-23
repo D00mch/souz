@@ -9,7 +9,8 @@ fun interface UserMessageClassifier {
     suspend fun classify(body: String): Reply
 
     data class Reply(
-        val category: ToolCategory?,
+        val primaryCategory: ToolCategory?,
+        val categories: List<ToolCategory> = emptyList(),
         val confidence: Double,
     )
 }
@@ -30,7 +31,7 @@ enum class ToolCategory {
 }
 
 object LocalRegexClassifier : UserMessageClassifier {
-    private val defaultUnknown = UserMessageClassifier.Reply(null, 0.0)
+    private val defaultUnknown = UserMessageClassifier.Reply(null, emptyList(), 0.0)
 
     override suspend fun classify(body: String): UserMessageClassifier.Reply {
         val chat: GigaRequest.Chat = try {
@@ -56,8 +57,10 @@ object LocalRegexClassifier : UserMessageClassifier {
 
         if (best.value == 0.0) return defaultUnknown
 
-        val second = sorted.getOrNull(1)?.value ?: 0.0
-        return if (best.value > second) UserMessageClassifier.Reply(best.key, 50.0) else defaultUnknown
+        // Return all categories with non-zero score as "relevant"
+        val relevant = sorted.filter { it.value > 0.0 }.map { it.key }
+        
+        return UserMessageClassifier.Reply(best.key, relevant, 50.0)
     }
 
     private data class WeightedRegex(val regex: Regex, val weight: Double)

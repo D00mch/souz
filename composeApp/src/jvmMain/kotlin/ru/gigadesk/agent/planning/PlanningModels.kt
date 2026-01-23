@@ -14,6 +14,7 @@ data class ExecutionPlan(
 data class PlanStep(
     val id: String,
     val toolName: String,
+    val description: String, // Human-readable description
     val arguments: Map<String, String> = emptyMap(),
     val status: StepStatus = StepStatus.PENDING,
     val result: String? = null,

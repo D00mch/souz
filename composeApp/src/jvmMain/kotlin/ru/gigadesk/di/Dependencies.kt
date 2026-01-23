@@ -80,7 +80,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             instance(),
         )
     }
-    bindSingleton { NodesPlanning(instance(), instance()) }
+    bindSingleton { NodesPlanning(instance(), instance(), instance()) }
     bindSingleton { ToolsFactory(instance(), instance(), instance()) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
 }

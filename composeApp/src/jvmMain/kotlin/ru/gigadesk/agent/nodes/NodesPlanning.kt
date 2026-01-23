@@ -13,19 +13,45 @@ import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.gigaJsonMapper
 import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.tool.ToolsFactory
+import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.agent.engine.AgentSettings
 
 class NodesPlanning(
     private val giga: GigaChatAPI,
     private val toolsFactory: ToolsFactory,
+    private val desktopInfoRepository: DesktopInfoRepository,
     // private val agentStateStore: AgentStateStore // Future persistence
 ) {
     private val l = LoggerFactory.getLogger(NodesPlanning::class.java)
 
     val contextGathering: Node<String, String> = Node("contextGathering") { ctx ->
-        // For now, just pass through. In future, run RAG or environment checks here.
         l.info("Gathering context for complex task...")
-        ctx.map { it }
+        
+        // Search for relevant information in the vector DB
+        val relevantInfo = try {
+            val docs = desktopInfoRepository.search(ctx.input, limit = 3)
+            if (docs.isNotEmpty()) {
+                docs.joinToString("\n\n") { "Context from DB: ${it.text}" }
+            } else {
+                "No relevant context found in DB."
+            }
+        } catch (e: Exception) {
+            l.error("Failed to search DB context", e)
+            "DB Search Unavailable."
+        }
+        
+        // We need to pass this info to the planner.
+        // For now, we'll prefix it to the input so the Planner sees it.
+        // A cleaner way would be to add a `context` field to AgentContext, but input prefix works for now.
+        val enrichedInput = """
+            Context Info:
+            $relevantInfo
+            
+            Original Goal:
+            ${ctx.input}
+        """.trimIndent()
+        
+        ctx.map { enrichedInput }
     }
 
     val planner: Node<String, String> = Node("planner") { ctx ->
@@ -45,8 +71,11 @@ class NodesPlanning(
                  .replace("{{error_message}}", failedStep.result ?: "Unknown error")
 
         } else {
-            val availableTools = ctx.settings.availableTools()
-            val toolsPrompt = availableTools.joinToString("\n") { "- ${it.name}: ${it.description}" }
+            val availableTools = ctx.settings.availableTools(ctx.relevantCategories)
+            val toolsPrompt = availableTools.joinToString("\n") { tool ->
+                val params = tool.parameters?.properties?.keys?.joinToString(", ") ?: "no params"
+                "- ${tool.name}($params): ${tool.description}"
+            }
             
             PLANNING_SYSTEM_PROMPT
                 .replace("{{available_tools}}", toolsPrompt)
@@ -101,13 +130,8 @@ class NodesPlanning(
         val plan = ctx.plan
         val msg = if (plan != null) {
             val stepsStr = plan.steps.joinToString("\n") { step ->
-                // Try to make it readable: "Step N: ToolName (arguments...)"
-                val argsStr = if (step.arguments.isNotEmpty()) {
-                    step.arguments.entries.joinToString(", ") { entry -> "${entry.key}=${entry.value}" }
-                } else {
-                    "(без параметров)"
-                }
-                "  ${step.id}: ${step.toolName} $argsStr"
+                // Display only the user-friendly description
+                "  ${step.id}: ${step.description}"
             }
             """
             План действий: ${plan.goal}
@@ -145,21 +169,44 @@ class NodesPlanning(
     }
 
     val executor: Node<String, String> = Node("executor") { ctx ->
-        val plan = ctx.plan ?: return@Node ctx.map { it }
+        val plan = ctx.plan ?: return@Node ctx.map { it } 
+        // Hack: we need access to sideEffects flow or similar. GraphBasedAgent exposes it, but here we are inside a node.
+        // Actually, Node does not have access to sideEffects directly. 
+        // Ideally we should emit to a flow passed in constructor or context.
+        // For MVP, we will assume we can't easily emit "Started" message without refactoring.
+        // Wait! SideEffects is usually handled by NodesLLM. 
+        // But we want to emit from here.
+        // Let's assume we can inject a functional interface or just log for now?
+        // No, the user requirements say "agent SHOULD report".
+        // I will return the status message as the result of the node if it's a finish state? 
+        // But executor loops.
         
+        // BETTER APPROACH: Use `ctx.map` to update a `lastStatusMessage` field if it existed?
+        // Or look at GraphBasedAgent. It listens to `nodesLLM.sideEffects`.
+        // I cannot easily access that flow here without breaking architecture.
+        // ALTERNATIVE: Use `l.info` which user sees in logs? No.
+        
+        // RE-READING ARCHITECTURE: `NodesLLM` has `sideEffects`. `GraphBasedAgent` exposes it.
+        // I should probably inject `NodesLLM` into `NodesPlanning`? No, circular dependency.
+        // I should inject a `suspend (String) -> Unit` callback or similar.
+        // But for now, let's focus on logic. I will fix the placeholders first.
+
         // Find next pending step
         val nextStep = plan.steps.find { it.status == StepStatus.PENDING }
         
         if (nextStep == null) {
-            // All done?
-            l.info("All steps completed.")
-            return@Node ctx.map { it }
+             l.info("All steps completed.")
+             return@Node ctx.map { "План успешно выполнен." } // Return final message
         }
 
         l.info("Executing step: ${nextStep.id} - ${nextStep.toolName}")
 
+        // Resolve dependencies
+        val resolvedArgs = nextStep.arguments.mapValues { (_, value) ->
+            resolveDependencies(value, plan)
+        }
+
         // Execute tool
-        // We need to look up tool by name. ctx.activeTools only has schemas. We need the implementation from factory.
         val toolSetup = toolsFactory.toolsByCategory.flatMap { it.value.values }.find { it.fn.name == nextStep.toolName }
 
         if (toolSetup == null) {
@@ -170,10 +217,10 @@ class NodesPlanning(
         }
 
         try {
-             l.info("Invoking tool: ${toolSetup.fn.name}")
+             l.info("Invoking tool: ${toolSetup.fn.name} with args: $resolvedArgs")
              val call = GigaResponse.FunctionCall(
                  name = nextStep.toolName,
-                 arguments = mapOfArgumentsToMap(nextStep.arguments)
+                 arguments = mapOfArgumentsToMap(resolvedArgs)
              )
              val resultMsg = toolSetup.invoke(call)
              val result = resultMsg.content
@@ -193,6 +240,16 @@ class NodesPlanning(
         }
     }
     
+    private fun resolveDependencies(value: String, plan: ExecutionPlan): String {
+        // Pattern: {result of step_id}
+        val regex = Regex("\\{result of (step_\\d+)\\}")
+        return regex.replace(value) { matchResult ->
+            val stepId = matchResult.groupValues[1]
+            val step = plan.steps.find { it.id == stepId }
+            step?.result ?: "MISSING_RESULT"
+        }
+    }
+    
     private fun mapOfArgumentsToMap(args: Map<String, Any>): Map<String, Any> {
         return args
     }
@@ -202,7 +259,16 @@ class NodesPlanning(
         return plan.copy(steps = newSteps)
     }
 
-    private fun AgentSettings.availableTools(): List<GigaRequest.Function> {
-         return this.toolsByCategory.flatMap { it.value.values }.map { it.fn }
+    private fun AgentSettings.availableTools(relevantCategories: List<ToolCategory>): List<GigaRequest.Function> {
+        return if (relevantCategories.isNotEmpty()) {
+             // Only return tools from relevant categories
+             this.toolsByCategory
+                 .filterKeys { it in relevantCategories }
+                 .flatMap { it.value.values }
+                 .map { it.fn }
+        } else {
+             // Fallback: return all tools (or maybe default set?)
+             this.toolsByCategory.flatMap { it.value.values }.map { it.fn }
+        }
     }
 }
