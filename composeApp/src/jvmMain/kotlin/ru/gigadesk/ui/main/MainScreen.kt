@@ -120,114 +120,117 @@ fun MainScreenContent(
             modifier = Modifier.fillMaxSize(),
             isWindowFocused = isFocused
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            HexagonNeuralBackground(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize()) {
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                        .zIndex(2f)
-                ) {
-                    Text(
-                        text = "gigadesk",
-                        modifier = Modifier.align(Alignment.Center),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            color = Color.White.copy(alpha = 0.2f),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-
-                    Row(
+                    Box(
                         modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 8.dp),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .zIndex(2f)
                     ) {
-                        val iconTint = Color.White.copy(0.8f)
+                        Text(
+                            text = "gigadesk",
+                            modifier = Modifier.align(Alignment.Center),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White.copy(alpha = 0.2f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
 
-                        if (state.lastText != null) {
-                            MinimalGlassButton(onClick = onShowLastText) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 8.dp),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val iconTint = Color.White.copy(0.8f)
+
+                            if (state.lastText != null) {
+                                MinimalGlassButton(onClick = onShowLastText) {
+                                    Icon(
+                                        Icons.Rounded.SkipPrevious,
+                                        null,
+                                        tint = iconTint,
+                                        modifier = Modifier.size(TopIconSize)
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            MinimalGlassButton(onClick = onStopSpeech) {
                                 Icon(
-                                    Icons.Rounded.SkipPrevious,
+                                    Icons.AutoMirrored.Rounded.VolumeOff,
                                     null,
                                     tint = iconTint,
                                     modifier = Modifier.size(TopIconSize)
                                 )
                             }
                             Spacer(Modifier.width(8.dp))
-                        }
-                        MinimalGlassButton(onClick = onStopSpeech) {
-                            Icon(
-                                Icons.AutoMirrored.Rounded.VolumeOff,
-                                null,
-                                tint = iconTint,
-                                modifier = Modifier.size(TopIconSize)
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        MinimalGlassButton(onClick = onOpenSettings) {
-                            Icon(Icons.Rounded.Settings, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        MinimalGlassButton(onClick = onClear) {
-                            Icon(Icons.Rounded.Close, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
+                            MinimalGlassButton(onClick = onOpenSettings) {
+                                Icon(Icons.Rounded.Settings, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            MinimalGlassButton(onClick = onClear) {
+                                Icon(Icons.Rounded.Close, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
+                            }
                         }
                     }
-                }
 
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
 
-                    val baseFontSize = 18.sp
+                        val baseFontSize = 18.sp
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(top = 5.dp, start = 24.dp, end = 24.dp),
-                        contentAlignment = Alignment.TopStart
-                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(top = 5.dp, start = 24.dp, end = 24.dp),
+                            contentAlignment = Alignment.TopStart
+                        ) {
 
-                        MarkdownViewer(
-                            text = textContent,
-                            baseFontSize = baseFontSize,
-                            onShowSnack = onShowSnack,
-                            modifier = Modifier.alpha(if (state.isProcessing) 0.5f else 1f)
-                        )
-                    }
-                }
-
-                TooltipArea(
-                    tooltip = {
-                        Text(
-                            text = "Нажмите и удерживайте\nправый Alt для записи",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    },
-                    delayMillis = 900,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 20.dp, top = 5.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (state.isProcessing) {
-                            DashedSpinningWheel(
-                                color = Color.White.copy(alpha = 0.8f),
-                                modifier = Modifier.size(80.dp)
+                            MarkdownViewer(
+                                text = textContent,
+                                baseFontSize = baseFontSize,
+                                onShowSnack = onShowSnack,
+                                modifier = Modifier.alpha(if (state.isProcessing) 0.5f else 1f)
                             )
                         }
-                        LiquidOrb(
-                            isActive = state.isListening,
-                            onClick = onToggleListening
-                        )
+                    }
+
+                    TooltipArea(
+                        tooltip = {
+                            Text(
+                                text = "Нажмите и удерживайте\nправый Alt для записи",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        },
+                        delayMillis = 900,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 20.dp, top = 5.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (state.isProcessing) {
+                                DashedSpinningWheel(
+                                    color = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(80.dp)
+                                )
+                            }
+                            LiquidOrb(
+                                isActive = state.isListening,
+                                onClick = onToggleListening
+                            )
+                        }
                     }
                 }
             }
+
         }
     }
 }
