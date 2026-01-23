@@ -36,7 +36,8 @@ private data class HexEdge(
     val id: String,
     val start: Offset,
     val end: Offset,
-    var pulse: Float = 0f // 0f..1f
+    var pulse: Float = 0f, // 0f..1f
+    var cooldown: Int = 0
 )
 
 private class HexGridSystem {
@@ -50,7 +51,7 @@ private class HexGridSystem {
 @Composable
 fun HexagonNeuralBackground(
     modifier: Modifier = Modifier,
-    hexSize: Float = 40f,
+    hexSize: Float = 90f, // +50% size
     gridColor: Color = Color.White.copy(alpha = 0.15f),
     pulseColor: Color = Color(0xFF00E5FF),
     content: @Composable () -> Unit
@@ -59,13 +60,14 @@ fun HexagonNeuralBackground(
     var regionSize by remember { mutableStateOf(Size.Zero) }
     
     val system = remember { HexGridSystem() }
-    val spotlightRadius = 90f 
+    val spotlightRadius = 52f // -30% radius
     var frameTick by remember { mutableStateOf(0L) }
+    var updateCounter by remember { mutableStateOf(0) }
 
     val hasMouse = mousePosition != null && regionSize.width > 0
     val globalAlpha by animateFloatAsState(
         targetValue = if (hasMouse) 1f else 0f,
-        animationSpec = tween(500)
+        animationSpec = tween(50) // "Appear immediately" - very fast fade
     )
 
 
@@ -155,11 +157,15 @@ fun HexagonNeuralBackground(
                                      ((size.height - edgeCenter.y) / padding).coerceIn(0f, 1f)
                         val boundaryAlpha = (xAlpha * yAlpha).coerceIn(0f, 1f)
 
-                        if (dist < spotlightRadius * 1.5f && boundaryAlpha > 0.01f) {
-                             val radiusAlpha = ((1f - dist / spotlightRadius).coerceIn(0f, 1f))
+                        if (boundaryAlpha > 0.01f) {
+                             // Allow pulses to go much further than the static spotlight
+                             val pulseVisibleRadius = spotlightRadius * 2.5f
+                             val radiusAlpha = ((1f - dist / pulseVisibleRadius).coerceIn(0f, 1f))
+                             
                              if (radiusAlpha > 0f) {
                                  drawLine(
-                                     color = pulseColor.copy(alpha = edge.pulse * globalAlpha * radiusAlpha * boundaryAlpha),
+                                     // Reduced opacity by 30% -> max 0.7f
+                                     color = pulseColor.copy(alpha = edge.pulse * globalAlpha * radiusAlpha * boundaryAlpha * 0.7f),
                                      start = edge.start,
                                      end = edge.end,
                                      strokeWidth = strokeWidth,
@@ -180,7 +186,11 @@ fun HexagonNeuralBackground(
             withFrameNanos { time ->
                 frameTick = time
                 if (globalAlpha > 0.01f && system.edges.isNotEmpty()) {
-                    updatePulses(system, mousePosition, spotlightRadius)
+                    // Update only every 2nd frame to slow down movement 50%
+                    updateCounter++
+                    if (updateCounter % 2 == 0) {
+                        updatePulses(system, mousePosition, spotlightRadius)
+                    }
                 }
             }
         }
@@ -259,43 +269,78 @@ private fun generateHoneycombGrid(width: Float, height: Float, r: Float): Pair<L
 
 
 private fun updatePulses(system: HexGridSystem, mousePos: Offset?, radius: Float) {
-    // Slower decay
-    val decay = 0.02f
+    // Slower decay so lines persist and "travel" visibly
+    val decay = 0.01f 
     
-    // Propagation chance
-    val propagateChance = 0.1f
+    // Very high propagation to ensure they "diverge along the faces" effectively
+    val propagateChance = 0.4f
     
     val radiusSq = radius * radius
+    val activationCooldown = 20 // Frames before an edge can be reused
     
     system.edges.forEach { edge ->
+        if (edge.cooldown > 0) edge.cooldown--
+        
         if (edge.pulse > 0f) {
-            // Propagate
-            if (edge.pulse > 0.8f && Random.nextFloat() < propagateChance) {
-                 val neighbor = system.adjacency[edge.id]?.randomOrNull()
-                 if (neighbor != null && neighbor.pulse < 0.1f) {
-                     neighbor.pulse = 1f
-                 }
+            // Aggressive propagation
+            if (edge.pulse > 0.5f) { // Spread earlier
+                // Chance to fork behavior
+                val forkChance = 0.15f // Reduced 50% for fewer lines
+                val shouldFork = Random.nextFloat() < forkChance
+                val count = if (shouldFork) 2 else 1
+                
+                if (Random.nextFloat() < propagateChance) {
+                     val neighbors = system.adjacency[edge.id]
+                     if (!neighbors.isNullOrEmpty()) {
+                         // Pick distinct neighbors that are NOT cooling down
+                         val targets = neighbors
+                             .filter { it.cooldown == 0 }
+                             .shuffled()
+                             .take(count)
+                         
+                         targets.forEach { target ->
+                             // Ignite neighbor if not already bright
+                             if (target.pulse < 0.1f) {
+                                 target.pulse = 1f
+                                 target.cooldown = activationCooldown
+                             }
+                         }
+                     }
+                }
             }
             edge.pulse = (edge.pulse - decay).coerceAtLeast(0f)
         }
     }
     
-    // Ignite from mouse
+    // Chaotic ignition (Bursts)
     if (mousePos != null) {
-        system.edges.forEach { edge ->
-             val midX = (edge.start.x + edge.end.x) / 2
-             val midY = (edge.start.y + edge.end.y) / 2
-             val mid = Offset(midX, midY)
-             val distSq = (mid - mousePos).getDistanceSquared()
-             
-             if (distSq < radiusSq) {
-                 if (edge.pulse < 0.1f && Random.nextFloat() < 0.03f) {
-                     edge.pulse = 1f
+        val strikeProbability = 0.07f // Reduced 50% for fewer lines
+        
+        if (Random.nextFloat() < strikeProbability) {
+             // Try to find a start point near mouse that is ready
+             // We'll try a few candidates
+             var ignited = false
+             for (i in 0..10) {
+                 if (system.edges.isNotEmpty()) {
+                     val candidate = system.edges.random()
+                     if (candidate.cooldown > 0) continue
+                     
+                     val midX = (candidate.start.x + candidate.end.x) / 2
+                     val midY = (candidate.start.y + candidate.end.y) / 2
+                     val distSq = (midX - mousePos.x) * (midX - mousePos.x) + (midY - mousePos.y) * (midY - mousePos.y)
+                     
+                     if (distSq < radiusSq) {
+                         candidate.pulse = 1f
+                         candidate.cooldown = activationCooldown
+                         ignited = true
+                         break 
+                     }
                  }
              }
         }
     }
 }
+
 
 private fun buildAdjacency(system: HexGridSystem) {
     if (system.adjacency.isNotEmpty()) return
