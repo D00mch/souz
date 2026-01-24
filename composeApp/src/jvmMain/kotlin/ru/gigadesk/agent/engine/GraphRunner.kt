@@ -33,7 +33,7 @@ internal class GraphRunner(
                 val frame = queue.removeFirst()
                 val outCtx = executeWithRetry(frame.node, frame.ctx, runtime)
                 val stepInfo = StepInfo(currentGraphIndex = frame.depth, index = runtime.counter.get())
-                runtime.onStep?.invoke(stepInfo, frame.node, outCtx)
+                runtime.onStep?.invoke(stepInfo, frame.node, frame.ctx, outCtx)
                 lastCtx = outCtx
 
                 if (stopPredicate?.invoke(frame.node, outCtx) == true) return outCtx
@@ -136,7 +136,7 @@ suspend fun main() {
         }
         userOutputNode.edgeTo(userInputNode)
     }
-    graph.start(seed, onStep = { step, n, c ->
-        println("step #${step.index} (depth ${step.currentGraphIndex}): node: ${n.name}, ctx: $c")
+    graph.start(seed, onStep = { step, n, from, to ->
+        println("step #${step.index} (depth ${step.currentGraphIndex}): node: ${n.name}, ctx: $to")
     })
 }

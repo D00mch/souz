@@ -27,13 +27,13 @@ data class StepInfo(
 class GraphRuntime private constructor(
     val retryPolicy: RetryPolicy,
     val maxSteps: Int,
-    val onStep: ((step: StepInfo, node: Node<Any?, Any?>, ctx: AgentContext<Any?>) -> Unit)? = null,
+    val onStep: ((step: StepInfo, node: Node<Any?, Any?>, from: AgentContext<Any?>, to: AgentContext<Any?>) -> Unit)? = null,
     val counter: AtomicInteger
 ) {
     constructor(
         retryPolicy: RetryPolicy,
         maxSteps: Int,
-        onStep: ((step: StepInfo, node: Node<Any?, Any?>, ctx: AgentContext<Any?>) -> Unit)? = null,
+        onStep: ((step: StepInfo, node: Node<Any?, Any?>, from: AgentContext<Any?>, to: AgentContext<Any?>) -> Unit)? = null,
     ): this(retryPolicy, maxSteps, onStep, counter = AtomicInteger())
 }
 

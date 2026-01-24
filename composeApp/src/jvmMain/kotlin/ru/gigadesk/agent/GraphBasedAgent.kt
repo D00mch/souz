@@ -17,6 +17,7 @@ import ru.gigadesk.agent.engine.*
 import ru.gigadesk.agent.node.NodesCommon
 import ru.gigadesk.agent.node.NodesLLM
 import ru.gigadesk.agent.nodes.NodesClassification
+import ru.gigadesk.agent.session.GraphSessionService
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.giga.*
@@ -37,6 +38,7 @@ class GraphBasedAgent(
     private val nodesClassify: NodesClassification by di.instance()
     private val nodeClassify = nodesClassify.node
     private val settingsProvider: SettingsProvider by di.instance()
+    private val sessionService: GraphSessionService by di.instance()
 
     // Make sure summarization only happens after all tool requests from LLM are answered
     private val settings = AtomicReference(
@@ -96,16 +98,28 @@ class GraphBasedAgent(
     suspend fun execute(input: String): String {
         cancelActiveJob()
         val ctx = currentContext.value.copy(input = input)
+        
+        sessionService.startTask(input)
+        
         val result: Deferred<AgentContext<String>> = coroutineScope {
             async {
-                buildGraph().start(ctx) { step, node, ctx ->
-                    val prettyInput = logObjectMapper.writeValueAsString(ctx.input)
+                buildGraph().start(ctx) { step, node, from, to ->
+                    val prettyInput = logObjectMapper.writeValueAsString(from.input)
                     l.debug { "Step: ${step.index}, node: ${node.name}, input: $prettyInput" }
+                    
+                    sessionService.onStep(step, node, from, to)
                 }
             }
         }
         runningJob.store(result)
         val newContext = result.await()
+
+        try {
+            sessionService.finishTask()
+        } catch (e: Exception) {
+            l.warn("sessionService fall", e)
+        }
+
         _ctx.emit(newContext)
         return newContext.input
     }
