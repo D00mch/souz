@@ -113,9 +113,13 @@ class GraphBasedAgent(
         }
         runningJob.store(result)
         val newContext = result.await()
-        
-        sessionService.finishTask()
-        
+
+        try {
+            sessionService.finishTask()
+        } catch (e: Exception) {
+            l.warn("sessionService fall", e)
+        }
+
         _ctx.emit(newContext)
         return newContext.input
     }

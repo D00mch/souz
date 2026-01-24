@@ -1,7 +1,8 @@
 package ru.gigadesk.agent.session
 
 /**
- * Запись одного шага выполнения графа
+ * One step (node to node transition) in a [ru.gigadesk.agent.engine.Graph]
+ * @property data steps data in Json
  */
 data class GraphStepRecord(
     val stepIndex: Int,
@@ -9,11 +10,11 @@ data class GraphStepRecord(
     val timestamp: Long,
     val inputSummary: String,
     val outputSummary: String? = null,
-    val data: String // Полные данные шага (JSON)
+    val data: String
 )
 
 /**
- * Сессия работы графового агента
+ * [ru.gigadesk.agent.engine.Graph] execution session.
  */
 data class GraphSession(
     val id: String,

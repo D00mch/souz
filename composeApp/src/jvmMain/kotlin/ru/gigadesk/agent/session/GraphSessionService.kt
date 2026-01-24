@@ -9,13 +9,15 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
+/**
+ * Thread safe, but only one task at a time.
+ */
 class GraphSessionService(
-    private val repository: GraphSessionRepository,
-    private val logObjectMapper: ObjectMapper
+    private val repository: GraphSessionRepository, private val logObjectMapper: ObjectMapper
 ) {
     private val currentSessionId = AtomicReference<String?>(null)
     private val startTime = AtomicLong(0)
-    private val initialInput = AtomicReference<String>("")
+    private val initialInput = AtomicReference("")
     private val steps = Collections.synchronizedList(mutableListOf<GraphStepRecord>())
 
     fun startTask(input: String) {
@@ -46,21 +48,23 @@ class GraphSessionService(
             "{}"
         }
 
-        steps.add(GraphStepRecord(
-            stepIndex = step.index,
-            nodeName = node.name,
-            timestamp = System.currentTimeMillis(),
-            inputSummary = prettyInput.take(500),
-            outputSummary = prettyOutput.take(500),
-            data = debugData
-        ))
+        steps.add(
+            GraphStepRecord(
+                stepIndex = step.index,
+                nodeName = node.name,
+                timestamp = System.currentTimeMillis(),
+                inputSummary = prettyInput.take(500),
+                outputSummary = prettyOutput.take(500),
+                data = debugData
+            )
+        )
     }
 
     fun finishTask() {
         val sessionId = currentSessionId.getAndSet(null) ?: return
 
         val stepsSnapshot = ArrayList(steps)
-        
+
         val session = GraphSession(
             id = sessionId,
             startTime = startTime.get(),

@@ -1,29 +1,21 @@
 package ru.gigadesk.agent.session
 
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
+import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.tool.files.FilesToolUtil
 import java.io.File
 
 /**
- * Репозиторий для сохранения и загрузки сессий графа на файловую систему.
- * Сессии хранятся в ~/.abledo/sessions/ как JSON файлы.
+ * Stores and loads graph sessions
+ * TODO: rewrite with SQLite
  */
-
-//TODO:("Переделать хранение сессий на SQLite")
-
 class GraphSessionRepository {
     private val l = LoggerFactory.getLogger(GraphSessionRepository::class.java)
-    private val objectMapper = jacksonObjectMapper()
-    
     private val sessionsDir: File by lazy {
-        File(FilesToolUtil.homeDirectory, ".abledo/sessions").apply { mkdirs() }
+        File(FilesToolUtil.homeDirectory, "${FilesToolUtil.homeStr}/.local/state/gigadesk/").apply { mkdirs() }
     }
 
-    /**
-     * Сохраняет сессию в файл
-     */
     fun save(session: GraphSession) {
         try {
             val file = File(sessionsDir, "${session.id}.json")
@@ -34,9 +26,7 @@ class GraphSessionRepository {
         }
     }
 
-    /**
-     * Загружает все сессии, отсортированные по времени начала (новые первые)
-     */
+    /** Fetches sessions. New first. */
     fun loadAll(): List<GraphSession> {
         return try {
             sessionsDir.listFiles { _, name -> name.endsWith(".json") }
@@ -51,9 +41,6 @@ class GraphSessionRepository {
         }
     }
 
-    /**
-     * Загружает сессию по ID
-     */
     fun loadById(sessionId: String): GraphSession? {
         return try {
             val file = File(sessionsDir, "$sessionId.json")
@@ -66,9 +53,6 @@ class GraphSessionRepository {
         }
     }
 
-    /**
-     * Удаляет сессию по ID
-     */
     fun delete(sessionId: String): Boolean {
         return try {
             File(sessionsDir, "$sessionId.json").delete()
@@ -78,9 +62,7 @@ class GraphSessionRepository {
         }
     }
 
-    /**
-     * Возвращает количество сохранённых сессий
-     */
+    /** @return Stored sessions count */
     fun count(): Int {
         return sessionsDir.listFiles { _, name -> name.endsWith(".json") }?.size ?: 0
     }
