@@ -148,6 +148,14 @@ class SettingsViewModel(
                 setState { copy(defaultCalendar = event.name) }
             }
             FetchCalendars -> fetchCalendars()
+            
+            // Graph Logs
+            OpenGraphSessions -> setState { copy(currentScreen = SettingsSubScreen.SESSIONS) }
+            is OpenGraphVisualization -> setState { 
+                copy(currentScreen = SettingsSubScreen.VISUALIZATION, selectedSessionId = event.sessionId) 
+            }
+            BackToSettings -> setState { copy(currentScreen = SettingsSubScreen.MAIN) }
+            BackToSessions -> setState { copy(currentScreen = SettingsSubScreen.SESSIONS, selectedSessionId = null) }
         }
     }
 

@@ -24,12 +24,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.debounce
 import org.kodein.di.compose.localDI
+import org.kodein.di.instance
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
-import ru.gigadesk.giga.GigaResponse
+import ru.gigadesk.agent.session.GraphSessionRepository
 import ru.gigadesk.giga.GigaModel
+import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
+import ru.gigadesk.ui.graphlog.GraphSessionsScreen
+import ru.gigadesk.ui.graphlog.GraphVisualizationScreen
 import ru.gigadesk.ui.main.RealLiquidGlassCard
 
 @Composable
@@ -41,6 +45,7 @@ fun SettingsScreen(
     val di = localDI()
     val viewModel = viewModel { SettingsViewModel(di) }
     val state = viewModel.uiState.collectAsState().value
+    val sessionRepository: GraphSessionRepository by di.instance()
 
     LaunchedEffect(viewModel) {
         @Suppress("OPT_IN_USAGE")
@@ -51,28 +56,56 @@ fun SettingsScreen(
             }
         }
     }
-
-    SettingsScreen(
-        state,
-        onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
-        onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
-        onVoiceSpeedInput = { speed -> viewModel.send(SettingsEvent.InputVoiceSpeed(speed)) },
-        onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
-        onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
-        onUseGrpcDelegateChange = { enabled -> viewModel.send(SettingsEvent.InputUseGrpcDelegate(enabled)) },
-        onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
-        onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
-        onTemperatureInput = { value -> viewModel.send(SettingsEvent.InputTemperature(value)) },
-        onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
-        onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
-        onSystemPromptChange = { prompt -> viewModel.send(SettingsEvent.InputSystemPrompt(prompt)) },
-        onSystemPromptReset = { viewModel.send(SettingsEvent.ResetSystemPrompt) },
-        onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
-        onRefreshBalance = { viewModel.send(SettingsEvent.RefreshBalance) },
-        onOpenTools = onOpenTools,
-        onClose = onClose,
-        onShowSnack = onShowSnack,
-    )
+    
+    when (state.currentScreen) {
+        SettingsSubScreen.MAIN -> {
+            SettingsScreen(
+                state,
+                onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
+                onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
+                onVoiceSpeedInput = { speed -> viewModel.send(SettingsEvent.InputVoiceSpeed(speed)) },
+                onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
+                onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
+                onUseGrpcDelegateChange = { enabled -> viewModel.send(SettingsEvent.InputUseGrpcDelegate(enabled)) },
+                onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
+                onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
+                onTemperatureInput = { value -> viewModel.send(SettingsEvent.InputTemperature(value)) },
+                onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
+                onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
+                onSystemPromptChange = { prompt -> viewModel.send(SettingsEvent.InputSystemPrompt(prompt)) },
+                onSystemPromptReset = { viewModel.send(SettingsEvent.ResetSystemPrompt) },
+                onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
+                onRefreshBalance = { viewModel.send(SettingsEvent.RefreshBalance) },
+                onOpenTools = onOpenTools,
+                onClose = onClose,
+                onShowSnack = onShowSnack,
+                onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) }
+            )
+        }
+        SettingsSubScreen.SESSIONS -> {
+            GraphSessionsScreen(
+                sessionRepository = sessionRepository,
+                onClose = { viewModel.send(SettingsEvent.BackToSettings) },
+                onSelectSession = { session -> viewModel.send(SettingsEvent.OpenGraphVisualization(session.id)) }
+            )
+        }
+        SettingsSubScreen.VISUALIZATION -> {
+            val session = remember(state.selectedSessionId) {
+                state.selectedSessionId?.let { sessionRepository.loadById(it) }
+            }
+            if (session != null) {
+                GraphVisualizationScreen(
+                    session = session,
+                    onBack = { viewModel.send(SettingsEvent.BackToSessions) }
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Сессия не найдена", color = Color.White)
+                    Button(onClick = { viewModel.send(SettingsEvent.BackToSessions) }) { Text("Назад") }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -96,6 +129,7 @@ fun SettingsScreen(
     onOpenTools: () -> Unit,
     onClose: () -> Unit,
     onShowSnack: (String) -> Unit = {},
+    onOpenGraphSessions: () -> Unit = {},
 ) {
     // Получаем состояние фокуса окна
     val windowInfo = LocalWindowInfo.current
@@ -309,6 +343,14 @@ fun SettingsScreen(
                     error = state.balanceError,
                     onRefreshBalance = onRefreshBalance,
                 )
+
+                Button(onClick = onOpenGraphSessions, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "История сессий графа",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.glassColors.textPrimary,
+                    )
+                }
 
                 LogsView(state, onSupportEmailInput, onSendLogs, clipboardManager, onShowSnack)
             }

@@ -8,6 +8,11 @@ import ru.gigadesk.ui.VMEvent
 import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
 
+
+enum class SettingsSubScreen {
+    MAIN, SESSIONS, VISUALIZATION
+}
+
 data class SettingsState(
     val gigaChatKey: String = "",
     val saluteSpeechKey: String = "",
@@ -31,6 +36,10 @@ data class SettingsState(
     val isLoadingCalendars: Boolean = false,
     val voiceSpeed: Int = ToolSoundConfig.DEFAULT_SPEED,
     val voiceSpeedInput: String = ToolSoundConfig.DEFAULT_SPEED.toString(),
+    
+    // Graph Logs
+    val currentScreen: SettingsSubScreen = SettingsSubScreen.MAIN,
+    val selectedSessionId: String? = null,
 ): VMState
 
 sealed interface SettingsEvent : VMEvent {
@@ -51,6 +60,12 @@ sealed interface SettingsEvent : VMEvent {
     object RefreshBalance: SettingsEvent
     data class SelectDefaultCalendar(val name: String?) : SettingsEvent
     object FetchCalendars : SettingsEvent
+    
+    // Graph Logs
+    object OpenGraphSessions : SettingsEvent
+    data class OpenGraphVisualization(val sessionId: String) : SettingsEvent
+    object BackToSettings : SettingsEvent
+    object BackToSessions : SettingsEvent
 }
 
 sealed interface SettingsEffect : VMSideEffect {
