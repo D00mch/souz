@@ -17,14 +17,11 @@ import ru.gigadesk.agent.engine.*
 import ru.gigadesk.agent.node.NodesCommon
 import ru.gigadesk.agent.node.NodesLLM
 import ru.gigadesk.agent.nodes.NodesClassification
-import ru.gigadesk.agent.session.GraphSession
-import ru.gigadesk.agent.session.GraphSessionRepository
-import ru.gigadesk.agent.session.GraphStepRecord
+import ru.gigadesk.agent.session.GraphSessionService
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.giga.*
 import ru.gigadesk.tool.*
-import java.util.UUID
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
@@ -41,7 +38,7 @@ class GraphBasedAgent(
     private val nodesClassify: NodesClassification by di.instance()
     private val nodeClassify = nodesClassify.node
     private val settingsProvider: SettingsProvider by di.instance()
-    private val sessionRepository: GraphSessionRepository by di.instance()
+    private val sessionService: GraphSessionService by di.instance()
 
     // Make sure summarization only happens after all tool requests from LLM are answered
     private val settings = AtomicReference(
@@ -102,39 +99,22 @@ class GraphBasedAgent(
         cancelActiveJob()
         val ctx = currentContext.value.copy(input = input)
         
-        // Создаём новую сессию для записи
-        val sessionId = UUID.randomUUID().toString()
-        val startTime = System.currentTimeMillis()
-        val steps = mutableListOf<GraphStepRecord>()
+        sessionService.startTask(input)
         
         val result: Deferred<AgentContext<String>> = coroutineScope {
             async {
-                buildGraph().start(ctx) { step, node, ctx ->
-                    val prettyInput = logObjectMapper.writeValueAsString(ctx.input)
+                buildGraph().start(ctx) { step, node, from, to ->
+                    val prettyInput = logObjectMapper.writeValueAsString(from.input)
                     l.debug { "Step: ${step.index}, node: ${node.name}, input: $prettyInput" }
                     
-                    // Записываем шаг в сессию
-                    steps.add(GraphStepRecord(
-                        stepIndex = step.index,
-                        nodeName = node.name,
-                        timestamp = System.currentTimeMillis(),
-                        inputSummary = prettyInput.take(500),
-                    ))
+                    sessionService.onStep(step, node, from, to)
                 }
             }
         }
         runningJob.store(result)
         val newContext = result.await()
         
-        // Сохраняем сессию
-        val session = GraphSession(
-            id = sessionId,
-            startTime = startTime,
-            endTime = System.currentTimeMillis(),
-            initialInput = input,
-            steps = steps,
-        )
-        sessionRepository.save(session)
+        sessionService.finishTask()
         
         _ctx.emit(newContext)
         return newContext.input

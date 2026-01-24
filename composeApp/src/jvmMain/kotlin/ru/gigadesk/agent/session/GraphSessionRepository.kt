@@ -9,6 +9,8 @@ import java.io.File
 /**
  * Репозиторий для сохранения и загрузки сессий графа на файловую систему.
  * Сессии хранятся в ~/.abledo/sessions/ как JSON файлы.
+ * 
+ * NOTE: Используем файловую систему, так как размер сессии может превышать лимит Preferences (8KB).
  */
 class GraphSessionRepository {
     private val l = LoggerFactory.getLogger(GraphSessionRepository::class.java)

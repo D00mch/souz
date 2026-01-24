@@ -31,7 +31,7 @@ class Graph<IN, OUT> internal constructor(
     suspend fun start(
         seed: AgentContext<IN>,
         maxSteps: Int = 1000,
-        onStep: ((step: StepInfo, node: Node<Any?, Any?>, ctx: AgentContext<Any?>) -> Unit)? = null,
+        onStep: ((step: StepInfo, node: Node<Any?, Any?>, from: AgentContext<Any?>, to: AgentContext<Any?>) -> Unit)? = null,
     ): AgentContext<OUT> {
         val runtime = GraphRuntime(
             retryPolicy = retryPolicy,
