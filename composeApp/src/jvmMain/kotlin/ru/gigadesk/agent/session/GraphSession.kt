@@ -9,7 +9,7 @@ data class GraphStepRecord(
     val timestamp: Long,
     val inputSummary: String,
     val outputSummary: String? = null,
-    val data: String? = null, // Полные данные шага (JSON)
+    val data: String // Полные данные шага (JSON)
 )
 
 /**

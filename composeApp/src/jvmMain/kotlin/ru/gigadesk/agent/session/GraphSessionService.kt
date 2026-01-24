@@ -4,26 +4,29 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.agent.engine.Node
 import ru.gigadesk.agent.engine.StepInfo
+import java.util.Collections
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 class GraphSessionService(
     private val repository: GraphSessionRepository,
     private val logObjectMapper: ObjectMapper
 ) {
-    private var currentSessionId: String? = null
-    private var startTime: Long = 0
-    private var initialInput: String = ""
-    private val steps = mutableListOf<GraphStepRecord>()
+    private val currentSessionId = AtomicReference<String?>(null)
+    private val startTime = AtomicLong(0)
+    private val initialInput = AtomicReference<String>("")
+    private val steps = Collections.synchronizedList(mutableListOf<GraphStepRecord>())
 
     fun startTask(input: String) {
-        currentSessionId = UUID.randomUUID().toString()
-        startTime = System.currentTimeMillis()
-        initialInput = input
+        currentSessionId.set(UUID.randomUUID().toString())
+        startTime.set(System.currentTimeMillis())
+        initialInput.set(input)
         steps.clear()
     }
 
     fun onStep(step: StepInfo, node: Node<*, *>, from: AgentContext<*>, to: AgentContext<*>) {
-        if (currentSessionId == null) return
+        if (currentSessionId.get() == null) return
 
         val prettyInput = try {
             logObjectMapper.writeValueAsString(from.input)
@@ -32,12 +35,11 @@ class GraphSessionService(
         }
 
         val prettyOutput = try {
-            logObjectMapper.writeValueAsString(to.input) // Context input is usually the "value" of the context
+            logObjectMapper.writeValueAsString(to.input)
         } catch (e: Exception) {
             "Error serializing output: ${e.message}"
         }
-        
-        // Full data capture for debug
+
         val debugData = try {
             logObjectMapper.writeValueAsString(mapOf("in" to from.input, "out" to to.input))
         } catch (e: Exception) {
@@ -55,16 +57,17 @@ class GraphSessionService(
     }
 
     fun finishTask() {
-        val sessionId = currentSessionId ?: return
+        val sessionId = currentSessionId.getAndSet(null) ?: return
+
+        val stepsSnapshot = ArrayList(steps)
         
         val session = GraphSession(
             id = sessionId,
-            startTime = startTime,
+            startTime = startTime.get(),
             endTime = System.currentTimeMillis(),
-            initialInput = initialInput,
-            steps = steps.toList()
+            initialInput = initialInput.get(),
+            steps = stepsSnapshot
         )
         repository.save(session)
-        currentSessionId = null
     }
 }

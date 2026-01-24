@@ -153,10 +153,10 @@ private fun SessionCard(
             )
             
             // Node path preview
-            val nodePath = session.steps.map { 
+            val nodePath = session.steps.joinToString(" → ") {
                 it.nodeName.substringAfter("Node ").substringBefore(";").trim()
-            }.joinToString(" → ")
-            
+            }
+
             Text(
                 text = nodePath,
                 style = MaterialTheme.typography.bodySmall,
