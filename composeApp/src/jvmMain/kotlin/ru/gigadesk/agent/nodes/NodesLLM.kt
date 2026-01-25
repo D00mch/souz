@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalAtomicApi::class)
 
-package ru.gigadesk.agent.node
+package ru.gigadesk.agent.nodes
 
 import io.ktor.util.logging.*
 import kotlinx.coroutines.Dispatchers
@@ -11,75 +11,49 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.agent.engine.Node
-import ru.gigadesk.agent.engine.graph
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
-import kotlin.math.ceil
 
+/**
+ * Nodes with calls to LLM
+ */
 class NodesLLM(
     private val llmApi: GigaRestChatAPI,
     private val grpcChatApi: GigaGRPCChatApi,
-    private val nodesCommon: NodesCommon,
     private val settingsProvider: SettingsProvider,
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
 
     val sideEffects: Flow<String> = MutableSharedFlow()
-
-    val requestToResponse: Node<GigaRequest.Chat, GigaResponse.Chat> = Node("llmCall") { ctx ->
-        l.debug { "LLM input is ${ctx.input}" }
-        val response = withContext(Dispatchers.IO) {
-            if (settingsProvider.useGrpc) {
-                streamResponse(ctx.input)
-            } else {
-                llmApi.message(ctx.input)
-            }
-        }
-        l.debug("LLM response is {}", response)
-        val history = ArrayList(ctx.history).apply {
-            if (response is GigaResponse.Chat.Ok) {
-                addAll(response.choices.mapNotNull { it.toMessage() })
-            }
-        }
-        ctx.map(history = history) { response }
-    }
-
+    
     /**
-     * Restores the last message, and a system prompt. Other messages are transformed into TLDR
+     * Calls LLM's API with the current [AgentContext.history].
+     * Converts [AgentContext.history] into [AgentContext.input] as [GigaRequest.Chat] suitable for LLM call
+     *
+     * Modifies [AgentContext.history] and [AgentContext.input]
      */
-    val summarize: Node<GigaResponse.Chat, GigaResponse.Chat> = Node("llmSummarize") { ctx ->
-        val conversation = ArrayList(ctx.history)
-
-        val summaryResponse: GigaResponse.Chat = withContext(Dispatchers.IO) {
-            conversation.add(GigaRequest.Message(
-                role = GigaMessageRole.user,
-                content = "Резюмируй разговор",
-            ))
-            val request = ctx.toGigaRequest(conversation)
-                .copy(functions = emptyList())
-            llmApi.message(request)
-        }
-
-        val msg: GigaRequest.Message = when (summaryResponse) {
-            is GigaResponse.Chat.Error -> {
-                l.error("Error on summarization: ${summaryResponse.message}")
-                throw GigaException(summaryResponse)
+    fun chat(name: String = "LLM Chat"): Node<String, GigaResponse.Chat> =
+        Node(name) { ctx: AgentContext<String> ->
+            l.debug { "LLM input is ${ctx.input}" }
+            val response = withContext(Dispatchers.IO) {
+                val req = ctx.toGigaRequest(ctx.history)
+                if (settingsProvider.useGrpc) {
+                    streamResponse(req)
+                } else {
+                    llmApi.message(req)
+                }
             }
-            is GigaResponse.Chat.Ok -> summaryResponse.choices.mapNotNull { it.toMessage() }.last()
+            l.debug("LLM response is {}", response)
+            val history = ArrayList(ctx.history).apply {
+                if (response is GigaResponse.Chat.Ok) {
+                    addAll(response.choices.mapNotNull { it.toMessage() })
+                }
+            }
+            ctx.map(history = history) { response }
         }
-
-        val newHistory = listOf(ctx.systemPrompt.toSystemPromptMessage(), msg)
-        ctx.map(history = newHistory) { summaryResponse }
-    }
-
-    val nodeSummarize: Node<GigaResponse.Chat, String> by graph(name = "Go to user") {
-        nodeInput.edgeTo { ctx -> if (ctx.historyIsTooBig()) summarize else nodesCommon.respToString }
-        summarize.edgeTo(nodesCommon.respToString)
-        nodesCommon.respToString.edgeTo(nodeFinish)
-    }
 
     private suspend fun streamResponse(request: GigaRequest.Chat): GigaResponse.Chat {
         val streamResponse = AtomicReference<GigaResponse.Chat?>(null)
@@ -160,35 +134,4 @@ class NodesLLM(
             finishReason = finishReason,
         )
     }
-}
-
-private const val HISTORY_SUMMARIZE_THRESHOLD = 0.8
-private const val APPROX_CHARS_PER_TOKEN = 4.0
-
-private fun String.estimateTokenCount(): Int = ceil(length / APPROX_CHARS_PER_TOKEN).toInt()
-
-private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(
-    threshold: Double = HISTORY_SUMMARIZE_THRESHOLD,
-): Boolean {
-    val model = GigaModel.entries.firstOrNull { it.alias == settings.model }
-    val contextWindow = model?.maxTokens ?: MAX_TOKENS
-    val estimatedTokens = systemPrompt.estimateTokenCount() +
-            history.sumOf { it.content.estimateTokenCount() }
-    return estimatedTokens >= contextWindow * threshold
-}
-
-fun GigaResponse.Choice.toMessage(): GigaRequest.Message? {
-    val msg = this.message
-    val content: String = when {
-        msg.content.isNotBlank() -> msg.content
-        msg.functionCall != null -> gigaJsonMapper.writeValueAsString(
-            mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
-        )
-        else -> return null
-    }
-    return GigaRequest.Message(
-        role = msg.role,
-        content = content,
-        functionsStateId = msg.functionsStateId
-    )
 }

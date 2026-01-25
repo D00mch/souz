@@ -14,9 +14,10 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.engine.*
-import ru.gigadesk.agent.node.NodesCommon
-import ru.gigadesk.agent.node.NodesLLM
+import ru.gigadesk.agent.nodes.NodesCommon
 import ru.gigadesk.agent.nodes.NodesClassification
+import ru.gigadesk.agent.nodes.NodesLLM
+import ru.gigadesk.agent.nodes.NodesSummarization
 import ru.gigadesk.agent.session.GraphSessionService
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
@@ -32,11 +33,11 @@ class GraphBasedAgent(
 ) {
     private val l = LoggerFactory.getLogger(GraphBasedAgent::class.java)
 
-    private val toolsFactory: ToolsFactory  by di.instance()
-    private val nodesLLM: NodesLLM  by di.instance()
+    private val toolsFactory: ToolsFactory by di.instance()
+    private val nodesLLM: NodesLLM by di.instance()
     private val nodesCommon: NodesCommon by di.instance()
     private val nodesClassify: NodesClassification by di.instance()
-    private val nodeClassify = nodesClassify.node
+    private val nodesSummarization: NodesSummarization by di.instance()
     private val settingsProvider: SettingsProvider by di.instance()
     private val sessionService: GraphSessionService by di.instance()
 
@@ -56,6 +57,39 @@ class GraphBasedAgent(
     private val runningJob = AtomicReference<Deferred<*>?>(null)
 
     val sideEffects: Flow<String> = nodesLLM.sideEffects
+
+    private val graph: Graph<String, String> = buildGraph(name = "Agent") {
+        // nodes
+        val chatSubgraph: Node<String, GigaResponse.Chat> = nodesLLM.chat("LLM")
+        val chatOk: Node<GigaResponse.Chat, GigaResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
+            ctx.map { ctx.input as GigaResponse.Chat.Ok }
+        }
+        val chatErrorToFinish: Node<GigaResponse.Chat, String> = Node("Chat.Error") { ctx ->
+            val error = ctx.input as GigaResponse.Chat.Error
+            ctx.map { error.message }
+        }
+        val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
+        val nodeClassify: Node<String, String> = nodesClassify.node()
+        val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
+        val toolUse: Node<GigaResponse.Chat.Ok, String> = nodesCommon.toolUse()
+        val summary: Node<GigaResponse.Chat.Ok, String> = nodesSummarization.summarize()
+
+        // graph
+        nodeInput.edgeTo(inputToHistory)
+        inputToHistory.edgeTo(nodeClassify)
+        nodeClassify.edgeTo(contextEnrich)
+        contextEnrich.edgeTo(chatSubgraph)
+        chatSubgraph.edgeTo { ctx ->
+            when (ctx.input) {
+                is GigaResponse.Chat.Error -> chatErrorToFinish
+                is GigaResponse.Chat.Ok -> chatOk
+            }
+        }
+        chatOk.edgeTo { ctx -> if (ctx.input.isToolUse) toolUse else summary }
+        toolUse.edgeTo(chatSubgraph)
+        summary.edgeTo(nodeFinish)
+        chatErrorToFinish.edgeTo(nodeFinish)
+    }
 
     fun clearContext(): Boolean {
         cancelActiveJob()
@@ -98,15 +132,15 @@ class GraphBasedAgent(
     suspend fun execute(input: String): String {
         cancelActiveJob()
         val ctx = currentContext.value.copy(input = input)
-        
+
         sessionService.startTask(input)
-        
+
         val result: Deferred<AgentContext<String>> = coroutineScope {
             async {
-                buildGraph().start(ctx) { step, node, from, to ->
+                graph.start(ctx) { step, node, from, to ->
                     val prettyInput = logObjectMapper.writeValueAsString(from.input)
                     l.debug { "Step: ${step.index}, node: ${node.name}, input: $prettyInput" }
-                    
+
                     sessionService.onStep(step, node, from, to)
                 }
             }
@@ -124,22 +158,7 @@ class GraphBasedAgent(
         return newContext.input
     }
 
-    private fun buildGraph(): Graph<String, String> = buildGraph(name = "Agent") {
-        nodeInput.edgeTo(nodeClassify)
-        nodeClassify.edgeTo(nodesCommon.nodeAppendAdditionalData)
-        nodesCommon.nodeAppendAdditionalData.edgeTo(nodesCommon.stringToReq)
-        nodesCommon.stringToReq.edgeTo(nodesLLM.requestToResponse)
-        nodesLLM.requestToResponse.edgeTo { ctx ->
-            when (val output = ctx.input) {
-                is GigaResponse.Chat.Error -> nodesLLM.nodeSummarize
-                is GigaResponse.Chat.Ok -> if (isToolUse(output)) nodesCommon.toolUse else nodesLLM.nodeSummarize
-            }
-        }
-        nodesCommon.toolUse.edgeTo(nodesLLM.requestToResponse)
-        nodesLLM.nodeSummarize.edgeTo(nodeFinish)
-    }
-
-    private fun isToolUse(input: GigaResponse.Chat.Ok): Boolean = input.choices.any { it.message.functionCall != null }
+    private val GigaResponse.Chat.Ok.isToolUse get() = choices.any { it.message.functionCall != null }
 
     private fun createInitialCtx(): AgentContext<String> = AgentContext(
         input = "",

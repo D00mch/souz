@@ -29,6 +29,7 @@ class GraphSessionService(
 
     fun onStep(step: StepInfo, node: Node<*, *>, from: AgentContext<*>, to: AgentContext<*>) {
         if (currentSessionId.get() == null) return
+        if (step.isSubgraph) return
 
         val prettyInput = try {
             logObjectMapper.writeValueAsString(from.input)

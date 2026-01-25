@@ -7,8 +7,9 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.gigadesk.agent.GraphBasedAgent
-import ru.gigadesk.agent.node.NodesCommon
-import ru.gigadesk.agent.node.NodesLLM
+import ru.gigadesk.agent.nodes.NodesCommon
+import ru.gigadesk.agent.nodes.NodesLLM
+import ru.gigadesk.agent.nodes.NodesSummarization
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.agent.session.GraphSessionRepository
 import ru.gigadesk.agent.session.GraphSessionService
@@ -72,7 +73,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     // LLM
     bindSingleton { NodesCommon(instance(), instance()) }
-    bindSingleton { NodesLLM(instance(), instance(), instance(), instance()) }
+    bindSingleton { NodesLLM(instance(), instance(), instance()) }
+    bindSingleton { NodesSummarization(instance(), instance()) }
     bindSingleton {
         NodesClassification(
             instance(),
