@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Thread safe, but only one task at a time.
- * Use [NODE_NAME_CLASSIFY] to support
+ * Use [NODE_NAME_CLASSIFY] to support chosen categories visualization
  */
 class GraphSessionService(
     private val repository: GraphSessionRepository, private val logObjectMapper: ObjectMapper
