@@ -75,6 +75,7 @@ kotlin {
             implementation(libs.commons.csv)
             implementation(libs.bundles.letsPlot)
             implementation(libs.markdown)
+            implementation("io.github.java-diff-utils:java-diff-utils:4.12")
         }
 
         jvmTest.dependencies {

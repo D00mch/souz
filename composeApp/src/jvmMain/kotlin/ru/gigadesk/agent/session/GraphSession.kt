@@ -10,7 +10,8 @@ data class GraphStepRecord(
     val timestamp: Long,
     val inputSummary: String,
     val outputSummary: String? = null,
-    val data: String
+    val data: String,
+    val addedHistory: String? = null
 )
 
 /**

@@ -49,14 +49,30 @@ class GraphSessionService(
             "{}"
         }
 
+        // Calculate History Delta
+        // Calculate History Delta (Simple difflib approach or set difference)
+        // Since messages are data classes, we can just find which ones in 'to' are not in 'from'
+        // This handles insertions anywhere in the list.
+        val fromSet = from.history.toHashSet()
+        val newMessages = to.history.filter { !fromSet.contains(it) }
+
+        val historyDelta = if (newMessages.isNotEmpty()) {
+            try {
+                logObjectMapper.writeValueAsString(newMessages)
+            } catch (e: Exception) {
+                null
+            }
+        } else null
+
         steps.add(
             GraphStepRecord(
                 stepIndex = step.index,
                 nodeName = node.name,
                 timestamp = System.currentTimeMillis(),
-                inputSummary = prettyInput.take(500),
-                outputSummary = prettyOutput.take(500),
-                data = debugData
+                inputSummary = prettyInput,
+                outputSummary = prettyOutput,
+                data = debugData,
+                addedHistory = historyDelta
             )
         )
     }

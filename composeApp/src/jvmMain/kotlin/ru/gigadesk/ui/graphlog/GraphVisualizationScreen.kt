@@ -2,8 +2,11 @@ package ru.gigadesk.ui.graphlog
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -24,6 +27,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -38,8 +42,6 @@ import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
 import java.util.*
 import kotlin.math.roundToInt
-import kotlin.math.cos
-import kotlin.math.sin
 
 // --- Data Models for Visualization ---
 
@@ -80,7 +82,7 @@ data class GraphProcessResult(
 
 // --- Helper Logic ---
 
-fun processSessionData(session: GraphSession): GraphProcessResult {
+fun processSessionData(session: GraphSession, collapsedSubgraphs: Set<String>): GraphProcessResult {
     val nodes = linkedMapOf<String, DisplayNode>()
     val edges = mutableListOf<GraphEdge>()
 
@@ -112,15 +114,38 @@ fun processSessionData(session: GraphSession): GraphProcessResult {
         return cleaner.trim().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
     }
 
-    // 1. Identify all unique nodes
+    // Helper to get group name (if any)
+    fun getGroupName(name: String): String? {
+        // Example: "Planner::Step1" -> "Planner"
+        if (name.contains("::")) {
+            return name.substringBefore("::")
+        }
+        return null
+    }
+    
+    // Helper: Resolve effective node name (original or group name if collapsed)
+    fun resolveNodeName(originalName: String): String {
+        val group = getGroupName(originalName)
+        if (group != null && collapsedSubgraphs.contains(group)) {
+            return group // Return the group name as the node ID
+        }
+        return originalName
+    }
+
+    // 1. Identify all unique nodes (mapped)
     session.steps.forEach { step ->
-        val name = step.nodeName
-        if (!nodes.containsKey(name)) {
-             nodes[name] = DisplayNode(
-                 id = name,
-                 label = formatLabel(name),
-                 initialPos = mapNodeToPos(name),
-                 resolvedPos = ResolvedPos(0f, 0f, GraphNodePos.MID_CENTER), // Placeholder
+        val rawName = step.nodeName
+        val finalName = resolveNodeName(rawName)
+        
+        if (!nodes.containsKey(finalName)) {
+             // If it's a group, we might want a special label or pos
+             val isGroup = finalName != rawName
+             
+             nodes[finalName] = DisplayNode(
+                 id = finalName,
+                 label = if (isGroup) "[$finalName]" else formatLabel(finalName),
+                 initialPos = mapNodeToPos(rawName), // Use rawName to guess pos
+                 resolvedPos = ResolvedPos(0f, 0f, GraphNodePos.MID_CENTER),
                  steps = mutableListOf(),
                  visitCount = 0
              )
@@ -138,9 +163,8 @@ fun processSessionData(session: GraphSession): GraphProcessResult {
             node.resolvedPos = ResolvedPos(basePos.xPercent, basePos.yPercent, basePos)
         } else {
             // Collision! Spread them out.
-            // Technique: Lay them out in a horizontal row or small arc around the center
             val count = groupNodes.size
-            val spreadWidth = 0.15f // 15% of screen width per node? maybe less
+            val spreadWidth = 0.15f // 15% of screen width per node
             val startX = basePos.xPercent - ((count - 1) * spreadWidth / 2)
             
             groupNodes.forEachIndexed { index, node ->
@@ -154,14 +178,18 @@ fun processSessionData(session: GraphSession): GraphProcessResult {
     }
 
     // 3. Populate steps and counts
-    session.steps.groupBy { it.nodeName }.forEach { (name, steps) ->
-        val node = nodes[name]!!
-        // We need to construct a new object or use a mutable one. 
-        // DisplayNode uses val for properties, but we can fake update or rely on object identity if we were using classes.
-        // Since using data classes, better to update the map entry.
-        nodes[name] = node.copy(
-            steps = steps,
-            visitCount = steps.size
+    session.steps.forEach { step ->
+        val finalName = resolveNodeName(step.nodeName)
+        val node = nodes[finalName]!!
+        
+        // Accumulate steps for this node (or group node)
+        // We reuse the immutable DisplayNode by updating the map
+        val newSteps = node.steps.toMutableList()
+        newSteps.add(step)
+        
+        nodes[finalName] = node.copy(
+            steps = newSteps,
+            visitCount = newSteps.size
         )
     }
 
@@ -170,19 +198,25 @@ fun processSessionData(session: GraphSession): GraphProcessResult {
         for (i in 0 until session.steps.size - 1) {
             val current = session.steps[i]
             val next = session.steps[i + 1]
-            val fromNode = nodes[current.nodeName]!!
-            val toNode = nodes[next.nodeName]!!
-
-            edges.add(
-                GraphEdge(
-                    fromId = fromNode.id,
-                    toId = toNode.id,
-                    fromPos = fromNode.resolvedPos,
-                    toPos = toNode.resolvedPos,
-                    stepIndex = i + 1,
-                    isHighlighted = true
+            
+            val fromId = resolveNodeName(current.nodeName)
+            val toId = resolveNodeName(next.nodeName)
+            
+            if (fromId != toId) { // No self-loops for cleanliness, or maybe yes? Let's allow distinct nodes
+                val fromNode = nodes[fromId]!!
+                val toNode = nodes[toId]!!
+    
+                edges.add(
+                    GraphEdge(
+                        fromId = fromNode.id,
+                        toId = toNode.id,
+                        fromPos = fromNode.resolvedPos,
+                        toPos = toNode.resolvedPos,
+                        stepIndex = i + 1,
+                        isHighlighted = true
+                    )
                 )
-            )
+            }
         }
     }
 
@@ -196,13 +230,18 @@ fun GraphVisualizationScreen(
     session: GraphSession,
     onBack: () -> Unit,
 ) {
-    val graphData = remember(session) { processSessionData(session) }
+    var collapsedSubgraphs by remember { mutableStateOf(setOf<String>()) }
+    val graphData = remember(session, collapsedSubgraphs) { 
+        processSessionData(session, collapsedSubgraphs) 
+    }
+    
     var selectedNodeId by remember { mutableStateOf<String?>(null) }
     var selectedStep by remember { mutableStateOf<GraphStepRecord?>(null) }
 
     // Auto-select first node
-    LaunchedEffect(Unit) {
-        if (graphData.nodes.isNotEmpty()) {
+    LaunchedEffect(graphData) {
+        // Only if nothing selected
+        if (selectedNodeId == null && graphData.nodes.isNotEmpty()) {
             selectedNodeId = graphData.nodes.keys.firstOrNull()
         }
     }
@@ -292,6 +331,15 @@ fun GraphVisualizationScreen(
                             selectedStep = selectedStep,
                             onStepSelect = { step ->
                                 selectedStep = if (selectedStep == step) null else step
+                            },
+                            allNodes = graphData.nodes.values,
+                            collapsedSubgraphs = collapsedSubgraphs,
+                            onToggleSubgraph = { group ->
+                                collapsedSubgraphs = if (collapsedSubgraphs.contains(group)) {
+                                    collapsedSubgraphs - group
+                                } else {
+                                    collapsedSubgraphs + group
+                                }
                             }
                         )
                     }
@@ -325,21 +373,31 @@ fun GraphCanvas(
 ) {
     val density = LocalDensity.current
     
+    // State for node positions (delta from initial)
+    // We use a key to reset if data changes completely, but persist for same session
+    val nodeOffsets = remember(data) { mutableStateMapOf<String, Offset>() }
+    
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val width = constraints.maxWidth.toFloat()
         val height = constraints.maxHeight.toFloat()
         
+        // Helper to get current pos
+        fun getPos(nodeId: String, initial: ResolvedPos): Offset {
+             val initialX = initial.x * width
+             val initialY = initial.y * height
+             val offset = nodeOffsets[nodeId] ?: Offset.Zero
+             return Offset(initialX + offset.x, initialY + offset.y)
+        }
+
         // Draw Edges first
         Canvas(modifier = Modifier.fillMaxSize()) {
             data.edges.forEach { edge ->
-                val startX = edge.fromPos.x * width
-                val startY = edge.fromPos.y * height
-                val endX = edge.toPos.x * width
-                val endY = edge.toPos.y * height
+                val start = getPos(edge.fromId, edge.fromPos)
+                val end = getPos(edge.toId, edge.toPos)
 
                 drawCurvedEdge(
-                    start = Offset(startX, startY),
-                    end = Offset(endX, endY),
+                    start = start,
+                    end = end,
                     fromPos = edge.fromPos,
                     toPos = edge.toPos,
                     highlighted = edge.isHighlighted
@@ -355,13 +413,25 @@ fun GraphCanvas(
              val sizeDp = 90.dp
              val sizePx = with(density) { sizeDp.toPx() }
              
-             val xPx = (node.resolvedPos.x * width).roundToInt() - (sizePx / 2).roundToInt()
-             val yPx = (node.resolvedPos.y * height).roundToInt() - (sizePx / 2).roundToInt()
+             // Calculate final position
+             val currentPos = getPos(node.id, node.resolvedPos)
+             
+             // Top-Left corner for Box
+             val xPx = (currentPos.x - sizePx / 2).roundToInt()
+             val yPx = (currentPos.y - sizePx / 2).roundToInt()
 
             Box(
                 modifier = Modifier
                     .offset { IntOffset(xPx, yPx) }
                     .size(sizeDp)
+                    // Draggable logic
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            val current = nodeOffsets[node.id] ?: Offset.Zero
+                            nodeOffsets[node.id] = current + dragAmount
+                        }
+                    }
             ) {
                  CircularNodeItem(
                      label = node.label,
@@ -376,8 +446,14 @@ fun GraphCanvas(
 
 fun calculateControlPoint(start: Offset, end: Offset, fromPos: ResolvedPos, toPos: ResolvedPos): Offset {
     val midX = (start.x + end.x) / 2
+    val midY = (start.y + end.y) / 2
     
-    // Use basePos for generic logic to keep routing sane even for spread nodes
+    // If nodes are moved manually, standard logic might look weird.
+    // Let's add simple distance check.
+    val dx = end.x - start.x
+    val dy = end.y - start.y
+    
+    // Standard routing based on semantic meaning
     return when {
         // Loop: Left -> Right (LLM -> Tool)
         (fromPos.basePos == GraphNodePos.LEFT_CENTER && toPos.basePos == GraphNodePos.RIGHT_CENTER) -> {
@@ -392,8 +468,9 @@ fun calculateControlPoint(start: Offset, end: Offset, fromPos: ResolvedPos, toPo
         (fromPos.basePos == GraphNodePos.MID_CENTER && toPos.basePos == GraphNodePos.MID_CENTER) -> {
              Offset(midX, start.y - 80f) // Small arc between neighbors
         }
-
-        else -> Offset(midX, (start.y + end.y)/2)
+        
+        // Default curve
+        else -> Offset(midX, midY)
     }
 }
 
@@ -504,15 +581,18 @@ fun CircularNodeItem(
 fun SideDetailsPanel(
     selectedNode: DisplayNode?,
     selectedStep: GraphStepRecord?,
-    onStepSelect: (GraphStepRecord) -> Unit
+    onStepSelect: (GraphStepRecord) -> Unit,
+    allNodes: Collection<DisplayNode>,
+    collapsedSubgraphs: Set<String>,
+    onToggleSubgraph: (String) -> Unit
 ) {
     val listState = rememberLazyListState()
 
     // Scroll to selected step
     LaunchedEffect(selectedStep) {
         if (selectedStep != null && selectedNode != null) {
-            val reversedList = selectedNode.steps.asReversed()
-            val index = reversedList.indexOf(selectedStep)
+            val list = selectedNode.steps
+            val index = list.indexOf(selectedStep)
             if (index >= 0) {
                 listState.animateScrollToItem(index)
             }
@@ -525,8 +605,62 @@ fun SideDetailsPanel(
             .clip(RoundedCornerShape(16.dp))
             .background(Color.Black.copy(alpha = 0.5f))
             .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
+            // Consume taps to prevent window drag on background
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {  }
+            // Consume drag gestures to prevent window drag on background
+            .pointerInput(Unit) {
+                detectDragGestures { change, _ ->
+                    change.consume()
+                }
+            }
             .padding(16.dp)
     ) {
+        // Subgraphs Control
+        // Find all potential groups
+        val groups = remember(allNodes) {
+             allNodes.mapNotNull { 
+                 if (it.label.startsWith("[") && it.label.endsWith("]")) {
+                     it.label.removeSurrounding("[", "]") 
+                 } else null
+             }.distinct() + collapsedSubgraphs // Also include those currently collapsed
+        }.distinct().sorted()
+
+        if (groups.isNotEmpty()) {
+            Text(
+                text = "SUBGRAPHS",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.Gray,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(groups) { group ->
+                    val isCollapsed = collapsedSubgraphs.contains(group)
+                    FilterChip(
+                        selected = isCollapsed,
+                        onClick = { onToggleSubgraph(group) },
+                        label = { Text(group) },
+                        leadingIcon = {
+                             if (isCollapsed) Icon(Icons.Rounded.KeyboardArrowRight, null, Modifier.size(16.dp))
+                             else Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(16.dp))
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = Color.White.copy(alpha = 0.05f),
+                            labelColor = Color.White,
+                            selectedContainerColor = Color(0xFF00E5FF).copy(alpha = 0.2f),
+                            selectedLabelColor = Color(0xFF00E5FF)
+                        )
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         if (selectedNode == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
@@ -554,17 +688,20 @@ fun SideDetailsPanel(
             Spacer(modifier = Modifier.height(16.dp))
 
             // History List
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(selectedNode.steps.asReversed()) { step ->
-                    ExpandableStepItem(
-                        step = step,
-                        isExpanded = step == selectedStep,
-                        onToggle = { onStepSelect(step) }
-                    )
+            // Global SelectionContainer ensures text selection works across items and persists better than inside items
+            SelectionContainer {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(selectedNode.steps) { step ->
+                        ExpandableStepItem(
+                            step = step,
+                            isExpanded = step == selectedStep,
+                            onToggle = { onStepSelect(step) }
+                        )
+                    }
                 }
             }
         }
@@ -583,11 +720,13 @@ fun ExpandableStepItem(
             .clip(RoundedCornerShape(8.dp))
             .background(if (isExpanded) Color.White.copy(alpha = 0.08f) else Color.Transparent)
             .border(1.dp, if (isExpanded) Color(0xFF00E5FF).copy(0.3f) else Color.White.copy(0.05f), RoundedCornerShape(8.dp))
-            .clickable(onClick = onToggle)
-            .padding(12.dp)
     ) {
+        // Header (Clickable)
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -606,11 +745,18 @@ fun ExpandableStepItem(
         }
         
         if (isExpanded) {
-            Spacer(modifier = Modifier.height(12.dp))
-            
             // Details
-            SelectionContainer {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Diff View (Input vs Output)
+                if (!step.outputSummary.isNullOrEmpty() && step.inputSummary != step.outputSummary) {
+                    Text("IO DIFF", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                    DiffContent(original = step.inputSummary, revised = step.outputSummary)
+                } else {
                     // Input
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                          Text("INPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
@@ -638,27 +784,27 @@ fun ExpandableStepItem(
                              )
                          }
                     }
-                    
-                    // JSON Dump / Payload
-                    if (step.data.isNotEmpty()) {
-                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("PAYLOAD / DATA", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color(0xFF101010), RoundedCornerShape(4.dp))
-                                    .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
-                                    .padding(8.dp)
-                            ) {
-                                 Text(
-                                    text = step.data.take(500) + if(step.data.length > 500) "..." else "",
-                                    style = TextStyle(
-                                        fontFamily = FontFamily.Monospace, 
-                                        fontSize = 10.sp, 
-                                        color = Color.LightGray.copy(alpha = 0.7f)
-                                    )
+                }
+
+                // History Delta
+                if (!step.addedHistory.isNullOrEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("SAVED TO HISTORY", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF101010), RoundedCornerShape(4.dp))
+                                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                text = step.addedHistory,
+                                style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    color = Color(0xFFFFCC80)
                                 )
-                            }
+                            )
                         }
                     }
                 }
@@ -666,6 +812,61 @@ fun ExpandableStepItem(
         }
     }
 }
+
+@Composable
+fun DiffContent(original: String, revised: String) {
+    val diff = remember(original, revised) {
+        val generator = com.github.difflib.text.DiffRowGenerator.create()
+            .showInlineDiffs(true)
+            .mergeOriginalRevised(true)
+            .inlineDiffByWord(true)
+            .ignoreWhiteSpaces(true) // Ignore whitespace
+            .oldTag { _ -> "" } // No markdown tags, we handle colors
+            .newTag { _ -> "" } 
+            .build()
+        generator.generateDiffRows(
+            original.lines(),
+            revised.lines()
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+            .padding(8.dp)
+    ) {
+        diff.forEach { row ->
+             val oldLine = row.oldLine
+             val newLine = row.newLine
+             
+             if (oldLine == newLine) {
+                 // Unchanged - Show context if needed, or skip for brevity? 
+                 // For now show generic grey
+                 Text(
+                     text = "  $oldLine",
+                     style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color.Gray.copy(0.5f))
+                 )
+             } else {
+                 // Semantic comparison
+                 if (oldLine.isNotBlank()) {
+                     Text(
+                        text = "- $oldLine",
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color(0xFFFF8A80)) // Softer Red
+                     )
+                 }
+                 if (newLine.isNotBlank()) {
+                     Text(
+                        text = "+ $newLine",
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color(0xFFB9F6CA)) // Softer Green
+                     )
+                 }
+             }
+        }
+    }
+}
+
+
 
 @Composable
 fun TimelineStrip(
@@ -737,5 +938,4 @@ fun TimelineStrip(
             )
         }
     }
-
 }
