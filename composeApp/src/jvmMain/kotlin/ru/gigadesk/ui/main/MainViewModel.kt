@@ -58,6 +58,7 @@ class MainViewModel(
             MainEvent.ClearContext -> clearContext()
             MainEvent.StopSpeech -> killTaskSideEffectJobs()
             MainEvent.ShowLastText -> setPreviousText()
+            MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
         }
     }
 
@@ -102,6 +103,12 @@ class MainViewModel(
                 }
 
             agentRef.set(graphAgent)
+
+            launch {
+                graphAgent.currentContext.collect { ctx ->
+                     setState { copy(agentHistory = ctx.history) }
+                }
+            }
 
             while (isActive) {
                 runCatching {
