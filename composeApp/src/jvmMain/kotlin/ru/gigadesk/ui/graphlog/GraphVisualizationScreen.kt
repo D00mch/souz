@@ -50,6 +50,10 @@ import java.util.*
 import kotlin.math.roundToInt
 import androidx.compose.foundation.window.WindowDraggableArea
 import ru.gigadesk.LocalWindowScope
+import com.fasterxml.jackson.databind.ObjectMapper
+import androidx.compose.material.icons.rounded.Check
+
+private val jsonMapper = ObjectMapper()
 
 // --- Data Models for Visualization ---
 
@@ -275,19 +279,21 @@ fun GraphVisualizationScreen(
     }
     
     // Navigation helper
-    fun navigateStep(delta: Int) {
-        val currentIndex = session.steps.indexOf(selectedStep)
-        if (currentIndex >= 0) {
-            val newIndex = (currentIndex + delta).coerceIn(0, session.steps.size - 1)
-            if (newIndex != currentIndex) {
-                val newStep = session.steps[newIndex]
-                selectedStep = newStep
-                // Also update selected node if step belongs to different node
-                val resolvedNodeName = graphData.nodes.keys.find { nodeId ->
-                    graphData.nodes[nodeId]?.steps?.contains(newStep) == true
-                }
-                if (resolvedNodeName != null && resolvedNodeName != selectedNodeId) {
-                    selectedNodeId = resolvedNodeName
+    val navigateStep = remember(session, graphData) {
+        { delta: Int ->
+            val currentIndex = session.steps.indexOf(selectedStep)
+            if (currentIndex >= 0) {
+                val newIndex = (currentIndex + delta).coerceIn(0, session.steps.size - 1)
+                if (newIndex != currentIndex) {
+                    val newStep = session.steps[newIndex]
+                    selectedStep = newStep
+                    // Also update selected node if step belongs to different node
+                    val resolvedNodeName = graphData.nodes.keys.find { nodeId ->
+                        graphData.nodes[nodeId]?.steps?.contains(newStep) == true
+                    }
+                    if (resolvedNodeName != null && resolvedNodeName != selectedNodeId) {
+                        selectedNodeId = resolvedNodeName
+                    }
                 }
             }
         }
@@ -786,6 +792,15 @@ fun ExpandableStepItem(
     onToggle: () -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
+    var isCopied by remember { mutableStateOf(false) }
+
+    // Reset copy icon after 2 seconds
+    LaunchedEffect(isCopied) {
+        if (isCopied) {
+            kotlinx.coroutines.delay(2000)
+            isCopied = false
+        }
+    }
     
     // Build copyable content
     val copyContent = remember(step) {
@@ -833,13 +848,16 @@ fun ExpandableStepItem(
             
             // Copy button
             IconButton(
-                onClick = { clipboardManager.setText(AnnotatedString(copyContent)) },
+                onClick = { 
+                    clipboardManager.setText(AnnotatedString(copyContent))
+                    isCopied = true
+                },
                 modifier = Modifier.size(24.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.ContentCopy,
-                    contentDescription = "Copy content",
-                    tint = Color.White.copy(alpha = 0.5f),
+                    imageVector = if (isCopied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                    contentDescription = if (isCopied) "Copied" else "Copy content",
+                    tint = if (isCopied) Color(0xFF66BB6A) else Color.White.copy(alpha = 0.5f),
                     modifier = Modifier.size(14.dp)
                 )
             }
@@ -868,7 +886,7 @@ fun ExpandableStepItem(
                         // Parse data field for selectedCategories
                         val selectedCategories = remember(step.data) {
                             try {
-                                val jsonNode = com.fasterxml.jackson.databind.ObjectMapper().readTree(step.data)
+                                val jsonNode = jsonMapper.readTree(step.data)
                                 val categoriesNode = jsonNode.get("selectedCategories")
                                 if (categoriesNode != null && categoriesNode.isArray) {
                                     categoriesNode.map { it.asText() }

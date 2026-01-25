@@ -15,6 +15,13 @@ import java.util.concurrent.atomic.AtomicReference
 class GraphSessionService(
     private val repository: GraphSessionRepository, private val logObjectMapper: ObjectMapper
 ) {
+    companion object {
+        private const val NODE_NAME_CLASSIFY = "classify"
+        private const val DATA_KEY_SELECTED_CATEGORIES = "selectedCategories"
+        private const val DATA_KEY_IN = "in"
+        private const val DATA_KEY_OUT = "out"
+    }
+
     private val currentSessionId = AtomicReference<String?>(null)
     private val startTime = AtomicLong(0)
     private val initialInput = AtomicReference("")
@@ -44,10 +51,10 @@ class GraphSessionService(
         }
 
         val debugData = try {
-            val baseData = mutableMapOf<String, Any?>("in" to from.input, "out" to to.input)
+            val baseData = mutableMapOf<String, Any?>(DATA_KEY_IN to from.input, DATA_KEY_OUT to to.input)
             
             // For classify nodes, include the selected categories
-            if (node.name.lowercase().contains("classify")) {
+            if (node.name.lowercase().contains(NODE_NAME_CLASSIFY)) {
                 val toToolNames = to.activeTools.map { it.name }.toSet()
                 // Reverse-map tools to categories
                 val selectedCategories = to.settings.toolsByCategory
@@ -55,7 +62,7 @@ class GraphSessionService(
                     .keys
                     .map { it.name }
                 if (selectedCategories.isNotEmpty()) {
-                    baseData["selectedCategories"] = selectedCategories
+                    baseData[DATA_KEY_SELECTED_CATEGORIES] = selectedCategories
                 }
             }
             
