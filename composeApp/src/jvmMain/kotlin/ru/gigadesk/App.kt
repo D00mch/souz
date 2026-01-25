@@ -48,7 +48,7 @@ fun App(
             if (online != isOnline.value) {
                 isOnline.value = online
             }
-            delay(5_000)
+            delay(3_000)
         }
     }
 

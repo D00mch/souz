@@ -2,6 +2,7 @@ package ru.gigadesk.ui.common
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -21,6 +22,10 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import ru.gigadesk.ui.main.RealLiquidGlassCard
 
+private const val NOTIFICATION_DISPLAY_DURATION_MS = 2500L
+private val NotificationWarningColor = Color(0xFFFF5252)
+private val NotificationCyanColor = Color(0xFF00E5FF)
+
 @Composable
 fun ConnectionStatusNotification(
     isOnline: Boolean,
@@ -33,11 +38,10 @@ fun ConnectionStatusNotification(
     LaunchedEffect(isOnline) {
         if (!isOnline) {
             isVisible = true
-            // Auto-dismiss logic - shorten duration as requested
-            delay(2500) 
+            delay(NOTIFICATION_DISPLAY_DURATION_MS)
             isVisible = false
         } else {
-            // Immediately hide if back online (optional, or let it fade)
+            // Immediately hide if back online
             isVisible = false
         }
     }
@@ -68,7 +72,7 @@ fun ConnectionStatusNotification(
                     Icon(
                         imageVector = Icons.Rounded.WifiOff,
                         contentDescription = null,
-                        tint = Color(0xFFFF5252), // Reddish warning color
+                        tint = NotificationWarningColor,
                         modifier = Modifier.size(16.dp)
                     )
                     

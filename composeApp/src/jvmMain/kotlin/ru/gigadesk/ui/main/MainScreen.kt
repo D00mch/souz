@@ -59,6 +59,7 @@ import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import org.kodein.di.compose.localDI
 import kotlin.random.Random
+import ru.gigadesk.ui.common.ConnectionStatusNotification
 
 private val TopButtonSize = 24.dp
 private val TopIconSize = 14.dp
@@ -256,7 +257,7 @@ fun MainScreenContent(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Bottom
                     ) {
-                        ru.gigadesk.ui.common.ConnectionStatusNotification(
+                        ConnectionStatusNotification(
                             isOnline = isOnline,
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
