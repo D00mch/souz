@@ -69,7 +69,7 @@ class GraphBasedAgent(
             ctx.map { error.message }
         }
         val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
-        val nodeClassify: Node<String, String> = nodesClassify.node(NODE_NAME_CLASSIFY)
+        val nodeClassify: Node<String, String> = nodesClassify.node("classify")
         val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
         val toolUse: Node<GigaResponse.Chat.Ok, String> = nodesCommon.toolUse()
         val summary: Node<GigaResponse.Chat.Ok, String> = nodesSummarization.summarize()

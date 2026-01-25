@@ -17,7 +17,7 @@ class GraphSessionService(
     private val repository: GraphSessionRepository, private val logObjectMapper: ObjectMapper
 ) {
     companion object {
-        //private const val NODE_NAME_CLASSIFY = "classify"
+        private const val NODE_NAME_CLASSIFY = "classify"
         private const val DATA_KEY_SELECTED_CATEGORIES = "selectedCategories"
         private const val DATA_KEY_IN = "in"
         private const val DATA_KEY_OUT = "out"
@@ -55,7 +55,7 @@ class GraphSessionService(
             val baseData = mutableMapOf<String, Any?>(DATA_KEY_IN to from.input, DATA_KEY_OUT to to.input)
             
 
-            if (node.name.lowercase().contains(GraphBasedAgent.NODE_NAME_CLASSIFY)) {
+            if (node.name.lowercase().contains(NODE_NAME_CLASSIFY)) {
                 val toToolNames = to.activeTools.map { it.name }.toSet()
                 val selectedCategories = to.settings.toolsByCategory
                     .filter { (_, tools) -> tools.keys.any { it in toToolNames } }
