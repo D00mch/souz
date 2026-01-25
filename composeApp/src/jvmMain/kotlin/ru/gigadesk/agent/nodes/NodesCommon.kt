@@ -56,6 +56,7 @@ class NodesCommon(
         if (additionalMessage == null) {
             ctx
         } else {
+            l.info("Additional data:\n$additionalMessage")
             val newHistory = ArrayList<GigaRequest.Message>()
             ctx.history.forEach { msg ->
                 val isAdditionalData = msg.role == GigaMessageRole.user && msg.content.startsWith(INFO_PREFIX)
@@ -73,42 +74,36 @@ class NodesCommon(
     private suspend fun appendActualInformation(userText: String): GigaRequest.Message? {
         if (userText.isBlank()) return null
 
-        val msgRelatedDataInTheStore: String = try {
-            desktopInfoRepository.search(userText).asString()
+        val additionalData = ArrayList<StorredData>()
+
+        try {
+            additionalData.addAll(desktopInfoRepository.search(userText))
         } catch (e: Exception) {
             l.error("Error while searching desktop info: {}", e.message)
-            ""
         }
 
-        val browserName = try {
-            val defaultBrowser = ToolRunBashCommand.detectDefaultBrowser()
-            "Дефолтный браузер — ${defaultBrowser.prettyName}"
+        try {
+            val defaultBrowser = ToolRunBashCommand.detectDefaultBrowser().prettyName
+            additionalData.add(StorredData("Дефолтный браузер — $defaultBrowser", StorredType.DEFAULT_BROWSER))
         } catch (e: Exception) {
             l.error("Error while fetching opened tabs: {}", e.message)
-            ""
         }
 
         val defaultCalendarName = settingsProvider.defaultCalendar
-        val calendarInfo = if (!defaultCalendarName.isNullOrBlank()) {
-            "Default calendar: $defaultCalendarName"
-        } else {
-            ""
+        if (!defaultCalendarName.isNullOrBlank()) {
+            additionalData.add(StorredData("Default calendar: $defaultCalendarName", StorredType.GENERAL_FACT))
         }
 
-        val currentDateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-        val dateInfo = "Текущие дата и время: $currentDateTime"
+        LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")).let { currentDateTime ->
+            val dateInfo = "Текущие дата и время: $currentDateTime"
+            additionalData.add(StorredData(dateInfo, StorredType.GENERAL_FACT))
+        }
 
         return GigaRequest.Message(
             role = GigaMessageRole.user,
-            content = listOf(
-                INFO_PREFIX,
-                msgRelatedDataInTheStore,
-                browserName,
-                calendarInfo,
-                dateInfo
-            )
-                .filter { it.isNotBlank() }
-                .joinToString(separator = ";\n")
+            content = additionalData.joinToString(prefix = INFO_PREFIX + ":\n", separator = "\n") { data ->
+                "${data.type}. ${data.text}"
+            }
         )
     }
 
@@ -145,4 +140,4 @@ fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaR
     )
 }
 
-private const val INFO_PREFIX = "Используя данные ниже, помоги с вопросом. Данные \n\n"
+private const val INFO_PREFIX = "Данные, которые могут оказаться полезными"
