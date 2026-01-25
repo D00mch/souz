@@ -16,6 +16,8 @@ data class MainState(
     val lastKnownAgentContext: AgentContext<String>? = null,
     val userExpectCloseOnX: Boolean = false,
     val isProcessing: Boolean = false,
+    val agentHistory: List<ru.gigadesk.giga.GigaRequest.Message> = emptyList(),
+    val isThinkingPanelOpen: Boolean = false,
 ) : VMState {
 
     companion object {
@@ -52,6 +54,7 @@ sealed interface MainEvent : VMEvent {
     object ClearContext : MainEvent
     object StopSpeech : MainEvent
     object ShowLastText : MainEvent
+    object ToggleThinkingPanel : MainEvent
 }
 
 sealed interface MainEffect : VMSideEffect {

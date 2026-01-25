@@ -2,6 +2,7 @@
 
 package ru.gigadesk.ui.main
 
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
@@ -17,6 +18,8 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -94,6 +97,7 @@ fun MainScreen(
         onOpenSettings = onOpenSettings,
         onStopSpeech = { viewModel.send(MainEvent.StopSpeech) },
         onShowLastText = { viewModel.send(MainEvent.ShowLastText) },
+        onToggleThinkingPanel = { viewModel.send(MainEvent.ToggleThinkingPanel) },
         onShowSnack = onShowSnack
     )
 }
@@ -106,6 +110,7 @@ fun MainScreenContent(
     onOpenSettings: () -> Unit = {},
     onStopSpeech: () -> Unit = {},
     onShowLastText: () -> Unit = {},
+    onToggleThinkingPanel: () -> Unit = {},
     onShowSnack: (String) -> Unit = {},
 ) {
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
@@ -139,6 +144,38 @@ fun MainScreenContent(
                             fontWeight = FontWeight.Bold
                         )
                     )
+
+                    // Top Left Controls
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(start = 8.dp),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val iconTint = Color.White.copy(0.8f)
+                        
+                        // Thinking Process Button
+                        Box(
+                            modifier = Modifier.size(TopButtonSize),
+                            contentAlignment = Alignment.TopEnd
+                        ) {
+                            MinimalGlassButton(onClick = onToggleThinkingPanel) {
+                                Icon(Icons.Rounded.Psychology, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
+                            }
+                            // Notification Dot (if active/processing)
+                            if (state.isProcessing || state.isThinkingPanelOpen) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .offset(x = 2.dp, y = (-2).dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF00E5FF))
+                                        .border(1.dp, Color.Black.copy(0.5f), CircleShape)
+                                )
+                            }
+                        }
+                    }
 
                     Row(
                         modifier = Modifier
@@ -227,6 +264,21 @@ fun MainScreenContent(
                         )
                     }
                 }
+            }
+            
+            // Thinking Panel Overlay
+            AnimatedVisibility(
+                visible = state.isThinkingPanelOpen,
+                enter = slideInHorizontally { it },
+                exit = slideOutHorizontally { it },
+                modifier = Modifier.align(Alignment.CenterEnd).zIndex(10f)
+            ) {
+                 ThinkingProcessPanel(
+                     history = state.agentHistory,
+                     isProcessing = state.isProcessing,
+                     onClose = onToggleThinkingPanel,
+                     modifier = Modifier.fillMaxHeight().width(400.dp)
+                 )
             }
         }
     }
@@ -447,29 +499,7 @@ fun MinimalGlassButton(
     }
 }
 
-@Composable
-fun rememberNoiseBrush(): ShaderBrush {
-    return remember {
-        val size = 256
-        val imageBitmap = ImageBitmap(size, size)
-        val canvas = Canvas(imageBitmap)
-        val paint = Paint().apply {
-            color = Color.White
-            alpha = 0.2f
-        }
-        val rnd = Random(System.currentTimeMillis())
 
-        for (x in 0 until size) {
-            for (y in 0 until size) {
-                if (rnd.nextFloat() > 0.8f) {
-                    canvas.drawRect(Rect(x.toFloat(), y.toFloat(), x + 1f, y + 1f), paint)
-                }
-            }
-        }
-        val shader = ImageShader(imageBitmap, TileMode.Repeated, TileMode.Repeated)
-        ShaderBrush(shader)
-    }
-}
 
 @Composable
 fun RealLiquidGlassCard(

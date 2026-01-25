@@ -130,6 +130,7 @@ object GigaRequest {
     data class Message(
         val role: GigaMessageRole,
         val content: String, // Could be String or FunctionCall object
+        @field:JsonProperty("function_call") val functionCall: GigaResponse.FunctionCall? = null,
         @field:JsonProperty("functions_state_id") val functionsStateId: String? = null,
         val attachments: List<String>? = null,
         val name: String? = null,
