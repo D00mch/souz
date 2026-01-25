@@ -27,6 +27,7 @@ class NodesClassification(
 
     /**
      * Classifies the user input and selects tools for the current step.
+     *
      * Modifies [AgentContext.activeTools] based on the classification algorithm and [ToolsSettings].
      */
     fun node(name: String = "classify"): Node<String, String> = Node(name) { ctx: AgentContext<String> ->

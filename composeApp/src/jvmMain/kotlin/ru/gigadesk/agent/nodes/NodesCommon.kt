@@ -27,6 +27,7 @@ class NodesCommon(
 
     /**
      * Ensures proper history with user input as a message.
+     *
      * Modifies [AgentContext.history] while preserving [AgentContext.input].
      */
     fun inputToHistory(name: String = "Input->History"): Node<String, String> =
@@ -41,6 +42,7 @@ class NodesCommon(
 
     /**
      * Converts LLM's [GigaResponse.Chat.Ok] into text suitable for the user to see.
+     *
      * Modifies [AgentContext.input] by replacing the response with the final message content.
      */
     fun responseToString(
@@ -63,6 +65,7 @@ class NodesCommon(
      * Makes sure we have Additional Data (AD) in the [AgentContext.history]. Implementation details:
      * - Swap the previous AD with the current one (so agent does have only the current AD, no previous ones);
      * - Append AD before the previous message (so agent is not focused on the AD).
+     *
      * Modifies [AgentContext.history] when new data is added.
      */
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->

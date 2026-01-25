@@ -32,6 +32,7 @@ class NodesLLM(
     /**
      * Calls LLM's API with the current [AgentContext.history].
      * Converts [AgentContext.history] into [AgentContext.input] as [GigaRequest.Chat] suitable for LLM call
+     *
      * Modifies [AgentContext.history] and [AgentContext.input]
      */
     fun chat(name: String = "LLM Chat"): Node<String, GigaResponse.Chat> =
