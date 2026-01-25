@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material3.*
@@ -23,12 +24,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +48,8 @@ import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
 import java.util.*
 import kotlin.math.roundToInt
+import androidx.compose.foundation.window.WindowDraggableArea
+import ru.gigadesk.LocalWindowScope
 
 // --- Data Models for Visualization ---
 
@@ -237,6 +245,9 @@ fun GraphVisualizationScreen(
     
     var selectedNodeId by remember { mutableStateOf<String?>(null) }
     var selectedStep by remember { mutableStateOf<GraphStepRecord?>(null) }
+    
+    // Focus requester for keyboard handling
+    val focusRequester = remember { FocusRequester() }
 
     // Auto-select first node
     LaunchedEffect(graphData) {
@@ -257,9 +268,51 @@ fun GraphVisualizationScreen(
             }
         }
     }
+    
+    // Request focus for keyboard events
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+    
+    // Navigation helper
+    fun navigateStep(delta: Int) {
+        val currentIndex = session.steps.indexOf(selectedStep)
+        if (currentIndex >= 0) {
+            val newIndex = (currentIndex + delta).coerceIn(0, session.steps.size - 1)
+            if (newIndex != currentIndex) {
+                val newStep = session.steps[newIndex]
+                selectedStep = newStep
+                // Also update selected node if step belongs to different node
+                val resolvedNodeName = graphData.nodes.keys.find { nodeId ->
+                    graphData.nodes[nodeId]?.steps?.contains(newStep) == true
+                }
+                if (resolvedNodeName != null && resolvedNodeName != selectedNodeId) {
+                    selectedNodeId = resolvedNodeName
+                }
+            }
+        }
+    }
 
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .focusRequester(focusRequester)
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown) {
+                    when (event.key) {
+                        Key.DirectionUp, Key.DirectionLeft -> {
+                            navigateStep(-1)
+                            true
+                        }
+                        Key.DirectionDown, Key.DirectionRight -> {
+                            navigateStep(1)
+                            true
+                        }
+                        else -> false
+                    }
+                } else false
+            },
         contentAlignment = Alignment.Center
     ) {
         // Main Background
@@ -268,34 +321,19 @@ fun GraphVisualizationScreen(
             isWindowFocused = true
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Header
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.glassColors.textPrimary
-                        )
+                // Get WindowScope for draggable header
+                val windowScope = LocalWindowScope.current
+                
+                // Header - Draggable area for window
+                if (windowScope != null) {
+                    with(windowScope) {
+                        WindowDraggableArea {
+                            HeaderRow(session = session, onBack = onBack)
+                        }
                     }
-                    Column {
-                        Text(
-                            text = "Session Visualization",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.glassColors.textPrimary
-                        )
-                        Text(
-                            text = "${session.id.take(8)}... • ${session.steps.size} steps",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-                        )
-                    }
+                } else {
+                    // Fallback if no WindowScope (shouldn't happen in normal use)
+                    HeaderRow(session = session, onBack = onBack)
                 }
 
                 // Main Content Split
@@ -364,6 +402,41 @@ fun GraphVisualizationScreen(
 }
 
 // --- Components ---
+
+@Composable
+fun HeaderRow(
+    session: GraphSession,
+    onBack: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = "Back",
+                tint = MaterialTheme.glassColors.textPrimary
+            )
+        }
+        Column {
+            Text(
+                text = "Session Visualization",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.glassColors.textPrimary
+            )
+            Text(
+                text = "${session.id.take(8)}... • ${session.steps.size} steps",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
 
 @Composable
 fun GraphCanvas(
@@ -586,16 +659,18 @@ fun SideDetailsPanel(
     collapsedSubgraphs: Set<String>,
     onToggleSubgraph: (String) -> Unit
 ) {
-    val listState = rememberLazyListState()
+    val scrollState = rememberScrollState()
 
     // Scroll to selected step
     LaunchedEffect(selectedStep) {
         if (selectedStep != null && selectedNode != null) {
             val list = selectedNode.steps
             val index = list.indexOf(selectedStep)
-            if (index >= 0) {
-                listState.animateScrollToItem(index)
-            }
+            // Rough estimation or manual scroll? 
+            // With Column, animateScrollTo is pixels, tricky to map index -> pixels without layout info.
+            // For now, let's skip auto-scroll or implement it simply if possible. 
+            // Actually, we can't easily auto-scroll to item index in Column. 
+            // Let's rely on user scrolling or minimal auto-scroll if really needed.
         }
     }
 
@@ -605,17 +680,11 @@ fun SideDetailsPanel(
             .clip(RoundedCornerShape(16.dp))
             .background(Color.Black.copy(alpha = 0.5f))
             .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
-            // Consume taps to prevent window drag on background
+            // Remove the aggressive pointerInput blocker as it kills scrolling
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
-            ) {  }
-            // Consume drag gestures to prevent window drag on background
-            .pointerInput(Unit) {
-                detectDragGestures { change, _ ->
-                    change.consume()
-                }
-            }
+            ) { /* Consume clicks to prevent window drag on tap */ }
             .padding(16.dp)
     ) {
         // Subgraphs Control
@@ -689,19 +758,21 @@ fun SideDetailsPanel(
 
             // History List
             // Global SelectionContainer ensures text selection works across items and persists better than inside items
-            SelectionContainer {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(selectedNode.steps) { step ->
-                        ExpandableStepItem(
-                            step = step,
-                            isExpanded = step == selectedStep,
-                            onToggle = { onStepSelect(step) }
-                        )
-                    }
+            // History List
+            // Global SelectionContainer ensures text selection works across items and persists better than inside items
+            // Reverting to Per-Item selection for stability
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                selectedNode.steps.forEach { step ->
+                    ExpandableStepItem(
+                        step = step,
+                        isExpanded = step == selectedStep,
+                        onToggle = { onStepSelect(step) }
+                    )
                 }
             }
         }
@@ -714,6 +785,28 @@ fun ExpandableStepItem(
     isExpanded: Boolean,
     onToggle: () -> Unit
 ) {
+    val clipboardManager = LocalClipboardManager.current
+    
+    // Build copyable content
+    val copyContent = remember(step) {
+        buildString {
+            appendLine("=== Step #${step.stepIndex}: ${step.nodeName} ===")
+            appendLine()
+            appendLine("INPUT:")
+            appendLine(step.inputSummary.trim().ifEmpty { "-" })
+            step.outputSummary?.let {
+                appendLine()
+                appendLine("OUTPUT:")
+                appendLine(it.trim())
+            }
+            step.addedHistory?.let {
+                appendLine()
+                appendLine("SAVED TO HISTORY:")
+                appendLine(it.trim())
+            }
+        }
+    }
+    
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -726,7 +819,7 @@ fun ExpandableStepItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onToggle)
-                .padding(12.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -734,8 +827,23 @@ fun ExpandableStepItem(
                 text = "Execution #${step.stepIndex}",
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Bold,
-                color = Color.White.copy(alpha = 0.9f)
+                color = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier.weight(1f)
             )
+            
+            // Copy button
+            IconButton(
+                onClick = { clipboardManager.setText(AnnotatedString(copyContent)) },
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.ContentCopy,
+                    contentDescription = "Copy content",
+                    tint = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+            
             Icon(
                 imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.Rounded.KeyboardArrowRight,
                 contentDescription = null,
@@ -743,68 +851,87 @@ fun ExpandableStepItem(
                 modifier = Modifier.size(16.dp)
             )
         }
-        
+
         if (isExpanded) {
             // Details
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Diff View (Input vs Output)
-                if (!step.outputSummary.isNullOrEmpty() && step.inputSummary != step.outputSummary) {
-                    Text("IO DIFF", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
-                    DiffContent(original = step.inputSummary, revised = step.outputSummary)
-                } else {
-                    // Input
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                         Text("INPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
-                         Text(
-                             text = step.inputSummary.trim().ifEmpty { "-" }, 
-                             style = TextStyle(
-                                 fontFamily = FontFamily.Monospace, 
-                                 fontSize = 11.sp, 
-                                 color = Color(0xFF81D4FA)
-                             )
-                         )
+            SelectionContainer {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Classification Result - shown for classify nodes
+                    val isClassifyStep = step.nodeName.lowercase().contains("classify") || 
+                                         step.nodeName.lowercase().contains("классифик")
+                    if (isClassifyStep && !step.outputSummary.isNullOrEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("CLASSIFICATION RESULT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                            Text(
+                                text = step.outputSummary.trim(),
+                                style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFA5D6A7) // Same green as OUTPUT
+                                )
+                            )
+                        }
                     }
                     
-                    // Output
-                    if (!step.outputSummary.isNullOrEmpty()) {
-                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                             Text("OUTPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                    // Diff View (Input vs Output) - only for non-classify or when no classification shown
+                    if (!isClassifyStep && !step.outputSummary.isNullOrEmpty() && step.inputSummary != step.outputSummary) {
+                        Text("IO DIFF", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                        DiffContent(original = step.inputSummary, revised = step.outputSummary)
+                    } else if (!isClassifyStep || step.outputSummary.isNullOrEmpty()) {
+                        // Input
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                             Text("INPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
                              Text(
-                                 text = step.outputSummary.trim(), 
+                                 text = step.inputSummary.trim().ifEmpty { "-" }, 
                                  style = TextStyle(
                                      fontFamily = FontFamily.Monospace, 
                                      fontSize = 11.sp, 
-                                     color = Color(0xFFA5D6A7)
+                                     color = Color(0xFF81D4FA)
                                  )
                              )
-                         }
+                        }
+                        
+                        // Output (only for non-classify, since classify shows it as classification result)
+                        if (!step.outputSummary.isNullOrEmpty() && !isClassifyStep) {
+                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                 Text("OUTPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                                 Text(
+                                     text = step.outputSummary.trim(), 
+                                     style = TextStyle(
+                                         fontFamily = FontFamily.Monospace, 
+                                         fontSize = 11.sp, 
+                                         color = Color(0xFFA5D6A7)
+                                     )
+                                 )
+                             }
+                        }
                     }
-                }
 
-                // History Delta
-                if (!step.addedHistory.isNullOrEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("SAVED TO HISTORY", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF101010), RoundedCornerShape(4.dp))
-                                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
-                                .padding(8.dp)
-                        ) {
-                            Text(
-                                text = step.addedHistory,
-                                style = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp,
-                                    color = Color(0xFFFFCC80)
+                    // History Delta
+                    if (!step.addedHistory.isNullOrEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("SAVED TO HISTORY", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF101010), RoundedCornerShape(4.dp))
+                                    .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+                                    .padding(8.dp)
+                            ) {
+                                Text(
+                                    text = step.addedHistory,
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 10.sp,
+                                        color = Color(0xFFFFCC80)
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                 }

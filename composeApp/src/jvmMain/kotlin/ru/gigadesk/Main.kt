@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import kotlinx.coroutines.FlowPreview
@@ -26,6 +27,9 @@ import org.kodein.di.instance
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
+
+// CompositionLocal to access WindowScope from nested composables
+val LocalWindowScope = staticCompositionLocalOf<WindowScope?> { null }
 
 fun main() {
     System.setProperty("apple.awt.UIElement", "true")
@@ -82,7 +86,8 @@ fun main() {
                             settingsProvider.initialWindowHeightDp = size.height.value.roundToInt()
                         }
                 }
-                WindowDraggableArea(modifier = Modifier.fillMaxSize()) {
+                // Provide WindowScope to nested composables via CompositionLocal
+                CompositionLocalProvider(LocalWindowScope provides this) {
                     App(
                         onCloseWindow = { isWindowVisible = false }
                     )
@@ -91,3 +96,4 @@ fun main() {
         }
     }
 }
+
