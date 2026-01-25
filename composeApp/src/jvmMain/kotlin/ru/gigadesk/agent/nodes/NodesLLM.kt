@@ -59,11 +59,11 @@ class NodesLLM(
 
     fun summarize(
         name: String = "Summarize or return",
-    ): Node<GigaResponse.Chat, String> = buildGraph(name) {
+    ): Node<GigaResponse.Chat.Ok, String> = buildGraph(name) {
         // nodes
-        val summarize: Node<GigaResponse.Chat, GigaResponse.Chat> = nodeSummarize()
-        val summaryToHistory = summaryToHistory<GigaResponse.Chat>()
-        val respToString: Node<GigaResponse.Chat, String> = nodesCommon.responseToString()
+        val summarize: Node<GigaResponse.Chat.Ok, GigaResponse.Chat.Ok> = nodeSummarize()
+        val summaryToHistory = summaryToHistory<GigaResponse.Chat.Ok>()
+        val respToString: Node<GigaResponse.Chat.Ok, String> = nodesCommon.responseToString()
 
         // graph
         nodeInput.edgeTo { ctx -> if (ctx.historyIsTooBig()) summarize else respToString }
@@ -73,7 +73,7 @@ class NodesLLM(
     }
 
     /** Updates [AgentContext.input] based on [AgentContext.history]. */
-    private fun nodeSummarize(name: String = "llmSummarize"): Node<GigaResponse.Chat, GigaResponse.Chat> =
+    private fun nodeSummarize(name: String = "llmSummarize"): Node<GigaResponse.Chat.Ok, GigaResponse.Chat.Ok> =
         Node(name) { ctx ->
             val summaryResponse: GigaResponse.Chat = withContext(Dispatchers.IO) {
                 val conversation = ArrayList(ctx.history).apply {
@@ -88,18 +88,15 @@ class NodesLLM(
                 llmApi.message(request)
             }
 
-            ctx.map { summaryResponse }
+            when (summaryResponse) {
+                is GigaResponse.Chat.Error -> throw GigaException(summaryResponse)
+                is GigaResponse.Chat.Ok -> ctx.map { summaryResponse }
+            }
         }
 
-    private inline fun <reified T> summaryToHistory(name: String = "summary->history"): Node<GigaResponse.Chat, T> =
+    private inline fun <reified T> summaryToHistory(name: String = "summary->history"): Node<GigaResponse.Chat.Ok, T> =
         Node(name) { ctx ->
-            val msg: GigaRequest.Message = when (val summaryResponse = ctx.input) {
-                is GigaResponse.Chat.Error -> {
-                    l.error("Error on summarization: ${summaryResponse.message}")
-                    throw GigaException(summaryResponse)
-                }
-                is GigaResponse.Chat.Ok -> summaryResponse.choices.mapNotNull { it.toMessage() }.last()
-            }
+            val msg: GigaRequest.Message = ctx.input.choices.mapNotNull { it.toMessage() }.last()
             val newHistory = listOf(ctx.systemPrompt.toSystemPromptMessage(), msg)
             ctx.map(history = newHistory)
         }
@@ -190,7 +187,7 @@ private const val APPROX_CHARS_PER_TOKEN = 4.0
 
 private fun String.estimateTokenCount(): Int = ceil(length / APPROX_CHARS_PER_TOKEN).toInt()
 
-private fun AgentContext<GigaResponse.Chat>.historyIsTooBig(
+private fun AgentContext<*>.historyIsTooBig(
     threshold: Double = HISTORY_SUMMARIZE_THRESHOLD,
 ): Boolean {
     val model = GigaModel.entries.firstOrNull { it.alias == settings.model }

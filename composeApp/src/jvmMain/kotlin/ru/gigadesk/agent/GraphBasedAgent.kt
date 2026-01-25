@@ -126,11 +126,18 @@ class GraphBasedAgent(
     private fun buildGraph(): Graph<String, String> = buildGraph(name = "Agent") {
         // nodes
         val chatSubgraph: Node<String, GigaResponse.Chat> = nodesLLM.chat("LLM")
+        val chatOk: Node<GigaResponse.Chat, GigaResponse.Chat.Ok> = Node("Chat.Ok only") { ctx ->
+            ctx.map { ctx.input as GigaResponse.Chat.Ok }
+        }
+        val chatErrorToFinish: Node<GigaResponse.Chat, String> = Node("Chat.Error -> Finish") { ctx ->
+            val error = ctx.input as GigaResponse.Chat.Error
+            ctx.map { error.message }
+        }
         val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
-        val nodeClassify = nodesClassify.node()
+        val nodeClassify: Node<String, String> = nodesClassify.node()
         val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
-        val toolUse = nodesCommon.toolUse()
-        val summary = nodesLLM.summarize()
+        val toolUse: Node<GigaResponse.Chat.Ok, String> = nodesCommon.toolUse()
+        val summary: Node<GigaResponse.Chat.Ok, String> = nodesLLM.summarize()
 
         // graph
         nodeInput.edgeTo(inputToHistory)
@@ -138,13 +145,15 @@ class GraphBasedAgent(
         nodeClassify.edgeTo(contextEnrich)
         contextEnrich.edgeTo(chatSubgraph)
         chatSubgraph.edgeTo { ctx ->
-            when (val output = ctx.input) {
-                is GigaResponse.Chat.Error -> summary
-                is GigaResponse.Chat.Ok -> if (output.isToolUse) toolUse else summary
+            when (ctx.input) {
+                is GigaResponse.Chat.Error -> chatErrorToFinish
+                is GigaResponse.Chat.Ok -> chatOk
             }
         }
+        chatOk.edgeTo { ctx -> if (ctx.input.isToolUse) toolUse else summary }
         toolUse.edgeTo(chatSubgraph)
         summary.edgeTo(nodeFinish)
+        chatErrorToFinish.edgeTo(nodeFinish)
     }
 
     private val GigaResponse.Chat.Ok.isToolUse get() = choices.any { it.message.functionCall != null }

@@ -37,22 +37,19 @@ class NodesCommon(
         }
 
     /**
-     * Converts LLM's [GigaResponse.Chat] into the text suitable for user to see
+     * Converts LLM's [GigaResponse.Chat.Ok] into the text suitable for user to see.
      */
     fun responseToString(
         name: String = "Response -> String"
-    ): Node<GigaResponse.Chat, String> = Node(name) { ctx ->
-        when (val input = ctx.input) {
-            is GigaResponse.Chat.Error -> ctx.map { input.message }
-            is GigaResponse.Chat.Ok -> ctx.map { input.choices.last().message.content }
-        }
+    ): Node<GigaResponse.Chat.Ok, String> = Node(name) { ctx ->
+        ctx.map { ctx.input.choices.last().message.content }
     }
 
     /**
      * Executes all the [GigaResponse.FunctionCall] from history synchronously.
      * put in [AgentContext.history]
      */
-    fun toolUse(name: String = "toolUse"): Node<GigaResponse.Chat, String> = Node(name) { ctx ->
+    fun toolUse(name: String = "toolUse"): Node<GigaResponse.Chat.Ok, String> = Node(name) { ctx ->
         val fnCallMessages = fnCallMessages(ctx)
         val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
         ctx.map(history = history) { ctx.history.last().content }
@@ -119,8 +116,8 @@ class NodesCommon(
         )
     }
 
-    private suspend fun fnCallMessages(ctx: AgentContext<GigaResponse.Chat>): List<GigaRequest.Message> {
-        val fnCallMessages = (ctx.input as GigaResponse.Chat.Ok).choices.mapNotNull { choice ->
+    private suspend fun fnCallMessages(ctx: AgentContext<GigaResponse.Chat.Ok>): List<GigaRequest.Message> {
+        val fnCallMessages = ctx.input.choices.mapNotNull { choice ->
             val msg = choice.message
             if (msg.functionCall != null && msg.functionsStateId != null) {
                 executeTool(ctx.settings, msg.functionCall)
