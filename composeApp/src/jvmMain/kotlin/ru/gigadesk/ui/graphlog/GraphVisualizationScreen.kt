@@ -73,7 +73,7 @@ data class DisplayNode(
     val id: String,
     val label: String,
     val initialPos: GraphNodePos,
-    var resolvedPos: ResolvedPos, // Changed to var for layout pass
+    var resolvedPos: ResolvedPos,
     val steps: List<GraphStepRecord>,
     val visitCount: Int
 )
@@ -106,9 +106,8 @@ fun processSessionData(session: GraphSession, collapsedSubgraphs: Set<String>): 
             normalized.contains("classify") -> GraphNodePos.MID_CENTER
             normalized.contains("llm") || normalized.contains("call") -> GraphNodePos.LEFT_CENTER
             normalized.contains("tool") -> GraphNodePos.RIGHT_CENTER
-            // "Go to user" is definitely exit/bottom
             normalized.contains("exit") || normalized.contains("user") -> GraphNodePos.BOTTOM_CENTER
-            else -> GraphNodePos.MID_CENTER // Stack here to be resolved later
+            else -> GraphNodePos.MID_CENTER
         }
     }
     
@@ -134,8 +133,7 @@ fun processSessionData(session: GraphSession, collapsedSubgraphs: Set<String>): 
         }
         return null
     }
-    
-    // Helper: Resolve effective node name (original or group name if collapsed)
+
     fun resolveNodeName(originalName: String): String {
         val group = getGroupName(originalName)
         if (group != null && collapsedSubgraphs.contains(group)) {
@@ -245,6 +243,15 @@ fun GraphVisualizationScreen(
     var collapsedSubgraphs by remember { mutableStateOf(setOf<String>()) }
     val graphData = remember(session, collapsedSubgraphs) { 
         processSessionData(session, collapsedSubgraphs) 
+    }
+
+    // Derive available groups from raw session steps (scanning for "Group::Node" pattern)
+    val allSessionGroups = remember(session.steps) {
+        session.steps.mapNotNull { step ->
+            if (step.nodeName.contains("::")) {
+                step.nodeName.substringBefore("::")
+            } else null
+        }.distinct().sorted()
     }
     
     var selectedNodeId by remember { mutableStateOf<String?>(null) }
@@ -376,7 +383,7 @@ fun GraphVisualizationScreen(
                             onStepSelect = { step ->
                                 selectedStep = if (selectedStep == step) null else step
                             },
-                            allNodes = graphData.nodes.values,
+                            availableGroups = allSessionGroups,
                             collapsedSubgraphs = collapsedSubgraphs,
                             onToggleSubgraph = { group ->
                                 collapsedSubgraphs = if (collapsedSubgraphs.contains(group)) {
@@ -397,7 +404,11 @@ fun GraphVisualizationScreen(
                     selectedStep = selectedStep,
                     onStepClick = { step ->
                         selectedStep = step
-                        selectedNodeId = step.nodeName
+                        // Find node in graphData that contains this step (resolves to group ID if collapsed)
+                        val foundId = graphData.nodes.entries.find { (_, node) ->
+                            node.steps.contains(step) 
+                        }?.key ?: step.nodeName
+                        selectedNodeId = foundId
                     }
                 )
                 
@@ -661,7 +672,7 @@ fun SideDetailsPanel(
     selectedNode: DisplayNode?,
     selectedStep: GraphStepRecord?,
     onStepSelect: (GraphStepRecord) -> Unit,
-    allNodes: Collection<DisplayNode>,
+    availableGroups: List<String>,
     collapsedSubgraphs: Set<String>,
     onToggleSubgraph: (String) -> Unit
 ) {
@@ -694,14 +705,10 @@ fun SideDetailsPanel(
             .padding(16.dp)
     ) {
         // Subgraphs Control
-        // Find all potential groups
-        val groups = remember(allNodes) {
-             allNodes.mapNotNull { 
-                 if (it.label.startsWith("[") && it.label.endsWith("]")) {
-                     it.label.removeSurrounding("[", "]") 
-                 } else null
-             }.distinct() + collapsedSubgraphs // Also include those currently collapsed
-        }.distinct().sorted()
+        // Use available groups derived from raw steps
+        val groups = remember(availableGroups, collapsedSubgraphs) {
+             (availableGroups + collapsedSubgraphs).distinct().sorted()
+        }
 
         if (groups.isNotEmpty()) {
             Text(
@@ -980,8 +987,8 @@ fun DiffContent(original: String, revised: String) {
             .showInlineDiffs(true)
             .mergeOriginalRevised(true)
             .inlineDiffByWord(true)
-            .ignoreWhiteSpaces(true) // Ignore whitespace
-            .oldTag { _ -> "" } // No markdown tags, we handle colors
+            .ignoreWhiteSpaces(true)
+            .oldTag { _ -> "" }
             .newTag { _ -> "" } 
             .build()
         generator.generateDiffRows(

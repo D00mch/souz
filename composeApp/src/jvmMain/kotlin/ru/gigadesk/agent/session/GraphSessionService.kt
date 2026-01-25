@@ -8,6 +8,7 @@ import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import ru.gigadesk.agent.GraphBasedAgent
 
 /**
  * Thread safe, but only one task at a time.
@@ -16,7 +17,6 @@ class GraphSessionService(
     private val repository: GraphSessionRepository, private val logObjectMapper: ObjectMapper
 ) {
     companion object {
-        private const val NODE_NAME_CLASSIFY = "classify"
         private const val DATA_KEY_SELECTED_CATEGORIES = "selectedCategories"
         private const val DATA_KEY_IN = "in"
         private const val DATA_KEY_OUT = "out"
@@ -53,8 +53,9 @@ class GraphSessionService(
         val debugData = try {
             val baseData = mutableMapOf<String, Any?>(DATA_KEY_IN to from.input, DATA_KEY_OUT to to.input)
             
+            
             // For classify nodes, include the selected categories
-            if (node.name.lowercase().contains(NODE_NAME_CLASSIFY)) {
+            if (node.name.lowercase().contains(GraphBasedAgent.NODE_NAME_CLASSIFY)) {
                 val toToolNames = to.activeTools.map { it.name }.toSet()
                 // Reverse-map tools to categories
                 val selectedCategories = to.settings.toolsByCategory
@@ -71,12 +72,11 @@ class GraphSessionService(
             "{}"
         }
 
-        // Calculate History Delta
         // Calculate History Delta (Simple difflib approach or set difference)
         // Since messages are data classes, we can just find which ones in 'to' are not in 'from'
         // This handles insertions anywhere in the list.
-        val fromSet = from.history.toHashSet()
-        val newMessages = to.history.filter { !fromSet.contains(it) }
+        // Reviewer note: don't use toHashSet() for small lists, contains() is faster.
+        val newMessages = to.history.filter { msg -> !from.history.contains(msg) }
 
         val historyDelta = if (newMessages.isNotEmpty()) {
             try {
