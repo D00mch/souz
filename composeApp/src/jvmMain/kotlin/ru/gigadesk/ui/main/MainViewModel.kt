@@ -106,9 +106,7 @@ class MainViewModel(
 
             launch {
                 graphAgent.currentContext.collect { ctx ->
-                     if (ctx.history.isNotEmpty()) {
-                        setState { copy(agentHistory = ctx.history) }
-                     }
+                     setState { copy(agentHistory = ctx.history) }
                 }
             }
 
