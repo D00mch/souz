@@ -32,7 +32,14 @@ internal class GraphRunner(
 
                 val frame = queue.removeFirst()
                 val outCtx = executeWithRetry(frame.node, frame.ctx, runtime)
-                val stepInfo = StepInfo(currentGraphIndex = frame.depth, index = runtime.counter.get())
+                val graphPath = runtime.graphPathSnapshot()
+                val graphDepth = (graphPath.size - 1).coerceAtLeast(0)
+                val stepInfo = StepInfo(
+                    currentGraphIndex = frame.depth,
+                    index = runtime.counter.get(),
+                    graphName = graphPath.lastOrNull() ?: "Unknown",
+                    graphDepth = graphDepth,
+                )
                 runtime.onStep?.invoke(stepInfo, frame.node, frame.ctx, outCtx)
                 lastCtx = outCtx
 

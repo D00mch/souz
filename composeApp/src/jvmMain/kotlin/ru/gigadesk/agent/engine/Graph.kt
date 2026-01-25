@@ -18,14 +18,16 @@ class Graph<IN, OUT> internal constructor(
 
     @Suppress("UNCHECKED_CAST")
     override suspend fun execute(ctx: AgentContext<IN>, runtime: GraphRuntime): AgentContext<OUT> {
-        val result = runner.run(
-            start = enter as Node<Any?, Any?>,
-            seed = ctx as AgentContext<Any?>,
-            runtime = runtime,
-            definition = definition,
-            stopPredicate = { node, _ -> node === exit }
-        )
-        return result as AgentContext<OUT>
+        return runtime.withGraphScope(name) {
+            val result = runner.run(
+                start = enter as Node<Any?, Any?>,
+                seed = ctx as AgentContext<Any?>,
+                runtime = runtime,
+                definition = definition,
+                stopPredicate = { node, _ -> node === exit }
+            )
+            result as AgentContext<OUT>
+        }
     }
 
     suspend fun start(
