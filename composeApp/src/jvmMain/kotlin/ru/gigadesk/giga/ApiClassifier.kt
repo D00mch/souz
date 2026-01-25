@@ -13,7 +13,9 @@ class ApiClassifier(
     private val l = LoggerFactory.getLogger(ApiClassifier::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
 
-    private val unknown = UserMessageClassifier.Reply(null, 0.0)
+    private val unknown = UserMessageClassifier.Reply(emptyList(), 0.0)
+    private val noiceRegex = Regex("[<>'`“”«»\"]")
+    private val spaceRegex = Regex("\\s+")
 
     override suspend fun classify(body: String): UserMessageClassifier.Reply {
         val req: GigaRequest.Chat = gigaJsonMapper.readValue(body)
@@ -24,10 +26,28 @@ class ApiClassifier(
                 unknown
             }
             is GigaResponse.Chat.Ok -> {
-                val (cat, confidence) = resp.choices.firstOrNull()?.message?.content?.trim()?.uppercase()?.split(" ")
+                val rawContent = resp.choices.firstOrNull()?.message?.content?.trim()?.uppercase()
                     ?: return unknown
-                l.info("Category: {}, {}", cat, confidence)
-                UserMessageClassifier.Reply(ToolCategory.valueOf(cat), confidence.toDouble())
+                val cleanedContent = rawContent.replace(noiceRegex, "").trim()
+
+                // Parse format: CATEGORY1,CATEGORY2 CONFIDENCE
+                // E.g. "MAIL,CALENDAR 90" or just "MAIL 90"
+                val parts = cleanedContent.split(spaceRegex)
+                if (parts.size < 2) return unknown
+
+                val confidence = parts.last().toDoubleOrNull() ?: 0.0
+                val categoriesStr = cleanedContent.substringBeforeLast(" ").trim()
+                val categories = categoriesStr.split(",").mapNotNull {
+                    try {
+                        ToolCategory.valueOf(it.trim())
+                    } catch (_: IllegalArgumentException) {
+                        l.warn("Unknown category: {}", it)
+                        null
+                    }
+                }
+
+                l.info("Categories: {}, Confidence: {}", categories, confidence)
+                UserMessageClassifier.Reply(categories, confidence)
             }
         }
     }

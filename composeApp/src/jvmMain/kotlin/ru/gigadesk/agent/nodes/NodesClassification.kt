@@ -33,13 +33,14 @@ class NodesClassification(
     fun node(name: String = "classify"): Node<String, String> = Node(name) { ctx: AgentContext<String> ->
         val categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>> =
             toolsSettings.applyFilter(toolsFactory.toolsByCategory)
-        val category = classify(ctx.input, ctx.history, categoryStates)
+        val categories: List<ToolCategory> = classify(ctx.input, ctx.history, categoryStates)
 
-        val functions: List<GigaRequest.Function> = if (category == null) {
-            categoryStates.flatMap { it.value.values }.map { it.fn }
+        val categoriesToChoseFrom = if (categories.isEmpty()) {
+            categoryStates
         } else {
-            categoryStates[category]!!.values.map { it.fn }
+            categoryStates.filter { categories.contains(it.key) }
         }
+        val functions: List<GigaRequest.Function> = categoriesToChoseFrom.flatMap { it.value.values }.map { it.fn }
         ctx.map(activeTools = functions) { it }
     }
 
@@ -48,19 +49,21 @@ class NodesClassification(
         history: List<GigaRequest.Message>,
         categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>>,
         retriesCount: Int = 2
-    ): ToolCategory? {
+    ): List<ToolCategory> {
         val body = buildClassifierBody(userText, history, categoryStates)
         val bodyJson = gigaJsonMapper.writeValueAsString(body)
         l.debug("Classifying user message: {}, \nbody: \n{}", userText, logObjectMapper.writeValueAsString(body))
         try {
-            val (localCategory, _) = localClassifier.classify(bodyJson)
-            if (retriesCount <= 0) return localCategory
-            val (apiCategory, apiConfidence) = apiClassifier.classify(bodyJson)
-            if (apiConfidence > 50 || apiCategory == localCategory) {
-                return apiCategory
+            val localResult: UserMessageClassifier.Reply = localClassifier.classify(bodyJson)
+            if (retriesCount <= 0) return localResult.categories
+
+            val apiResult: UserMessageClassifier.Reply = apiClassifier.classify(bodyJson)
+            val (localCategories, _) = localClassifier.classify(bodyJson)
+            if (apiResult.confidence > 50 || apiResult.categories.firstOrNull() == localCategories.firstOrNull()) {
+                return apiResult.categories
             } else {
-                l.info("Categories mismatch: Local: $localCategory, API: $apiCategory. Api confidence $apiConfidence")
-                return null
+                l.info("Categories mismatch: Local: ${localResult}, API: ${apiResult}.")
+                return emptyList()
             }
         } catch (e: Exception) {
             l.error("Error in apiClassifier: {}", e.message)
@@ -89,7 +92,7 @@ class NodesClassification(
     }
 
     fun buildPrompt(toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>): String {
-        val allowedCategories = toolsByCategory.keys
+        val allowedCategories: Set<ToolCategory> = toolsByCategory.keys
         val categoriesInfoSection = allowedCategories.joinToString(
             prefix = "Категории:\n",
             separator = ";\n"
@@ -105,51 +108,34 @@ class NodesClassification(
         }
 
         return """
-            Ты — алгоритм классификации. Выбери категорию запроса.
-            $categoriesInfoSection
-            $examplesSection
-            Ответь двумя словами: `<имя категории> <число, показывающее уверенность в правильном выборе>.
-            Имя категории — одно из: ${allowedCategories.joinToString(",") { it.name }}.
-            Число — от 0 до 100. 0 — вообще не уверен, 50 — сомневаюсь, 75 — почти уверен, 100 — абсолютно уверен.
-            Пример ответа: FILES 75  
-        """.trimIndent()
-
+Ты — алгоритм классификации. Выбери категорию запроса.
+$categoriesInfoSection
+$examplesSection
+Ответь в формате: `<категория1>,<категория2>,...,<категорияN> <число, показывающее уверенность в правильном выборе>.
+Категории представляются именами: ${allowedCategories.joinToString(",") { it.name }}, первая категория — основаня.
+Число — от 0 до 100. 0 — вообще не уверен, 50 — сомневаешься, 75 — почти уверен, 100 — абсолютно уверен.
+3 примера ответа ниже:
+FILES 80
+CALENDAR,MAIL,BROWSER 70
+CHAT 100"""
     }
 
     private fun ToolCategory.description(): String = when(this) {
-        FILES -> """
-навигация по файловой системе, чтение и поиск текста в файлах, создание, удаление или изменение файлов и папок"""
+        FILES -> """|навигация по файловой системе, чтение и поиск текста в файлах, 
+                    |создание, удаление или изменение файлов и папок"""
 
-        BROWSER -> """
-веб-страницы, вкладки, или браузерные горячие клавиши, или когда надо получить общую информацию о новостях или погоде"""
+        BROWSER -> """|веб-страницы, вкладки, или браузерные горячие клавиши, 
+                      |или когда надо получить общую информацию о новостях или погоде"""
 
-        CONFIG -> """
-изменение или сохранение настроек, вроде скорости речи, запоминание и исполнение инструкций"""
-
-        DATAANALYTICS -> """
-когда надо создать график или найти корреляцию между двумя переменными"""
-
-        CALENDAR -> """
-создание и удаление событий в календаре"""
-
-        MAIL -> """
-получение и отправка писем, список писем, чтение писем, ответ на письмо, прочтение сообщений из почты"""
-
-        NOTES -> """
-работа с заметками"""
-
-        APPLICATIONS -> """
-работа с приложениями"""
-
-        TEXT_REPLACE -> """
-работа с текстом, который сейчас выделен пользователем (находится под selection)
-"""
-
-        CHAT -> """
-вопрос на общие знания, не относящиеся к работе с рабочим столом, или просто болтовня
-"""
-    }
-        .trimIndent()
+        CONFIG -> "изменение или сохранение настроек, вроде скорости речи, запоминание и исполнение инструкций"
+        DATAANALYTICS -> "когда надо создать график или найти корреляцию между двумя переменными"
+        CALENDAR -> "создание и удаление событий в календаре"
+        MAIL -> "получение и отправка писем, список писем, чтение писем, ответ на письмо, прочтение сообщений из почты."
+        NOTES -> "работа с заметками"
+        APPLICATIONS -> "работа с приложениями"
+        TEXT_REPLACE -> "работа с текстом, который сейчас выделен пользователем (находится под selection)"
+        CHAT -> "вопрос на общие знания, не относящиеся к работе с рабочим столом, или просто болтовня"
+    }.trimMargin().trimIndent()
 
     private fun ToolCategory.examples(): List<String> = when (this) {
         FILES -> listOf(
