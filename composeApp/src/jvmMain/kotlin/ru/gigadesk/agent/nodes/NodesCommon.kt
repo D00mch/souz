@@ -25,7 +25,10 @@ class NodesCommon(
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
-    /** Ensures proper history with user input as message exists */
+    /**
+     * Ensures proper history with user input as a message.
+     * Modifies [AgentContext.history] while preserving [AgentContext.input].
+     */
     fun inputToHistory(name: String = "Input->History"): Node<String, String> =
         Node(name) { ctx ->
             val usrMsg = GigaRequest.Message(GigaMessageRole.user, ctx.input)
@@ -37,7 +40,8 @@ class NodesCommon(
         }
 
     /**
-     * Converts LLM's [GigaResponse.Chat.Ok] into the text suitable for user to see.
+     * Converts LLM's [GigaResponse.Chat.Ok] into text suitable for the user to see.
+     * Modifies [AgentContext.input] by replacing the response with the final message content.
      */
     fun responseToString(
         name: String = "Response -> String"
@@ -47,7 +51,7 @@ class NodesCommon(
 
     /**
      * Executes all the [GigaResponse.FunctionCall] from history synchronously.
-     * put in [AgentContext.history]
+     * Updates [AgentContext.history] and [AgentContext.input] with tool call results.
      */
     fun toolUse(name: String = "toolUse"): Node<GigaResponse.Chat.Ok, String> = Node(name) { ctx ->
         val fnCallMessages = fnCallMessages(ctx)
@@ -59,6 +63,7 @@ class NodesCommon(
      * Makes sure we have Additional Data (AD) in the [AgentContext.history]. Implementation details:
      * - Swap the previous AD with the current one (so agent does have only the current AD, no previous ones);
      * - Append AD before the previous message (so agent is not focused on the AD).
+     * Modifies [AgentContext.history] when new data is added.
      */
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
         val additionalMessage: GigaRequest.Message? = appendActualInformation(ctx.input)

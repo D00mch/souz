@@ -15,8 +15,9 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.engine.*
 import ru.gigadesk.agent.nodes.NodesCommon
-import ru.gigadesk.agent.nodes.NodesLLM
 import ru.gigadesk.agent.nodes.NodesClassification
+import ru.gigadesk.agent.nodes.NodesLLM
+import ru.gigadesk.agent.nodes.NodesSummarization
 import ru.gigadesk.agent.session.GraphSessionService
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
@@ -36,6 +37,7 @@ class GraphBasedAgent(
     private val nodesLLM: NodesLLM by di.instance()
     private val nodesCommon: NodesCommon by di.instance()
     private val nodesClassify: NodesClassification by di.instance()
+    private val nodesSummarization: NodesSummarization by di.instance()
     private val settingsProvider: SettingsProvider by di.instance()
     private val sessionService: GraphSessionService by di.instance()
 
@@ -70,7 +72,7 @@ class GraphBasedAgent(
         val nodeClassify: Node<String, String> = nodesClassify.node()
         val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
         val toolUse: Node<GigaResponse.Chat.Ok, String> = nodesCommon.toolUse()
-        val summary: Node<GigaResponse.Chat.Ok, String> = nodesLLM.summarize()
+        val summary: Node<GigaResponse.Chat.Ok, String> = nodesSummarization.summarize()
 
         // graph
         nodeInput.edgeTo(inputToHistory)

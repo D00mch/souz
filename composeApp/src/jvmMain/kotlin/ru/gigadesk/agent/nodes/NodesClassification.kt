@@ -25,7 +25,10 @@ class NodesClassification(
 ) {
     private val l = LoggerFactory.getLogger(NodesClassification::class.java)
 
-    /** Modifies [AgentContext.activeTools], based on the Classification algorithm and [ToolsSettings] */
+    /**
+     * Classifies the user input and selects tools for the current step.
+     * Modifies [AgentContext.activeTools] based on the classification algorithm and [ToolsSettings].
+     */
     fun node(name: String = "classify"): Node<String, String> = Node(name) { ctx: AgentContext<String> ->
         val categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>> =
             toolsSettings.applyFilter(toolsFactory.toolsByCategory)

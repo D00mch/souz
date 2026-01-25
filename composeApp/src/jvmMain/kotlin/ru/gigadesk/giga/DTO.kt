@@ -186,3 +186,19 @@ operator fun GigaResponse.Usage.plus(usage: GigaResponse.Usage): GigaResponse.Us
     totalTokens = this.totalTokens + usage.totalTokens,
     precachedTokens = this.precachedTokens + usage.precachedTokens
 )
+
+fun GigaResponse.Choice.toMessage(): GigaRequest.Message? {
+    val msg = this.message
+    val content: String = when {
+        msg.content.isNotBlank() -> msg.content
+        msg.functionCall != null -> gigaJsonMapper.writeValueAsString(
+            mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
+        )
+        else -> return null
+    }
+    return GigaRequest.Message(
+        role = msg.role,
+        content = content,
+        functionsStateId = msg.functionsStateId
+    )
+}
