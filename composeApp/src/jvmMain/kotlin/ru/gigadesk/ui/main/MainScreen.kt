@@ -59,6 +59,7 @@ import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import org.kodein.di.compose.localDI
 import kotlin.random.Random
+import ru.gigadesk.ui.common.ConnectionStatusNotification
 
 private val TopButtonSize = 24.dp
 private val TopIconSize = 14.dp
@@ -73,6 +74,7 @@ fun MainScreen(
     onOpenSettings: () -> Unit,
     onCloseWindow: () -> Unit,
     onShowSnack: (String) -> Unit = {},
+    isOnline: Boolean = true,
 ) {
     val di = localDI()
     val viewModel = viewModel { MainViewModel(di) }
@@ -89,6 +91,7 @@ fun MainScreen(
 
     MainScreenContent(
         state = state,
+        isOnline = isOnline,
         onToggleListening = {
             if (state.isListening) viewModel.send(MainEvent.StopListening)
             else viewModel.send(MainEvent.StartListening)
@@ -105,6 +108,7 @@ fun MainScreen(
 @Composable
 fun MainScreenContent(
     state: MainState,
+    isOnline: Boolean,
     onToggleListening: () -> Unit = {},
     onClear: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
@@ -246,22 +250,32 @@ fun MainScreenContent(
                     },
                     delayMillis = 900,
                 ) {
-                    Box(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 20.dp, top = 5.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(bottom = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Bottom
                     ) {
-                        if (state.isProcessing) {
-                            DashedSpinningWheel(
-                                color = Color.White.copy(alpha = 0.8f),
-                                modifier = Modifier.size(80.dp)
+                        ConnectionStatusNotification(
+                            isOnline = isOnline,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        
+                        Box(
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (state.isProcessing) {
+                                DashedSpinningWheel(
+                                    color = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(80.dp)
+                                )
+                            }
+                            LiquidOrb(
+                                isActive = state.isListening,
+                                onClick = onToggleListening
                             )
                         }
-                        LiquidOrb(
-                            isActive = state.isListening,
-                            onClick = onToggleListening
-                        )
                     }
                 }
             }
@@ -674,7 +688,8 @@ fun PreviewSmartFocusGlass() {
                     displayedText = "### Заголовок\nВот пример кода:\n```python\ndef hello():\n    print('Hello')\n```\n* Пункт 1\n* Пункт 2",
                     statusMessage = "Готов",
                     isListening = false
-                )
+                ),
+                isOnline = true
             )
         }
     }
