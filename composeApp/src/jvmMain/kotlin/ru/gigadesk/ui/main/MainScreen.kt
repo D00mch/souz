@@ -483,7 +483,7 @@ fun RealLiquidGlassCard(
     val noiseBrush = rememberNoiseBrush()
 
     val backdropAlpha by animateFloatAsState(
-        targetValue = if (isWindowFocused) 0.75f else 0.0f,
+        targetValue = if (isWindowFocused) 0.95f else 0.0f,
         animationSpec = tween(400)
     )
 

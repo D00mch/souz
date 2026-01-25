@@ -290,7 +290,9 @@ fun GraphVisualizationScreen(
                         SideDetailsPanel(
                             selectedNode = selectedNodeId?.let { graphData.nodes[it] },
                             selectedStep = selectedStep,
-                            onStepSelect = { selectedStep = it }
+                            onStepSelect = { step ->
+                                selectedStep = if (selectedStep == step) null else step
+                            }
                         )
                     }
                 }
