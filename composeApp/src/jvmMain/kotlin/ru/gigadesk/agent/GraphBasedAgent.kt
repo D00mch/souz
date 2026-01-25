@@ -61,10 +61,10 @@ class GraphBasedAgent(
     private val graph: Graph<String, String> = buildGraph(name = "Agent") {
         // nodes
         val chatSubgraph: Node<String, GigaResponse.Chat> = nodesLLM.chat("LLM")
-        val chatOk: Node<GigaResponse.Chat, GigaResponse.Chat.Ok> = Node("Chat.Ok only") { ctx ->
+        val chatOk: Node<GigaResponse.Chat, GigaResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
             ctx.map { ctx.input as GigaResponse.Chat.Ok }
         }
-        val chatErrorToFinish: Node<GigaResponse.Chat, String> = Node("Chat.Error -> Finish") { ctx ->
+        val chatErrorToFinish: Node<GigaResponse.Chat, String> = Node("Chat.Error") { ctx ->
             val error = ctx.input as GigaResponse.Chat.Error
             ctx.map { error.message }
         }
