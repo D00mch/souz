@@ -5,10 +5,23 @@ import ru.gigadesk.tool.files.ToolListFiles
 import com.fasterxml.jackson.module.kotlin.contains
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
+import ru.gigadesk.tool.files.FilesToolUtil
+import java.io.File
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class GigaToolTest {
+    private fun createTempDirectory(): File =
+        Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "gigadesk-giga-test-").toFile()
+
+    private fun createSampleFiles(baseDir: File) {
+        val nestedDir = File(baseDir, "directory").apply { mkdirs() }
+        File(nestedDir, "file.txt").writeText("Nested")
+        File(baseDir, "sample.csv").writeText("name,score\nAlice,1")
+        File(baseDir, "test.txt").writeText("Test content\n")
+    }
+
     @Test
     fun `test function name and parameters setup`() {
         val fn = ToolListFiles.toGiga().fn
@@ -24,31 +37,37 @@ class GigaToolTest {
 
     @Test
     fun `test function invocation`() = runBlocking {
-        val toolsMap: Map<String, GigaToolSetup> = listOf(ToolListFiles.toGiga()).associateBy { it.fn.name }
+        val tempDir = createTempDirectory()
+        try {
+            createSampleFiles(tempDir)
+            val toolsMap: Map<String, GigaToolSetup> = listOf(ToolListFiles.toGiga()).associateBy { it.fn.name }
 
-        val functionCall = GigaResponse.FunctionCall(
-            name = "ListFiles",
-            arguments = mapOf("path" to "src/jvmTest/resources"),
-        )
+            val functionCall = GigaResponse.FunctionCall(
+                name = "ListFiles",
+                arguments = mapOf("path" to tempDir.absolutePath),
+            )
 
-        val l = LoggerFactory.getLogger(GigaToolTest::class.java)
-        val result = toolsMap[functionCall.name]!!.invoke(functionCall)
-        l.info("$result")
-        assertEquals(GigaMessageRole.function, result.role)
-        val actual = gigaJsonMapper.readTree(result.content).let { nodes ->
-            if (nodes.contains("result")) {
-                nodes.get("result").asText()
-            } else {
-                nodes.asText()
+            val l = LoggerFactory.getLogger(GigaToolTest::class.java)
+            val result = toolsMap[functionCall.name]!!.invoke(functionCall)
+            l.info("$result")
+            assertEquals(GigaMessageRole.function, result.role)
+            val actual = gigaJsonMapper.readTree(result.content).let { nodes ->
+                if (nodes.contains("result")) {
+                    nodes.get("result").asText()
+                } else {
+                    nodes.asText()
+                }
             }
+            val actualSet = actual.removePrefix("[").removeSuffix("]").split(",").toSet()
+            val expected = setOf(
+                "${tempDir.absolutePath}/directory/",
+                "${tempDir.absolutePath}/directory/file.txt",
+                "${tempDir.absolutePath}/sample.csv",
+                "${tempDir.absolutePath}/test.txt",
+            )
+            assertEquals(expected, actualSet)
+        } finally {
+            tempDir.deleteRecursively()
         }
-        val actualSet = actual.removePrefix("[").removeSuffix("]").split(",").toSet()
-        val expected = setOf(
-            "src/jvmTest/resources/directory/",
-            "src/jvmTest/resources/directory/file.txt",
-            "src/jvmTest/resources/sample.csv",
-            "src/jvmTest/resources/test.txt",
-        )
-        assertEquals(expected, actualSet)
     }
 }
