@@ -53,6 +53,7 @@ class NodesCommon(
 
     /**
      * Executes all the [GigaResponse.FunctionCall] from history synchronously.
+     *
      * Updates [AgentContext.history] and [AgentContext.input] with tool call results.
      */
     fun toolUse(name: String = "toolUse"): Node<GigaResponse.Chat.Ok, String> = Node(name) { ctx ->
