@@ -116,7 +116,7 @@ $examplesSection
 Число — от 0 до 100. 0 — вообще не уверен, 50 — сомневаешься, 75 — почти уверен, 100 — абсолютно уверен.
 3 примера ответа ниже:
 FILES 80
-COMPLEX_TASK,CALENDAR,MAIL 70
+CALENDAR,MAIL,BROWSER 70
 CHAT 100"""
     }
 
