@@ -58,9 +58,7 @@ class NodesClassification(
             if (retriesCount <= 0) return localResult.categories
 
             val apiResult: UserMessageClassifier.Reply = apiClassifier.classify(bodyJson)
-
             val (localCategories, _) = localClassifier.classify(bodyJson)
-
             if (apiResult.confidence > 50 || apiResult.categories.firstOrNull() == localCategories.firstOrNull()) {
                 return apiResult.categories
             } else {
