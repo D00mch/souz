@@ -9,7 +9,7 @@ context, explicit transitions, and deterministic execution with retries.
 - **AgentContext** — immutable payload that flows through the graph: input, settings, conversation history, active tools, and
   a system prompt. Nodes return a *new* context instead of mutating state.
 - **Node** — a suspendable unit of work (`execute`) that transforms `AgentContext<IN>` into `AgentContext<OUT>`.
-- **Graph** — a Node that wires other nodes with static or dynamic transitions (`edgeTo`). Executable with GraphRunner.
+- **Graph** — a Node that wires other nodes with **static** or **dynamic** transitions (`edgeTo`). Executable with GraphRunner.
 - **GraphRunner** — execution engine that traverses the graph, respects `maxSteps`, and stops on a designated exit node.
 - **GraphRuntime & RetryPolicy** — runtime settings for retries, step limits, and step callbacks.
 
@@ -35,3 +35,9 @@ val seed = AgentContext(
 
 println("Result: ${graph.start(seed)}")
 ```
+
+## Best practices
+
+- When you create a **Node**, document what input it expects, what output produce (e.g. takes `ctx.input`, updates `ctx.history`). 
+- When working with **dynamic** transitions — `edge { ... }` — we have to `edge` from the same type.
+- In the top level graph, use the combined nodes to avoid low level details.

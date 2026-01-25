@@ -2,6 +2,10 @@
 
 A desktop Agent app to help with routines.
 
+# Documentation
+
+- [Agent engine](composeApp/src/jvmMain/kotlin/ru/gigadesk/agent/engine/README.md)
+
 # Developers notes
  
 For Intellij IDEA you need next plugins:

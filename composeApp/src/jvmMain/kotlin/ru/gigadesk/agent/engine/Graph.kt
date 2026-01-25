@@ -56,7 +56,7 @@ class GraphBuilder<IN, OUT> internal constructor(
         return target
     }
 
-    fun <IN, OUT> Node<IN, OUT>.edgeTo(router: suspend (AgentContext<OUT>) -> Node<OUT, *>): Unit {
+    fun <IN, OUT> Node<IN, OUT>.edgeTo(router: suspend (AgentContext<OUT>) -> Node<OUT, *>) {
         registerTransition(this, Transition.Dynamic(router))
     }
 
@@ -87,8 +87,8 @@ internal class GraphDefinition(
         val next = ArrayList<Node<Any?, *>>(registered.size)
         for (transition in registered) {
             when (transition) {
-                is Transition.Static -> next.addOrWarn(transition.target as Node<Any?, *>)
-                is Transition.Dynamic -> next.addOrWarn(transition.router(ctx) as Node<Any?, *>)
+                is Transition.Static -> next.addOrWarn(transition.target)
+                is Transition.Dynamic -> next.addOrWarn(transition.router(ctx))
             }
         }
         return next
@@ -108,9 +108,11 @@ internal sealed interface Transition<OUT> {
     class Dynamic<OUT>(val router: suspend (AgentContext<OUT>) -> Node<OUT, *>) : Transition<OUT>
 }
 
+private val defaultRetryPolicy = RetryPolicy()
+
 fun <I, O> buildGraph(
     name: String = "Graph",
-    retryPolicy: RetryPolicy = RetryPolicy(),
+    retryPolicy: RetryPolicy = defaultRetryPolicy,
     configure: GraphBuilder<I, O>.() -> Unit
 ): Graph<I, O> {
     val builder = GraphBuilder<I, O>(name, retryPolicy)
@@ -120,10 +122,15 @@ fun <I, O> buildGraph(
 
 fun <I, O> graph(
     name: String? = null,
-    retryPolicy: RetryPolicy = RetryPolicy(),
+    retryPolicy: RetryPolicy = defaultRetryPolicy,
     configure: GraphBuilder<I, O>.() -> Unit
 ): ReadOnlyProperty<Any?, Graph<I, O>> = GraphDelegate(name, retryPolicy, configure)
 
+
+/**
+ * Make sure to avoid using [GraphBuilder.nodeInput] from the outsize scope as an entry point.
+ * This graph has its own runtime.
+ */
 private class GraphDelegate<I, O>(
     private val nameHint: String?,
     private val retryPolicy: RetryPolicy,

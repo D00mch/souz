@@ -14,8 +14,8 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.engine.*
-import ru.gigadesk.agent.node.NodesCommon
-import ru.gigadesk.agent.node.NodesLLM
+import ru.gigadesk.agent.nodes.NodesCommon
+import ru.gigadesk.agent.nodes.NodesLLM
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.agent.session.GraphSessionService
 import ru.gigadesk.db.SettingsProvider
@@ -32,11 +32,10 @@ class GraphBasedAgent(
 ) {
     private val l = LoggerFactory.getLogger(GraphBasedAgent::class.java)
 
-    private val toolsFactory: ToolsFactory  by di.instance()
-    private val nodesLLM: NodesLLM  by di.instance()
+    private val toolsFactory: ToolsFactory by di.instance()
+    private val nodesLLM: NodesLLM by di.instance()
     private val nodesCommon: NodesCommon by di.instance()
     private val nodesClassify: NodesClassification by di.instance()
-    private val nodeClassify = nodesClassify.node
     private val settingsProvider: SettingsProvider by di.instance()
     private val sessionService: GraphSessionService by di.instance()
 
@@ -98,15 +97,15 @@ class GraphBasedAgent(
     suspend fun execute(input: String): String {
         cancelActiveJob()
         val ctx = currentContext.value.copy(input = input)
-        
+
         sessionService.startTask(input)
-        
+
         val result: Deferred<AgentContext<String>> = coroutineScope {
             async {
                 buildGraph().start(ctx) { step, node, from, to ->
                     val prettyInput = logObjectMapper.writeValueAsString(from.input)
                     l.debug { "Step: ${step.index}, node: ${node.name}, input: $prettyInput" }
-                    
+
                     sessionService.onStep(step, node, from, to)
                 }
             }
@@ -125,21 +124,30 @@ class GraphBasedAgent(
     }
 
     private fun buildGraph(): Graph<String, String> = buildGraph(name = "Agent") {
-        nodeInput.edgeTo(nodeClassify)
-        nodeClassify.edgeTo(nodesCommon.nodeAppendAdditionalData)
-        nodesCommon.nodeAppendAdditionalData.edgeTo(nodesCommon.stringToReq)
-        nodesCommon.stringToReq.edgeTo(nodesLLM.requestToResponse)
-        nodesLLM.requestToResponse.edgeTo { ctx ->
+        // nodes
+        val chatSubgraph: Node<String, GigaResponse.Chat> = nodesLLM.chat("LLM")
+        val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
+        val nodeClassify = nodesClassify.node()
+        val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
+        val toolUse = nodesCommon.toolUse()
+        val summary = nodesLLM.summarize()
+
+        // graph
+        nodeInput.edgeTo(inputToHistory)
+        inputToHistory.edgeTo(nodeClassify)
+        nodeClassify.edgeTo(contextEnrich)
+        contextEnrich.edgeTo(chatSubgraph)
+        chatSubgraph.edgeTo { ctx ->
             when (val output = ctx.input) {
-                is GigaResponse.Chat.Error -> nodesLLM.nodeSummarize
-                is GigaResponse.Chat.Ok -> if (isToolUse(output)) nodesCommon.toolUse else nodesLLM.nodeSummarize
+                is GigaResponse.Chat.Error -> summary
+                is GigaResponse.Chat.Ok -> if (output.isToolUse) toolUse else summary
             }
         }
-        nodesCommon.toolUse.edgeTo(nodesLLM.requestToResponse)
-        nodesLLM.nodeSummarize.edgeTo(nodeFinish)
+        toolUse.edgeTo(chatSubgraph)
+        summary.edgeTo(nodeFinish)
     }
 
-    private fun isToolUse(input: GigaResponse.Chat.Ok): Boolean = input.choices.any { it.message.functionCall != null }
+    private val GigaResponse.Chat.Ok.isToolUse get() = choices.any { it.message.functionCall != null }
 
     private fun createInitialCtx(): AgentContext<String> = AgentContext(
         input = "",
