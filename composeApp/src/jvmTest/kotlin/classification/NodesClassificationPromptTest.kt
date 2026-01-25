@@ -68,7 +68,7 @@ class NodesClassificationPromptTest {
         val prompt = buildPromptWith(toolsSettings, toolsFactory)
 
         assertTrue(prompt.contains("FILES"))
-        assertFalse(prompt.contains("BROWSER"))
+        assertFalse(prompt.contains("TEXT_REPLACE"))
     }
 
     @Test
@@ -87,7 +87,7 @@ class NodesClassificationPromptTest {
         val prompt = buildPromptWith(toolsSettings, toolsFactory)
 
         assertTrue(prompt.contains("FILES"))
-        assertFalse(prompt.contains("BROWSER"))
+        assertFalse(prompt.contains("TEXT_REPLACE"))
     }
 
     private fun buildPromptWith(toolsSettings: ToolsSettings, toolsFactory: ToolsFactory): String {
