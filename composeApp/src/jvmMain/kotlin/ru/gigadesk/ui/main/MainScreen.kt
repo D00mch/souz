@@ -223,7 +223,7 @@ fun MainScreenContent(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(top = 5.dp, start = 24.dp, end = 24.dp),
+                            .padding(top = 16.dp, start = 24.dp, end = 24.dp),
                         contentAlignment = Alignment.TopStart
                     ) {
 
