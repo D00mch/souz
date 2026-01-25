@@ -864,17 +864,32 @@ fun ExpandableStepItem(
                     // Classification Result - shown for classify nodes
                     val isClassifyStep = step.nodeName.lowercase().contains("classify") || 
                                          step.nodeName.lowercase().contains("классифик")
-                    if (isClassifyStep && !step.outputSummary.isNullOrEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("CLASSIFICATION RESULT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
-                            Text(
-                                text = step.outputSummary.trim(),
-                                style = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp,
-                                    color = Color(0xFFA5D6A7) // Same green as OUTPUT
+                    if (isClassifyStep) {
+                        // Parse data field for selectedCategories
+                        val selectedCategories = remember(step.data) {
+                            try {
+                                val jsonNode = com.fasterxml.jackson.databind.ObjectMapper().readTree(step.data)
+                                val categoriesNode = jsonNode.get("selectedCategories")
+                                if (categoriesNode != null && categoriesNode.isArray) {
+                                    categoriesNode.map { it.asText() }
+                                } else null
+                            } catch (e: Exception) {
+                                null
+                            }
+                        }
+                        
+                        if (selectedCategories != null && selectedCategories.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("CATEGORIES", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                                Text(
+                                    text = selectedCategories.joinToString(", "),
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        color = Color(0xFFA5D6A7)
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                     

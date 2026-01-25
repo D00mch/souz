@@ -44,7 +44,22 @@ class GraphSessionService(
         }
 
         val debugData = try {
-            logObjectMapper.writeValueAsString(mapOf("in" to from.input, "out" to to.input))
+            val baseData = mutableMapOf<String, Any?>("in" to from.input, "out" to to.input)
+            
+            // For classify nodes, include the selected categories
+            if (node.name.lowercase().contains("classify")) {
+                val toToolNames = to.activeTools.map { it.name }.toSet()
+                // Reverse-map tools to categories
+                val selectedCategories = to.settings.toolsByCategory
+                    .filter { (_, tools) -> tools.keys.any { it in toToolNames } }
+                    .keys
+                    .map { it.name }
+                if (selectedCategories.isNotEmpty()) {
+                    baseData["selectedCategories"] = selectedCategories
+                }
+            }
+            
+            logObjectMapper.writeValueAsString(baseData)
         } catch (e: Exception) {
             "{}"
         }
