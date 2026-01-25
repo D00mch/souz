@@ -16,7 +16,7 @@ context, explicit transitions, and deterministic execution with retries.
 ## Usage example
 
 ```kotlin
-  val userInput = Node<String, String>("userInput") { ctx -> ctx.map { readln() } }
+val userInput = Node<String, String>("userInput") { ctx -> ctx.map { readln() } }
 val llmCall = Node<String, String>("llmCall") { ctx -> ctx.map { "Response: $it" } }
 
 val graph = buildGraph(name = "chat") {
