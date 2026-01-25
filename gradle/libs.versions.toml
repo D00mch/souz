@@ -9,6 +9,7 @@ jnativehook = "2.2.2"
 jna = "5.14.0"
 junit = "4.13.2"
 grpc = "1.65.0"
+javaDiffUtils = "4.15"
 grpcKotlin = "1.4.1"
 kdroidfilter-platformtools = "0.6.1"
 kodeinDi = "7.26.1"
@@ -42,6 +43,7 @@ grpc-kotlinStub = { module = "io.grpc:grpc-kotlin-stub", version.ref = "grpcKotl
 grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
 grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
 grpc-nettyShaded = { module = "io.grpc:grpc-netty-shaded", version.ref = "grpc" }
+java-diffUtils = { module = "io.github.java-diff-utils:java-diff-utils", version.ref = "javaDiffUtils" }
 kodein-di-framework-compose = { module = "org.kodein.di:kodein-di-framework-compose", version.ref = "kodeinDi" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
@@ -66,6 +68,7 @@ protobuf-kotlin = { module = "com.google.protobuf:protobuf-kotlin", version.ref 
 slfj = { module = "org.slf4j:jul-to-slf4j", version.ref = "slfj" }
 tika-core = { module = "org.apache.tika:tika-core", version.ref = "tika" }
 tika-parsersStandardPackage = { module = "org.apache.tika:tika-parsers-standard-package", version.ref = "tika" }
+compose-ui-tooling-preview-desktop = { module = "org.jetbrains.compose.ui:ui-tooling-preview-desktop", version.ref = "composeMultiplatform" }
 
 [bundles]
 ktorClient = [

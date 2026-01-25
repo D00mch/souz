@@ -30,7 +30,7 @@ class NodesClassification(
      *
      * Modifies [AgentContext.activeTools] based on the classification algorithm and [ToolsSettings].
      */
-    fun node(name: String = "classify"): Node<String, String> = Node(name) { ctx: AgentContext<String> ->
+    fun node(name: String = "select categories"): Node<String, String> = Node(name) { ctx: AgentContext<String> ->
         val categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>> =
             toolsSettings.applyFilter(toolsFactory.toolsByCategory)
         val categories: List<ToolCategory> = classify(ctx.input, ctx.history, categoryStates)

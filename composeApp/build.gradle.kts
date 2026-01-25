@@ -39,7 +39,7 @@ kotlin {
         jvmMain.dependencies {
             implementation(files("src/jvmMain/resources/darwin-arm64"))
 
-            implementation("org.jetbrains.compose.ui:ui-tooling-preview-desktop")
+            implementation(libs.compose.ui.tooling.preview.desktop)
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
 
@@ -75,6 +75,7 @@ kotlin {
             implementation(libs.commons.csv)
             implementation(libs.bundles.letsPlot)
             implementation(libs.markdown)
+            implementation(libs.java.diffUtils)
         }
 
         jvmTest.dependencies {

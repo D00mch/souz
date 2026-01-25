@@ -11,10 +11,18 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Thread safe, but only one task at a time.
+ * Use [NODE_NAME_CLASSIFY] to support chosen categories visualization
  */
 class GraphSessionService(
     private val repository: GraphSessionRepository, private val logObjectMapper: ObjectMapper
 ) {
+    companion object {
+        const val NODE_NAME_CLASSIFY = "classify"
+        private const val DATA_KEY_SELECTED_CATEGORIES = "selectedCategories"
+        private const val DATA_KEY_IN = "in"
+        private const val DATA_KEY_OUT = "out"
+    }
+
     private val currentSessionId = AtomicReference<String?>(null)
     private val startTime = AtomicLong(0)
     private val initialInput = AtomicReference("")
@@ -44,19 +52,43 @@ class GraphSessionService(
         }
 
         val debugData = try {
-            logObjectMapper.writeValueAsString(mapOf("in" to from.input, "out" to to.input))
+            val baseData = mutableMapOf(DATA_KEY_IN to from.input, DATA_KEY_OUT to to.input)
+            
+            if (node.name.lowercase().contains(NODE_NAME_CLASSIFY)) {
+                val toToolNames = to.activeTools.map { it.name }.toSet()
+                val selectedCategories = to.settings.toolsByCategory
+                    .filter { (_, tools) -> tools.keys.any { it in toToolNames } }
+                    .keys
+                    .map { it.name }
+                if (selectedCategories.isNotEmpty()) {
+                    baseData[DATA_KEY_SELECTED_CATEGORIES] = selectedCategories
+                }
+            }
+            
+            logObjectMapper.writeValueAsString(baseData)
         } catch (e: Exception) {
-            "{}"
+            logObjectMapper.writeValueAsString(mapOf("error" to e.toString()))
         }
+
+        val newMessages = to.history.filter { msg -> !from.history.contains(msg) }
+
+        val historyDelta = if (newMessages.isNotEmpty()) {
+            try {
+                logObjectMapper.writeValueAsString(newMessages)
+            } catch (e: Exception) {
+                logObjectMapper.writeValueAsString(mapOf("error" to e.toString()))
+            }
+        } else null
 
         steps.add(
             GraphStepRecord(
                 stepIndex = step.index,
                 nodeName = node.name,
                 timestamp = System.currentTimeMillis(),
-                inputSummary = prettyInput.take(500),
-                outputSummary = prettyOutput.take(500),
-                data = debugData
+                inputSummary = prettyInput,
+                outputSummary = prettyOutput,
+                data = debugData,
+                addedHistory = historyDelta
             )
         )
     }
