@@ -47,11 +47,6 @@ fun App(
             val online = withContext(Dispatchers.IO) { isInternetAvailable() }
             if (online != isOnline.value) {
                 isOnline.value = online
-                if (!online) {
-                    snackbarScope.launch {
-                        snackbarHostState.showSnackbar("No internet connection.")
-                    }
-                }
             }
             delay(5_000)
         }
@@ -85,6 +80,7 @@ fun App(
                                 onShowSnack = { message ->
                                     snackbarScope.launch { snackbarHostState.showSnackbar(message) }
                                 },
+                                isOnline = isOnline.value
                             )
                             Settings -> SettingsScreen(
                                 onClose = { currentScreen = Main },
