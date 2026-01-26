@@ -45,7 +45,11 @@ object ToolListFiles : ToolSetup<ToolListFiles.Input> {
                 if (file.isDirectory) "$fixedPath/$relPath/" else "$fixedPath/$relPath"
             } // no sort or .toList() required, not for codex
 
-        return files.joinToString(",", prefix = "[", postfix = "]")
+        val result = files.joinToString(",", prefix = "[", postfix = "]")
+        if (result.length > 25000) {
+            return "Error: content is too large, it will be difficult to correctly process so much data (limit 25000 chars)."
+        }
+        return result
     }
 }
 

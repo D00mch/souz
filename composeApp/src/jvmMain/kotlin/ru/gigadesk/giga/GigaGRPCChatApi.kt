@@ -104,6 +104,10 @@ class GigaGRPCChatApi(
                 (e is StatusRuntimeException && e.status.code == Status.Code.UNAUTHENTICATED)
             ) {
                 emitAll(stream(refreshAccessToken()))
+            } else if ((e is StatusException && e.status.code == Status.Code.RESOURCE_EXHAUSTED) ||
+                (e is StatusRuntimeException && e.status.code == Status.Code.RESOURCE_EXHAUSTED)
+            ) {
+                emit(GigaResponse.Chat.Error(413, "Resource exhausted: ${e.message}"))
             } else {
                 emit(GigaResponse.Chat.Error(-1, "Connection error: ${e.message}"))
             }

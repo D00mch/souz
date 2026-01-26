@@ -47,6 +47,29 @@ class NodesLLM(
                 }
             }
             l.debug("LLM response is {}", response)
+
+            if (response is GigaResponse.Chat.Error && response.status == 413) {
+                val resetContent = "Я запутался - давай начнем заново"
+                val resetMessage = GigaResponse.Message(
+                    content = resetContent,
+                    role = GigaMessageRole.assistant,
+                    functionsStateId = null
+                )
+                val fixedResponse = GigaResponse.Chat.Ok(
+                    choices = listOf(
+                        GigaResponse.Choice(
+                            message = resetMessage,
+                            index = 0,
+                            finishReason = GigaResponse.FinishReason.stop
+                        )
+                    ),
+                    created = System.currentTimeMillis() / 1000,
+                    model = "system-reset",
+                    usage = GigaResponse.Usage(0, 0, 0, 0)
+                )
+                return@Node ctx.map(history = emptyList()) { fixedResponse }
+            }
+
             val history = ArrayList(ctx.history).apply {
                 if (response is GigaResponse.Chat.Ok) {
                     addAll(response.choices.mapNotNull { it.toMessage() })
