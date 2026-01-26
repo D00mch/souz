@@ -43,10 +43,10 @@ object GigaResponse {
     )
 
     data class RecognizeResponse(
-        val result: List<String>,
-        val emotions: List<Emotion>,
-        @field:JsonProperty("person_identity") val personIdentity: PersonIdentity,
-        val status: Int
+        val result: List<String> = emptyList(),
+        val emotions: List<Emotion> = emptyList(),
+        @field:JsonProperty("person_identity") val personIdentity: PersonIdentity? = null,
+        val status: Int = 0
     )
 
     data class Emotion(
