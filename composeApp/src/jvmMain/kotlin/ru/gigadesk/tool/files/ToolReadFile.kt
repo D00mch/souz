@@ -29,6 +29,10 @@ object ToolReadFile : ToolSetup<ToolReadFile.Input> {
         if (!file.exists() || file.isDirectory) {
             throw BadInputException("Invalid file path: $path")
         }
-        return file.readText()
+        val content = file.readText()
+        if (content.length > 25000) {
+            return "Error: content is too large, it will be difficult to correctly process so much data (limit 25000 chars)."
+        }
+        return content
     }
 }

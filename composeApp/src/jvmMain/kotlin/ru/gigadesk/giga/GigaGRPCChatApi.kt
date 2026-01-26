@@ -5,25 +5,21 @@ import ch.qos.logback.classic.Logger
 import com.fasterxml.jackson.module.kotlin.readValue
 import gigachat.v1.ChatServiceGrpcKt
 import gigachat.v1.Gigachatv1
-import io.grpc.ManagedChannel
-import io.grpc.Metadata
-import io.grpc.Status
-import io.grpc.StatusException
-import io.grpc.StatusRuntimeException
+import io.grpc.*
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext
-import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
-import org.slf4j.LoggerFactory
-import org.slf4j.bridge.SLF4JBridgeHandler
 import org.kodein.di.DI
 import org.kodein.di.instance
+import org.slf4j.LoggerFactory
+import org.slf4j.bridge.SLF4JBridgeHandler
 import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.tool.files.ToolListFiles
+import java.util.*
 import kotlin.time.measureTime
 
 /**
@@ -104,6 +100,12 @@ class GigaGRPCChatApi(
                 (e is StatusRuntimeException && e.status.code == Status.Code.UNAUTHENTICATED)
             ) {
                 emitAll(stream(refreshAccessToken()))
+            } else if (
+                (e is StatusException && e.status.code == Status.Code.RESOURCE_EXHAUSTED) ||
+                (e is StatusRuntimeException && e.status.code == Status.Code.RESOURCE_EXHAUSTED) ||
+                e.message?.contains("status code 413") == true
+            ) {
+                emit(GigaResponse.Chat.Error(413, "Resource exhausted: ${e.message}"))
             } else {
                 emit(GigaResponse.Chat.Error(-1, "Connection error: ${e.message}"))
             }
@@ -219,7 +221,7 @@ class GigaGRPCChatApi(
 
     private suspend fun refreshAccessToken(): String {
         val apiKey = System.getenv("GIGA_KEY") ?: System.getProperty("GIGA_KEY")
-            ?: throw IllegalStateException("GIGA_KEY is not set")
+        ?: throw IllegalStateException("GIGA_KEY is not set")
         val newToken = auth.requestToken(apiKey, "GIGACHAT_API_PERS")
         System.setProperty("GIGA_ACCESS_TOKEN", newToken)
         return newToken

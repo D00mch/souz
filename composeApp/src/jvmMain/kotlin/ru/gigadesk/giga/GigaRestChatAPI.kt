@@ -94,6 +94,14 @@ class GigaRestChatAPI(
                     GigaResponse.Chat.Error(response.status.value, response.status.description)
                 }
         }
+    } catch (e: ClientRequestException) {
+        val status = e.response.status
+        val msg = if (status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden) {
+            "Authentication error: ${status.description}"
+        } else {
+            "HTTP error: ${e.response.bodyAsText()}"
+        }
+        GigaResponse.Chat.Error(status.value, msg)
     } catch (t: Throwable) {
         l.error("Error in REST chat", t)
         GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")

@@ -15,6 +15,7 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.engine.*
 import ru.gigadesk.agent.nodes.NodesCommon
+import ru.gigadesk.agent.nodes.NodesErrorHandling
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.agent.nodes.NodesLLM
 import ru.gigadesk.agent.nodes.NodesSummarization
@@ -37,6 +38,7 @@ class GraphBasedAgent(
     private val nodesLLM: NodesLLM by di.instance()
     private val nodesCommon: NodesCommon by di.instance()
     private val nodesClassify: NodesClassification by di.instance()
+    private val nodesErrorHandling: NodesErrorHandling by di.instance()
     private val nodesSummarization: NodesSummarization by di.instance()
     private val settingsProvider: SettingsProvider by di.instance()
     private val sessionService: GraphSessionService by di.instance()
@@ -64,10 +66,7 @@ class GraphBasedAgent(
         val chatOk: Node<GigaResponse.Chat, GigaResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
             ctx.map { ctx.input as GigaResponse.Chat.Ok }
         }
-        val chatErrorToFinish: Node<GigaResponse.Chat, String> = Node("Chat.Error") { ctx ->
-            val error = ctx.input as GigaResponse.Chat.Error
-            ctx.map { error.message }
-        }
+        val chatErrorToFinish: Node<GigaResponse.Chat, String> = nodesErrorHandling.chatErrorToFinish()
         val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
         val nodeClassify: Node<String, String> = nodesClassify.node(GraphSessionService.NODE_NAME_CLASSIFY)
         val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
@@ -159,10 +158,6 @@ class GraphBasedAgent(
     }
 
     private val GigaResponse.Chat.Ok.isToolUse get() = choices.any { it.message.functionCall != null }
-
-    companion object {
-        const val NODE_NAME_CLASSIFY = "classify"
-    }
 
     private fun createInitialCtx(): AgentContext<String> = AgentContext(
         input = "",

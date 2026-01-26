@@ -7,6 +7,7 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.gigadesk.agent.GraphBasedAgent
+import ru.gigadesk.agent.nodes.NodesErrorHandling
 import ru.gigadesk.agent.nodes.NodesCommon
 import ru.gigadesk.agent.nodes.NodesLLM
 import ru.gigadesk.agent.nodes.NodesSummarization
@@ -72,6 +73,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
 
     // LLM
+    bindSingleton { NodesErrorHandling() }
     bindSingleton { NodesCommon(instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance(), instance()) }
     bindSingleton { NodesSummarization(instance(), instance()) }
