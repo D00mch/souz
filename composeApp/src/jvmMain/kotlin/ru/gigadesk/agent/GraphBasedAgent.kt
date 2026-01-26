@@ -113,10 +113,6 @@ class GraphBasedAgent(
         _ctx.tryEmit(currentContext.value.copy(systemPrompt = DEFAULT_SYSTEM_PROMPT))
     }
 
-    /**
-     * Обновляет текущую модель и загружает её системный промпт.
-     * Возвращает системный промпт для новой модели.
-     */
     fun updateModel(model: GigaModel): String {
         settingsProvider.gigaModel = model
         val newSettings = settings.load().copy(model = model.alias)
