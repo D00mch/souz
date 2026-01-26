@@ -35,19 +35,21 @@ class SettingsViewModel(
     init {
         viewModelScope.launch {
             val voiceSpeed = ConfigStore.get(ToolSoundConfig.SPEED_KEY, ToolSoundConfig.DEFAULT_SPEED)
+            val currentModel = keysProvider.gigaModel
+            val currentPrompt = keysProvider.getSystemPromptForModel(currentModel) ?: DEFAULT_SYSTEM_PROMPT
             setState {
                 copy(
                     gigaChatKey = keysProvider.gigaChatKey ?: "",
                     saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                     useFewShotExamples = keysProvider.useFewShotExamples,
                     useGrpcDelegate = keysProvider.useGrpc,
-                    gigaModel = keysProvider.gigaModel,
+                    gigaModel = currentModel,
                     requestTimeoutMillis = keysProvider.requestTimeoutMillis,
                     requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
                     temperature = keysProvider.temperature,
                     temperatureInput = keysProvider.temperature.toString(),
                     supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
-                    systemPrompt = keysProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT,
+                    systemPrompt = currentPrompt,
                     defaultCalendar = keysProvider.defaultCalendar,
                     voiceSpeed = voiceSpeed,
                     voiceSpeedInput = voiceSpeed.toString(),
@@ -81,8 +83,8 @@ class SettingsViewModel(
                 setState { copy(useGrpcDelegate = event.enabled) }
             }
             is SelectModel -> {
-                graphBasedAgent.updateModel(event.model)
-                setState { copy(gigaModel = event.model) }
+                val newPrompt = graphBasedAgent.updateModel(event.model)
+                setState { copy(gigaModel = event.model, systemPrompt = newPrompt) }
             }
             is InputRequestTimeoutMillis -> {
                 val normalized = event.millis.filter { it.isDigit() }

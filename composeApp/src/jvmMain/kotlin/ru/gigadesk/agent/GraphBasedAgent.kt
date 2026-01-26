@@ -102,20 +102,29 @@ class GraphBasedAgent(
     }
 
     fun updateSystemPrompt(prompt: String) {
-        settingsProvider.systemPrompt = prompt
+        val currentModel = settingsProvider.gigaModel
+        settingsProvider.setSystemPromptForModel(currentModel, prompt)
         _ctx.tryEmit(currentContext.value.copy(systemPrompt = prompt))
     }
 
     fun resetSystemPrompt() {
-        settingsProvider.systemPrompt = null
+        val currentModel = settingsProvider.gigaModel
+        settingsProvider.setSystemPromptForModel(currentModel, null)
         _ctx.tryEmit(currentContext.value.copy(systemPrompt = DEFAULT_SYSTEM_PROMPT))
     }
 
-    fun updateModel(model: GigaModel) {
+    /**
+     * Обновляет текущую модель и загружает её системный промпт.
+     * Возвращает системный промпт для новой модели.
+     */
+    fun updateModel(model: GigaModel): String {
         settingsProvider.gigaModel = model
         val newSettings = settings.load().copy(model = model.alias)
         settings.store(newSettings)
-        _ctx.tryEmit(currentContext.value.copy(settings = newSettings))
+        
+        val promptForModel = settingsProvider.getSystemPromptForModel(model) ?: DEFAULT_SYSTEM_PROMPT
+        _ctx.tryEmit(currentContext.value.copy(settings = newSettings, systemPrompt = promptForModel))
+        return promptForModel
     }
 
     fun updateTemperature(temperature: Float) {
@@ -164,13 +173,17 @@ class GraphBasedAgent(
         const val NODE_NAME_CLASSIFY = "classify"
     }
 
-    private fun createInitialCtx(): AgentContext<String> = AgentContext(
-        input = "",
-        settings = settings.load(),
-        history = emptyList(),
-        activeTools = allFunctions,
-        systemPrompt = settingsProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT
-    )
+    private fun createInitialCtx(): AgentContext<String> {
+        val currentModel = settingsProvider.gigaModel
+        val prompt = settingsProvider.getSystemPromptForModel(currentModel) ?: DEFAULT_SYSTEM_PROMPT
+        return AgentContext(
+            input = "",
+            settings = settings.load(),
+            history = emptyList(),
+            activeTools = allFunctions,
+            systemPrompt = prompt
+        )
+    }
 }
 
 
