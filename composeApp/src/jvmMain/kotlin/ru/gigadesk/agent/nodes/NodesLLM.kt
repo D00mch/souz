@@ -49,7 +49,7 @@ class NodesLLM(
             l.debug("LLM response is {}", response)
 
             if (response is GigaResponse.Chat.Error && response.status == 413) {
-                val resetContent = "Я запутался - давай начнем заново"
+                val resetContent = "Слишком много информации. Я запутался - давай начнем заново и по чуть-чуть"
                 val resetMessage = GigaResponse.Message(
                     content = resetContent,
                     role = GigaMessageRole.assistant,
