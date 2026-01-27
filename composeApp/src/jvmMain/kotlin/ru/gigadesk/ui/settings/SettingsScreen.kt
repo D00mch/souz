@@ -220,10 +220,6 @@ fun SettingsScreen(
                     )
                 }
 
-                ModelDropdown(
-                    selectedModel = state.gigaModel,
-                    onModelSelected = onModelChange,
-                )
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     LabeledTextField(
@@ -308,6 +304,11 @@ fun SettingsScreen(
                     availableCalendars = state.availableCalendars,
                     isLoading = state.isLoadingCalendars,
                     onCalendarSelected = onDefaultCalendarChange
+                )
+
+                ModelDropdown(
+                    selectedModel = state.gigaModel,
+                    onModelSelected = onModelChange,
                 )
 
                 Column(

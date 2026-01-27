@@ -101,20 +101,25 @@ class GraphBasedAgent(
     }
 
     fun updateSystemPrompt(prompt: String) {
-        settingsProvider.systemPrompt = prompt
+        val currentModel = settingsProvider.gigaModel
+        settingsProvider.setSystemPromptForModel(currentModel, prompt)
         _ctx.tryEmit(currentContext.value.copy(systemPrompt = prompt))
     }
 
     fun resetSystemPrompt() {
-        settingsProvider.systemPrompt = null
+        val currentModel = settingsProvider.gigaModel
+        settingsProvider.setSystemPromptForModel(currentModel, null)
         _ctx.tryEmit(currentContext.value.copy(systemPrompt = DEFAULT_SYSTEM_PROMPT))
     }
 
-    fun updateModel(model: GigaModel) {
+    fun updateModel(model: GigaModel): String {
         settingsProvider.gigaModel = model
         val newSettings = settings.load().copy(model = model.alias)
         settings.store(newSettings)
-        _ctx.tryEmit(currentContext.value.copy(settings = newSettings))
+
+        val promptForModel = settingsProvider.getSystemPromptForModel(model) ?: DEFAULT_SYSTEM_PROMPT
+        _ctx.tryEmit(currentContext.value.copy(settings = newSettings, systemPrompt = promptForModel))
+        return promptForModel
     }
 
     fun updateTemperature(temperature: Float) {
@@ -159,23 +164,34 @@ class GraphBasedAgent(
 
     private val GigaResponse.Chat.Ok.isToolUse get() = choices.any { it.message.functionCall != null }
 
-    private fun createInitialCtx(): AgentContext<String> = AgentContext(
-        input = "",
-        settings = settings.load(),
-        history = emptyList(),
-        activeTools = allFunctions,
-        systemPrompt = settingsProvider.systemPrompt ?: DEFAULT_SYSTEM_PROMPT
-    )
+    private fun createInitialCtx(): AgentContext<String> {
+        val currentModel = settingsProvider.gigaModel
+        val prompt = settingsProvider.getSystemPromptForModel(currentModel) ?: DEFAULT_SYSTEM_PROMPT
+        return AgentContext(
+            input = "",
+            settings = settings.load(),
+            history = emptyList(),
+            activeTools = allFunctions,
+            systemPrompt = prompt
+        )
+    }
 }
 
 
 val DEFAULT_SYSTEM_PROMPT = """
-Ты — помощник, управляющий компьютером. Будь полезным. Говори только по существу.
-Если получил команду, выполняй, потом говори, что сделал.
-Если какую-то задачу можно решить c помощью имеющихся функций, сделай, а не проси пользователя сделать это.
-Если сомневаешься, уточни.
-Если работаешь с файлами, отвечай кратко, не нужно рассказывать все, только по делу.
-Ответ должен быть в формате Markdown. Только не таблицы - вместо них присылай просто списки.
+## Правила работы:
+1. **Приоритет инструментов:** Если задачу можно решить вызовом функции — ВЫЗЫВАЙ ЕЁ. Никогда не пиши название функции текстом и не присылай примеры кода на Python/Bash, если ты не собираешься их исполнять через инструмент.
+2. **Рассуждения (Chain of Thought):** Перед действием кратко проанализируй запрос. Сначала подумай, какой инструмент нужен, затем используй его.
+3. **Формат ответа:**
+   - Если результат получен: кратко сообщи об успехе.
+   - Если ошибка: сообщи суть проблемы и предложи решение.
+4. **Работа с файлами:** Будь краток. Не выводи содержимое файлов, если тебя об этом прямо не просили.
+5. **Возврат текста:**
+   - Если нужно вернуть текст - возвращай в формате Markdown.
+   - В Markdown не возвращай таблицы - вместо них возвращай форматированные списки.
+
+## Критически важно:
+Твоя задача — ДЕЙСТВОВАТЬ, а не болтать. 
 """.trimIndent()
 
 suspend fun main() {

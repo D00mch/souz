@@ -1,10 +1,24 @@
 package ru.gigadesk.db
 
+import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.giga.GigaModel
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
 class SettingsProvider(private val configStore: ConfigStore) {
+
+    fun getSystemPromptForModel(model: GigaModel): String? {
+        val key = "${SYSTEM_PROMPT}_${model.name}"
+        return configStore.get<String>(key)
+    }
+
+    fun setSystemPromptForModel(model: GigaModel, prompt: String?) {
+        val key = "${SYSTEM_PROMPT}_${model.name}"
+        when {
+            prompt.isNullOrBlank() || prompt == DEFAULT_SYSTEM_PROMPT -> configStore.rm(key)
+            else -> configStore.put(key, prompt)
+        }
+    }
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
     private var _useGrpcDelegate: String? by keyDelegate(configKey = USE_GRPC, envKey = USE_GRPC)
