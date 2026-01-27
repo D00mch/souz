@@ -7,6 +7,7 @@ import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onEach
 import org.kodein.di.DI
 import org.kodein.di.DIAware
@@ -96,10 +97,16 @@ class MainViewModel(
                 .catch { l.error("Error in audio flow: ${it.message}") }
                 .map { audioData -> rawToOpusOgg(rawData = audioData) }
                 .onEach { l.debug("[Sending audio data: ${it.size} bytes]") }
-                .map { audioData ->
+                .mapNotNull { audioData ->
                     val resp = gigaVoiceAPI.recognize(audioData)
                     l.info("Recognition response: $resp")
-                    resp.result.joinToString("\n")
+                    val recognizedText = resp.result.joinToString("\n").trim()
+                    if (recognizedText.isBlank()) {
+                        setState { copy(statusMessage = "Речь не распознана", isProcessing = false) }
+                        null
+                    } else {
+                        recognizedText
+                    }
                 }
 
             agentRef.set(graphAgent)
