@@ -50,20 +50,20 @@ import androidx.compose.material.icons.rounded.Check
 
 private val jsonMapper = ObjectMapper()
 
-enum class GraphNodePos(val xPercent: Float, val yPercent: Float) {
-    TOP_CENTER(0.5f, 0.12f),     
-    MID_CENTER(0.5f, 0.40f),    
-    LEFT_CENTER(0.2f, 0.65f),    
-    RIGHT_CENTER(0.8f, 0.65f),   
-    BOTTOM_CENTER(0.5f, 0.88f)
-}
+// Layout node for force-directed algorithm
+data class LayoutNode(
+    val id: String,
+    var x: Float,      // 0..1 normalized
+    var y: Float,      // 0..1 normalized  
+    var layer: Int,
+    var indexInLayer: Int
+)
 
-data class ResolvedPos(val x: Float, val y: Float, val basePos: GraphNodePos)
+data class ResolvedPos(val x: Float, val y: Float, val layer: Int = 0)
 
 data class DisplayNode(
     val id: String,
     val label: String,
-    val initialPos: GraphNodePos,
     var resolvedPos: ResolvedPos,
     val steps: List<GraphStepRecord>,
     val visitCount: Int
@@ -83,22 +83,221 @@ data class GraphProcessResult(
     val edges: List<GraphEdge>
 )
 
+// ============= Force-Directed Layout Algorithm =============
+
+/**
+ * Calculate graph layout using force-directed algorithm with topological layering
+ */
+private fun calculateGraphLayout(
+    nodeIds: List<String>,
+    edges: List<Pair<String, String>>
+): Map<String, LayoutNode> {
+    if (nodeIds.isEmpty()) return emptyMap()
+    
+    // Build adjacency lists
+    val successors = mutableMapOf<String, MutableList<String>>()
+    val predecessors = mutableMapOf<String, MutableList<String>>()
+    nodeIds.forEach { 
+        successors[it] = mutableListOf()
+        predecessors[it] = mutableListOf()
+    }
+    edges.forEach { (from, to) ->
+        successors[from]?.add(to)
+        predecessors[to]?.add(from)
+    }
+    
+    // Step 1: Assign layers via BFS (topological layering)
+    val layers = assignLayers(nodeIds, successors, predecessors)
+    
+    // Step 2: Create layout nodes with zigzag positioning (alternate left/right per layer)
+    val layoutNodes = mutableMapOf<String, LayoutNode>()
+    val layerGroups = nodeIds.groupBy { layers[it] ?: 0 }
+    val maxLayer = layerGroups.keys.maxOrNull() ?: 0
+    
+    // Layout parameters
+    val layerSpacing = if (maxLayer == 0) 0f else 0.75f / maxLayer
+    val leftX = 0.25f    // Left side position
+    val rightX = 0.75f   // Right side position
+    val centerX = 0.50f  // Center position (for first/last nodes)
+    
+    layerGroups.forEach { (layer, nodesInLayer) ->
+        val yPos = if (maxLayer == 0) 0.5f else 0.10f + (layer.toFloat() * layerSpacing)
+        
+        if (nodesInLayer.size == 1) {
+            // Single node per layer: zigzag between left and right
+            // First layer (entry) and last layer (exit) are centered
+            val xPos = when {
+                layer == 0 -> centerX           // Entry node centered
+                layer == maxLayer -> centerX     // Exit node centered
+                layer % 2 == 1 -> rightX         // Odd layers: right
+                else -> leftX                    // Even layers: left
+            }
+            layoutNodes[nodesInLayer[0]] = LayoutNode(nodesInLayer[0], xPos, yPos, layer, 0)
+        } else {
+            // Multiple nodes in layer: spread horizontally with zigzag Y-offset
+            val zigzagY = 0.03f
+            nodesInLayer.forEachIndexed { index, nodeId ->
+                val xPos = 0.15f + (index.toFloat() / (nodesInLayer.size - 1)) * 0.70f
+                val yOffset = if (index % 2 == 0) 0f else zigzagY
+                layoutNodes[nodeId] = LayoutNode(nodeId, xPos, yPos + yOffset, layer, index)
+            }
+        }
+    }
+    
+    // Step 3: Barycenter ordering to minimize edge crossings
+    repeat(3) {
+        barycenterOrdering(layoutNodes, layerGroups.keys.sorted(), successors, predecessors)
+    }
+    
+    // Step 4: Apply force simulation for fine-tuning
+    applyForceSimulation(layoutNodes, edges, layerGroups)
+    
+    return layoutNodes
+}
+
+/**
+ * Assign layers to nodes using BFS from entry nodes
+ */
+private fun assignLayers(
+    nodeIds: List<String>,
+    successors: Map<String, List<String>>,
+    predecessors: Map<String, List<String>>
+): Map<String, Int> {
+    val layers = mutableMapOf<String, Int>()
+    
+    // Find entry nodes (nodes with no predecessors, or first node if all have predecessors)
+    val entryNodes = nodeIds.filter { predecessors[it]?.isEmpty() == true }
+        .ifEmpty { listOf(nodeIds.first()) }
+    
+    // BFS to assign layers
+    val queue = ArrayDeque<String>()
+    entryNodes.forEach { 
+        layers[it] = 0
+        queue.add(it)
+    }
+    
+    while (queue.isNotEmpty()) {
+        val current = queue.removeFirst()
+        val currentLayer = layers[current] ?: 0
+        
+        successors[current]?.forEach { next ->
+            val existingLayer = layers[next]
+            if (existingLayer == null || existingLayer < currentLayer + 1) {
+                layers[next] = currentLayer + 1
+                if (existingLayer == null) {
+                    queue.add(next)
+                }
+            }
+        }
+    }
+    
+    // Assign remaining nodes to layer 0 if not visited
+    nodeIds.forEach { if (!layers.containsKey(it)) layers[it] = 0 }
+    
+    return layers
+}
+
+/**
+ * Barycenter ordering - reorder nodes within layers to minimize edge crossings
+ */
+private fun barycenterOrdering(
+    layoutNodes: MutableMap<String, LayoutNode>,
+    sortedLayers: List<Int>,
+    successors: Map<String, List<String>>,
+    predecessors: Map<String, List<String>>
+) {
+    val zigzagOffset = 0.04f
+    
+    // Forward pass: order by barycenter of predecessors
+    sortedLayers.forEach { layer ->
+        val nodesInLayer = layoutNodes.values.filter { it.layer == layer }
+        if (nodesInLayer.size <= 1) return@forEach
+        
+        val barycenters = nodesInLayer.associateWith { node ->
+            val preds = predecessors[node.id] ?: emptyList()
+            if (preds.isEmpty()) node.x
+            else preds.mapNotNull { layoutNodes[it]?.x }.average().toFloat()
+        }
+        
+        val sorted = nodesInLayer.sortedBy { barycenters[it] }
+        val baseY = sorted.first().y - if (sorted.first().indexInLayer % 2 == 0) 0f else zigzagOffset
+        
+        sorted.forEachIndexed { index, node ->
+            node.indexInLayer = index
+            node.x = if (sorted.size == 1) 0.5f 
+                     else 0.10f + (index.toFloat() / (sorted.size - 1)) * 0.80f
+            // Maintain zigzag pattern
+            node.y = baseY + if (index % 2 == 0) 0f else zigzagOffset
+        }
+    }
+    
+    // Backward pass: order by barycenter of successors
+    sortedLayers.reversed().forEach { layer ->
+        val nodesInLayer = layoutNodes.values.filter { it.layer == layer }
+        if (nodesInLayer.size <= 1) return@forEach
+        
+        val barycenters = nodesInLayer.associateWith { node ->
+            val succs = successors[node.id] ?: emptyList()
+            if (succs.isEmpty()) node.x
+            else succs.mapNotNull { layoutNodes[it]?.x }.average().toFloat()
+        }
+        
+        val sorted = nodesInLayer.sortedBy { barycenters[it] }
+        val baseY = sorted.first().y - if (sorted.first().indexInLayer % 2 == 0) 0f else zigzagOffset
+        
+        sorted.forEachIndexed { index, node ->
+            node.indexInLayer = index
+            node.x = if (sorted.size == 1) 0.5f 
+                     else 0.10f + (index.toFloat() / (sorted.size - 1)) * 0.80f
+            // Maintain zigzag pattern
+            node.y = baseY + if (index % 2 == 0) 0f else zigzagOffset
+        }
+    }
+}
+
+/**
+ * Apply force simulation for fine-tuning positions
+ */
+private fun applyForceSimulation(
+    layoutNodes: MutableMap<String, LayoutNode>,
+    edges: List<Pair<String, String>>,
+    layerGroups: Map<Int, List<String>>
+) {
+    val iterations = 80
+    val repulsionStrength = 0.05f
+    val minDistance = 0.18f  // Minimum distance between nodes (increased)
+    
+    repeat(iterations) { iteration ->
+        val damping = 1f - (iteration.toFloat() / iterations) * 0.5f
+        
+        // Apply repulsion forces (only within same layer to maintain layering)
+        layerGroups.values.forEach { nodesInLayer ->
+            if (nodesInLayer.size < 2) return@forEach
+            
+            for (i in nodesInLayer.indices) {
+                for (j in i + 1 until nodesInLayer.size) {
+                    val node1 = layoutNodes[nodesInLayer[i]] ?: continue
+                    val node2 = layoutNodes[nodesInLayer[j]] ?: continue
+                    
+                    val dx = node2.x - node1.x
+                    val distance = kotlin.math.abs(dx).coerceAtLeast(0.01f)
+                    
+                    if (distance < minDistance) {
+                        val force = repulsionStrength * (minDistance - distance) / distance * damping
+                        val moveAmount = force / 2
+                        
+                        node1.x = (node1.x - moveAmount * kotlin.math.sign(dx)).coerceIn(0.05f, 0.95f)
+                        node2.x = (node2.x + moveAmount * kotlin.math.sign(dx)).coerceIn(0.05f, 0.95f)
+                    }
+                }
+            }
+        }
+    }
+}
 
 fun processSessionData(session: GraphSession, collapsedSubgraphs: Set<String>): GraphProcessResult {
     val nodes = linkedMapOf<String, DisplayNode>()
     val edges = mutableListOf<GraphEdge>()
-
-    fun mapNodeToPos(name: String): GraphNodePos {
-        val normalized = name.lowercase()
-        return when {
-            normalized.contains("agent::enter") -> GraphNodePos.TOP_CENTER
-            normalized.contains("classify") -> GraphNodePos.MID_CENTER
-            normalized.contains("llm") || normalized.contains("call") -> GraphNodePos.LEFT_CENTER
-            normalized.contains("tool") -> GraphNodePos.RIGHT_CENTER
-            normalized.contains("exit") || normalized.contains("user") -> GraphNodePos.BOTTOM_CENTER
-            else -> GraphNodePos.MID_CENTER
-        }
-    }
 
     fun formatLabel(rawName: String): String {
         var cleaner = rawName
@@ -128,44 +327,54 @@ fun processSessionData(session: GraphSession, collapsedSubgraphs: Set<String>): 
         return originalName
     }
 
+    // Collect unique node IDs in order of appearance
+    val nodeIds = mutableListOf<String>()
+    session.steps.forEach { step ->
+        val finalName = resolveNodeName(step.nodeName)
+        if (!nodeIds.contains(finalName)) {
+            nodeIds.add(finalName)
+        }
+    }
+    
+    // Collect edges for layout algorithm
+    val layoutEdges = mutableListOf<Pair<String, String>>()
+    if (session.steps.size > 1) {
+        for (i in 0 until session.steps.size - 1) {
+            val fromId = resolveNodeName(session.steps[i].nodeName)
+            val toId = resolveNodeName(session.steps[i + 1].nodeName)
+            if (fromId != toId && !layoutEdges.contains(fromId to toId)) {
+                layoutEdges.add(fromId to toId)
+            }
+        }
+    }
+    
+    // Calculate layout using force-directed algorithm
+    val layout = calculateGraphLayout(nodeIds, layoutEdges)
+    
+    // Create DisplayNodes with calculated positions
     session.steps.forEach { step ->
         val rawName = step.nodeName
         val finalName = resolveNodeName(rawName)
         
         if (!nodes.containsKey(finalName)) {
-             val isGroup = finalName != rawName
-             
-             nodes[finalName] = DisplayNode(
-                 id = finalName,
-                 label = if (isGroup) "[$finalName]" else formatLabel(finalName),
-                 initialPos = mapNodeToPos(rawName),
-                 resolvedPos = ResolvedPos(0f, 0f, GraphNodePos.MID_CENTER),
-                 steps = mutableListOf(),
-                 visitCount = 0
-             )
-        }
-    }
-
-    val grouped = nodes.values.groupBy { it.initialPos }
-    
-    grouped.forEach { (basePos, groupNodes) ->
-        if (groupNodes.size == 1) {
-            val node = groupNodes.first()
-            node.resolvedPos = ResolvedPos(basePos.xPercent, basePos.yPercent, basePos)
-        } else {
-            val count = groupNodes.size
-            val spreadWidth = 0.15f
-            val startX = basePos.xPercent - ((count - 1) * spreadWidth / 2)
+            val isGroup = finalName != rawName
+            val layoutNode = layout[finalName]
             
-            groupNodes.forEachIndexed { index, node ->
-                val offsetX = startX + (index * spreadWidth)
-                val offsetY = basePos.yPercent + if(index % 2 == 0) 0.0f else 0.05f 
-                
-                node.resolvedPos = ResolvedPos(offsetX, offsetY, basePos)
-            }
+            nodes[finalName] = DisplayNode(
+                id = finalName,
+                label = if (isGroup) "[$finalName]" else formatLabel(finalName),
+                resolvedPos = ResolvedPos(
+                    x = layoutNode?.x ?: 0.5f,
+                    y = layoutNode?.y ?: 0.5f,
+                    layer = layoutNode?.layer ?: 0
+                ),
+                steps = mutableListOf(),
+                visitCount = 0
+            )
         }
     }
 
+    // Populate steps for each node
     session.steps.forEach { step ->
         val finalName = resolveNodeName(step.nodeName)
         val node = nodes[finalName]!!
@@ -179,6 +388,7 @@ fun processSessionData(session: GraphSession, collapsedSubgraphs: Set<String>): 
         )
     }
 
+    // Create edges with calculated positions
     if (session.steps.size > 1) {
         for (i in 0 until session.steps.size - 1) {
             val current = session.steps[i]
@@ -497,21 +707,28 @@ fun GraphCanvas(
 fun calculateControlPoint(start: Offset, end: Offset, fromPos: ResolvedPos, toPos: ResolvedPos): Offset {
     val midX = (start.x + end.x) / 2
     val midY = (start.y + end.y) / 2
-
-    return when {
-        (fromPos.basePos == GraphNodePos.LEFT_CENTER && toPos.basePos == GraphNodePos.RIGHT_CENTER) -> {
-             Offset(midX, start.y - 180f) 
-        }
-        (fromPos.basePos == GraphNodePos.RIGHT_CENTER && toPos.basePos == GraphNodePos.LEFT_CENTER) -> {
-             Offset(midX, start.y + 180f)
-        }
-
-        (fromPos.basePos == GraphNodePos.MID_CENTER && toPos.basePos == GraphNodePos.MID_CENTER) -> {
-             Offset(midX, start.y - 80f)
-        }
-
-        else -> Offset(midX, midY)
+    
+    val dx = end.x - start.x
+    val dy = end.y - start.y
+    
+    // If nodes are on the same layer (horizontal edge)
+    if (fromPos.layer == toPos.layer) {
+        // Curve upward for same-layer edges to avoid overlap with nodes
+        val curvature = kotlin.math.abs(dx) * 0.3f
+        return Offset(midX, minOf(start.y, end.y) - curvature.coerceIn(40f, 150f))
     }
+    
+    // If edge goes backward (from higher layer to lower layer)
+    if (fromPos.layer > toPos.layer) {
+        // Curve to the side to make backward edges visible
+        val sideOffset = if (start.x < end.x) -100f else 100f
+        return Offset(midX + sideOffset, midY)
+    }
+    
+    // Normal forward edges (from lower layer to higher layer)
+    // Use slight curve based on horizontal distance to avoid edge overlaps
+    val horizontalOffset = dx * 0.2f
+    return Offset(midX + horizontalOffset, midY)
 }
 
 fun DrawScope.drawCurvedEdge(start: Offset, end: Offset, fromPos: ResolvedPos, toPos: ResolvedPos, highlighted: Boolean) {
