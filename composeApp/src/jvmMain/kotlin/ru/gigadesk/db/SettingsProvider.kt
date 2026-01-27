@@ -6,20 +6,12 @@ import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
 class SettingsProvider(private val configStore: ConfigStore) {
-    
-    /**
-     * Получить системный промпт для конкретной модели.
-     * Возвращает null, если промпт не был задан для этой модели.
-     */
+
     fun getSystemPromptForModel(model: GigaModel): String? {
         val key = "${SYSTEM_PROMPT}_${model.name}"
         return configStore.get<String>(key)
     }
-    
-    /**
-     * Сохранить системный промпт для конкретной модели.
-     * Передать null или пустую строку, чтобы удалить кастомный промпт.
-     */
+
     fun setSystemPromptForModel(model: GigaModel, prompt: String?) {
         val key = "${SYSTEM_PROMPT}_${model.name}"
         when {
