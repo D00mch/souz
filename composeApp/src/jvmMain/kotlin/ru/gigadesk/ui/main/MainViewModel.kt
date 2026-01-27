@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import org.kodein.di.DI
@@ -99,8 +100,10 @@ class MainViewModel(
                 .map { audioData ->
                     val resp = gigaVoiceAPI.recognize(audioData)
                     l.info("Recognition response: $resp")
-                    resp.result.joinToString("\n")
+                    resp.result.joinToString("\n").trim()
                 }
+                .onEach(::onTextRecognizeSideEffects)
+                .filter { it.isNotBlank() }
 
             agentRef.set(graphAgent)
 
@@ -127,6 +130,13 @@ class MainViewModel(
         } finally {
             GlobalScreen.unregisterNativeHook()
         }
+    }
+
+    private suspend fun onTextRecognizeSideEffects(recognizedText: String) {
+        if (recognizedText.isNotBlank()) return
+        val msg = "Речь не распознана"
+        ioLaunch { say.queue(msg) }
+        setState { copy(displayedText = msg, isProcessing = false) }
     }
 
     private fun subscribeOnTaskSideEffects(userInput: String) {
