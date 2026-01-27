@@ -43,9 +43,8 @@ import ru.gigadesk.agent.session.GraphSession
 import ru.gigadesk.agent.session.GraphStepRecord
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
+import ru.gigadesk.ui.common.DraggableWindowArea
 import kotlin.math.roundToInt
-import androidx.compose.foundation.window.WindowDraggableArea
-import ru.gigadesk.LocalWindowScope
 import com.fasterxml.jackson.databind.ObjectMapper
 import androidx.compose.material.icons.rounded.Check
 
@@ -310,18 +309,8 @@ fun GraphVisualizationScreen(
             isWindowFocused = true
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Get WindowScope for draggable header
-                val windowScope = LocalWindowScope.current
-                
                 // Header - Draggable area for window
-                if (windowScope != null) {
-                    with(windowScope) {
-                        WindowDraggableArea {
-                            HeaderRow(session = session, onBack = onBack)
-                        }
-                    }
-                } else {
-                    // Fallback if no WindowScope (shouldn't happen in normal use)
+                DraggableWindowArea {
                     HeaderRow(session = session, onBack = onBack)
                 }
 

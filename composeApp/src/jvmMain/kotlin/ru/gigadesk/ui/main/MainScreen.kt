@@ -60,6 +60,7 @@ import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import org.kodein.di.compose.localDI
 import kotlin.random.Random
 import ru.gigadesk.ui.common.ConnectionStatusNotification
+import ru.gigadesk.ui.common.DraggableWindowArea
 
 private val TopButtonSize = 24.dp
 private val TopIconSize = 14.dp
@@ -130,13 +131,13 @@ fun MainScreenContent(
             isWindowFocused = isFocused
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                        .zIndex(2f)
-                ) {
+                DraggableWindowArea {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .zIndex(2f)
+                    ) {
                     Text(
                         text = "gigadesk",
                         modifier = Modifier.align(Alignment.Center),
@@ -218,6 +219,7 @@ fun MainScreenContent(
                             Icon(Icons.Rounded.Close, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                         }
                     }
+                }
                 }
 
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {

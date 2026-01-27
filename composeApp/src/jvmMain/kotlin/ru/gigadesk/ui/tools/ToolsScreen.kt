@@ -46,6 +46,7 @@ import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
+import ru.gigadesk.ui.common.DraggableWindowArea
 
 private val ToolsWindowSize = DpSize(width = 640.dp, height = 720.dp)
 
@@ -127,11 +128,12 @@ fun ToolsScreen(
                             .padding(horizontal = 24.dp, vertical = 24.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                        DraggableWindowArea {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
                                     text = "Tools",
@@ -151,6 +153,7 @@ fun ToolsScreen(
                                     contentDescription = "Закрыть",
                                     tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f)
                                 )
+                            }
                             }
                         }
 
