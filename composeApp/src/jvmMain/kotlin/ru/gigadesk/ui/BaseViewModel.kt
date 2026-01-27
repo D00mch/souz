@@ -43,6 +43,12 @@ abstract class BaseViewModel<STATE : VMState, EVENT : VMEvent, EFFECT : VMSideEf
 
     open val ioDispatchers: CoroutineDispatcher = Dispatchers.IO
 
+    fun vmLaunch(block: suspend CoroutineScope.() -> Unit): Job =
+        viewModelScope.launch { block() }
+
+    fun vmAsync(block: suspend CoroutineScope.() -> Unit): Job =
+        viewModelScope.launch { block() }
+
     fun ioLaunch(block: suspend CoroutineScope.() -> Unit): Job =
         viewModelScope.launch(ioDispatchers) { block() }
 
