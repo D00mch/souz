@@ -35,6 +35,7 @@ import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.graphlog.GraphSessionsScreen
 import ru.gigadesk.ui.graphlog.GraphVisualizationScreen
 import ru.gigadesk.ui.main.RealLiquidGlassCard
+import ru.gigadesk.ui.common.DraggableWindowArea
 
 @Composable
 fun SettingsScreen(
@@ -154,11 +155,12 @@ fun SettingsScreen(
                     .padding(horizontal = 24.dp, vertical = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                DraggableWindowArea {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             text = "Настройки",
@@ -178,6 +180,7 @@ fun SettingsScreen(
                             contentDescription = "Закрыть настройки",
                             tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f)
                         )
+                    }
                     }
                 }
 

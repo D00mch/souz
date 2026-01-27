@@ -22,6 +22,7 @@ import ru.gigadesk.agent.session.GraphSession
 import ru.gigadesk.agent.session.GraphSessionRepository
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
+import ru.gigadesk.ui.common.DraggableWindowArea
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -48,12 +49,12 @@ fun GraphSessionsScreen(
                     .fillMaxSize()
                     .padding(horizontal = 24.dp, vertical = 24.dp),
             ) {
-                // Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                DraggableWindowArea {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             text = "История сессий графа",
@@ -73,6 +74,7 @@ fun GraphSessionsScreen(
                             contentDescription = "Закрыть",
                             tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f)
                         )
+                    }
                     }
                 }
 
