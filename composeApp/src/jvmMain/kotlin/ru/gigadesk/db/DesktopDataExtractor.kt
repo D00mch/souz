@@ -130,5 +130,5 @@ fun List<StorredData>.asString(): String = groupBy { it.type }.entries.joinToStr
 }
 
 fun main() {
-    println(DesktopDataExtractor.notes().asString())
+    println(DesktopDataExtractor.browserHistory().asString())
 }
