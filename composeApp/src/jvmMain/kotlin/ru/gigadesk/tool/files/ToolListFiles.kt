@@ -39,6 +39,7 @@ class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolLi
 
         val files = base.walkTopDown()
             .onEnter { file ->
+                val excludedPaths: List<String> = filesToolUtil.forbiddenDirectories().map { it.canonicalPath }
                 val prohibit = excludedPaths.contains(file.path)
                         || file.name.startsWith('.')
                 !prohibit
@@ -56,18 +57,6 @@ class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolLi
         }
         return result
     }
-}
-
-private val excludedPaths: List<String> = run {
-    val home = System.getenv("HOME")
-    listOf(
-        "$home/Library",
-        "$home/Sync",
-        "$home/Yandex.Disk.localized",
-        "$home/go",
-        "$home/dotfiles",
-        "$home/Applications",
-    )
 }
 
 fun main() {

@@ -38,7 +38,7 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) {
             .replace("HOME", homeStr)
     }
 
-    private fun forbiddenDirectories(): List<File> {
+    fun forbiddenDirectories(): List<File> {
         return settingsProvider.forbiddenFolders.mapNotNull { raw ->
             val expanded = applyDefaultEnvs(raw).trim()
             if (expanded.isBlank()) return@mapNotNull null
