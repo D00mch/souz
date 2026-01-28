@@ -19,6 +19,8 @@ import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolSetup
 import ru.gigadesk.tool.files.FilesToolUtil // <-- Импортируем утилиту
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
 import java.awt.Desktop
 import java.io.File
 import java.io.FileReader
@@ -28,7 +30,7 @@ enum class ChartType {
     BAR, LINE, SCATTER, PIE
 }
 
-class ToolCreatePlotFromCsv : ToolSetup<ToolCreatePlotFromCsv.Input> {
+class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolCreatePlotFromCsv.Input> {
     private val l = LoggerFactory.getLogger(ToolCreatePlotFromCsv::class.java)
 
     data class Input(
@@ -77,23 +79,23 @@ class ToolCreatePlotFromCsv : ToolSetup<ToolCreatePlotFromCsv.Input> {
 
     override fun invoke(input: Input): String {
         // 1. Нормализуем путь к CSV и проверяем безопасность
-        val rawPath = FilesToolUtil.applyDefaultEnvs(input.path)
+        val rawPath = filesToolUtil.applyDefaultEnvs(input.path)
         val csvFile = File(rawPath)
 
         // Проверка: файл существует и находится внутри домашней директории
-        FilesToolUtil.requirePathIsSave(csvFile)
+        filesToolUtil.requirePathIsSave(csvFile)
 
         if (!csvFile.exists()) {
             throw BadInputException("File not found: $rawPath")
         }
 
         // 2. То же самое для выходного файла
-        val rawOutputPath = FilesToolUtil.applyDefaultEnvs(input.output ?: "~/SluxxDocuments/plot.png")
+        val rawOutputPath = filesToolUtil.applyDefaultEnvs(input.output ?: "~/SluxxDocuments/plot.png")
         val outputFile = File(rawOutputPath)
 
         // Создаем директорию для output, если её нет (например, SluxxDocuments)
         outputFile.parentFile?.mkdirs()
-        FilesToolUtil.requirePathIsSave(outputFile)
+        filesToolUtil.requirePathIsSave(outputFile)
 
         // --- Дальше логика без изменений ---
 
@@ -179,7 +181,7 @@ class ToolCreatePlotFromCsv : ToolSetup<ToolCreatePlotFromCsv.Input> {
     }
 }
 fun main() {
-    val tool = ToolCreatePlotFromCsv()
+    val tool = ToolCreatePlotFromCsv(FilesToolUtil(SettingsProvider(ConfigStore)))
 
     println(tool.invoke(ToolCreatePlotFromCsv.Input(path = "/Users/duxx/Отчеты/sales_report.csv")))
 

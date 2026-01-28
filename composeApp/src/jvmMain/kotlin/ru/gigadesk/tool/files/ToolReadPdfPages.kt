@@ -7,10 +7,12 @@ import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolSetup
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
 import java.io.File
 import java.io.IOException
 
-class ToolReadPdfPages : ToolSetup<ToolReadPdfPages.Input> {
+class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolReadPdfPages.Input> {
 
     data class Input(
         @InputParamDescription("Absolute path to the PDF file")
@@ -39,7 +41,7 @@ class ToolReadPdfPages : ToolSetup<ToolReadPdfPages.Input> {
     )
 
     override fun invoke(input: Input): String {
-        val file = File(FilesToolUtil.applyDefaultEnvs(input.filePath))
+        val file = File(filesToolUtil.applyDefaultEnvs(input.filePath))
         if (!file.exists()) return "Error: File not found at ${input.filePath}"
 
         if (file.extension.lowercase() != "pdf") return "Error: Expecting .pdf file"
@@ -101,7 +103,8 @@ class ToolReadPdfPages : ToolSetup<ToolReadPdfPages.Input> {
 }
 
 fun main() {
-    val result = ToolReadPdfPages().invoke(
+    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val result = ToolReadPdfPages(filesToolUtil).invoke(
         ToolReadPdfPages.Input(
             filePath = "/Users/duxx/Книги/100 ошибок в го.pdf",
             startPage = 27,

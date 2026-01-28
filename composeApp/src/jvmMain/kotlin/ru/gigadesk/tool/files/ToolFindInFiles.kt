@@ -9,9 +9,11 @@ import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
 import java.io.File
 
-object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
+class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindInFiles.Input> {
     data class Input(
         @InputParamDescription("Relative path to search for files. Defaults to user HOME. Try to avoid using ~ or HOME")
         val path: String = FilesToolUtil.homeDirectory.absolutePath,
@@ -51,8 +53,8 @@ object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 
     override suspend fun suspendInvoke(input: Input): String {
-        val path = FilesToolUtil.applyDefaultEnvs(input.path)
-        val script = FilesToolUtil.resourceAsText("scripts/find_in_files.sh")
+        val path = filesToolUtil.applyDefaultEnvs(input.path)
+        val script = filesToolUtil.resourceAsText("scripts/find_in_files.sh")
         val result = ToolRunBashCommand.sh(script, path, input.query)
             .lineSequence()
             .windowed(size = 2, step = 2, partialWindows = false)
@@ -63,11 +65,13 @@ object ToolFindInFiles : ToolSetup<ToolFindInFiles.Input> {
 }
 
 fun main() {
-    val result = ToolFindInFiles.invoke(ToolFindInFiles.Input("~/wiki", " vr "))
+    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val tool = ToolFindInFiles(filesToolUtil)
+    val result = tool.invoke(ToolFindInFiles.Input("~/wiki", " vr "))
     println("result: $result")
     val results: List<List<String>> = objectMapper.readValue(result)
     results.forEach { (path, _) ->
-        val safe = FilesToolUtil.isPathSafe(File(path))
+        val safe = filesToolUtil.isPathSafe(File(path))
         if (safe) {
             println("Safe!: $path")
         } else {

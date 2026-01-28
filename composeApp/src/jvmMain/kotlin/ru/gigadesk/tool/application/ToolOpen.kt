@@ -3,9 +3,15 @@ package ru.gigadesk.tool.application
 import ru.gigadesk.tool.*
 import org.slf4j.LoggerFactory
 import ru.gigadesk.tool.desktop.ToolOpenFolder
+import ru.gigadesk.tool.files.FilesToolUtil
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
 import java.io.File
 
-class ToolOpen(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpen.Input> {
+class ToolOpen(
+    private val bash: ToolRunBashCommand,
+    private val filesToolUtil: FilesToolUtil,
+) : ToolSetup<ToolOpen.Input> {
     private val l = LoggerFactory.getLogger(ToolOpen::class.java)
 
     data class Input(
@@ -63,18 +69,19 @@ class ToolOpen(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpen.Input>
                     "Done"
                 }
                 else -> {
-                    ToolOpenFolder(bash).invoke(ToolOpenFolder.Input(File(fixedPath).name))
+                    ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(File(fixedPath).name))
                     "Done"
                 }
             }
         } catch (e: Exception) {
             l.error("Error opening '$fixedPath': ${e.message}")
-            ToolOpenFolder(bash).invoke(ToolOpenFolder.Input(File(fixedPath).name))
+            ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(File(fixedPath).name))
         }
     }
 }
 
 fun main() {
-    val result = ToolOpen(ToolRunBashCommand).invoke(ToolOpen.Input("/Applications/Telegram.app"))
+    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val result = ToolOpen(ToolRunBashCommand, filesToolUtil).invoke(ToolOpen.Input("/Applications/Telegram.app"))
     println(result)
 }

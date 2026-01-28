@@ -6,8 +6,12 @@ import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 import ru.gigadesk.tool.application.ToolOpen
+import ru.gigadesk.tool.files.FilesToolUtil
 
-class ToolOpenDefaultBrowser(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenDefaultBrowser.Input> {
+class ToolOpenDefaultBrowser(
+    private val bash: ToolRunBashCommand,
+    private val filesToolUtil: FilesToolUtil,
+) : ToolSetup<ToolOpenDefaultBrowser.Input> {
     object Input
 
     override val name: String = "OpenDefaultBrowser"
@@ -34,7 +38,7 @@ class ToolOpenDefaultBrowser(private val bash: ToolRunBashCommand) : ToolSetup<T
             else -> "/Applications/Safari.app"
         }
 
-        ToolOpen(bash).invoke(ToolOpen.Input(target))
+        ToolOpen(bash, filesToolUtil).invoke(ToolOpen.Input(target))
         return "Done"
     }
 }

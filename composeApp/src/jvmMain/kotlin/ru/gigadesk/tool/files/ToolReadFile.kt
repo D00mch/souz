@@ -3,7 +3,7 @@ package ru.gigadesk.tool.files
 import ru.gigadesk.tool.*
 import java.io.File
 
-object ToolReadFile : ToolSetup<ToolReadFile.Input> {
+class ToolReadFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolReadFile.Input> {
     data class Input(
         @InputParamDescription("A relative path pointing to a file in the project directory")
         val path: String
@@ -25,7 +25,7 @@ object ToolReadFile : ToolSetup<ToolReadFile.Input> {
 
     override fun invoke(input: Input): String {
         val path = input.path
-        val file = File(FilesToolUtil.applyDefaultEnvs(path))
+        val file = File(filesToolUtil.applyDefaultEnvs(path))
         if (!file.exists() || file.isDirectory) {
             throw BadInputException("Invalid file path: $path")
         }

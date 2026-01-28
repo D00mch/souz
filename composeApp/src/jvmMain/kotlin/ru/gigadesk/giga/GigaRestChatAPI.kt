@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.application.ToolOpen
+import ru.gigadesk.tool.files.FilesToolUtil
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -331,6 +332,7 @@ class GigaRestChatAPI(
 suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val api: GigaRestChatAPI by di.instance()
+    val filesToolUtil: FilesToolUtil by di.instance()
 
     val systemPrompt = GigaRequest.Message(
         role = GigaMessageRole.system,
@@ -353,7 +355,7 @@ suspend fun main() {
                 ),
             ),
             functions = listOf(
-                ToolOpen(ToolRunBashCommand).toGiga(),
+                ToolOpen(ToolRunBashCommand, filesToolUtil).toGiga(),
             ).map { it.fn }
         )
     )

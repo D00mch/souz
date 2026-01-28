@@ -1,10 +1,16 @@
 package ru.gigadesk.tool.desktop
 
 import ru.gigadesk.tool.*
+import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ToolListFiles
 import org.slf4j.LoggerFactory
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
 
-class ToolOpenFolder(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenFolder.Input> {
+class ToolOpenFolder(
+    private val bash: ToolRunBashCommand,
+    private val filesToolUtil: FilesToolUtil,
+) : ToolSetup<ToolOpenFolder.Input> {
     private val l = LoggerFactory.getLogger(ToolOpenFolder::class.java)
 
     override val name: String = "OpenFolder"
@@ -37,7 +43,7 @@ class ToolOpenFolder(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenF
         val path = bash.apple(script)
         if (path.isBlank()) return "Can't find path of such folder: ${input.name}"
 
-        val files = ToolListFiles(ToolListFiles.Input(path))
+        val files = ToolListFiles(filesToolUtil).invoke(ToolListFiles.Input(path))
         val result = """{"path":"$path","files":$files}"""
         l.info("Result is $result")
         return result
@@ -114,6 +120,7 @@ class ToolOpenFolder(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenF
 }
 
 fun main() {
-    val v = ToolOpenFolder(ToolRunBashCommand)(ToolOpenFolder.Input("семья"))
+    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val v = ToolOpenFolder(ToolRunBashCommand, filesToolUtil)(ToolOpenFolder.Input("семья"))
     println(v)
 }

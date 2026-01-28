@@ -3,7 +3,7 @@ package ru.gigadesk.tool.files
 import ru.gigadesk.tool.*
 import java.io.File
 
-object ToolDeleteFile : ToolSetup<ToolDeleteFile.Input> {
+class ToolDeleteFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolDeleteFile.Input> {
     data class Input(
         @InputParamDescription("The path of the file to delete")
         val path: String
@@ -27,7 +27,7 @@ object ToolDeleteFile : ToolSetup<ToolDeleteFile.Input> {
         if (!file.exists() || file.isDirectory) {
             throw BadInputException("Invalid file path: ${input.path}")
         }
-        FilesToolUtil.requirePathIsSave(file)
+        filesToolUtil.requirePathIsSave(file)
         file.delete()
         return "File deleted at ${input.path}"
     }

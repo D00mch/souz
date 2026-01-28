@@ -3,7 +3,7 @@ package ru.gigadesk.tool.files
 import ru.gigadesk.tool.*
 import java.io.File
 
-object ToolFindTextInFiles : ToolSetup<ToolFindTextInFiles.Input> {
+class ToolFindTextInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindTextInFiles.Input> {
     data class Input(
         @InputParamDescription("Directory path to search in (recursive)")
         val path: String = FilesToolUtil.homeStr,
@@ -30,7 +30,7 @@ object ToolFindTextInFiles : ToolSetup<ToolFindTextInFiles.Input> {
     )
 
     override fun invoke(input: Input): String {
-        val baseDir = FilesToolUtil.applyDefaultEnvs(input.path).let { File(it) }
+        val baseDir = filesToolUtil.applyDefaultEnvs(input.path).let { File(it) }
         if (!baseDir.exists() || !baseDir.isDirectory) {
             throw BadInputException("Invalid directory path: ${input.path}")
         }
