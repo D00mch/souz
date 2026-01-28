@@ -15,16 +15,16 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import org.slf4j.LoggerFactory
-import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.tool.files.ToolFindInFiles
 import kotlin.test.Ignore
 import kotlin.test.assertContains
 import ru.gigadesk.tool.files.FilesToolUtil
+import io.mockk.every
+import io.mockk.mockk
 
 class ToolTest {
-    private val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
-    private val listFiles = ToolListFiles(filesToolUtil)
+    private val filesToolUtil: FilesToolUtil = mockk()
 
     private fun createTempDirectory(): File =
         Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "gigadesk-test-").toFile()
@@ -36,11 +36,47 @@ class ToolTest {
         File(baseDir, "test.txt").writeText("Test content\n")
     }
 
+    private fun createFilesToolUtil(forbiddenFolders: List<String>): FilesToolUtil {
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.forbiddenFolders } returns forbiddenFolders
+        return FilesToolUtil(settingsProvider)
+    }
+
+    @Test
+    fun `test isPathSafe allows non-forbidden paths`() {
+        val tempDir = createTempDirectory()
+        val forbiddenDir = createTempDirectory()
+        val filesToolUtil = createFilesToolUtil(listOf(forbiddenDir.absolutePath, "~/Library/"))
+        try {
+            val safeFile = File(tempDir, "safe.txt").apply { writeText("ok") }
+            assertEquals(true, filesToolUtil.isPathSafe(safeFile))
+        } finally {
+            tempDir.deleteRecursively()
+            forbiddenDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test isPathSafe blocks forbidden paths and canonical traversal`() {
+        val forbiddenDir = createTempDirectory()
+        val filesToolUtil = createFilesToolUtil(listOf(forbiddenDir.absolutePath, "~/Library/"))
+        try {
+            val directForbidden = File(forbiddenDir, "blocked.txt").apply { writeText("nope") }
+            assertEquals(false, filesToolUtil.isPathSafe(directForbidden))
+
+            val traversalPath = File(forbiddenDir.parentFile, "${forbiddenDir.name}/blocked.txt")
+            assertEquals(false, filesToolUtil.isPathSafe(traversalPath))
+        } finally {
+            forbiddenDir.deleteRecursively()
+        }
+    }
+
     @Test
     fun `test ToolReadFile`() {
         val l = LoggerFactory.getLogger(ToolTest::class.java)
         l.info(File("src/jvmTest/resources/test.txt").readText())
-        val result = ToolReadFile(FilesToolUtil(SettingsProvider(ConfigStore))).invoke(ToolReadFile.Input("src/jvmTest/resources/test.txt"))
+        val result = ToolReadFile(createFilesToolUtil(listOf("~/Library/")))
+            .invoke(ToolReadFile.Input("src/jvmTest/resources/test.txt"))
         assertEquals("Test content\n", result)
     }
 
@@ -49,6 +85,7 @@ class ToolTest {
         val tempDir = createTempDirectory()
         try {
             createSampleFiles(tempDir)
+            val listFiles = ToolListFiles(createFilesToolUtil(listOf("~/Library/")))
             val resources = listFiles(ToolListFiles.Input(tempDir.absolutePath))
             val resourceFiles = resources.removePrefix("[").removeSuffix("]").split(",").toSet()
             assertEquals(
@@ -70,7 +107,8 @@ class ToolTest {
     @Test
     @Ignore
     fun `test ToolFindInFiles`() {
-        val resources = ToolFindInFiles(filesToolUtil).invoke(ToolFindInFiles.Input("src/jvmTest/resources", "Alice"))
+        val resources = ToolFindInFiles(filesToolUtil)
+            .invoke(ToolFindInFiles.Input("src/jvmTest/resources", "Alice"))
         println(resources)
         assertContains(resources, "sample.csv")
     }
@@ -80,6 +118,7 @@ class ToolTest {
         val content = "Test"
         val tempDir = createTempDirectory()
         try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
             val resources = tempDir.absolutePath
             val newFileName = "${UUID.randomUUID()}.txt"
             val path = "$resources/$newFileName"
