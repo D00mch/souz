@@ -43,11 +43,9 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) {
         return settingsProvider.forbiddenFolders.mapNotNull { raw ->
             val expanded = applyDefaultEnvs(raw).trim()
             if (expanded.isBlank()) return@mapNotNull null
-            val resolved = File(expanded).let { file ->
+            File(expanded).let { file ->
                 if (file.isAbsolute) file else File(homeDirectory, file.path)
             }.canonicalFile
-            if (!resolved.startsWith(homeDirectory)) return@mapNotNull null
-            resolved
         }.distinct()
     }
 
@@ -73,7 +71,7 @@ fun main() {
     val filesToolUtil: FilesToolUtil by di.instance()
 
     val result = filesToolUtil.isPathSafe(File(
-        filesToolUtil.applyDefaultEnvs("~/Documents")
+        filesToolUtil.applyDefaultEnvs("~/Downloads")
     ))
     println("Safe? $result")
 }
