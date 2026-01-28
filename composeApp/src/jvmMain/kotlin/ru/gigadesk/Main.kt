@@ -27,6 +27,9 @@ import org.kodein.di.instance
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
+import ru.gigadesk.server.AgentNode
+import ru.gigadesk.server.startLocalServer
+// ----------------------------------------
 
 // CompositionLocal to access WindowScope from nested composables
 val LocalWindowScope = staticCompositionLocalOf<WindowScope?> { null }
@@ -39,6 +42,24 @@ fun main() {
             val di = localDI()
             val say: Say by di.instance()
             val settingsProvider: SettingsProvider by di.instance()
+
+            // 1. Получаем реализацию логики агента из DI
+            // Убедитесь, что в mainDiModule есть bind<AgentNode>() with singleton { ... }
+            val agentNode: AgentNode by di.instance()
+
+            // 2. Управление жизненным циклом сервера
+            // Server запускается при старте App и останавливается при выходе
+            DisposableEffect(Unit) {
+                println("Starting local server...")
+                val serverEngine = startLocalServer(agentNode)
+
+                onDispose {
+                    println("Stopping local server...")
+                    // Остановка: 1 сек на завершение текущих, 2 сек таймаут
+                    serverEngine.stop(1000, 2000)
+                }
+            }
+
             var isWindowVisible by remember { mutableStateOf(true) }
 
             Tray(
@@ -96,4 +117,3 @@ fun main() {
         }
     }
 }
-

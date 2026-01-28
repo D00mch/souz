@@ -6,6 +6,7 @@ import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
+import io.ktor.server.plugins.origin
 import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
@@ -62,17 +63,36 @@ fun Application.configureServer(agentNode: AgentNode) {
     routing {
         route("/api/agent") {
             post("/command") {
-                val request = call.receive<AgentRequest>()
-                logger.info("Received command: ${request.text.take(100)}...")
+                val clientHost = call.request.origin.remoteHost
+                val contentLength = call.request.headers["Content-Length"]
+                logger.info("📱 Incoming request from $clientHost (Content-Length: $contentLength)")
                 
+                val request = call.receive<AgentRequest>()
+                val textPreview = request.text.take(100).let { 
+                    if (request.text.length > 100) "$it..." else it 
+                }
+                logger.info("📨 Received command from mobile app: \"$textPreview\"")
+                logger.debug("Full command text: ${request.text}")
+                
+                val startTime = System.currentTimeMillis()
                 val result = agentNode.processRequest(request.text)
+                val processingTime = System.currentTimeMillis() - startTime
+                
+                val resultPreview = result.take(100).let {
+                    if (result.length > 100) "$it..." else it
+                }
+                logger.info("✅ Command processed in ${processingTime}ms, response: \"$resultPreview\"")
+                logger.debug("Full response: $result")
                 
                 call.respond(HttpStatusCode.OK, AgentResponse(result))
+                logger.info("📤 Response sent to $clientHost")
             }
         }
         
         // Health check endpoint
         get("/health") {
+            val clientHost = call.request.origin.remoteHost
+            logger.debug("💓 Health check from $clientHost")
             call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
         }
     }

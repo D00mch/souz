@@ -14,6 +14,8 @@ import ru.gigadesk.agent.nodes.NodesSummarization
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.agent.session.GraphSessionRepository
 import ru.gigadesk.agent.session.GraphSessionService
+import ru.gigadesk.server.AgentNode
+import ru.gigadesk.server.GraphAgentNode
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.DesktopDataExtractor
@@ -94,4 +96,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { ToolsFactory(instance(), instance(), instance(), instance()) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
+    
+    // Server
+    bindSingleton<AgentNode> { GraphAgentNode(instance()) }
 }
