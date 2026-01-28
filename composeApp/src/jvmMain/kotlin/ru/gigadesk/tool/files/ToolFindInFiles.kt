@@ -63,7 +63,14 @@ class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         val result = ToolRunBashCommand.sh(script, path, input.query)
             .lineSequence()
             .windowed(size = 2, step = 2, partialWindows = false)
-            .map { (filePath, matchingContent) -> listOf(filePath, matchingContent) }
+            .mapNotNull { (filePath, matchingContent) ->
+                val file = File(filePath)
+                if (filesToolUtil.isPathSafe(file)) {
+                    listOf(filePath, matchingContent)
+                } else {
+                    null
+                }
+            }
             .toList()
         return objectMapper.writeValueAsString(result)
     }
