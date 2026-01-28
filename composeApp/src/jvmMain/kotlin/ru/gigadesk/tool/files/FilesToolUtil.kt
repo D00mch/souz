@@ -10,9 +10,6 @@ import java.io.IOException
 import java.io.InputStream
 
 class FilesToolUtil(private val settingsProvider: SettingsProvider) {
-    val homeStr: String get() = Companion.homeStr
-    val homeDirectory: File get() = Companion.homeDirectory
-
     /**
      * Generally, we don't want Agent to mess around /
      */
