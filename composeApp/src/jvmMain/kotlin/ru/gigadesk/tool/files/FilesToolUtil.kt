@@ -64,6 +64,10 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) {
     }
 }
 
+@Suppress("FunctionName")
+fun ForbiddenFolder(fixedPath: String) =
+    BadInputException("Forbidden directory: $fixedPath. User explicitly restricted this path. Inform him")
+
 fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val filesToolUtil: FilesToolUtil by di.instance()

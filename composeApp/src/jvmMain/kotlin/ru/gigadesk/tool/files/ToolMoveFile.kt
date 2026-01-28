@@ -40,10 +40,16 @@ class ToolMoveFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolMov
     )
 
     override fun invoke(input: Input): String {
-        val sourceFile = File(filesToolUtil.applyDefaultEnvs(input.sourcePath))
-        val destinationFile = File(filesToolUtil.applyDefaultEnvs(input.destinationPath))
-        filesToolUtil.requirePathIsSave(sourceFile)
-        filesToolUtil.requirePathIsSave(destinationFile)
+        val fixedSourcePath = filesToolUtil.applyDefaultEnvs(input.sourcePath)
+        val fixedDestinationPath = filesToolUtil.applyDefaultEnvs(input.destinationPath)
+        val sourceFile = File(fixedSourcePath)
+        val destinationFile = File(fixedDestinationPath)
+        if (!filesToolUtil.isPathSafe(sourceFile)) {
+            throw BadInputException("Forbidden directory: $fixedSourcePath. User explicitly restricted this path. Inform him")
+        }
+        if (!filesToolUtil.isPathSafe(destinationFile)) {
+            throw BadInputException("Forbidden directory: $fixedDestinationPath. User explicitly restricted this path. Inform him")
+        }
         val sourcePath = sourceFile.toPath().toAbsolutePath().normalize()
         val destinationPath = destinationFile.toPath().toAbsolutePath().normalize()
         if (sourcePath == destinationPath) {

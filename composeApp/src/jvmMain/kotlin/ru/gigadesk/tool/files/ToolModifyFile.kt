@@ -27,13 +27,16 @@ class ToolModifyFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolM
     )
 
     override fun invoke(input: Input): String {
-        val file = File(filesToolUtil.applyDefaultEnvs(input.path))
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
+        val file = File(fixedPath)
+        if (!filesToolUtil.isPathSafe(file)) {
+            throw ForbiddenFolder(fixedPath)
+        }
         if (input.oldText == input.newText || input.path.isBlank() || input.oldText.isEmpty()) {
             throw BadInputException("Invalid input parameters")
         } else if (!file.exists()) {
             throw BadInputException("File does not exist")
         }
-        filesToolUtil.requirePathIsSave(file)
         val content = file.readText()
         val newContent = content.replace(input.oldText, input.newText)
         file.writeText(newContent)

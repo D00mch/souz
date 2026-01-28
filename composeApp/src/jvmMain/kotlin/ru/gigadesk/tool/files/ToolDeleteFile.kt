@@ -23,11 +23,14 @@ class ToolDeleteFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolD
     )
 
     override fun invoke(input: Input): String {
-        val file = File(input.path)
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
+        val file = File(fixedPath)
+        if (!filesToolUtil.isPathSafe(file)) {
+            throw ForbiddenFolder(fixedPath)
+        }
         if (!file.exists() || file.isDirectory) {
             throw BadInputException("Invalid file path: ${input.path}")
         }
-        filesToolUtil.requirePathIsSave(file)
         file.delete()
         return "File deleted at ${input.path}"
     }

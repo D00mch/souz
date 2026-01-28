@@ -3,6 +3,7 @@ package ru.gigadesk.tool.files
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.runBlocking
 import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.tool.BadInputException
 import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
@@ -11,6 +12,7 @@ import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
+import java.io.File
 
 class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindFilesByName.Input> {
     data class Input(
@@ -56,6 +58,10 @@ class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<
 
     override suspend fun suspendInvoke(input: Input): String {
         val path = filesToolUtil.applyDefaultEnvs(input.path)
+        val base = File(path)
+        if (!filesToolUtil.isPathSafe(base)) {
+            throw BadInputException("Forbidden directory: $path. User explicitly restricted this path. Inform him")
+        }
 
         val script = "mdfind -onlyin \"$1\" -name \"$2\""
 

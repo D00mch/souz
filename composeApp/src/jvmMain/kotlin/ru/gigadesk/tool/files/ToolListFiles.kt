@@ -31,7 +31,7 @@ class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolLi
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         val base = File(fixedPath)
         if (!filesToolUtil.isPathSafe(base)) {
-            throw BadInputException("Forbidden directory: $fixedPath. User explicitly restricted this path. Inform him")
+            throw ForbiddenFolder(fixedPath)
         }
         if (!base.exists() || !base.isDirectory) {
             throw BadInputException("Invalid directory path: $fixedPath")

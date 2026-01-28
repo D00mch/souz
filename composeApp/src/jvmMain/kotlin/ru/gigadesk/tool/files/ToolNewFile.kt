@@ -25,7 +25,11 @@ class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewF
     )
 
     override fun invoke(input: Input): String {
-        val file = File(filesToolUtil.applyDefaultEnvs(input.path))
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
+        val file = File(fixedPath)
+        if (!filesToolUtil.isPathSafe(file)) {
+            throw ForbiddenFolder(fixedPath)
+        }
         if (file.exists()) {
             throw BadInputException("File already exists: ${input.path}")
         }

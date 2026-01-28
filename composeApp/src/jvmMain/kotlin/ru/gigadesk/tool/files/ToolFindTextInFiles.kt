@@ -30,7 +30,11 @@ class ToolFindTextInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<
     )
 
     override fun invoke(input: Input): String {
-        val baseDir = filesToolUtil.applyDefaultEnvs(input.path).let { File(it) }
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
+        val baseDir = File(fixedPath)
+        if (!filesToolUtil.isPathSafe(baseDir)) {
+            throw ForbiddenFolder(fixedPath)
+        }
         if (!baseDir.exists() || !baseDir.isDirectory) {
             throw BadInputException("Invalid directory path: ${input.path}")
         }

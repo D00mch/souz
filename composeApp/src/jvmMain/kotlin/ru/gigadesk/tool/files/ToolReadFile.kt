@@ -25,7 +25,11 @@ class ToolReadFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolRea
 
     override fun invoke(input: Input): String {
         val path = input.path
-        val file = File(filesToolUtil.applyDefaultEnvs(path))
+        val fixedPath = filesToolUtil.applyDefaultEnvs(path)
+        val file = File(fixedPath)
+        if (!filesToolUtil.isPathSafe(file)) {
+            throw ForbiddenFolder(fixedPath)
+        }
         if (!file.exists() || file.isDirectory) {
             throw BadInputException("Invalid file path: $path")
         }

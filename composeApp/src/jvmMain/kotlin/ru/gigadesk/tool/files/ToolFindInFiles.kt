@@ -3,6 +3,7 @@ package ru.gigadesk.tool.files
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.runBlocking
 import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.tool.BadInputException
 import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
@@ -54,6 +55,10 @@ class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
 
     override suspend fun suspendInvoke(input: Input): String {
         val path = filesToolUtil.applyDefaultEnvs(input.path)
+        val base = File(path)
+        if (!filesToolUtil.isPathSafe(base)) {
+            throw BadInputException("Forbidden directory: $path. User explicitly restricted this path. Inform him")
+        }
         val script = filesToolUtil.resourceAsText("scripts/find_in_files.sh")
         val result = ToolRunBashCommand.sh(script, path, input.query)
             .lineSequence()
