@@ -15,12 +15,17 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import org.slf4j.LoggerFactory
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.tool.files.ToolFindInFiles
 import kotlin.test.Ignore
 import kotlin.test.assertContains
 import ru.gigadesk.tool.files.FilesToolUtil
 
 class ToolTest {
+    private val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    private val listFiles = ToolListFiles(filesToolUtil)
+
     private fun createTempDirectory(): File =
         Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "gigadesk-test-").toFile()
 
@@ -35,7 +40,7 @@ class ToolTest {
     fun `test ToolReadFile`() {
         val l = LoggerFactory.getLogger(ToolTest::class.java)
         l.info(File("src/jvmTest/resources/test.txt").readText())
-        val result = ToolReadFile(ToolReadFile.Input("src/jvmTest/resources/test.txt"))
+        val result = ToolReadFile(FilesToolUtil(SettingsProvider(ConfigStore))).invoke(ToolReadFile.Input("src/jvmTest/resources/test.txt"))
         assertEquals("Test content\n", result)
     }
 
@@ -44,7 +49,7 @@ class ToolTest {
         val tempDir = createTempDirectory()
         try {
             createSampleFiles(tempDir)
-            val resources = ToolListFiles(ToolListFiles.Input(tempDir.absolutePath))
+            val resources = listFiles(ToolListFiles.Input(tempDir.absolutePath))
             val resourceFiles = resources.removePrefix("[").removeSuffix("]").split(",").toSet()
             assertEquals(
                 setOf(
@@ -65,7 +70,7 @@ class ToolTest {
     @Test
     @Ignore
     fun `test ToolFindInFiles`() {
-        val resources = ToolFindInFiles(ToolFindInFiles.Input("src/jvmTest/resources", "Alice"))
+        val resources = ToolFindInFiles(filesToolUtil).invoke(ToolFindInFiles.Input("src/jvmTest/resources", "Alice"))
         println(resources)
         assertContains(resources, "sample.csv")
     }
@@ -81,27 +86,28 @@ class ToolTest {
             val movedPath = "$resources/moved-$newFileName"
 
             // create new file
-            ToolNewFile(ToolNewFile.Input(path, text = content))
-            val fileContent = ToolReadFile(ToolReadFile.Input(path))
+            ToolNewFile(filesToolUtil).invoke(ToolNewFile.Input(path, text = content))
+            val fileContent = ToolReadFile(filesToolUtil).invoke(ToolReadFile.Input(path))
             assertEquals(content, fileContent)
 
             // modify new
             val newContent = "New"
-            ToolModifyFile(ToolModifyFile.Input(path, oldText = content, newText = newContent))
+            ToolModifyFile(filesToolUtil).invoke(ToolModifyFile.Input(path, oldText = content, newText = newContent))
 
             // move
-            ToolMoveFile(ToolMoveFile.Input(path, movedPath))
-            val movedContent = ToolReadFile(ToolReadFile.Input(movedPath))
+            ToolMoveFile(filesToolUtil).invoke(ToolMoveFile.Input(path, movedPath))
+            val movedContent = ToolReadFile(filesToolUtil).invoke(ToolReadFile.Input(movedPath))
             assertEquals(newContent, movedContent)
 
             // find
-            val findResult = ToolFindTextInFiles(ToolFindTextInFiles.Input(path = resources, newContent))
+            val findResult = ToolFindTextInFiles(filesToolUtil)
+                .invoke(ToolFindTextInFiles.Input(path = resources, newContent))
             assertEquals("[moved-$newFileName]", findResult)
 
             // delete
-            ToolDeleteFile(ToolDeleteFile.Input(movedPath))
+            ToolDeleteFile(filesToolUtil).invoke(ToolDeleteFile.Input(movedPath))
             assertThrows(BadInputException::class.java) {
-                ToolReadFile(ToolReadFile.Input(movedPath))
+                ToolReadFile(filesToolUtil).invoke(ToolReadFile.Input(movedPath))
             }
         } finally {
             tempDir.deleteRecursively()
