@@ -132,6 +132,6 @@ class SettingsProvider(private val configStore: ConfigStore) {
         private const val INITIAL_WINDOW_HEIGHT_DP = "INITIAL_WINDOW_HEIGHT_DP"
         private const val TEMPERATURE = "TEMPERATURE"
         private const val FORBIDDEN_FOLDERS = "FORBIDDEN_FOLDERS"
-        private val DEFAULT_FORBIDDEN_FOLDERS = listOf("/", "~/Library/")
+        private val DEFAULT_FORBIDDEN_FOLDERS = listOf("~/Library/")
     }
 }
