@@ -27,7 +27,7 @@ class ToolTest {
     private val filesToolUtil: FilesToolUtil = mockk()
 
     private fun createTempDirectory(): File =
-        Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "gigadesk-test-").toFile()
+        Files.createTempDirectory(File("src/jvmTest/resources").toPath(), "gigadesk-test-").toFile()
 
     private fun createSampleFiles(baseDir: File) {
         val nestedDir = File(baseDir, "directory").apply { mkdirs() }
