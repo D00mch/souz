@@ -4,24 +4,33 @@ import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.browser.ToolSafariInfo
 import com.fasterxml.jackson.module.kotlin.readValue
+import org.kodein.di.DI
+import org.kodein.di.instance
+import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.tool.browser.ToolChromeInfo
 import ru.gigadesk.tool.browser.detectDefaultBrowser
 import ru.gigadesk.tool.config.ToolInstructionStore
 import ru.gigadesk.tool.config.ToolInstructionStore.Companion.buildInstruction
 import ru.gigadesk.tool.application.ToolShowApps
 import ru.gigadesk.tool.files.ToolListFiles
+import ru.gigadesk.tool.files.FilesToolUtil
 import java.util.ArrayList
 import kotlin.collections.map
 import ru.gigadesk.tool.browser.BrowserType
+import kotlin.getValue
 
 /**
  * Collects various desktop information and converts it to a list of data
  * ready for embedding.
  */
-object DesktopDataExtractor {
+class DesktopDataExtractor(
+    private val filesToolUtil: FilesToolUtil,
+    private val toolShowApps: ToolShowApps,
+) {
+
     fun all(): List<StorredData> {
         val installed = runCatching {
-            val json = ToolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
+            val json = toolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
             val arr: List<Map<String, String>> = objectMapper.readValue(json)
             arr.map {
                 val (appName, appBundleId) = it["app-name"] to it["app-bundle-id"]
@@ -50,7 +59,7 @@ object DesktopDataExtractor {
     }
 
     fun files(): Sequence<StorredData> = runCatching {
-        val res = ToolListFiles.invoke(ToolListFiles.Input(System.getenv("HOME"), 3))
+        val res = ToolListFiles(filesToolUtil).invoke(ToolListFiles.Input(System.getenv("HOME"), 3))
         res.trim('[', ']')
             .splitToSequence(',')
             .mapNotNull { it.trim().takeIf { s -> s.isNotEmpty() } }    // skip empty lines
@@ -130,5 +139,7 @@ fun List<StorredData>.asString(): String = groupBy { it.type }.entries.joinToStr
 }
 
 fun main() {
-    println(DesktopDataExtractor.notes().asString())
+    val di = DI.invoke { import(mainDiModule) }
+    val extractor: DesktopDataExtractor by di.instance()
+    println(extractor.notes().asString())
 }

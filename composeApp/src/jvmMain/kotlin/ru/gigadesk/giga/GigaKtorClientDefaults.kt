@@ -1,6 +1,5 @@
 package ru.gigadesk.giga
 
-import ru.gigadesk.tool.files.FilesToolUtil.resourceStream
 import com.fasterxml.jackson.databind.DeserializationFeature
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
@@ -10,6 +9,7 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
 import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.tool.files.FilesToolUtil.Companion.resourceStream
 import java.io.InputStream
 import java.security.KeyStore
 import java.security.cert.CertificateFactory

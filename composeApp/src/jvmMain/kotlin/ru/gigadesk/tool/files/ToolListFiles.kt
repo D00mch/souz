@@ -1,10 +1,12 @@
 package ru.gigadesk.tool.files
 
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.tool.*
 import java.io.File
 import kotlin.io.relativeTo
 
-object ToolListFiles : ToolSetup<ToolListFiles.Input> {
+class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolListFiles.Input> {
     data class Input(
         @InputParamDescription("Relative path to list files from")
         val path: String = FilesToolUtil.homeDirectory.absolutePath,
@@ -26,14 +28,18 @@ object ToolListFiles : ToolSetup<ToolListFiles.Input> {
     )
 
     override fun invoke(input: Input): String {
-        val fixedPath = FilesToolUtil.applyDefaultEnvs(input.path)
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         val base = File(fixedPath)
+        if (!filesToolUtil.isPathSafe(base)) {
+            throw ForbiddenFolder(fixedPath)
+        }
         if (!base.exists() || !base.isDirectory) {
             throw BadInputException("Invalid directory path: $fixedPath")
         }
 
         val files = base.walkTopDown()
             .onEnter { file ->
+                val excludedPaths: List<String> = filesToolUtil.forbiddenDirectories().map { it.canonicalPath }
                 val prohibit = excludedPaths.contains(file.path)
                         || file.name.startsWith('.')
                 !prohibit
@@ -53,21 +59,8 @@ object ToolListFiles : ToolSetup<ToolListFiles.Input> {
     }
 }
 
-private val excludedPaths: List<String> = run {
-    val home = System.getenv("HOME")
-    listOf(
-        "$home/Library",
-        "$home/Sync",
-        "$home/Yandex.Disk.localized",
-        "$home/go",
-        "$home/dotfiles",
-        "$home/Applications",
-    )
-}
-
 fun main() {
-    val result = ToolListFiles(
-        ToolListFiles.Input("${'$'}HOME", 3)
-    )
+    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val result = ToolListFiles(filesToolUtil).invoke(ToolListFiles.Input("${'$'}HOME", 3))
     println(result)
 }

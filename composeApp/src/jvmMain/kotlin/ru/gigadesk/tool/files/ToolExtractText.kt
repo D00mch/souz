@@ -12,7 +12,7 @@ import ru.gigadesk.tool.ToolSetup
 import java.io.File
 import java.io.FileInputStream
 
-class ToolExtractText : ToolSetup<ToolExtractText.Input> {
+class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolExtractText.Input> {
 
     data class Input(
         @InputParamDescription("Absolute path to the file (pdf, xlsx, docx, pptx, csv, etc)")
@@ -40,7 +40,11 @@ class ToolExtractText : ToolSetup<ToolExtractText.Input> {
     )
 
     override fun invoke(input: Input): String {
-        val file = File(FilesToolUtil.applyDefaultEnvs(input.filePath))
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.filePath)
+        val file = File(fixedPath)
+        if (!filesToolUtil.isPathSafe(file)) {
+            throw ForbiddenFolder(fixedPath)
+        }
         if (!file.exists()) return "Error: File not found at ${input.filePath}"
 
         if (file.extension.lowercase() == "key") {

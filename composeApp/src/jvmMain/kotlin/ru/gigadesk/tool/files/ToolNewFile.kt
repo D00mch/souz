@@ -3,7 +3,7 @@ package ru.gigadesk.tool.files
 import ru.gigadesk.tool.*
 import java.io.File
 
-object ToolNewFile : ToolSetup<ToolNewFile.Input> {
+class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewFile.Input> {
     data class Input(
         @InputParamDescription("The path where the file will be created, including filename")
         val path: String,
@@ -25,7 +25,11 @@ object ToolNewFile : ToolSetup<ToolNewFile.Input> {
     )
 
     override fun invoke(input: Input): String {
-        val file = File(FilesToolUtil.applyDefaultEnvs(input.path))
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
+        val file = File(fixedPath)
+        if (!filesToolUtil.isPathSafe(file)) {
+            throw ForbiddenFolder(fixedPath)
+        }
         if (file.exists()) {
             throw BadInputException("File already exists: ${input.path}")
         }

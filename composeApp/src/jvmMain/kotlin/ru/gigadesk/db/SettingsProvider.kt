@@ -38,6 +38,10 @@ class SettingsProvider(private val configStore: ConfigStore) {
         configKey = TEMPERATURE,
         envKey = TEMPERATURE
     )
+    private var _forbiddenFoldersDelegate: String? by keyDelegate(
+        configKey = FORBIDDEN_FOLDERS,
+        envKey = FORBIDDEN_FOLDERS
+    )
     private var _needsOnboardingDelegate: String? by keyDelegate(
         configKey = NEEDS_ONBOARDING,
         envKey = NEEDS_ONBOARDING
@@ -84,6 +88,19 @@ class SettingsProvider(private val configStore: ConfigStore) {
         get() = _temperatureDelegate?.toFloatOrNull() ?: 0.7f
         set(value) { _temperatureDelegate = value.toString() }
 
+    var forbiddenFolders: List<String>
+        get() = _forbiddenFoldersDelegate
+            ?.lines()
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            ?: DEFAULT_FORBIDDEN_FOLDERS
+        set(value) {
+            _forbiddenFoldersDelegate = value
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .joinToString("\n")
+        }
+
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
         object : ReadWriteProperty<Any?, String?> {
 
@@ -114,5 +131,7 @@ class SettingsProvider(private val configStore: ConfigStore) {
         private const val INITIAL_WINDOW_WIDTH_DP = "INITIAL_WINDOW_WIDTH_DP"
         private const val INITIAL_WINDOW_HEIGHT_DP = "INITIAL_WINDOW_HEIGHT_DP"
         private const val TEMPERATURE = "TEMPERATURE"
+        private const val FORBIDDEN_FOLDERS = "FORBIDDEN_FOLDERS"
+        private val DEFAULT_FORBIDDEN_FOLDERS = listOf("~/Library/")
     }
 }

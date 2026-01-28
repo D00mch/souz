@@ -80,7 +80,8 @@ fun SettingsScreen(
                 onOpenTools = onOpenTools,
                 onClose = onClose,
                 onShowSnack = onShowSnack,
-                onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) }
+                onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) },
+                onOpenFoldersManagement = { viewModel.send(SettingsEvent.OpenFoldersManagement) }
             )
         }
         SettingsSubScreen.SESSIONS -> {
@@ -105,6 +106,11 @@ fun SettingsScreen(
                     Button(onClick = { viewModel.send(SettingsEvent.BackToSessions) }) { Text("Назад") }
                 }
             }
+        }
+        SettingsSubScreen.FOLDERS -> {
+            FoldersManagementScreen(
+                onClose = { viewModel.send(SettingsEvent.BackToSettings) }
+            )
         }
     }
 }
@@ -131,6 +137,7 @@ fun SettingsScreen(
     onClose: () -> Unit,
     onShowSnack: (String) -> Unit = {},
     onOpenGraphSessions: () -> Unit = {},
+    onOpenFoldersManagement: () -> Unit = {},
 ) {
     // Получаем состояние фокуса окна
     val windowInfo = LocalWindowInfo.current
@@ -255,6 +262,14 @@ fun SettingsScreen(
                 Button(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "Настройка инструментов",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.glassColors.textPrimary,
+                    )
+                }
+
+                Button(onClick = onOpenFoldersManagement, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Запретные папки",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.glassColors.textPrimary,
                     )

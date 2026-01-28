@@ -7,13 +7,15 @@ import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolSetup
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.StandardCopyOption
 
-object ToolMoveFile : ToolSetup<ToolMoveFile.Input> {
+class ToolMoveFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolMoveFile.Input> {
     private val l = LoggerFactory.getLogger(ToolMoveFile::class.java)
 
     data class Input(
@@ -38,10 +40,16 @@ object ToolMoveFile : ToolSetup<ToolMoveFile.Input> {
     )
 
     override fun invoke(input: Input): String {
-        val sourceFile = File(FilesToolUtil.applyDefaultEnvs(input.sourcePath))
-        val destinationFile = File(FilesToolUtil.applyDefaultEnvs(input.destinationPath))
-        FilesToolUtil.requirePathIsSave(sourceFile)
-        FilesToolUtil.requirePathIsSave(destinationFile)
+        val fixedSourcePath = filesToolUtil.applyDefaultEnvs(input.sourcePath)
+        val fixedDestinationPath = filesToolUtil.applyDefaultEnvs(input.destinationPath)
+        val sourceFile = File(fixedSourcePath)
+        val destinationFile = File(fixedDestinationPath)
+        if (!filesToolUtil.isPathSafe(sourceFile)) {
+            throw BadInputException("Forbidden directory: $fixedSourcePath. User explicitly restricted this path. Inform him")
+        }
+        if (!filesToolUtil.isPathSafe(destinationFile)) {
+            throw BadInputException("Forbidden directory: $fixedDestinationPath. User explicitly restricted this path. Inform him")
+        }
         val sourcePath = sourceFile.toPath().toAbsolutePath().normalize()
         val destinationPath = destinationFile.toPath().toAbsolutePath().normalize()
         if (sourcePath == destinationPath) {
@@ -77,7 +85,8 @@ object ToolMoveFile : ToolSetup<ToolMoveFile.Input> {
 }
 
 fun main() {
-    val result = ToolMoveFile.invoke(
+    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val result = ToolMoveFile(filesToolUtil).invoke(
         ToolMoveFile.Input(
             "~/Downloads/tmp.txt",
             destinationPath = "~/Downloads/articles/tmp.txt",
