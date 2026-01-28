@@ -10,12 +10,14 @@ import java.io.IOException
 import java.io.InputStream
 
 class FilesToolUtil(private val settingsProvider: SettingsProvider) {
+
     /**
-     * Generally, we don't want Agent to mess around /
+     * Generally, we don't want Agent to mess around anything out of $HOME and everything user disallowed
      */
     fun isPathSafe(file: File): Boolean {
         val canonicalPath = file.canonicalFile
-        return forbiddenDirectories().none { canonicalPath.startsWith(it) }
+        return file.canonicalPath.startsWith(homeStr) &&
+                forbiddenDirectories().none { canonicalPath.startsWith(it) }
     }
 
     @Throws(BadInputException::class)
@@ -70,7 +72,7 @@ fun main() {
     val filesToolUtil: FilesToolUtil by di.instance()
 
     val result = filesToolUtil.isPathSafe(File(
-        filesToolUtil.applyDefaultEnvs("~/Documents")
+        filesToolUtil.applyDefaultEnvs("~/")
     ))
     println("Safe? $result")
 }

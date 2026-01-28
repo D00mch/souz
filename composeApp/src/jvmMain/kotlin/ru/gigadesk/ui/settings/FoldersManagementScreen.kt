@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import org.apache.batik.svggen.SVGCSSStyler.style
 import org.kodein.di.compose.localDI
 import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
@@ -83,7 +84,10 @@ private fun FoldersManagementScreen(
                             color = MaterialTheme.glassColors.textPrimary
                         )
                         Text(
-                            text = "Укажите по одному пути на строку. Эти папки будут исключены из работы агента.",
+                            text = """
+                                Укажите по одному пути на строку. Эти папки будут исключены из работы агента. 
+                                Всё вне домашней директории запрещено по умолчанию.
+                            """.trimIndent(),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f)
                         )
