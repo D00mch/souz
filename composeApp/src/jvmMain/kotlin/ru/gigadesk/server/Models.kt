@@ -6,11 +6,22 @@ package ru.gigadesk.server
 data class AgentRequest(val text: String)
 
 /**
- * Response DTO for successful agent responses.
+ * Message DTO for agent conversation history.
  */
-data class AgentResponse(val result: String)
+data class AgentMessage(
+    val role: String,
+    val content: String,
+    val name: String? = null
+)
 
-/**
- * Response DTO for error cases.
- */
-data class AgentErrorResponse(val error: String)
+sealed class AgentResponse {
+
+    data class Success(
+        val result: String,
+        val history: List<AgentMessage> = emptyList()
+    ) : AgentResponse()
+
+    data class Error(
+        val error: String
+    ) : AgentResponse()
+}
