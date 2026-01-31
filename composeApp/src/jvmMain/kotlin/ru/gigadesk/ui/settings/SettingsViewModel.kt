@@ -158,6 +158,7 @@ class SettingsViewModel(
             }
             BackToSettings -> setState { copy(currentScreen = SettingsSubScreen.MAIN) }
             BackToSessions -> setState { copy(currentScreen = SettingsSubScreen.SESSIONS, selectedSessionId = null) }
+            OpenFoldersManagement -> setState { copy(currentScreen = SettingsSubScreen.FOLDERS) }
         }
     }
 

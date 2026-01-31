@@ -35,6 +35,7 @@ import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.graphlog.GraphSessionsScreen
 import ru.gigadesk.ui.graphlog.GraphVisualizationScreen
 import ru.gigadesk.ui.main.RealLiquidGlassCard
+import ru.gigadesk.ui.common.DraggableWindowArea
 
 @Composable
 fun SettingsScreen(
@@ -79,7 +80,8 @@ fun SettingsScreen(
                 onOpenTools = onOpenTools,
                 onClose = onClose,
                 onShowSnack = onShowSnack,
-                onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) }
+                onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) },
+                onOpenFoldersManagement = { viewModel.send(SettingsEvent.OpenFoldersManagement) }
             )
         }
         SettingsSubScreen.SESSIONS -> {
@@ -104,6 +106,11 @@ fun SettingsScreen(
                     Button(onClick = { viewModel.send(SettingsEvent.BackToSessions) }) { Text("Назад") }
                 }
             }
+        }
+        SettingsSubScreen.FOLDERS -> {
+            FoldersManagementScreen(
+                onClose = { viewModel.send(SettingsEvent.BackToSettings) }
+            )
         }
     }
 }
@@ -130,6 +137,7 @@ fun SettingsScreen(
     onClose: () -> Unit,
     onShowSnack: (String) -> Unit = {},
     onOpenGraphSessions: () -> Unit = {},
+    onOpenFoldersManagement: () -> Unit = {},
 ) {
     // Получаем состояние фокуса окна
     val windowInfo = LocalWindowInfo.current
@@ -154,11 +162,12 @@ fun SettingsScreen(
                     .padding(horizontal = 24.dp, vertical = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                DraggableWindowArea {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             text = "Настройки",
@@ -178,6 +187,7 @@ fun SettingsScreen(
                             contentDescription = "Закрыть настройки",
                             tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f)
                         )
+                    }
                     }
                 }
 
@@ -252,6 +262,14 @@ fun SettingsScreen(
                 Button(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "Настройка инструментов",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.glassColors.textPrimary,
+                    )
+                }
+
+                Button(onClick = onOpenFoldersManagement, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Запретные папки",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.glassColors.textPrimary,
                     )

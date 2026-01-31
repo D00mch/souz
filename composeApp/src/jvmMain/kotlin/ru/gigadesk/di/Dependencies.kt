@@ -14,8 +14,11 @@ import ru.gigadesk.agent.nodes.NodesSummarization
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.agent.session.GraphSessionRepository
 import ru.gigadesk.agent.session.GraphSessionService
+import ru.gigadesk.server.AgentNode
+import ru.gigadesk.server.GraphAgentNode
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.DesktopDataExtractor
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.db.VectorDB
@@ -29,6 +32,8 @@ import ru.gigadesk.keys.Keys
 import ru.gigadesk.tool.LocalRegexClassifier
 import ru.gigadesk.tool.ToolsFactory
 import ru.gigadesk.tool.ToolsSettings
+import ru.gigadesk.tool.application.ToolShowApps
+import ru.gigadesk.tool.files.FilesToolUtil
 
 private object DiTags {
     const val MODULE_MAIN = "main"
@@ -54,10 +59,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ConfigStore }
     bindSingleton { VectorDB }
     bindSingleton { SettingsProvider(instance()) }
-    bindSingleton { DesktopInfoRepository(instance(), instance()) }
+    bindSingleton { DesktopInfoRepository(instance(), instance(), instance()) }
     bindSingleton { ToolsSettings(instance(), instance()) }
+    bindSingleton { FilesToolUtil(instance()) }
     bindSingleton { GraphSessionRepository() }
     bindSingleton { GraphSessionService(instance(), instance(DiTags.TAG_LOG)) }
+    bindSingleton { DesktopDataExtractor(instance(), ToolShowApps(instance())) }
 
     // API
     bindSingleton { GigaAuth(instance()) }
@@ -87,6 +94,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             instance(),
         )
     }
-    bindSingleton { ToolsFactory(instance(), instance(), instance()) }
+    bindSingleton { ToolsFactory(instance(), instance(), instance(), instance()) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
+    
+    // Server
+    bindSingleton<AgentNode> { GraphAgentNode(instance()) }
 }

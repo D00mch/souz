@@ -2,9 +2,10 @@ package giga
 
 import ru.gigadesk.giga.*
 import ru.gigadesk.tool.files.ToolListFiles
-import com.fasterxml.jackson.module.kotlin.contains
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.tool.files.FilesToolUtil
 import java.io.File
 import java.nio.file.Files
@@ -12,6 +13,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class GigaToolTest {
+    private val listFiles = ToolListFiles(FilesToolUtil(SettingsProvider(ConfigStore)))
+    
     private fun createTempDirectory(): File =
         Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "gigadesk-giga-test-").toFile()
 
@@ -24,7 +27,7 @@ class GigaToolTest {
 
     @Test
     fun `test function name and parameters setup`() {
-        val fn = ToolListFiles.toGiga().fn
+        val fn = listFiles.toGiga().fn
         assertEquals(fn.name, "ListFiles")
         val jsonParams = gigaJsonMapper.writeValueAsString(fn.parameters)
         assertEquals(
@@ -40,7 +43,7 @@ class GigaToolTest {
         val tempDir = createTempDirectory()
         try {
             createSampleFiles(tempDir)
-            val toolsMap: Map<String, GigaToolSetup> = listOf(ToolListFiles.toGiga()).associateBy { it.fn.name }
+            val toolsMap: Map<String, GigaToolSetup> = listOf(listFiles.toGiga()).associateBy { it.fn.name }
 
             val functionCall = GigaResponse.FunctionCall(
                 name = "ListFiles",
@@ -52,7 +55,7 @@ class GigaToolTest {
             l.info("$result")
             assertEquals(GigaMessageRole.function, result.role)
             val actual = gigaJsonMapper.readTree(result.content).let { nodes ->
-                if (nodes.contains("result")) {
+                if (nodes.has("result")) {
                     nodes.get("result").asText()
                 } else {
                     nodes.asText()

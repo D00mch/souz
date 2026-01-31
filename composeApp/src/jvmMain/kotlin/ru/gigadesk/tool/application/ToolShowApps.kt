@@ -1,17 +1,18 @@
 package ru.gigadesk.tool.application
 
-import ru.gigadesk.giga.objectMapper
-import ru.gigadesk.tool.FewShotExample
-import ru.gigadesk.tool.InputParamDescription
-import ru.gigadesk.tool.ReturnParameters
-import ru.gigadesk.tool.ReturnProperty
-import ru.gigadesk.tool.ToolRunBashCommand
-import ru.gigadesk.tool.ToolSetup
-import ru.gigadesk.tool.files.FilesToolUtil
 import com.fasterxml.jackson.annotation.JsonProperty
-import ru.gigadesk.tool.desktop.ToolWindowsManager
+import org.kodein.di.DI
+import org.kodein.di.instance
+import ru.gigadesk.di.mainDiModule
+import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.tool.*
+import ru.gigadesk.tool.files.FilesToolUtil
 
-object ToolShowApps : ToolSetup<ToolShowApps.Input> {
+class ToolShowApps(
+    private val filesToolUtil: FilesToolUtil,
+    private val bash: ToolRunBashCommand = ToolRunBashCommand,
+) : ToolSetup<ToolShowApps.Input> {
+
     data class Input(
         @InputParamDescription("What apps to show")
         val state: AppState,
@@ -48,7 +49,7 @@ The "app-pid" only returned for running apps with `${AppState.running}` input.
 
     override fun invoke(input: Input): String = when (input.state) {
         AppState.installed -> {
-            val script = FilesToolUtil.resourceAsText("scripts/show_installed_apps.sh")
+            val script = filesToolUtil.resourceAsText("scripts/show_installed_apps.sh")
             val appsLines = ToolRunBashCommand.sh(script)
                 .lines()
                 .map { line ->
@@ -59,9 +60,16 @@ The "app-pid" only returned for running apps with `${AppState.running}` input.
         }
 
         AppState.running -> {
-            val result = ToolWindowsManager.runAerospace(
-                "list-apps", "--format",
-                "{app:%{app-name},bundle:%{app-bundle-id},pid:%{app-pid}}"
+            val result = bash.apple(
+               """
+               tell application "System Events"
+                set appNames to name of (application processes where background only is false)
+               end tell
+               set AppleScript's text item delimiters to linefeed
+               set out to appNames as text
+               set AppleScript's text item delimiters to ""
+               return out
+               """.trimIndent()
             )
             result.lines().joinToString(prefix = "[", postfix = "]", separator = ",") { it }
         }
@@ -74,7 +82,10 @@ private data class Result(
 )
 
 fun main() {
-    val tool = ToolShowApps
+    val di = DI.invoke { import(mainDiModule) }
+    val filesToolUtil: FilesToolUtil by di.instance()
+
+    val tool = ToolShowApps(filesToolUtil)
     val result = tool.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
     println(result)
 }

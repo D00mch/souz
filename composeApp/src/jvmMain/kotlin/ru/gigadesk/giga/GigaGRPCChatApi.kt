@@ -19,6 +19,7 @@ import org.slf4j.LoggerFactory
 import org.slf4j.bridge.SLF4JBridgeHandler
 import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.tool.files.ToolListFiles
+import ru.gigadesk.tool.files.FilesToolUtil
 import java.util.*
 import kotlin.time.measureTime
 
@@ -291,6 +292,7 @@ private const val DEFAULT_MAX_INBOUND_MESSAGE_MB = 32
 suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val api: GigaGRPCChatApi by di.instance()
+    val filesToolUtil: FilesToolUtil by di.instance()
 //  val api: GigaRestChatAPI by di.instance()
 
     val systemPrompt = GigaRequest.Message(
@@ -310,7 +312,7 @@ suspend fun main() {
             ),
         ),
         functions = listOf(
-            ToolListFiles.toGiga(),
+            ToolListFiles(filesToolUtil).toGiga(),
         ).map { it.fn }
     )
 

@@ -3,6 +3,7 @@ package ru.gigadesk.anthropic
 import ru.gigadesk.giga.*
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.application.ToolOpen
+import ru.gigadesk.tool.files.FilesToolUtil
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
@@ -377,6 +378,7 @@ class AnthropicChatAPI(
 suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val fallback: GigaRestChatAPI by di.instance()
+    val filesToolUtil: FilesToolUtil by di.instance()
     val api = AnthropicChatAPI(fallback)
 
 //    val result = api.uploadFile(File("/Users/m1/Pictures/портрет.jpeg"))
@@ -403,7 +405,7 @@ suspend fun main() {
             ),
         ),
         functions = listOf(
-            ToolOpen(ToolRunBashCommand).toGiga(),
+            ToolOpen(ToolRunBashCommand, filesToolUtil).toGiga(),
         ).map { it.fn }
     )
 

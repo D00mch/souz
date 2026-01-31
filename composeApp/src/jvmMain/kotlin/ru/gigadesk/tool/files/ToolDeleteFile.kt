@@ -3,7 +3,7 @@ package ru.gigadesk.tool.files
 import ru.gigadesk.tool.*
 import java.io.File
 
-object ToolDeleteFile : ToolSetup<ToolDeleteFile.Input> {
+class ToolDeleteFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolDeleteFile.Input> {
     data class Input(
         @InputParamDescription("The path of the file to delete")
         val path: String
@@ -23,11 +23,14 @@ object ToolDeleteFile : ToolSetup<ToolDeleteFile.Input> {
     )
 
     override fun invoke(input: Input): String {
-        val file = File(input.path)
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
+        val file = File(fixedPath)
+        if (!filesToolUtil.isPathSafe(file)) {
+            throw ForbiddenFolder(fixedPath)
+        }
         if (!file.exists() || file.isDirectory) {
             throw BadInputException("Invalid file path: ${input.path}")
         }
-        FilesToolUtil.requirePathIsSave(file)
         file.delete()
         return "File deleted at ${input.path}"
     }

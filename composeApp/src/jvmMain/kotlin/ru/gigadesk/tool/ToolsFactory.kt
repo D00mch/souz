@@ -36,6 +36,7 @@ typealias FunctionName = String
 class ToolsFactory(
     private val repo: DesktopInfoRepository,
     private val api: GigaChatAPI,
+    private val filesToolUtil: FilesToolUtil,
     private val keys: Keys = Keys(),
 ) {
     val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
@@ -46,18 +47,18 @@ class ToolsFactory(
 
     private fun ToolCategory.tools(): List<GigaToolSetup> = when (this) {
         ToolCategory.FILES -> listOf(
-            ToolReadFile.toGiga(),
-            ToolListFiles.toGiga(),
-            ToolFindInFiles.toGiga(),
-            ToolNewFile.toGiga(),
-            ToolDeleteFile.toGiga(),
-            ToolModifyFile.toGiga(),
-            ToolMoveFile.toGiga(),
+            ToolReadFile(filesToolUtil).toGiga(),
+            ToolListFiles(filesToolUtil).toGiga(),
+            ToolFindInFiles(filesToolUtil).toGiga(),
+            ToolNewFile(filesToolUtil).toGiga(),
+            ToolDeleteFile(filesToolUtil).toGiga(),
+            ToolModifyFile(filesToolUtil).toGiga(),
+            ToolMoveFile(filesToolUtil).toGiga(),
             // ToolFindTextInFiles.toGiga(), // we already have ToolFindInFiles
-            ToolExtractText().toGiga(),
-            ToolFindFilesByName.toGiga(),
-            ToolReadPdfPages().toGiga(),
-            ToolOpen(ToolRunBashCommand).toGiga(),
+            ToolExtractText(filesToolUtil).toGiga(),
+            ToolFindFilesByName(filesToolUtil).toGiga(),
+            ToolReadPdfPages(filesToolUtil).toGiga(),
+            ToolOpen(ToolRunBashCommand, filesToolUtil).toGiga(),
         )
 
         ToolCategory.BROWSER -> listOf(
@@ -66,7 +67,7 @@ class ToolsFactory(
             ToolBrowserHotkeys(keys).toGiga(),
             ToolFocusOnTab(ToolRunBashCommand).toGiga(),
             ToolChromeInfo(ToolRunBashCommand).toGiga(),
-            ToolOpenDefaultBrowser(ToolRunBashCommand).toGiga(),
+            ToolOpenDefaultBrowser(ToolRunBashCommand, filesToolUtil).toGiga(),
         )
 
         ToolCategory.CONFIG -> listOf(
@@ -83,13 +84,16 @@ class ToolsFactory(
             ToolSearchNotes(ToolRunBashCommand).toGiga(),
         )
 
-        ToolCategory.APPLICATIONS -> listOf(
-            ToolShowApps.toGiga(),
-            ToolOpen(ToolRunBashCommand).toGiga(),
-        )
+        ToolCategory.APPLICATIONS -> {
+            val toolOpen = ToolOpen(ToolRunBashCommand, filesToolUtil)
+             listOf(
+                ToolShowApps(filesToolUtil, ToolRunBashCommand).toGiga(),
+                toolOpen.toGiga(),
+            )
+        }
 
         ToolCategory.DATAANALYTICS -> listOf(
-            ToolCreatePlotFromCsv().toGiga(),
+            ToolCreatePlotFromCsv(filesToolUtil).toGiga(),
             ToolUploadFile(api).toGiga(),
             ToolDownloadFile(api).toGiga(),
         )

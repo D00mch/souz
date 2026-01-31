@@ -1,11 +1,14 @@
 package ru.gigadesk.tool.desktop
 
+import org.kodein.di.DI
+import org.kodein.di.instance
 import ru.gigadesk.tool.*
 import org.slf4j.LoggerFactory
+import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.tool.application.ToolOpen
 import java.util.concurrent.TimeUnit
 
-object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
+class ToolWindowsManager(private val toolOpen: ToolOpen) : ToolSetup<ToolWindowsManager.Input> {
     private val l = LoggerFactory.getLogger(ToolWindowsManager::class.java)
 
     data class Input(
@@ -105,7 +108,7 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
             Action.focus_right -> "focus right"
             Action.focus_up -> "focus up"
             Action.focus_down -> "focus down"
-            Action.focus_app -> return ToolOpen(ToolRunBashCommand).invoke(ToolOpen.Input(input.meta))
+            Action.focus_app -> return toolOpen.invoke(ToolOpen.Input(input.meta))
             Action.move_left -> "move left"
             Action.move_right -> "move right"
             Action.move_up -> "move up"
@@ -147,7 +150,9 @@ object ToolWindowsManager : ToolSetup<ToolWindowsManager.Input> {
 
 // Usage
 fun main() {
-    val t = ToolWindowsManager
+    val di = DI.invoke { import(mainDiModule) }
+    val open: ToolOpen by di.instance()
+    val t = ToolWindowsManager(open)
 //    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.list_apps, "")))
 //    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.move_app_to_workspace, "2")))
     println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.focus_app, "com.google.Chrome")))

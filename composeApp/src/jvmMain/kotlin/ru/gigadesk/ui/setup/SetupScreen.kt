@@ -30,6 +30,7 @@ import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
+import ru.gigadesk.ui.common.DraggableWindowArea
 
 private val SetupWindowSize = DpSize(width = 560.dp, height = 480.dp)
 
@@ -86,12 +87,14 @@ fun SetupScreenContent(
                     .padding(horizontal = 24.dp, vertical = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(
-                    text = "Перед началом работы нужно настроить ключи",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.glassColors.textPrimary
-                )
+                DraggableWindowArea {
+                    Text(
+                        text = "Перед началом работы нужно настроить ключи",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.glassColors.textPrimary
+                    )
+                }
 
                 if (state.missingMessages.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

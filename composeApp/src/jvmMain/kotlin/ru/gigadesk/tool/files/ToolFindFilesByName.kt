@@ -3,14 +3,18 @@ package ru.gigadesk.tool.files
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.runBlocking
 import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.tool.BadInputException
 import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
+import java.io.File
 
-object ToolFindFilesByName : ToolSetup<ToolFindFilesByName.Input> {
+class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindFilesByName.Input> {
     data class Input(
         @InputParamDescription("Relative or absolute path to limit the search. Defaults to user HOME.")
         val path: String = FilesToolUtil.homeDirectory.absolutePath,
@@ -53,7 +57,11 @@ object ToolFindFilesByName : ToolSetup<ToolFindFilesByName.Input> {
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 
     override suspend fun suspendInvoke(input: Input): String {
-        val path = FilesToolUtil.applyDefaultEnvs(input.path)
+        val path = filesToolUtil.applyDefaultEnvs(input.path)
+        val base = File(path)
+        if (!filesToolUtil.isPathSafe(base)) {
+            throw BadInputException("Forbidden directory: $path. User explicitly restricted this path. Inform him")
+        }
 
         val script = "mdfind -onlyin \"$1\" -name \"$2\""
 
@@ -67,6 +75,8 @@ object ToolFindFilesByName : ToolSetup<ToolFindFilesByName.Input> {
 }
 
 fun main() {
+    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val tool = ToolFindFilesByName(filesToolUtil)
     val searchInput = ToolFindFilesByName.Input(
         path = "~",
         fileName = "родмап"
@@ -74,7 +84,7 @@ fun main() {
 
     println("Running search for: ${searchInput.fileName} in ${searchInput.path}...")
 
-    val resultJson = ToolFindFilesByName.invoke(searchInput)
+    val resultJson = tool.invoke(searchInput)
     println("Raw JSON result: $resultJson")
 
     try {
@@ -91,4 +101,3 @@ fun main() {
         println("Error parsing result: ${e.message}")
     }
 }
-

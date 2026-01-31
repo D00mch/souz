@@ -10,7 +10,7 @@ import ru.gigadesk.ui.VMState
 
 
 enum class SettingsSubScreen {
-    MAIN, SESSIONS, VISUALIZATION
+    MAIN, SESSIONS, VISUALIZATION, FOLDERS
 }
 
 data class SettingsState(
@@ -66,6 +66,7 @@ sealed interface SettingsEvent : VMEvent {
     data class OpenGraphVisualization(val sessionId: String) : SettingsEvent
     object BackToSettings : SettingsEvent
     object BackToSessions : SettingsEvent
+    object OpenFoldersManagement : SettingsEvent
 }
 
 sealed interface SettingsEffect : VMSideEffect {

@@ -18,6 +18,7 @@ import kotlin.random.Random
 class DesktopInfoRepository(
     private val api: GigaChatAPI,
     private val db: VectorDB,
+    private val extractor: DesktopDataExtractor,
 ) {
     private val l = LoggerFactory.getLogger(DesktopInfoRepository::class.java)
 
@@ -33,7 +34,7 @@ class DesktopInfoRepository(
         val today = LocalDate.now().toString() // returns data like 2023-03-31
         if (ConfigStore.get(LAST_RUN_KEY, "") == today) return
         db.clearAllData()
-        val data = DesktopDataExtractor.all()
+        val data = extractor.all()
         if (data.isEmpty()) {
             l.info("DesktopDataExtractor.all() is empty!")
         } else {
@@ -78,7 +79,9 @@ suspend fun main() {
  //   ConfigStore.rm("rag_repo_last_run") // to reset
     val di = DI.invoke { import(mainDiModule) }
     val api: GigaRestChatAPI by di.instance()
-    val repo = DesktopInfoRepository(api, VectorDB)
+    val vectorDB: VectorDB by di.instance()
+    val extractor: DesktopDataExtractor by di.instance()
+    val repo = DesktopInfoRepository(api, vectorDB, extractor)
     repo.storeDesktopDataDaily()
     println(repo.getDesktopData().size)
 }
