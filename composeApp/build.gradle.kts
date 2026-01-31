@@ -76,11 +76,15 @@ kotlin {
             implementation(libs.bundles.letsPlot)
             implementation(libs.markdown)
             implementation(libs.java.diffUtils)
+
+            // ktor server (local API for mobile companion)
+            implementation(libs.bundles.ktorServer)
         }
 
         jvmTest.dependencies {
             implementation(libs.kotlin.testJunit)
             implementation(libs.mockk)
+            implementation(libs.ktor.serverTestHost)
         }
     }
 }

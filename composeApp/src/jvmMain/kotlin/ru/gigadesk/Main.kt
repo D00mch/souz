@@ -4,11 +4,8 @@ package ru.gigadesk
 
 import gigadesk.composeapp.generated.resources.Res
 import gigadesk.composeapp.generated.resources.iconT
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
@@ -27,8 +24,9 @@ import org.kodein.di.instance
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
+import ru.gigadesk.server.AgentNode
+import ru.gigadesk.server.startLocalServer
 
-// CompositionLocal to access WindowScope from nested composables
 val LocalWindowScope = staticCompositionLocalOf<WindowScope?> { null }
 
 fun main() {
@@ -39,6 +37,18 @@ fun main() {
             val di = localDI()
             val say: Say by di.instance()
             val settingsProvider: SettingsProvider by di.instance()
+            val agentNode: AgentNode by di.instance()
+
+            DisposableEffect(Unit) {
+                println("Starting local server...")
+                val serverEngine = startLocalServer(agentNode)
+
+                onDispose {
+                    println("Stopping local server...")
+                    serverEngine.stop(1000, 2000)
+                }
+            }
+
             var isWindowVisible by remember { mutableStateOf(true) }
 
             Tray(
@@ -96,4 +106,3 @@ fun main() {
         }
     }
 }
-
