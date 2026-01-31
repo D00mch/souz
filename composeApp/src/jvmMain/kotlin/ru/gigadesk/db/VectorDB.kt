@@ -43,7 +43,6 @@ object VectorDB {
                 doc.add(StoredField("text", data[idx].text))
                 doc.add(StoredField("type", data[idx].type.name))
 
-                // ИСПРАВЛЕНИЕ ЗДЕСЬ: Добавлен третий параметр VectorSimilarityFunction.COSINE
                 doc.add(KnnFloatVectorField(
                     "embedding",
                     toFloatArray(embeddings[idx]),
