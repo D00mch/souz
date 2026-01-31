@@ -20,9 +20,7 @@ object VectorDB {
     private val l = LoggerFactory.getLogger(VectorDB::class.java)
     private val indexPath = "${FilesToolUtil.homeStr}/.local/state/gigadesk/"
     private const val INIT_KEY = "rag_db_initialized"
-
-    // Для Cosine similarity адекватный порог обычно выше 0.5
-    private const val DEFAULT_MIN_SCORE = 0.9f
+    private const val DEFAULT_MIN_SCORE = 0.92f
 
     fun initializeOnce() {
         if (ConfigStore.get(INIT_KEY, false)) return
@@ -57,11 +55,8 @@ object VectorDB {
         }
     }
 
-    // ... методы getAllData и clearAllData без изменений ...
-
     fun getAllData(): List<StorredData> {
         val dir = FSDirectory.open(Paths.get(indexPath))
-        // Обернули в try, так как если индекса нет, DirectoryReader упадет
         try {
             DirectoryReader.open(dir).use { reader ->
                 val list = mutableListOf<StorredData>()
@@ -100,7 +95,6 @@ object VectorDB {
                 val texts = mutableListOf<StorredData>()
 
                 topDocs.scoreDocs.forEach { sd ->
-                    // Логируем для отладки
                     l.debug("Doc id: ${sd.doc}, Score: ${sd.score}")
 
                     if (sd.score < minScore) {
@@ -110,13 +104,9 @@ object VectorDB {
                     val doc = searcher.storedFields().document(sd.doc)
                     val originalText = doc.get("text") ?: return@forEach
                     val type = doc.get("type")?.let { StorredType.valueOf(it) } ?: return@forEach
+                    //val textWithScore = "$originalText [${String.format("%.4f", sd.score)}]"
 
-                    // --- ХАК ДЛЯ ЭКСПЕРИМЕНТА ---
-                    // Вшиваем оценку прямо в начало текста.
-                    // Форматируем до 4 знаков, чтобы было аккуратно.
-                    val textWithScore = "$originalText [${String.format("%.4f", sd.score)}]"
-
-                    texts.add(StorredData(textWithScore, type))
+                    texts.add(StorredData(originalText, type))
                 }
                 return texts
             }

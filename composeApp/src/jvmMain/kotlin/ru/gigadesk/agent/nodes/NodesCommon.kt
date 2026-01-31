@@ -71,18 +71,22 @@ class NodesCommon(
      */
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
         val additionalMessage: GigaRequest.Message? = appendActualInformation(ctx.input)
-        if (additionalMessage == null) {
-            ctx
-        } else {
-            l.info("Additional data:\n$additionalMessage")
-            val newHistory = ArrayList<GigaRequest.Message>()
-            ctx.history.forEach { msg ->
-                val isAdditionalData = msg.role == GigaMessageRole.user && msg.content.startsWith(INFO_PREFIX)
-                if (!isAdditionalData) newHistory.add(msg)
-            }
 
-            if (ctx.history.size > 1) {
-                newHistory.apply { add(size - 1, additionalMessage) }
+        val newHistory = ArrayList<GigaRequest.Message>()
+        ctx.history.forEach { msg ->
+            val isOldContext = msg.role == GigaMessageRole.user && msg.content.contains("<context>")
+            if (!isOldContext) newHistory.add(msg)
+        }
+
+        if (additionalMessage == null) {
+            ctx.map(history = newHistory)
+        } else {
+            l.info("Injecting RAG context (${additionalMessage.content.length} chars)")
+
+            if (newHistory.isNotEmpty()) {
+                newHistory.add(newHistory.size - 1, additionalMessage)
+            } else {
+                newHistory.add(additionalMessage)
             }
 
             ctx.map(history = newHistory)
@@ -97,31 +101,43 @@ class NodesCommon(
         try {
             additionalData.addAll(desktopInfoRepository.search(userText))
         } catch (e: Exception) {
-            l.error("Error while searching desktop info: {}", e.message)
+            l.error("Error searching desktop info: ${e.message}")
         }
 
         try {
             val defaultBrowser = ToolRunBashCommand.detectDefaultBrowser().prettyName
-            additionalData.add(StorredData("Дефолтный браузер — $defaultBrowser", StorredType.DEFAULT_BROWSER))
+            additionalData.add(StorredData(defaultBrowser, StorredType.DEFAULT_BROWSER))
         } catch (e: Exception) {
-            l.error("Error while fetching opened tabs: {}", e.message)
+            l.error("Error fetching browser info: ${e.message}")
         }
 
-        val defaultCalendarName = settingsProvider.defaultCalendar
-        if (!defaultCalendarName.isNullOrBlank()) {
-            additionalData.add(StorredData("Default calendar: $defaultCalendarName", StorredType.GENERAL_FACT))
+        val defaultCalendar = settingsProvider.defaultCalendar
+        if (!defaultCalendar.isNullOrBlank()) {
+            additionalData.add(StorredData(defaultCalendar, StorredType.GENERAL_FACT))
         }
 
-        LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")).let { currentDateTime ->
-            val dateInfo = "Текущие дата и время: $currentDateTime"
-            additionalData.add(StorredData(dateInfo, StorredType.GENERAL_FACT))
+        val currentDateTime = LocalDateTime.now().format(
+            DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss")
+        )
+        additionalData.add(StorredData(currentDateTime, StorredType.GENERAL_FACT))
+
+        if (additionalData.isEmpty()) return null
+
+        val content = buildString {
+            append("<context>\n")
+            append("Background information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), IGNORE completely. Do NOT reference this data in output.\n")
+            append("---\n")
+
+            additionalData.forEach { data ->
+                val typeReadable = data.type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
+                append("- [$typeReadable]: ${data.text}\n")
+            }
+            append("</context>")
         }
 
         return GigaRequest.Message(
             role = GigaMessageRole.user,
-            content = additionalData.joinToString(prefix = "$INFO_PREFIX:\n", separator = "\n") { data ->
-                "${data.type}. ${data.text}"
-            }
+            content = content
         )
     }
 
@@ -157,5 +173,3 @@ fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaR
         temperature = ctx.settings.temperature,
     )
 }
-
-private const val INFO_PREFIX = "Данные, которые могут оказаться полезными"
