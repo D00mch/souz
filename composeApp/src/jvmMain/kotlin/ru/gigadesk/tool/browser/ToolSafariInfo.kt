@@ -235,6 +235,6 @@ private fun processArrayElement(array: Element, bookmarks: MutableMap<String, St
 
 fun main() {
     val tool = ToolSafariInfo(ToolRunBashCommand)
-    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.bookmarks))
+    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.history))
     println(result)
 }

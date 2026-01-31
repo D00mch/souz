@@ -56,7 +56,6 @@ class ToolOpen(
 
         return try {
             when {
-                // Если есть слэш, значит это путь к файлу или папке
                 fixedPath.contains('/') -> {
                     val isDir = !fixedPath.endsWith(".app") && File(fixedPath).isDirectory
                     if (isDir) {
@@ -66,18 +65,14 @@ class ToolOpen(
                         "Done"
                     }
                 }
-                // Если есть точка (например, ru.keepcoder.Telegram или file.txt)
                 fixedPath.contains('.') -> {
                     if (File(fixedPath).exists()) {
-                        // Если это реальный файл, открываем как файл
                         bash.sh("""open "$fixedPath"""")
                     } else {
-                        // Если файла нет, считаем, что это Bundle ID приложения
                         bash.sh("""open -b "$fixedPath"""")
                     }
                     "Done"
                 }
-                // Иначе ищем папку
                 else -> {
                     ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(File(fixedPath).name))
                     "Done"
@@ -92,7 +87,6 @@ class ToolOpen(
 
 fun main() {
     val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
-    // Тест запуска по Bundle ID
     val result = ToolOpen(ToolRunBashCommand, filesToolUtil).invoke(ToolOpen.Input("ru.keepcoder.Telegram"))
     println(result)
 }
