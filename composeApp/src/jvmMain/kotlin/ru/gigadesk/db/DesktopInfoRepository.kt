@@ -76,7 +76,7 @@ class DesktopInfoRepository(
 }
 
 suspend fun main() {
-//    ConfigStore.rm("rag_repo_last_run") // to reset
+ //   ConfigStore.rm("rag_repo_last_run") // to reset
     val di = DI.invoke { import(mainDiModule) }
     val api: GigaRestChatAPI by di.instance()
     val vectorDB: VectorDB by di.instance()
