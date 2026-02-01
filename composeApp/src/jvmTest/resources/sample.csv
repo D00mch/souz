@@ -1,3 +1,4 @@
-name,age
-Alice,30
-Bob,25
+name,age,value
+Alice,30,100
+Bob,25,150
+Charlie,35,120
