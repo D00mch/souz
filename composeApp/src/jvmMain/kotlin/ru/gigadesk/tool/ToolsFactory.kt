@@ -1,5 +1,7 @@
 package ru.gigadesk.tool
 
+import org.kodein.di.DI
+import org.kodein.di.instance
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.giga.GigaToolSetup
 import ru.gigadesk.giga.toGiga
@@ -33,12 +35,15 @@ import ru.gigadesk.tool.textReplace.ToolTextUnderSelection
 
 typealias FunctionName = String
 
-class ToolsFactory(
-    private val repo: DesktopInfoRepository,
-    private val api: GigaChatAPI,
-    private val filesToolUtil: FilesToolUtil,
-    private val keys: Keys = Keys(),
-) {
+class ToolsFactory(di: DI) {
+
+    private val repo: DesktopInfoRepository by di.instance()
+    private val api: GigaChatAPI by di.instance()
+    private val filesToolUtil: FilesToolUtil by di.instance()
+    private val keys: Keys = Keys()
+
+    private val toolReadFile: ToolReadFile by di.instance()
+
     val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
             category.tools().associateBy { it.fn.name }
@@ -47,7 +52,7 @@ class ToolsFactory(
 
     private fun ToolCategory.tools(): List<GigaToolSetup> = when (this) {
         ToolCategory.FILES -> listOf(
-            ToolReadFile(filesToolUtil).toGiga(),
+            toolReadFile.toGiga(),
             ToolListFiles(filesToolUtil).toGiga(),
             ToolFindInFiles(filesToolUtil).toGiga(),
             ToolNewFile(filesToolUtil).toGiga(),

@@ -1,12 +1,20 @@
 package agent
 
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.kodein.di.DI
 import org.kodein.di.instance
+import org.kodein.di.singleton
 import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.di.mainDiModule
+import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.tool.application.ToolOpen
+import ru.gigadesk.tool.application.ToolShowApps
 import ru.gigadesk.tool.files.FilesToolUtil
 import java.io.File
 import kotlin.test.Test
@@ -91,12 +99,25 @@ class GraphAgentToolScenariosIntegrationTest {
     }
 
     @Test
-    fun scenario1_launchApplication() {
-        runScenario(
-            "Запусти программу",
-            "Запусти программу Терминал",
-            expectedAnyOf = listOf("терминал", "запуск", "открыт", "запущен"),
-        )
+    fun scenario1_launchApplication() = runTest {
+        val testGetApps: ToolShowApps = mockk(relaxed = true)
+        coEvery { testGetApps.invoke(any()) } returns """
+        [{"app-bundle-id":"com.github.wez.wezterm","app-name":"WezTerm"},
+         {"app-bundle-id":"ru.yandex.desktop.disk2","app-name":"Yandex.Disk.2"}]
+    """.trimIndent()
+
+        val testOpenApp: ToolOpen = mockk(relaxed = true)
+
+        val di = DI.invoke(allowSilentOverride = true) {
+            import(mainDiModule)
+            singleton { testOpenApp }
+            singleton { testGetApps }
+        }
+
+        val agent = GraphBasedAgent(di, objectMapper)
+        agent.execute("Запусти программу Терминал")
+
+        coVerify(exactly = 1) { testOpenApp.invoke(ToolOpen.Input("com.github.wez.wezterm")) }
     }
 
     @Test

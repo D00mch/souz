@@ -3,6 +3,7 @@ package ru.gigadesk.di
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import kotlinx.coroutines.internal.synchronizedImpl
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -55,6 +56,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     // Native
     bindSingleton { Keys() }
 
+    // tools
+
+
     // DB
     bindSingleton { ConfigStore }
     bindSingleton { VectorDB }
@@ -94,7 +98,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             instance(),
         )
     }
-    bindSingleton { ToolsFactory(instance(), instance(), instance(), instance()) }
+    bindSingleton { ToolsFactory(instance()) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
     
     // Server
