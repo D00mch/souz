@@ -53,6 +53,7 @@ class ToolOpen(
             .replace("\\\\n","")
             .replace("{","")
             .replace("}","")
+
         return try {
             when {
                 fixedPath.contains('/') -> {
@@ -65,7 +66,11 @@ class ToolOpen(
                     }
                 }
                 fixedPath.contains('.') -> {
-                    bash.sh("""open $fixedPath""")
+                    if (File(fixedPath).exists()) {
+                        bash.sh("""open "$fixedPath"""")
+                    } else {
+                        bash.sh("""open -b "$fixedPath"""")
+                    }
                     "Done"
                 }
                 else -> {
@@ -82,6 +87,6 @@ class ToolOpen(
 
 fun main() {
     val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
-    val result = ToolOpen(ToolRunBashCommand, filesToolUtil).invoke(ToolOpen.Input("/Applications/Telegram.app"))
+    val result = ToolOpen(ToolRunBashCommand, filesToolUtil).invoke(ToolOpen.Input("ru.keepcoder.Telegram"))
     println(result)
 }

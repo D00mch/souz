@@ -59,6 +59,7 @@ class ToolsFactory(
             ToolFindFilesByName(filesToolUtil).toGiga(),
             ToolReadPdfPages(filesToolUtil).toGiga(),
             ToolOpen(ToolRunBashCommand, filesToolUtil).toGiga(),
+            ToolFindFolders(ToolRunBashCommand, filesToolUtil).toGiga(),
         )
 
         ToolCategory.BROWSER -> listOf(

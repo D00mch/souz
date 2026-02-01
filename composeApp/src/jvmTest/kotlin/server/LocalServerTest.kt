@@ -30,7 +30,7 @@ class LocalServerTest {
     @Test
     fun `test error handling when agent throws`() = testApplication {
         val failingAgent = object : AgentNode {
-            override suspend fun processRequest(input: String): String {
+            override suspend fun processRequest(input: String): AgentResult {
                 throw RuntimeException("Test error message")
             }
         }
