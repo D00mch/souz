@@ -23,14 +23,22 @@ import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
 import kotlin.test.Test
+import org.junit.Assume
+import org.junit.Before
 
 
 /**
- * Интеграционные тесты сценариев вызовов тулов через [GraphBasedAgent.execute].
- * Тулы замоканы: проверяем, что LLM вызывает нужные тулы с ожидаемыми параметрами.
- * Все сценарии проходят через graphAgent.execute(input).
+ * Integration tests for tool invocation scenarios via [GraphBasedAgent.execute].
+ * Tools are mocked: we verify that LLM calls the required tools with the expected parameters.
+ * All scenarios are run via graphAgent.execute(input).
  */
 class GraphAgentToolScenariosIntegrationTest {
+
+    @Before
+    fun checkEnvironment() {
+        val apiKey = System.getenv("GIGA_KEY") ?: System.getProperty("GIGA_KEY")
+        Assume.assumeTrue("Skipping integration tests: GIGA_KEY is not set", !apiKey.isNullOrBlank())
+    }
 
     @Test
     fun scenario1_launchApplication() = runTest {

@@ -70,7 +70,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolsSettings(instance(), instance()) }
     bindSingleton { FilesToolUtil(instance()) }
 
-    // Tools (order: no deps first, then tools that depend on FilesToolUtil/ConfigStore/Keys/ToolRunBashCommand)
+    // Tools
     bindSingleton { ToolGetClipboard() }
     bindSingleton { ToolReadFile(instance()) }
     bindSingleton { ToolListFiles(instance()) }
