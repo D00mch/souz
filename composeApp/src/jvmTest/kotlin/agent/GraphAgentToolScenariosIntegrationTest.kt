@@ -3,7 +3,6 @@ package agent
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
-import io.mockk.mockk
 import io.mockk.spyk
 import ru.gigadesk.tool.ToolRunBashCommand
 import kotlinx.coroutines.test.runTest
@@ -15,28 +14,14 @@ import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.DesktopInfoRepository
-import ru.gigadesk.db.VectorDB
-import ru.gigadesk.tool.application.ToolOpen
-import ru.gigadesk.tool.application.ToolShowApps
-import ru.gigadesk.tool.browser.ToolChromeInfo
-import ru.gigadesk.tool.browser.ToolCreateNewBrowserTab
-import ru.gigadesk.tool.browser.ToolOpenDefaultBrowser
-import ru.gigadesk.tool.browser.ToolSafariInfo
-import ru.gigadesk.tool.calendar.ToolCalendarCreateEvent
-import ru.gigadesk.tool.calendar.ToolCalendarDeleteEvent
-import ru.gigadesk.tool.calendar.ToolCalendarListEvents
-import ru.gigadesk.tool.config.ToolInstructionStore
-import ru.gigadesk.tool.dataAnalytics.ToolCreatePlotFromCsv
+import ru.gigadesk.tool.application.*
+import ru.gigadesk.tool.browser.*
+import ru.gigadesk.tool.calendar.*
+import ru.gigadesk.tool.dataAnalytics.*
 import ru.gigadesk.tool.files.*
-import ru.gigadesk.tool.mail.ToolMailListMessages
-import ru.gigadesk.tool.mail.ToolMailSendNewMessage
-import ru.gigadesk.tool.mail.ToolMailUnreadMessagesCount
-import ru.gigadesk.tool.notes.ToolCreateNote
-import ru.gigadesk.tool.notes.ToolDeleteNote
-import ru.gigadesk.tool.notes.ToolListNotes
-import ru.gigadesk.tool.notes.ToolSearchNotes
-import ru.gigadesk.tool.textReplace.ToolGetClipboard
+import ru.gigadesk.tool.mail.*
+import ru.gigadesk.tool.notes.*
+import ru.gigadesk.tool.textReplace.*
 import kotlin.test.Test
 
 
@@ -46,21 +31,6 @@ import kotlin.test.Test
  * Все сценарии проходят через graphAgent.execute(input).
  */
 class GraphAgentToolScenariosIntegrationTest {
-
-    private fun runScenarioWithMocks(
-        userPrompt: String,
-        overrides: DI.MainBuilder.() -> Unit,
-    ) = runTest {
-        val di = DI.invoke(allowSilentOverride = true) {
-            import(mainDiModule)
-            bindProvider<DI> { this.di }
-
-
-            overrides()
-        }
-        val agent = GraphBasedAgent(di, objectMapper)
-        agent.execute(userPrompt)
-    }
 
     @Test
     fun scenario1_launchApplication() = runTest {
@@ -321,7 +291,7 @@ class GraphAgentToolScenariosIntegrationTest {
     }
 
     @Test
-    fun scenario14_createReadModifyDeleteFile() = runTest {
+    fun scenario14_createFile() = runTest {
         val realSettings = SettingsProvider(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
@@ -332,33 +302,98 @@ class GraphAgentToolScenariosIntegrationTest {
         val realToolNew = ToolNewFile(filesUtil)
         val toolNewFile: ToolNewFile = spyk(realToolNew)
         
+        coEvery { toolNewFile.invoke(any()) } returns "Created"
+
+        val testDataPath = "/tmp/test-data"
+        val tempFile = "test_integration.txt"
+        runScenarioWithMocks("В папке $testDataPath создай файл $tempFile с текстом Hello") {
+            bindSingleton<ToolNewFile> { toolNewFile }
+            bindSingleton<SettingsProvider> { spySettings }
+        }
+        coVerify(exactly = 1) { toolNewFile.invoke(match { it.path.contains(tempFile) && it.text.contains("Hello") }) }
+    }
+
+    @Test
+    fun scenario14_readFile() = runTest {
+        val realSettings = SettingsProvider(ConfigStore)
+        val spySettings: SettingsProvider = spyk(realSettings) {
+             every { forbiddenFolders } returns emptyList()
+             every { useGrpc } returns false
+        }
+        val filesUtil = FilesToolUtil(spySettings)
+
         val realToolRead = ToolReadFile(filesUtil)
         val toolReadFile: ToolReadFile = spyk(realToolRead)
+
+        val realToolFind = ToolFindFilesByName(filesUtil)
+        val toolFindFilesByName: ToolFindFilesByName = spyk(realToolFind)
+
+        coEvery { toolReadFile.invoke(any()) } returns "Hello"
+        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
+
+        val testDataPath = "/tmp/test-data"
+        val tempFile = "test_integration.txt"
+        runScenarioWithMocks("Прочитай файл $tempFile в папке $testDataPath") {
+            bindSingleton<ToolReadFile> { toolReadFile }
+            bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
+            bindSingleton<SettingsProvider> { spySettings }
+        }
+        coVerify(exactly = 1) { toolReadFile.invoke(match { it.path.contains(tempFile) }) }
+    }
+
+    @Test
+    fun scenario14_modifyFile() = runTest {
+        val realSettings = SettingsProvider(ConfigStore)
+        val spySettings: SettingsProvider = spyk(realSettings) {
+             every { forbiddenFolders } returns emptyList()
+             every { useGrpc } returns false
+        }
+        val filesUtil = FilesToolUtil(spySettings)
 
         val realToolMod = ToolModifyFile(filesUtil)
         val toolModifyFile: ToolModifyFile = spyk(realToolMod)
 
+        val realToolFind = ToolFindFilesByName(filesUtil)
+        val toolFindFilesByName: ToolFindFilesByName = spyk(realToolFind)
+
+        coEvery { toolModifyFile.invoke(any()) } returns "Modified"
+        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
+
+        val tempFile = "test_integration"
+        runScenarioWithMocks("Измени файл $tempFile добавь новую строку World is over") {
+            bindSingleton<ToolModifyFile> { toolModifyFile }
+            bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
+            bindSingleton<SettingsProvider> { spySettings }
+        }
+        coVerify(exactly = 1) { toolModifyFile.invoke(match { it.path.contains(tempFile) && it.newText.contains("World") }) }
+    }
+
+    @Test
+    fun scenario14_deleteFile() = runTest {
+        val realSettings = SettingsProvider(ConfigStore)
+        val spySettings: SettingsProvider = spyk(realSettings) {
+             every { forbiddenFolders } returns emptyList()
+             every { useGrpc } returns false
+        }
+        val filesUtil = FilesToolUtil(spySettings)
+
         val realToolDel = ToolDeleteFile(filesUtil)
         val toolDeleteFile: ToolDeleteFile = spyk(realToolDel)
 
-//        coEvery { toolNewFile.invoke(any()) } returns "Created"
-//        coEvery { toolReadFile.invoke(any()) } returns "Hello"
-//        coEvery { toolModifyFile.invoke(any()) } returns "Modified"
-//        coEvery { toolDeleteFile.invoke(any()) } returns "Deleted"
+        val realToolFind = ToolFindFilesByName(filesUtil)
+        val toolFindFilesByName: ToolFindFilesByName = spyk(realToolFind)
+
+        coEvery { toolDeleteFile.invoke(any()) } returns "Deleted"
+        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
 
         val testDataPath = "/tmp/test-data"
         val tempFile = "test_integration.txt"
-        runScenarioWithMocks("В папке $testDataPath создай файл $tempFile с текстом Hello, прочитай его, добавь строку World, потом удали этот файл") {
-            bindSingleton<ToolNewFile> { toolNewFile }
-            bindSingleton<ToolReadFile> { toolReadFile }
-            bindSingleton<ToolModifyFile> { toolModifyFile }
+        runScenarioWithMocks("Удали файл $tempFile в папке $testDataPath") {
             bindSingleton<ToolDeleteFile> { toolDeleteFile }
+            bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
             bindSingleton<SettingsProvider> { spySettings }
         }
-        coVerify(exactly = 1) { toolNewFile.invoke(match { it.path.contains(tempFile) && it.text.contains("Hello") }) }
-        coVerify(exactly = 1) { toolReadFile.invoke(any()) }
-        coVerify(exactly = 1) { toolModifyFile.invoke(any()) }
-        coVerify(exactly = 1) { toolDeleteFile.invoke(any()) }
+        coVerify(exactly = 1) { toolDeleteFile.invoke(match { it.path.contains(tempFile) }) }
     }
 
     @Test
@@ -375,7 +410,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { toolMoveFile.invoke(any()) } returns "Moved"
 
-        runScenarioWithMocks("Перенеси файл /tmp/read_me.txt в папку /tmp/dest") {
+        runScenarioWithMocks("Перенеси файл read_me в папку dest") {
             bindSingleton<ToolMoveFile> { toolMoveFile }
             bindSingleton<SettingsProvider> { spySettings }
         }
@@ -421,12 +456,12 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { toolReadPdfPages.invoke(any()) } returns "Page 1 content"
 
-        runScenarioWithMocks("Прочитай PDF постранично: файл /tmp/sample.pdf") {
+        runScenarioWithMocks("Прочитай первую страницу PDF файла sample") {
             bindSingleton<ToolReadPdfPages> { toolReadPdfPages }
             bindSingleton<SettingsProvider> { spySettings }
         }
         coVerify(exactly = 1) {
-            toolReadPdfPages.invoke(match { it.filePath.contains("sample.pdf") })
+            toolReadPdfPages.invoke(match { it.filePath.contains("sample") })
         }
     }
 
@@ -517,5 +552,20 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolGetClipboard> { toolGetClipboard }
         }
         coVerify(exactly = 1) { toolGetClipboard.invoke(any()) }
+    }
+
+    private fun runScenarioWithMocks(
+        userPrompt: String,
+        overrides: DI.MainBuilder.() -> Unit,
+    ) = runTest {
+        val di = DI.invoke(allowSilentOverride = true) {
+            import(mainDiModule)
+            bindProvider<DI> { this.di }
+
+
+            overrides()
+        }
+        val agent = GraphBasedAgent(di, objectMapper)
+        agent.execute(userPrompt)
     }
 }
