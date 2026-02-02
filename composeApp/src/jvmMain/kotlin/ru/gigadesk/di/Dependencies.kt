@@ -112,6 +112,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolTextReplace(ToolRunBashCommand) }
     bindSingleton { ToolTextUnderSelection(ToolRunBashCommand, instance()) }
     bindSingleton { ToolFindFolders(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolUploadFile(instance()) }
+    bindSingleton { ToolDownloadFile(instance()) }
 
     bindSingleton { GraphSessionRepository() }
     bindSingleton { GraphSessionService(instance(), instance(DiTags.TAG_LOG)) }
@@ -129,9 +131,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
-
-    bindSingleton { ToolUploadFile(instance()) }
-    bindSingleton { ToolDownloadFile(instance()) }
 
     // LLM
     bindSingleton { NodesErrorHandling() }
