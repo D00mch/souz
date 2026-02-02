@@ -85,6 +85,7 @@ kotlin {
             implementation(libs.kotlin.testJunit)
             implementation(libs.mockk)
             implementation(libs.ktor.serverTestHost)
+            implementation(libs.kotlinx.coroutinesTest)
         }
     }
 }
