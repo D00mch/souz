@@ -2,28 +2,42 @@ package ru.gigadesk.tool
 
 import org.kodein.di.DI
 import org.kodein.di.instance
-import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.giga.GigaToolSetup
 import ru.gigadesk.giga.toGiga
-import ru.gigadesk.keys.Keys
-import ru.gigadesk.tool.browser.ToolBrowserHotkeys
-import ru.gigadesk.tool.browser.ToolCreateNewBrowserTab
-import ru.gigadesk.tool.browser.ToolFocusOnTab
-import ru.gigadesk.tool.browser.ToolSafariInfo
-import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.tool.application.ToolOpen
 import ru.gigadesk.tool.application.ToolShowApps
+import ru.gigadesk.tool.browser.ToolBrowserHotkeys
 import ru.gigadesk.tool.browser.ToolChromeInfo
+import ru.gigadesk.tool.browser.ToolCreateNewBrowserTab
+import ru.gigadesk.tool.browser.ToolFocusOnTab
 import ru.gigadesk.tool.browser.ToolOpenDefaultBrowser
+import ru.gigadesk.tool.browser.ToolSafariInfo
+import ru.gigadesk.tool.calendar.ToolCalendarCreateEvent
+import ru.gigadesk.tool.calendar.ToolCalendarDeleteEvent
+import ru.gigadesk.tool.calendar.ToolCalendarListCalendars
+import ru.gigadesk.tool.calendar.ToolCalendarListEvents
 import ru.gigadesk.tool.config.ToolInstructionStore
 import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.tool.config.ToolSoundConfigDiff
 import ru.gigadesk.tool.dataAnalytics.ToolCreatePlotFromCsv
-import ru.gigadesk.tool.desktop.*
-import ru.gigadesk.tool.calendar.*
-import ru.gigadesk.tool.mail.*
-import ru.gigadesk.tool.files.*
+import ru.gigadesk.tool.desktop.ToolDownloadFile
+import ru.gigadesk.tool.desktop.ToolUploadFile
+import ru.gigadesk.tool.files.ToolDeleteFile
+import ru.gigadesk.tool.files.ToolExtractText
+import ru.gigadesk.tool.files.ToolFindFilesByName
+import ru.gigadesk.tool.files.ToolFindInFiles
+import ru.gigadesk.tool.files.ToolListFiles
+import ru.gigadesk.tool.files.ToolModifyFile
+import ru.gigadesk.tool.files.ToolMoveFile
+import ru.gigadesk.tool.files.ToolNewFile
+import ru.gigadesk.tool.files.ToolReadFile
+import ru.gigadesk.tool.files.ToolReadPdfPages
+import ru.gigadesk.tool.mail.ToolMailListMessages
+import ru.gigadesk.tool.mail.ToolMailReadMessage
+import ru.gigadesk.tool.mail.ToolMailReplyMessage
+import ru.gigadesk.tool.mail.ToolMailSearch
+import ru.gigadesk.tool.mail.ToolMailSendNewMessage
+import ru.gigadesk.tool.mail.ToolMailUnreadMessagesCount
 import ru.gigadesk.tool.notes.ToolCreateNote
 import ru.gigadesk.tool.notes.ToolDeleteNote
 import ru.gigadesk.tool.notes.ToolListNotes
@@ -37,12 +51,48 @@ typealias FunctionName = String
 
 class ToolsFactory(di: DI) {
 
-    private val repo: DesktopInfoRepository by di.instance()
-    private val api: GigaChatAPI by di.instance()
-    private val filesToolUtil: FilesToolUtil by di.instance()
-    private val keys: Keys = Keys()
-
     private val toolReadFile: ToolReadFile by di.instance()
+    private val toolListFiles: ToolListFiles by di.instance()
+    private val toolFindInFiles: ToolFindInFiles by di.instance()
+    private val toolNewFile: ToolNewFile by di.instance()
+    private val toolDeleteFile: ToolDeleteFile by di.instance()
+    private val toolModifyFile: ToolModifyFile by di.instance()
+    private val toolMoveFile: ToolMoveFile by di.instance()
+    private val toolExtractText: ToolExtractText by di.instance()
+    private val toolFindFilesByName: ToolFindFilesByName by di.instance()
+    private val toolReadPdfPages: ToolReadPdfPages by di.instance()
+    private val toolOpen: ToolOpen by di.instance()
+    private val toolCreateNewBrowserTab: ToolCreateNewBrowserTab by di.instance()
+    private val toolSafariInfo: ToolSafariInfo by di.instance()
+    private val toolBrowserHotkeys: ToolBrowserHotkeys by di.instance()
+    private val toolFocusOnTab: ToolFocusOnTab by di.instance()
+    private val toolChromeInfo: ToolChromeInfo by di.instance()
+    private val toolOpenDefaultBrowser: ToolOpenDefaultBrowser by di.instance()
+    private val toolSoundConfig: ToolSoundConfig by di.instance()
+    private val toolSoundConfigDiff: ToolSoundConfigDiff by di.instance()
+    private val toolInstructionStore: ToolInstructionStore by di.instance()
+    private val toolOpenNote: ToolOpenNote by di.instance()
+    private val toolCreateNote: ToolCreateNote by di.instance()
+    private val toolDeleteNote: ToolDeleteNote by di.instance()
+    private val toolListNotes: ToolListNotes by di.instance()
+    private val toolSearchNotes: ToolSearchNotes by di.instance()
+    private val toolShowApps: ToolShowApps by di.instance()
+    private val toolCreatePlotFromCsv: ToolCreatePlotFromCsv by di.instance()
+    private val toolUploadFile: ToolUploadFile by di.instance()
+    private val toolDownloadFile: ToolDownloadFile by di.instance()
+    private val toolCalendarCreateEvent: ToolCalendarCreateEvent by di.instance()
+    private val toolCalendarDeleteEvent: ToolCalendarDeleteEvent by di.instance()
+    private val toolCalendarListCalendars: ToolCalendarListCalendars by di.instance()
+    private val toolCalendarListEvents: ToolCalendarListEvents by di.instance()
+    private val toolMailUnreadMessagesCount: ToolMailUnreadMessagesCount by di.instance()
+    private val toolMailListMessages: ToolMailListMessages by di.instance()
+    private val toolMailReadMessage: ToolMailReadMessage by di.instance()
+    private val toolMailReplyMessage: ToolMailReplyMessage by di.instance()
+    private val toolMailSendNewMessage: ToolMailSendNewMessage by di.instance()
+    private val toolMailSearch: ToolMailSearch by di.instance()
+    private val toolGetClipboard: ToolGetClipboard by di.instance()
+    private val toolTextReplace: ToolTextReplace by di.instance()
+    private val toolTextUnderSelection: ToolTextUnderSelection by di.instance()
 
     val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
@@ -53,81 +103,73 @@ class ToolsFactory(di: DI) {
     private fun ToolCategory.tools(): List<GigaToolSetup> = when (this) {
         ToolCategory.FILES -> listOf(
             toolReadFile.toGiga(),
-            ToolListFiles(filesToolUtil).toGiga(),
-            ToolFindInFiles(filesToolUtil).toGiga(),
-            ToolNewFile(filesToolUtil).toGiga(),
-            ToolDeleteFile(filesToolUtil).toGiga(),
-            ToolModifyFile(filesToolUtil).toGiga(),
-            ToolMoveFile(filesToolUtil).toGiga(),
-            // ToolFindTextInFiles.toGiga(), // we already have ToolFindInFiles
-            ToolExtractText(filesToolUtil).toGiga(),
-            ToolFindFilesByName(filesToolUtil).toGiga(),
-            ToolReadPdfPages(filesToolUtil).toGiga(),
-            ToolOpen(ToolRunBashCommand, filesToolUtil).toGiga(),
+            toolListFiles.toGiga(),
+            toolFindInFiles.toGiga(),
+            toolNewFile.toGiga(),
+            toolDeleteFile.toGiga(),
+            toolModifyFile.toGiga(),
+            toolMoveFile.toGiga(),
+            toolExtractText.toGiga(),
+            toolFindFilesByName.toGiga(),
+            toolReadPdfPages.toGiga(),
+            toolOpen.toGiga(),
         )
 
         ToolCategory.BROWSER -> listOf(
-            ToolCreateNewBrowserTab(ToolRunBashCommand).toGiga(),
-            ToolSafariInfo(ToolRunBashCommand).toGiga(),
-            ToolBrowserHotkeys(keys).toGiga(),
-            ToolFocusOnTab(ToolRunBashCommand).toGiga(),
-            ToolChromeInfo(ToolRunBashCommand).toGiga(),
-            ToolOpenDefaultBrowser(ToolRunBashCommand, filesToolUtil).toGiga(),
+            toolCreateNewBrowserTab.toGiga(),
+            toolSafariInfo.toGiga(),
+            toolBrowserHotkeys.toGiga(),
+            toolFocusOnTab.toGiga(),
+            toolChromeInfo.toGiga(),
+            toolOpenDefaultBrowser.toGiga(),
         )
 
         ToolCategory.CONFIG -> listOf(
-            ToolSoundConfig(ConfigStore).toGiga(),
-            ToolSoundConfigDiff(ConfigStore).toGiga(),
-            ToolInstructionStore(ConfigStore, repo).toGiga(),
+            toolSoundConfig.toGiga(),
+            toolSoundConfigDiff.toGiga(),
+            toolInstructionStore.toGiga(),
         )
 
         ToolCategory.NOTES -> listOf(
-            ToolOpenNote(ToolRunBashCommand).toGiga(),
-            ToolCreateNote(ToolRunBashCommand).toGiga(),
-            ToolDeleteNote(ToolRunBashCommand).toGiga(),
-            ToolListNotes(ToolRunBashCommand).toGiga(),
-            ToolSearchNotes(ToolRunBashCommand).toGiga(),
+            toolOpenNote.toGiga(),
+            toolCreateNote.toGiga(),
+            toolDeleteNote.toGiga(),
+            toolListNotes.toGiga(),
+            toolSearchNotes.toGiga(),
         )
 
-        ToolCategory.APPLICATIONS -> {
-            val toolOpen = ToolOpen(ToolRunBashCommand, filesToolUtil)
-             listOf(
-                ToolShowApps(filesToolUtil, ToolRunBashCommand).toGiga(),
-                toolOpen.toGiga(),
-            )
-        }
+        ToolCategory.APPLICATIONS -> listOf(
+            toolShowApps.toGiga(),
+            toolOpen.toGiga(),
+        )
 
         ToolCategory.DATAANALYTICS -> listOf(
-            ToolCreatePlotFromCsv(filesToolUtil).toGiga(),
-            ToolUploadFile(api).toGiga(),
-            ToolDownloadFile(api).toGiga(),
+            toolCreatePlotFromCsv.toGiga(),
+            toolUploadFile.toGiga(),
+            toolDownloadFile.toGiga(),
         )
 
         ToolCategory.CALENDAR -> listOf(
-            //ToolCalendarListTodayEvents(ToolRunBashCommand).toGiga(),
-            ToolCalendarCreateEvent(ToolRunBashCommand).toGiga(),
-            ToolCalendarDeleteEvent(ToolRunBashCommand).toGiga(),
-            ToolCalendarListCalendars(ToolRunBashCommand).toGiga(),
-            ToolCalendarListEvents(ToolRunBashCommand).toGiga(),
+            toolCalendarCreateEvent.toGiga(),
+            toolCalendarDeleteEvent.toGiga(),
+            toolCalendarListCalendars.toGiga(),
+            toolCalendarListEvents.toGiga(),
         )
 
         ToolCategory.MAIL -> listOf(
-            ToolMailUnreadMessagesCount(ToolRunBashCommand).toGiga(),
-            ToolMailListMessages(ToolRunBashCommand).toGiga(),
-            ToolMailReadMessage(ToolRunBashCommand).toGiga(),
-            ToolMailReplyMessage(ToolRunBashCommand).toGiga(),
-            ToolMailSendNewMessage(ToolRunBashCommand).toGiga(),
-            ToolMailSearch(ToolRunBashCommand).toGiga(),
+            toolMailUnreadMessagesCount.toGiga(),
+            toolMailListMessages.toGiga(),
+            toolMailReadMessage.toGiga(),
+            toolMailReplyMessage.toGiga(),
+            toolMailSendNewMessage.toGiga(),
+            toolMailSearch.toGiga(),
         )
 
-        ToolCategory.TEXT_REPLACE -> {
-            val clip = ToolGetClipboard()
-            listOf(
-                clip.toGiga(),
-                ToolTextReplace(ToolRunBashCommand).toGiga(),
-                ToolTextUnderSelection(ToolRunBashCommand, clip).toGiga(),
-            )
-        }
+        ToolCategory.TEXT_REPLACE -> listOf(
+            toolGetClipboard.toGiga(),
+            toolTextReplace.toGiga(),
+            toolTextUnderSelection.toGiga(),
+        )
 
         ToolCategory.CHAT -> listOf()
     }

@@ -30,11 +30,17 @@ import ru.gigadesk.giga.GigaGRPCChatApi
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.keys.Keys
-import ru.gigadesk.tool.LocalRegexClassifier
-import ru.gigadesk.tool.ToolsFactory
-import ru.gigadesk.tool.ToolsSettings
-import ru.gigadesk.tool.application.ToolShowApps
-import ru.gigadesk.tool.files.FilesToolUtil
+import ru.gigadesk.tool.*
+import ru.gigadesk.tool.application.*
+import ru.gigadesk.tool.browser.*
+import ru.gigadesk.tool.calendar.*
+import ru.gigadesk.tool.config.*
+import ru.gigadesk.tool.dataAnalytics.*
+import ru.gigadesk.tool.desktop.*
+import ru.gigadesk.tool.files.*
+import ru.gigadesk.tool.mail.*
+import ru.gigadesk.tool.notes.*
+import ru.gigadesk.tool.textReplace.*
 
 private object DiTags {
     const val MODULE_MAIN = "main"
@@ -56,9 +62,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     // Native
     bindSingleton { Keys() }
 
-    // tools
-
-
     // DB
     bindSingleton { ConfigStore }
     bindSingleton { VectorDB }
@@ -66,9 +69,52 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance()) }
     bindSingleton { ToolsSettings(instance(), instance()) }
     bindSingleton { FilesToolUtil(instance()) }
+
+    // Tools (order: no deps first, then tools that depend on FilesToolUtil/ConfigStore/Keys/ToolRunBashCommand)
+    bindSingleton { ToolGetClipboard() }
+    bindSingleton { ToolReadFile(instance()) }
+    bindSingleton { ToolListFiles(instance()) }
+    bindSingleton { ToolFindInFiles(instance()) }
+    bindSingleton { ToolNewFile(instance()) }
+    bindSingleton { ToolDeleteFile(instance()) }
+    bindSingleton { ToolModifyFile(instance()) }
+    bindSingleton { ToolMoveFile(instance()) }
+    bindSingleton { ToolExtractText(instance()) }
+    bindSingleton { ToolFindFilesByName(instance()) }
+    bindSingleton { ToolReadPdfPages(instance()) }
+    bindSingleton { ToolOpen(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolCreateNewBrowserTab(ToolRunBashCommand) }
+    bindSingleton { ToolSafariInfo(ToolRunBashCommand) }
+    bindSingleton { ToolBrowserHotkeys(instance()) }
+    bindSingleton { ToolFocusOnTab(ToolRunBashCommand) }
+    bindSingleton { ToolChromeInfo(ToolRunBashCommand) }
+    bindSingleton { ToolOpenDefaultBrowser(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolSoundConfig(ConfigStore) }
+    bindSingleton { ToolSoundConfigDiff(ConfigStore) }
+    bindSingleton { ToolInstructionStore(ConfigStore, instance()) }
+    bindSingleton { ToolOpenNote(ToolRunBashCommand) }
+    bindSingleton { ToolCreateNote(ToolRunBashCommand) }
+    bindSingleton { ToolDeleteNote(ToolRunBashCommand) }
+    bindSingleton { ToolListNotes(ToolRunBashCommand) }
+    bindSingleton { ToolSearchNotes(ToolRunBashCommand) }
+    bindSingleton { ToolShowApps(instance(), ToolRunBashCommand) }
+    bindSingleton { ToolCreatePlotFromCsv(instance()) }
+    bindSingleton { ToolCalendarCreateEvent(ToolRunBashCommand) }
+    bindSingleton { ToolCalendarDeleteEvent(ToolRunBashCommand) }
+    bindSingleton { ToolCalendarListCalendars(ToolRunBashCommand) }
+    bindSingleton { ToolCalendarListEvents(ToolRunBashCommand) }
+    bindSingleton { ToolMailUnreadMessagesCount(ToolRunBashCommand) }
+    bindSingleton { ToolMailListMessages(ToolRunBashCommand) }
+    bindSingleton { ToolMailReadMessage(ToolRunBashCommand) }
+    bindSingleton { ToolMailReplyMessage(ToolRunBashCommand) }
+    bindSingleton { ToolMailSendNewMessage(ToolRunBashCommand) }
+    bindSingleton { ToolMailSearch(ToolRunBashCommand) }
+    bindSingleton { ToolTextReplace(ToolRunBashCommand) }
+    bindSingleton { ToolTextUnderSelection(ToolRunBashCommand, instance()) }
+
     bindSingleton { GraphSessionRepository() }
     bindSingleton { GraphSessionService(instance(), instance(DiTags.TAG_LOG)) }
-    bindSingleton { DesktopDataExtractor(instance(), ToolShowApps(instance())) }
+    bindSingleton { DesktopDataExtractor(instance(), instance()) }
 
     // API
     bindSingleton { GigaAuth(instance()) }
@@ -82,6 +128,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
+
+    bindSingleton { ToolUploadFile(instance()) }
+    bindSingleton { ToolDownloadFile(instance()) }
 
     // LLM
     bindSingleton { NodesErrorHandling() }
@@ -98,7 +147,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             instance(),
         )
     }
-    bindSingleton { ToolsFactory(instance()) }
+    bindSingleton { ToolsFactory(di) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
     
     // Server
