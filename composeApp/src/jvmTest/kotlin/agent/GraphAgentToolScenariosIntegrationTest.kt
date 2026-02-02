@@ -562,10 +562,10 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(exactly = 1) { toolGetClipboard.invoke(any()) }
     }
 
-    private fun runScenarioWithMocks(
+    private suspend fun runScenarioWithMocks(
         userPrompt: String,
         overrides: DI.MainBuilder.() -> Unit,
-    ) = runTest {
+    ) {
         val di = DI.invoke(allowSilentOverride = true) {
             import(mainDiModule)
             bindProvider<DI> { this.di }
