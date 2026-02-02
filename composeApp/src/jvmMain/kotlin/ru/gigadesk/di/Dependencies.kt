@@ -111,6 +111,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolMailSearch(ToolRunBashCommand) }
     bindSingleton { ToolTextReplace(ToolRunBashCommand) }
     bindSingleton { ToolTextUnderSelection(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolFindFolders(ToolRunBashCommand, instance()) }
 
     bindSingleton { GraphSessionRepository() }
     bindSingleton { GraphSessionService(instance(), instance(DiTags.TAG_LOG)) }
