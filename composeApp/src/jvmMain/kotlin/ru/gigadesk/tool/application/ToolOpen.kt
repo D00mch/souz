@@ -2,7 +2,7 @@ package ru.gigadesk.tool.application
 
 import org.slf4j.LoggerFactory
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.desktop.ToolOpenFolder
 import ru.gigadesk.tool.files.FilesToolUtil
@@ -109,7 +109,7 @@ class ToolOpen(
 }
 
 fun main() {
-    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
     val result = ToolOpen(ToolRunBashCommand, filesToolUtil).invoke(ToolOpen.Input("ru.keepcoder.Telegram"))
     println(result)
 }

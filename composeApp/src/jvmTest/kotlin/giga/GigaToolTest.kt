@@ -5,7 +5,7 @@ import ru.gigadesk.tool.files.ToolListFiles
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.tool.files.FilesToolUtil
 import java.io.File
 import java.nio.file.Files
@@ -13,7 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class GigaToolTest {
-    private val listFiles = ToolListFiles(FilesToolUtil(SettingsProvider(ConfigStore)))
+    private val listFiles = ToolListFiles(FilesToolUtil(SettingsProviderImpl(ConfigStore)))
     
     private fun createTempDirectory(): File =
         Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "gigadesk-giga-test-").toFile()

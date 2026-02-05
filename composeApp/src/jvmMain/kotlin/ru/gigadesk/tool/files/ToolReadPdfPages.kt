@@ -8,7 +8,7 @@ import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolSetup
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.SettingsProviderImpl
 import java.io.File
 import java.io.IOException
 
@@ -107,7 +107,7 @@ class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<Too
 }
 
 fun main() {
-    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
     val result = ToolReadPdfPages(filesToolUtil).invoke(
         ToolReadPdfPages.Input(
             filePath = "/Users/duxx/Книги/100 ошибок в го.pdf",

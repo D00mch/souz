@@ -2,7 +2,6 @@ package ru.gigadesk.tool.files
 
 import org.slf4j.LoggerFactory
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
@@ -11,6 +10,7 @@ import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 import java.io.File
+import ru.gigadesk.db.SettingsProviderImpl
 
 class ToolFindFolders(
     private val bash: ToolRunBashCommand,
@@ -86,7 +86,7 @@ class ToolFindFolders(
 }
 
 fun main() {
-     val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+     val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
      val tool = ToolFindFolders(ToolRunBashCommand, filesToolUtil)
      println(tool.invoke(ToolFindFolders.Input("Загрузки")))
 }

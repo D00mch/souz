@@ -8,7 +8,7 @@ import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolSetup
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.SettingsProviderImpl
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -85,7 +85,7 @@ class ToolMoveFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolMov
 }
 
 fun main() {
-    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
     val result = ToolMoveFile(filesToolUtil).invoke(
         ToolMoveFile.Input(
             "~/Downloads/tmp.txt",

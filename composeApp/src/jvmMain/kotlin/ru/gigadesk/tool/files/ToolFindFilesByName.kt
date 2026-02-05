@@ -11,7 +11,7 @@ import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.SettingsProviderImpl
 import java.io.File
 
 class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindFilesByName.Input> {
@@ -75,7 +75,7 @@ class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<
 }
 
 fun main() {
-    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
     val tool = ToolFindFilesByName(filesToolUtil)
     val searchInput = ToolFindFilesByName.Input(
         path = "~",
