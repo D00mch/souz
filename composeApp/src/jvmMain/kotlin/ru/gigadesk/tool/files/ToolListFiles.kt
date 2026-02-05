@@ -1,7 +1,7 @@
 package ru.gigadesk.tool.files
 
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.tool.*
 import java.io.File
 import kotlin.io.relativeTo
@@ -60,7 +60,7 @@ class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolLi
 }
 
 fun main() {
-    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
     val result = ToolListFiles(filesToolUtil).invoke(ToolListFiles.Input("${'$'}HOME", 3))
     println(result)
 }

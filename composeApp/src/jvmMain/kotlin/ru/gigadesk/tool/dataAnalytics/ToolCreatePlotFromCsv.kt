@@ -18,9 +18,9 @@ import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolSetup
-import ru.gigadesk.tool.files.FilesToolUtil // <-- Импортируем утилиту
+import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.SettingsProviderImpl
 import java.awt.Desktop
 import java.io.File
 import java.io.FileReader
@@ -78,26 +78,19 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
     )
 
     override fun invoke(input: Input): String {
-        // 1. Нормализуем путь к CSV и проверяем безопасность
         val rawPath = filesToolUtil.applyDefaultEnvs(input.path)
         val csvFile = File(rawPath)
-
-        // Проверка: файл существует и находится внутри домашней директории
         filesToolUtil.requirePathIsSave(csvFile)
 
         if (!csvFile.exists()) {
             throw BadInputException("File not found: $rawPath")
         }
 
-        // 2. То же самое для выходного файла
         val rawOutputPath = filesToolUtil.applyDefaultEnvs(input.output ?: "~/SluxxDocuments/plot.png")
         val outputFile = File(rawOutputPath)
 
-        // Создаем директорию для output, если её нет (например, SluxxDocuments)
         outputFile.parentFile?.mkdirs()
         filesToolUtil.requirePathIsSave(outputFile)
-
-        // --- Дальше логика без изменений ---
 
         val format = CSVFormat.DEFAULT.builder()
             .setHeader()
@@ -181,7 +174,7 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
     }
 }
 fun main() {
-    val tool = ToolCreatePlotFromCsv(FilesToolUtil(SettingsProvider(ConfigStore)))
+    val tool = ToolCreatePlotFromCsv(FilesToolUtil(SettingsProviderImpl(ConfigStore)))
 
     println(tool.invoke(ToolCreatePlotFromCsv.Input(path = "/Users/duxx/Отчеты/sales_report.csv")))
 

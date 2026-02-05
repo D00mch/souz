@@ -25,6 +25,7 @@ import ru.gigadesk.tool.textReplace.*
 import kotlin.test.Test
 import org.junit.Assume
 import org.junit.Before
+import ru.gigadesk.db.SettingsProviderImpl
 
 
 /**
@@ -42,7 +43,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario1_launchApplication() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false
@@ -80,7 +81,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario2_openWebsite() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false
@@ -230,7 +231,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario11_buildChartFromFile() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false
@@ -254,7 +255,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario12_findFileByName() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false
@@ -278,7 +279,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario13_listFilesInFolder() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false
@@ -300,7 +301,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario14_createFile() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false
@@ -323,7 +324,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario14_readFile() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false
@@ -351,7 +352,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario14_modifyFile() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false
@@ -378,7 +379,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario14_deleteFile() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false
@@ -406,7 +407,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario15_moveFile() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false
@@ -429,7 +430,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario16_extractTextFromFile() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false
@@ -452,7 +453,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario17_readPdfPageByPage() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false
@@ -475,7 +476,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @Test
     fun scenario18_openFile() = runTest {
-        val realSettings = SettingsProvider(ConfigStore)
+        val realSettings = SettingsProviderImpl(ConfigStore)
         val spySettings: SettingsProvider = spyk(realSettings) {
              every { forbiddenFolders } returns emptyList()
              every { useGrpc } returns false

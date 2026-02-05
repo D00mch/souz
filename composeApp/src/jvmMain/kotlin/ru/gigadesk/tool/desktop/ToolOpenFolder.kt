@@ -5,7 +5,7 @@ import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ToolListFiles
 import org.slf4j.LoggerFactory
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.SettingsProviderImpl
 
 class ToolOpenFolder(
     private val bash: ToolRunBashCommand,
@@ -120,7 +120,7 @@ class ToolOpenFolder(
 }
 
 fun main() {
-    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
     val v = ToolOpenFolder(ToolRunBashCommand, filesToolUtil)(ToolOpenFolder.Input("семья"))
     println(v)
 }

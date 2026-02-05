@@ -5,20 +5,41 @@ import ru.gigadesk.giga.GigaModel
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
-class SettingsProvider(private val configStore: ConfigStore) {
+interface SettingsProvider {
+    fun getSystemPromptForModel(model: GigaModel): String?
+    fun setSystemPromptForModel(model: GigaModel, prompt: String?)
 
-    fun getSystemPromptForModel(model: GigaModel): String? {
+    var gigaChatKey: String?
+    var saluteSpeechKey: String?
+    var supportEmail: String?
+    var systemPrompt: String?
+    var defaultCalendar: String?
+    var gigaModel: GigaModel
+    var useFewShotExamples: Boolean
+    var useGrpc: Boolean
+    var needsOnboarding: Boolean
+    var requestTimeoutMillis: Long
+    var initialWindowWidthDp: Int
+    var initialWindowHeightDp: Int
+    var temperature: Float
+    var forbiddenFolders: List<String>
+}
+
+class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvider {
+
+    override fun getSystemPromptForModel(model: GigaModel): String? {
         val key = "${SYSTEM_PROMPT}_${model.name}"
         return configStore.get<String>(key)
     }
 
-    fun setSystemPromptForModel(model: GigaModel, prompt: String?) {
+    override fun setSystemPromptForModel(model: GigaModel, prompt: String?) {
         val key = "${SYSTEM_PROMPT}_${model.name}"
         when {
             prompt.isNullOrBlank() || prompt == DEFAULT_SYSTEM_PROMPT -> configStore.rm(key)
             else -> configStore.put(key, prompt)
         }
     }
+
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
     private var _useGrpcDelegate: String? by keyDelegate(configKey = USE_GRPC, envKey = USE_GRPC)
@@ -47,48 +68,64 @@ class SettingsProvider(private val configStore: ConfigStore) {
         envKey = NEEDS_ONBOARDING
     )
 
-    var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
-    var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
-    var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
-    var systemPrompt: String? by keyDelegate(configKey = SYSTEM_PROMPT, envKey = SYSTEM_PROMPT)
-    var defaultCalendar: String? by keyDelegate(configKey = DEFAULT_CALENDAR, envKey = DEFAULT_CALENDAR)
-    var gigaModel: GigaModel
+    override var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
+    override var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
+    override var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
+    override var systemPrompt: String? by keyDelegate(configKey = SYSTEM_PROMPT, envKey = SYSTEM_PROMPT)
+    override var defaultCalendar: String? by keyDelegate(configKey = DEFAULT_CALENDAR, envKey = DEFAULT_CALENDAR)
+    override var gigaModel: GigaModel
         get() = _gigaModelDelegate?.let { value ->
             GigaModel.entries.firstOrNull { model ->
                 model.name.equals(value, ignoreCase = true) || model.alias.equals(value, ignoreCase = true)
             }
         } ?: GigaModel.Max
-        set(value) { _gigaModelDelegate = value.alias }
+        set(value) {
+            _gigaModelDelegate = value.alias
+        }
 
-    var useFewShotExamples: Boolean
+    override var useFewShotExamples: Boolean
         get() = _fewShotsDelegate?.lowercase() == "true"
-        set(value) { _fewShotsDelegate = value.toString() }
+        set(value) {
+            _fewShotsDelegate = value.toString()
+        }
 
-    var useGrpc: Boolean
+    override var useGrpc: Boolean
         get() = _useGrpcDelegate?.lowercase() == "true"
-        set(value) { _useGrpcDelegate = value.toString() }
+        set(value) {
+            _useGrpcDelegate = value.toString()
+        }
 
-    var needsOnboarding: Boolean
+    override var needsOnboarding: Boolean
         get() = _needsOnboardingDelegate?.toBooleanStrictOrNull() ?: false
-        set(value) { _needsOnboardingDelegate = value.toString() }
+        set(value) {
+            _needsOnboardingDelegate = value.toString()
+        }
 
-    var requestTimeoutMillis: Long
+    override var requestTimeoutMillis: Long
         get() = _requestTimeoutDelegate?.toLongOrNull() ?: 10_000L
-        set(value) { _requestTimeoutDelegate = value.toString() }
+        set(value) {
+            _requestTimeoutDelegate = value.toString()
+        }
 
-    var initialWindowWidthDp: Int
+    override var initialWindowWidthDp: Int
         get() = _initialWindowWidthDelegate?.toIntOrNull() ?: 580
-        set(value) { _initialWindowWidthDelegate = value.toString() }
+        set(value) {
+            _initialWindowWidthDelegate = value.toString()
+        }
 
-    var initialWindowHeightDp: Int
+    override var initialWindowHeightDp: Int
         get() = _initialWindowHeightDelegate?.toIntOrNull() ?: 780
-        set(value) { _initialWindowHeightDelegate = value.toString() }
+        set(value) {
+            _initialWindowHeightDelegate = value.toString()
+        }
 
-    var temperature: Float
+    override var temperature: Float
         get() = _temperatureDelegate?.toFloatOrNull() ?: 0.7f
-        set(value) { _temperatureDelegate = value.toString() }
+        set(value) {
+            _temperatureDelegate = value.toString()
+        }
 
-    var forbiddenFolders: List<String>
+    override var forbiddenFolders: List<String>
         get() = _forbiddenFoldersDelegate
             ?.lines()
             ?.map { it.trim() }
