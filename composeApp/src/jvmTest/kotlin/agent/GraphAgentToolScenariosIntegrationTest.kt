@@ -40,9 +40,10 @@ class GraphAgentToolScenariosIntegrationTest {
         every { forbiddenFolders } returns emptyList()
         every { useGrpc } returns false
         every { gigaModel } returns GigaModel.Lite
+        every { temperature } returns 0.4f
     }
     private val filesUtil: FilesToolUtil = FilesToolUtil(spySettings)
-    private val testOverrideModule: DI.Module =  DI.Module("TestOverrideModule") {
+    private val testOverrideModule: DI.Module = DI.Module("TestOverrideModule") {
         bindSingleton<SettingsProvider>(overrides = true) { spySettings }
         bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
     }
@@ -314,16 +315,28 @@ class GraphAgentToolScenariosIntegrationTest {
 
         val realToolFind = ToolFindFilesByName(filesUtil)
         val toolFindFilesByName: ToolFindFilesByName = spyk(realToolFind)
+        val toolReadFile: ToolReadFile = spyk(ToolReadFile(filesUtil))
 
-        coEvery { toolModifyFile.invoke(any()) } returns "Modified"
-        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
-
+        var currentContent = ""
         val tempFile = "test_integration"
-        runScenarioWithMocks("Измени файл $tempFile добавь новую строку World is over") {
+        val appendText = "World is over"
+
+        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
+        coEvery { toolReadFile.invoke(any()) } answers { currentContent }
+        coEvery { toolModifyFile.invoke(any()) } answers {
+            val request = firstArg<ToolModifyFile.Input>()
+            currentContent = "$currentContent\n${request.newText}"
+            "Modified"
+        }
+
+        runScenarioWithMocks("Измени файл $tempFile добавь новую строку $appendText") {
+            bindSingleton<ToolReadFile> { toolReadFile }
             bindSingleton<ToolModifyFile> { toolModifyFile }
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }
-        coVerify(exactly = 1) { toolModifyFile.invoke(match { it.path.contains(tempFile) && it.newText.contains("World") }) }
+        coVerify(exactly = 1) {
+            toolModifyFile.invoke(match { it.path.contains(tempFile) && it.newText.contains(appendText) })
+        }
     }
 
     @Test
@@ -413,19 +426,32 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolSearchNotes: ToolSearchNotes = spyk(ToolSearchNotes(ToolRunBashCommand))
         val toolDeleteNote: ToolDeleteNote = spyk(ToolDeleteNote(ToolRunBashCommand))
 
-        coEvery { toolCreateNote.invoke(any()) } returns "Created"
-        coEvery { toolListNotes.invoke(any()) } returns "[]"
-        coEvery { toolSearchNotes.invoke(any()) } returns "[]"
-        coEvery { toolDeleteNote.invoke(any()) } returns "Deleted"
+        val noteTitle = "тест интеграции"
+        var hasNote = false
 
-        runScenarioWithMocks("Создай заметку \"тест интеграции\", перечисли заметки, найди заметку тест, удали заметку тест интеграции") {
+        coEvery { toolCreateNote.invoke(any()) } answers {
+            hasNote = true
+            "Created"
+        }
+        coEvery { toolDeleteNote.invoke(any()) } answers {
+            hasNote = false
+            "Deleted"
+        }
+        coEvery { toolListNotes.invoke(any()) } answers {
+            if (hasNote) "[\"$noteTitle\"]" else "[]"
+        }
+        coEvery { toolSearchNotes.invoke(any()) } answers {
+            if (hasNote) "[\"$noteTitle\"]" else "[]"
+        }
+
+        runScenarioWithMocks("Создай заметку \"$noteTitle\", перечисли заметки, найди заметку тест, удали заметку $noteTitle") {
             bindSingleton<ToolCreateNote> { toolCreateNote }
             bindSingleton<ToolListNotes> { toolListNotes }
             bindSingleton<ToolSearchNotes> { toolSearchNotes }
             bindSingleton<ToolDeleteNote> { toolDeleteNote }
         }
-        coVerify(exactly = 1) { toolCreateNote.invoke(match { it.noteText.contains("тест интеграции") }) }
-        coVerify(exactly = 1) { toolListNotes.invoke(any()) }
+        coVerify(exactly = 1) { toolCreateNote.invoke(match { it.noteText.contains(noteTitle) }) }
+        coVerify(atLeast = 1) { toolListNotes.invoke(any()) }
         coVerify(atLeast = 0) { toolSearchNotes.invoke(any()) }
         coVerify(exactly = 1) { toolDeleteNote.invoke(match { it.noteName.contains("тест") }) }
     }

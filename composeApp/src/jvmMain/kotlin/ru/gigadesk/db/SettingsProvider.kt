@@ -102,7 +102,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         }
 
     override var requestTimeoutMillis: Long
-        get() = _requestTimeoutDelegate?.toLongOrNull() ?: 10_000L
+        get() = _requestTimeoutDelegate?.toLongOrNull() ?: 20_000L
         set(value) {
             _requestTimeoutDelegate = value.toString()
         }
