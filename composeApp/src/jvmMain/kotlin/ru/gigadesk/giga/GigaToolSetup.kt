@@ -1,8 +1,6 @@
 package ru.gigadesk.giga
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.keys.Keys
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.desktop.ToolHotkeyMac
@@ -24,7 +22,6 @@ interface GigaToolSetup {
 val gigaJsonMapper = jacksonObjectMapper()
 
 inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
-    val settings = SettingsProvider(ConfigStore) // consider DI
     val toolSetup = this
     return object : GigaToolSetup {
         override val fn: GigaRequest.Function = GigaRequest.Function(
@@ -62,11 +59,7 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
                     ?.filter { !it.isOptional && !it.type.isMarkedNullable }
                     ?.mapNotNull { it.name } ?: emptyList()
             ),
-            fewShotExamples = if (settings.useFewShotExamples) {
-                toolSetup.fewShotExamples.map { GigaRequest.FewShotExample(it.request, it.params) }
-            } else {
-                null
-            },
+            fewShotExamples = toolSetup.fewShotExamples.map { GigaRequest.FewShotExample(it.request, it.params) },
             returnParameters = null
 //                    GigaRequest.Parameters(
 //                             type = toolSetup.returnParameters.type,
