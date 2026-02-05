@@ -1,27 +1,27 @@
-package tool.coder
+package tool.files
 
+import io.mockk.every
+import io.mockk.mockk
+import org.junit.Assert
+import org.slf4j.LoggerFactory
+import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.tool.BadInputException
+import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ToolDeleteFile
+import ru.gigadesk.tool.files.ToolFindInFiles
 import ru.gigadesk.tool.files.ToolFindTextInFiles
 import ru.gigadesk.tool.files.ToolListFiles
 import ru.gigadesk.tool.files.ToolModifyFile
 import ru.gigadesk.tool.files.ToolMoveFile
 import ru.gigadesk.tool.files.ToolNewFile
 import ru.gigadesk.tool.files.ToolReadFile
-import org.junit.Assert.assertThrows
 import java.io.File
 import java.nio.file.Files
 import java.util.UUID
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import org.slf4j.LoggerFactory
-import ru.gigadesk.db.SettingsProvider
-import ru.gigadesk.tool.files.ToolFindInFiles
 import kotlin.test.Ignore
+import kotlin.test.Test
 import kotlin.test.assertContains
-import ru.gigadesk.tool.files.FilesToolUtil
-import io.mockk.every
-import io.mockk.mockk
+import kotlin.test.assertEquals
 
 class ToolTest {
     private val filesToolUtil: FilesToolUtil = mockk()
@@ -145,7 +145,7 @@ class ToolTest {
 
             // delete
             ToolDeleteFile(filesToolUtil).invoke(ToolDeleteFile.Input(movedPath))
-            assertThrows(BadInputException::class.java) {
+            Assert.assertThrows(BadInputException::class.java) {
                 ToolReadFile(filesToolUtil).invoke(ToolReadFile.Input(movedPath))
             }
         } finally {
