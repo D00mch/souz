@@ -46,7 +46,7 @@ class ToolOpen(
     )
 
     override fun invoke(input: Input): String {
-        val fixedPath = input.target.replace("\$HOME", System.getenv("HOME"))
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.target)
             .replace("\n","")
             .replace("\\r","")
             .replace("\\\n","")
