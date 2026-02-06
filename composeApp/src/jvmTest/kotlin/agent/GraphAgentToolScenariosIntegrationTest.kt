@@ -23,6 +23,7 @@ import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -113,19 +114,36 @@ class GraphAgentToolScenariosIntegrationTest {
         val realToolTab = ToolCreateNewBrowserTab(ToolRunBashCommand)
         val toolCreateNewBrowserTab: ToolCreateNewBrowserTab = spyk(realToolTab)
 
-        coEvery { toolOpenDefaultBrowser.invoke(any()) } returns "Browser opened"
-        coEvery { toolOpen.invoke(any()) } returns "Opened"
-        coEvery { toolCreateNewBrowserTab.invoke(any()) } returns "Tab opened"
+        var openCalls = 0
+
+        val openTargets = mutableListOf<String>()
+        val createNewTabUrls = mutableListOf<String>()
+
+        coEvery { toolOpenDefaultBrowser.invoke(any()) } answers {
+            openCalls++
+            "Browser opened"
+        }
+        coEvery { toolOpen.invoke(any()) } answers {
+            openCalls++
+            openTargets += firstArg<ToolOpen.Input>().target
+            "Opened"
+        }
+        coEvery { toolCreateNewBrowserTab.invoke(any()) } answers {
+            openCalls++
+            createNewTabUrls += firstArg<ToolCreateNewBrowserTab.Input>().url
+            "Tab opened"
+        }
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolOpenDefaultBrowser> { toolOpenDefaultBrowser }
             bindSingleton<ToolOpen> { toolOpen }
             bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
         }
-        // Check both, as the agent might prefer ToolOpen for URLs
-        coVerify(atLeast = 0) { toolOpenDefaultBrowser.invoke(any()) }
-        coVerify(atLeast = 0) { toolOpen.invoke(any()) }
-        coVerify(atLeast = 0) { toolCreateNewBrowserTab.invoke(match { it.url.contains("example.com") }) }
+        assertEquals(
+            1,
+            openCalls,
+            "Expected exactly one tool call among OpenDefaultBrowser/Open/CreateNewBrowserTab, but got $openCalls"
+        )
     }
 
     @ParameterizedTest(name = "scenario3_openWebsiteInNewTab[{index}] {0}")
