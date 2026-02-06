@@ -15,7 +15,7 @@ import kotlin.random.Random
  * Orchestrates extraction of desktop data, embedding via LLM and persistence
  * into a Lucene index for similarity search.
  */
-class DesktopInfoRepository(
+open class DesktopInfoRepository(
     private val api: GigaChatAPI,
     private val db: VectorDB,
     private val extractor: DesktopDataExtractor,
@@ -66,7 +66,7 @@ class DesktopInfoRepository(
      * Convert the provided query to an embedding and return the most similar
      * stored texts from the database.
      */
-    suspend fun search(query: String, limit: Int = 5): List<StorredData> {
+    open suspend fun search(query: String, limit: Int = 5): List<StorredData> {
         val emb = when (val resp = api.embeddings(GigaRequest.Embeddings(input = listOf(query)))) {
             is GigaResponse.Embeddings.Ok -> resp.data.first().embedding
             is GigaResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")

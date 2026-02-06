@@ -8,7 +8,7 @@ import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 
-class ToolSearchNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolSearchNotes.Input> {
+open class ToolSearchNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolSearchNotes.Input> {
     data class Input(
         @InputParamDescription("Text to search in note name or body")
         val query: String,

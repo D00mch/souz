@@ -6,7 +6,7 @@ import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 
-class ToolListNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolListNotes.Input> {
+open class ToolListNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolListNotes.Input> {
     // No parameters required
     object Input
 

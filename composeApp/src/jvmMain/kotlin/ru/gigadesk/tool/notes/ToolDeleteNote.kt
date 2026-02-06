@@ -8,7 +8,7 @@ import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 
-class ToolDeleteNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolDeleteNote.Input> {
+open class ToolDeleteNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolDeleteNote.Input> {
     data class Input(
         @InputParamDescription("Note name")
         val noteName: String,

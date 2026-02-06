@@ -14,7 +14,7 @@ enum class ReadOperation {
     LOOKUP
 }
 
-class ExcelRead(
+open class ExcelRead(
     private val filesToolUtil: FilesToolUtil
 ) : ToolSetup<ExcelRead.Input> {
 

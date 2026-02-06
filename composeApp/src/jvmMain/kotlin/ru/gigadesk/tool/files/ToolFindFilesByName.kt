@@ -14,7 +14,7 @@ import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProviderImpl
 import java.io.File
 
-class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindFilesByName.Input> {
+open class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindFilesByName.Input> {
     data class Input(
         @InputParamDescription("Relative or absolute path to limit the search. Defaults to user HOME.")
         val path: String = FilesToolUtil.homeDirectory.absolutePath,

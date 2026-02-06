@@ -4,12 +4,7 @@ import giga.getHttpClient
 import giga.getSessionTokenUsage
 import io.ktor.client.plugins.HttpSend
 import io.ktor.client.plugins.plugin
-import io.mockk.coEvery
-import io.mockk.coVerify
-import io.mockk.every
-import io.mockk.mockkStatic
-import io.mockk.spyk
-import io.mockk.unmockkStatic
+import io.mockk.*
 import ru.gigadesk.tool.ToolRunBashCommand
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterAll
@@ -21,6 +16,7 @@ import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.tool.application.*
 import ru.gigadesk.tool.browser.*
 import ru.gigadesk.tool.calendar.*
@@ -28,7 +24,6 @@ import ru.gigadesk.tool.dataAnalytics.*
 import ru.gigadesk.tool.files.*
 import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
-import ru.gigadesk.tool.excel.*
 import ru.gigadesk.tool.textReplace.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -752,20 +747,6 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(exactly = 1) { toolGetClipboard.invoke(any()) }
     }
 
-    private suspend fun runScenarioWithMocks(
-        userPrompt: String,
-        overrides: DI.MainBuilder.() -> Unit,
-    ) {
-        val di = DI.invoke(allowSilentOverride = true) {
-            import(mainDiModule)
-            import(testOverrideModule, allowOverride = true)
-            bindProvider<DI> { this.di }
-            overrides()
-        }
-        val agent = GraphBasedAgent(di, objectMapper)
-        agent.execute(userPrompt)
-    }
-
     // ===================== ExcelRead Scenarios =====================
 
     @ParameterizedTest(name = "excelRead_overview[{index}] {0}")
@@ -811,7 +792,7 @@ class GraphAgentToolScenariosIntegrationTest {
             excelRead.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == ReadOperation.QUERY &&
-                        it.filter?.contains("1000") == true
+                        it.filter != null && it.filter.contains("1000")
             })
         }
     }
@@ -837,7 +818,34 @@ class GraphAgentToolScenariosIntegrationTest {
             excelRead.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == ReadOperation.CELL &&
-                        it.range?.contains("B5") == true
+                        it.range != null && it.range.contains("B5")
+            })
+        }
+    }
+
+    @ParameterizedTest(name = "excelRead_lookup[{index}] {0}")
+    @ValueSource(strings = [
+        "Найди цену товара Ноутбук в файле price.xlsx",
+        "VLOOKUP: найди в price.xlsx цену для Ноутбук",
+        "Посмотри в price.xlsx какая цена у товара Ноутбук"
+    ])
+    fun excelRead_lookup(userPrompt: String) = runTest {
+        val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/price.xlsx\"]"
+        coEvery { excelRead.invoke(any()) } returns "45000"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelRead> { excelRead }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+        }
+        coVerify(atLeast = 1) {
+            excelRead.invoke(match {
+                it.path.contains("price") &&
+                        it.operation == ReadOperation.LOOKUP &&
+                        it.lookupValue != null && it.lookupValue.contains("Ноутбук") &&
+                        it.returnColumn != null
             })
         }
     }
@@ -868,7 +876,8 @@ class GraphAgentToolScenariosIntegrationTest {
             excelWrite.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == WriteOperation.SET_CELL &&
-                        it.cell?.contains("A1") == true
+                        it.cell != null && it.cell.contains("A1") &&
+                        (it.value != null || it.formula != null)
             })
         }
     }
@@ -897,7 +906,7 @@ class GraphAgentToolScenariosIntegrationTest {
             excelWrite.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == WriteOperation.ADD_ROW &&
-                        it.rowData?.contains("2024-02-01") == true
+                        it.rowData != null && it.rowData.contains("2024-02-01")
             })
         }
     }
@@ -926,7 +935,8 @@ class GraphAgentToolScenariosIntegrationTest {
             excelWrite.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == WriteOperation.UPDATE_ROWS &&
-                        it.where?.contains("1000") == true
+                        it.where != null &&
+                        it.set != null && it.set.lowercase().contains("done")
             })
         }
     }
@@ -955,7 +965,7 @@ class GraphAgentToolScenariosIntegrationTest {
             excelWrite.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == WriteOperation.DELETE_ROWS &&
-                        it.where?.contains("Cancelled") == true
+                        it.where != null && it.where.contains("Cancelled", ignoreCase = true)
             })
         }
     }
@@ -985,7 +995,9 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(atLeast = 1) {
             excelTransform.invoke(match {
                 it.path.contains("sales") &&
-                        it.operation == TransformOperation.SORT
+                        it.operation == TransformOperation.SORT &&
+                        it.by != null && it.by.lowercase().contains("date") &&
+                        it.order != null && it.order.equals("DESC", ignoreCase = true)
             })
         }
     }
@@ -1014,7 +1026,7 @@ class GraphAgentToolScenariosIntegrationTest {
             excelTransform.invoke(match {
                 it.path.contains("clients") &&
                         it.operation == TransformOperation.DEDUPLICATE &&
-                        it.uniqueKeys?.contains("Email") == true
+                        it.uniqueKeys != null && it.uniqueKeys.contains("Email", ignoreCase = true)
             })
         }
     }
@@ -1043,7 +1055,8 @@ class GraphAgentToolScenariosIntegrationTest {
             excelTransform.invoke(match {
                 it.path.contains("clients") &&
                         it.operation == TransformOperation.FORMAT &&
-                        it.column?.lowercase()?.contains("phone") == true
+                        it.column != null && it.column.lowercase().contains("phone") &&
+                        it.format != null
             })
         }
     }
@@ -1072,7 +1085,8 @@ class GraphAgentToolScenariosIntegrationTest {
             excelTransform.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == TransformOperation.FORMAT &&
-                        it.column?.lowercase()?.contains("date") == true
+                        it.column != null && it.column.lowercase().contains("date") &&
+                        it.format != null
             })
         }
     }
@@ -1100,7 +1114,9 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(atLeast = 1) {
             excelTransform.invoke(match {
                 it.path.contains("sales") &&
-                        it.operation == TransformOperation.PIVOT
+                        it.operation == TransformOperation.PIVOT &&
+                        it.rows != null && it.rows.contains("Manager", ignoreCase = true) &&
+                        it.values != null && it.values.contains("Amount", ignoreCase = true)
             })
         }
     }
@@ -1130,31 +1146,39 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(atLeast = 1) {
             excelJoin.invoke(match {
                 it.operation == JoinOperation.VLOOKUP &&
-                        it.key?.contains("ProductID") == true
+                        it.path != null && it.path.contains("sales") &&
+                        it.otherPath != null && it.otherPath.contains("prices") &&
+                        it.key != null && it.key.contains("ProductID", ignoreCase = true) &&
+                        it.valueColumn != null
             })
         }
     }
 
     @ParameterizedTest(name = "excelJoin_merge[{index}] {0}")
     @ValueSource(strings = [
-        "Объедини файлы sales_jan.xlsx и sales_feb.xlsx",
-        "Склей sales_jan.xlsx и sales_feb.xlsx в один файл",
-        "Merge данных из sales_jan.xlsx и sales_feb.xlsx"
+        "Объедини все файлы из папки /tmp/reports в один all_reports.xlsx",
+        "Склей все Excel файлы из /tmp/reports в all_reports.xlsx",
+        "Merge всех файлов из папки /tmp/reports в all_reports.xlsx"
     ])
     fun excelJoin_merge(userPrompt: String) = runTest {
         val excelJoin: ExcelJoin = spyk(ExcelJoin(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales_jan.xlsx\", \"/tmp/sales_feb.xlsx\"]"
-        coEvery { excelJoin.invoke(any()) } returns "Merged 50 rows"
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[]"
+        coEvery { toolListFiles.invoke(any()) } returns "sales_jan.xlsx, sales_feb.xlsx"
+        coEvery { excelJoin.invoke(any()) } returns "Merged 2 files into all_reports.xlsx. Total rows: 50"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelJoin> { excelJoin }
             bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolListFiles> { toolListFiles }
         }
         coVerify(atLeast = 1) {
             excelJoin.invoke(match {
-                it.operation == JoinOperation.MERGE
+                it.operation == JoinOperation.MERGE &&
+                        it.folderPath != null && it.folderPath.contains("reports") &&
+                        it.path != null && it.path.contains("all_reports")
             })
         }
     }
@@ -1181,5 +1205,24 @@ class GraphAgentToolScenariosIntegrationTest {
                         it.headers.contains("Имя")
             })
         }
+    }
+
+    private suspend fun runScenarioWithMocks(
+        userPrompt: String,
+        overrides: DI.MainBuilder.() -> Unit,
+    ) {
+        val mockDesktopInfoRepository: DesktopInfoRepository = mockk(relaxed = true)
+        coEvery { mockDesktopInfoRepository.search(any()) } returns emptyList()
+
+        val di = DI.invoke(allowSilentOverride = true) {
+            import(mainDiModule)
+            import(testOverrideModule, allowOverride = true)
+            bindProvider<DI> { this.di }
+
+            bindSingleton<DesktopInfoRepository> { mockDesktopInfoRepository }
+            overrides()
+        }
+        val agent = GraphBasedAgent(di, objectMapper)
+        agent.execute(userPrompt)
     }
 }
