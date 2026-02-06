@@ -8,7 +8,13 @@ plugins {
 }
 
 kotlin {
-    jvm()
+    jvm {
+        testRuns.named("test") {
+            executionTask.configure {
+                useJUnitPlatform()
+            }
+        }
+    }
 
     sourceSets {
         commonMain.dependencies {
@@ -86,7 +92,8 @@ kotlin {
         }
 
         jvmTest.dependencies {
-            implementation(libs.kotlin.testJunit)
+            implementation(libs.kotlin.testJunit5)
+            implementation(libs.junit.jupiterParams)
             implementation(libs.mockk)
             implementation(libs.ktor.serverTestHost)
             implementation(libs.kotlinx.coroutinesTest)

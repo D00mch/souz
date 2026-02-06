@@ -2,7 +2,6 @@ package tool.files
 
 import io.mockk.every
 import io.mockk.mockk
-import org.junit.Assert
 import org.slf4j.LoggerFactory
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.tool.BadInputException
@@ -22,6 +21,7 @@ import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class ToolTest {
     private val filesToolUtil: FilesToolUtil = mockk()
@@ -145,7 +145,7 @@ class ToolTest {
 
             // delete
             ToolDeleteFile(filesToolUtil).invoke(ToolDeleteFile.Input(movedPath))
-            Assert.assertThrows(BadInputException::class.java) {
+            assertFailsWith<BadInputException> {
                 ToolReadFile(filesToolUtil).invoke(ToolReadFile.Input(movedPath))
             }
         } finally {
