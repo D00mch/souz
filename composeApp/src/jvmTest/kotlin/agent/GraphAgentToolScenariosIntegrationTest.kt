@@ -28,6 +28,7 @@ import ru.gigadesk.tool.dataAnalytics.*
 import ru.gigadesk.tool.files.*
 import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
+import ru.gigadesk.tool.excel.*
 import ru.gigadesk.tool.textReplace.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -762,5 +763,422 @@ class GraphAgentToolScenariosIntegrationTest {
         }
         val agent = GraphBasedAgent(di, objectMapper)
         agent.execute(userPrompt)
+    }
+
+    // ===================== ExcelRead Scenarios =====================
+
+    @ParameterizedTest(name = "excelRead_overview[{index}] {0}")
+    @ValueSource(strings = [
+        "Покажи структуру файла sales.xlsx",
+        "Какие колонки в файле sales.xlsx?",
+        "Открой превью таблицы sales.xlsx"
+    ])
+    fun excelRead_overview(userPrompt: String) = runTest {
+        val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { excelRead.invoke(any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelRead> { excelRead }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+        }
+        coVerify(atLeast = 1) {
+            excelRead.invoke(match { it.path.contains("sales") && it.operation == ReadOperation.STRUCTURE })
+        }
+    }
+
+    @ParameterizedTest(name = "excelRead_query[{index}] {0}")
+    @ValueSource(strings = [
+        "Найди в sales.xlsx все продажи где Amount > 1000",
+        "Покажи строки из sales.xlsx где сумма больше 1000",
+        "Отфильтруй sales.xlsx по Amount больше 1000"
+    ])
+    fun excelRead_query(userPrompt: String) = runTest {
+        val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { excelRead.invoke(any()) } returns """[{"Date":"2024-01-01","Amount":"1500"}]"""
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelRead> { excelRead }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+        }
+        coVerify(atLeast = 1) {
+            excelRead.invoke(match { 
+                it.path.contains("sales") && 
+                it.operation == ReadOperation.QUERY && 
+                it.filter?.contains("1000") == true
+            })
+        }
+    }
+
+    @ParameterizedTest(name = "excelRead_cell[{index}] {0}")
+    @ValueSource(strings = [
+        "Покажи значение ячейки B5 в sales.xlsx",
+        "Что в ячейке B5 файла sales.xlsx?",
+        "Прочитай ячейку B5 из sales.xlsx"
+    ])
+    fun excelRead_cell(userPrompt: String) = runTest {
+        val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { excelRead.invoke(any()) } returns "1500"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelRead> { excelRead }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+        }
+        coVerify(atLeast = 1) {
+            excelRead.invoke(match { 
+                it.path.contains("sales") && 
+                it.operation == ReadOperation.CELL && 
+                it.range?.contains("B5") == true
+            })
+        }
+    }
+
+    // ===================== ExcelWrite Scenarios =====================
+
+    @ParameterizedTest(name = "excelWrite_setCell[{index}] {0}")
+    @ValueSource(strings = [
+        "Установи значение 100 в ячейку A1 файла sales.xlsx",
+        "Запиши 100 в A1 sales.xlsx",
+        "Измени ячейку A1 в sales.xlsx на 100"
+    ])
+    fun excelWrite_setCell(userPrompt: String) = runTest {
+        val excelWrite: ExcelWrite = spyk(ExcelWrite(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolExtractText.invoke(any()) } returns "Date|Amount\n2024-01-01|500"
+        coEvery { excelWrite.invoke(any()) } returns "Cell A1 set to 100"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelWrite> { excelWrite }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolExtractText> { toolExtractText }
+        }
+        coVerify(atLeast = 1) {
+            excelWrite.invoke(match { 
+                it.path.contains("sales") && 
+                it.operation == WriteOperation.SET_CELL && 
+                it.cell?.contains("A1") == true
+            })
+        }
+    }
+
+    @ParameterizedTest(name = "excelWrite_addRow[{index}] {0}")
+    @ValueSource(strings = [
+        "Добавь строку в sales.xlsx: 2024-02-01, 2000",
+        "Добавь новую запись в sales.xlsx: дата 2024-02-01, сумма 2000",
+        "Вставь строку 2024-02-01, 2000 в конец файла sales.xlsx"
+    ])
+    fun excelWrite_addRow(userPrompt: String) = runTest {
+        val excelWrite: ExcelWrite = spyk(ExcelWrite(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolExtractText.invoke(any()) } returns "Date|Amount\n2024-01-01|500"
+        coEvery { excelWrite.invoke(any()) } returns "Added row at position 3"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelWrite> { excelWrite }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolExtractText> { toolExtractText }
+        }
+        coVerify(atLeast = 1) {
+            excelWrite.invoke(match { 
+                it.path.contains("sales") && 
+                it.operation == WriteOperation.ADD_ROW && 
+                it.rowData?.contains("2024-02-01") == true
+            })
+        }
+    }
+
+    @ParameterizedTest(name = "excelWrite_updateRows[{index}] {0}")
+    @ValueSource(strings = [
+        "Обнови статус на Done для всех строк где Amount > 1000 в sales.xlsx",
+        "Измени Status на Done где Amount больше 1000 в sales.xlsx",
+        "Установи Status=Done для записей где Amount > 1000 в sales.xlsx"
+    ])
+    fun excelWrite_updateRows(userPrompt: String) = runTest {
+        val excelWrite: ExcelWrite = spyk(ExcelWrite(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolExtractText.invoke(any()) } returns "Date|Amount|Status\n2024-01-01|1500|Pending"
+        coEvery { excelWrite.invoke(any()) } returns "Updated 5 rows"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelWrite> { excelWrite }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolExtractText> { toolExtractText }
+        }
+        coVerify(atLeast = 1) {
+            excelWrite.invoke(match { 
+                it.path.contains("sales") && 
+                it.operation == WriteOperation.UPDATE_ROWS && 
+                it.where?.contains("1000") == true
+            })
+        }
+    }
+
+    @ParameterizedTest(name = "excelWrite_deleteRows[{index}] {0}")
+    @ValueSource(strings = [
+        "Удали строки где Status=Cancelled в sales.xlsx",
+        "Удали все записи со статусом Cancelled из sales.xlsx",
+        "Очисти строки где Status равен Cancelled в sales.xlsx"
+    ])
+    fun excelWrite_deleteRows(userPrompt: String) = runTest {
+        val excelWrite: ExcelWrite = spyk(ExcelWrite(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolExtractText.invoke(any()) } returns "Date|Amount|Status\n2024-01-01|500|Cancelled"
+        coEvery { excelWrite.invoke(any()) } returns "Deleted 3 rows"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelWrite> { excelWrite }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolExtractText> { toolExtractText }
+        }
+        coVerify(atLeast = 1) {
+            excelWrite.invoke(match { 
+                it.path.contains("sales") && 
+                it.operation == WriteOperation.DELETE_ROWS && 
+                it.where?.contains("Cancelled") == true
+            })
+        }
+    }
+
+    // ===================== ExcelTransform Scenarios =====================
+
+    @ParameterizedTest(name = "excelTransform_sort[{index}] {0}")
+    @ValueSource(strings = [
+        "Отсортируй sales.xlsx по дате по убыванию",
+        "Сортировка sales.xlsx по Date DESC",
+        "Упорядочи sales.xlsx по дате (новые сверху)"
+    ])
+    fun excelTransform_sort(userPrompt: String) = runTest {
+        val excelTransform: ExcelTransform = spyk(ExcelTransform(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolExtractText.invoke(any()) } returns "Date|Amount\n2024-01-01|500"
+        coEvery { excelTransform.invoke(any()) } returns "Sorted 10 rows by Date"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelTransform> { excelTransform }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolExtractText> { toolExtractText }
+        }
+        coVerify(atLeast = 1) {
+            excelTransform.invoke(match { 
+                it.path.contains("sales") && 
+                it.operation == TransformOperation.SORT
+            })
+        }
+    }
+
+    @ParameterizedTest(name = "excelTransform_deduplicate[{index}] {0}")
+    @ValueSource(strings = [
+        "Удали дубликаты в clients.xlsx по Email",
+        "Убери повторы по Email в clients.xlsx",
+        "Дедупликация clients.xlsx по колонке Email"
+    ])
+    fun excelTransform_deduplicate(userPrompt: String) = runTest {
+        val excelTransform: ExcelTransform = spyk(ExcelTransform(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/clients.xlsx\"]"
+        coEvery { toolExtractText.invoke(any()) } returns "Name|Email\nIvan|test@example.com"
+        coEvery { excelTransform.invoke(any()) } returns "Removed 5 duplicates"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelTransform> { excelTransform }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolExtractText> { toolExtractText }
+        }
+        coVerify(atLeast = 1) {
+            excelTransform.invoke(match { 
+                it.path.contains("clients") && 
+                it.operation == TransformOperation.DEDUPLICATE && 
+                it.uniqueKeys?.contains("Email") == true
+            })
+        }
+    }
+
+    @ParameterizedTest(name = "excelTransform_formatPhone[{index}] {0}")
+    @ValueSource(strings = [
+        "Приведи телефоны к единому формату в clients.xlsx",
+        "Форматируй колонку Phone в clients.xlsx как PHONE_RU",
+        "Нормализуй номера телефонов в clients.xlsx"
+    ])
+    fun excelTransform_formatPhone(userPrompt: String) = runTest {
+        val excelTransform: ExcelTransform = spyk(ExcelTransform(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/clients.xlsx\"]"
+        coEvery { toolExtractText.invoke(any()) } returns "Name|Phone\nIvan|89991234567"
+        coEvery { excelTransform.invoke(any()) } returns "Formatted 10 cells"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelTransform> { excelTransform }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolExtractText> { toolExtractText }
+        }
+        coVerify(atLeast = 1) {
+            excelTransform.invoke(match { 
+                it.path.contains("clients") && 
+                it.operation == TransformOperation.FORMAT && 
+                it.column?.lowercase()?.contains("phone") == true
+            })
+        }
+    }
+
+    @ParameterizedTest(name = "excelTransform_formatDate[{index}] {0}")
+    @ValueSource(strings = [
+        "Приведи даты к единому формату в sales.xlsx",
+        "Форматируй колонку Date в sales.xlsx",
+        "Стандартизируй даты в sales.xlsx"
+    ])
+    fun excelTransform_formatDate(userPrompt: String) = runTest {
+        val excelTransform: ExcelTransform = spyk(ExcelTransform(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolExtractText.invoke(any()) } returns "Date|Amount\n1.02.2024|500"
+        coEvery { excelTransform.invoke(any()) } returns "Formatted 10 cells in Date column using DATE"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelTransform> { excelTransform }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolExtractText> { toolExtractText }
+        }
+        coVerify(atLeast = 1) {
+            excelTransform.invoke(match { 
+                it.path.contains("sales") && 
+                it.operation == TransformOperation.FORMAT && 
+                it.column?.lowercase()?.contains("date") == true
+            })
+        }
+    }
+
+    @ParameterizedTest(name = "excelTransform_pivot[{index}] {0}")
+    @ValueSource(strings = [
+        "Построй сводную таблицу из sales.xlsx по Manager с суммой Amount",
+        "Сделай pivot по Manager и сумме Amount в sales.xlsx",
+        "Группировка sales.xlsx по менеджеру с суммой продаж"
+    ])
+    fun excelTransform_pivot(userPrompt: String) = runTest {
+        val excelTransform: ExcelTransform = spyk(ExcelTransform(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolExtractText.invoke(any()) } returns "Manager|Amount\nIvan|500"
+        coEvery { excelTransform.invoke(any()) } returns "Pivot created"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelTransform> { excelTransform }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolExtractText> { toolExtractText }
+        }
+        coVerify(atLeast = 1) {
+            excelTransform.invoke(match { 
+                it.path.contains("sales") && 
+                it.operation == TransformOperation.PIVOT
+            })
+        }
+    }
+
+    // ===================== ExcelJoin Scenarios =====================
+
+    @ParameterizedTest(name = "excelJoin_vlookup[{index}] {0}")
+    @ValueSource(strings = [
+        "Подтяни цены из prices.xlsx в sales.xlsx по ProductID",
+        "VLOOKUP цену из prices.xlsx в sales.xlsx по ключу ProductID",
+        "Добавь колонку Price из prices.xlsx в sales.xlsx по ProductID"
+    ])
+    fun excelJoin_vlookup(userPrompt: String) = runTest {
+        val excelJoin: ExcelJoin = spyk(ExcelJoin(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\", \"/tmp/prices.xlsx\"]"
+        coEvery { toolExtractText.invoke(any()) } returns "ProductID|Amount\nP001|500"
+        coEvery { excelJoin.invoke(any()) } returns "Added Price column"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelJoin> { excelJoin }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolExtractText> { toolExtractText }
+        }
+        coVerify(atLeast = 1) {
+            excelJoin.invoke(match { 
+                it.operation == JoinOperation.VLOOKUP && 
+                it.key?.contains("ProductID") == true
+            })
+        }
+    }
+
+    @ParameterizedTest(name = "excelJoin_merge[{index}] {0}")
+    @ValueSource(strings = [
+        "Объедини файлы sales_jan.xlsx и sales_feb.xlsx",
+        "Склей sales_jan.xlsx и sales_feb.xlsx в один файл",
+        "Merge данных из sales_jan.xlsx и sales_feb.xlsx"
+    ])
+    fun excelJoin_merge(userPrompt: String) = runTest {
+        val excelJoin: ExcelJoin = spyk(ExcelJoin(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales_jan.xlsx\", \"/tmp/sales_feb.xlsx\"]"
+        coEvery { excelJoin.invoke(any()) } returns "Merged 50 rows"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelJoin> { excelJoin }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+        }
+        coVerify(atLeast = 1) {
+            excelJoin.invoke(match { 
+                it.operation == JoinOperation.MERGE
+            })
+        }
+    }
+
+    // ===================== ExcelCreate Scenarios =====================
+
+    @ParameterizedTest(name = "excelCreate_newFile[{index}] {0}")
+    @ValueSource(strings = [
+        "Создай новую таблицу clients.xlsx с колонками Имя, Телефон, Email",
+        "Создай Excel файл clients.xlsx с заголовками Имя, Телефон, Email",
+        "Сделай новый файл clients.xlsx с полями Имя, Телефон, Email"
+    ])
+    fun excelCreate_newFile(userPrompt: String) = runTest {
+        val excelCreate: ExcelCreate = spyk(ExcelCreate(filesUtil))
+
+        coEvery { excelCreate.invoke(any()) } returns "Created clients.xlsx"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ExcelCreate> { excelCreate }
+        }
+        coVerify(atLeast = 1) {
+            excelCreate.invoke(match { 
+                it.path.contains("clients") && 
+                it.headers.contains("Имя")
+            })
+        }
     }
 }
