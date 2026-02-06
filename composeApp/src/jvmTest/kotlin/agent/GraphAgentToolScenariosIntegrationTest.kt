@@ -39,6 +39,7 @@ import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRestChatAPI
+import java.util.concurrent.atomic.AtomicLong
 
 
 /**
@@ -58,11 +59,20 @@ class GraphAgentToolScenariosIntegrationTest {
 
     companion object {
         private var gigaRestChatAPI: GigaRestChatAPI? = null
+        private val httpRequestCount = AtomicLong(0)
+        private val httpRequestTotalNanos = AtomicLong(0)
 
         @JvmStatic
         @AfterAll
         fun finish() {
             println("Spent: ${gigaRestChatAPI!!.getSessionTokenUsage()}")
+            val requestCount = httpRequestCount.get()
+            if (requestCount == 0L) {
+                println("HTTP requests: 0")
+                return
+            }
+            val avgMs = httpRequestTotalNanos.get().toDouble() / requestCount / 1_000_000.0
+            println("HTTP requests: $requestCount, avg/request: ${"%.2f".format(avgMs)} ms")
         }
     }
 
@@ -74,8 +84,13 @@ class GraphAgentToolScenariosIntegrationTest {
             if (gigaRestChatAPI == null) {
                 gigaRestChatAPI = GigaRestChatAPI(instance(), instance()).apply {
                     getHttpClient().plugin(HttpSend).intercept { request ->
-                        val call = execute(request)
-                        call
+                        val startNanos = System.nanoTime()
+                        try {
+                            execute(request)
+                        } finally {
+                            httpRequestCount.incrementAndGet()
+                            httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
+                        }
                     }
                 }
             }
