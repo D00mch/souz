@@ -166,7 +166,9 @@ class GraphBasedAgent(
 
     private fun createInitialCtx(): AgentContext<String> {
         val currentModel = settingsProvider.gigaModel
-        val prompt = settingsProvider.getSystemPromptForModel(currentModel) ?: DEFAULT_SYSTEM_PROMPT
+        val prompt = settingsProvider.getSystemPromptForModel(currentModel)
+            ?: settingsProvider.systemPrompt
+            ?: DEFAULT_SYSTEM_PROMPT
         return AgentContext(
             input = "",
             settings = settings.load(),

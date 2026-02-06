@@ -25,6 +25,7 @@ import ru.gigadesk.tool.textReplace.*
 import kotlin.test.Test
 import org.junit.Assume
 import org.junit.Before
+import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.giga.GigaModel
 
@@ -40,7 +41,8 @@ class GraphAgentToolScenariosIntegrationTest {
         every { forbiddenFolders } returns emptyList()
         every { useGrpc } returns false
         every { gigaModel } returns GigaModel.Lite
-        every { temperature } returns 0.4f
+        every { temperature } returns 0.2f
+        every { systemPrompt } returns DEFAULT_SYSTEM_PROMPT
     }
     private val filesUtil: FilesToolUtil = FilesToolUtil(spySettings)
     private val testOverrideModule: DI.Module = DI.Module("TestOverrideModule") {
