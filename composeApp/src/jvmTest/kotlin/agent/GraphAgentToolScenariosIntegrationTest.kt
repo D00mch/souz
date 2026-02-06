@@ -23,8 +23,10 @@ import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
 import kotlin.test.Test
-import org.junit.Assume
-import org.junit.Before
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Assumptions
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.giga.GigaModel
@@ -50,14 +52,22 @@ class GraphAgentToolScenariosIntegrationTest {
         bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
     }
 
-    @Before
+    @BeforeEach
     fun checkEnvironment() {
         val apiKey = System.getenv("GIGA_KEY") ?: System.getProperty("GIGA_KEY")
-        Assume.assumeTrue("Skipping integration tests: GIGA_KEY is not set", !apiKey.isNullOrBlank())
+        Assumptions.assumeTrue(!apiKey.isNullOrBlank(), "Skipping integration tests: GIGA_KEY is not set")
     }
 
-    @Test
-    fun scenario1_launchApplication() = runTest {
+    @ParameterizedTest(name = "scenario1_launchApplication[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Запусти Telegram",
+            "Открой приложение Telegram",
+            "Запусти Телегу",
+            "Открой Телеграм"
+        ]
+    )
+    fun scenario1_launchApplication(userPrompt: String) = runTest {
         val realToolShowApps = ToolShowApps(filesUtil)
         val testGetApps: ToolShowApps = spyk(realToolShowApps)
 
@@ -80,7 +90,7 @@ class GraphAgentToolScenariosIntegrationTest {
         }
 
         val agent = GraphBasedAgent(di, objectMapper)
-        agent.execute("Запусти Telegram")
+        agent.execute(userPrompt)
 
         coVerify(atLeast = 1) {
             testOpenApp.invoke(match { it.target.contains("ru.keepcoder.Telegram", ignoreCase = true) })

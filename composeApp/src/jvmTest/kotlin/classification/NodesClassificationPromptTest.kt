@@ -5,8 +5,8 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
-import org.junit.After
-import org.junit.Before
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProviderImpl
@@ -30,14 +30,14 @@ class NodesClassificationPromptTest {
         ToolCategory.BROWSER to mapOf("Open" to dummySetup("Open")),
     )
 
-    @Before
+    @BeforeEach
     fun setUp() {
         mockkObject(ConfigStore)
         every { ConfigStore.get<ToolsSettingsState>(any()) } returns null
         every { ConfigStore.put(any(), any()) } returns Unit
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         unmockkAll()
     }
