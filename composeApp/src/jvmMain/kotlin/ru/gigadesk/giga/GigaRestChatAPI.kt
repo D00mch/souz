@@ -72,7 +72,7 @@ class GigaRestChatAPI(
         }
     }
 
-    private val uuid = UUID.randomUUID().toString() // для того, чтобы работал кеш
+    private val uuid = UUID.randomUUID().toString() // for cache to work
 
     private val currentSessionTokensUsage = AtomicReference(GigaResponse.Usage(0, 0, 0, 0))
 
