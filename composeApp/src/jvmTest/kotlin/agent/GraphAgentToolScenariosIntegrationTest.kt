@@ -68,7 +68,8 @@ class GraphAgentToolScenariosIntegrationTest {
         @JvmStatic
         @AfterAll
         fun finish() {
-            println("Spent: ${gigaRestChatAPI!!.getSessionTokenUsage()}")
+            val gigaRestChatAPI = gigaRestChatAPI ?: return
+            println("Spent: ${gigaRestChatAPI.getSessionTokenUsage()}")
             val requestCount = httpRequestCount.get()
             if (requestCount == 0L) {
                 println("HTTP requests: 0")
