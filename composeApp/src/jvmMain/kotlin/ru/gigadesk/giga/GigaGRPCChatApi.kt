@@ -31,15 +31,39 @@ class GigaGRPCChatApi(
     private val auth: GigaAuth,
     private val gigaChatAPI: GigaRestChatAPI,
 ) : GigaChatAPI by gigaChatAPI {
-    private val l = LoggerFactory.getLogger(GigaGRPCChatApi::class.java)
+    private val l by lazy { LoggerFactory.getLogger(GigaGRPCChatApi::class.java) }
 
-    private val maxInboundMessageSizeBytes: Int = run {
+    private val maxInboundMessageSizeBytes by lazy {
         val envValue = System.getenv("GIGA_GRPC_MAX_INBOUND_MB")
             ?: System.getProperty("GIGA_GRPC_MAX_INBOUND_MB")
         val sizeMb = envValue?.toIntOrNull() ?: DEFAULT_MAX_INBOUND_MESSAGE_MB
         val bytes = sizeMb * 1024 * 1024
         l.info("gRPC max inbound message size: ${sizeMb}MB ($bytes bytes)")
         bytes
+    }
+
+    private val keepAliveTimeMs by lazy {
+        val value = System.getenv("GIGA_GRPC_KEEPALIVE_TIME_MS")
+            ?: System.getProperty("GIGA_GRPC_KEEPALIVE_TIME_MS")
+        val keepAliveMs = value?.toLongOrNull() ?: DEFAULT_KEEPALIVE_TIME_MS
+        l.info("gRPC keepAlive time: ${keepAliveMs}ms")
+        keepAliveMs
+    }
+
+    private val keepAliveTimeoutMs by lazy {
+        val value = System.getenv("GIGA_GRPC_KEEPALIVE_TIMEOUT_MS")
+            ?: System.getProperty("GIGA_GRPC_KEEPALIVE_TIMEOUT_MS")
+        val timeoutMs = value?.toLongOrNull() ?: DEFAULT_KEEPALIVE_TIMEOUT_MS
+        l.info("gRPC keepAlive timeout: ${timeoutMs}ms")
+        timeoutMs
+    }
+
+    private val keepAliveWithoutCalls by lazy {
+        val value = System.getenv("GIGA_GRPC_KEEPALIVE_WITHOUT_CALLS")
+            ?: System.getProperty("GIGA_GRPC_KEEPALIVE_WITHOUT_CALLS")
+        val withoutCalls = value?.toBooleanStrictOrNull() ?: DEFAULT_KEEPALIVE_WITHOUT_CALLS
+        l.info("gRPC keepAlive without calls: $withoutCalls")
+        withoutCalls
     }
 
     init {
@@ -63,14 +87,19 @@ class GigaGRPCChatApi(
         (LoggerFactory.getLogger("io.netty") as? Logger)?.level = nettyLevel
     }
 
-    private val channel: ManagedChannel =
+    private val channel: ManagedChannel by lazy {
         NettyChannelBuilder.forAddress("gigachat.devices.sberbank.ru", 443)
             .sslContext(loadSslContext())
             .maxInboundMessageSize(maxInboundMessageSizeBytes)
+            .keepAliveTime(keepAliveTimeMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .keepAliveTimeout(keepAliveTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .keepAliveWithoutCalls(keepAliveWithoutCalls)
             .build()
+    }
 
-    private val stub: ChatServiceGrpcKt.ChatServiceCoroutineStub =
+    private val stub: ChatServiceGrpcKt.ChatServiceCoroutineStub by lazy {
         ChatServiceGrpcKt.ChatServiceCoroutineStub(channel)
+    }
 
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat {
         val request = request(body)
@@ -228,7 +257,7 @@ class GigaGRPCChatApi(
         return newToken
     }
 
-    private val uuid = UUID.randomUUID().toString()
+    private val uuid by lazy { UUID.randomUUID().toString() }
 
     private fun headers(token: String): Metadata = Metadata().apply {
         val authKey = Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER)
@@ -288,6 +317,9 @@ class GigaGRPCChatApi(
 }
 
 private const val DEFAULT_MAX_INBOUND_MESSAGE_MB = 32
+private const val DEFAULT_KEEPALIVE_TIME_MS = Long.MAX_VALUE
+private const val DEFAULT_KEEPALIVE_TIMEOUT_MS = 20_000L
+private const val DEFAULT_KEEPALIVE_WITHOUT_CALLS = false
 
 suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
