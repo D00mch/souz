@@ -430,21 +430,18 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario14_readFile(userPrompt: String) = runTest {
-        val realToolRead = ToolReadFile(filesUtil)
-        val toolReadFile: ToolReadFile = spyk(realToolRead)
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+        val toolFindFilesByName: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        val realToolFind = ToolFindFilesByName(filesUtil)
-        val toolFindFilesByName: ToolFindFilesByName = spyk(realToolFind)
-
-        coEvery { toolReadFile.invoke(any()) } returns "Hello"
+        coEvery { toolExtractText.invoke(any()) } returns "Hello"
         coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
 
         val tempFile = "test_integration.txt"
         runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolReadFile> { toolReadFile }
+            bindSingleton<ToolExtractText> { toolExtractText }
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }
-        coVerify(exactly = 1) { toolReadFile.invoke(match { it.path.contains(tempFile) }) }
+        coVerify(exactly = 1) { toolExtractText.invoke(match { it.filePath.contains(tempFile) }) }
     }
 
     @ParameterizedTest(name = "scenario14_modifyFile[{index}] {0}")
@@ -461,14 +458,14 @@ class GraphAgentToolScenariosIntegrationTest {
 
         val realToolFind = ToolFindFilesByName(filesUtil)
         val toolFindFilesByName: ToolFindFilesByName = spyk(realToolFind)
-        val toolReadFile: ToolReadFile = spyk(ToolReadFile(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
 
         var currentContent = ""
         val tempFile = "test_integration"
         val appendText = "World is over"
 
         coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
-        coEvery { toolReadFile.invoke(any()) } answers { currentContent }
+        coEvery { toolExtractText.invoke(any()) } answers { currentContent }
         coEvery { toolModifyFile.invoke(any()) } answers {
             val request = firstArg<ToolModifyFile.Input>()
             currentContent = "$currentContent\n${request.newText}"
@@ -476,7 +473,7 @@ class GraphAgentToolScenariosIntegrationTest {
         }
 
         runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolReadFile> { toolReadFile }
+            bindSingleton<ToolExtractText> { toolExtractText }
             bindSingleton<ToolModifyFile> { toolModifyFile }
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }

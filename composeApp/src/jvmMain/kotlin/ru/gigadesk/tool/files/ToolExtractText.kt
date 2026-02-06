@@ -20,7 +20,8 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
     )
 
     override val name: String = "ExtractTextFromFile"
-    override val description: String = "Extracts pure text content and metadata from documents (PDF, Excel, PowerPoint, CSV, Word) without opening the app. Returns structured text."
+    override val description: String = "Extracts pure text content and metadata from documents " +
+            "(PDF, Excel, PowerPoint, CSV, Word, etc) without opening the app. Returns structured text."
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -71,24 +72,24 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
             }
 
             """
-            === METADATA ===
-            Filename: ${file.name}
-            $metaInfo
-            
-            === CONTENT ===
-            ${handler.toString().trim()}
-            """.trimIndent()
+            |=== METADATA ===
+            |Filename: ${file.name}
+            |$metaInfo
+            |
+            |=== CONTENT ===
+            |${handler.toString().trim()}
+            """.trimIndent().trimMargin()
 
-        } catch (e: SAXException) {
+        } catch (_: SAXException) {
             """
-            Error: The file is too large for full extraction (limit 25000 chars).
-            
-            ACTION REQUIRED:
-            You MUST use the tool 'ReadPdfPages' instead. 
-            1. Check the table of contents (pages 1-20) using 'ReadPdfPages'.
-            2. Find the start/end pages of the chapter you need.
-            3. Call 'ReadPdfPages' with those specific page numbers.
-            """.trimIndent()
+            |Error: The file is too large for full extraction (limit 25000 chars).
+            |
+            |ACTION REQUIRED:
+            |You MUST use the tool 'ReadPdfPages' instead. 
+            |1. Check the table of contents (pages 1-20) using 'ReadPdfPages'.
+            |2. Find the start/end pages of the chapter you need.
+            |3. Call 'ReadPdfPages' with those specific page numbers.
+            """.trimIndent().trimMargin()
         } catch (e: Exception) {
             "Error extracting text: ${e.message}"
         }

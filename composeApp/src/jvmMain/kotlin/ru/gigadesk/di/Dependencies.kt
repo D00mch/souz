@@ -72,7 +72,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     // Tools
     bindSingleton { ToolGetClipboard() }
-    bindSingleton { ToolReadFile(instance()) }
     bindSingleton { ToolListFiles(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
     bindSingleton { ToolNewFile(instance()) }

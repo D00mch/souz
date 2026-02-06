@@ -7,6 +7,7 @@ import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.tool.BadInputException
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ToolDeleteFile
+import ru.gigadesk.tool.files.ToolExtractText
 import ru.gigadesk.tool.files.ToolFindInFiles
 import ru.gigadesk.tool.files.ToolFindTextInFiles
 import ru.gigadesk.tool.files.ToolListFiles
@@ -75,9 +76,18 @@ class ToolTest {
     fun `test ToolReadFile`() {
         val l = LoggerFactory.getLogger(ToolTest::class.java)
         l.info(File("src/jvmTest/resources/test.txt").readText())
-        val result = ToolReadFile(createFilesToolUtil(listOf("~/Library/")))
+        val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+
+        val result = ToolReadFile(filesToolUtil)
             .invoke(ToolReadFile.Input("src/jvmTest/resources/test.txt"))
         assertEquals("Test content\n", result)
+
+        val extracted = ToolExtractText(filesToolUtil)
+            .invoke(ToolExtractText.Input("src/jvmTest/resources/test.txt"))
+        assertContains(extracted, "=== METADATA ===")
+        assertContains(extracted, "Filename: test.txt")
+        assertContains(extracted, "=== CONTENT ===")
+        assertContains(extracted, "Test content")
     }
 
     @Test
