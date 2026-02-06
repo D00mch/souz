@@ -1,12 +1,14 @@
 package ru.gigadesk.tool.application
 
-import ru.gigadesk.tool.*
 import org.slf4j.LoggerFactory
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProviderImpl
+import ru.gigadesk.tool.*
 import ru.gigadesk.tool.desktop.ToolOpenFolder
 import ru.gigadesk.tool.files.FilesToolUtil
-import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
+import java.awt.Desktop
 import java.io.File
+import java.net.URI
 
 class ToolOpen(
     private val bash: ToolRunBashCommand,
@@ -45,8 +47,10 @@ class ToolOpen(
         )
     )
 
+
     override fun invoke(input: Input): String {
-        val fixedPath = input.target.replace("\$HOME", System.getenv("HOME"))
+        val desktop = Desktop.getDesktop().takeIf { Desktop.isDesktopSupported() }
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.target)
             .replace("\n","")
             .replace("\\r","")
             .replace("\\\n","")
@@ -54,39 +58,58 @@ class ToolOpen(
             .replace("{","")
             .replace("}","")
 
-        return try {
-            when {
-                fixedPath.contains('/') -> {
-                    val isDir = !fixedPath.endsWith(".app") && File(fixedPath).isDirectory
-                    if (isDir) {
-                        bash.sh("""open -R "$fixedPath"""")
-                    } else {
-                        bash.sh("""open "$fixedPath"""")
-                        "Done"
-                    }
-                }
-                fixedPath.contains('.') -> {
-                    if (File(fixedPath).exists()) {
-                        bash.sh("""open "$fixedPath"""")
-                    } else {
-                        bash.sh("""open -b "$fixedPath"""")
-                    }
-                    "Done"
-                }
-                else -> {
-                    ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(File(fixedPath).name))
-                    "Done"
-                }
+        if (fixedPath.startsWith("http://") || fixedPath.startsWith("https://")) {
+            if (desktop != null && desktop.isSupported(Desktop.Action.BROWSE)) {
+                desktop.browse(URI(fixedPath))
+                return "Done"
             }
-        } catch (e: Exception) {
-            l.error("Error opening '$fixedPath': ${e.message}")
-            ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(File(fixedPath).name))
         }
+
+        val f = File(fixedPath)
+        if (f.exists()) {
+            if (desktop != null && desktop.isSupported(Desktop.Action.OPEN)) {
+                desktop.open(f) // opens file with default app OR opens folder in file manager
+                return "Done"
+            }
+        }
+
+        return openViaOsFallback(fixedPath)
+    }
+
+    private fun openViaOsFallback(fixedPath: String): String = try {
+        when {
+            fixedPath.contains('/') -> {
+                val isDir = !fixedPath.endsWith(".app") && File(fixedPath).isDirectory
+                if (isDir) {
+                    bash.sh("""open -R "$fixedPath"""")
+                } else {
+                    bash.sh("""open "$fixedPath"""")
+                }
+                "Done"
+            }
+
+            fixedPath.contains('.') -> {
+                if (File(fixedPath).exists()) {
+                    bash.sh("""open "$fixedPath"""")
+                } else {
+                    bash.sh("""open -b "$fixedPath"""")
+                }
+                "Done"
+            }
+
+            else -> {
+                ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(File(fixedPath).name))
+                "Done"
+            }
+        }
+    } catch (e: Exception) {
+        l.error("Error opening '$fixedPath': ${e.message}")
+        ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(File(fixedPath).name))
     }
 }
 
 fun main() {
-    val filesToolUtil = FilesToolUtil(SettingsProvider(ConfigStore))
+    val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
     val result = ToolOpen(ToolRunBashCommand, filesToolUtil).invoke(ToolOpen.Input("ru.keepcoder.Telegram"))
     println(result)
 }

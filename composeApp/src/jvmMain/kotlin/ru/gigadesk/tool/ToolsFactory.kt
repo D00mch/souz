@@ -2,6 +2,8 @@ package ru.gigadesk.tool
 
 import org.kodein.di.DI
 import org.kodein.di.instance
+import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaToolSetup
 import ru.gigadesk.giga.toGiga
 import ru.gigadesk.tool.application.*
@@ -19,6 +21,7 @@ import ru.gigadesk.tool.textReplace.*
 typealias FunctionName = String
 
 class ToolsFactory(di: DI) {
+    private val settingsProvider: SettingsProvider by di.instance()
 
     private val toolReadFile: ToolReadFile by di.instance()
     private val toolListFiles: ToolListFiles by di.instance()
@@ -155,5 +158,15 @@ class ToolsFactory(di: DI) {
         )
 
         ToolCategory.CHAT -> listOf()
+    }.map {
+        object : GigaToolSetup by it {
+            override val fn: GigaRequest.Function =
+                it.fn.copy(
+                    fewShotExamples = when {
+                        settingsProvider.useFewShotExamples -> it.fn.fewShotExamples
+                        else -> emptyList()
+                    }
+                )
+        }
     }
 }

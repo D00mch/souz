@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.SettingsProviderImpl
 import java.awt.Desktop
 import java.io.File
 import java.io.FileInputStream
@@ -87,6 +87,7 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
 
         val rawOutputPath = filesToolUtil.applyDefaultEnvs(input.output ?: "~/GigaDesk/Documents/plot.png")
         val outputFile = File(rawOutputPath)
+
         outputFile.parentFile?.mkdirs()
         filesToolUtil.requirePathIsSave(outputFile)
 
@@ -268,7 +269,7 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
 
 // Пример запуска
 fun main() {
-    val tool = ToolCreatePlotFromCsv(FilesToolUtil(SettingsProvider(ConfigStore)))
+    val tool = ToolCreatePlotFromCsv(FilesToolUtil(SettingsProviderImpl(ConfigStore)))
     println(tool.invoke(ToolCreatePlotFromCsv.Input(
         path = "/Users/duxx/Отчеты/Финансовый отчет первый квартал.xlsx",
         xColumn = "Manager",

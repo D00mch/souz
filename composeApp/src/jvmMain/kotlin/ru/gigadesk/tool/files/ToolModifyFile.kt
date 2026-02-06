@@ -16,8 +16,8 @@ class ToolModifyFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolM
     override val description = "Replace text in a file. Replaces 'old_text' with 'new_text' in the specified file. "
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Replace foo with bar in notes.txt",
-            params = mapOf("path" to "notes.txt", "oldText" to "foo", "newText" to "bar")
+            request = "Замени foo на bar в home notes.txt",
+            params = mapOf("path" to "~/notes.txt", "oldText" to "foo", "newText" to "bar")
         )
     )
     override val returnParameters = ReturnParameters(

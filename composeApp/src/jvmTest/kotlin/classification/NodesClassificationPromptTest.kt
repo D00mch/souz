@@ -9,7 +9,7 @@ import org.junit.After
 import org.junit.Before
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.giga.GigaMessageRole
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
@@ -97,7 +97,7 @@ class NodesClassificationPromptTest {
             localClassifier = mockk(relaxed = true),
             toolsFactory = toolsFactory,
             toolsSettings = toolsSettings,
-            settingsProvider = SettingsProvider(ConfigStore)
+            settingsProvider = SettingsProviderImpl(ConfigStore)
         )
 
         val filteredTools = toolsSettings.applyFilter(toolsFactory.toolsByCategory)
