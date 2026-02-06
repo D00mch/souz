@@ -344,10 +344,11 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario11_buildChartFromFile(userPrompt: String) = runTest {
-        val realTool = ToolCreatePlotFromCsv(filesUtil)
-        val toolCreatePlotFromCsv: ToolCreatePlotFromCsv = spyk(realTool)
+        val toolCreatePlotFromCsv: ToolCreatePlotFromCsv = spyk(ToolCreatePlotFromCsv(filesUtil))
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
         coEvery { toolCreatePlotFromCsv.invoke(any()) } returns "Plot saved"
+        coEvery { toolListFiles.invoke(any()) } returns "[\"sample.csv\"]"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCreatePlotFromCsv> { toolCreatePlotFromCsv }
@@ -366,8 +367,7 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario12_findFileByName(userPrompt: String) = runTest {
-        val realTool = ToolFindFilesByName(filesUtil)
-        val toolFindFilesByName: ToolFindFilesByName = spyk(realTool)
+        val toolFindFilesByName: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
         coEvery { toolFindFilesByName.invoke(any()) } returns "/path/to/test.txt"
         coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "/path/to/test.txt"
@@ -383,9 +383,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario13_listFilesInFolder[{index}] {0}")
     @ValueSource(
         strings = [
-            "Покажи список файлов в папке /tmp/test-data",
-            "Перечисли файлы в директории /tmp/test-data",
-            "Что лежит в slash tmp slash test-data",
+            "Покажи список файлов в папке ~/tmp/test-data",
+            "Перечисли файлы в директории HOME/tmp/test-data",
+            "Что лежит в home slash tmp slash test-data",
         ]
     )
     fun scenario13_listFilesInFolder(userPrompt: String) = runTest {
@@ -488,9 +488,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario14_deleteFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "Удали файл test_integration.txt в папке /tmp/test-data",
-            "Удали /tmp/test-data/test_integration.txt",
-            "Нужно удалить файл test_integration.txt из slash tmp slash test-data",
+            "Удали файл test_integration.txt в папке ~/tmp/test-data",
+            "Удали HOME/tmp/test-data/test_integration.txt",
+            "Нужно удалить файл test_integration.txt из home slash tmp slash test-data",
         ]
     )
     fun scenario14_deleteFile(userPrompt: String) = runTest {
@@ -514,9 +514,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario15_moveFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "Перенеси файл read_me в папку dest",
-            "Перемести read_me в директорию dest",
-            "Сделай move файла read_me в папку dest",
+            "Перенеси файл README в папку dest",
+            "Перемести read me в директорию dest",
+            "Сделай move файла readme в папку dest",
         ]
     )
     fun scenario15_moveFile(userPrompt: String) = runTest {
@@ -529,16 +529,16 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolMoveFile> { toolMoveFile }
         }
         coVerify(exactly = 1) {
-            toolMoveFile.invoke(match { it.sourcePath.contains("read_me") && it.destinationPath.contains("dest") })
+            toolMoveFile.invoke(match { it.sourcePath.contains("README") && it.destinationPath.contains("dest") })
         }
     }
 
     @ParameterizedTest(name = "scenario16_extractTextFromFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "Извлеки текст из файла /tmp/test.txt",
-            "Достань текстовое содержимое файла /tmp/test.txt",
-            "Прочитай и извлеки текст из test.txt по пути slash tmp",
+            "Извлеки текст из файла ~/tmp/test.txt",
+            "Достань текстовое содержимое файла home tmp slash test.txt",
+            "Прочитай и извлеки текст из test.txt по пути home slash tmp",
         ]
     )
     fun scenario16_extractTextFromFile(userPrompt: String) = runTest {
@@ -580,9 +580,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario18_openFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "Открой файл /tmp/read_me.txt",
-            "Открой документ read_me.txt из slash tmp",
-            "Запусти файл /tmp/read_me.txt",
+            "Открой файл ~/tmp/read_me.txt",
+            "Открой документ read_me.txt из home slash tmp",
+            "Запусти файл HOME/tmp/read_me.txt",
         ]
     )
     fun scenario18_openFile(userPrompt: String) = runTest {
