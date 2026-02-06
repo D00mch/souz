@@ -3,7 +3,9 @@ package agent
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.mockkStatic
 import io.mockk.spyk
+import io.mockk.unmockkStatic
 import ru.gigadesk.tool.ToolRunBashCommand
 import kotlinx.coroutines.test.runTest
 import org.kodein.di.DI
@@ -24,6 +26,7 @@ import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -176,15 +179,29 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario4_findSiteInHistory(userPrompt: String) = runTest {
-        val realTool = ToolCreateNewBrowserTab(ToolRunBashCommand)
-        val toolCreateNewBrowserTab: ToolCreateNewBrowserTab = spyk(realTool)
+        mockkStatic("ru.gigadesk.tool.browser.DefaultBrowserKt")
+        every { ToolRunBashCommand.detectDefaultBrowser() } returns BrowserType.CHROME
 
+        val toolChromeInfo: ToolChromeInfo = spyk(ToolChromeInfo(ToolRunBashCommand))
+        val toolSafariInfo: ToolSafariInfo = spyk(ToolSafariInfo(ToolRunBashCommand))
+        val toolCreateNewBrowserTab: ToolCreateNewBrowserTab = spyk(ToolCreateNewBrowserTab(ToolRunBashCommand))
+
+        coEvery { toolChromeInfo.invoke(any()) } returns "2026-01-01|https://example.com|Example Domain"
+        coEvery { toolSafariInfo.invoke(any()) } returns ""
         coEvery { toolCreateNewBrowserTab.invoke(any()) } returns "Opened"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
+        try {
+            runScenarioWithMocks(userPrompt) {
+                bindSingleton<ToolChromeInfo> { toolChromeInfo }
+                bindSingleton<ToolSafariInfo> { toolSafariInfo }
+                bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
+            }
+            coVerify(atLeast = 1) {
+                toolChromeInfo.invoke(match { it.type == ToolChromeInfo.InfoType.history })
+            }
+        } finally {
+            unmockkStatic("ru.gigadesk.tool.browser.DefaultBrowserKt")
         }
-        coVerify(atLeast = 0) { toolCreateNewBrowserTab.invoke(any()) }
     }
 
     @ParameterizedTest(name = "scenario5_readPageInOpenTab[{index}] {0}")
@@ -202,20 +219,27 @@ class GraphAgentToolScenariosIntegrationTest {
         val realChrome = ToolChromeInfo(ToolRunBashCommand)
         val toolChromeInfo: ToolChromeInfo = spyk(realChrome)
 
-        coEvery { toolSafariInfo.invoke(any()) } returns "Page content"
-        coEvery { toolChromeInfo.invoke(any()) } returns "Page content"
+        var pageTextCalls = 0
+
+        coEvery { toolSafariInfo.invoke(any()) } answers {
+            val input = firstArg<ToolSafariInfo.Input>()
+            if (input.type == ToolSafariInfo.InfoType.pageText) pageTextCalls++
+            "Page content"
+        }
+        coEvery { toolChromeInfo.invoke(any()) } answers {
+            val input = firstArg<ToolChromeInfo.Input>()
+            if (input.type == ToolChromeInfo.InfoType.pageText) pageTextCalls++
+            "Page content"
+        }
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolSafariInfo> { toolSafariInfo }
             bindSingleton<ToolChromeInfo> { toolChromeInfo }
         }
-
-        coVerify(atLeast = 0) {
-            toolSafariInfo.invoke(match { it.type == ToolSafariInfo.InfoType.pageText })
-        }
-        coVerify(atLeast = 0) {
-            toolChromeInfo.invoke(match { it.type == ToolChromeInfo.InfoType.pageText })
-        }
+        assertTrue(
+            pageTextCalls >= 1,
+            "Expected at least one pageText action via SafariInfo or ChromeInfo, but got $pageTextCalls"
+        )
     }
 
     @ParameterizedTest(name = "scenario6_todayCalendarEvents[{index}] {0}")
@@ -319,10 +343,11 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario11_buildChartFromFile(userPrompt: String) = runTest {
-        val realTool = ToolCreatePlotFromCsv(filesUtil)
-        val toolCreatePlotFromCsv: ToolCreatePlotFromCsv = spyk(realTool)
+        val toolCreatePlotFromCsv: ToolCreatePlotFromCsv = spyk(ToolCreatePlotFromCsv(filesUtil))
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
         coEvery { toolCreatePlotFromCsv.invoke(any()) } returns "Plot saved"
+        coEvery { toolListFiles.invoke(any()) } returns "[\"sample.csv\"]"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCreatePlotFromCsv> { toolCreatePlotFromCsv }
@@ -341,8 +366,7 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario12_findFileByName(userPrompt: String) = runTest {
-        val realTool = ToolFindFilesByName(filesUtil)
-        val toolFindFilesByName: ToolFindFilesByName = spyk(realTool)
+        val toolFindFilesByName: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
         coEvery { toolFindFilesByName.invoke(any()) } returns "/path/to/test.txt"
         coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "/path/to/test.txt"
@@ -358,9 +382,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario13_listFilesInFolder[{index}] {0}")
     @ValueSource(
         strings = [
-            "Покажи список файлов в папке /tmp/test-data",
-            "Перечисли файлы в директории /tmp/test-data",
-            "Что лежит в slash tmp slash test-data",
+            "Покажи список файлов в папке ~/tmp/test-data",
+            "Перечисли файлы в директории HOME/tmp/test-data",
+            "Что лежит в home slash tmp slash test-data",
         ]
     )
     fun scenario13_listFilesInFolder(userPrompt: String) = runTest {
@@ -463,9 +487,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario14_deleteFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "Удали файл test_integration.txt в папке /tmp/test-data",
-            "Удали /tmp/test-data/test_integration.txt",
-            "Нужно удалить файл test_integration.txt из slash tmp slash test-data",
+            "Удали файл test_integration.txt в папке ~/tmp/test-data",
+            "Удали HOME/tmp/test-data/test_integration.txt",
+            "Нужно удалить файл test_integration.txt из home slash tmp slash test-data",
         ]
     )
     fun scenario14_deleteFile(userPrompt: String) = runTest {
@@ -489,9 +513,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario15_moveFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "Перенеси файл read_me в папку dest",
-            "Перемести read_me в директорию dest",
-            "Сделай move файла read_me в папку dest",
+            "Перенеси файл README в папку dest",
+            "Перемести read me в директорию dest",
+            "Сделай move файла readme в папку dest",
         ]
     )
     fun scenario15_moveFile(userPrompt: String) = runTest {
@@ -504,16 +528,16 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolMoveFile> { toolMoveFile }
         }
         coVerify(exactly = 1) {
-            toolMoveFile.invoke(match { it.sourcePath.contains("read_me") && it.destinationPath.contains("dest") })
+            toolMoveFile.invoke(match { it.sourcePath.contains("README") && it.destinationPath.contains("dest") })
         }
     }
 
     @ParameterizedTest(name = "scenario16_extractTextFromFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "Извлеки текст из файла /tmp/test.txt",
-            "Достань текстовое содержимое файла /tmp/test.txt",
-            "Прочитай и извлеки текст из test.txt по пути slash tmp",
+            "Извлеки текст из файла ~/tmp/test.txt",
+            "Достань текстовое содержимое файла home tmp slash test.txt",
+            "Прочитай и извлеки текст из test.txt по пути home slash tmp",
         ]
     )
     fun scenario16_extractTextFromFile(userPrompt: String) = runTest {
@@ -555,9 +579,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario18_openFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "Открой файл /tmp/read_me.txt",
-            "Открой документ read_me.txt из slash tmp",
-            "Запусти файл /tmp/read_me.txt",
+            "Открой файл ~/tmp/read_me.txt",
+            "Открой документ read_me.txt из home slash tmp",
+            "Запусти файл HOME/tmp/read_me.txt",
         ]
     )
     fun scenario18_openFile(userPrompt: String) = runTest {
