@@ -11,7 +11,8 @@ import java.io.FileOutputStream
 enum class TransformOperation {
     SORT,
     DEDUPLICATE,
-    PIVOT // Basic pivot: Group By -> Aggregate
+    PIVOT, // Basic pivot: Group By -> Aggregate
+    FORMAT // Format values in a column
 }
 
 class ExcelTransform(
@@ -22,8 +23,12 @@ class ExcelTransform(
         @InputParamDescription("Path to Excel file")
         val path: String,
 
-        @InputParamDescription("Operation: SORT, DEDUPLICATE, PIVOT")
+        @InputParamDescription("Operation: SORT, DEDUPLICATE, PIVOT, FORMAT")
         val operation: TransformOperation,
+
+        // Common
+        @InputParamDescription("Output sheet name (optional). If set, creates a new sheet with results.")
+        val outSheet: String? = null,
 
         // SORT
         @InputParamDescription("Column to sort by")
@@ -42,12 +47,16 @@ class ExcelTransform(
         val values: String? = null,
         @InputParamDescription("Aggregation: SUM, COUNT")
         val agg: String? = null,
-        @InputParamDescription("Output sheet name for Pivot results")
-        val outSheet: String? = null
+
+        // FORMAT
+        @InputParamDescription("Column to format")
+        val column: String? = null,
+        @InputParamDescription("Format type: PHONE_RU, PHONE_INTERNATIONAL, EMAIL, TRIM, UPPER, LOWER, CAPITALIZE, TITLE_CASE, DATE (default yyyy-MM-dd), DATE-dd.MM.yyyy")
+        val format: String? = null
     )
 
     override val name = "ExcelTransform"
-    override val description = "Transform Excel data: Sort, Deduplicate, Pivot (Group By)"
+    override val description = "Transform Excel data: Sort, Deduplicate, Pivot, Format. MUST be used for ANY bulk updates (formatting dates, phones, names). Do NOT use NewFile for Excel."
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -55,8 +64,16 @@ class ExcelTransform(
             params = mapOf("path" to "sales.xlsx", "operation" to "SORT", "by" to "Date", "order" to "DESC")
         ),
         FewShotExample(
-            request = "Удали дубликаты по Email",
-            params = mapOf("path" to "clients.xlsx", "operation" to "DEDUPLICATE", "uniqueKeys" to "Email")
+            request = "Удали дубликаты по Email и сохрани в лист 'Unique'",
+            params = mapOf("path" to "clients.xlsx", "operation" to "DEDUPLICATE", "uniqueKeys" to "Email", "outSheet" to "Unique")
+        ),
+        FewShotExample(
+            request = "Приведи телефоны к единому формату",
+            params = mapOf("path" to "clients.xlsx", "operation" to "FORMAT", "column" to "Phone", "format" to "PHONE_RU")
+        ),
+        FewShotExample(
+            request = "Приведи даты к формату",
+            params = mapOf("path" to "sales.xlsx", "operation" to "FORMAT", "column" to "Date", "format" to "DATE")
         )
     )
 
@@ -71,15 +88,38 @@ class ExcelTransform(
 
         val workbook = FileInputStream(file).use { WorkbookFactory.create(it) }
         try {
-            val sheet = workbook.getSheetAt(0)
+            var sheet = workbook.getSheetAt(0)
+
+            // Handle outSheet for non-Pivot operations (Pivot creates its own)
+            if (input.operation != TransformOperation.PIVOT && !input.outSheet.isNullOrBlank()) {
+                val sheetIdx = workbook.getSheetIndex(sheet)
+                sheet = workbook.cloneSheet(sheetIdx)
+                workbook.setSheetName(workbook.getSheetIndex(sheet), input.outSheet)
+            }
             
             val res = when(input.operation) {
                 TransformOperation.SORT -> sort(sheet, input)
                 TransformOperation.DEDUPLICATE -> deduplicate(sheet, input)
                 TransformOperation.PIVOT -> pivot(workbook, sheet, input)
+                TransformOperation.FORMAT -> format(sheet, input)
             }
             
-            FileOutputStream(file).use { workbook.write(it) }
+            // Atomic Save: Write to temp file first, then replace original
+            val tempFile = File(file.parentFile, "${file.name}.${System.currentTimeMillis()}.tmp")
+            FileOutputStream(tempFile).use { workbook.write(it) }
+            
+            try {
+                java.nio.file.Files.move(
+                    tempFile.toPath(), 
+                    file.toPath(), 
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                )
+            } catch (e: Exception) {
+                // Fallback for some OS/Filesystem locks
+                tempFile.delete()
+                throw e
+            }
+            
             return res
         } finally {
             workbook.close()
@@ -116,12 +156,9 @@ class ExcelTransform(
             if (isDesc) -res else res
         }
 
-        // Re-write rows (simplified: shift values, preserving styles is hard)
-        // Ideally we just swap values
-        // For MVP: simple value swap
-        // (A robust sort needs to move rows, which POI does not support natively well)
-        
-        // Let's create a temp list of cell values map
+        // Re-write rows (simplified value swap)
+        // We read all data first to avoid overwriting issues during swap if we were moving rows
+        // But here we just extract values and write them back in new order
         val data = rows.map { row ->
             (0 until row.lastCellNum).map { c ->
                 val cell = row.getCell(c)
@@ -130,7 +167,7 @@ class ExcelTransform(
                     CellType.STRING -> cell.stringCellValue
                     CellType.NUMERIC -> cell.numericCellValue
                     CellType.BOOLEAN -> cell.booleanCellValue
-                    CellType.FORMULA -> cell.cellFormula // formula might break sorting
+                    CellType.FORMULA -> cell.cellFormula
                     else -> null
                 }
                 type to value
@@ -141,7 +178,7 @@ class ExcelTransform(
         data.forEachIndexed { i, rowData ->
              val row = sheet.getRow(i + 1) ?: sheet.createRow(i + 1)
              rowData.forEachIndexed { c, (type, value) ->
-                 val cell = row.createCell(c) // reset cell
+                 val cell = row.createCell(c)
                  when(type) {
                      CellType.STRING -> cell.setCellValue(value as String)
                      CellType.NUMERIC -> cell.setCellValue(value as Double)
@@ -230,6 +267,130 @@ class ExcelTransform(
         }
 
         return "Pivot created in sheet matches '${resSheet.sheetName}'"
+    }
+
+    private fun format(sheet: Sheet, input: Input): String {
+        val colName = input.column ?: throw BadInputException("column required for FORMAT")
+        val formatType = input.format ?: throw BadInputException("format type required")
+        
+        val formatter = DataFormatter()
+        val headers = sheet.getRow(0).map { formatter.formatCellValue(it).trim() }
+        val colIdx = headers.indexOfFirst { it.equals(colName, true) }
+        
+        if (colIdx == -1) return "Column '$colName' not found. Available: ${headers.joinToString(", ")}"
+        
+        var count = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val cell = row.getCell(colIdx) ?: row.createCell(colIdx)
+            val original = formatter.formatCellValue(cell).trim()
+            
+            if (original.isEmpty()) continue
+            
+            val formatted = when (formatType.uppercase()) {
+                "PHONE_RU" -> formatPhoneRu(original)
+                "PHONE_INTERNATIONAL" -> formatPhoneInternational(original)
+                "TRIM" -> original.trim()
+                "UPPER" -> original.uppercase()
+                "LOWER" -> original.lowercase()
+                "CAPITALIZE" -> original.replaceFirstChar { it.uppercase() } // Only first letter
+                "TITLE_CASE" -> original.lowercase().split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+                "EMAIL" -> original.lowercase().replace(" ", "").trim()
+                else -> {
+                    if (formatType.equals("DATE", ignoreCase = true)) {
+                         formatDate(cell, original, "yyyy-MM-dd")
+                    } else if (formatType.startsWith("DATE-")) {
+                         formatDate(cell, original, formatType.removePrefix("DATE-"))
+                    } else {
+                        original
+                    }
+                }
+            }
+            
+            if (formatted != original) {
+                // Aggressive update to ensure change is applied (fixes silent persistence failure)
+                cell.setBlank()
+                cell.setCellValue(formatted)
+                count++
+            }
+        }
+        return "Formatted $count cells in $colName column using $formatType"
+    }
+
+    private fun formatDate(cell: Cell, original: String, pattern: String): String {
+        try {
+            // 1. Try to parse "original" as a string date
+            // Common formats: dd.MM.yyyy, yyyy-MM-dd, dd-MM-yyyy, etc.
+            val d = parseDate(original)
+            
+            // 2. If null, check if cell is numeric (Excel date)
+            val dateObj = if (d != null) {
+                d
+            } else if (cell.cellType == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
+                cell.dateCellValue
+            } else if (cell.cellType == CellType.NUMERIC) {
+                // Sometimes numeric but not marked as date
+                 DateUtil.getJavaDate(cell.numericCellValue)
+            } else {
+                return original // Can't parse
+            }
+            
+            if (dateObj == null) return original
+
+            // 3. Format to target pattern
+            return java.text.SimpleDateFormat(pattern).format(dateObj)
+        } catch (e: Exception) {
+            return original
+        }
+    }
+
+    private fun parseDate(str: String): java.util.Date? {
+        val formats = listOf(
+            "dd.MM.yyyy", "dd.MM.yy",
+            "yyyy-MM-dd", "yyyy/MM/dd",
+            "dd-MM-yyyy", "dd/MM/yyyy",
+            "MM/dd/yyyy", // US
+            "d.M.yyyy", "d.M.yy"
+        )
+        for (fmt in formats) {
+            try {
+                val sdf = java.text.SimpleDateFormat(fmt)
+                sdf.isLenient = false
+                return sdf.parse(str.trim())
+            } catch (e: Exception) { continue }
+        }
+        return null
+    }
+    
+    private fun formatPhoneRu(phone: String): String {
+        // Remove everything except digits
+        val digits = phone.filter { it.isDigit() }
+        if (digits.length == 10) { // 900 123 45 67 -> +7 ...
+            return "+7 (${digits.substring(0,3)}) ${digits.substring(3,6)} ${digits.substring(6,8)} ${digits.substring(8,10)}"
+        }
+        if (digits.length == 11 && (digits.startsWith("7") || digits.startsWith("8"))) {
+            val tail = digits.substring(1)
+            return "+7 (${tail.substring(0,3)}) ${tail.substring(3,6)} ${tail.substring(6,8)} ${tail.substring(8,10)}"
+        }
+        return phone // Return original if pattern doesn't match
+    }
+
+    private fun formatPhoneInternational(phone: String): String {
+        // Just ensure it starts with + and has digits. Very basic specific logic can be added if needed.
+        // For general usage: remove non-digits/plus, maybe add spaces?
+        // Let's keep it simple: Ensure + at start, then groups of digits.
+        // Actually, user just wants "international format". Let's assume generic cleaning.
+        val digits = phone.filter { it.isDigit() }
+        if (digits.isEmpty()) return phone
+        
+        // If it looks like RU (starts with 7 or 8 and len 11), treat as RU international +7 ...
+        if (digits.length == 11 && (digits.startsWith("7") || digits.startsWith("8"))) {
+             val tail = digits.substring(1)
+             // +7 XXX XXX XXXX generic
+             return "+7 ${tail.substring(0,3)} ${tail.substring(3,6)} ${tail.substring(6)}"
+        }
+         
+        return "+" + digits
     }
 
     private fun getVal(row: Row, col: Int): String {

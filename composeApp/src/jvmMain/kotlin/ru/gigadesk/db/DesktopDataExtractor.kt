@@ -39,21 +39,21 @@ class DesktopDataExtractor(
             }
         }.getOrElse { emptyList() }
 
-        val instructions = runCatching {
-            val list = ConfigStore.get<ArrayList<ToolInstructionStore.Input>>(
-                ToolInstructionStore.INSTUCTIONS_KEY,
-                ArrayList(),
-            )
-            list.map { input ->
-                StorredData(buildInstruction(input.name, input.action), StorredType.INSTRUCTIONS)
-            }
-        }.getOrElse { emptyList() }
+//        val instructions = runCatching {
+//            val list = ConfigStore.get<ArrayList<ToolInstructionStore.Input>>(
+//                ToolInstructionStore.INSTUCTIONS_KEY,
+//                ArrayList(),
+//            )
+//            list.map { input ->
+//                StorredData(buildInstruction(input.name, input.action), StorredType.INSTRUCTIONS)
+//            }
+//        }.getOrElse { emptyList() }
 
         // Собираем всё вместе: приложения + файлы + браузер + история + инструкции
         return installed +
                 files().toList() +
                 browserHistory(50) +
-                instructions +
+                //instructions +
                 facts +
                 notes()
     }

@@ -35,7 +35,7 @@ class ExcelCreate(
     override fun invoke(input: Input): String {
         val file = File(filesToolUtil.applyDefaultEnvs(input.path))
         if (!filesToolUtil.isPathSafe(file)) throw ForbiddenFolder(file.path)
-        if (file.exists()) throw BadInputException("File exists. Use ExcelWrite to modify or delete it first.")
+        if (file.exists()) throw BadInputException("File exists. To READ data, use 'ExcelRead'. To EDIT, use 'ExcelWrite'. To overwrite, delete it first.")
 
         val wb = XSSFWorkbook()
         val sheet = wb.createSheet("Sheet1")

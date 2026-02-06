@@ -56,37 +56,26 @@ class ExcelWrite(
     )
 
     override val name = "ExcelWrite"
-    override val description = """Modify Excel files in place:
-- SET_CELL: Set value or formula (=SUM, =VLOOKUP, etc.)
-- ADD_ROW: Add new row at the end
-- UPDATE_ROWS: Update rows matching condition
-- DELETE_ROWS: Delete rows matching condition"""
+    override val description = """Modify Excel files in place. 
+Use this for:
+- APPADING DATA: Use ADD_ROW to append new lines.
+- UPDATING STATUS: Use UPDATE_ROWS.
+- SPECIFIC EDITS: Single cell changes.
+
+Do NOT use this for bulk formatting - use ExcelTransform.
+Operations:
+- SET_CELL: Set value/formula
+- ADD_ROW: Append row at bottom. Input: 'val1,val2' or JSON.
+- UPDATE_ROWS: Modify matching rows
+- DELETE_ROWS: Remove matching rows"""
 
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "В ячейку D10 поставь формулу суммы D2:D9",
+            request = "Добавь строку с продажей: Иванов, 5000, 2024-01-01",
             params = mapOf(
-                "path" to "report.xlsx",
-                "operation" to "SET_CELL",
-                "cell" to "D10",
-                "formula" to "=SUM(D2:D9)"
-            )
-        ),
-        FewShotExample(
-            request = "Добавь строку: Иванов, Продажи, 50000",
-            params = mapOf(
-                "path" to "employees.xlsx",
+                "path" to "sales.xlsx",
                 "operation" to "ADD_ROW",
-                "rowData" to "Иванов,Продажи,50000"
-            )
-        ),
-        FewShotExample(
-            request = "Измени статус на Архив где статус = Отменён",
-            params = mapOf(
-                "path" to "orders.xlsx",
-                "operation" to "UPDATE_ROWS",
-                "where" to "Status=Отменён",
-                "set" to "Status=Архив"
+                "rowData" to "Иванов,5000,2024-01-01"
             )
         )
     )
@@ -116,7 +105,21 @@ class ExcelWrite(
                 WriteOperation.DELETE_ROWS -> deleteRows(sheet, input)
             }
 
-            FileOutputStream(file).use { workbook.write(it) }
+            // Atomic Save: properties matching ExcelTransform fix
+            val tempFile = File(file.parentFile, "${file.name}.${System.currentTimeMillis()}.tmp")
+            FileOutputStream(tempFile).use { workbook.write(it) }
+            
+            try {
+                java.nio.file.Files.move(
+                    tempFile.toPath(), 
+                    file.toPath(), 
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                )
+            } catch (e: Exception) {
+                tempFile.delete()
+                throw e
+            }
+            
             return result
         } finally {
             workbook.close()

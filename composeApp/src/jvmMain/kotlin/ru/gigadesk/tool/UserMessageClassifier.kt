@@ -65,8 +65,8 @@ object LocalRegexClassifier : UserMessageClassifier {
         ToolCategory.FILES -> listOf(
             WeightedRegex(Regex("прочитай в файле|открой файл|покажи файл|найди файл|путь к файл|открой папк"), 2.0),
             WeightedRegex(Regex("создай файл|удали файл|покажи содержим|перенеси файл|поиск по файлам"), 2.0),
-            WeightedRegex(Regex("файл|file|перепиши|исправь в"), 1.5),
-            WeightedRegex(Regex("поправь|поправить|исправить|прочитай|папк|folder|каталог|директори|directory"), 1.0),
+            WeightedRegex(Regex("файл(?!.*(xlsx|xls|excel|эксель|таблиц))|file|перепиши|исправь в"), 1.0),
+            WeightedRegex(Regex("поправь|поправить|исправить|прочитай(?!.*(xlsx|xls|excel|эксель|таблиц))|папк|folder|каталог|директори|directory"), 1.0),
         )
 
         ToolCategory.BROWSER -> listOf(

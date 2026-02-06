@@ -20,7 +20,7 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
     )
 
     override val name: String = "ExtractTextFromFile"
-    override val description: String = "Extracts pure text content and metadata from documents (PDF, Excel, PowerPoint, CSV, Word) without opening the app. Returns structured text."
+    override val description: String = "READ ONLY preview of documents (PDF, Excel, PowerPoint, CSV, Word). Use this to SEE content. Does NOT modify files. To edit Excel, use ExcelWrite."
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -55,7 +55,7 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
     }
 
     private fun extractWithTika(file: File): String {
-        val charLimit = 500000
+        val charLimit = 50000
 
         return try {
             val parser = AutoDetectParser()
