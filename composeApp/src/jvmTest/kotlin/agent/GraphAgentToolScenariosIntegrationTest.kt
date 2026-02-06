@@ -50,12 +50,14 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class GraphAgentToolScenariosIntegrationTest {
 
-    private val spySettings: SettingsProviderImpl = spyk(SettingsProviderImpl(ConfigStore)) {
-        every { forbiddenFolders } returns emptyList()
-        every { useGrpc } returns false
-        every { gigaModel } returns GigaModel.Lite
-        every { temperature } returns 0.2f
-        every { systemPrompt } returns DEFAULT_SYSTEM_PROMPT
+    private val spySettings: SettingsProviderImpl by lazy {
+        spyk(SettingsProviderImpl(ConfigStore)) {
+            every { forbiddenFolders } returns emptyList()
+            every { useGrpc } returns false
+            every { gigaModel } returns GigaModel.Lite
+            every { temperature } returns 0.2f
+            every { systemPrompt } returns DEFAULT_SYSTEM_PROMPT
+        }
     }
 
     companion object {
@@ -77,7 +79,7 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    private val filesUtil: FilesToolUtil = FilesToolUtil(spySettings)
+    private val filesUtil: FilesToolUtil by lazy { FilesToolUtil(spySettings) }
     private val testOverrideModule: DI.Module = DI.Module("TestOverrideModule") {
         bindSingleton<SettingsProvider>(overrides = true) { spySettings }
         bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
