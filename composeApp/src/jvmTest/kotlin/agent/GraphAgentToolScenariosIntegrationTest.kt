@@ -26,6 +26,7 @@ import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -219,20 +220,27 @@ class GraphAgentToolScenariosIntegrationTest {
         val realChrome = ToolChromeInfo(ToolRunBashCommand)
         val toolChromeInfo: ToolChromeInfo = spyk(realChrome)
 
-        coEvery { toolSafariInfo.invoke(any()) } returns "Page content"
-        coEvery { toolChromeInfo.invoke(any()) } returns "Page content"
+        var pageTextCalls = 0
+
+        coEvery { toolSafariInfo.invoke(any()) } answers {
+            val input = firstArg<ToolSafariInfo.Input>()
+            if (input.type == ToolSafariInfo.InfoType.pageText) pageTextCalls++
+            "Page content"
+        }
+        coEvery { toolChromeInfo.invoke(any()) } answers {
+            val input = firstArg<ToolChromeInfo.Input>()
+            if (input.type == ToolChromeInfo.InfoType.pageText) pageTextCalls++
+            "Page content"
+        }
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolSafariInfo> { toolSafariInfo }
             bindSingleton<ToolChromeInfo> { toolChromeInfo }
         }
-
-        coVerify(atLeast = 0) {
-            toolSafariInfo.invoke(match { it.type == ToolSafariInfo.InfoType.pageText })
-        }
-        coVerify(atLeast = 0) {
-            toolChromeInfo.invoke(match { it.type == ToolChromeInfo.InfoType.pageText })
-        }
+        assertTrue(
+            pageTextCalls >= 1,
+            "Expected at least one pageText action via SafariInfo or ChromeInfo, but got $pageTextCalls"
+        )
     }
 
     @ParameterizedTest(name = "scenario6_todayCalendarEvents[{index}] {0}")
