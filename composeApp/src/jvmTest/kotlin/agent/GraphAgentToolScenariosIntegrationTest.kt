@@ -8,6 +8,7 @@ import io.mockk.spyk
 import io.mockk.unmockkStatic
 import ru.gigadesk.tool.ToolRunBashCommand
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.AfterAll
 import org.kodein.di.DI
 import org.kodein.di.bindProvider
 import org.kodein.di.bindSingleton
@@ -30,9 +31,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.kodein.di.instance
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.giga.GigaModel
+import ru.gigadesk.giga.GigaRestChatAPI
 
 
 /**
@@ -49,10 +52,27 @@ class GraphAgentToolScenariosIntegrationTest {
         every { temperature } returns 0.2f
         every { systemPrompt } returns DEFAULT_SYSTEM_PROMPT
     }
+
+    companion object {
+        private var gigaRestChatAPI: GigaRestChatAPI? = null
+
+        @JvmStatic
+        @AfterAll
+        fun finish() {
+            println("Spent: ${gigaRestChatAPI!!.getSessionTokenUsage()}")
+        }
+    }
+
     private val filesUtil: FilesToolUtil = FilesToolUtil(spySettings)
     private val testOverrideModule: DI.Module = DI.Module("TestOverrideModule") {
         bindSingleton<SettingsProvider>(overrides = true) { spySettings }
         bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
+        bindSingleton(overrides = true) {
+            if (gigaRestChatAPI == null) {
+                gigaRestChatAPI = GigaRestChatAPI(instance(), instance())
+            }
+            gigaRestChatAPI!!
+        }
     }
 
     @BeforeEach
