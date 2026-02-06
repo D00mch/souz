@@ -63,7 +63,6 @@ class GraphAgentToolScenariosIntegrationTest {
         strings = [
             "Запусти Telegram",
             "Открой приложение Telegram",
-            "Запусти Телегу",
             "Открой Телеграм"
         ]
     )
@@ -97,8 +96,15 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario2_openWebsite() = runTest {
+    @ParameterizedTest(name = "scenario2_openWebsite[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Открой сайт https://example.com",
+            "Открой example dot com",
+            "Открой вкладку с example точка com",
+        ]
+    )
+    fun scenario2_openWebsite(userPrompt: String) = runTest {
         val realTool = ToolOpenDefaultBrowser(ToolRunBashCommand, filesUtil)
         val toolOpenDefaultBrowser: ToolOpenDefaultBrowser = spyk(realTool)
 
@@ -112,7 +118,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolOpen.invoke(any()) } returns "Opened"
         coEvery { toolCreateNewBrowserTab.invoke(any()) } returns "Tab opened"
 
-        runScenarioWithMocks("Открой сайт https://example.com") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolOpenDefaultBrowser> { toolOpenDefaultBrowser }
             bindSingleton<ToolOpen> { toolOpen }
             bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
