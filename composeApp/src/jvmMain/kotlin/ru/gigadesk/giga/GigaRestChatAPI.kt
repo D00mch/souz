@@ -125,8 +125,6 @@ class GigaRestChatAPI(
         )
     }
 
-    fun getSessionTokenUsage(): GigaResponse.Usage = currentSessionTokensUsage.load()
-
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
         try {
             client.sse(
