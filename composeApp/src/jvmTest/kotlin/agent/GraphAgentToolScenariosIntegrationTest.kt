@@ -1,5 +1,8 @@
 package agent
 
+import giga.getHttpClient
+import io.ktor.client.plugins.HttpSend
+import io.ktor.client.plugins.plugin
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -69,7 +72,12 @@ class GraphAgentToolScenariosIntegrationTest {
         bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
         bindSingleton(overrides = true) {
             if (gigaRestChatAPI == null) {
-                gigaRestChatAPI = GigaRestChatAPI(instance(), instance())
+                gigaRestChatAPI = GigaRestChatAPI(instance(), instance()).apply {
+                    getHttpClient().plugin(HttpSend).intercept { request ->
+                        val call = execute(request)
+                        call
+                    }
+                }
             }
             gigaRestChatAPI!!
         }
