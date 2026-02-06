@@ -28,6 +28,7 @@ import ru.gigadesk.tool.dataAnalytics.*
 import ru.gigadesk.tool.files.*
 import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
+import ru.gigadesk.tool.excel.*
 import ru.gigadesk.tool.textReplace.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -40,15 +41,7 @@ import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRestChatAPI
-import ru.gigadesk.tool.dataAnalytics.excel.ExcelCreate
-import ru.gigadesk.tool.dataAnalytics.excel.ExcelJoin
-import ru.gigadesk.tool.dataAnalytics.excel.ExcelRead
-import ru.gigadesk.tool.dataAnalytics.excel.ExcelTransform
-import ru.gigadesk.tool.dataAnalytics.excel.ExcelWrite
-import ru.gigadesk.tool.dataAnalytics.excel.JoinOperation
-import ru.gigadesk.tool.dataAnalytics.excel.ReadOperation
-import ru.gigadesk.tool.dataAnalytics.excel.TransformOperation
-import ru.gigadesk.tool.dataAnalytics.excel.WriteOperation
+import ru.gigadesk.tool.dataAnalytics.excel.*
 import java.util.concurrent.atomic.AtomicLong
 
 
@@ -64,7 +57,7 @@ class GraphAgentToolScenariosIntegrationTest {
             every { forbiddenFolders } returns emptyList()
             every { useGrpc } returns false
             every { gigaModel } returns GigaModel.Lite
-            every { temperature } returns 0.2f
+            every { temperature } returns 0.1f
             every { systemPrompt } returns DEFAULT_SYSTEM_PROMPT
         }
     }
@@ -815,10 +808,10 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolFindFilesByName> { toolFindFiles }
         }
         coVerify(atLeast = 1) {
-            excelRead.invoke(match { 
-                it.path.contains("sales") && 
-                it.operation == ReadOperation.QUERY &&
-                it.filter?.contains("1000") == true
+            excelRead.invoke(match {
+                it.path.contains("sales") &&
+                        it.operation == ReadOperation.QUERY &&
+                        it.filter?.contains("1000") == true
             })
         }
     }
@@ -841,10 +834,10 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolFindFilesByName> { toolFindFiles }
         }
         coVerify(atLeast = 1) {
-            excelRead.invoke(match { 
-                it.path.contains("sales") && 
-                it.operation == ReadOperation.CELL &&
-                it.range?.contains("B5") == true
+            excelRead.invoke(match {
+                it.path.contains("sales") &&
+                        it.operation == ReadOperation.CELL &&
+                        it.range?.contains("B5") == true
             })
         }
     }
@@ -872,10 +865,10 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolExtractText> { toolExtractText }
         }
         coVerify(atLeast = 1) {
-            excelWrite.invoke(match { 
-                it.path.contains("sales") && 
-                it.operation == WriteOperation.SET_CELL &&
-                it.cell?.contains("A1") == true
+            excelWrite.invoke(match {
+                it.path.contains("sales") &&
+                        it.operation == WriteOperation.SET_CELL &&
+                        it.cell?.contains("A1") == true
             })
         }
     }
@@ -901,10 +894,10 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolExtractText> { toolExtractText }
         }
         coVerify(atLeast = 1) {
-            excelWrite.invoke(match { 
-                it.path.contains("sales") && 
-                it.operation == WriteOperation.ADD_ROW &&
-                it.rowData?.contains("2024-02-01") == true
+            excelWrite.invoke(match {
+                it.path.contains("sales") &&
+                        it.operation == WriteOperation.ADD_ROW &&
+                        it.rowData?.contains("2024-02-01") == true
             })
         }
     }
@@ -930,10 +923,10 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolExtractText> { toolExtractText }
         }
         coVerify(atLeast = 1) {
-            excelWrite.invoke(match { 
-                it.path.contains("sales") && 
-                it.operation == WriteOperation.UPDATE_ROWS &&
-                it.where?.contains("1000") == true
+            excelWrite.invoke(match {
+                it.path.contains("sales") &&
+                        it.operation == WriteOperation.UPDATE_ROWS &&
+                        it.where?.contains("1000") == true
             })
         }
     }
@@ -959,10 +952,10 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolExtractText> { toolExtractText }
         }
         coVerify(atLeast = 1) {
-            excelWrite.invoke(match { 
-                it.path.contains("sales") && 
-                it.operation == WriteOperation.DELETE_ROWS &&
-                it.where?.contains("Cancelled") == true
+            excelWrite.invoke(match {
+                it.path.contains("sales") &&
+                        it.operation == WriteOperation.DELETE_ROWS &&
+                        it.where?.contains("Cancelled") == true
             })
         }
     }
@@ -990,9 +983,9 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolExtractText> { toolExtractText }
         }
         coVerify(atLeast = 1) {
-            excelTransform.invoke(match { 
-                it.path.contains("sales") && 
-                it.operation == TransformOperation.SORT
+            excelTransform.invoke(match {
+                it.path.contains("sales") &&
+                        it.operation == TransformOperation.SORT
             })
         }
     }
@@ -1018,10 +1011,10 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolExtractText> { toolExtractText }
         }
         coVerify(atLeast = 1) {
-            excelTransform.invoke(match { 
-                it.path.contains("clients") && 
-                it.operation == TransformOperation.DEDUPLICATE &&
-                it.uniqueKeys?.contains("Email") == true
+            excelTransform.invoke(match {
+                it.path.contains("clients") &&
+                        it.operation == TransformOperation.DEDUPLICATE &&
+                        it.uniqueKeys?.contains("Email") == true
             })
         }
     }
@@ -1047,10 +1040,10 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolExtractText> { toolExtractText }
         }
         coVerify(atLeast = 1) {
-            excelTransform.invoke(match { 
-                it.path.contains("clients") && 
-                it.operation == TransformOperation.FORMAT &&
-                it.column?.lowercase()?.contains("phone") == true
+            excelTransform.invoke(match {
+                it.path.contains("clients") &&
+                        it.operation == TransformOperation.FORMAT &&
+                        it.column?.lowercase()?.contains("phone") == true
             })
         }
     }
@@ -1076,10 +1069,10 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolExtractText> { toolExtractText }
         }
         coVerify(atLeast = 1) {
-            excelTransform.invoke(match { 
-                it.path.contains("sales") && 
-                it.operation == TransformOperation.FORMAT &&
-                it.column?.lowercase()?.contains("date") == true
+            excelTransform.invoke(match {
+                it.path.contains("sales") &&
+                        it.operation == TransformOperation.FORMAT &&
+                        it.column?.lowercase()?.contains("date") == true
             })
         }
     }
@@ -1105,9 +1098,9 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolExtractText> { toolExtractText }
         }
         coVerify(atLeast = 1) {
-            excelTransform.invoke(match { 
-                it.path.contains("sales") && 
-                it.operation == TransformOperation.PIVOT
+            excelTransform.invoke(match {
+                it.path.contains("sales") &&
+                        it.operation == TransformOperation.PIVOT
             })
         }
     }
@@ -1135,9 +1128,9 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolExtractText> { toolExtractText }
         }
         coVerify(atLeast = 1) {
-            excelJoin.invoke(match { 
+            excelJoin.invoke(match {
                 it.operation == JoinOperation.VLOOKUP &&
-                it.key?.contains("ProductID") == true
+                        it.key?.contains("ProductID") == true
             })
         }
     }
@@ -1160,7 +1153,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolFindFilesByName> { toolFindFiles }
         }
         coVerify(atLeast = 1) {
-            excelJoin.invoke(match { 
+            excelJoin.invoke(match {
                 it.operation == JoinOperation.MERGE
             })
         }
@@ -1183,9 +1176,9 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ExcelCreate> { excelCreate }
         }
         coVerify(atLeast = 1) {
-            excelCreate.invoke(match { 
-                it.path.contains("clients") && 
-                it.headers.contains("Имя")
+            excelCreate.invoke(match {
+                it.path.contains("clients") &&
+                        it.headers.contains("Имя")
             })
         }
     }

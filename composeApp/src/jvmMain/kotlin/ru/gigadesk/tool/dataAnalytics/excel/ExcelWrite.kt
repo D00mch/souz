@@ -6,18 +6,12 @@ import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ForbiddenFolder
 import java.io.File
 import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 
-/**
- * Write operations for Excel files.
- */
 enum class WriteOperation {
-    SET_CELL,      // Set value or formula in a cell
-    ADD_ROW,       // Add a new row at the end
-    UPDATE_ROWS,   // Update rows matching condition
-    DELETE_ROWS    // Delete rows matching condition
+    SET_CELL,
+    ADD_ROW,
+    UPDATE_ROWS,
+    DELETE_ROWS
 }
 
 class ExcelWrite(
@@ -40,7 +34,7 @@ class ExcelWrite(
         @InputParamDescription("Value to set (for SET_CELL, ADD_ROW)")
         val value: String? = null,
 
-        @InputParamDescription("Formula like '=SUM(A1:A10)' (for SET_CELL, starts with =)")
+        @InputParamDescription("Formula like '=SUM(A1:A10)' (for SET_CELL)")
         val formula: String? = null,
 
         @InputParamDescription("Row values as comma-separated or JSON array (for ADD_ROW)")
@@ -54,18 +48,12 @@ class ExcelWrite(
     )
 
     override val name = "ExcelWrite"
-    override val description = """Modify Excel files in place. 
-Use this for:
-- APPADING DATA: Use ADD_ROW to append new lines.
-- UPDATING STATUS: Use UPDATE_ROWS.
-- SPECIFIC EDITS: Single cell changes.
-
-Do NOT use this for bulk formatting - use ExcelTransform.
-Operations:
-- SET_CELL: Set value/formula
-- ADD_ROW: Append row at bottom. Input: 'val1,val2' or JSON.
-- UPDATE_ROWS: Modify matching rows
-- DELETE_ROWS: Remove matching rows"""
+    
+    override val description = """Modify Excel files in place.
+- SET_CELL: Set value/formula in specific cell
+- ADD_ROW: Append row at bottom
+- UPDATE_ROWS: Modify rows matching condition
+- DELETE_ROWS: Remove rows matching condition"""
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -89,12 +77,10 @@ Operations:
 
         val workbook = FileInputStream(file).use { WorkbookFactory.create(it) }
 
-        try {
-            val sheet = if (input.sheet != null) {
-                workbook.getSheet(input.sheet) ?: throw BadInputException("Sheet '${input.sheet}' not found")
-            } else {
-                workbook.getSheetAt(0)
-            }
+        return workbook.use { wb ->
+            val sheet = input.sheet?.let { name ->
+                wb.getSheet(name) ?: throw BadInputException("Sheet '$name' not found")
+            } ?: wb.getSheetAt(0)
 
             val result = when (input.operation) {
                 WriteOperation.SET_CELL -> setCell(sheet, input)
@@ -103,23 +89,8 @@ Operations:
                 WriteOperation.DELETE_ROWS -> deleteRows(sheet, input)
             }
 
-            val tempFile = File(file.parentFile, "${file.name}.${System.currentTimeMillis()}.tmp")
-            FileOutputStream(tempFile).use { workbook.write(it) }
-            
-            try {
-                Files.move(
-                    tempFile.toPath(), 
-                    file.toPath(), 
-                    StandardCopyOption.REPLACE_EXISTING
-                )
-            } catch (e: Exception) {
-                tempFile.delete()
-                throw e
-            }
-            
-            return result
-        } finally {
-            workbook.close()
+            wb.saveAtomic(file)
+            result
         }
     }
 
@@ -130,20 +101,15 @@ Operations:
         val row = sheet.getRow(rowIdx) ?: sheet.createRow(rowIdx)
         val cell = row.getCell(colIdx) ?: row.createCell(colIdx)
 
-        when {
+        return when {
             input.formula != null -> {
-                val formula = if (input.formula.startsWith("=")) input.formula.substring(1) else input.formula
+                val formula = input.formula.removePrefix("=")
                 cell.setCellFormula(formula)
-                return "Formula set in $cellRef: ${input.formula}"
+                "Formula set in $cellRef: =${formula}"
             }
             input.value != null -> {
-                val numValue = input.value.toDoubleOrNull()
-                if (numValue != null) {
-                    cell.setCellValue(numValue)
-                } else {
-                    cell.setCellValue(input.value)
-                }
-                return "Value set in $cellRef: ${input.value}"
+                cell.setSmartValue(input.value)
+                "Value set in $cellRef: ${input.value}"
             }
             else -> throw BadInputException("value or formula required for SET_CELL")
         }
@@ -157,13 +123,7 @@ Operations:
         val row = sheet.createRow(newRowIdx)
 
         values.forEachIndexed { idx, value ->
-            val cell = row.createCell(idx)
-            val numValue = value.toDoubleOrNull()
-            if (numValue != null) {
-                cell.setCellValue(numValue)
-            } else {
-                cell.setCellValue(value)
-            }
+            row.createCell(idx).setSmartValue(value)
         }
 
         return "Added row #${newRowIdx + 1} with ${values.size} values"
@@ -174,7 +134,7 @@ Operations:
         val set = input.set ?: throw BadInputException("set required for UPDATE_ROWS")
 
         val formatter = DataFormatter()
-        val headers = getHeaders(sheet, formatter)
+        val headers = sheet.getHeaders(formatter)
 
         val (whereCol, whereVal) = parseCondition(where)
         val (setCol, setVal) = parseCondition(set)
@@ -182,8 +142,8 @@ Operations:
         val whereIdx = headers.indexOf(whereCol)
         val setIdx = headers.indexOf(setCol)
 
-        if (whereIdx == -1) return "Column '$whereCol' not found"
-        if (setIdx == -1) return "Column '$setCol' not found"
+        if (whereIdx == -1) throw BadInputException("Column '$whereCol' not found")
+        if (setIdx == -1) throw BadInputException("Column '$setCol' not found")
 
         var updated = 0
         for (i in 1..sheet.lastRowNum) {
@@ -192,12 +152,7 @@ Operations:
 
             if (cellValue.equals(whereVal, ignoreCase = true)) {
                 val cell = row.getCell(setIdx) ?: row.createCell(setIdx)
-                val numValue = setVal.toDoubleOrNull()
-                if (numValue != null) {
-                    cell.setCellValue(numValue)
-                } else {
-                    cell.setCellValue(setVal)
-                }
+                cell.setSmartValue(setVal)
                 updated++
             }
         }
@@ -209,12 +164,12 @@ Operations:
         val where = input.where ?: throw BadInputException("where required for DELETE_ROWS")
 
         val formatter = DataFormatter()
-        val headers = getHeaders(sheet, formatter)
+        val headers = sheet.getHeaders(formatter)
 
         val (whereCol, whereVal) = parseCondition(where)
         val whereIdx = headers.indexOf(whereCol)
 
-        if (whereIdx == -1) return "Column '$whereCol' not found"
+        if (whereIdx == -1) throw BadInputException("Column '$whereCol' not found")
 
         val rowsToDelete = mutableListOf<Int>()
         for (i in 1..sheet.lastRowNum) {
@@ -227,8 +182,7 @@ Operations:
         }
 
         rowsToDelete.sortedDescending().forEach { rowIdx ->
-            val row = sheet.getRow(rowIdx)
-            if (row != null) {
+            sheet.getRow(rowIdx)?.let { row ->
                 sheet.removeRow(row)
                 if (rowIdx < sheet.lastRowNum) {
                     sheet.shiftRows(rowIdx + 1, sheet.lastRowNum, -1)
@@ -239,32 +193,11 @@ Operations:
         return "Deleted ${rowsToDelete.size} rows (where $whereCol = $whereVal)"
     }
 
-    private fun getHeaders(sheet: Sheet, formatter: DataFormatter): List<String> {
-        val headerRow = sheet.getRow(0) ?: return emptyList()
-        return headerRow.map { formatter.formatCellValue(it).trim() }
-    }
-
-    private fun parseCondition(cond: String): Pair<String, String> {
-        val parts = cond.split("=", limit = 2)
-        if (parts.size != 2) throw BadInputException("Invalid condition format: $cond (expected Column=Value)")
-        return parts[0].trim() to parts[1].trim()
-    }
-
     private fun parseRowData(data: String): List<String> {
         return if (data.startsWith("[") && data.endsWith("]")) {
-            // JSON array format
             data.trim('[', ']').split(",").map { it.trim().trim('"', '\'') }
         } else {
-            // CSV format
             data.split(",").map { it.trim() }
         }
-    }
-
-    private fun parseCellRef(ref: String): Pair<Int, Int> {
-        val match = Regex("([A-Z]+)(\\d+)").matchEntire(ref.uppercase())
-            ?: throw BadInputException("Invalid cell reference: $ref")
-        val col = match.groupValues[1].fold(0) { acc, c -> acc * 26 + (c - 'A' + 1) } - 1
-        val row = match.groupValues[2].toInt() - 1
-        return row to col
     }
 }

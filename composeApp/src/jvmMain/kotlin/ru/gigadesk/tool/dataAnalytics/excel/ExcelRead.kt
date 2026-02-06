@@ -1,15 +1,12 @@
 package ru.gigadesk.tool.dataAnalytics.excel
 
-import org.apache.poi.ss.usermodel.*
 import org.apache.poi.openxml4j.util.ZipSecureFile
+import org.apache.poi.ss.usermodel.*
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ForbiddenFolder
 import java.io.File
 
-/**
- * Smart Excel reading with multiple operations.
- */
 enum class ReadOperation {
     STRUCTURE,
     QUERY,
@@ -22,7 +19,7 @@ class ExcelRead(
 ) : ToolSetup<ExcelRead.Input> {
 
     init {
-        try { ZipSecureFile.setMinInflateRatio(0.0) } catch (_: Throwable) {}
+        runCatching { ZipSecureFile.setMinInflateRatio(0.0) }
     }
 
     data class Input(
@@ -35,15 +32,13 @@ class ExcelRead(
         @InputParamDescription("Sheet name (optional, default: first sheet)")
         val sheet: String? = null,
 
-        // For CELL operation
         @InputParamDescription("Cell address like 'B5' or range 'A1:C10' (for CELL operation)")
         val range: String? = null,
 
-        // For QUERY operation
         @InputParamDescription("Column to aggregate (for QUERY)")
         val column: String? = null,
 
-        @InputParamDescription("Aggregation: SUM, COUNT, AVG, MIN, MAX, LIST (for QUERY)")
+        @InputParamDescription("Aggregation: SUM, COUNT, AVG, MIN, MAX (for QUERY)")
         val aggregation: String? = null,
 
         @InputParamDescription("Column to group by (for QUERY)")
@@ -55,7 +50,6 @@ class ExcelRead(
         @InputParamDescription("Limit results (for QUERY, default: 10)")
         val limit: Int? = null,
 
-        // For LOOKUP operation
         @InputParamDescription("Lookup value (for LOOKUP)")
         val lookupValue: String? = null,
 
@@ -67,11 +61,12 @@ class ExcelRead(
     )
 
     override val name = "ExcelRead"
-    override val description = """READ and GET data from Excel files. READ ONLY tool. Do NOT use this tool for writing, updating or deleting data.
+    
+    override val description = """READ and GET data from Excel files. READ ONLY tool.
 - STRUCTURE: Get columns, row count, stats (Use first to understand file)
 - QUERY: Filter, Sort, Aggregate (SUM, COUNT, AVG), Group By
 - CELL: Read specific cell (e.g. B5) or range (e.g. A1:C10)
-- LOOKUP: VLOOKUP-style search (find value in one specific column, return another)"""
+- LOOKUP: VLOOKUP-style search (find value in one column, return another)"""
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -110,11 +105,9 @@ class ExcelRead(
         if (!file.exists()) throw BadInputException("File not found: ${input.path}")
 
         return WorkbookFactory.create(file, null, true).use { workbook ->
-            val sheet = if (input.sheet != null) {
-                workbook.getSheet(input.sheet) ?: throw BadInputException("Sheet '${input.sheet}' not found")
-            } else {
-                workbook.getSheetAt(0)
-            }
+            val sheet = input.sheet?.let { name ->
+                workbook.getSheet(name) ?: throw BadInputException("Sheet '$name' not found")
+            } ?: workbook.getSheetAt(0)
 
             when (input.operation) {
                 ReadOperation.STRUCTURE -> readStructure(sheet)
@@ -131,29 +124,31 @@ class ExcelRead(
 
         val columns = mutableListOf<String>()
         val numericStats = mutableMapOf<String, MutableList<Double>>()
+        val stringSamples = mutableMapOf<String, MutableSet<String>>()
 
         for (cell in headerRow) {
             val name = formatter.formatCellValue(cell).trim()
             if (name.isNotBlank()) columns.add(name)
         }
 
-        val stringSamples = mutableMapOf<String, MutableSet<String>>()
-
         val rowCount = sheet.lastRowNum
         val sampleSize = minOf(100, rowCount)
 
-        // Collect stats
         for (i in 1..sampleSize) {
             val row = sheet.getRow(i) ?: continue
             columns.forEachIndexed { idx, colName ->
                 val cell = row.getCell(idx) ?: return@forEachIndexed
-                if (cell.cellType == CellType.NUMERIC) {
-                    numericStats.getOrPut(colName) { mutableListOf() }.add(cell.numericCellValue)
-                } else if (cell.cellType == CellType.STRING) {
-                     val str = cell.stringCellValue.trim()
-                     if (str.isNotEmpty()) {
-                         stringSamples.getOrPut(colName) { mutableSetOf() }.add(str)
-                     }
+                when (cell.cellType) {
+                    CellType.NUMERIC -> {
+                        numericStats.getOrPut(colName) { mutableListOf() }.add(cell.numericCellValue)
+                    }
+                    CellType.STRING -> {
+                        val str = cell.stringCellValue.trim()
+                        if (str.isNotEmpty()) {
+                            stringSamples.getOrPut(colName) { mutableSetOf() }.add(str)
+                        }
+                    }
+                    else -> {}
                 }
             }
         }
@@ -163,73 +158,60 @@ class ExcelRead(
             val avg = if (values.isNotEmpty()) sum / values.size else 0.0
             """"$col":{"sum":${formatNum(sum)},"avg":${formatNum(avg)},"min":${formatNum(values.minOrNull() ?: 0.0)},"max":${formatNum(values.maxOrNull() ?: 0.0)}}"""
         }
-        
-        val stringSamplesJson = stringSamples.entries.joinToString(",") { (col, values) ->
+
+        val samplesJson = stringSamples.entries.joinToString(",") { (col, values) ->
             """"$col":${values.take(5).toList().toJsonArray()}"""
         }
 
-        return """{"rows":$rowCount,"columns":${columns.toJsonArray()},"numericStats":{$statsJson},"stringSamples":{$stringSamplesJson}}"""
+        return """{"rows":$rowCount,"columns":${columns.toJsonArray()},"numericStats":{$statsJson},"stringSamples":{$samplesJson}}"""
     }
 
     private fun readQuery(sheet: Sheet, input: Input): String {
         val formatter = DataFormatter()
-        val headerRow = sheet.getRow(0) ?: return "Empty sheet"
+        val headers = sheet.getHeaders(formatter)
+        if (headers.isEmpty()) return "Empty sheet"
 
-        val headers = mutableListOf<String>()
-        for (cell in headerRow) headers.add(formatter.formatCellValue(cell).trim())
+        val colIdx = input.column?.let { col ->
+            headers.indexOf(col).also { if (it == -1) throw BadInputException("Column '$col' not found. Available: ${headers.joinToString()}") }
+        } ?: -1
 
-        val colIdx = input.column?.let { headers.indexOf(it) } ?: -1
-        val groupIdx = input.groupBy?.let { headers.indexOf(it) } ?: -1
+        val groupIdx = input.groupBy?.let { col ->
+            headers.indexOf(col).also { if (it == -1) throw BadInputException("Group column '$col' not found. Available: ${headers.joinToString()}") }
+        } ?: -1
 
-        if (input.column != null && colIdx == -1) {
-            return "Column '${input.column}' not found. Available: ${headers.joinToString(", ")}"
+        val filterPair = input.filter?.let { filter ->
+            val (colName, value) = parseCondition(filter)
+            val idx = headers.indexOf(colName)
+            if (idx == -1) throw BadInputException("Filter column '$colName' not found. Available: ${headers.joinToString()}")
+            idx to value
         }
-        
-        if (input.groupBy != null && groupIdx == -1) {
-             return "Group column '${input.groupBy}' not found. Available: ${headers.joinToString(", ")}"
-        }
-
-        // Parse filter
-        val filterPair = input.filter?.split("=", limit = 2)?.let {
-            val colName = it[0].trim()
-            val colIndex = headers.indexOf(colName)
-            if (colIndex == -1) return "Filter column '$colName' not found. Available: ${headers.joinToString(", ")}"
-            colIndex to it[1].trim()
-        }
-
-        if (input.filter != null && filterPair is String) return filterPair // Error message
 
         val groups = mutableMapOf<String, MutableList<Double>>()
         val limit = input.limit ?: 10
-        
-        val filterColIdx = (filterPair as? Pair<Int, String>)?.first
-        val filterValue = (filterPair as? Pair<Int, String>)?.second
 
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
 
-            // Apply filter
-            if (filterColIdx != null && filterValue != null) {
-                val cell = row.getCell(filterColIdx) ?: continue
-                val valInCell = formatter.formatCellValue(cell).trim()
-                if (!valInCell.equals(filterValue, ignoreCase = true)) continue
+            if (filterPair != null) {
+                val cellValue = formatter.formatCellValue(row.getCell(filterPair.first)).trim()
+                if (!cellValue.equals(filterPair.second, ignoreCase = true)) continue
             }
 
             val groupKey = if (groupIdx >= 0) {
                 formatter.formatCellValue(row.getCell(groupIdx)).trim().ifEmpty { "(empty)" }
             } else "total"
 
-            if (colIdx >= 0) {
-                val cell = row.getCell(colIdx)
-                val value = when (cell?.cellType) {
-                    CellType.NUMERIC -> cell.numericCellValue
-                    CellType.STRING -> cell.stringCellValue.toDoubleOrNull() ?: 0.0
-                    else -> 0.0
-                }
-                groups.getOrPut(groupKey) { mutableListOf() }.add(value)
-            } else {
-                groups.getOrPut(groupKey) { mutableListOf() }.add(1.0)
-            }
+            val value = if (colIdx >= 0) {
+                row.getCell(colIdx)?.let { cell ->
+                    when (cell.cellType) {
+                        CellType.NUMERIC -> cell.numericCellValue
+                        CellType.STRING -> cell.stringCellValue.toDoubleOrNull() ?: 0.0
+                        else -> 0.0
+                    }
+                } ?: 0.0
+            } else 1.0
+
+            groups.getOrPut(groupKey) { mutableListOf() }.add(value)
         }
 
         val agg = input.aggregation?.uppercase() ?: "COUNT"
@@ -250,25 +232,21 @@ class ExcelRead(
     private fun readCell(sheet: Sheet, range: String): String {
         val formatter = DataFormatter()
 
-        // Parse range like "A1" or "A1:C3"
-        if (range.contains(":")) {
+        return if (":" in range) {
             val (start, end) = range.split(":")
-            val startRef = parseCellRef(start)
-            val endRef = parseCellRef(end)
+            val (startRow, startCol) = parseCellRef(start)
+            val (endRow, endCol) = parseCellRef(end)
 
-            val result = StringBuilder()
-            for (r in startRef.first..endRef.first) {
-                val row = sheet.getRow(r) ?: continue
-                val values = (startRef.second..endRef.second).map { c ->
-                    formatter.formatCellValue(row.getCell(c))
+            (startRow..endRow).mapNotNull { r ->
+                sheet.getRow(r)?.let { row ->
+                    (startCol..endCol).joinToString("\t") { c ->
+                        formatter.formatCellValue(row.getCell(c))
+                    }
                 }
-                result.appendLine(values.joinToString("\t"))
-            }
-            return result.toString().trim()
+            }.joinToString("\n")
         } else {
             val (rowIdx, colIdx) = parseCellRef(range)
-            val row = sheet.getRow(rowIdx) ?: return "(empty)"
-            return formatter.formatCellValue(row.getCell(colIdx))
+            sheet.getRow(rowIdx)?.let { formatter.formatCellValue(it.getCell(colIdx)) } ?: "(empty)"
         }
     }
 
@@ -278,16 +256,11 @@ class ExcelRead(
         val returnColumn = input.returnColumn ?: throw BadInputException("returnColumn required")
 
         val formatter = DataFormatter()
-        val headerRow = sheet.getRow(0) ?: return "Empty sheet"
+        val lookupIdx = sheet.findColumnIndex(lookupColumn, formatter)
+        val returnIdx = sheet.findColumnIndex(returnColumn, formatter)
 
-        val headers = mutableListOf<String>()
-        for (cell in headerRow) headers.add(formatter.formatCellValue(cell).trim())
-
-        val lookupIdx = headers.indexOf(lookupColumn)
-        val returnIdx = headers.indexOf(returnColumn)
-
-        if (lookupIdx == -1) return "Column '$lookupColumn' not found"
-        if (returnIdx == -1) return "Column '$returnColumn' not found"
+        if (lookupIdx == -1) throw BadInputException("Column '$lookupColumn' not found")
+        if (returnIdx == -1) throw BadInputException("Column '$returnColumn' not found")
 
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -299,16 +272,4 @@ class ExcelRead(
 
         return "Not found: '$lookupValue'"
     }
-
-    private fun parseCellRef(ref: String): Pair<Int, Int> {
-        val match = Regex("([A-Z]+)(\\d+)").matchEntire(ref.uppercase())
-            ?: throw BadInputException("Invalid cell reference: $ref")
-        val col = match.groupValues[1].fold(0) { acc, c -> acc * 26 + (c - 'A' + 1) } - 1
-        val row = match.groupValues[2].toInt() - 1
-        return row to col
-    }
-
-    private fun formatNum(d: Double): String = if (d == d.toLong().toDouble()) d.toLong().toString() else "%.2f".format(d)
-
-    private fun List<String>.toJsonArray() = joinToString(",", "[", "]") { "\"${it.replace("\"", "\\\"")}\"" }
 }
