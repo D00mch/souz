@@ -1,4 +1,4 @@
-package ru.gigadesk.tool.excel
+package ru.gigadesk.tool.dataAnalytics.excel
 
 import org.apache.poi.ss.usermodel.*
 import ru.gigadesk.tool.*
@@ -7,12 +7,16 @@ import ru.gigadesk.tool.files.ForbiddenFolder
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.text.SimpleDateFormat
+import java.util.Date
 
 enum class TransformOperation {
     SORT,
     DEDUPLICATE,
-    PIVOT, // Basic pivot: Group By -> Aggregate
-    FORMAT // Format values in a column
+    PIVOT,
+    FORMAT
 }
 
 class ExcelTransform(
@@ -90,7 +94,6 @@ class ExcelTransform(
         try {
             var sheet = workbook.getSheetAt(0)
 
-            // Handle outSheet for non-Pivot operations (Pivot creates its own)
             if (input.operation != TransformOperation.PIVOT && !input.outSheet.isNullOrBlank()) {
                 val sheetIdx = workbook.getSheetIndex(sheet)
                 sheet = workbook.cloneSheet(sheetIdx)
@@ -103,19 +106,17 @@ class ExcelTransform(
                 TransformOperation.PIVOT -> pivot(workbook, sheet, input)
                 TransformOperation.FORMAT -> format(sheet, input)
             }
-            
-            // Atomic Save: Write to temp file first, then replace original
+
             val tempFile = File(file.parentFile, "${file.name}.${System.currentTimeMillis()}.tmp")
             FileOutputStream(tempFile).use { workbook.write(it) }
             
             try {
-                java.nio.file.Files.move(
+                Files.move(
                     tempFile.toPath(), 
                     file.toPath(), 
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                    StandardCopyOption.REPLACE_EXISTING
                 )
             } catch (e: Exception) {
-                // Fallback for some OS/Filesystem locks
                 tempFile.delete()
                 throw e
             }
@@ -156,9 +157,6 @@ class ExcelTransform(
             if (isDesc) -res else res
         }
 
-        // Re-write rows (simplified value swap)
-        // We read all data first to avoid overwriting issues during swap if we were moving rows
-        // But here we just extract values and write them back in new order
         val data = rows.map { row ->
             (0 until row.lastCellNum).map { c ->
                 val cell = row.getCell(c)
@@ -174,7 +172,6 @@ class ExcelTransform(
             }
         }
 
-        // Write back
         data.forEachIndexed { i, rowData ->
              val row = sheet.getRow(i + 1) ?: sheet.createRow(i + 1)
              rowData.forEachIndexed { c, (type, value) ->
@@ -308,7 +305,6 @@ class ExcelTransform(
             }
             
             if (formatted != original) {
-                // Aggressive update to ensure change is applied (fixes silent persistence failure)
                 cell.setBlank()
                 cell.setCellValue(formatted)
                 count++
@@ -319,17 +315,13 @@ class ExcelTransform(
 
     private fun formatDate(cell: Cell, original: String, pattern: String): String {
         try {
-            // 1. Try to parse "original" as a string date
-            // Common formats: dd.MM.yyyy, yyyy-MM-dd, dd-MM-yyyy, etc.
             val d = parseDate(original)
-            
-            // 2. If null, check if cell is numeric (Excel date)
+
             val dateObj = if (d != null) {
                 d
             } else if (cell.cellType == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
                 cell.dateCellValue
             } else if (cell.cellType == CellType.NUMERIC) {
-                // Sometimes numeric but not marked as date
                  DateUtil.getJavaDate(cell.numericCellValue)
             } else {
                 return original // Can't parse
@@ -337,24 +329,23 @@ class ExcelTransform(
             
             if (dateObj == null) return original
 
-            // 3. Format to target pattern
-            return java.text.SimpleDateFormat(pattern).format(dateObj)
+            return SimpleDateFormat(pattern).format(dateObj)
         } catch (e: Exception) {
             return original
         }
     }
 
-    private fun parseDate(str: String): java.util.Date? {
+    private fun parseDate(str: String): Date? {
         val formats = listOf(
             "dd.MM.yyyy", "dd.MM.yy",
             "yyyy-MM-dd", "yyyy/MM/dd",
             "dd-MM-yyyy", "dd/MM/yyyy",
-            "MM/dd/yyyy", // US
+            "MM/dd/yyyy",
             "d.M.yyyy", "d.M.yy"
         )
         for (fmt in formats) {
             try {
-                val sdf = java.text.SimpleDateFormat(fmt)
+                val sdf = SimpleDateFormat(fmt)
                 sdf.isLenient = false
                 return sdf.parse(str.trim())
             } catch (e: Exception) { continue }
@@ -363,30 +354,23 @@ class ExcelTransform(
     }
     
     private fun formatPhoneRu(phone: String): String {
-        // Remove everything except digits
         val digits = phone.filter { it.isDigit() }
-        if (digits.length == 10) { // 900 123 45 67 -> +7 ...
+        if (digits.length == 10) {
             return "+7 (${digits.substring(0,3)}) ${digits.substring(3,6)} ${digits.substring(6,8)} ${digits.substring(8,10)}"
         }
         if (digits.length == 11 && (digits.startsWith("7") || digits.startsWith("8"))) {
             val tail = digits.substring(1)
             return "+7 (${tail.substring(0,3)}) ${tail.substring(3,6)} ${tail.substring(6,8)} ${tail.substring(8,10)}"
         }
-        return phone // Return original if pattern doesn't match
+        return phone
     }
 
     private fun formatPhoneInternational(phone: String): String {
-        // Just ensure it starts with + and has digits. Very basic specific logic can be added if needed.
-        // For general usage: remove non-digits/plus, maybe add spaces?
-        // Let's keep it simple: Ensure + at start, then groups of digits.
-        // Actually, user just wants "international format". Let's assume generic cleaning.
         val digits = phone.filter { it.isDigit() }
         if (digits.isEmpty()) return phone
-        
-        // If it looks like RU (starts with 7 or 8 and len 11), treat as RU international +7 ...
+
         if (digits.length == 11 && (digits.startsWith("7") || digits.startsWith("8"))) {
              val tail = digits.substring(1)
-             // +7 XXX XXX XXXX generic
              return "+7 ${tail.substring(0,3)} ${tail.substring(3,6)} ${tail.substring(6)}"
         }
          

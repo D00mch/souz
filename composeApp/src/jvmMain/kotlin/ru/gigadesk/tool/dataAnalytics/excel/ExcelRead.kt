@@ -1,4 +1,4 @@
-package ru.gigadesk.tool.excel
+package ru.gigadesk.tool.dataAnalytics.excel
 
 import org.apache.poi.ss.usermodel.*
 import org.apache.poi.openxml4j.util.ZipSecureFile
@@ -11,10 +11,10 @@ import java.io.File
  * Smart Excel reading with multiple operations.
  */
 enum class ReadOperation {
-    STRUCTURE,  // Get file structure: columns, types, stats
-    QUERY,      // Filter + aggregate data
-    CELL,       // Read specific cell/range
-    LOOKUP      // VLOOKUP between sheets
+    STRUCTURE,
+    QUERY,
+    CELL,
+    LOOKUP
 }
 
 class ExcelRead(
@@ -196,7 +196,7 @@ class ExcelRead(
             if (colIndex == -1) return "Filter column '$colName' not found. Available: ${headers.joinToString(", ")}"
             colIndex to it[1].trim()
         }
-        
+
         if (input.filter != null && filterPair is String) return filterPair // Error message
 
         val groups = mutableMapOf<String, MutableList<Double>>()

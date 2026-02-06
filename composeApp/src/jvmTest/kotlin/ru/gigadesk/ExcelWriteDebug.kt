@@ -1,7 +1,7 @@
 package ru.gigadesk
 
-import ru.gigadesk.tool.excel.ExcelWrite
-import ru.gigadesk.tool.excel.WriteOperation
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelWrite
+import ru.gigadesk.tool.dataAnalytics.excel.WriteOperation
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.db.SettingsProvider

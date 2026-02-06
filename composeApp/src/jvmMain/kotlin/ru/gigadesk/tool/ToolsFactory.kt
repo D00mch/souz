@@ -11,8 +11,12 @@ import ru.gigadesk.tool.browser.*
 import ru.gigadesk.tool.calendar.*
 import ru.gigadesk.tool.config.*
 import ru.gigadesk.tool.dataAnalytics.ToolCreatePlotFromCsv
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelCreate
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelJoin
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelRead
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelTransform
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelWrite
 import ru.gigadesk.tool.desktop.*
-import ru.gigadesk.tool.excel.*
 import ru.gigadesk.tool.files.*
 import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*

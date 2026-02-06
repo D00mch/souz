@@ -1,4 +1,4 @@
-package ru.gigadesk.tool.excel
+package ru.gigadesk.tool.dataAnalytics.excel
 
 import org.apache.poi.ss.usermodel.*
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
@@ -99,16 +99,13 @@ class ExcelJoin(
         val targetFile = resolveFile(targetPath)
         val sourceFile = resolveFile(sourcePath)
 
-        // Read source map: Key -> Value
         val sourceMap = readColumnMap(sourceFile, sourceKeyCol, sourceValCol)
 
-        // Update target
         val workbook = FileInputStream(targetFile).use { WorkbookFactory.create(it) }
         try {
             val sheet = workbook.getSheetAt(0)
             val formatter = DataFormatter()
-            
-            // Find key column index
+
             val headerRow = sheet.getRow(0) ?: throw BadInputException("Target file empty")
             var keyIdx = -1
             var newColIdx = -1
@@ -120,7 +117,6 @@ class ExcelJoin(
 
             if (keyIdx == -1) throw BadInputException("Key column '$keyCol' not found in target")
 
-            // Check if target column exists or create new
             for (cell in headerRow) {
                  if (formatter.formatCellValue(cell).trim().equals(targetColName, true)) {
                      newColIdx = cell.columnIndex
@@ -190,20 +186,15 @@ class ExcelJoin(
                     
                     if (headers == null) {
                         headers = currentHeaders
-                        // Write headers
                         val hRow = outSheet.createRow(rowIdx++)
                         currentHeaders.forEachIndexed { i, h -> hRow.createCell(i).setCellValue(h) }
-                        // Add "Source File" column
                         hRow.createCell(currentHeaders.size).setCellValue("Source File")
                     }
 
-                    // Append rows
                     for (i in 1..sheet.lastRowNum) {
                         val row = sheet.getRow(i) ?: continue
                         val newRow = outSheet.createRow(rowIdx++)
-                        
-                        // Map by index for now (assuming same schema)
-                        // Ideally matches by name
+
                         for (c in 0 until row.lastCellNum) {
                             val cell = row.getCell(c) ?: continue
                             val newCell = newRow.createCell(c)

@@ -1,13 +1,14 @@
-package ru.gigadesk.tool.excel
+package ru.gigadesk.tool.dataAnalytics.excel
 
 import org.apache.poi.ss.usermodel.*
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ForbiddenFolder
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Write operations for Excel files.
@@ -33,7 +34,6 @@ class ExcelWrite(
         @InputParamDescription("Sheet name (optional, default: first sheet)")
         val sheet: String? = null,
 
-        // For SET_CELL
         @InputParamDescription("Cell address like 'B5' (for SET_CELL)")
         val cell: String? = null,
 
@@ -43,11 +43,9 @@ class ExcelWrite(
         @InputParamDescription("Formula like '=SUM(A1:A10)' (for SET_CELL, starts with =)")
         val formula: String? = null,
 
-        // For ADD_ROW
         @InputParamDescription("Row values as comma-separated or JSON array (for ADD_ROW)")
         val rowData: String? = null,
 
-        // For UPDATE_ROWS / DELETE_ROWS
         @InputParamDescription("Condition like 'Status=Pending' (for UPDATE/DELETE)")
         val where: String? = null,
 
@@ -105,15 +103,14 @@ Operations:
                 WriteOperation.DELETE_ROWS -> deleteRows(sheet, input)
             }
 
-            // Atomic Save: properties matching ExcelTransform fix
             val tempFile = File(file.parentFile, "${file.name}.${System.currentTimeMillis()}.tmp")
             FileOutputStream(tempFile).use { workbook.write(it) }
             
             try {
-                java.nio.file.Files.move(
+                Files.move(
                     tempFile.toPath(), 
                     file.toPath(), 
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                    StandardCopyOption.REPLACE_EXISTING
                 )
             } catch (e: Exception) {
                 tempFile.delete()
@@ -229,7 +226,6 @@ Operations:
             }
         }
 
-        // Delete from bottom to top to preserve indices
         rowsToDelete.sortedDescending().forEach { rowIdx ->
             val row = sheet.getRow(rowIdx)
             if (row != null) {

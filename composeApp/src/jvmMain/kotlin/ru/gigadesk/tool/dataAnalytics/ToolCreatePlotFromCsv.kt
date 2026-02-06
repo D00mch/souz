@@ -59,12 +59,12 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
             params = mapOf("path" to "~/sales.xlsx")
         ),
         FewShotExample(
-            request = "Построй график из report.csv, ось X - Month, Y - Sales",
+            request = "Построй график объема продаж в каждом месяце из report.csv",
             params = mapOf(
                 "path" to "~/data/report.csv",
                 "xColumn" to "Month",
                 "yColumn" to "Sales",
-                "chartType" to "LINE"
+                "chartType" to "BAR"
             )
         )
     )
@@ -91,7 +91,6 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
         outputFile.parentFile?.mkdirs()
         filesToolUtil.requirePathIsSave(outputFile)
 
-        // Определяем стратегию парсинга по расширению файла
         val extension = inputFile.extension.lowercase(Locale.getDefault())
 
         val dataResult = when (extension) {
@@ -100,7 +99,6 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
             else -> throw BadInputException("Unsupported file extension: .$extension. Use CSV, XLS, or XLSX.")
         }
 
-        // Если вернулись только заголовки (пользователь не указал колонки)
         if (dataResult.isHeadersOnly) {
             return "Columns required. Available headers: ${dataResult.headers}"
         }
@@ -108,12 +106,10 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
         val dataMap = dataResult.data
         if (dataMap.isEmpty()) throw BadInputException("No valid data found in selected columns.")
 
-        // Сортировка и подготовка данных для графика
         val sortedData = dataMap.toList().sortedByDescending { it.second }
         val xData = sortedData.map { it.first }
         val yData = sortedData.map { it.second }
 
-        // Построение графика
         val plot = createPlot(xData, yData, input)
         ggsave(plot, outputFile.absolutePath)
         openFileInOS(outputFile)
@@ -121,7 +117,6 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
         return "Plot saved to ${outputFile.absolutePath}"
     }
 
-    // --- Логика для CSV ---
     private fun parseCsv(file: File, xCol: String?, yCol: String?): ParsedData {
         val format = CSVFormat.DEFAULT.builder()
             .setHeader()
@@ -153,18 +148,14 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
         }
     }
 
-    // --- Логика для Excel ---
     private fun parseExcel(file: File, xCol: String?, yCol: String?): ParsedData {
         FileInputStream(file).use { fis ->
-            // WorkbookFactory автоматически определяет формат (xls или xlsx)
             val workbook = WorkbookFactory.create(fis)
-            // Берем первый лист
             val sheet = workbook.getSheetAt(0)
-            val formatter = DataFormatter() // Помогает корректно читать значения как строки
+            val formatter = DataFormatter()
 
-            // Получаем заголовки (первая строка)
             val headerRow = sheet.getRow(0) ?: throw BadInputException("Excel sheet is empty")
-            val headersMap = mutableMapOf<String, Int>() // Имя колонки -> Индекс
+            val headersMap = mutableMapOf<String, Int>()
 
             for (cell in headerRow) {
                 headersMap[formatter.formatCellValue(cell).trim()] = cell.columnIndex
@@ -177,8 +168,6 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
 
             validateColumns(headers, xCol, yCol)
 
-            // Определяем индексы нужных колонок
-            // Ищем case-insensitive соответствие
             val xIndex = headersMap.entries.find { it.key.equals(xCol, ignoreCase = true) }?.value!!
             val yIndex = headersMap.entries.find { it.key.equals(yCol, ignoreCase = true) }?.value!!
 
@@ -192,7 +181,6 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
                     val valueCell = row.getCell(yIndex)
 
                     val category = formatter.formatCellValue(categoryCell)
-                    // Для значения берем сырое значение, если возможно, или отформатированное
                     val valueStr = when(valueCell?.cellType) {
                         CellType.NUMERIC -> valueCell.numericCellValue.toString()
                         CellType.FORMULA -> {
@@ -212,10 +200,8 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
         }
     }
 
-    // --- Общие утилиты ---
 
     private fun validateColumns(headers: List<String>, xCol: String, yCol: String) {
-        // Простая проверка (case-insensitive)
         val headersLower = headers.map { it.lowercase() }
         if (!headersLower.contains(xCol.lowercase()) || !headersLower.contains(yCol.lowercase())) {
             throw BadInputException("Missing columns. Found: $headers. Requested: $xCol, $yCol")
@@ -259,7 +245,6 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
         }
     }
 
-    // Вспомогательный класс для передачи результатов парсинга
     private data class ParsedData(
         val headers: List<String>,
         val data: Map<String, Double> = emptyMap(),
@@ -267,7 +252,6 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
     )
 }
 
-// Пример запуска
 fun main() {
     val tool = ToolCreatePlotFromCsv(FilesToolUtil(SettingsProviderImpl(ConfigStore)))
     println(tool.invoke(ToolCreatePlotFromCsv.Input(

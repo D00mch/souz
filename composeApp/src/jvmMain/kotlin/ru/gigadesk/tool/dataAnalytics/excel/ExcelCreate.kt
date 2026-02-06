@@ -1,4 +1,4 @@
-package ru.gigadesk.tool.excel
+package ru.gigadesk.tool.dataAnalytics.excel
 
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import ru.gigadesk.tool.*

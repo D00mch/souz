@@ -2,6 +2,9 @@ package ru.gigadesk.tool.excel
 
 import io.mockk.every
 import io.mockk.mockk
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelCreate
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelWrite
+import ru.gigadesk.tool.dataAnalytics.excel.WriteOperation
 import kotlin.test.Test
 import ru.gigadesk.tool.files.FilesToolUtil
 import java.io.File
