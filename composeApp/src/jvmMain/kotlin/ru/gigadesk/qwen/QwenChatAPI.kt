@@ -24,6 +24,8 @@ import io.ktor.http.isSuccess
 import io.ktor.serialization.jackson.jackson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import org.kodein.di.DI
+import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaMessageRole
@@ -31,8 +33,13 @@ import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.giga.toFinishReason
+import ru.gigadesk.giga.toGiga
+import ru.gigadesk.di.mainDiModule
+import ru.gigadesk.tool.files.FilesToolUtil
+import ru.gigadesk.tool.files.ToolListFiles
 import java.io.File
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.measureTime
 
 class QwenChatAPI : GigaChatAPI {
     private val l = LoggerFactory.getLogger(QwenChatAPI::class.java)
@@ -385,4 +392,47 @@ class QwenChatAPI : GigaChatAPI {
         private const val GENERATION_SSE_URL =
             "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
     }
+}
+
+suspend fun main() {
+    val di = DI.invoke { import(mainDiModule) }
+    val filesToolUtil: FilesToolUtil by di.instance()
+    val api = QwenChatAPI()
+
+    val model = System.getenv("QWEN_MODEL")
+        ?: System.getProperty("QWEN_MODEL")
+        ?: "qwen-flash"
+
+    val request = GigaRequest.Chat(
+        model = model,
+        stream = true,
+        messages = listOf(
+            GigaRequest.Message(
+                role = GigaMessageRole.system,
+                content = """
+                    Ты помощник, который при необходимости вызывает функции и отвечает по-русски.
+                """.trimIndent()
+            ),
+            GigaRequest.Message(
+                role = GigaMessageRole.user,
+                content = "Покажи первые 5 файлов в домашней директории, используй функцию.",
+            ),
+        ),
+        functions = listOf(
+            ToolListFiles(filesToolUtil).toGiga(),
+        ).map { it.fn }
+    )
+
+    val allTime = measureTime {
+        val result = api.messageStream(request)
+        val millis = System.currentTimeMillis()
+        val first by lazy {
+            println("First response in ${System.currentTimeMillis() - millis}")
+        }
+        result.collect { response ->
+            first
+            println("Response: $response")
+        }
+    }
+    println("All time: $allTime")
 }
