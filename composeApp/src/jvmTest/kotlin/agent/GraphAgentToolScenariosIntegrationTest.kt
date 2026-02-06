@@ -3,7 +3,9 @@ package agent
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.mockkStatic
 import io.mockk.spyk
+import io.mockk.unmockkStatic
 import ru.gigadesk.tool.ToolRunBashCommand
 import kotlinx.coroutines.test.runTest
 import org.kodein.di.DI
@@ -177,15 +179,29 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario4_findSiteInHistory(userPrompt: String) = runTest {
-        val realTool = ToolCreateNewBrowserTab(ToolRunBashCommand)
-        val toolCreateNewBrowserTab: ToolCreateNewBrowserTab = spyk(realTool)
+        mockkStatic("ru.gigadesk.tool.browser.DefaultBrowserKt")
+        every { ToolRunBashCommand.detectDefaultBrowser() } returns BrowserType.CHROME
 
+        val toolChromeInfo: ToolChromeInfo = spyk(ToolChromeInfo(ToolRunBashCommand))
+        val toolSafariInfo: ToolSafariInfo = spyk(ToolSafariInfo(ToolRunBashCommand))
+        val toolCreateNewBrowserTab: ToolCreateNewBrowserTab = spyk(ToolCreateNewBrowserTab(ToolRunBashCommand))
+
+        coEvery { toolChromeInfo.invoke(any()) } returns "2026-01-01|https://example.com|Example Domain"
+        coEvery { toolSafariInfo.invoke(any()) } returns ""
         coEvery { toolCreateNewBrowserTab.invoke(any()) } returns "Opened"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
+        try {
+            runScenarioWithMocks(userPrompt) {
+                bindSingleton<ToolChromeInfo> { toolChromeInfo }
+                bindSingleton<ToolSafariInfo> { toolSafariInfo }
+                bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
+            }
+            coVerify(atLeast = 1) {
+                toolChromeInfo.invoke(match { it.type == ToolChromeInfo.InfoType.history })
+            }
+        } finally {
+            unmockkStatic("ru.gigadesk.tool.browser.DefaultBrowserKt")
         }
-        coVerify(atLeast = 0) { toolCreateNewBrowserTab.invoke(any()) }
     }
 
     @ParameterizedTest(name = "scenario5_readPageInOpenTab[{index}] {0}")
