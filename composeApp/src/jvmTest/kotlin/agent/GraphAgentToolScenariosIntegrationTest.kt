@@ -22,7 +22,6 @@ import ru.gigadesk.tool.files.*
 import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
-import kotlin.test.Test
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.params.ParameterizedTest
@@ -101,7 +100,7 @@ class GraphAgentToolScenariosIntegrationTest {
         strings = [
             "Открой сайт https://example.com",
             "Открой example dot com",
-            "Открой вкладку с example точка com",
+            "Открой в бразуере example точка com",
         ]
     )
     fun scenario2_openWebsite(userPrompt: String) = runTest {
@@ -129,14 +128,21 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(atLeast = 0) { toolCreateNewBrowserTab.invoke(match { it.url.contains("example.com") }) }
     }
 
-    @Test
-    fun scenario3_openWebsiteInNewTab() = runTest {
+    @ParameterizedTest(name = "scenario3_openWebsiteInNewTab[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Открой в новой вкладке сайт https://example.com",
+            "Создай новую вкладку с example точка com",
+            "Открой example dot com в отдельной вкладке браузера",
+        ]
+    )
+    fun scenario3_openWebsiteInNewTab(userPrompt: String) = runTest {
         val realTool = ToolCreateNewBrowserTab(ToolRunBashCommand)
         val toolCreateNewBrowserTab: ToolCreateNewBrowserTab = spyk(realTool)
 
         coEvery { toolCreateNewBrowserTab.invoke(any()) } returns "Tab opened"
 
-        runScenarioWithMocks("Открой в новой вкладке сайт https://example.com") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
         }
         coVerify(exactly = 1) {
@@ -144,21 +150,35 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario4_findSiteInHistory() = runTest {
+    @ParameterizedTest(name = "scenario4_findSiteInHistory[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Найди в истории браузера сайт example",
+            "Проверь историю и открой сайт example com",
+            "Посмотри, был ли в истории example",
+        ]
+    )
+    fun scenario4_findSiteInHistory(userPrompt: String) = runTest {
         val realTool = ToolCreateNewBrowserTab(ToolRunBashCommand)
         val toolCreateNewBrowserTab: ToolCreateNewBrowserTab = spyk(realTool)
 
         coEvery { toolCreateNewBrowserTab.invoke(any()) } returns "Opened"
 
-        runScenarioWithMocks("Найди в истории браузера сайт example") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
         }
         coVerify(atLeast = 0) { toolCreateNewBrowserTab.invoke(any()) }
     }
 
-    @Test
-    fun scenario5_readPageInOpenTab() = runTest {
+    @ParameterizedTest(name = "scenario5_readPageInOpenTab[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Прочитай содержимое текущей открытой вкладки",
+            "Покажи текст страницы в активной вкладке",
+            "Извлеки текст из открытой вкладки браузера",
+        ]
+    )
+    fun scenario5_readPageInOpenTab(userPrompt: String) = runTest {
         val realSafari = ToolSafariInfo(ToolRunBashCommand)
         val toolSafariInfo: ToolSafariInfo = spyk(realSafari)
 
@@ -168,7 +188,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolSafariInfo.invoke(any()) } returns "Page content"
         coEvery { toolChromeInfo.invoke(any()) } returns "Page content"
 
-        runScenarioWithMocks("Прочитай содержимое текущей открытой вкладки") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolSafariInfo> { toolSafariInfo }
             bindSingleton<ToolChromeInfo> { toolChromeInfo }
         }
@@ -181,27 +201,41 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario6_todayCalendarEvents() = runTest {
+    @ParameterizedTest(name = "scenario6_todayCalendarEvents[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Покажи сегодняшние события в календаре",
+            "Какие у меня события на сегодня в календаре?",
+            "Выведи список дел из календаря на сегодня",
+        ]
+    )
+    fun scenario6_todayCalendarEvents(userPrompt: String) = runTest {
         val realTool = ToolCalendarListEvents(ToolRunBashCommand)
         val toolCalendarListEvents: ToolCalendarListEvents = spyk(realTool)
 
         coEvery { toolCalendarListEvents.invoke(any()) } returns "[]"
 
-        runScenarioWithMocks("Покажи сегодняшние события в календаре") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCalendarListEvents> { toolCalendarListEvents }
         }
         coVerify(exactly = 1) { toolCalendarListEvents.invoke(any()) }
     }
 
-    @Test
-    fun scenario7_createCalendarEvent() = runTest {
+    @ParameterizedTest(name = "scenario7_createCalendarEvent[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Создай событие в календаре: встреча завтра в 10:00",
+            "Добавь в календарь встречу завтра на десять ноль ноль",
+            "Запланируй событие \"встреча\" на завтра в 10 утра",
+        ]
+    )
+    fun scenario7_createCalendarEvent(userPrompt: String) = runTest {
         val realTool = ToolCalendarCreateEvent(ToolRunBashCommand)
         val toolCalendarCreateEvent: ToolCalendarCreateEvent = spyk(realTool)
 
         coEvery { toolCalendarCreateEvent.invoke(any()) } returns "Event created"
 
-        runScenarioWithMocks("Создай событие в календаре: встреча завтра в 10:00") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCalendarCreateEvent> { toolCalendarCreateEvent }
         }
         coVerify(exactly = 1) {
@@ -209,8 +243,15 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario8_deleteCalendarEvent() = runTest {
+    @ParameterizedTest(name = "scenario8_deleteCalendarEvent[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Удали событие из календаря на завтра в 10:00",
+            "Найди и удали событие завтра в 10:00",
+            "Удалить встречу в календаре завтра в 10 утра",
+        ]
+    )
+    fun scenario8_deleteCalendarEvent(userPrompt: String) = runTest {
         val realToolList = ToolCalendarListEvents(ToolRunBashCommand)
         val toolCalendarListEvents: ToolCalendarListEvents = spyk(realToolList)
 
@@ -220,7 +261,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolCalendarListEvents.invoke(any()) } returns "10:00 - 11:00: Важная встреча"
         coEvery { toolCalendarDeleteEvent.invoke(any()) } returns "Deleted"
 
-        runScenarioWithMocks("Удали событие из календаря на завтра в 10:00") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCalendarListEvents> { toolCalendarListEvents }
             bindSingleton<ToolCalendarDeleteEvent> { toolCalendarDeleteEvent }
         }
@@ -232,28 +273,41 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario9_findCalendarEvent() = runTest {
+    @ParameterizedTest(name = "scenario9_findCalendarEvent[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Найди событие в календаре на эту неделю",
+            "Покажи события в календаре на текущую неделю",
+            "Поищи в календаре встречи на этой неделе",
+        ]
+    )
+    fun scenario9_findCalendarEvent(userPrompt: String) = runTest {
         val realTool = ToolCalendarListEvents(ToolRunBashCommand)
         val toolCalendarListEvents: ToolCalendarListEvents = spyk(realTool)
 
         coEvery { toolCalendarListEvents.invoke(any()) } returns "[]"
 
-        runScenarioWithMocks("Найди событие в календаре на эту неделю") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCalendarListEvents> { toolCalendarListEvents }
         }
         coVerify(exactly = 1) { toolCalendarListEvents.invoke(any()) }
     }
 
-    @Test
-    fun scenario11_buildChartFromFile() = runTest {
+    @ParameterizedTest(name = "scenario11_buildChartFromFile[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Построй график возраста по имени из файла sample.csv по пути /tmp/test-data",
+            "Сделай график из /tmp/test-data/sample.csv по полям имя и возраст",
+            "Построй chart по sample.csv из папки /tmp/test-data",
+        ]
+    )
+    fun scenario11_buildChartFromFile(userPrompt: String) = runTest {
         val realTool = ToolCreatePlotFromCsv(filesUtil)
         val toolCreatePlotFromCsv: ToolCreatePlotFromCsv = spyk(realTool)
 
         coEvery { toolCreatePlotFromCsv.invoke(any()) } returns "Plot saved"
 
-        val testDataPath = "/tmp/test-data"
-        runScenarioWithMocks("Построй график возраста по имени из файла sample.csv по пути $testDataPath") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCreatePlotFromCsv> { toolCreatePlotFromCsv }
         }
         coVerify(exactly = 1) {
@@ -261,15 +315,22 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario12_findFileByName() = runTest {
+    @ParameterizedTest(name = "scenario12_findFileByName[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Найди файл по имени 100 ошибок в го",
+            "Найди документ с названием 100 ошибок в го",
+            "Поищи файл \"100 ошибок в го\"",
+        ]
+    )
+    fun scenario12_findFileByName(userPrompt: String) = runTest {
         val realTool = ToolFindFilesByName(filesUtil)
         val toolFindFilesByName: ToolFindFilesByName = spyk(realTool)
 
         coEvery { toolFindFilesByName.invoke(any()) } returns "/path/to/test.txt"
         coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "/path/to/test.txt"
 
-        runScenarioWithMocks("Найди файл по имени 100 ошибок в го") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }
         coVerify(atLeast = 1) {
@@ -277,37 +338,56 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario13_listFilesInFolder() = runTest {
+    @ParameterizedTest(name = "scenario13_listFilesInFolder[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Покажи список файлов в папке /tmp/test-data",
+            "Перечисли файлы в директории /tmp/test-data",
+            "Что лежит в slash tmp slash test-data",
+        ]
+    )
+    fun scenario13_listFilesInFolder(userPrompt: String) = runTest {
         val realTool = ToolListFiles(filesUtil)
         val toolListFiles: ToolListFiles = spyk(realTool)
 
         coEvery { toolListFiles.invoke(any()) } returns "test.txt, read_me.txt, sample.csv"
 
-        val testDataPath = "/tmp/test-data"
-        runScenarioWithMocks("Покажи список файлов в папке $testDataPath") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolListFiles> { toolListFiles }
         }
         coVerify(exactly = 1) { toolListFiles.invoke(any()) }
     }
 
-    @Test
-    fun scenario14_createFile() = runTest {
+    @ParameterizedTest(name = "scenario14_createFile[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "В папке /tmp/test-data создай файл test_integration.txt с текстом Hello",
+            "Создай /tmp/test-data/test_integration.txt и запиши Hello",
+            "Нужен файл test_integration.txt в /tmp/test-data с содержимым Hello",
+        ]
+    )
+    fun scenario14_createFile(userPrompt: String) = runTest {
         val realToolNew = ToolNewFile(filesUtil)
         val toolNewFile: ToolNewFile = spyk(realToolNew)
 
         coEvery { toolNewFile.invoke(any()) } returns "Created"
 
-        val testDataPath = "/tmp/test-data"
         val tempFile = "test_integration.txt"
-        runScenarioWithMocks("В папке $testDataPath создай файл $tempFile с текстом Hello") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolNewFile> { toolNewFile }
         }
         coVerify(exactly = 1) { toolNewFile.invoke(match { it.path.contains(tempFile) && it.text.contains("Hello") }) }
     }
 
-    @Test
-    fun scenario14_readFile() = runTest {
+    @ParameterizedTest(name = "scenario14_readFile[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Прочитай файл test_integration.txt в папке /tmp/test-data",
+            "Открой и прочитай /tmp/test-data/test_integration.txt",
+            "Покажи содержимое файла test_integration.txt из /tmp/test-data",
+        ]
+    )
+    fun scenario14_readFile(userPrompt: String) = runTest {
         val realToolRead = ToolReadFile(filesUtil)
         val toolReadFile: ToolReadFile = spyk(realToolRead)
 
@@ -317,17 +397,23 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolReadFile.invoke(any()) } returns "Hello"
         coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
 
-        val testDataPath = "/tmp/test-data"
         val tempFile = "test_integration.txt"
-        runScenarioWithMocks("Прочитай файл $tempFile в папке $testDataPath") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolReadFile> { toolReadFile }
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }
         coVerify(exactly = 1) { toolReadFile.invoke(match { it.path.contains(tempFile) }) }
     }
 
-    @Test
-    fun scenario14_modifyFile() = runTest {
+    @ParameterizedTest(name = "scenario14_modifyFile[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Измени файл test_integration добавь новую строку World is over",
+            "В файл test_integration добавь строку World is over",
+            "Допиши в test_integration текст World is over новой строкой",
+        ]
+    )
+    fun scenario14_modifyFile(userPrompt: String) = runTest {
         val realToolMod = ToolModifyFile(filesUtil)
         val toolModifyFile: ToolModifyFile = spyk(realToolMod)
 
@@ -347,7 +433,7 @@ class GraphAgentToolScenariosIntegrationTest {
             "Modified"
         }
 
-        runScenarioWithMocks("Измени файл $tempFile добавь новую строку $appendText") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolReadFile> { toolReadFile }
             bindSingleton<ToolModifyFile> { toolModifyFile }
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
@@ -357,8 +443,15 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario14_deleteFile() = runTest {
+    @ParameterizedTest(name = "scenario14_deleteFile[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Удали файл test_integration.txt в папке /tmp/test-data",
+            "Удали /tmp/test-data/test_integration.txt",
+            "Нужно удалить файл test_integration.txt из slash tmp slash test-data",
+        ]
+    )
+    fun scenario14_deleteFile(userPrompt: String) = runTest {
         val realToolDel = ToolDeleteFile(filesUtil)
         val toolDeleteFile: ToolDeleteFile = spyk(realToolDel)
 
@@ -368,23 +461,29 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolDeleteFile.invoke(any()) } returns "Deleted"
         coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
 
-        val testDataPath = "/tmp/test-data"
         val tempFile = "test_integration.txt"
-        runScenarioWithMocks("Удали файл $tempFile в папке $testDataPath") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolDeleteFile> { toolDeleteFile }
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }
         coVerify(exactly = 1) { toolDeleteFile.invoke(match { it.path.contains(tempFile) }) }
     }
 
-    @Test
-    fun scenario15_moveFile() = runTest {
+    @ParameterizedTest(name = "scenario15_moveFile[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Перенеси файл read_me в папку dest",
+            "Перемести read_me в директорию dest",
+            "Сделай move файла read_me в папку dest",
+        ]
+    )
+    fun scenario15_moveFile(userPrompt: String) = runTest {
         val realTool = ToolMoveFile(filesUtil)
         val toolMoveFile: ToolMoveFile = spyk(realTool)
 
         coEvery { toolMoveFile.invoke(any()) } returns "Moved"
 
-        runScenarioWithMocks("Перенеси файл read_me в папку dest") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolMoveFile> { toolMoveFile }
         }
         coVerify(exactly = 1) {
@@ -392,14 +491,21 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario16_extractTextFromFile() = runTest {
+    @ParameterizedTest(name = "scenario16_extractTextFromFile[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Извлеки текст из файла /tmp/test.txt",
+            "Достань текстовое содержимое файла /tmp/test.txt",
+            "Прочитай и извлеки текст из test.txt по пути slash tmp",
+        ]
+    )
+    fun scenario16_extractTextFromFile(userPrompt: String) = runTest {
         val realTool = ToolExtractText(filesUtil)
         val toolExtractText: ToolExtractText = spyk(realTool)
 
         coEvery { toolExtractText.invoke(any()) } returns "Test content\nСтрока для проверки извлечения текста."
 
-        runScenarioWithMocks("Извлеки текст из файла /tmp/test.txt") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolExtractText> { toolExtractText }
         }
         coVerify(exactly = 1) {
@@ -407,14 +513,21 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario17_readPdfPageByPage() = runTest {
+    @ParameterizedTest(name = "scenario17_readPdfPageByPage[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Прочитай первую страницу PDF файла sample",
+            "Открой PDF sample и прочитай страницу 1",
+            "Считай первую страницу из файла sample.pdf",
+        ]
+    )
+    fun scenario17_readPdfPageByPage(userPrompt: String) = runTest {
         val realTool = ToolReadPdfPages(filesUtil)
         val toolReadPdfPages: ToolReadPdfPages = spyk(realTool)
 
         coEvery { toolReadPdfPages.invoke(any()) } returns "Page 1 content"
 
-        runScenarioWithMocks("Прочитай первую страницу PDF файла sample") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolReadPdfPages> { toolReadPdfPages }
         }
         coVerify(exactly = 1) {
@@ -422,14 +535,21 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario18_openFile() = runTest {
+    @ParameterizedTest(name = "scenario18_openFile[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Открой файл /tmp/read_me.txt",
+            "Открой документ read_me.txt из slash tmp",
+            "Запусти файл /tmp/read_me.txt",
+        ]
+    )
+    fun scenario18_openFile(userPrompt: String) = runTest {
         val realTool = ToolOpen(ToolRunBashCommand, filesUtil)
         val toolOpen: ToolOpen = spyk(realTool)
 
         coEvery { toolOpen.invoke(any()) } returns "Opened"
 
-        runScenarioWithMocks("Открой файл /tmp/read_me.txt") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolOpen> { toolOpen }
         }
         coVerify(exactly = 1) {
@@ -437,8 +557,15 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario19_notesFindCreateDeleteList() = runTest {
+    @ParameterizedTest(name = "scenario19_notesFindCreateDeleteList[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Создай заметку \"тест интеграции\", перечисли заметки, найди заметку тест, удали заметку тест интеграции",
+            "Сделай заметку тест интеграции, покажи список заметок, найди тест, затем удали тест интеграции",
+            "Работаем с заметками. Добавь заметку \"тест интеграции\", проверь список, найди ее и удали",
+        ]
+    )
+    fun scenario19_notesFindCreateDeleteList(userPrompt: String) = runTest {
         val toolCreateNote: ToolCreateNote = spyk(ToolCreateNote(ToolRunBashCommand))
         val toolListNotes: ToolListNotes = spyk(ToolListNotes(ToolRunBashCommand))
         val toolSearchNotes: ToolSearchNotes = spyk(ToolSearchNotes(ToolRunBashCommand))
@@ -462,7 +589,7 @@ class GraphAgentToolScenariosIntegrationTest {
             if (hasNote) "[\"$noteTitle\"]" else "[]"
         }
 
-        runScenarioWithMocks("Создай заметку \"$noteTitle\", перечисли заметки, найди заметку тест, удали заметку $noteTitle") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCreateNote> { toolCreateNote }
             bindSingleton<ToolListNotes> { toolListNotes }
             bindSingleton<ToolSearchNotes> { toolSearchNotes }
@@ -474,8 +601,15 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(exactly = 1) { toolDeleteNote.invoke(match { it.noteName.contains("тест") }) }
     }
 
-    @Test
-    fun scenario20_mailFindUnreadListReply() = runTest {
+    @ParameterizedTest(name = "scenario20_mailFindUnreadListReply[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Сколько непрочитанных писем? Перечисли последние письма. Найди письмо от сегодня.",
+            "Покажи число непрочитанных писем и перечисли последние письма.",
+            "Проверь unread письма и выведи список последних писем.",
+        ]
+    )
+    fun scenario20_mailFindUnreadListReply(userPrompt: String) = runTest {
         val toolMailUnreadMessagesCount: ToolMailUnreadMessagesCount =
             spyk(ToolMailUnreadMessagesCount(ToolRunBashCommand))
         val toolMailListMessages: ToolMailListMessages = spyk(ToolMailListMessages(ToolRunBashCommand))
@@ -483,7 +617,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolMailUnreadMessagesCount.invoke(any()) } returns "0"
         coEvery { toolMailListMessages.invoke(any()) } returns "[]"
 
-        runScenarioWithMocks("Сколько непрочитанных писем? Перечисли последние письма. Найди письмо от сегодня.") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolMailUnreadMessagesCount> { toolMailUnreadMessagesCount }
             bindSingleton<ToolMailListMessages> { toolMailListMessages }
         }
@@ -491,13 +625,20 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(exactly = 1) { toolMailListMessages.invoke(any()) }
     }
 
-    @Test
-    fun scenario21_sendEmail() = runTest {
+    @ParameterizedTest(name = "scenario21_sendEmail[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Напиши письмо на test собака example.com с темой Тест",
+            "Отправь email на test@example.com, тема: Тест",
+            "Создай новое письмо для test@example.com с темой Тест",
+        ]
+    )
+    fun scenario21_sendEmail(userPrompt: String) = runTest {
         val toolMailSendNewMessage: ToolMailSendNewMessage = spyk(ToolMailSendNewMessage(ToolRunBashCommand))
 
         coEvery { toolMailSendNewMessage.invoke(any()) } returns "Sent"
 
-        runScenarioWithMocks("Напиши письмо (тестовое) на test@example.com с темой Тест") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolMailSendNewMessage> { toolMailSendNewMessage }
         }
         coVerify(exactly = 1) {
@@ -505,13 +646,20 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 
-    @Test
-    fun scenario22_readSelectedText() = runTest {
+    @ParameterizedTest(name = "scenario22_readSelectedText[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Получи текст из буфера обмена или выделения и кратко перескажи",
+            "Возьми выделенный текст из clipboard и перескажи",
+            "Прочитай текст из буфера обмена и дай краткий пересказ",
+        ]
+    )
+    fun scenario22_readSelectedText(userPrompt: String) = runTest {
         val toolGetClipboard: ToolGetClipboard = spyk(ToolGetClipboard())
 
         coEvery { toolGetClipboard.invoke(any()) } returns "Selected text"
 
-        runScenarioWithMocks("Получи текст из буфера обмена или выделения и кратко перескажи") {
+        runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolGetClipboard> { toolGetClipboard }
         }
         coVerify(exactly = 1) { toolGetClipboard.invoke(any()) }
