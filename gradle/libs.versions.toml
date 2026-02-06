@@ -26,6 +26,7 @@ protobuf = "3.25.3"
 protobufGradlePlugin = "0.9.4"
 slfj = "2.0.17"
 tika = "2.9.1"
+poi = "5.2.5"
 
 
 [libraries]
@@ -75,6 +76,8 @@ slfj = { module = "org.slf4j:jul-to-slf4j", version.ref = "slfj" }
 tika-core = { module = "org.apache.tika:tika-core", version.ref = "tika" }
 tika-parsersStandardPackage = { module = "org.apache.tika:tika-parsers-standard-package", version.ref = "tika" }
 compose-ui-tooling-preview-desktop = { module = "org.jetbrains.compose.ui:ui-tooling-preview-desktop", version.ref = "composeMultiplatform" }
+poi = { module = "org.apache.poi:poi", version.ref = "poi" }
+poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "poi" }
 
 [bundles]
 ktorClient = [

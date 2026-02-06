@@ -55,7 +55,7 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
     }
 
     private fun extractWithTika(file: File): String {
-        val charLimit = 25000
+        val charLimit = 500000
 
         return try {
             val parser = AutoDetectParser()

@@ -56,8 +56,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val testOpenApp: ToolOpen = spyk(realToolOpen)
 
         coEvery { testGetApps.invoke(any()) } returns """
-            [{"app-bundle-id":"ru.keepcoder.Telegram","app-name":"WezTerm"},
-             {"app-bundle-id":"ru.yandex.desktop.disk2","app-name":"Yandex.Disk.2"}]
+            [{"app-bundle-id":"ru.keepcoder.Telegram","app-name":"Telegram"}]
         """.trimIndent()
         
         coEvery { testOpenApp.invoke(any()) } returns "Opened"

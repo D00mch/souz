@@ -93,8 +93,9 @@ object LocalRegexClassifier : UserMessageClassifier {
         )
 
         ToolCategory.DATAANALYTICS -> listOf(
-            WeightedRegex(Regex("построй|созда|сделай|проанализ|график|chart|graph|plot|что на графике"), 2.0),
-            WeightedRegex(Regex("find|скольк|корреляц|correlation|причин"), 1.0),
+            WeightedRegex(Regex("построй|созда|сделай|проанализ|колонк|столбец|строка|ячейк"), 1.5),
+            WeightedRegex(Regex("скольк|корреляц|консолид|отчёт|отчет|причин"), 1.0),
+            WeightedRegex(Regex("excel|таблиц|spreadsheet|xlsx|эксель"), 2.0)
         )
 
         ToolCategory.CALENDAR -> listOf(
