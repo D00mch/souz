@@ -1,5 +1,9 @@
 package agent
 
+import giga.getHttpClient
+import giga.getSessionTokenUsage
+import io.ktor.client.plugins.HttpSend
+import io.ktor.client.plugins.plugin
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -8,6 +12,7 @@ import io.mockk.spyk
 import io.mockk.unmockkStatic
 import ru.gigadesk.tool.ToolRunBashCommand
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.AfterAll
 import org.kodein.di.DI
 import org.kodein.di.bindProvider
 import org.kodein.di.bindSingleton
@@ -30,9 +35,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.kodein.di.instance
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.giga.GigaModel
+import ru.gigadesk.giga.GigaRestChatAPI
+import java.util.concurrent.atomic.AtomicLong
 
 
 /**
@@ -42,17 +50,56 @@ import ru.gigadesk.giga.GigaModel
  */
 class GraphAgentToolScenariosIntegrationTest {
 
-    private val spySettings: SettingsProviderImpl = spyk(SettingsProviderImpl(ConfigStore)) {
-        every { forbiddenFolders } returns emptyList()
-        every { useGrpc } returns false
-        every { gigaModel } returns GigaModel.Lite
-        every { temperature } returns 0.2f
-        every { systemPrompt } returns DEFAULT_SYSTEM_PROMPT
+    private val spySettings: SettingsProviderImpl by lazy {
+        spyk(SettingsProviderImpl(ConfigStore)) {
+            every { forbiddenFolders } returns emptyList()
+            every { useGrpc } returns false
+            every { gigaModel } returns GigaModel.Lite
+            every { temperature } returns 0.2f
+            every { systemPrompt } returns DEFAULT_SYSTEM_PROMPT
+        }
     }
-    private val filesUtil: FilesToolUtil = FilesToolUtil(spySettings)
+
+    companion object {
+        private var gigaRestChatAPI: GigaRestChatAPI? = null
+        private val httpRequestCount = AtomicLong(0)
+        private val httpRequestTotalNanos = AtomicLong(0)
+
+        @JvmStatic
+        @AfterAll
+        fun finish() {
+            val gigaRestChatAPI = gigaRestChatAPI ?: return
+            println("Spent: ${gigaRestChatAPI.getSessionTokenUsage()}")
+            val requestCount = httpRequestCount.get()
+            if (requestCount == 0L) {
+                println("HTTP requests: 0")
+                return
+            }
+            val avgMs = httpRequestTotalNanos.get().toDouble() / requestCount / 1_000_000.0
+            println("HTTP requests: $requestCount, avg/request: ${"%.2f".format(avgMs)} ms")
+        }
+    }
+
+    private val filesUtil: FilesToolUtil by lazy { FilesToolUtil(spySettings) }
     private val testOverrideModule: DI.Module = DI.Module("TestOverrideModule") {
         bindSingleton<SettingsProvider>(overrides = true) { spySettings }
         bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
+        bindSingleton(overrides = true) {
+            if (gigaRestChatAPI == null) {
+                gigaRestChatAPI = GigaRestChatAPI(instance(), instance()).apply {
+                    getHttpClient().plugin(HttpSend).intercept { request ->
+                        val startNanos = System.nanoTime()
+                        try {
+                            execute(request)
+                        } finally {
+                            httpRequestCount.incrementAndGet()
+                            httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
+                        }
+                    }
+                }
+            }
+            gigaRestChatAPI!!
+        }
     }
 
     @BeforeEach
@@ -429,21 +476,18 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario14_readFile(userPrompt: String) = runTest {
-        val realToolRead = ToolReadFile(filesUtil)
-        val toolReadFile: ToolReadFile = spyk(realToolRead)
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+        val toolFindFilesByName: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        val realToolFind = ToolFindFilesByName(filesUtil)
-        val toolFindFilesByName: ToolFindFilesByName = spyk(realToolFind)
-
-        coEvery { toolReadFile.invoke(any()) } returns "Hello"
+        coEvery { toolExtractText.invoke(any()) } returns "Hello"
         coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
 
         val tempFile = "test_integration.txt"
         runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolReadFile> { toolReadFile }
+            bindSingleton<ToolExtractText> { toolExtractText }
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }
-        coVerify(exactly = 1) { toolReadFile.invoke(match { it.path.contains(tempFile) }) }
+        coVerify(exactly = 1) { toolExtractText.invoke(match { it.filePath.contains(tempFile) }) }
     }
 
     @ParameterizedTest(name = "scenario14_modifyFile[{index}] {0}")
@@ -460,14 +504,14 @@ class GraphAgentToolScenariosIntegrationTest {
 
         val realToolFind = ToolFindFilesByName(filesUtil)
         val toolFindFilesByName: ToolFindFilesByName = spyk(realToolFind)
-        val toolReadFile: ToolReadFile = spyk(ToolReadFile(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
 
         var currentContent = ""
         val tempFile = "test_integration"
         val appendText = "World is over"
 
         coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
-        coEvery { toolReadFile.invoke(any()) } answers { currentContent }
+        coEvery { toolExtractText.invoke(any()) } answers { currentContent }
         coEvery { toolModifyFile.invoke(any()) } answers {
             val request = firstArg<ToolModifyFile.Input>()
             currentContent = "$currentContent\n${request.newText}"
@@ -475,7 +519,7 @@ class GraphAgentToolScenariosIntegrationTest {
         }
 
         runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolReadFile> { toolReadFile }
+            bindSingleton<ToolExtractText> { toolExtractText }
             bindSingleton<ToolModifyFile> { toolModifyFile }
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }

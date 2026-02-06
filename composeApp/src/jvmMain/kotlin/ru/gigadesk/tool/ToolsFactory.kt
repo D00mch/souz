@@ -23,7 +23,6 @@ typealias FunctionName = String
 class ToolsFactory(di: DI) {
     private val settingsProvider: SettingsProvider by di.instance()
 
-    private val toolReadFile: ToolReadFile by di.instance()
     private val toolListFiles: ToolListFiles by di.instance()
     private val toolFindInFiles: ToolFindInFiles by di.instance()
     private val toolNewFile: ToolNewFile by di.instance()
@@ -82,7 +81,6 @@ class ToolsFactory(di: DI) {
 
     private fun ToolCategory.tools(): List<GigaToolSetup> = when (this) {
         ToolCategory.FILES -> listOf(
-            toolReadFile.toGiga(),
             toolListFiles.toGiga(),
             toolFindInFiles.toGiga(),
             toolNewFile.toGiga(),
