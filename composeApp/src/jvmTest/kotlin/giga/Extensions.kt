@@ -3,7 +3,7 @@ package giga
 import io.ktor.client.HttpClient
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaRestChatAPI
-import ru.gigadesk.qwen.QwenChatAPI
+import ru.gigadesk.llms.QwenChatAPI
 
 fun GigaRestChatAPI.getHttpClient(): HttpClient {
     val field = GigaRestChatAPI::class.java.getDeclaredField("client")

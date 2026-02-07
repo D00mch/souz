@@ -2,7 +2,7 @@ package ru.gigadesk.giga
 
 import kotlinx.coroutines.flow.Flow
 import ru.gigadesk.db.SettingsProvider
-import ru.gigadesk.qwen.QwenChatAPI
+import ru.gigadesk.llms.QwenChatAPI
 import java.io.File
 
 class LLMFactory(

@@ -33,7 +33,7 @@ import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.giga.SessionTokenLogging
 import ru.gigadesk.giga.TokenLogging
 import ru.gigadesk.keys.Keys
-import ru.gigadesk.qwen.QwenChatAPI
+import ru.gigadesk.llms.QwenChatAPI
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.application.*
 import ru.gigadesk.tool.browser.*

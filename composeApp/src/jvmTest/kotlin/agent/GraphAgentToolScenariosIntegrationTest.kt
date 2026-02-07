@@ -43,7 +43,7 @@ import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.LlmProvider
-import ru.gigadesk.qwen.QwenChatAPI
+import ru.gigadesk.llms.QwenChatAPI
 import java.util.concurrent.atomic.AtomicLong
 
 
