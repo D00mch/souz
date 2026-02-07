@@ -5,17 +5,21 @@ import java.io.File
 
 class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewFile.Input> {
     data class Input(
-        @InputParamDescription("The path where the file will be created, including filename")
+        @InputParamDescription("The path where the file or folder will be created; add a trailing slash to create a folder")
         val path: String,
         @InputParamDescription("The content to be written to the new file")
         val text: String
     )
     override val name = "NewFile"
-    override val description = "Creates a new TEXT file at the given path with the provided content. forbidden: .xlsx, .xls, .png, .jpg, .pdf."
+    override val description = "Creates a new TEXT file at the given path with the provided content. If the path ends with a slash, creates a folder instead. forbidden: .xlsx, .xls, .png, .jpg, .pdf."
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Create notes.txt with greeting",
             params = mapOf("path" to "notes.txt", "text" to "Hello!\n")
+        ),
+        FewShotExample(
+            request = "Create a folder named drafts",
+            params = mapOf("path" to "drafts/", "text" to "")
         )
     )
     override val returnParameters = ReturnParameters(
@@ -25,13 +29,21 @@ class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewF
     )
 
     override fun invoke(input: Input): String {
+        val isDirectoryRequest = input.path.endsWith("/") || input.path.endsWith(File.separator)
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         val file = File(fixedPath)
         if (!filesToolUtil.isPathSafe(file)) {
             throw ForbiddenFolder(fixedPath)
         }
         if (file.exists()) {
-            throw BadInputException("File already exists: ${input.path}")
+            val typeLabel = if (isDirectoryRequest) "Folder" else "File"
+            throw BadInputException("$typeLabel already exists: ${input.path}")
+        }
+        if (isDirectoryRequest) {
+            if (!file.mkdirs()) {
+                throw BadInputException("Failed to create folder: ${input.path}")
+            }
+            return "Folder created at ${input.path}"
         }
         file.parentFile?.mkdirs()
         file.writeText(input.text)
