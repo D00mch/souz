@@ -204,10 +204,10 @@ class MainViewModel(
         }
 
         try {
-            val response = withContext(Dispatchers.IO) {
+            val response = ioAsync {
                 graphAgent.execute(userText)
             }
-            val botMessage = ChatMessage(text = response, isUser = false)
+            val botMessage = ChatMessage(text = response.await(), isUser = false)
             setState {
                 copy(
                     chatMessages = chatMessages + botMessage,
@@ -314,7 +314,7 @@ class MainViewModel(
         setState { copy(displayedText = ONBOARDING_DISPLAY_TEXT) }
         val onboardingSpeech = prepareTextForSpeech(ONBOARDING_SPEECH_TEXT)
         onboardingSpeechStartedAt = System.currentTimeMillis()
-        viewModelScope.launch(Dispatchers.IO) {
+        ioLaunch {
             say.queue(onboardingSpeech)
         }
     }
