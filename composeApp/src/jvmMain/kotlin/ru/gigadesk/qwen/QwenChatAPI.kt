@@ -107,14 +107,14 @@ class QwenChatAPI(
             setBody(buildChatRequest(body))
         }
         val text = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            GigaResponse.Chat.Error(response.status.value, text)
-        } else {
+        if (response.status.isSuccess()) {
             parseCompletionsResponse(text, resolveChatModel(body.model)).also { result ->
                 if (result is GigaResponse.Chat.Ok) {
                     logTokenUsage(result, body)
                 }
             }
+        } else {
+            GigaResponse.Chat.Error(response.status.value, text)
         }
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
@@ -307,11 +307,11 @@ class QwenChatAPI(
 
     private fun parseCompletionsResponse(text: String, model: String): GigaResponse.Chat {
         val node = objectMapper.readTree(text)
-        val choices = parseChoices(node["choices"], nestedMessageField = "message")
+        val choices = parseChoices(node["choices"])
         val usage = parseUsage(node["usage"])
         return GigaResponse.Chat.Ok(
             choices = choices,
-            created = node["created"]?.asLong() ?: System.currentTimeMillis() / 1000,
+            created = node["created"]?.asLong() ?: (System.currentTimeMillis() / 1000),
             model = node["model"]?.asText() ?: model,
             usage = usage,
         )
@@ -320,7 +320,7 @@ class QwenChatAPI(
     private fun parseGenerationChunk(text: String, model: String): GigaResponse.Chat {
         val node = objectMapper.readTree(text)
         val output = node["output"]
-        val choices = parseChoices(output?.get("choices"), nestedMessageField = "message")
+        val choices = parseChoices(output?.get("choices"))
         val usage = parseUsage(node["usage"])
         return GigaResponse.Chat.Ok(
             choices = choices,
@@ -332,7 +332,7 @@ class QwenChatAPI(
 
     private fun parseChoices(
         choicesNode: com.fasterxml.jackson.databind.JsonNode?,
-        nestedMessageField: String,
+        nestedMessageField: String = "message",
     ): List<GigaResponse.Choice> {
         if (choicesNode == null || !choicesNode.isArray) {
             return emptyList()
