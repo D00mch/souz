@@ -18,6 +18,7 @@ import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.audio.*
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
+import androidx.compose.ui.text.input.TextFieldValue
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.permissions.AppRelauncher
@@ -60,6 +61,9 @@ class MainViewModel(
             MainEvent.StopSpeech -> killTaskSideEffectJobs()
             MainEvent.ShowLastText -> setPreviousText()
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
+            MainEvent.ToggleChatMode -> setState { copy(isChatMode = !isChatMode) }
+            is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
+            MainEvent.SendChatMessage -> sendChatMessage()
         }
     }
 
@@ -186,6 +190,43 @@ class MainViewModel(
         ioLaunch { say.playTextRand(speed = 120, "ok", "okey", "окей", "ок") }
     }
 
+    private suspend fun sendChatMessage() {
+        val userText = currentState.chatInputText.text.trim()
+        if (userText.isEmpty()) return
+
+        val userMessage = ChatMessage(text = userText, isUser = true)
+        setState {
+            copy(
+                chatMessages = chatMessages + userMessage,
+                chatInputText = TextFieldValue(""),
+                isProcessing = true
+            )
+        }
+
+        try {
+            val response = ioAsync {
+                graphAgent.execute(userText)
+            }
+            val botMessage = ChatMessage(text = response.await(), isUser = false)
+            setState {
+                copy(
+                    chatMessages = chatMessages + botMessage,
+                    isProcessing = false
+                )
+            }
+        } catch (e: Exception) {
+            l.error("Chat message failed: ${e.message}", e)
+            val errorMessage = ChatMessage(text = "Ошибка: ${e.message}", isUser = false)
+            setState {
+                copy(
+                    chatMessages = chatMessages + errorMessage,
+                    isProcessing = false
+                )
+            }
+        }
+    }
+
+
     private suspend fun setPreviousText() {
         currentState.lastKnownAgentContext?.let { ctx ->
             agentRef.get()?.setContext(ctx)
@@ -212,13 +253,14 @@ class MainViewModel(
                         displayedText = clearedText,
                         lastText = lastText,
                         lastKnownAgentContext = lastKnownAgentContext ?: currentState.lastKnownAgentContext,
-                        userExpectCloseOnX = true
+                        userExpectCloseOnX = true,
+                        chatMessages = emptyList()
                     )
                 }
             }
 
             true -> {
-                setState { copy(displayedText = DEFAULT_CLEARED_TEXT, userExpectCloseOnX = false) }
+                setState { copy(displayedText = DEFAULT_CLEARED_TEXT, userExpectCloseOnX = false, chatMessages = emptyList()) }
                 send(MainEffect.Hide)
             }
         }
@@ -272,7 +314,7 @@ class MainViewModel(
         setState { copy(displayedText = ONBOARDING_DISPLAY_TEXT) }
         val onboardingSpeech = prepareTextForSpeech(ONBOARDING_SPEECH_TEXT)
         onboardingSpeechStartedAt = System.currentTimeMillis()
-        viewModelScope.launch(Dispatchers.IO) {
+        ioLaunch {
             say.queue(onboardingSpeech)
         }
     }
