@@ -13,9 +13,7 @@ open class ExcelRead(
     private val filesToolUtil: FilesToolUtil
 ) : ToolSetup<ExcelRead.Input> {
 
-    init {
-        runCatching { ZipSecureFile.setMinInflateRatio(0.0) }
-    }
+
 
     enum class ReadOperation {
         STRUCTURE,
@@ -46,7 +44,7 @@ open class ExcelRead(
         @InputParamDescription("Column to group by (for QUERY)")
         val groupBy: String? = null,
 
-        @InputParamDescription("Filter: Column=Value, e.g. 'Status=Completed'. Only equality supported (for QUERY)")
+        @InputParamDescription("Filter: Column=Value or >, <, >=, <=, <> (e.g. 'Amount>1000')")
         val filter: String? = null,
 
         @InputParamDescription("Limit results (for QUERY, default: 10)")
@@ -190,11 +188,11 @@ open class ExcelRead(
             headers.indexOf(col).also { if (it == -1) throw BadInputException("Group column '$col' not found. Available: ${headers.joinToString()}") }
         } ?: -1
 
-        val filterPair = input.filter?.let { filter ->
-            val (colName, value) = parseCondition(filter)
-            val idx = headers.indexOf(colName)
-            if (idx == -1) throw BadInputException("Filter column '$colName' not found. Available: ${headers.joinToString()}")
-            idx to value
+        val filterCondition = input.filter?.let { output ->
+            val condition = parseCondition(output)
+            val idx = headers.indexOf(condition.column)
+            if (idx == -1) throw BadInputException("Filter column '${condition.column}' not found. Available: ${headers.joinToString()}")
+            idx to condition
         }
 
         val groups = mutableMapOf<String, MutableList<Double>>()
@@ -203,9 +201,38 @@ open class ExcelRead(
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
 
-            if (filterPair != null) {
-                val cellValue = formatter.formatCellValue(row.getCell(filterPair.first)).trim()
-                if (!cellValue.equals(filterPair.second, ignoreCase = true)) continue
+            if (filterCondition != null) {
+                val (filterIdx, cond) = filterCondition
+                val cell = row.getCell(filterIdx)
+                val cellValue = formatter.formatCellValue(cell).trim()
+                
+                val matches = when (cond.operator) {
+                    ComparisonOperator.EQ -> cellValue.equals(cond.value, ignoreCase = true)
+                    ComparisonOperator.NEQ -> !cellValue.equals(cond.value, ignoreCase = true)
+                    else -> {
+                        val numCell = cellValue.toDoubleOrNull()
+                        val numVal = cond.value.toDoubleOrNull()
+                        if (numCell != null && numVal != null) {
+                            when (cond.operator) {
+                                ComparisonOperator.GT -> numCell > numVal
+                                ComparisonOperator.LT -> numCell < numVal
+                                ComparisonOperator.GTE -> numCell >= numVal
+                                ComparisonOperator.LTE -> numCell <= numVal
+                                else -> false
+                            }
+                        } else {
+                            val cmp = cellValue.compareTo(cond.value, ignoreCase = true)
+                            when (cond.operator) {
+                                ComparisonOperator.GT -> cmp > 0
+                                ComparisonOperator.LT -> cmp < 0
+                                ComparisonOperator.GTE -> cmp >= 0
+                                ComparisonOperator.LTE -> cmp <= 0
+                                else -> false
+                            }
+                        }
+                    }
+                }
+                if (!matches) continue
             }
 
             val groupKey = if (groupIdx >= 0) {

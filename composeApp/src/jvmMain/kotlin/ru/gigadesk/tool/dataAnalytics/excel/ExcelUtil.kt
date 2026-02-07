@@ -50,8 +50,22 @@ fun cloneCell(src: Cell, dest: Cell) {
     }
 }
 
-fun parseCondition(cond: String): Pair<String, String> {
-    val parts = cond.split("=", limit = 2)
-    if (parts.size != 2) throw BadInputException("Invalid condition: $cond (expected Column=Value)")
-    return parts[0].trim() to parts[1].trim()
+enum class ComparisonOperator(val symbol: String) {
+    GTE(">="), LTE("<="), NEQ("<>"), GT(">"), LT("<"), EQ("=")
+}
+
+data class FilterCondition(
+    val column: String,
+    val operator: ComparisonOperator,
+    val value: String
+)
+
+fun parseCondition(cond: String): FilterCondition {
+    val operator = ComparisonOperator.entries.firstOrNull { cond.contains(it.symbol) }
+        ?: throw BadInputException("Invalid condition: $cond (expected Column=Value or >, <, >=, <=, <>)")
+
+    val parts = cond.split(operator.symbol, limit = 2)
+    if (parts.size != 2) throw BadInputException("Invalid condition format: $cond")
+    
+    return FilterCondition(parts[0].trim(), operator, parts[1].trim())
 }

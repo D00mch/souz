@@ -794,7 +794,7 @@ class GraphAgentToolScenariosIntegrationTest {
             excelRead.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == ExcelRead.ReadOperation.QUERY &&
-                        it.filter != null && it.filter.contains("1000")
+                        it.filter != null && it.filter!!.contains(">") && it.filter!!.contains("1000")
             })
         }
     }
