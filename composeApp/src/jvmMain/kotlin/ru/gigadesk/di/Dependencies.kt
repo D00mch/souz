@@ -75,13 +75,14 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance()) }
     bindSingleton { ToolsSettings(instance(), instance()) }
     bindSingleton { FilesToolUtil(instance()) }
+    bindSingleton { ToolPermissionBroker(instance()) }
 
     // Tools
     bindSingleton { ToolGetClipboard() }
     bindSingleton { ToolListFiles(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
     bindSingleton { ToolNewFile(instance()) }
-    bindSingleton { ToolDeleteFile(instance()) }
+    bindSingleton { ToolDeleteFile(instance(), instance()) }
     bindSingleton { ToolModifyFile(instance()) }
     bindSingleton { ToolMoveFile(instance()) }
     bindSingleton { ToolExtractText(instance()) }

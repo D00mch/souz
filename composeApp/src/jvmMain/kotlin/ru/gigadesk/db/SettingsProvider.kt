@@ -18,6 +18,7 @@ interface SettingsProvider {
     var gigaModel: GigaModel
     var useFewShotExamples: Boolean
     var useStreaming: Boolean
+    var safeModeEnabled: Boolean
     var needsOnboarding: Boolean
     var requestTimeoutMillis: Long
     var initialWindowWidthDp: Int
@@ -44,6 +45,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
     private var _useStreamingDelegate: String? by keyDelegate(configKey = USE_STREAMING, envKey = USE_STREAMING)
+    private var _safeModeDelegate: String? by keyDelegate(configKey = SAFE_MODE_ENABLED, envKey = SAFE_MODE_ENABLED)
     private var _requestTimeoutDelegate: String? by keyDelegate(
         configKey = REQUEST_TIMEOUT_MILLIS,
         envKey = REQUEST_TIMEOUT_MILLIS
@@ -101,6 +103,12 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         }
         set(value) {
             _useStreamingDelegate = value.toString()
+        }
+
+    override var safeModeEnabled: Boolean
+        get() = _safeModeDelegate?.lowercase() == "true"
+        set(value) {
+            _safeModeDelegate = value.toString()
         }
 
     override var needsOnboarding: Boolean
@@ -168,6 +176,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         private const val USE_STREAMING = "USE_STREAMING"
+        private const val SAFE_MODE_ENABLED = "SAFE_MODE_ENABLED"
         private const val USE_GRPC_LEGACY = "USE_GRPC"
         private const val SUPPORT_EMAIL = "SUPPORT_EMAIL"
         private const val SYSTEM_PROMPT = "SYSTEM_PROMPT"

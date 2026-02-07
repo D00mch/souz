@@ -19,6 +19,7 @@ data class SettingsState(
     val saluteSpeechKey: String = "",
     val useFewShotExamples: Boolean = false,
     val useStreaming: Boolean = false,
+    val safeModeEnabled: Boolean = false,
     val gigaModel: GigaModel = GigaModel.Max,
     val requestTimeoutMillis: Long = 10_000L,
     val requestTimeoutInput: String = "10000",
@@ -50,6 +51,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputSaluteSpeechKey(val key: String): SettingsEvent
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
     data class InputUseStreaming(val enabled: Boolean): SettingsEvent
+    data class InputSafeModeEnabled(val enabled: Boolean): SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
     data class InputRequestTimeoutMillis(val millis: String) : SettingsEvent
     data class InputTemperature(val temperature: String) : SettingsEvent

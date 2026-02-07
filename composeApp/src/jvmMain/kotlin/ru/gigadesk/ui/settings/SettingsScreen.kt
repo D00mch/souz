@@ -69,6 +69,7 @@ fun SettingsScreen(
                 onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
                 onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
                 onUseStreamingChange = { enabled -> viewModel.send(SettingsEvent.InputUseStreaming(enabled)) },
+                onSafeModeChange = { enabled -> viewModel.send(SettingsEvent.InputSafeModeEnabled(enabled)) },
                 onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
                 onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
                 onTemperatureInput = { value -> viewModel.send(SettingsEvent.InputTemperature(value)) },
@@ -126,6 +127,7 @@ fun SettingsScreen(
     onChooseVoice: () -> Unit,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
     onUseStreamingChange: (Boolean) -> Unit,
+    onSafeModeChange: (Boolean) -> Unit,
     onModelChange: (GigaModel) -> Unit,
     onRequestTimeoutMillisChange: (String) -> Unit,
     onTemperatureInput: (String) -> Unit,
@@ -320,6 +322,27 @@ fun SettingsScreen(
                     )
                     Text(
                         text = "Использовать streaming-режим для запросов к модели",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.glassColors.textPrimary
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Checkbox(
+                        checked = state.safeModeEnabled,
+                        onCheckedChange = onSafeModeChange,
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
+                            checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    )
+                    Text(
+                        text = "Безопасный режим: запрашивать подтверждение опасных действий",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.glassColors.textPrimary
                     )
@@ -667,6 +690,7 @@ fun SettingsScreenPreview() {
             onChooseVoice = {},
             onUseFewShotExamplesChange = {},
             onUseStreamingChange = {},
+            onSafeModeChange = {},
             onModelChange = {},
             onRequestTimeoutMillisChange = {},
             onTemperatureInput = {},

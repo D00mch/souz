@@ -34,6 +34,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -121,7 +123,9 @@ fun MainScreen(
         onShowSnack = onShowSnack,
         onToggleChatMode = { viewModel.send(MainEvent.ToggleChatMode) },
         onUpdateChatInput = { viewModel.send(MainEvent.UpdateChatInput(it)) },
-        onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage) }
+        onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage) },
+        onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
+        onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
     )
 }
 
@@ -139,6 +143,8 @@ fun MainScreenContent(
     onToggleChatMode: () -> Unit = {},
     onUpdateChatInput: (TextFieldValue) -> Unit = {},
     onSendChatMessage: () -> Unit = {},
+    onApproveToolPermission: () -> Unit = {},
+    onRejectToolPermission: () -> Unit = {},
 ) {
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
     val windowInfo = LocalWindowInfo.current
@@ -350,6 +356,33 @@ fun MainScreenContent(
                      onClose = onToggleThinkingPanel,
                      modifier = Modifier.fillMaxHeight().width(400.dp)
                  )
+            }
+
+            state.toolPermissionDialog?.let { dialog ->
+                AlertDialog(
+                    onDismissRequest = onRejectToolPermission,
+                    title = { Text("Подтверждение действия") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(dialog.description)
+                            if (dialog.params.isNotEmpty()) {
+                                dialog.params.forEach { (key, value) ->
+                                    Text("$key: $value")
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = onApproveToolPermission) {
+                            Text("Разрешить")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = onRejectToolPermission) {
+                            Text("Запретить")
+                        }
+                    }
+                )
             }
         }
     }
