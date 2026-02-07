@@ -60,6 +60,9 @@ class MainViewModel(
             MainEvent.StopSpeech -> killTaskSideEffectJobs()
             MainEvent.ShowLastText -> setPreviousText()
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
+            MainEvent.ToggleChatMode -> setState { copy(isChatMode = !isChatMode) }
+            is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
+            MainEvent.SendChatMessage -> sendChatMessage()
         }
     }
 
@@ -186,6 +189,41 @@ class MainViewModel(
         ioLaunch { say.playTextRand(speed = 120, "ok", "okey", "окей", "ок") }
     }
 
+    private suspend fun sendChatMessage() {
+        val userText = currentState.chatInputText.trim()
+        if (userText.isEmpty()) return
+
+        val userMessage = ChatMessage(text = userText, isUser = true)
+        setState {
+            copy(
+                chatMessages = chatMessages + userMessage,
+                chatInputText = "",
+                isProcessing = true
+            )
+        }
+
+        try {
+            val response = graphAgent.execute(userText)
+            val botMessage = ChatMessage(text = response, isUser = false)
+            setState {
+                copy(
+                    chatMessages = chatMessages + botMessage,
+                    isProcessing = false
+                )
+            }
+            // No voice synthesis in chat mode
+        } catch (e: Exception) {
+            l.error("Chat message failed: ${e.message}", e)
+            val errorMessage = ChatMessage(text = "Ошибка: ${e.message}", isUser = false)
+            setState {
+                copy(
+                    chatMessages = chatMessages + errorMessage,
+                    isProcessing = false
+                )
+            }
+        }
+    }
+
     private suspend fun setPreviousText() {
         currentState.lastKnownAgentContext?.let { ctx ->
             agentRef.get()?.setContext(ctx)
@@ -212,13 +250,14 @@ class MainViewModel(
                         displayedText = clearedText,
                         lastText = lastText,
                         lastKnownAgentContext = lastKnownAgentContext ?: currentState.lastKnownAgentContext,
-                        userExpectCloseOnX = true
+                        userExpectCloseOnX = true,
+                        chatMessages = emptyList()
                     )
                 }
             }
 
             true -> {
-                setState { copy(displayedText = DEFAULT_CLEARED_TEXT, userExpectCloseOnX = false) }
+                setState { copy(displayedText = DEFAULT_CLEARED_TEXT, userExpectCloseOnX = false, chatMessages = emptyList()) }
                 send(MainEffect.Hide)
             }
         }

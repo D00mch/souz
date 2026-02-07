@@ -6,6 +6,15 @@ import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
 
 /**
+ * Chat message for the chat mode.
+ */
+data class ChatMessage(
+    val text: String,
+    val isUser: Boolean,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+/**
  * State for the main screen that mirrors the floating glass panel experience.
  */
 data class MainState(
@@ -18,6 +27,9 @@ data class MainState(
     val isProcessing: Boolean = false,
     val agentHistory: List<ru.gigadesk.giga.GigaRequest.Message> = emptyList(),
     val isThinkingPanelOpen: Boolean = false,
+    val isChatMode: Boolean = false,
+    val chatMessages: List<ChatMessage> = emptyList(),
+    val chatInputText: String = "",
 ) : VMState {
 
     companion object {
@@ -49,12 +61,15 @@ data class MainState(
 }
 
 sealed interface MainEvent : VMEvent {
-    object StartListening : MainEvent
-    object StopListening : MainEvent
-    object ClearContext : MainEvent
-    object StopSpeech : MainEvent
-    object ShowLastText : MainEvent
-    object ToggleThinkingPanel : MainEvent
+    data object StartListening : MainEvent
+    data object StopListening : MainEvent
+    data object ClearContext : MainEvent
+    data object StopSpeech : MainEvent
+    data object ShowLastText : MainEvent
+    data object ToggleThinkingPanel : MainEvent
+    data object ToggleChatMode : MainEvent
+    data class UpdateChatInput(val text: String) : MainEvent
+    data object SendChatMessage : MainEvent
 }
 
 sealed interface MainEffect : VMSideEffect {
