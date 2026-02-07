@@ -45,6 +45,7 @@ class SettingsViewModel(
                     saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                     useFewShotExamples = keysProvider.useFewShotExamples,
                     useStreaming = keysProvider.useStreaming,
+                    safeModeEnabled = keysProvider.safeModeEnabled,
                     gigaModel = currentModel,
                     requestTimeoutMillis = keysProvider.requestTimeoutMillis,
                     requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
@@ -89,6 +90,10 @@ class SettingsViewModel(
                 keysProvider.useStreaming = event.enabled
                 setState { copy(useStreaming = event.enabled) }
                 fetchBalance()
+            }
+            is InputSafeModeEnabled -> {
+                keysProvider.safeModeEnabled = event.enabled
+                setState { copy(safeModeEnabled = event.enabled) }
             }
             is SelectModel -> {
                 val newPrompt = graphBasedAgent.updateModel(event.model)

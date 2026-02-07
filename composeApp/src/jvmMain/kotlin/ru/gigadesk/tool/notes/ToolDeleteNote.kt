@@ -5,10 +5,15 @@ import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
+import ru.gigadesk.tool.ToolPermissionBroker
+import ru.gigadesk.tool.ToolPermissionResult
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 
-class ToolDeleteNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolDeleteNote.Input> {
+class ToolDeleteNote(
+    private val bash: ToolRunBashCommand,
+    private val permissionBroker: ToolPermissionBroker? = null,
+) : ToolSetup<ToolDeleteNote.Input> {
     data class Input(
         @InputParamDescription("Note name")
         val noteName: String,
@@ -29,6 +34,15 @@ class ToolDeleteNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolDelet
             "result" to ReturnProperty("string", "Operation status")
         )
     )
+
+    override suspend fun suspendInvoke(input: Input): String {
+        val result = permissionBroker?.requestPermission(
+            "Удаляем заметку?",
+            linkedMapOf("noteName" to input.noteName)
+        )
+        if (result is ToolPermissionResult.No) return result.msg
+        return invoke(input)
+    }
 
     override fun invoke(input: Input): String {
         if (input.noteName.isBlank()) throw BadInputException("Note name cannot be empty")

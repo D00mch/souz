@@ -2,9 +2,13 @@ package tool.files
 
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
 import org.slf4j.LoggerFactory
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.tool.BadInputException
+import ru.gigadesk.tool.ToolPermissionBroker
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ToolDeleteFile
 import ru.gigadesk.tool.files.ToolExtractText
@@ -158,6 +162,34 @@ class ToolTest {
             assertFailsWith<BadInputException> {
                 ToolReadFile(filesToolUtil).invoke(ToolReadFile.Input(movedPath))
             }
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolDeleteFile returns disapproved when user rejects action`() = runTest {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/to-delete.txt"
+            File(path).writeText("test")
+
+            val settingsProvider = mockk<SettingsProvider>()
+            every { settingsProvider.safeModeEnabled } returns true
+            val permissionBroker = ToolPermissionBroker(settingsProvider)
+            val tool = ToolDeleteFile(filesToolUtil, permissionBroker)
+
+            val resultDeferred = async {
+                tool.suspendInvoke(ToolDeleteFile.Input(path))
+            }
+            val request = permissionBroker.requests.first()
+            permissionBroker.resolve(request.id, approved = false)
+
+            val result = resultDeferred.await()
+
+            assertEquals("User disapproved", result)
+            assertEquals(true, File(path).exists())
         } finally {
             tempDir.deleteRecursively()
         }

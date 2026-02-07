@@ -3,7 +3,10 @@ package ru.gigadesk.tool.files
 import ru.gigadesk.tool.*
 import java.io.File
 
-class ToolDeleteFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolDeleteFile.Input> {
+class ToolDeleteFile(
+    private val filesToolUtil: FilesToolUtil,
+    private val permissionBroker: ToolPermissionBroker? = null,
+) : ToolSetup<ToolDeleteFile.Input> {
     data class Input(
         @InputParamDescription("The path of the file to delete")
         val path: String
@@ -21,6 +24,16 @@ class ToolDeleteFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolD
             "result" to ReturnProperty("string", "Deletion status")
         )
     )
+
+    override suspend fun suspendInvoke(input: Input): String {
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
+        val result = permissionBroker?.requestPermission(
+            "Удаляем файл?",
+            linkedMapOf("path" to fixedPath)
+        )
+        if (result is ToolPermissionResult.No) return result.msg
+        return invoke(input)
+    }
 
     override fun invoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)

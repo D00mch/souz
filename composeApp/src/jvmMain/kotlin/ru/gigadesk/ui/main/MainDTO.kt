@@ -16,6 +16,12 @@ data class ChatMessage(
     val id: String = java.util.UUID.randomUUID().toString()
 )
 
+data class ToolPermissionDialogData(
+    val requestId: Long,
+    val description: String,
+    val params: Map<String, String>,
+)
+
 /**
  * State for the main screen that mirrors the floating glass panel experience.
  */
@@ -32,6 +38,7 @@ data class MainState(
     val isChatMode: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
     val chatInputText: TextFieldValue = TextFieldValue(""),
+    val toolPermissionDialog: ToolPermissionDialogData? = null,
 ) : VMState {
 
     companion object {
@@ -72,6 +79,8 @@ sealed interface MainEvent : VMEvent {
     data object ToggleChatMode : MainEvent
     data class UpdateChatInput(val text: TextFieldValue) : MainEvent
     data object SendChatMessage : MainEvent
+    data object ApproveToolPermission : MainEvent
+    data object RejectToolPermission : MainEvent
 }
 
 sealed interface MainEffect : VMSideEffect {
