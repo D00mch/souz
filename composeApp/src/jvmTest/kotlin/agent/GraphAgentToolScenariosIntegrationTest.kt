@@ -831,7 +831,7 @@ class GraphAgentToolScenariosIntegrationTest {
             excelRead.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == ExcelRead.ReadOperation.QUERY &&
-                        it.filter != null && it.filter!!.contains(">") && it.filter!!.contains("1000")
+                        it.filter != null && it.filter.contains(">") && it.filter.contains("1000")
             })
         }
     }
@@ -857,7 +857,7 @@ class GraphAgentToolScenariosIntegrationTest {
             excelRead.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == ExcelRead.ReadOperation.QUERY &&
-                        it.sortBy != null && it.sortBy!!.contains("Amount", ignoreCase = true)
+                        it.sortBy != null && it.sortBy.contains("Amount", ignoreCase = true)
             })
         }
     }
@@ -932,7 +932,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(atLeast = 1) {
             excelReport.invoke(match {
                 it.path.contains("report") &&
-                        it.headers != null && it.headers!!.contains("Имя")
+                        it.headers != null && it.headers.contains("Имя")
             })
         }
     }
@@ -952,8 +952,7 @@ class GraphAgentToolScenariosIntegrationTest {
         }
         coVerify(atLeast = 1) {
             excelReport.invoke(match {
-                it.path.contains("stats") &&
-                        it.data != null && it.data!!.isNotEmpty()
+                it.path.contains("stats") && !it.data.isNullOrEmpty()
             })
         }
     }
