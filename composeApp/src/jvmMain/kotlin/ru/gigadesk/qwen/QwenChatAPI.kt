@@ -80,7 +80,7 @@ class QwenChatAPI(
             header(HttpHeaders.Authorization, "Bearer $apiKey")
         }
         install(HttpTimeout) {
-            requestTimeoutMillis = 60_000
+            requestTimeoutMillis = settingsProvider.requestTimeoutMillis
         }
         install(ContentNegotiation) {
             jackson {
