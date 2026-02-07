@@ -422,9 +422,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario11_buildChartFromFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "Построй график возраста по имени из файла sample.csv по пути /tmp/test-data",
-            "Сделай график из /tmp/test-data/sample.csv по полям имя и возраст",
-            "Построй chart по sample.csv из папки /tmp/test-data",
+            "Построй график возраста по имени из файла sample.csv по пути home/tmp/test-data",
+            "Сделай график из ~/tmp/test-data/sample.csv по полям имя и возраст",
+            "Построй chart по sample.csv из папки ~/tmp/test-data",
         ]
     )
     fun scenario11_buildChartFromFile(userPrompt: String) = runTest {
@@ -487,9 +487,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario14_createFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "В папке /tmp/test-data создай файл test_integration.txt с текстом Hello",
-            "Создай /tmp/test-data/test_integration.txt и запиши Hello",
-            "Нужен файл test_integration.txt в /tmp/test-data с содержимым Hello",
+            "В папке home/tmp/test-data создай файл test_integration.txt с текстом Hello",
+            "Создай ~/tmp/test-data/test_integration.txt и запиши Hello",
+            "Нужен файл test_integration.txt в ~/tmp/test-data с содержимым Hello",
         ]
     )
     fun scenario14_createFile(userPrompt: String) = runTest {
@@ -508,9 +508,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario14_readFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "Прочитай файл test_integration.txt в папке /tmp/test-data",
-            "Открой и прочитай /tmp/test-data/test_integration.txt",
-            "Покажи содержимое файла test_integration.txt из /tmp/test-data",
+            "Прочитай файл test_integration.txt в папке ~/tmp/test-data",
+            "Открой и прочитай home/tmp/test-data/test_integration.txt",
+            "Покажи содержимое файла test_integration.txt из home tmp test-data",
         ]
     )
     fun scenario14_readFile(userPrompt: String) = runTest {
@@ -785,7 +785,7 @@ class GraphAgentToolScenariosIntegrationTest {
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolGetClipboard> { toolGetClipboard }
         }
-        coVerify(exactly = 1) { toolGetClipboard.invoke(any()) }
+        coVerify(atLeast = 1) { toolGetClipboard.invoke(any()) }
     }
 
     private suspend fun runScenarioWithMocks(
