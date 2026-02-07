@@ -264,13 +264,13 @@ open class ExcelRead(
             (startRow..endRow).mapNotNull { r ->
                 sheet.getRow(r)?.let { row ->
                     (startCol..endCol).joinToString("\t") { c ->
-                        formatter.formatCellValue(row.getCell(c))
+                        row.getCell(c)?.let { formatter.formatCellValue(it) } ?: ""
                     }
                 }
             }.joinToString("\n")
         } else {
             val (rowIdx, colIdx) = parseCellRef(range)
-            sheet.getRow(rowIdx)?.let { formatter.formatCellValue(it.getCell(colIdx)) } ?: "(empty)"
+            sheet.getRow(rowIdx)?.getCell(colIdx)?.let { formatter.formatCellValue(it) } ?: "(empty)"
         }
     }
 
