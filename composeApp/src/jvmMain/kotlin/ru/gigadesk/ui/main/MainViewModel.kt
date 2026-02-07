@@ -204,7 +204,9 @@ class MainViewModel(
         }
 
         try {
-            val response = graphAgent.execute(userText)
+            val response = withContext(Dispatchers.IO) {
+                graphAgent.execute(userText)
+            }
             val botMessage = ChatMessage(text = response, isUser = false)
             setState {
                 copy(
@@ -212,7 +214,6 @@ class MainViewModel(
                     isProcessing = false
                 )
             }
-            // No voice synthesis in chat mode
         } catch (e: Exception) {
             l.error("Chat message failed: ${e.message}", e)
             val errorMessage = ChatMessage(text = "Ошибка: ${e.message}", isUser = false)
