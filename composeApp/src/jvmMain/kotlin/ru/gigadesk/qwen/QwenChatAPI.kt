@@ -1,6 +1,11 @@
+@file:OptIn(ExperimentalAtomicApi::class)
+
 package ru.gigadesk.qwen
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -38,16 +43,21 @@ import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ToolListFiles
 import java.io.File
+import kotlin.concurrent.atomics.AtomicReference
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.measureTime
 
 class QwenChatAPI : GigaChatAPI {
     private val l = LoggerFactory.getLogger(QwenChatAPI::class.java)
+    private val logObjectMapper: ObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
 
     private val apiKey: String
         get() = System.getenv("QWEN_KEY")
             ?: System.getProperty("QWEN_KEY")
             ?: throw IllegalStateException("QWEN_KEY is not set")
+
+    private val currentSessionTokensUsage = AtomicReference(GigaResponse.Usage(0, 0, 0, 0))
 
     private val client = HttpClient(CIO) {
         defaultRequest {
@@ -86,7 +96,11 @@ class QwenChatAPI : GigaChatAPI {
         if (!response.status.isSuccess()) {
             GigaResponse.Chat.Error(response.status.value, text)
         } else {
-            parseCompletionsResponse(text, body.model)
+            parseCompletionsResponse(text, body.model).also { result ->
+                if (result is GigaResponse.Chat.Ok) {
+                    logTokenUsage(result, body)
+                }
+            }
         }
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
@@ -94,6 +108,30 @@ class QwenChatAPI : GigaChatAPI {
     } catch (t: Throwable) {
         l.error("Error in Qwen chat", t)
         GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")
+    }
+
+    // TODO: extract this abstraction into a separat class
+    fun logTokenUsage(result: GigaResponse.Chat.Ok, body: GigaRequest.Chat) {
+        val current = currentSessionTokensUsage.load()
+        val newCurrentTokensUsage = GigaResponse.Usage(
+            promptTokens = current.promptTokens + result.usage.promptTokens,
+            completionTokens = current.completionTokens + result.usage.completionTokens,
+            totalTokens = current.totalTokens + result.usage.totalTokens,
+            precachedTokens = current.precachedTokens + result.usage.precachedTokens,
+        )
+        currentSessionTokensUsage.store(newCurrentTokensUsage)
+
+        val (_, _, spent, cached) = result.usage
+        val (_, _, sessionSpent, sessionCached) = newCurrentTokensUsage
+        l.info("Chat response: ")
+        println(
+            """
+            |--  History.len: ${body.messages.size},  Functions.len: ${body.functions.size}
+            |--  Tokens spent: $spent, cached: $cached, per session spent: $sessionSpent, cached: $sessionCached
+            |--  Choice.len: ${result.choices.size}, Last choice:"
+            |${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}
+            """.trimMargin()
+        )
     }
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
