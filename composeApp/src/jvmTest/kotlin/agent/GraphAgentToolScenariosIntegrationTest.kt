@@ -65,7 +65,7 @@ class GraphAgentToolScenariosIntegrationTest {
     }
 
     companion object {
-        private val selectedModel = GigaModel.QwenFlash
+        private val selectedModel = GigaModel.Lite
 
         private var gigaRestChatAPI: GigaRestChatAPI? = null
         private var qwenChatAPI: QwenChatAPI? = null

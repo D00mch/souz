@@ -3,6 +3,7 @@ package giga
 import io.ktor.client.HttpClient
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaRestChatAPI
+import ru.gigadesk.giga.TokenLogging
 import ru.gigadesk.llms.QwenChatAPI
 
 fun GigaRestChatAPI.getHttpClient(): HttpClient {
@@ -14,8 +15,8 @@ fun GigaRestChatAPI.getHttpClient(): HttpClient {
 fun GigaRestChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
     val tokenLoggingField = GigaRestChatAPI::class.java.getDeclaredField("tokenLogging")
     tokenLoggingField.isAccessible = true
-    val tokenLogging = tokenLoggingField.get(this) ?: return zeroUsage()
-    return tokenLogging.extractSessionUsage()
+    val tokenLogging = tokenLoggingField.get(this) as? TokenLogging ?: return zeroUsage()
+    return tokenLogging.sessionTokenUsage()
 }
 
 fun QwenChatAPI.getHttpClient(): HttpClient {
@@ -27,18 +28,8 @@ fun QwenChatAPI.getHttpClient(): HttpClient {
 fun QwenChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
     val tokenLoggingField = QwenChatAPI::class.java.getDeclaredField("tokenLogging")
     tokenLoggingField.isAccessible = true
-    val tokenLogging = tokenLoggingField.get(this) ?: return zeroUsage()
-    return tokenLogging.extractSessionUsage()
-}
-
-private fun Any.extractSessionUsage(): GigaResponse.Usage {
-    val usageField = runCatching { this.javaClass.getDeclaredField("currentSessionTokensUsage") }
-        .getOrNull() ?: return zeroUsage()
-
-    usageField.isAccessible = true
-    val usageRef = usageField.get(this) ?: return zeroUsage()
-    val loadMethod = runCatching { usageRef.javaClass.getMethod("load") }.getOrNull() ?: return zeroUsage()
-    return loadMethod.invoke(usageRef) as? GigaResponse.Usage ?: zeroUsage()
+    val tokenLogging = tokenLoggingField.get(this) as? TokenLogging ?: return zeroUsage()
+    return tokenLogging.sessionTokenUsage()
 }
 
 private fun zeroUsage() = GigaResponse.Usage(0, 0, 0, 0)
