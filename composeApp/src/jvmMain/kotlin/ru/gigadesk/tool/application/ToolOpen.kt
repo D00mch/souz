@@ -24,7 +24,8 @@ class ToolOpen(
 
     override val name: String = "Open"
     override val description: String = "Opens apps, files or folders. If you have two candidates to open, choose" +
-            " the one with the shortest path, but tell the user that there are other options."
+            " the one with the shortest path, but tell the user that there are other options." +
+            " before run application, you must check if the app is installed on the system and its app-bundle-id."
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -38,6 +39,10 @@ class ToolOpen(
         FewShotExample(
             request = "Открой загрузки",
             params = mapOf("target" to "~/path/to/Downloads")
+        ),
+        FewShotExample(
+            request = "Открой Телеграм",
+            params = mapOf("target" to "ru.keepcoder.Telegram")
         ),
     )
 

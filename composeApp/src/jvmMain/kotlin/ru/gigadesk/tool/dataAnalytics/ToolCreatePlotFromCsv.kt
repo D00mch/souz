@@ -2,6 +2,7 @@ package ru.gigadesk.tool.dataAnalytics
 
 import org.apache.commons.csv.CSVFormat
 import org.apache.commons.csv.CSVParser
+import org.apache.poi.ss.usermodel.*
 import org.jetbrains.letsPlot.Stat
 import org.jetbrains.letsPlot.export.ggsave
 import org.jetbrains.letsPlot.geom.geomBar
@@ -12,19 +13,16 @@ import org.jetbrains.letsPlot.ggsize
 import org.jetbrains.letsPlot.label.labs
 import org.jetbrains.letsPlot.letsPlot
 import org.slf4j.LoggerFactory
-import ru.gigadesk.tool.BadInputException
-import ru.gigadesk.tool.FewShotExample
-import ru.gigadesk.tool.InputParamDescription
-import ru.gigadesk.tool.ReturnParameters
-import ru.gigadesk.tool.ReturnProperty
-import ru.gigadesk.tool.ToolSetup
+import ru.gigadesk.tool.*
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProviderImpl
 import java.awt.Desktop
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileReader
 import java.nio.charset.StandardCharsets
+import java.util.*
 
 enum class ChartType {
     BAR, LINE, SCATTER, PIE
@@ -34,7 +32,7 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
     private val l = LoggerFactory.getLogger(ToolCreatePlotFromCsv::class.java)
 
     data class Input(
-        @InputParamDescription("Path to a CSV file (e.g. ~/Documents/data.csv)")
+        @InputParamDescription("Path to a data file (CSV, XLS, XLSX). E.g. ~/Documents/data.xlsx")
         val path: String,
 
         @InputParamDescription("Column name for the x-axis. Omit to inspect headers.")
@@ -46,27 +44,27 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
         @InputParamDescription("Type of chart (BAR, LINE, SCATTER, PIE). Defaults to BAR.")
         val chartType: ChartType = ChartType.BAR,
 
-        @InputParamDescription("Output file path. Defaults to '~/SluxxDocuments/plot.png'")
-        val output: String? = "~/SluxxDocuments/plot.png", // Теперь можно использовать ~ в дефолте
+        @InputParamDescription("Output file path. Defaults to '~/GigaDesk/Documents/plot.png'")
+        val output: String? = "~/GigaDesk/Documents/plot.png",
     )
 
-    override val name: String = "CreatePlotFromCsv"
-    override val description: String = "Create a plot from a CSV file. " +
+    override val name: String = "CreatePlot"
+    override val description: String = "Create a plot from a CSV or Excel file. " +
             "Handles paths with '~'. " +
             "Supports Bar, Line, Scatter, and Pie charts."
 
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Show headers of ~/sales.csv",
-            params = mapOf("path" to "~/sales.csv")
+            request = "Show headers of ~/sales.xlsx",
+            params = mapOf("path" to "~/sales.xlsx")
         ),
         FewShotExample(
-            request = "Draw chart from ~/data/report.csv",
+            request = "Построй график объема продаж в каждом месяце из report.csv",
             params = mapOf(
                 "path" to "~/data/report.csv",
                 "xColumn" to "Month",
                 "yColumn" to "Sales",
-                "chartType" to "LINE"
+                "chartType" to "BAR"
             )
         )
     )
@@ -79,19 +77,47 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
 
     override fun invoke(input: Input): String {
         val rawPath = filesToolUtil.applyDefaultEnvs(input.path)
-        val csvFile = File(rawPath)
-        filesToolUtil.requirePathIsSave(csvFile)
+        val inputFile = File(rawPath)
 
-        if (!csvFile.exists()) {
+        filesToolUtil.requirePathIsSave(inputFile)
+
+        if (!inputFile.exists()) {
             throw BadInputException("File not found: $rawPath")
         }
 
-        val rawOutputPath = filesToolUtil.applyDefaultEnvs(input.output ?: "~/SluxxDocuments/plot.png")
+        val rawOutputPath = filesToolUtil.applyDefaultEnvs(input.output ?: "~/GigaDesk/Documents/plot.png")
         val outputFile = File(rawOutputPath)
 
         outputFile.parentFile?.mkdirs()
         filesToolUtil.requirePathIsSave(outputFile)
 
+        val extension = inputFile.extension.lowercase(Locale.getDefault())
+
+        val dataResult = when (extension) {
+            "csv" -> parseCsv(inputFile, input.xColumn, input.yColumn)
+            "xls", "xlsx" -> parseExcel(inputFile, input.xColumn, input.yColumn)
+            else -> throw BadInputException("Unsupported file extension: .$extension. Use CSV, XLS, or XLSX.")
+        }
+
+        if (dataResult.isHeadersOnly) {
+            return "Columns required. Available headers: ${dataResult.headers}"
+        }
+
+        val dataMap = dataResult.data
+        if (dataMap.isEmpty()) throw BadInputException("No valid data found in selected columns.")
+
+        val sortedData = dataMap.toList().sortedByDescending { it.second }
+        val xData = sortedData.map { it.first }
+        val yData = sortedData.map { it.second }
+
+        val plot = createPlot(xData, yData, input)
+        ggsave(plot, outputFile.absolutePath)
+        openFileInOS(outputFile)
+
+        return "Plot saved to ${outputFile.absolutePath}"
+    }
+
+    private fun parseCsv(file: File, xCol: String?, yCol: String?): ParsedData {
         val format = CSVFormat.DEFAULT.builder()
             .setHeader()
             .setSkipHeaderRecord(true)
@@ -100,48 +126,94 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
             .setIgnoreEmptyLines(true)
             .build()
 
-        FileReader(csvFile, StandardCharsets.UTF_8).use { reader ->
+        FileReader(file, StandardCharsets.UTF_8).use { reader ->
             val parser = CSVParser(reader, format)
             val headers = parser.headerNames
 
-            if (input.xColumn == null || input.yColumn == null) {
-                return "Columns required. Available headers: $headers"
+            if (xCol == null || yCol == null) {
+                return ParsedData(headers = headers, isHeadersOnly = true)
             }
 
-            if (!headers.contains(input.xColumn) || !headers.contains(input.yColumn)) {
-                throw BadInputException("Missing columns. Found: $headers")
+            validateColumns(headers, xCol, yCol)
+
+            val dataMap = mutableMapOf<String, Double>()
+            for (record in parser) {
+                try {
+                    val category = record.get(xCol)
+                    val valueStr = record.get(yCol)
+                    addToMap(dataMap, category, valueStr)
+                } catch (e: Exception) { /* ignore */ }
             }
+            return ParsedData(headers, dataMap)
+        }
+    }
+
+    private fun parseExcel(file: File, xCol: String?, yCol: String?): ParsedData {
+        FileInputStream(file).use { fis ->
+            val workbook = WorkbookFactory.create(fis)
+            val sheet = workbook.getSheetAt(0)
+            val formatter = DataFormatter()
+
+            val headerRow = sheet.getRow(0) ?: throw BadInputException("Excel sheet is empty")
+            val headersMap = mutableMapOf<String, Int>()
+
+            for (cell in headerRow) {
+                headersMap[formatter.formatCellValue(cell).trim()] = cell.columnIndex
+            }
+            val headers = headersMap.keys.toList()
+
+            if (xCol == null || yCol == null) {
+                return ParsedData(headers = headers, isHeadersOnly = true)
+            }
+
+            validateColumns(headers, xCol, yCol)
+
+            val xIndex = headersMap.entries.find { it.key.equals(xCol, ignoreCase = true) }?.value!!
+            val yIndex = headersMap.entries.find { it.key.equals(yCol, ignoreCase = true) }?.value!!
 
             val dataMap = mutableMapOf<String, Double>()
 
-            for (record in parser) {
+            // Проходим по строкам (начиная со 2-й)
+            for (i in 1..sheet.lastRowNum) {
+                val row = sheet.getRow(i) ?: continue
                 try {
-                    val category = record.get(input.xColumn)
-                    val valueStr = record.get(input.yColumn)
-                    val cleanValue = valueStr.replace("\u00A0", "").replace(" ", "")
-                    val value = cleanValue.toDoubleOrNull()
+                    val categoryCell = row.getCell(xIndex)
+                    val valueCell = row.getCell(yIndex)
 
-                    if (value != null && category.isNotBlank()) {
-                        dataMap[category] = dataMap.getOrDefault(category, 0.0) + value
+                    val category = formatter.formatCellValue(categoryCell)
+                    val valueStr = when(valueCell?.cellType) {
+                        CellType.NUMERIC -> valueCell.numericCellValue.toString()
+                        CellType.FORMULA -> {
+                            try {
+                                valueCell.numericCellValue.toString()
+                            } catch (e: Exception) {
+                                valueCell.stringCellValue
+                            }
+                        }
+                        else -> formatter.formatCellValue(valueCell)
                     }
-                } catch (e: Exception) {
-                    // ignore bad rows
-                }
+
+                    addToMap(dataMap, category, valueStr)
+                } catch (e: Exception) { /* ignore bad rows */ }
             }
+            return ParsedData(headers, dataMap)
+        }
+    }
 
-            if (dataMap.isEmpty()) throw BadInputException("No valid data found.")
 
-            val sortedData = dataMap.toList().sortedByDescending { it.second }
-            val xData = sortedData.map { it.first }
-            val yData = sortedData.map { it.second }
+    private fun validateColumns(headers: List<String>, xCol: String, yCol: String) {
+        val headersLower = headers.map { it.lowercase() }
+        if (!headersLower.contains(xCol.lowercase()) || !headersLower.contains(yCol.lowercase())) {
+            throw BadInputException("Missing columns. Found: $headers. Requested: $xCol, $yCol")
+        }
+    }
 
-            val plot = createPlot(xData, yData, input)
+    private fun addToMap(map: MutableMap<String, Double>, key: String, valueStr: String) {
+        val cleanValue = valueStr.replace("\u00A0", "").replace(" ", "").replace(",", ".")
+        val value = cleanValue.toDoubleOrNull()
 
-            // Используем уже обработанный путь outputFile
-            ggsave(plot, outputFile.absolutePath)
-            openFileInOS(outputFile)
-
-            return "Plot saved to ${outputFile.absolutePath}"
+        if (value != null && key.isNotBlank()) {
+            map[key] = map.getOrDefault(key, 0.0) + value
         }
     }
 
@@ -172,17 +244,20 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
             l.error("Could not open image: ${e.message}")
         }
     }
+
+    private data class ParsedData(
+        val headers: List<String>,
+        val data: Map<String, Double> = emptyMap(),
+        val isHeadersOnly: Boolean = false
+    )
 }
+
 fun main() {
     val tool = ToolCreatePlotFromCsv(FilesToolUtil(SettingsProviderImpl(ConfigStore)))
-
-    println(tool.invoke(ToolCreatePlotFromCsv.Input(path = "/Users/duxx/Отчеты/sales_report.csv")))
-
-    val res = tool.invoke(ToolCreatePlotFromCsv.Input(
-        path = "/Users/duxx/Отчеты/sales_report.csv",
-        xColumn = "Клиент",
-        yColumn = "Доход",
+    println(tool.invoke(ToolCreatePlotFromCsv.Input(
+        path = "/Users/duxx/Отчеты/Финансовый отчет первый квартал.xlsx",
+        xColumn = "Manager",
+        yColumn = "Revenue",
         chartType = ChartType.BAR
-    ))
-    println(res)
+    )))
 }

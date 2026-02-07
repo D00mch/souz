@@ -11,7 +11,7 @@ class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewF
         val text: String
     )
     override val name = "NewFile"
-    override val description = "Creates a new file at the given path with the provided content."
+    override val description = "Creates a new TEXT file at the given path with the provided content. forbidden: .xlsx, .xls, .png, .jpg, .pdf."
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Create notes.txt with greeting",
