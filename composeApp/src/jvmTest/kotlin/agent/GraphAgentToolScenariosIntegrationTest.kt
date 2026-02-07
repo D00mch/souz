@@ -28,8 +28,8 @@ import ru.gigadesk.tool.dataAnalytics.*
 import ru.gigadesk.tool.files.*
 import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
-import ru.gigadesk.tool.excel.*
 import ru.gigadesk.tool.textReplace.*
+import ru.gigadesk.tool.dataAnalytics.excel.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -41,7 +41,6 @@ import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRestChatAPI
-import ru.gigadesk.tool.dataAnalytics.excel.*
 import java.util.concurrent.atomic.AtomicLong
 
 
@@ -752,8 +751,6 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(exactly = 1) { toolGetClipboard.invoke(any()) }
     }
 
-    // ===================== ExcelRead Scenarios =====================
-
     @ParameterizedTest(name = "excelRead_overview[{index}] {0}")
     @ValueSource(strings = [
         "Покажи структуру файла sales.xlsx",
@@ -772,7 +769,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolFindFilesByName> { toolFindFiles }
         }
         coVerify(atLeast = 1) {
-            excelRead.invoke(match { it.path.contains("sales") && it.operation == ReadOperation.STRUCTURE })
+            excelRead.invoke(match { it.path.contains("sales") && it.operation == ExcelRead.ReadOperation.STRUCTURE })
         }
     }
 
@@ -796,7 +793,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
                 it.path.contains("sales") &&
-                        it.operation == ReadOperation.QUERY &&
+                        it.operation == ExcelRead.ReadOperation.QUERY &&
                         it.filter != null && it.filter.contains("1000")
             })
         }
@@ -822,7 +819,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
                 it.path.contains("sales") &&
-                        it.operation == ReadOperation.QUERY &&
+                        it.operation == ExcelRead.ReadOperation.QUERY &&
                         it.sortBy != null && it.sortBy!!.contains("Amount", ignoreCase = true)
             })
         }
@@ -848,7 +845,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
                 it.path.contains("sales") &&
-                        it.operation == ReadOperation.CELL &&
+                        it.operation == ExcelRead.ReadOperation.CELL &&
                         it.range != null && it.range.contains("B5")
             })
         }
@@ -874,14 +871,13 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
                 it.path.contains("price") &&
-                        it.operation == ReadOperation.LOOKUP &&
+                        it.operation == ExcelRead.ReadOperation.LOOKUP &&
                         it.lookupValue != null && it.lookupValue.contains("Ноутбук") &&
                         it.returnColumn != null
             })
         }
     }
 
-    // ===================== ExcelReport Scenarios =====================
 
     @ParameterizedTest(name = "excelReport_newFile[{index}] {0}")
     @ValueSource(strings = [

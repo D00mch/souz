@@ -7,12 +7,7 @@ import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ForbiddenFolder
 import java.io.File
 
-enum class ReadOperation {
-    STRUCTURE,
-    QUERY,
-    CELL,
-    LOOKUP
-}
+
 
 open class ExcelRead(
     private val filesToolUtil: FilesToolUtil
@@ -20,6 +15,13 @@ open class ExcelRead(
 
     init {
         runCatching { ZipSecureFile.setMinInflateRatio(0.0) }
+    }
+
+    enum class ReadOperation {
+        STRUCTURE,
+        QUERY,
+        CELL,
+        LOOKUP
     }
 
     data class Input(

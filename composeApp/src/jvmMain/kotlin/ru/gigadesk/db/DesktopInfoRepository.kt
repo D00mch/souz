@@ -15,7 +15,7 @@ import kotlin.random.Random
  * Orchestrates extraction of desktop data, embedding via LLM and persistence
  * into a Lucene index for similarity search.
  */
-open class DesktopInfoRepository(
+class DesktopInfoRepository(
     private val api: GigaChatAPI,
     private val db: VectorDB,
     private val extractor: DesktopDataExtractor,
