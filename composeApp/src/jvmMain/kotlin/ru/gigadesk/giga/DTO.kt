@@ -124,6 +124,7 @@ enum class GigaModel(
     Max("GigaChat Max", "GigaChat-Max", MAX_TOKENS, LlmProvider.GIGA),
     QwenFlash("Qwen Flash", "qwen-flash", 32_768, LlmProvider.QWEN),
     QwenPlus("Qwen Plus", "qwen-plus", 32_768, LlmProvider.QWEN),
+    QwenMax("Qwen Max", "qwen-max", 32_768, LlmProvider.QWEN),
 }
 
 object GigaRequest {
