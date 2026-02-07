@@ -38,8 +38,11 @@ import org.junit.jupiter.params.provider.ValueSource
 import org.kodein.di.instance
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.db.SettingsProviderImpl
+import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRestChatAPI
+import ru.gigadesk.giga.LlmProvider
+import ru.gigadesk.qwen.QwenChatAPI
 import java.util.concurrent.atomic.AtomicLong
 
 
@@ -54,22 +57,27 @@ class GraphAgentToolScenariosIntegrationTest {
         spyk(SettingsProviderImpl(ConfigStore)) {
             every { forbiddenFolders } returns emptyList()
             every { useStreaming } returns false
-            every { gigaModel } returns GigaModel.Lite
+            every { gigaModel } returns selectedModel
             every { temperature } returns 0.2f
             every { systemPrompt } returns DEFAULT_SYSTEM_PROMPT
         }
     }
 
     companion object {
+        private val selectedModel = GigaModel.QwenFlash
+
         private var gigaRestChatAPI: GigaRestChatAPI? = null
+        private var qwenChatAPI: QwenChatAPI? = null
         private val httpRequestCount = AtomicLong(0)
         private val httpRequestTotalNanos = AtomicLong(0)
 
         @JvmStatic
         @AfterAll
         fun finish() {
-            val gigaRestChatAPI = gigaRestChatAPI ?: return
-            println("Spent: ${gigaRestChatAPI.getSessionTokenUsage()}")
+            when (selectedModel.provider) {
+                LlmProvider.GIGA -> println("Spent: ${gigaRestChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+                LlmProvider.QWEN -> println("Spent: ${qwenChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+            }
             val requestCount = httpRequestCount.get()
             if (requestCount == 0L) {
                 println("HTTP requests: 0")
@@ -84,7 +92,7 @@ class GraphAgentToolScenariosIntegrationTest {
     private val testOverrideModule: DI.Module = DI.Module("TestOverrideModule") {
         bindSingleton<SettingsProvider>(overrides = true) { spySettings }
         bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
-        bindSingleton(overrides = true) {
+        bindSingleton<GigaRestChatAPI>(overrides = true) {
             if (gigaRestChatAPI == null) {
                 gigaRestChatAPI = GigaRestChatAPI(instance(), instance()).apply {
                     getHttpClient().plugin(HttpSend).intercept { request ->
@@ -100,12 +108,41 @@ class GraphAgentToolScenariosIntegrationTest {
             }
             gigaRestChatAPI!!
         }
+        bindSingleton<QwenChatAPI>(overrides = true) {
+            if (qwenChatAPI == null) {
+                qwenChatAPI = QwenChatAPI(instance()).apply {
+                    getHttpClient().plugin(HttpSend).intercept { request ->
+                        val startNanos = System.nanoTime()
+                        try {
+                            execute(request)
+                        } finally {
+                            httpRequestCount.incrementAndGet()
+                            httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
+                        }
+                    }
+                }
+            }
+            qwenChatAPI!!
+        }
+        bindSingleton<GigaChatAPI>(overrides = true) {
+            when (selectedModel.provider) {
+                LlmProvider.GIGA -> instance<GigaRestChatAPI>()
+                LlmProvider.QWEN -> instance<QwenChatAPI>()
+            }
+        }
     }
 
     @BeforeEach
     fun checkEnvironment() {
-        val apiKey = System.getenv("GIGA_KEY") ?: System.getProperty("GIGA_KEY")
-        Assumptions.assumeTrue(!apiKey.isNullOrBlank(), "Skipping integration tests: GIGA_KEY is not set")
+        val apiKeyName = when (selectedModel.provider) {
+            LlmProvider.GIGA -> "GIGA_KEY"
+            LlmProvider.QWEN -> "QWEN_KEY"
+        }
+        val apiKey = System.getenv(apiKeyName) ?: System.getProperty(apiKeyName)
+        Assumptions.assumeTrue(
+            !apiKey.isNullOrBlank(),
+            "Skipping integration tests: $apiKeyName is not set (selected model=${selectedModel.alias})"
+        )
     }
 
     @ParameterizedTest(name = "scenario1_launchApplication[{index}] {0}")
