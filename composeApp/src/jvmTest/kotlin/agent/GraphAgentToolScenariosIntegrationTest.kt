@@ -53,7 +53,7 @@ class GraphAgentToolScenariosIntegrationTest {
     private val spySettings: SettingsProviderImpl by lazy {
         spyk(SettingsProviderImpl(ConfigStore)) {
             every { forbiddenFolders } returns emptyList()
-            every { useGrpc } returns false
+            every { useStreaming } returns false
             every { gigaModel } returns GigaModel.Lite
             every { temperature } returns 0.2f
             every { systemPrompt } returns DEFAULT_SYSTEM_PROMPT

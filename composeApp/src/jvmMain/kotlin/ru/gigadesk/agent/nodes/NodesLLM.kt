@@ -21,8 +21,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  * Nodes with calls to LLM
  */
 class NodesLLM(
-    private val llmApi: GigaRestChatAPI,
-    private val grpcChatApi: GigaGRPCChatApi,
+    private val llmApi: GigaChatAPI,
     private val settingsProvider: SettingsProvider,
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
@@ -40,7 +39,7 @@ class NodesLLM(
             l.debug { "LLM input is ${ctx.input}" }
             val response = withContext(Dispatchers.IO) {
                 val req = ctx.toGigaRequest(ctx.history)
-                if (settingsProvider.useGrpc) {
+                if (settingsProvider.useStreaming) {
                     streamResponse(req)
                 } else {
                     llmApi.message(req)
@@ -60,7 +59,7 @@ class NodesLLM(
         val choicesByIndex = ConcurrentHashMap<Int, ChoiceAccumulator>()
 
         withContext(Dispatchers.IO) {
-            grpcChatApi.messageStream(request).takeWhile { response ->
+            llmApi.messageStream(request).takeWhile { response ->
                 l.info("Stream response type ${response::class.java}")
                 if (response is GigaResponse.Chat.Error) {
                     streamResponse.store(response)
@@ -91,10 +90,7 @@ class NodesLLM(
                     created = response.created,
                     model = response.model,
                     usage = response.usage,
-                ).also { response ->
-                    llmApi.logTokenUsage(response, request)
-                    streamResponse.store(response)
-                }
+                ).also(streamResponse::store)
             }
         }
 

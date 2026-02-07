@@ -11,7 +11,7 @@ import ru.gigadesk.giga.GigaException
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
-import ru.gigadesk.giga.GigaRestChatAPI
+import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.MAX_TOKENS
 import ru.gigadesk.giga.toMessage
 import ru.gigadesk.giga.toSystemPromptMessage
@@ -21,7 +21,7 @@ import kotlin.math.ceil
  * Nodes responsible for summarizing conversation history.
  */
 class NodesSummarization(
-    private val llmApi: GigaRestChatAPI,
+    private val llmApi: GigaChatAPI,
     private val nodesCommon: NodesCommon,
 ) {
     private val l = LoggerFactory.getLogger(NodesSummarization::class.java)

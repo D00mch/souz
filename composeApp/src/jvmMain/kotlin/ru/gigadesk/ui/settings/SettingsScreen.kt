@@ -63,11 +63,12 @@ fun SettingsScreen(
             SettingsScreen(
                 state,
                 onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
+                onQwenChatKeyInput = { key -> viewModel.send(SettingsEvent.InputQwenChatKey(key)) },
                 onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
                 onVoiceSpeedInput = { speed -> viewModel.send(SettingsEvent.InputVoiceSpeed(speed)) },
                 onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
                 onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
-                onUseGrpcDelegateChange = { enabled -> viewModel.send(SettingsEvent.InputUseGrpcDelegate(enabled)) },
+                onUseStreamingChange = { enabled -> viewModel.send(SettingsEvent.InputUseStreaming(enabled)) },
                 onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
                 onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
                 onTemperatureInput = { value -> viewModel.send(SettingsEvent.InputTemperature(value)) },
@@ -119,11 +120,12 @@ fun SettingsScreen(
 fun SettingsScreen(
     state: SettingsState,
     onGigaChatKeyInput: (String) -> Unit,
+    onQwenChatKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
     onChooseVoice: () -> Unit,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
-    onUseGrpcDelegateChange: (Boolean) -> Unit,
+    onUseStreamingChange: (Boolean) -> Unit,
     onModelChange: (GigaModel) -> Unit,
     onRequestTimeoutMillisChange: (String) -> Unit,
     onTemperatureInput: (String) -> Unit,
@@ -195,6 +197,12 @@ fun SettingsScreen(
                     label = "GigaChat ключ",
                     value = state.gigaChatKey,
                     onValueChange = onGigaChatKeyInput,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                LabeledTextField(
+                    label = "Qwen ключ",
+                    value = state.qwenChatKey,
+                    onValueChange = onQwenChatKeyInput,
                     modifier = Modifier.fillMaxWidth()
                 )
                 LabeledTextField(
@@ -302,8 +310,8 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Checkbox(
-                        checked = state.useGrpcDelegate,
-                        onCheckedChange = onUseGrpcDelegateChange,
+                        checked = state.useStreaming,
+                        onCheckedChange = onUseStreamingChange,
                         colors = CheckboxDefaults.colors(
                             checkedColor = MaterialTheme.colorScheme.primary,
                             uncheckedColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
@@ -311,7 +319,7 @@ fun SettingsScreen(
                         )
                     )
                     Text(
-                        text = "Использовать gRPC для запросов к модели",
+                        text = "Использовать streaming-режим для запросов к модели",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.glassColors.textPrimary
                     )
@@ -611,7 +619,7 @@ private fun ModelDropdown(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "${selectedModel.name} (${selectedModel.alias})",
+                        text = "${selectedModel.displayName} (${selectedModel.alias})",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.glassColors.textPrimary
                     )
@@ -629,7 +637,7 @@ private fun ModelDropdown(
             ) {
                 GigaModel.entries.forEach { model ->
                     DropdownMenuItem(
-                        text = { Text("${model.name} (${model.alias})") },
+                        text = { Text("${model.displayName} (${model.alias})") },
                         onClick = {
                             onModelSelected(model)
                             expanded = false
@@ -639,7 +647,7 @@ private fun ModelDropdown(
             }
         }
         Text(
-            text = "Выберите модель, которая будет использована для запросов.",
+            text = "Выберите основную модель (GigaChat или Qwen), которая будет использована для запросов.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
         )
@@ -653,11 +661,12 @@ fun SettingsScreenPreview() {
         SettingsScreen(
             state = SettingsState(gigaChatKey = "key1", saluteSpeechKey = "key2", useFewShotExamples = true),
             onGigaChatKeyInput = {},
+            onQwenChatKeyInput = {},
             onSaluteSpeechKeyInput = {},
             onVoiceSpeedInput = {},
             onChooseVoice = {},
             onUseFewShotExamplesChange = {},
-            onUseGrpcDelegateChange = {},
+            onUseStreamingChange = {},
             onModelChange = {},
             onRequestTimeoutMillisChange = {},
             onTemperatureInput = {},

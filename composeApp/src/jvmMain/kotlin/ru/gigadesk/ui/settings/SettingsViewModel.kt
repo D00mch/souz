@@ -15,6 +15,7 @@ import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaResponse
+import ru.gigadesk.giga.LlmProvider
 import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.calendar.CalendarAppleScriptCommands
@@ -40,9 +41,10 @@ class SettingsViewModel(
             setState {
                 copy(
                     gigaChatKey = keysProvider.gigaChatKey ?: "",
+                    qwenChatKey = keysProvider.qwenChatKey ?: "",
                     saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                     useFewShotExamples = keysProvider.useFewShotExamples,
-                    useGrpcDelegate = keysProvider.useGrpc,
+                    useStreaming = keysProvider.useStreaming,
                     gigaModel = currentModel,
                     requestTimeoutMillis = keysProvider.requestTimeoutMillis,
                     requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
@@ -70,6 +72,11 @@ class SettingsViewModel(
                 setState { copy(gigaChatKey = event.key) }
                 fetchBalance()
             }
+            is InputQwenChatKey -> {
+                keysProvider.qwenChatKey = event.key
+                setState { copy(qwenChatKey = event.key) }
+                fetchBalance()
+            }
             is InputSaluteSpeechKey -> {
                 keysProvider.saluteSpeechKey = event.key
                 setState { copy(saluteSpeechKey = event.key) }
@@ -78,13 +85,15 @@ class SettingsViewModel(
                 keysProvider.useFewShotExamples = event.enabled
                 setState { copy(useFewShotExamples = event.enabled) }
             }
-            is InputUseGrpcDelegate -> {
-                keysProvider.useGrpc = event.enabled
-                setState { copy(useGrpcDelegate = event.enabled) }
+            is InputUseStreaming -> {
+                keysProvider.useStreaming = event.enabled
+                setState { copy(useStreaming = event.enabled) }
+                fetchBalance()
             }
             is SelectModel -> {
                 val newPrompt = graphBasedAgent.updateModel(event.model)
                 setState { copy(gigaModel = event.model, systemPrompt = newPrompt) }
+                fetchBalance()
             }
             is InputRequestTimeoutMillis -> {
                 val normalized = event.millis.filter { it.isDigit() }
@@ -236,10 +245,29 @@ class SettingsViewModel(
     private fun fetchBalance() = viewModelScope.launch(Dispatchers.IO) {
         if (currentState.isBalanceLoading) return@launch
 
-        val key = currentState.gigaChatKey
-        if (key.isBlank()) {
-            setState { copy(balance = emptyList(), balanceError = "Укажите GigaChat ключ", isBalanceLoading = false) }
-            return@launch
+        when (currentState.gigaModel.provider) {
+            LlmProvider.GIGA -> {
+                if (currentState.gigaChatKey.isBlank()) {
+                    setState {
+                        copy(
+                            balance = emptyList(),
+                            balanceError = "Укажите GigaChat ключ",
+                            isBalanceLoading = false
+                        )
+                    }
+                    return@launch
+                }
+            }
+            LlmProvider.QWEN -> {
+                setState {
+                    copy(
+                        balance = emptyList(),
+                        balanceError = "Баланс для Qwen недоступен",
+                        isBalanceLoading = false
+                    )
+                }
+                return@launch
+            }
         }
 
         setState { copy(isBalanceLoading = true, balanceError = null) }

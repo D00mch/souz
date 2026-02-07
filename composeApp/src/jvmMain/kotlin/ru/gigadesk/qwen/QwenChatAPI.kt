@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.channelFlow
 import org.kodein.di.DI
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
+import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaMessageRole
 import ru.gigadesk.giga.GigaRequest
@@ -48,14 +49,27 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.measureTime
 
-class QwenChatAPI : GigaChatAPI {
+class QwenChatAPI(
+    private val settingsProvider: SettingsProvider,
+) : GigaChatAPI {
     private val l = LoggerFactory.getLogger(QwenChatAPI::class.java)
     private val logObjectMapper: ObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
 
     private val apiKey: String
-        get() = System.getenv("QWEN_KEY")
+        get() = settingsProvider.qwenChatKey
+            ?: System.getenv("QWEN_KEY")
             ?: System.getProperty("QWEN_KEY")
             ?: throw IllegalStateException("QWEN_KEY is not set")
+
+    private val defaultChatModel: String
+        get() = System.getenv("QWEN_MODEL")
+            ?: System.getProperty("QWEN_MODEL")
+            ?: "qwen-flash"
+
+    private val defaultEmbeddingsModel: String
+        get() = System.getenv("QWEN_EMBEDDINGS_MODEL")
+            ?: System.getProperty("QWEN_EMBEDDINGS_MODEL")
+            ?: "text-embedding-v3"
 
     private val currentSessionTokensUsage = AtomicReference(GigaResponse.Usage(0, 0, 0, 0))
 
@@ -96,7 +110,7 @@ class QwenChatAPI : GigaChatAPI {
         if (!response.status.isSuccess()) {
             GigaResponse.Chat.Error(response.status.value, text)
         } else {
-            parseCompletionsResponse(text, body.model).also { result ->
+            parseCompletionsResponse(text, resolveChatModel(body.model)).also { result ->
                 if (result is GigaResponse.Chat.Ok) {
                     logTokenUsage(result, body)
                 }
@@ -149,7 +163,7 @@ class QwenChatAPI : GigaChatAPI {
                     if (data == "[DONE]" || !data.trimStart().startsWith("{")) {
                         return@collect
                     }
-                    send(parseGenerationChunk(data, body.model))
+                    send(parseGenerationChunk(data, resolveChatModel(body.model)))
                 }
             }
         } catch (e: ClientRequestException) {
@@ -194,8 +208,9 @@ class QwenChatAPI : GigaChatAPI {
     private fun buildChatRequest(body: GigaRequest.Chat): Map<String, Any> {
         val tools = buildTools(body.functions)
         return buildMap {
-            put("model", body.model)
+            put("model", resolveChatModel(body.model))
             put("messages", buildMessages(body.messages))
+            put("parallel_tool_calls", true)
             body.temperature?.let { put("temperature", it) }
             if (body.maxTokens > 0) {
                 put("max_tokens", body.maxTokens)
@@ -218,8 +233,9 @@ class QwenChatAPI : GigaChatAPI {
             }
         }
         return buildMap {
-            put("model", body.model)
+            put("model", resolveChatModel(body.model))
             put("input", mapOf("messages" to buildMessages(body.messages)))
+            put("parallel_tool_calls", true)
             put("parameters", parameters)
             if (tools.isNotEmpty()) {
                 put("tools", tools)
@@ -228,7 +244,7 @@ class QwenChatAPI : GigaChatAPI {
     }
 
     private fun buildEmbeddingsRequest(body: GigaRequest.Embeddings): Map<String, Any> = buildMap {
-        put("model", body.model)
+        put("model", resolveEmbeddingsModel(body.model))
         if (body.input.size == 1) {
             put("input", body.input.first())
         } else {
@@ -424,6 +440,16 @@ class QwenChatAPI : GigaChatAPI {
             .getOrDefault(GigaMessageRole.assistant)
     }
 
+    private fun resolveChatModel(model: String): String {
+        if (model.startsWith("GigaChat", ignoreCase = true)) return defaultChatModel
+        return model
+    }
+
+    private fun resolveEmbeddingsModel(model: String): String {
+        if (model.equals("Embeddings", ignoreCase = true)) return defaultEmbeddingsModel
+        return model
+    }
+
     companion object {
         private const val CHAT_COMPLETIONS_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
         private const val EMBEDDINGS_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/embeddings"
@@ -435,7 +461,8 @@ class QwenChatAPI : GigaChatAPI {
 suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val filesToolUtil: FilesToolUtil by di.instance()
-    val api = QwenChatAPI()
+    val settingsProvider: SettingsProvider by di.instance()
+    val api = QwenChatAPI(settingsProvider)
 
     val model = System.getenv("QWEN_MODEL")
         ?: System.getProperty("QWEN_MODEL")

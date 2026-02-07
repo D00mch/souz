@@ -10,13 +10,14 @@ interface SettingsProvider {
     fun setSystemPromptForModel(model: GigaModel, prompt: String?)
 
     var gigaChatKey: String?
+    var qwenChatKey: String?
     var saluteSpeechKey: String?
     var supportEmail: String?
     var systemPrompt: String?
     var defaultCalendar: String?
     var gigaModel: GigaModel
     var useFewShotExamples: Boolean
-    var useGrpc: Boolean
+    var useStreaming: Boolean
     var needsOnboarding: Boolean
     var requestTimeoutMillis: Long
     var initialWindowWidthDp: Int
@@ -42,7 +43,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
 
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
-    private var _useGrpcDelegate: String? by keyDelegate(configKey = USE_GRPC, envKey = USE_GRPC)
+    private var _useStreamingDelegate: String? by keyDelegate(configKey = USE_STREAMING, envKey = USE_STREAMING)
     private var _requestTimeoutDelegate: String? by keyDelegate(
         configKey = REQUEST_TIMEOUT_MILLIS,
         envKey = REQUEST_TIMEOUT_MILLIS
@@ -69,6 +70,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     )
 
     override var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
+    override var qwenChatKey: String? by keyDelegate(configKey = QWEN_CHAT_KEY, envKey = "QWEN_KEY")
     override var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
     override var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
     override var systemPrompt: String? by keyDelegate(configKey = SYSTEM_PROMPT, envKey = SYSTEM_PROMPT)
@@ -89,10 +91,16 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
             _fewShotsDelegate = value.toString()
         }
 
-    override var useGrpc: Boolean
-        get() = _useGrpcDelegate?.lowercase() == "true"
+    override var useStreaming: Boolean
+        get() {
+            val value = _useStreamingDelegate
+                ?: configStore.get(USE_GRPC_LEGACY)
+                ?: System.getenv(USE_GRPC_LEGACY)
+                ?: System.getProperty(USE_GRPC_LEGACY)
+            return value?.lowercase() == "true"
+        }
         set(value) {
-            _useGrpcDelegate = value.toString()
+            _useStreamingDelegate = value.toString()
         }
 
     override var needsOnboarding: Boolean
@@ -156,9 +164,11 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
 
     companion object {
         private const val GIGA_CHAT_KEY = "GIGA_CHAT_KEY"
+        private const val QWEN_CHAT_KEY = "QWEN_CHAT_KEY"
         private const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
-        private const val USE_GRPC = "USE_GRPC"
+        private const val USE_STREAMING = "USE_STREAMING"
+        private const val USE_GRPC_LEGACY = "USE_GRPC"
         private const val SUPPORT_EMAIL = "SUPPORT_EMAIL"
         private const val SYSTEM_PROMPT = "SYSTEM_PROMPT"
         private const val DEFAULT_CALENDAR = "DEFAULT_CALENDAR"
