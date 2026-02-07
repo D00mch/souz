@@ -15,9 +15,10 @@ enum class SettingsSubScreen {
 
 data class SettingsState(
     val gigaChatKey: String = "",
+    val qwenChatKey: String = "",
     val saluteSpeechKey: String = "",
     val useFewShotExamples: Boolean = false,
-    val useGrpcDelegate: Boolean = false,
+    val useStreaming: Boolean = false,
     val gigaModel: GigaModel = GigaModel.Max,
     val requestTimeoutMillis: Long = 10_000L,
     val requestTimeoutInput: String = "10000",
@@ -45,9 +46,10 @@ data class SettingsState(
 sealed interface SettingsEvent : VMEvent {
     object GoToMain : SettingsEvent
     data class InputGigaChatKey(val key: String): SettingsEvent
+    data class InputQwenChatKey(val key: String): SettingsEvent
     data class InputSaluteSpeechKey(val key: String): SettingsEvent
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
-    data class InputUseGrpcDelegate(val enabled: Boolean): SettingsEvent
+    data class InputUseStreaming(val enabled: Boolean): SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
     data class InputRequestTimeoutMillis(val millis: String) : SettingsEvent
     data class InputTemperature(val temperature: String) : SettingsEvent

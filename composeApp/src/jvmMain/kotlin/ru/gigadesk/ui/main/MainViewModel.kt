@@ -124,7 +124,9 @@ class MainViewModel(
                         val rawText = graphAgent.execute(userInput)
                         l.info(rawText)
                         setState { copy(displayedText = rawText, statusMessage = "Ответ готов", isProcessing = false) }
-                        if (!settingsProvider.useGrpc) say.queue(prepareTextForSpeech(rawText))
+                        if (!settingsProvider.useStreaming) {
+                            say.queue(prepareTextForSpeech(rawText))
+                        }
                     }
                 }.onFailure { e ->
                     l.error("Agent flow terminated: ${e.message}", e)

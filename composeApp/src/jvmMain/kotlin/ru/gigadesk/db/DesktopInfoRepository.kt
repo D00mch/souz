@@ -7,7 +7,6 @@ import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
-import ru.gigadesk.giga.GigaRestChatAPI
 import java.time.LocalDate
 import kotlin.random.Random
 
@@ -78,7 +77,7 @@ class DesktopInfoRepository(
 suspend fun main() {
  //   ConfigStore.rm("rag_repo_last_run") // to reset
     val di = DI.invoke { import(mainDiModule) }
-    val api: GigaRestChatAPI by di.instance()
+    val api: GigaChatAPI by di.instance()
     val vectorDB: VectorDB by di.instance()
     val extractor: DesktopDataExtractor by di.instance()
     val repo = DesktopInfoRepository(api, vectorDB, extractor)

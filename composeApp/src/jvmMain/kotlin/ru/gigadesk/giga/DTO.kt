@@ -108,10 +108,23 @@ fun String.toFinishReason(): GigaResponse.FinishReason? {
 
 const val MAX_TOKENS = 8192
 
-enum class GigaModel(val alias: String, val maxTokens: Int) {
-    Lite("GigaChat-2", MAX_TOKENS),
-    Pro("GigaChat-Pro", MAX_TOKENS),
-    Max("GigaChat-Max", MAX_TOKENS),
+enum class LlmProvider {
+    GIGA,
+    QWEN,
+}
+
+enum class GigaModel(
+    val displayName: String,
+    val alias: String,
+    val maxTokens: Int,
+    val provider: LlmProvider,
+) {
+    Lite("GigaChat Lite", "GigaChat-2", MAX_TOKENS, LlmProvider.GIGA),
+    Pro("GigaChat Pro", "GigaChat-Pro", MAX_TOKENS, LlmProvider.GIGA),
+    Max("GigaChat Max", "GigaChat-Max", MAX_TOKENS, LlmProvider.GIGA),
+    QwenFlash("Qwen Flash", "qwen-flash", 32_768, LlmProvider.QWEN),
+    QwenPlus("Qwen Plus", "qwen-plus", 32_768, LlmProvider.QWEN),
+    QwenMax("Qwen Max", "qwen-max", 32_768, LlmProvider.QWEN),
 }
 
 object GigaRequest {

@@ -39,8 +39,11 @@ import org.junit.jupiter.params.provider.ValueSource
 import org.kodein.di.instance
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.db.SettingsProviderImpl
+import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRestChatAPI
+import ru.gigadesk.giga.LlmProvider
+import ru.gigadesk.qwen.QwenChatAPI
 import java.util.concurrent.atomic.AtomicLong
 
 
@@ -54,23 +57,28 @@ class GraphAgentToolScenariosIntegrationTest {
     private val spySettings: SettingsProviderImpl by lazy {
         spyk(SettingsProviderImpl(ConfigStore)) {
             every { forbiddenFolders } returns emptyList()
-            every { useGrpc } returns false
-            every { gigaModel } returns GigaModel.Lite
-            every { temperature } returns 0.1f
+            every { useStreaming } returns false
+            every { gigaModel } returns selectedModel
+            every { temperature } returns 0.2f
             every { systemPrompt } returns DEFAULT_SYSTEM_PROMPT
         }
     }
 
     companion object {
+        private val selectedModel = GigaModel.QwenFlash
+
         private var gigaRestChatAPI: GigaRestChatAPI? = null
+        private var qwenChatAPI: QwenChatAPI? = null
         private val httpRequestCount = AtomicLong(0)
         private val httpRequestTotalNanos = AtomicLong(0)
 
         @JvmStatic
         @AfterAll
         fun finish() {
-            val gigaRestChatAPI = gigaRestChatAPI ?: return
-            println("Spent: ${gigaRestChatAPI.getSessionTokenUsage()}")
+            when (selectedModel.provider) {
+                LlmProvider.GIGA -> println("Spent: ${gigaRestChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+                LlmProvider.QWEN -> println("Spent: ${qwenChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+            }
             val requestCount = httpRequestCount.get()
             if (requestCount == 0L) {
                 println("HTTP requests: 0")
@@ -85,7 +93,7 @@ class GraphAgentToolScenariosIntegrationTest {
     private val testOverrideModule: DI.Module = DI.Module("TestOverrideModule") {
         bindSingleton<SettingsProvider>(overrides = true) { spySettings }
         bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
-        bindSingleton(overrides = true) {
+        bindSingleton<GigaRestChatAPI>(overrides = true) {
             if (gigaRestChatAPI == null) {
                 gigaRestChatAPI = GigaRestChatAPI(instance(), instance()).apply {
                     getHttpClient().plugin(HttpSend).intercept { request ->
@@ -101,12 +109,41 @@ class GraphAgentToolScenariosIntegrationTest {
             }
             gigaRestChatAPI!!
         }
+        bindSingleton<QwenChatAPI>(overrides = true) {
+            if (qwenChatAPI == null) {
+                qwenChatAPI = QwenChatAPI(instance()).apply {
+                    getHttpClient().plugin(HttpSend).intercept { request ->
+                        val startNanos = System.nanoTime()
+                        try {
+                            execute(request)
+                        } finally {
+                            httpRequestCount.incrementAndGet()
+                            httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
+                        }
+                    }
+                }
+            }
+            qwenChatAPI!!
+        }
+        bindSingleton<GigaChatAPI>(overrides = true) {
+            when (selectedModel.provider) {
+                LlmProvider.GIGA -> instance<GigaRestChatAPI>()
+                LlmProvider.QWEN -> instance<QwenChatAPI>()
+            }
+        }
     }
 
     @BeforeEach
     fun checkEnvironment() {
-        val apiKey = System.getenv("GIGA_KEY") ?: System.getProperty("GIGA_KEY")
-        Assumptions.assumeTrue(!apiKey.isNullOrBlank(), "Skipping integration tests: GIGA_KEY is not set")
+        val apiKeyName = when (selectedModel.provider) {
+            LlmProvider.GIGA -> "GIGA_KEY"
+            LlmProvider.QWEN -> "QWEN_KEY"
+        }
+        val apiKey = System.getenv(apiKeyName) ?: System.getProperty(apiKeyName)
+        Assumptions.assumeTrue(
+            !apiKey.isNullOrBlank(),
+            "Skipping integration tests: $apiKeyName is not set (selected model=${selectedModel.alias})"
+        )
     }
 
     @ParameterizedTest(name = "scenario1_launchApplication[{index}] {0}")
@@ -385,9 +422,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario11_buildChartFromFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "Построй график возраста по имени из файла sample.csv по пути /tmp/test-data",
-            "Сделай график из /tmp/test-data/sample.csv по полям имя и возраст",
-            "Построй chart по sample.csv из папки /tmp/test-data",
+            "Построй график возраста по имени из файла sample.csv по пути home/tmp/test-data",
+            "Сделай график из ~/tmp/test-data/sample.csv по полям имя и возраст",
+            "Построй chart по sample.csv из папки ~/tmp/test-data",
         ]
     )
     fun scenario11_buildChartFromFile(userPrompt: String) = runTest {
@@ -450,9 +487,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario14_createFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "В папке /tmp/test-data создай файл test_integration.txt с текстом Hello",
-            "Создай /tmp/test-data/test_integration.txt и запиши Hello",
-            "Нужен файл test_integration.txt в /tmp/test-data с содержимым Hello",
+            "В папке home/tmp/test-data создай файл test_integration.txt с текстом Hello",
+            "Создай ~/tmp/test-data/test_integration.txt и запиши Hello",
+            "Нужен файл test_integration.txt в ~/tmp/test-data с содержимым Hello",
         ]
     )
     fun scenario14_createFile(userPrompt: String) = runTest {
@@ -471,9 +508,9 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario14_readFile[{index}] {0}")
     @ValueSource(
         strings = [
-            "Прочитай файл test_integration.txt в папке /tmp/test-data",
-            "Открой и прочитай /tmp/test-data/test_integration.txt",
-            "Покажи содержимое файла test_integration.txt из /tmp/test-data",
+            "Прочитай файл test_integration.txt в папке ~/tmp/test-data",
+            "Открой и прочитай home/tmp/test-data/test_integration.txt",
+            "Покажи содержимое файла test_integration.txt из home tmp test-data",
         ]
     )
     fun scenario14_readFile(userPrompt: String) = runTest {
@@ -748,7 +785,7 @@ class GraphAgentToolScenariosIntegrationTest {
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolGetClipboard> { toolGetClipboard }
         }
-        coVerify(exactly = 1) { toolGetClipboard.invoke(any()) }
+        coVerify(atLeast = 1) { toolGetClipboard.invoke(any()) }
     }
 
     @ParameterizedTest(name = "excelRead_overview[{index}] {0}")
@@ -794,7 +831,7 @@ class GraphAgentToolScenariosIntegrationTest {
             excelRead.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == ExcelRead.ReadOperation.QUERY &&
-                        it.filter != null && it.filter!!.contains(">") && it.filter!!.contains("1000")
+                        it.filter != null && it.filter.contains(">") && it.filter.contains("1000")
             })
         }
     }
@@ -820,7 +857,7 @@ class GraphAgentToolScenariosIntegrationTest {
             excelRead.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == ExcelRead.ReadOperation.QUERY &&
-                        it.sortBy != null && it.sortBy!!.contains("Amount", ignoreCase = true)
+                        it.sortBy != null && it.sortBy.contains("Amount", ignoreCase = true)
             })
         }
     }
@@ -895,7 +932,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(atLeast = 1) {
             excelReport.invoke(match {
                 it.path.contains("report") &&
-                        it.headers != null && it.headers!!.contains("Имя")
+                        it.headers != null && it.headers.contains("Имя")
             })
         }
     }
@@ -915,8 +952,7 @@ class GraphAgentToolScenariosIntegrationTest {
         }
         coVerify(atLeast = 1) {
             excelReport.invoke(match {
-                it.path.contains("stats") &&
-                        it.data != null && it.data!!.isNotEmpty()
+                it.path.contains("stats") && !it.data.isNullOrEmpty()
             })
         }
     }

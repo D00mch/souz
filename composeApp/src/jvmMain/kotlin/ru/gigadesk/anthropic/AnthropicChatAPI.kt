@@ -34,7 +34,7 @@ private data class ToolUseBlock(
 )
 
 class AnthropicChatAPI(
-    private val fallback: GigaRestChatAPI,
+    private val fallback: GigaChatAPI,
 ) : GigaChatAPI by fallback {
 
     private val l = LoggerFactory.getLogger(AnthropicChatAPI::class.java)
@@ -377,7 +377,7 @@ class AnthropicChatAPI(
 
 suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
-    val fallback: GigaRestChatAPI by di.instance()
+    val fallback: GigaChatAPI by di.instance()
     val filesToolUtil: FilesToolUtil by di.instance()
     val api = AnthropicChatAPI(fallback)
 

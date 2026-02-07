@@ -27,9 +27,11 @@ import ru.gigadesk.giga.ApiClassifier
 import ru.gigadesk.giga.GigaAuth
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaGRPCChatApi
+import ru.gigadesk.giga.LLMFactory
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.keys.Keys
+import ru.gigadesk.qwen.QwenChatAPI
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.application.*
 import ru.gigadesk.tool.browser.*
@@ -132,7 +134,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<GigaRestChatAPI> {
         GigaRestChatAPI(instance(), instance(), instance(DiTags.TAG_LOG))
     }
-    bindSingleton<GigaChatAPI> { instance<GigaRestChatAPI>() }
+    bindSingleton<QwenChatAPI> { QwenChatAPI(instance()) }
+    bindSingleton { LLMFactory(instance(), instance(), instance(), instance()) }
+    bindSingleton<GigaChatAPI> { instance<LLMFactory>() }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
@@ -140,7 +144,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     // LLM
     bindSingleton { NodesErrorHandling() }
     bindSingleton { NodesCommon(instance(), instance()) }
-    bindSingleton { NodesLLM(instance(), instance(), instance()) }
+    bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { NodesSummarization(instance(), instance()) }
     bindSingleton {
         NodesClassification(
