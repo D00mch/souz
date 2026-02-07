@@ -4,6 +4,7 @@ import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.ui.VMEvent
 import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
+import androidx.compose.ui.text.input.TextFieldValue
 
 /**
  * Chat message for the chat mode.
@@ -11,7 +12,8 @@ import ru.gigadesk.ui.VMState
 data class ChatMessage(
     val text: String,
     val isUser: Boolean,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val id: String = java.util.UUID.randomUUID().toString()
 )
 
 /**
@@ -29,7 +31,7 @@ data class MainState(
     val isThinkingPanelOpen: Boolean = false,
     val isChatMode: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
-    val chatInputText: String = "",
+    val chatInputText: TextFieldValue = TextFieldValue(""),
 ) : VMState {
 
     companion object {
@@ -68,7 +70,7 @@ sealed interface MainEvent : VMEvent {
     data object ShowLastText : MainEvent
     data object ToggleThinkingPanel : MainEvent
     data object ToggleChatMode : MainEvent
-    data class UpdateChatInput(val text: String) : MainEvent
+    data class UpdateChatInput(val text: TextFieldValue) : MainEvent
     data object SendChatMessage : MainEvent
 }
 

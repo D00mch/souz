@@ -137,7 +137,7 @@ fun MainScreenContent(
     onToggleThinkingPanel: () -> Unit = {},
     onShowSnack: (String) -> Unit = {},
     onToggleChatMode: () -> Unit = {},
-    onUpdateChatInput: (String) -> Unit = {},
+    onUpdateChatInput: (TextFieldValue) -> Unit = {},
     onSendChatMessage: () -> Unit = {},
 ) {
     val textContent = state.displayedText.ifEmpty { state.statusMessage }
@@ -172,7 +172,6 @@ fun MainScreenContent(
                         )
                     )
 
-                    // Top Left Controls
                     Row(
                         modifier = Modifier
                             .align(Alignment.CenterStart)
@@ -181,8 +180,7 @@ fun MainScreenContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         val iconTint = Color.White.copy(0.8f)
-                        
-                        // Thinking Process Button
+
                         Box(
                             modifier = Modifier.size(TopButtonSize),
                             contentAlignment = Alignment.TopEnd
@@ -190,7 +188,6 @@ fun MainScreenContent(
                             MinimalGlassButton(onClick = onToggleThinkingPanel) {
                                 Icon(Icons.Rounded.Psychology, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                             }
-                            // Notification Dot (if active/processing)
                             if (state.isProcessing || state.isThinkingPanelOpen) {
                                 Box(
                                     modifier = Modifier
@@ -204,8 +201,7 @@ fun MainScreenContent(
                         }
                         
                         Spacer(Modifier.width(8.dp))
-                        
-                        // Chat Mode Toggle Button
+
                         Box(
                             modifier = Modifier.size(TopButtonSize),
                             contentAlignment = Alignment.TopEnd
@@ -214,7 +210,6 @@ fun MainScreenContent(
                                 val toggleIcon = if (state.isChatMode) Icons.Rounded.Mic else Icons.Outlined.ChatBubbleOutline
                                 Icon(toggleIcon, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                             }
-                            // Indicator dot when chat mode is active
                             if (state.isChatMode) {
                                 Box(
                                     modifier = Modifier
@@ -462,31 +457,27 @@ fun MarkdownViewer(
 @Composable
 fun ChatModeContent(
     messages: List<ChatMessage>,
-    inputText: String,
+    inputText: TextFieldValue,
     isProcessing: Boolean,
-    onInputChange: (String) -> Unit,
+    onInputChange: (TextFieldValue) -> Unit,
     onSendMessage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
     val textColor = MaterialTheme.glassColors.textPrimary
-    
-    // Track window focus
+
     val windowInfo = LocalWindowInfo.current
     val isWindowFocused = windowInfo.isWindowFocused
-    
-    // Auto-focus input field on initial composition and when window is focused
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-    }
+
     LaunchedEffect(isWindowFocused) {
         if (isWindowFocused) {
             focusRequester.requestFocus()
         }
     }
-    
-    // Auto-scroll to bottom when new messages arrive
+
+    val randomTips = remember { MainState.START_TIPS.shuffled().take(3) }
+
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -494,9 +485,7 @@ fun ChatModeContent(
     }
     
     Column(modifier = modifier) {
-        if (messages.isEmpty() && !isProcessing && inputText.isEmpty()) {
-            // Show START_TIPS when chat is empty and input is empty
-            val randomTips = remember { MainState.START_TIPS.shuffled().take(3) }
+        if (messages.isEmpty() && !isProcessing && inputText.text.isEmpty()) {
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -520,17 +509,17 @@ fun ChatModeContent(
                             color = textColor.copy(0.7f),
                             fontSize = 14.sp,
                             modifier = Modifier
-                                .clickable { onInputChange(tip) }
+                                .clickable { 
+                                    onInputChange(TextFieldValue(tip, TextRange(tip.length))) 
+                                }
                                 .padding(vertical = 4.dp)
                         )
                     }
                 }
             }
         } else if (messages.isEmpty() && !isProcessing) {
-            // Empty space when typing but no messages yet
             Box(modifier = Modifier.weight(1f))
         } else {
-            // Messages list
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -540,11 +529,10 @@ fun ChatModeContent(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
-                items(messages, key = { it.timestamp }) { message ->
+                items(messages, key = { it.id }) { message ->
                     ChatBubble(message = message, isWindowFocused = isWindowFocused)
                 }
-                
-                // Loading indicator
+
                 if (isProcessing) {
                     item {
                         Box(
@@ -573,8 +561,7 @@ fun ChatModeContent(
                 }
             }
         }
-        
-        // Input field with focus and Enter key handling
+
         ChatInputField(
             value = inputText,
             onValueChange = onInputChange,
@@ -594,8 +581,7 @@ private fun ChatBubble(message: ChatMessage, isWindowFocused: Boolean) {
     val textColor = MaterialTheme.glassColors.textPrimary
     val userBubbleColor = MaterialTheme.colorScheme.primary
     val botBubbleColor = MaterialTheme.glassColors.backgroundTop
-    
-    // When window loses focus, make bubbles semi-transparent
+
     val focusAlpha = if (isWindowFocused) 1f else 0.4f
     
     val bubbleShape = RoundedCornerShape(
@@ -642,8 +628,8 @@ private fun ChatBubble(message: ChatMessage, isWindowFocused: Boolean) {
 
 @Composable
 private fun ChatInputField(
-    value: String,
-    onValueChange: (String) -> Unit,
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
     onSend: () -> Unit,
     enabled: Boolean,
     focusRequester: FocusRequester,
@@ -654,16 +640,6 @@ private fun ChatInputField(
     val borderColor = textColor.copy(alpha = 0.15f)
     val bgColor = MaterialTheme.glassColors.backgroundTop.copy(alpha = 0.4f)
     
-    // Use TextFieldValue to properly manage cursor position
-    var textFieldValue by remember { mutableStateOf(TextFieldValue(value)) }
-    
-    // Sync external value changes
-    LaunchedEffect(value) {
-        if (textFieldValue.text != value) {
-            textFieldValue = TextFieldValue(value, TextRange(value.length))
-        }
-    }
-    
     Row(
         modifier = modifier
             .heightIn(min = 44.dp, max = 120.dp)
@@ -673,19 +649,16 @@ private fun ChatInputField(
             .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
             .onPreviewKeyEvent { event ->
                 when {
-                    // Enter without Shift sends message
                     event.type == KeyEventType.KeyDown && event.key == Key.Enter && !event.isShiftPressed -> {
-                        if (value.isNotBlank() && enabled) {
+                        if (value.text.isNotBlank() && enabled) {
                             onSend()
                         }
                         true
                     }
-                    // Shift+Enter adds newline at cursor position
                     event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isShiftPressed -> {
-                        val cursorPos = textFieldValue.selection.start
-                        val newText = textFieldValue.text.substring(0, cursorPos) + "\n" + textFieldValue.text.substring(cursorPos)
-                        textFieldValue = TextFieldValue(newText, TextRange(cursorPos + 1))
-                        onValueChange(newText)
+                        val cursorPos = value.selection.start
+                        val newText = value.text.substring(0, cursorPos) + "\n" + value.text.substring(cursorPos)
+                        onValueChange(TextFieldValue(newText, TextRange(cursorPos + 1)))
                         true
                     }
                     else -> false
@@ -697,7 +670,7 @@ private fun ChatInputField(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.CenterStart
         ) {
-            if (textFieldValue.text.isEmpty()) {
+            if (value.text.isEmpty()) {
                 Text(
                     "Введите сообщение...",
                     color = textColor.copy(0.35f),
@@ -705,11 +678,8 @@ private fun ChatInputField(
                 )
             }
             BasicTextField(
-                value = textFieldValue,
-                onValueChange = { newValue ->
-                    textFieldValue = newValue
-                    onValueChange(newValue.text)
-                },
+                value = value,
+                onValueChange = onValueChange,
                 enabled = enabled,
                 textStyle = TextStyle(
                     color = textColor,
@@ -731,24 +701,24 @@ private fun ChatInputField(
             modifier = Modifier
                 .size(34.dp)
                 .clip(CircleShape)
-                .background(if (value.isNotBlank() && enabled) accentColor else textColor.copy(0.08f))
-                .clickable(enabled = value.isNotBlank() && enabled) { onSend() },
+                .background(if (value.text.isNotBlank() && enabled) accentColor else textColor.copy(0.08f))
+                .clickable(enabled = value.text.isNotBlank() && enabled) { onSend() },
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Rounded.ArrowUpward,
                 contentDescription = "Отправить",
-                tint = if (value.isNotBlank() && enabled) Color.Black else textColor.copy(0.25f),
+                tint = if (value.text.isNotBlank() && enabled) Color.Black else textColor.copy(0.25f),
                 modifier = Modifier.size(18.dp)
             )
         }
     }
 }
 
-private fun formatTimestamp(timestamp: Long): String {
-    val sdf = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-    return sdf.format(java.util.Date(timestamp))
-}
+private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+
+private fun formatTimestamp(timestamp: Long): String = 
+    timestampFormatter.format(java.util.Date(timestamp))
 
 fun parseMarkdownContent(input: String): List<MarkdownPart> {
     val parts = mutableListOf<MarkdownPart>()
@@ -1061,7 +1031,7 @@ fun PreviewChatMode() {
                         ChatMessage("Привет! Все отлично, спасибо за вопрос. Чем могу помочь?", isUser = false, timestamp = System.currentTimeMillis() - 30000),
                         ChatMessage("Покажи погоду в Москве", isUser = true, timestamp = System.currentTimeMillis())
                     ),
-                    chatInputText = "",
+                    chatInputText = TextFieldValue(""),
                     displayedText = "",
                     statusMessage = "Чат режим",
                     isListening = false
@@ -1081,7 +1051,7 @@ fun PreviewChatModeEmpty() {
                 state = MainState(
                     isChatMode = true,
                     chatMessages = emptyList(),
-                    chatInputText = "",
+                    chatInputText = TextFieldValue(""),
                     displayedText = "",
                     statusMessage = "Чат режим",
                     isListening = false

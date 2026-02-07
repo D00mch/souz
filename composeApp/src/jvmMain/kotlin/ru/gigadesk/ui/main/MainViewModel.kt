@@ -18,6 +18,7 @@ import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.audio.*
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
+import androidx.compose.ui.text.input.TextFieldValue
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.permissions.AppRelauncher
@@ -190,14 +191,14 @@ class MainViewModel(
     }
 
     private suspend fun sendChatMessage() {
-        val userText = currentState.chatInputText.trim()
+        val userText = currentState.chatInputText.text.trim()
         if (userText.isEmpty()) return
 
         val userMessage = ChatMessage(text = userText, isUser = true)
         setState {
             copy(
                 chatMessages = chatMessages + userMessage,
-                chatInputText = "",
+                chatInputText = TextFieldValue(""),
                 isProcessing = true
             )
         }
@@ -223,6 +224,7 @@ class MainViewModel(
             }
         }
     }
+
 
     private suspend fun setPreviousText() {
         currentState.lastKnownAgentContext?.let { ctx ->
