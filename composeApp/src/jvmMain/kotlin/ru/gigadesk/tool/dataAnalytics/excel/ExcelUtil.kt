@@ -34,26 +34,6 @@ fun Sheet.findColumnIndex(columnName: String, formatter: DataFormatter = DataFor
     return -1
 }
 
-fun Cell.setSmartValue(value: String) {
-    val numValue = value.toDoubleOrNull()
-    if (numValue != null) {
-        setCellValue(numValue)
-    } else {
-        setCellValue(value)
-    }
-}
-
-fun Workbook.saveAtomic(file: File) {
-    val tempFile = File(file.parentFile, "${file.name}.${System.currentTimeMillis()}.tmp")
-    try {
-        FileOutputStream(tempFile).use { write(it) }
-        Files.move(tempFile.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
-    } catch (e: Exception) {
-        tempFile.delete()
-        throw e
-    }
-}
-
 fun formatNum(d: Double): String = 
     if (d == d.toLong().toDouble()) d.toLong().toString() else "%.2f".format(d)
 

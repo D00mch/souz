@@ -53,7 +53,6 @@ class ExcelReport(
             
             var rowIdx = 0
 
-            // Headers
             if (!input.headers.isNullOrBlank()) {
                 val row = sheet.createRow(rowIdx++)
                 val style = wb.createCellStyle()
@@ -81,8 +80,7 @@ class ExcelReport(
                     }
                 }
             }
-            
-            // Autosize columns if data exists
+
             if (rowIdx > 0) {
                  val cols = sheet.getRow(0)?.lastCellNum?.toInt() ?: 0
                  for(i in 0 until cols) sheet.autoSizeColumn(i)
