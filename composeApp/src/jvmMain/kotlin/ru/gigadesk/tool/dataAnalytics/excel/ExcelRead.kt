@@ -44,7 +44,7 @@ open class ExcelRead(
         @InputParamDescription("Column to group by (for QUERY)")
         val groupBy: String? = null,
 
-        @InputParamDescription("Filter condition like 'Status=Completed' (for QUERY)")
+        @InputParamDescription("Filter: Column=Value, e.g. 'Status=Completed'. Only equality supported (for QUERY)")
         val filter: String? = null,
 
         @InputParamDescription("Limit results (for QUERY, default: 10)")
@@ -53,7 +53,7 @@ open class ExcelRead(
         @InputParamDescription("Column to sort by (for QUERY)")
         val sortBy: String? = null,
 
-        @InputParamDescription("Sort order: ASC (default), DESC")
+        @InputParamDescription("Sort order: ASC or DESC")
         val sortOrder: String? = null,
 
 
@@ -236,7 +236,12 @@ open class ExcelRead(
         }.entries.toList()
 
         val sortKey = input.sortBy
-        val isDesc = input.sortOrder?.equals("DESC", true) ?: true
+        val isDesc = when (input.sortOrder?.uppercase()) {
+            null -> true
+            "DESC" -> true
+            "ASC" -> false
+            else -> throw BadInputException("sortOrder must be ASC or DESC")
+        }
 
         val sortedResults = if (sortKey != null) {
             if (sortKey.equals(input.groupBy, true)) {

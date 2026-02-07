@@ -26,7 +26,10 @@ class ExcelReport(
     )
 
     override val name = "ExcelReport"
-    override val description = "Create a NEW Excel file for reports. Can populate with data immediately."
+    override val description = """Create a NEW Excel file with headers and data.
+- headers: comma-separated, e.g. 'Name, Age, City'
+- data: list of rows, e.g. [["John", 25], ["Jane", 30]]
+File must not exist. For reading use ExcelRead."""
 
     override val fewShotExamples = listOf(
         FewShotExample(
