@@ -25,9 +25,11 @@ class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<
 
     override val name: String = "FindFilesByName"
     override val description: String = """
-        Search for files by name using macOS Spotlight (mdfind). 
-        Returns absolute paths to files matching the name query.
-        This is much faster than generic file search but works only on indexed locations.
+        [PRIMARY TOOL for Finding Files]
+        Search for the PATH of a file by its name (or partial name).
+        Use this when the user asks "Find file X" or "Where is file Y".
+        
+        Mechanism: uses macOS Spotlight (mdfind). Fast and recursive.
     """.trimIndent()
 
     override val fewShotExamples: List<FewShotExample> = listOf(

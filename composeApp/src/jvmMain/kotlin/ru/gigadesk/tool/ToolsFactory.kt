@@ -11,6 +11,8 @@ import ru.gigadesk.tool.browser.*
 import ru.gigadesk.tool.calendar.*
 import ru.gigadesk.tool.config.*
 import ru.gigadesk.tool.dataAnalytics.ToolCreatePlotFromCsv
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelReport
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelRead
 import ru.gigadesk.tool.desktop.*
 import ru.gigadesk.tool.files.*
 import ru.gigadesk.tool.mail.*
@@ -65,6 +67,10 @@ class ToolsFactory(di: DI) {
     private val toolTextUnderSelection: ToolTextUnderSelection by di.instance()
     private val toolFindFolders: ToolFindFolders by di.instance()
 
+    // Excel tools
+    private val excelRead: ExcelRead by di.instance()
+    private val excelReport: ExcelReport by di.instance()
+
     val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
             category.tools().associateBy { it.fn.name }
@@ -118,6 +124,8 @@ class ToolsFactory(di: DI) {
             toolCreatePlotFromCsv.toGiga(),
             toolUploadFile.toGiga(),
             toolDownloadFile.toGiga(),
+            excelRead.toGiga(),
+            excelReport.toGiga(),
         )
 
         ToolCategory.CALENDAR -> listOf(

@@ -85,6 +85,10 @@ kotlin {
 
             // ktor server (local API for mobile companion)
             implementation(libs.bundles.ktorServer)
+
+            // Excel support
+            implementation(libs.poi)
+            implementation(libs.poi.ooxml)
         }
 
         jvmTest.dependencies {
