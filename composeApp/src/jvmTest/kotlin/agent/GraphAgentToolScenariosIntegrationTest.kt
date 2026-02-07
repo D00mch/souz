@@ -95,7 +95,7 @@ class GraphAgentToolScenariosIntegrationTest {
         bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
         bindSingleton<GigaRestChatAPI>(overrides = true) {
             if (gigaRestChatAPI == null) {
-                gigaRestChatAPI = GigaRestChatAPI(instance(), instance()).apply {
+                gigaRestChatAPI = GigaRestChatAPI(instance(), instance(), instance()).apply {
                     getHttpClient().plugin(HttpSend).intercept { request ->
                         val startNanos = System.nanoTime()
                         try {
@@ -111,7 +111,7 @@ class GraphAgentToolScenariosIntegrationTest {
         }
         bindSingleton<QwenChatAPI>(overrides = true) {
             if (qwenChatAPI == null) {
-                qwenChatAPI = QwenChatAPI(instance()).apply {
+                qwenChatAPI = QwenChatAPI(instance(), instance()).apply {
                     getHttpClient().plugin(HttpSend).intercept { request ->
                         val startNanos = System.nanoTime()
                         try {

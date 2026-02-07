@@ -1,8 +1,5 @@
 package ru.gigadesk.giga
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.SerializationFeature
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.application.ToolOpen
 import ru.gigadesk.tool.files.FilesToolUtil
@@ -27,15 +24,12 @@ import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
 import java.io.File
 import java.util.UUID
-import kotlin.concurrent.atomics.AtomicReference
-import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.time.Duration.Companion.seconds
 
-@OptIn(ExperimentalAtomicApi::class)
 class GigaRestChatAPI(
     private val auth: GigaAuth,
     private val keysProvider: SettingsProvider,
-    private val logObjectMapper: ObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
+    private val tokenLogging: TokenLogging,
 ) : GigaChatAPI {
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
 
@@ -74,8 +68,6 @@ class GigaRestChatAPI(
 
     private val uuid = UUID.randomUUID().toString() // for cache to work
 
-    private val currentSessionTokensUsage = AtomicReference(GigaResponse.Usage(0, 0, 0, 0))
-
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
         val response = client.post(URL) {
             header("X-Session-ID", uuid)
@@ -84,7 +76,8 @@ class GigaRestChatAPI(
         when {
             response.status.isSuccess() -> {
                 val result = response.body<GigaResponse.Chat.Ok>()
-                logTokenUsage(result, body)
+                l.info("Chat response: ")
+                tokenLogging.logTokenUsage(result, body)
                 result
             }
             response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
@@ -106,23 +99,6 @@ class GigaRestChatAPI(
     } catch (t: Throwable) {
         l.error("Error in REST chat", t)
         GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")
-    }
-
-    fun logTokenUsage(result: GigaResponse.Chat.Ok, body: GigaRequest.Chat) {
-        val newCurrentTokensUsage = currentSessionTokensUsage.load() + result.usage
-        currentSessionTokensUsage.store(newCurrentTokensUsage)
-
-        val (_, _, spent, cached) = result.usage
-        val (_, _, sSpent, sCached) = newCurrentTokensUsage
-        l.info("Chat response: ")
-        println(
-            """
-            |--  History.len: ${body.messages.size},  Functions.len: ${body.functions.size}
-            |--  Tokens spent: $spent, cached: $cached, per session spent: $sSpent, cached: $sCached
-            |--  Choice.len: ${result.choices.size}, Last choice:"
-            |${logObjectMapper.writeValueAsString(result.choices.lastOrNull())}
-            """.trimMargin()
-        )
     }
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
@@ -323,9 +299,9 @@ class GigaRestChatAPI(
     }
 
     companion object {
-        private val URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
-        private val EMBEDDINGS_URL = "https://gigachat.devices.sberbank.ru/api/v1/embeddings"
-        private val BALANCE_URL = "https://gigachat.devices.sberbank.ru/api/v1/balance"
+        private const val URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
+        private const val EMBEDDINGS_URL = "https://gigachat.devices.sberbank.ru/api/v1/embeddings"
+        private const val BALANCE_URL = "https://gigachat.devices.sberbank.ru/api/v1/balance"
     }
 }
 
