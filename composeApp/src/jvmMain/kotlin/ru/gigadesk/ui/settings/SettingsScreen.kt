@@ -29,6 +29,7 @@ import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.agent.session.GraphSessionRepository
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
+import ru.gigadesk.giga.LlmProvider
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
@@ -64,6 +65,8 @@ fun SettingsScreen(
                 state,
                 onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
                 onQwenChatKeyInput = { key -> viewModel.send(SettingsEvent.InputQwenChatKey(key)) },
+                onAiTunnelKeyInput = { key -> viewModel.send(SettingsEvent.InputAiTunnelKey(key)) },
+                onAiTunnelModelNameInput = { name -> viewModel.send(SettingsEvent.InputAiTunnelModelName(name)) },
                 onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
                 onVoiceSpeedInput = { speed -> viewModel.send(SettingsEvent.InputVoiceSpeed(speed)) },
                 onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
@@ -121,6 +124,8 @@ fun SettingsScreen(
     state: SettingsState,
     onGigaChatKeyInput: (String) -> Unit,
     onQwenChatKeyInput: (String) -> Unit,
+    onAiTunnelKeyInput: (String) -> Unit,
+    onAiTunnelModelNameInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
     onChooseVoice: () -> Unit,
@@ -336,6 +341,29 @@ fun SettingsScreen(
                     selectedModel = state.gigaModel,
                     onModelSelected = onModelChange,
                 )
+
+                // AI Tunnel specific fields - show only when AiTunnel is selected
+                if (state.gigaModel.provider == LlmProvider.AI_TUNNEL) {
+                    LabeledTextField(
+                        label = "AI Tunnel ключ",
+                        value = state.aiTunnelKey,
+                        onValueChange = onAiTunnelKeyInput,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LabeledTextField(
+                            label = "Название модели AI Tunnel",
+                            value = state.aiTunnelModelName,
+                            onValueChange = onAiTunnelModelNameInput,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = "Например: gpt-4o-mini, claude-3-5-sonnet, deepseek-chat",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                        )
+                    }
+                }
 
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -662,6 +690,8 @@ fun SettingsScreenPreview() {
             state = SettingsState(gigaChatKey = "key1", saluteSpeechKey = "key2", useFewShotExamples = true),
             onGigaChatKeyInput = {},
             onQwenChatKeyInput = {},
+            onAiTunnelKeyInput = {},
+            onAiTunnelModelNameInput = {},
             onSaluteSpeechKeyInput = {},
             onVoiceSpeedInput = {},
             onChooseVoice = {},

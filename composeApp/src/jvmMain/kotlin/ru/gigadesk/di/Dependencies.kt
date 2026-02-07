@@ -33,6 +33,7 @@ import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.giga.SessionTokenLogging
 import ru.gigadesk.giga.TokenLogging
 import ru.gigadesk.keys.Keys
+import ru.gigadesk.llms.AiTunnelChatAPI
 import ru.gigadesk.llms.QwenChatAPI
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.application.*
@@ -140,7 +141,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         GigaRestChatAPI(instance(), instance(), instance())
     }
     bindSingleton<QwenChatAPI> { QwenChatAPI(instance(), instance()) }
-    bindSingleton { LLMFactory(instance(), instance(), instance(), instance()) }
+    bindSingleton<AiTunnelChatAPI> { AiTunnelChatAPI(instance(), instance()) }
+    bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance()) }
     bindSingleton<GigaChatAPI> { instance<LLMFactory>() }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }

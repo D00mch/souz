@@ -11,6 +11,8 @@ interface SettingsProvider {
 
     var gigaChatKey: String?
     var qwenChatKey: String?
+    var aiTunnelKey: String?
+    var aiTunnelModelName: String?
     var saluteSpeechKey: String?
     var supportEmail: String?
     var systemPrompt: String?
@@ -71,6 +73,8 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
 
     override var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
     override var qwenChatKey: String? by keyDelegate(configKey = QWEN_CHAT_KEY, envKey = "QWEN_KEY")
+    override var aiTunnelKey: String? by keyDelegate(configKey = AI_TUNNEL_KEY, envKey = "AITUNNEL_KEY")
+    override var aiTunnelModelName: String? by keyDelegate(configKey = AI_TUNNEL_MODEL_NAME, envKey = "AITUNNEL_MODEL")
     override var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
     override var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
     override var systemPrompt: String? by keyDelegate(configKey = SYSTEM_PROMPT, envKey = SYSTEM_PROMPT)
@@ -165,6 +169,8 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     companion object {
         private const val GIGA_CHAT_KEY = "GIGA_CHAT_KEY"
         private const val QWEN_CHAT_KEY = "QWEN_CHAT_KEY"
+        private const val AI_TUNNEL_KEY = "AI_TUNNEL_KEY"
+        private const val AI_TUNNEL_MODEL_NAME = "AI_TUNNEL_MODEL_NAME"
         private const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         private const val USE_STREAMING = "USE_STREAMING"

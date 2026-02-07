@@ -42,6 +42,8 @@ class SettingsViewModel(
                 copy(
                     gigaChatKey = keysProvider.gigaChatKey ?: "",
                     qwenChatKey = keysProvider.qwenChatKey ?: "",
+                    aiTunnelKey = keysProvider.aiTunnelKey ?: "",
+                    aiTunnelModelName = keysProvider.aiTunnelModelName ?: "",
                     saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                     useFewShotExamples = keysProvider.useFewShotExamples,
                     useStreaming = keysProvider.useStreaming,
@@ -89,6 +91,14 @@ class SettingsViewModel(
                 keysProvider.useStreaming = event.enabled
                 setState { copy(useStreaming = event.enabled) }
                 fetchBalance()
+            }
+            is InputAiTunnelKey -> {
+                keysProvider.aiTunnelKey = event.key
+                setState { copy(aiTunnelKey = event.key) }
+            }
+            is InputAiTunnelModelName -> {
+                keysProvider.aiTunnelModelName = event.name
+                setState { copy(aiTunnelModelName = event.name) }
             }
             is SelectModel -> {
                 val newPrompt = graphBasedAgent.updateModel(event.model)
@@ -263,6 +273,16 @@ class SettingsViewModel(
                     copy(
                         balance = emptyList(),
                         balanceError = "Баланс для Qwen недоступен",
+                        isBalanceLoading = false
+                    )
+                }
+                return@launch
+            }
+            LlmProvider.AI_TUNNEL -> {
+                setState {
+                    copy(
+                        balance = emptyList(),
+                        balanceError = "Баланс для AI Tunnel недоступен",
                         isBalanceLoading = false
                     )
                 }

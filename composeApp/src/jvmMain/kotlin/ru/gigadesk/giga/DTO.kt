@@ -111,6 +111,7 @@ const val MAX_TOKENS = 8192
 enum class LlmProvider {
     GIGA,
     QWEN,
+    AI_TUNNEL,
 }
 
 enum class GigaModel(
@@ -125,6 +126,7 @@ enum class GigaModel(
     QwenFlash("Qwen Flash", "qwen-flash", 32_768, LlmProvider.QWEN),
     QwenPlus("Qwen Plus", "qwen-plus", 32_768, LlmProvider.QWEN),
     QwenMax("Qwen Max", "qwen-max", 32_768, LlmProvider.QWEN),
+    AiTunnel("AI Tunnel", "ai-tunnel", 128_000, LlmProvider.AI_TUNNEL),
 }
 
 object GigaRequest {

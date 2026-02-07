@@ -16,6 +16,8 @@ enum class SettingsSubScreen {
 data class SettingsState(
     val gigaChatKey: String = "",
     val qwenChatKey: String = "",
+    val aiTunnelKey: String = "",
+    val aiTunnelModelName: String = "",
     val saluteSpeechKey: String = "",
     val useFewShotExamples: Boolean = false,
     val useStreaming: Boolean = false,
@@ -47,6 +49,8 @@ sealed interface SettingsEvent : VMEvent {
     object GoToMain : SettingsEvent
     data class InputGigaChatKey(val key: String): SettingsEvent
     data class InputQwenChatKey(val key: String): SettingsEvent
+    data class InputAiTunnelKey(val key: String): SettingsEvent
+    data class InputAiTunnelModelName(val name: String): SettingsEvent
     data class InputSaluteSpeechKey(val key: String): SettingsEvent
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
     data class InputUseStreaming(val enabled: Boolean): SettingsEvent
