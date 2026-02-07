@@ -50,6 +50,14 @@ open class ExcelRead(
         @InputParamDescription("Limit results (for QUERY, default: 10)")
         val limit: Int? = null,
 
+        @InputParamDescription("Column to sort by (for QUERY)")
+        val sortBy: String? = null,
+
+        @InputParamDescription("Sort order: ASC (default), DESC")
+        val sortOrder: String? = null,
+
+
+
         @InputParamDescription("Lookup value (for LOOKUP)")
         val lookupValue: String? = null,
 
@@ -59,6 +67,7 @@ open class ExcelRead(
         @InputParamDescription("Column to return (for LOOKUP)")
         val returnColumn: String? = null
     )
+
 
     override val name = "ExcelRead"
     
@@ -224,9 +233,24 @@ open class ExcelRead(
                 "MAX" -> values.maxOrNull() ?: 0.0
                 else -> values.size.toDouble()
             }
-        }.entries.sortedByDescending { it.value }.take(limit)
+        }.entries.toList()
 
-        return results.joinToString("\n") { "${it.key}: ${formatNum(it.value)}" }
+        val sortKey = input.sortBy
+        val isDesc = input.sortOrder?.equals("DESC", true) ?: true
+
+        val sortedResults = if (sortKey != null) {
+            if (sortKey.equals(input.groupBy, true)) {
+                if (isDesc) results.sortedByDescending { it.key } else results.sortedBy { it.key }
+            } else {
+                 if (isDesc) results.sortedByDescending { it.value } else results.sortedBy { it.value }
+            }
+        } else {
+             results.sortedByDescending { it.value }
+        }
+
+        return sortedResults.take(limit).joinToString("\n") { "${it.key}: ${formatNum(it.value)}" }
+
+
     }
 
     private fun readCell(sheet: Sheet, range: String): String {

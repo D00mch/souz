@@ -36,11 +36,8 @@ import ru.gigadesk.tool.browser.*
 import ru.gigadesk.tool.calendar.*
 import ru.gigadesk.tool.config.*
 import ru.gigadesk.tool.dataAnalytics.*
-import ru.gigadesk.tool.dataAnalytics.excel.ExcelCreate
-import ru.gigadesk.tool.dataAnalytics.excel.ExcelJoin
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelReport
 import ru.gigadesk.tool.dataAnalytics.excel.ExcelRead
-import ru.gigadesk.tool.dataAnalytics.excel.ExcelTransform
-import ru.gigadesk.tool.dataAnalytics.excel.ExcelWrite
 import ru.gigadesk.tool.desktop.*
 import ru.gigadesk.tool.files.*
 import ru.gigadesk.tool.mail.*
@@ -121,10 +118,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     // Excel tools
     bindSingleton { ExcelRead(instance()) }
-    bindSingleton { ExcelWrite(instance()) }
-    bindSingleton { ExcelJoin(instance()) }
-    bindSingleton { ExcelTransform(instance()) }
-    bindSingleton { ExcelCreate(instance()) }
+    bindSingleton { ExcelReport(instance()) }
 
     bindSingleton { GraphSessionRepository() }
     bindSingleton { GraphSessionService(instance(), instance(DiTags.TAG_LOG)) }
