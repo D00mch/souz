@@ -83,8 +83,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolFindInFiles(instance()) }
     bindSingleton { ToolNewFile(instance()) }
     bindSingleton { ToolDeleteFile(instance(), instance()) }
-    bindSingleton { ToolModifyFile(instance()) }
-    bindSingleton { ToolMoveFile(instance()) }
+    bindSingleton { ToolModifyFile(instance(), instance()) }
+    bindSingleton { ToolMoveFile(instance(), instance()) }
     bindSingleton { ToolExtractText(instance()) }
     bindSingleton { ToolFindFilesByName(instance()) }
     bindSingleton { ToolReadPdfPages(instance()) }
@@ -100,7 +100,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolInstructionStore(ConfigStore, instance()) }
     bindSingleton { ToolOpenNote(ToolRunBashCommand) }
     bindSingleton { ToolCreateNote(ToolRunBashCommand) }
-    bindSingleton { ToolDeleteNote(ToolRunBashCommand) }
+    bindSingleton { ToolDeleteNote(ToolRunBashCommand, instance()) }
     bindSingleton { ToolListNotes(ToolRunBashCommand) }
     bindSingleton { ToolSearchNotes(ToolRunBashCommand) }
     bindSingleton { ToolShowApps(instance(), ToolRunBashCommand) }
