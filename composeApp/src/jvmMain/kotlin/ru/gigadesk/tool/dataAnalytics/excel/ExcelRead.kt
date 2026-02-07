@@ -1,19 +1,14 @@
 package ru.gigadesk.tool.dataAnalytics.excel
 
-import org.apache.poi.openxml4j.util.ZipSecureFile
 import org.apache.poi.ss.usermodel.*
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ForbiddenFolder
 import java.io.File
 
-
-
-open class ExcelRead(
+class ExcelRead(
     private val filesToolUtil: FilesToolUtil
 ) : ToolSetup<ExcelRead.Input> {
-
-
 
     enum class ReadOperation {
         STRUCTURE,
@@ -314,11 +309,12 @@ open class ExcelRead(
         val returnColumn = input.returnColumn ?: throw BadInputException("returnColumn required")
 
         val formatter = DataFormatter()
-        val lookupIdx = sheet.findColumnIndex(lookupColumn, formatter)
-        val returnIdx = sheet.findColumnIndex(returnColumn, formatter)
-
-        if (lookupIdx == -1) throw BadInputException("Column '$lookupColumn' not found")
-        if (returnIdx == -1) throw BadInputException("Column '$returnColumn' not found")
+        val lookupIdx = sheet.findColumnIndex(lookupColumn, formatter).also { i ->
+            if (i == -1) throw BadInputException("Column '$lookupColumn' not found")
+        }
+        val returnIdx = sheet.findColumnIndex(returnColumn, formatter).also { i ->
+            if (i == -1) throw BadInputException("Column '$returnColumn' not found")
+        }
 
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
