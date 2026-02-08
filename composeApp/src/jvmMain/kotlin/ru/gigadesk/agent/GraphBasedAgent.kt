@@ -43,7 +43,6 @@ class GraphBasedAgent(
     private val settingsProvider: SettingsProvider by di.instance()
     private val sessionService: GraphSessionService by di.instance()
 
-    // Make sure summarization only happens after all tool requests from LLM are answered
     private val settings = AtomicReference(
         AgentSettings(
             model = settingsProvider.gigaModel.alias,
