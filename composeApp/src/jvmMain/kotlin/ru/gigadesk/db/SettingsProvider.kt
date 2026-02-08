@@ -1,7 +1,7 @@
 package ru.gigadesk.db
 
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
-import ru.gigadesk.giga.EmbeddingsProvider
+import ru.gigadesk.giga.EmbeddingsModel
 import ru.gigadesk.giga.GigaModel
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
@@ -13,7 +13,6 @@ interface SettingsProvider {
     var gigaChatKey: String?
     var qwenChatKey: String?
     var aiTunnelKey: String?
-    var aiTunnelModelName: String?
     var saluteSpeechKey: String?
     var supportEmail: String?
     var systemPrompt: String?
@@ -27,8 +26,7 @@ interface SettingsProvider {
     var initialWindowHeightDp: Int
     var temperature: Float
     var forbiddenFolders: List<String>
-    var embeddingsProvider: EmbeddingsProvider
-    var aiTunnelEmbeddingsModelName: String?
+    var embeddingsModel: EmbeddingsModel
 }
 
 class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvider {
@@ -73,16 +71,14 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         configKey = NEEDS_ONBOARDING,
         envKey = NEEDS_ONBOARDING
     )
-    private var _embeddingsProviderDelegate: String? by keyDelegate(
-        configKey = EMBEDDINGS_PROVIDER,
-        envKey = EMBEDDINGS_PROVIDER
+    private var _embeddingsModelDelegate: String? by keyDelegate(
+        configKey = EMBEDDINGS_MODEL,
+        envKey = EMBEDDINGS_MODEL
     )
 
     override var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
     override var qwenChatKey: String? by keyDelegate(configKey = QWEN_CHAT_KEY, envKey = "QWEN_KEY")
     override var aiTunnelKey: String? by keyDelegate(configKey = AI_TUNNEL_KEY, envKey = "AITUNNEL_KEY")
-    override var aiTunnelModelName: String? by keyDelegate(configKey = AI_TUNNEL_MODEL_NAME, envKey = "AITUNNEL_MODEL")
-    override var aiTunnelEmbeddingsModelName: String? by keyDelegate(configKey = AI_TUNNEL_EMBEDDINGS_MODEL_NAME, envKey = "AITUNNEL_EMBEDDINGS_MODEL")
     override var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
     override var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
     override var systemPrompt: String? by keyDelegate(configKey = SYSTEM_PROMPT, envKey = SYSTEM_PROMPT)
@@ -158,12 +154,12 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
                 .joinToString("\n")
         }
 
-    override var embeddingsProvider: EmbeddingsProvider
-        get() = _embeddingsProviderDelegate?.let { value ->
-            EmbeddingsProvider.entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
-        } ?: EmbeddingsProvider.GIGA
+    override var embeddingsModel: EmbeddingsModel
+        get() = _embeddingsModelDelegate?.let { value ->
+            EmbeddingsModel.entries.firstOrNull { it.name.equals(value, ignoreCase = true) || it.alias.equals(value, ignoreCase = true) }
+        } ?: EmbeddingsModel.GigaEmbeddings
         set(value) {
-            _embeddingsProviderDelegate = value.name
+            _embeddingsModelDelegate = value.name
         }
 
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
@@ -201,8 +197,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val INITIAL_WINDOW_HEIGHT_DP = "INITIAL_WINDOW_HEIGHT_DP"
         private const val TEMPERATURE = "TEMPERATURE"
         private const val FORBIDDEN_FOLDERS = "FORBIDDEN_FOLDERS"
-        private const val EMBEDDINGS_PROVIDER = "EMBEDDINGS_PROVIDER"
-        private const val AI_TUNNEL_EMBEDDINGS_MODEL_NAME = "AI_TUNNEL_EMBEDDINGS_MODEL_NAME"
+        private const val EMBEDDINGS_MODEL = "EMBEDDINGS_MODEL"
         private val DEFAULT_FORBIDDEN_FOLDERS = listOf("~/Library/")
     }
 }

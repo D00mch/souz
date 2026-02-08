@@ -15,13 +15,18 @@ import io.ktor.client.plugins.sse.SSE
 import io.ktor.client.plugins.sse.sse
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.HttpStatement
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.isSuccess
 import io.ktor.serialization.jackson.jackson
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import org.kodein.di.DI
@@ -56,16 +61,14 @@ class AiTunnelChatAPI(
             ?: throw IllegalStateException("AITUNNEL_KEY is not set")
 
     private val defaultChatModel: String
-        get() = settingsProvider.aiTunnelModelName?.takeIf { it.isNotBlank() }
-            ?: System.getenv("AITUNNEL_MODEL")
+        get() = System.getenv("AITUNNEL_MODEL")
             ?: System.getProperty("AITUNNEL_MODEL")
-            ?: "gpt-4o-mini" // Дешевый и быстрый дефолт для тестов
+            ?: settingsProvider.gigaModel.alias
 
     private val defaultEmbeddingsModel: String
-        get() = settingsProvider.aiTunnelEmbeddingsModelName?.takeIf { it.isNotBlank() }
-            ?: System.getenv("AITUNNEL_EMBEDDINGS_MODEL")
+        get() = System.getenv("AITUNNEL_EMBEDDINGS_MODEL")
             ?: System.getProperty("AITUNNEL_EMBEDDINGS_MODEL")
-            ?: "text-embedding-3-small"
+            ?: settingsProvider.embeddingsModel.alias
 
     private val client = HttpClient(CIO) {
         defaultRequest {
@@ -88,11 +91,8 @@ class AiTunnelChatAPI(
                 }
             }
             level = LogLevel.INFO
+            level = LogLevel.INFO
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
-        }
-        install(SSE) {
-            maxReconnectionAttempts = 0
-            reconnectionTime = 3.seconds
         }
     }
 
@@ -121,22 +121,39 @@ class AiTunnelChatAPI(
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
         try {
-            client.sse(
-                urlString = CHAT_COMPLETIONS_URL,
-                request = {
-                    method = HttpMethod.Post
-                    setBody(buildChatRequest(body, stream = true))
-                },
-            ) {
-                incoming.collect { event ->
-                    val data = event.data ?: return@collect
-                    if (data == "[DONE]") {
-                        return@collect
+            client.preparePost(CHAT_COMPLETIONS_URL) {
+                setBody(buildChatRequest(body, stream = true))
+            }.execute { response ->
+                if (!response.status.isSuccess()) {
+                    val text = response.bodyAsText()
+                    send(GigaResponse.Chat.Error(response.status.value, text))
+                    return@execute
+                }
+
+                val channel = response.bodyAsChannel()
+                while (!channel.isClosedForRead) {
+                    val line = channel.readUTF8Line() ?: break
+                    if (line.startsWith("data: ")) {
+                        val data = line.removePrefix("data: ")
+                        if (data == "[DONE]") break
+
+                        try {
+                            val chunkNode = objectMapper.readTree(data)
+                            val choices = parseChoices(chunkNode["choices"], isStream = true)
+                            if (choices.isNotEmpty()) {
+                                // For streaming, usually created/model/usage might be present or partial
+                                // We take what we have
+                                val created = chunkNode["created"]?.asLong() ?: (System.currentTimeMillis() / 1000)
+                                val model = chunkNode["model"]?.asText() ?: body.model
+                                // Usage is typically null in chunks until the end, or never sent
+                                val usage = parseUsage(chunkNode["usage"])
+
+                                send(GigaResponse.Chat.Ok(choices, created, model, usage))
+                            }
+                        } catch (e: Exception) {
+                            l.warn("Failed to parse AiTunnel stream chunk: $data", e)
+                        }
                     }
-                    if (!data.trimStart().startsWith("{")) {
-                        return@collect
-                    }
-                    send(parseStreamChunk(data, body.model))
                 }
             }
         } catch (e: ClientRequestException) {
@@ -153,10 +170,10 @@ class AiTunnelChatAPI(
             setBody(buildEmbeddingsRequest(body))
         }
         val text = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            GigaResponse.Embeddings.Error(response.status.value, text)
-        } else {
+        if (response.status.isSuccess()) {
             parseEmbeddingsResponse(text)
+        } else {
+            GigaResponse.Embeddings.Error(response.status.value, text)
         }
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
@@ -317,22 +334,20 @@ class AiTunnelChatAPI(
                 toolCallsNode.forEach { toolCallNode ->
                     val functionNode = toolCallNode["function"]
                     val name = functionNode?.get("name")?.asText().orEmpty()
-                    // В стриме аргументы могут приходить частями, но мы просто передаем строку
                     val argsText = functionNode?.get("arguments")?.asText() ?: ""
-
-                    // Парсим аргументы только если это не стрим или если строка похожа на полный JSON,
-                    // но чаще всего для стрима мы просто копим строку в контроллере выше.
-                    // Здесь для совместимости вернем map, если удастся распарсить.
+                    // In streaming, we pass raw text to allow accumulation upstream.
+                    // We only try to parse if it's not streaming or if it looks complete, 
+                    // but robust logic should rely on accumulation.
                     val args = if (!isStream && argsText.isNotEmpty()) parseFunctionArguments(argsText) else emptyMap()
-
+                    
                     val functionsStateId = toolCallNode["id"]?.asText()
-                    val toolIndex = toolCallNode["index"]?.asInt() ?: choiceIndex // В tool_calls тоже есть индекс
+                    val toolIndex = toolCallNode["index"]?.asInt() ?: choiceIndex
 
                     choices += GigaResponse.Choice(
                         message = GigaResponse.Message(
                             content = "",
                             role = role,
-                            functionCall = GigaResponse.FunctionCall(name, args),
+                            functionCall = GigaResponse.FunctionCall(name, args, argsText),
                             functionsStateId = functionsStateId,
                         ),
                         index = toolIndex,

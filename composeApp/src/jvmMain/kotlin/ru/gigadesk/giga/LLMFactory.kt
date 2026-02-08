@@ -24,7 +24,7 @@ class LLMFactory(
     }
 
     private fun currentEmbeddings(): GigaChatAPI {
-        return when (settingsProvider.embeddingsProvider) {
+        return when (settingsProvider.embeddingsModel.provider) {
             EmbeddingsProvider.QWEN -> qwenApi
             EmbeddingsProvider.AI_TUNNEL -> aiTunnelApi
             EmbeddingsProvider.GIGA -> restApi

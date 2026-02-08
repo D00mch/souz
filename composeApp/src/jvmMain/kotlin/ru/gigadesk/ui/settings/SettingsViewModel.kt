@@ -43,13 +43,11 @@ class SettingsViewModel(
                     gigaChatKey = keysProvider.gigaChatKey ?: "",
                     qwenChatKey = keysProvider.qwenChatKey ?: "",
                     aiTunnelKey = keysProvider.aiTunnelKey ?: "",
-                    aiTunnelModelName = keysProvider.aiTunnelModelName ?: "",
                     saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                     useFewShotExamples = keysProvider.useFewShotExamples,
                     useStreaming = keysProvider.useStreaming,
                     gigaModel = currentModel,
-                    embeddingsProvider = keysProvider.embeddingsProvider,
-                    aiTunnelEmbeddingsModelName = keysProvider.aiTunnelEmbeddingsModelName ?: "",
+                    embeddingsModel = keysProvider.embeddingsModel,
                     requestTimeoutMillis = keysProvider.requestTimeoutMillis,
                     requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
                     temperature = keysProvider.temperature,
@@ -98,22 +96,14 @@ class SettingsViewModel(
                 keysProvider.aiTunnelKey = event.key
                 setState { copy(aiTunnelKey = event.key) }
             }
-            is InputAiTunnelModelName -> {
-                keysProvider.aiTunnelModelName = event.name
-                setState { copy(aiTunnelModelName = event.name) }
-            }
             is SelectModel -> {
                 val newPrompt = graphBasedAgent.updateModel(event.model)
                 setState { copy(gigaModel = event.model, systemPrompt = newPrompt) }
                 fetchBalance()
             }
-            is SelectEmbeddingsProvider -> {
-                keysProvider.embeddingsProvider = event.provider
-                setState { copy(embeddingsProvider = event.provider) }
-            }
-            is InputAiTunnelEmbeddingsModelName -> {
-                keysProvider.aiTunnelEmbeddingsModelName = event.name
-                setState { copy(aiTunnelEmbeddingsModelName = event.name) }
+            is SelectEmbeddingsModel -> {
+                keysProvider.embeddingsModel = event.model
+                setState { copy(embeddingsModel = event.model) }
             }
             is InputRequestTimeoutMillis -> {
                 val normalized = event.millis.filter { it.isDigit() }

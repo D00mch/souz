@@ -27,7 +27,7 @@ import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.agent.session.GraphSessionRepository
-import ru.gigadesk.giga.EmbeddingsProvider
+import ru.gigadesk.giga.EmbeddingsModel
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.LlmProvider
@@ -67,15 +67,13 @@ fun SettingsScreen(
                 onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
                 onQwenChatKeyInput = { key -> viewModel.send(SettingsEvent.InputQwenChatKey(key)) },
                 onAiTunnelKeyInput = { key -> viewModel.send(SettingsEvent.InputAiTunnelKey(key)) },
-                onAiTunnelModelNameInput = { name -> viewModel.send(SettingsEvent.InputAiTunnelModelName(name)) },
                 onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
                 onVoiceSpeedInput = { speed -> viewModel.send(SettingsEvent.InputVoiceSpeed(speed)) },
                 onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
                 onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
                 onUseStreamingChange = { enabled -> viewModel.send(SettingsEvent.InputUseStreaming(enabled)) },
                 onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
-                onEmbeddingsProviderChange = { provider -> viewModel.send(SettingsEvent.SelectEmbeddingsProvider(provider)) },
-                onAiTunnelEmbeddingsModelNameInput = { name -> viewModel.send(SettingsEvent.InputAiTunnelEmbeddingsModelName(name)) },
+                onEmbeddingsModelChange = { model -> viewModel.send(SettingsEvent.SelectEmbeddingsModel(model)) },
                 onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
                 onTemperatureInput = { value -> viewModel.send(SettingsEvent.InputTemperature(value)) },
                 onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
@@ -128,15 +126,13 @@ fun SettingsScreen(
     onGigaChatKeyInput: (String) -> Unit,
     onQwenChatKeyInput: (String) -> Unit,
     onAiTunnelKeyInput: (String) -> Unit,
-    onAiTunnelModelNameInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
     onChooseVoice: () -> Unit,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
     onUseStreamingChange: (Boolean) -> Unit,
     onModelChange: (GigaModel) -> Unit,
-    onEmbeddingsProviderChange: (EmbeddingsProvider) -> Unit,
-    onAiTunnelEmbeddingsModelNameInput: (String) -> Unit,
+    onEmbeddingsModelChange: (EmbeddingsModel) -> Unit,
     onRequestTimeoutMillisChange: (String) -> Unit,
     onTemperatureInput: (String) -> Unit,
     onDefaultCalendarChange: (String?) -> Unit,
@@ -213,6 +209,12 @@ fun SettingsScreen(
                     label = "Qwen ключ",
                     value = state.qwenChatKey,
                     onValueChange = onQwenChatKeyInput,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                LabeledTextField(
+                    label = "AI Tunnel ключ",
+                    value = state.aiTunnelKey,
+                    onValueChange = onAiTunnelKeyInput,
                     modifier = Modifier.fillMaxWidth()
                 )
                 LabeledTextField(
@@ -347,50 +349,10 @@ fun SettingsScreen(
                     onModelSelected = onModelChange,
                 )
 
-                // AI Tunnel specific fields - show only when AiTunnel is selected
-                if (state.gigaModel.provider == LlmProvider.AI_TUNNEL) {
-                    LabeledTextField(
-                        label = "AI Tunnel ключ",
-                        value = state.aiTunnelKey,
-                        onValueChange = onAiTunnelKeyInput,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        LabeledTextField(
-                            label = "Название модели AI Tunnel",
-                            value = state.aiTunnelModelName,
-                            onValueChange = onAiTunnelModelNameInput,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            text = "Например: gpt-4o-mini, claude-3-5-sonnet, deepseek-chat",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-                        )
-                    }
-                }
-
-                EmbeddingsProviderDropdown(
-                    selectedProvider = state.embeddingsProvider,
-                    onProviderSelected = onEmbeddingsProviderChange,
+                EmbeddingsModelDropdown(
+                    selectedModel = state.embeddingsModel,
+                    onModelSelected = onEmbeddingsModelChange,
                 )
-
-                // AI Tunnel embeddings model - show only when AI Tunnel embeddings is selected
-                if (state.embeddingsProvider == EmbeddingsProvider.AI_TUNNEL) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        LabeledTextField(
-                            label = "Название модели эмбеддингов AI Tunnel",
-                            value = state.aiTunnelEmbeddingsModelName,
-                            onValueChange = onAiTunnelEmbeddingsModelNameInput,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            text = "Например: text-embedding-3-small, text-embedding-ada-002",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-                        )
-                    }
-                }
 
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -710,15 +672,15 @@ private fun ModelDropdown(
 }
 
 @Composable
-private fun EmbeddingsProviderDropdown(
-    selectedProvider: EmbeddingsProvider,
-    onProviderSelected: (EmbeddingsProvider) -> Unit,
+private fun EmbeddingsModelDropdown(
+    selectedModel: EmbeddingsModel,
+    onModelSelected: (EmbeddingsModel) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "Провайдер эмбеддингов",
+            text = "Модель эмбеддингов",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.glassColors.textPrimary
         )
@@ -739,13 +701,13 @@ private fun EmbeddingsProviderDropdown(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = selectedProvider.displayName,
+                        text = selectedModel.displayName,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.glassColors.textPrimary
                     )
                     Icon(
                         imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Выбрать провайдер эмбеддингов",
+                        contentDescription = "Выбрать модель эмбеддингов",
                         tint = MaterialTheme.glassColors.textPrimary
                     )
                 }
@@ -755,11 +717,11 @@ private fun EmbeddingsProviderDropdown(
                 onDismissRequest = { expanded = false },
                 modifier = Modifier.fillMaxWidth(0.6f)
             ) {
-                EmbeddingsProvider.entries.forEach { provider ->
+                EmbeddingsModel.entries.forEach { model ->
                     DropdownMenuItem(
-                        text = { Text(provider.displayName) },
+                        text = { Text(model.displayName) },
                         onClick = {
-                            onProviderSelected(provider)
+                            onModelSelected(model)
                             expanded = false
                         }
                     )
@@ -767,7 +729,7 @@ private fun EmbeddingsProviderDropdown(
             }
         }
         Text(
-            text = "Ключи используются от привязанных моделей.",
+            text = "Ключи используются от привязанных провайдеров.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
         )
@@ -783,15 +745,13 @@ fun SettingsScreenPreview() {
             onGigaChatKeyInput = {},
             onQwenChatKeyInput = {},
             onAiTunnelKeyInput = {},
-            onAiTunnelModelNameInput = {},
             onSaluteSpeechKeyInput = {},
             onVoiceSpeedInput = {},
             onChooseVoice = {},
             onUseFewShotExamplesChange = {},
             onUseStreamingChange = {},
             onModelChange = {},
-            onEmbeddingsProviderChange = {},
-            onAiTunnelEmbeddingsModelNameInput = {},
+            onEmbeddingsModelChange = {},
             onRequestTimeoutMillisChange = {},
             onTemperatureInput = {},
             onDefaultCalendarChange = {},

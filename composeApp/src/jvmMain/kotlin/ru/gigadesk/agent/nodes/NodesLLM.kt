@@ -16,6 +16,7 @@ import ru.gigadesk.giga.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import com.fasterxml.jackson.module.kotlin.readValue
 
 /**
  * Nodes with calls to LLM
@@ -100,7 +101,8 @@ class NodesLLM(
     private class ChoiceAccumulator(
         var role: GigaMessageRole,
         val content: StringBuilder = StringBuilder(),
-        var functionCall: GigaResponse.FunctionCall? = null,
+        var functionCallName: String? = null,
+        val functionCallArguments: StringBuilder = StringBuilder(),
         var functionsStateId: String? = null,
         var finishReason: GigaResponse.FinishReason? = null,
     ) {
@@ -110,7 +112,12 @@ class NodesLLM(
                 content.append(msg.content)
             }
             if (msg.functionCall != null) {
-                functionCall = msg.functionCall
+                if (msg.functionCall.name.isNotEmpty()) {
+                    functionCallName = msg.functionCall.name
+                }
+                msg.functionCall.argumentsString?.let {
+                    functionCallArguments.append(it)
+                }
             }
             if (msg.functionsStateId != null) {
                 functionsStateId = msg.functionsStateId
@@ -119,15 +126,36 @@ class NodesLLM(
             role = msg.role
         }
 
-        fun toChoice(index: Int): GigaResponse.Choice = GigaResponse.Choice(
-            message = GigaResponse.Message(
-                content = content.toString(),
-                role = role,
-                functionCall = functionCall,
-                functionsStateId = functionsStateId,
-            ),
-            index = index,
-            finishReason = finishReason,
-        )
+        fun toChoice(index: Int): GigaResponse.Choice {
+            val argsText = functionCallArguments.toString()
+            val args = if (argsText.isNotBlank()) {
+                try {
+                    ru.gigadesk.giga.objectMapper.readValue<Map<String, Any>>(argsText)
+                } catch (e: Exception) {
+                    mapOf<String, Any>("raw" to argsText)
+                }
+            } else {
+                emptyMap()
+            }
+
+            val functionCall = if (functionCallName != null) {
+                GigaResponse.FunctionCall(
+                    name = functionCallName!!,
+                    arguments = args,
+                    argumentsString = argsText
+                )
+            } else null
+
+            return GigaResponse.Choice(
+                message = GigaResponse.Message(
+                    content = content.toString(),
+                    role = role,
+                    functionCall = functionCall,
+                    functionsStateId = functionsStateId,
+                ),
+                index = index,
+                finishReason = finishReason,
+            )
+        }
     }
 }

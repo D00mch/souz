@@ -39,7 +39,8 @@ object GigaResponse {
 
     data class FunctionCall(
         val name: String,
-        val arguments: Map<String, Any>
+        val arguments: Map<String, Any>,
+        val argumentsString: String? = null
     )
 
     data class RecognizeResponse(
@@ -114,10 +115,10 @@ enum class LlmProvider {
     AI_TUNNEL,
 }
 
-enum class EmbeddingsProvider(val displayName: String) {
-    GIGA("GigaChat"),
-    QWEN("Qwen"),
-    AI_TUNNEL("AI Tunnel"),
+enum class EmbeddingsProvider {
+    GIGA,
+    QWEN,
+    AI_TUNNEL,
 }
 
 enum class GigaModel(
@@ -132,7 +133,25 @@ enum class GigaModel(
     QwenFlash("Qwen Flash", "qwen-flash", 32_768, LlmProvider.QWEN),
     QwenPlus("Qwen Plus", "qwen-plus", 32_768, LlmProvider.QWEN),
     QwenMax("Qwen Max", "qwen-max", 32_768, LlmProvider.QWEN),
-    AiTunnel("AI Tunnel", "ai-tunnel", 128_000, LlmProvider.AI_TUNNEL),
+    AiTunnelGpt4oMini("AI-Tunnel: gpt-4o-mini", "gpt-4o-mini", MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelGpt52Codex("AI-Tunnel: gpt-5.2-codex", "gpt-5.2-codex", MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelGpt5Nano("AI-Tunnel: gpt-5-nano", "gpt-5-nano", MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelGemini3Flash("AI-Tunnel: gemini-3-flash-preview", "gemini-3-flash-preview", MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelClaudeOpus("AI-Tunnel: claude-opus-4.6", "claude-opus-4.6", MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelClaudeHaiku("AI-Tunnel: claude-haiku-4.5", "claude-haiku-4.5", MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelGrok("AI-Tunnel: grok-4.1-fast", "grok-4.1-fast", MAX_TOKENS, LlmProvider.AI_TUNNEL),
+}
+
+enum class EmbeddingsModel(
+    val displayName: String,
+    val alias: String,
+    val provider: EmbeddingsProvider,
+) {
+    GigaEmbeddings("GigaChat", "Embeddings", EmbeddingsProvider.GIGA),
+    QwenEmbeddings("Qwen", "text-embedding-v3", EmbeddingsProvider.QWEN),
+    AiTunnelEmbedding3Small("AI-Tunnel: text-embedding-3-small", "text-embedding-3-small", EmbeddingsProvider.AI_TUNNEL),
+    AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", EmbeddingsProvider.AI_TUNNEL),
+    AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", EmbeddingsProvider.AI_TUNNEL),
 }
 
 object GigaRequest {

@@ -1,7 +1,7 @@
 package ru.gigadesk.ui.settings
 
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
-import ru.gigadesk.giga.EmbeddingsProvider
+import ru.gigadesk.giga.EmbeddingsModel
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.tool.config.ToolSoundConfig
@@ -18,13 +18,11 @@ data class SettingsState(
     val gigaChatKey: String = "",
     val qwenChatKey: String = "",
     val aiTunnelKey: String = "",
-    val aiTunnelModelName: String = "",
     val saluteSpeechKey: String = "",
     val useFewShotExamples: Boolean = false,
     val useStreaming: Boolean = false,
     val gigaModel: GigaModel = GigaModel.Max,
-    val embeddingsProvider: EmbeddingsProvider = EmbeddingsProvider.GIGA,
-    val aiTunnelEmbeddingsModelName: String = "",
+    val embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
     val systemPrompt: String = "",
     val requestTimeoutMillis: Long = 10_000L,
     val requestTimeoutInput: String = "10000",
@@ -53,13 +51,11 @@ sealed interface SettingsEvent : VMEvent {
     data class InputGigaChatKey(val key: String): SettingsEvent
     data class InputQwenChatKey(val key: String): SettingsEvent
     data class InputAiTunnelKey(val key: String): SettingsEvent
-    data class InputAiTunnelModelName(val name: String): SettingsEvent
     data class InputSaluteSpeechKey(val key: String): SettingsEvent
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
     data class InputUseStreaming(val enabled: Boolean): SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
-    data class SelectEmbeddingsProvider(val provider: EmbeddingsProvider): SettingsEvent
-    data class InputAiTunnelEmbeddingsModelName(val name: String): SettingsEvent
+    data class SelectEmbeddingsModel(val model: EmbeddingsModel): SettingsEvent
     data class InputRequestTimeoutMillis(val millis: String) : SettingsEvent
     data class InputTemperature(val temperature: String) : SettingsEvent
     data class InputSupportEmail(val email: String): SettingsEvent
