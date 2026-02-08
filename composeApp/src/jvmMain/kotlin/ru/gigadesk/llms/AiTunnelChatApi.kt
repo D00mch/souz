@@ -62,7 +62,8 @@ class AiTunnelChatAPI(
             ?: "gpt-4o-mini" // Дешевый и быстрый дефолт для тестов
 
     private val defaultEmbeddingsModel: String
-        get() = System.getenv("AITUNNEL_EMBEDDINGS_MODEL")
+        get() = settingsProvider.aiTunnelEmbeddingsModelName?.takeIf { it.isNotBlank() }
+            ?: System.getenv("AITUNNEL_EMBEDDINGS_MODEL")
             ?: System.getProperty("AITUNNEL_EMBEDDINGS_MODEL")
             ?: "text-embedding-3-small"
 

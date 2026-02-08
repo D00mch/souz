@@ -23,11 +23,19 @@ class LLMFactory(
         }
     }
 
+    private fun currentEmbeddings(): GigaChatAPI {
+        return when (settingsProvider.embeddingsProvider) {
+            EmbeddingsProvider.QWEN -> qwenApi
+            EmbeddingsProvider.AI_TUNNEL -> aiTunnelApi
+            EmbeddingsProvider.GIGA -> restApi
+        }
+    }
+
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = current().message(body)
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = current().messageStream(body)
 
-    override suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings = current().embeddings(body)
+    override suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings = currentEmbeddings().embeddings(body)
 
     override suspend fun uploadFile(file: File): GigaResponse.UploadFile = current().uploadFile(file)
 
@@ -35,4 +43,5 @@ class LLMFactory(
 
     override suspend fun balance(): GigaResponse.Balance = current().balance()
 }
+
 

@@ -27,6 +27,7 @@ import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.agent.session.GraphSessionRepository
+import ru.gigadesk.giga.EmbeddingsProvider
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.LlmProvider
@@ -73,6 +74,8 @@ fun SettingsScreen(
                 onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
                 onUseStreamingChange = { enabled -> viewModel.send(SettingsEvent.InputUseStreaming(enabled)) },
                 onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
+                onEmbeddingsProviderChange = { provider -> viewModel.send(SettingsEvent.SelectEmbeddingsProvider(provider)) },
+                onAiTunnelEmbeddingsModelNameInput = { name -> viewModel.send(SettingsEvent.InputAiTunnelEmbeddingsModelName(name)) },
                 onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
                 onTemperatureInput = { value -> viewModel.send(SettingsEvent.InputTemperature(value)) },
                 onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
@@ -132,6 +135,8 @@ fun SettingsScreen(
     onUseFewShotExamplesChange: (Boolean) -> Unit,
     onUseStreamingChange: (Boolean) -> Unit,
     onModelChange: (GigaModel) -> Unit,
+    onEmbeddingsProviderChange: (EmbeddingsProvider) -> Unit,
+    onAiTunnelEmbeddingsModelNameInput: (String) -> Unit,
     onRequestTimeoutMillisChange: (String) -> Unit,
     onTemperatureInput: (String) -> Unit,
     onDefaultCalendarChange: (String?) -> Unit,
@@ -359,6 +364,28 @@ fun SettingsScreen(
                         )
                         Text(
                             text = "Например: gpt-4o-mini, claude-3-5-sonnet, deepseek-chat",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+
+                EmbeddingsProviderDropdown(
+                    selectedProvider = state.embeddingsProvider,
+                    onProviderSelected = onEmbeddingsProviderChange,
+                )
+
+                // AI Tunnel embeddings model - show only when AI Tunnel embeddings is selected
+                if (state.embeddingsProvider == EmbeddingsProvider.AI_TUNNEL) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LabeledTextField(
+                            label = "Название модели эмбеддингов AI Tunnel",
+                            value = state.aiTunnelEmbeddingsModelName,
+                            onValueChange = onAiTunnelEmbeddingsModelNameInput,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = "Например: text-embedding-3-small, text-embedding-ada-002",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
                         )
@@ -682,6 +709,71 @@ private fun ModelDropdown(
     }
 }
 
+@Composable
+private fun EmbeddingsProviderDropdown(
+    selectedProvider: EmbeddingsProvider,
+    onProviderSelected: (EmbeddingsProvider) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Провайдер эмбеддингов",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.glassColors.textPrimary
+        )
+        Box {
+            OutlinedButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.glassColors.textPrimary
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f)),
+                shape = MaterialTheme.shapes.extraSmall
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = selectedProvider.displayName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.glassColors.textPrimary
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Выбрать провайдер эмбеддингов",
+                        tint = MaterialTheme.glassColors.textPrimary
+                    )
+                }
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.fillMaxWidth(0.6f)
+            ) {
+                EmbeddingsProvider.entries.forEach { provider ->
+                    DropdownMenuItem(
+                        text = { Text(provider.displayName) },
+                        onClick = {
+                            onProviderSelected(provider)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+        Text(
+            text = "Ключи используются от привязанных моделей.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+        )
+    }
+}
+
 @Preview
 @Composable
 fun SettingsScreenPreview() {
@@ -698,6 +790,8 @@ fun SettingsScreenPreview() {
             onUseFewShotExamplesChange = {},
             onUseStreamingChange = {},
             onModelChange = {},
+            onEmbeddingsProviderChange = {},
+            onAiTunnelEmbeddingsModelNameInput = {},
             onRequestTimeoutMillisChange = {},
             onTemperatureInput = {},
             onDefaultCalendarChange = {},

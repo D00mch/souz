@@ -114,6 +114,12 @@ enum class LlmProvider {
     AI_TUNNEL,
 }
 
+enum class EmbeddingsProvider(val displayName: String) {
+    GIGA("GigaChat"),
+    QWEN("Qwen"),
+    AI_TUNNEL("AI Tunnel"),
+}
+
 enum class GigaModel(
     val displayName: String,
     val alias: String,

@@ -1,6 +1,7 @@
 package ru.gigadesk.ui.settings
 
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
+import ru.gigadesk.giga.EmbeddingsProvider
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.tool.config.ToolSoundConfig
@@ -22,6 +23,9 @@ data class SettingsState(
     val useFewShotExamples: Boolean = false,
     val useStreaming: Boolean = false,
     val gigaModel: GigaModel = GigaModel.Max,
+    val embeddingsProvider: EmbeddingsProvider = EmbeddingsProvider.GIGA,
+    val aiTunnelEmbeddingsModelName: String = "",
+    val systemPrompt: String = "",
     val requestTimeoutMillis: Long = 10_000L,
     val requestTimeoutInput: String = "10000",
     val temperature: Float = 0.7f,
@@ -33,7 +37,6 @@ data class SettingsState(
     val isBalanceLoading: Boolean = false,
     val balance: List<GigaResponse.BalanceItem> = emptyList(),
     val balanceError: String? = null,
-    val systemPrompt: String = DEFAULT_SYSTEM_PROMPT,
     val defaultCalendar: String? = null,
     val availableCalendars: List<String> = emptyList(),
     val isLoadingCalendars: Boolean = false,
@@ -55,6 +58,8 @@ sealed interface SettingsEvent : VMEvent {
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
     data class InputUseStreaming(val enabled: Boolean): SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
+    data class SelectEmbeddingsProvider(val provider: EmbeddingsProvider): SettingsEvent
+    data class InputAiTunnelEmbeddingsModelName(val name: String): SettingsEvent
     data class InputRequestTimeoutMillis(val millis: String) : SettingsEvent
     data class InputTemperature(val temperature: String) : SettingsEvent
     data class InputSupportEmail(val email: String): SettingsEvent

@@ -48,6 +48,8 @@ class SettingsViewModel(
                     useFewShotExamples = keysProvider.useFewShotExamples,
                     useStreaming = keysProvider.useStreaming,
                     gigaModel = currentModel,
+                    embeddingsProvider = keysProvider.embeddingsProvider,
+                    aiTunnelEmbeddingsModelName = keysProvider.aiTunnelEmbeddingsModelName ?: "",
                     requestTimeoutMillis = keysProvider.requestTimeoutMillis,
                     requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
                     temperature = keysProvider.temperature,
@@ -104,6 +106,14 @@ class SettingsViewModel(
                 val newPrompt = graphBasedAgent.updateModel(event.model)
                 setState { copy(gigaModel = event.model, systemPrompt = newPrompt) }
                 fetchBalance()
+            }
+            is SelectEmbeddingsProvider -> {
+                keysProvider.embeddingsProvider = event.provider
+                setState { copy(embeddingsProvider = event.provider) }
+            }
+            is InputAiTunnelEmbeddingsModelName -> {
+                keysProvider.aiTunnelEmbeddingsModelName = event.name
+                setState { copy(aiTunnelEmbeddingsModelName = event.name) }
             }
             is InputRequestTimeoutMillis -> {
                 val normalized = event.millis.filter { it.isDigit() }
