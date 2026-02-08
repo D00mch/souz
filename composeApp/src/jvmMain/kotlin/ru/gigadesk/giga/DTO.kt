@@ -40,7 +40,7 @@ object GigaResponse {
     data class FunctionCall(
         val name: String,
         val arguments: Map<String, Any>,
-        // For AI Tunnel: raw arguments string for proper formatting
+        // Raw arguments string for streaming/partial tool calls.
         val argumentsString: String? = null
     )
 
@@ -233,7 +233,7 @@ fun GigaResponse.Choice.toMessages(): List<GigaRequest.Message> {
     val msg = this.message
     val result = mutableListOf<GigaRequest.Message>()
 
-    // Message can have both content and function call (e.g. from OpenAI/AiTunnel)
+    // Message can have both content and function call (e.g. from some LLMs)
     // We split them into separate messages for GigaRequest which expects strict types
 
     // 1. Add text content if present
@@ -268,4 +268,3 @@ fun GigaResponse.Choice.toMessages(): List<GigaRequest.Message> {
 
     return result
 }
-

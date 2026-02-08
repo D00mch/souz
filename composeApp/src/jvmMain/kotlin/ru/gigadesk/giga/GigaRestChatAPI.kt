@@ -214,8 +214,7 @@ class GigaRestChatAPI(
                 val args: Map<String, Any> = objectMapper.readValue(argsText)
                 GigaResponse.FunctionCall(
                     name = name,
-                    arguments = args,
-                    argumentsString = argsText
+                    arguments = args
                 )
             } else null
 

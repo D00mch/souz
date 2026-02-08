@@ -200,8 +200,7 @@ class GigaGRPCChatApi(
                     functionCall = if (msg.hasFunctionCall()) {
                         GigaResponse.FunctionCall(
                             name = msg.functionCall.name,
-                            arguments = objectMapper.readValue(msg.functionCall.arguments),
-                            argumentsString = msg.functionCall.arguments
+                            arguments = objectMapper.readValue(msg.functionCall.arguments)
                         )
                     } else {
                         null
@@ -276,8 +275,7 @@ class GigaGRPCChatApi(
                 val args: Map<String, Any> = objectMapper.readValue(msg.functionCall.arguments)
                 GigaResponse.FunctionCall(
                     name = msg.functionCall.name,
-                    arguments = args,
-                    argumentsString = msg.functionCall.arguments
+                    arguments = args
                 )
             } else null
 

@@ -103,6 +103,7 @@ class NodesLLM(
         val content: StringBuilder = StringBuilder(),
         var functionCallName: String? = null,
         val functionCallArguments: StringBuilder = StringBuilder(),
+        var functionCallArgumentsMap: Map<String, Any>? = null,
         var functionsStateId: String? = null,
         var finishReason: GigaResponse.FinishReason? = null,
     ) {
@@ -115,8 +116,11 @@ class NodesLLM(
                 if (msg.functionCall.name.isNotEmpty()) {
                     functionCallName = msg.functionCall.name
                 }
-                msg.functionCall.argumentsString?.let {
-                    functionCallArguments.append(it)
+                val rawArguments = msg.functionCall.argumentsString
+                if (!rawArguments.isNullOrBlank()) {
+                    functionCallArguments.append(rawArguments)
+                } else if (msg.functionCall.arguments.isNotEmpty()) {
+                    functionCallArgumentsMap = msg.functionCall.arguments
                 }
             }
             if (msg.functionsStateId != null) {
@@ -128,21 +132,23 @@ class NodesLLM(
 
         fun toChoice(index: Int): GigaResponse.Choice {
             val argsText = functionCallArguments.toString()
-            val args = if (argsText.isNotBlank()) {
-                try {
-                    ru.gigadesk.giga.objectMapper.readValue<Map<String, Any>>(argsText)
-                } catch (e: Exception) {
-                    mapOf<String, Any>("raw" to argsText)
+            val args = when {
+                argsText.isNotBlank() -> {
+                    try {
+                        ru.gigadesk.giga.objectMapper.readValue<Map<String, Any>>(argsText)
+                    } catch (e: Exception) {
+                        mapOf<String, Any>("raw" to argsText)
+                    }
                 }
-            } else {
-                emptyMap()
+                functionCallArgumentsMap != null -> functionCallArgumentsMap.orEmpty()
+                else -> emptyMap()
             }
 
             val functionCall = if (functionCallName != null) {
                 GigaResponse.FunctionCall(
                     name = functionCallName!!,
                     arguments = args,
-                    argumentsString = argsText
+                    argumentsString = argsText.ifBlank { null }
                 )
             } else null
 
