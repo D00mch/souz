@@ -78,6 +78,7 @@ class GraphAgentToolScenariosIntegrationTest {
             when (selectedModel.provider) {
                 LlmProvider.GIGA -> println("Spent: ${gigaRestChatAPI?.getSessionTokenUsage() ?: "n/a"}")
                 LlmProvider.QWEN -> println("Spent: ${qwenChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+                LlmProvider.AI_TUNNEL -> println("Spent: n/a (AiTunnel)")
             }
             val requestCount = httpRequestCount.get()
             if (requestCount == 0L) {
@@ -129,6 +130,7 @@ class GraphAgentToolScenariosIntegrationTest {
             when (selectedModel.provider) {
                 LlmProvider.GIGA -> instance<GigaRestChatAPI>()
                 LlmProvider.QWEN -> instance<QwenChatAPI>()
+                LlmProvider.AI_TUNNEL -> throw NotImplementedError("AiTunnel not supported in integration tests yet")
             }
         }
     }
@@ -138,6 +140,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val apiKeyName = when (selectedModel.provider) {
             LlmProvider.GIGA -> "GIGA_KEY"
             LlmProvider.QWEN -> "QWEN_KEY"
+            LlmProvider.AI_TUNNEL -> "AITUNNEL_KEY"
         }
         val apiKey = System.getenv(apiKeyName) ?: System.getProperty(apiKeyName)
         Assumptions.assumeTrue(

@@ -162,7 +162,9 @@ class GigaGRPCChatApi(
                     .setRole(msg.role.name)
                     .setContent(msg.content)
                     .apply {
-                        msg.functionsStateId?.let { id -> functionsStateId = id }
+                        if (msg.role == GigaMessageRole.assistant) {
+                             msg.functionsStateId?.let { id -> functionsStateId = id }
+                        }
                         msg.attachments?.let { att -> addAllAttachments(att) }
                     }
                     .build()
@@ -198,7 +200,8 @@ class GigaGRPCChatApi(
                     functionCall = if (msg.hasFunctionCall()) {
                         GigaResponse.FunctionCall(
                             name = msg.functionCall.name,
-                            arguments = objectMapper.readValue(msg.functionCall.arguments)
+                            arguments = objectMapper.readValue(msg.functionCall.arguments),
+                            argumentsString = msg.functionCall.arguments
                         )
                     } else {
                         null
@@ -273,7 +276,8 @@ class GigaGRPCChatApi(
                 val args: Map<String, Any> = objectMapper.readValue(msg.functionCall.arguments)
                 GigaResponse.FunctionCall(
                     name = msg.functionCall.name,
-                    arguments = args
+                    arguments = args,
+                    argumentsString = msg.functionCall.arguments
                 )
             } else null
 

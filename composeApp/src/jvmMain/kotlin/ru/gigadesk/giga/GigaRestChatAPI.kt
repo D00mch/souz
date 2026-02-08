@@ -69,9 +69,10 @@ class GigaRestChatAPI(
     private val uuid = UUID.randomUUID().toString() // for cache to work
 
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
+        val sanitizedBody = body.sanitizeForGiga()
         val response = client.post(URL) {
             header("X-Session-ID", uuid)
-            setBody(body)
+            setBody(sanitizedBody)
         }
         when {
             response.status.isSuccess() -> {
@@ -107,7 +108,7 @@ class GigaRestChatAPI(
                 urlString = URL,
                 request = {
                     method = HttpMethod.Post
-                    setBody(body.copy(stream = true))
+                    setBody(body.sanitizeForGiga().copy(stream = true))
                     header("X-Session-ID", uuid)
                 }
             ) {
@@ -211,7 +212,11 @@ class GigaRestChatAPI(
                 val name = functionCallNode["name"]?.asText() ?: ""
                 val argsText = functionCallNode["arguments"]?.toString() ?: "{}"
                 val args: Map<String, Any> = objectMapper.readValue(argsText)
-                GigaResponse.FunctionCall(name, args)
+                GigaResponse.FunctionCall(
+                    name = name,
+                    arguments = args,
+                    argumentsString = argsText
+                )
             } else null
 
             val content = delta["content"]?.asText() ?: ""
@@ -224,7 +229,7 @@ class GigaRestChatAPI(
                     content = content,
                     role = role,
                     functionCall = functionCall,
-                    functionsStateId = delta["functions_state_id"]?.asText(),
+                    functionsStateId = if (role == GigaMessageRole.assistant) delta["functions_state_id"]?.asText() else null,
                 ),
                 index = choice["index"]?.asInt() ?: 0,
                 finishReason = finishReasonText?.toFinishReason(),
@@ -302,7 +307,18 @@ class GigaRestChatAPI(
         private const val URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
         private const val EMBEDDINGS_URL = "https://gigachat.devices.sberbank.ru/api/v1/embeddings"
         private const val BALANCE_URL = "https://gigachat.devices.sberbank.ru/api/v1/balance"
+        private fun GigaRequest.Chat.sanitizeForGiga(): GigaRequest.Chat {
+        return copy(
+            messages = messages.map { msg ->
+                if (msg.role != GigaMessageRole.assistant && msg.functionsStateId != null) {
+                    msg.copy(functionsStateId = null)
+                } else {
+                    msg
+                }
+            }
+        )
     }
+}
 }
 
 suspend fun main() {

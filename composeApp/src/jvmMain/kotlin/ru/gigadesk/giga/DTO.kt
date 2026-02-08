@@ -40,6 +40,7 @@ object GigaResponse {
     data class FunctionCall(
         val name: String,
         val arguments: Map<String, Any>,
+        // For AI Tunnel: raw arguments string for proper formatting
         val argumentsString: String? = null
     )
 
@@ -227,18 +228,44 @@ operator fun GigaResponse.Usage.plus(usage: GigaResponse.Usage): GigaResponse.Us
     precachedTokens = this.precachedTokens + usage.precachedTokens
 )
 
-fun GigaResponse.Choice.toMessage(): GigaRequest.Message? {
+
+fun GigaResponse.Choice.toMessages(): List<GigaRequest.Message> {
     val msg = this.message
-    val content: String = when {
-        msg.content.isNotBlank() -> msg.content
-        msg.functionCall != null -> gigaJsonMapper.writeValueAsString(
-            mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
+    val result = mutableListOf<GigaRequest.Message>()
+
+    // Message can have both content and function call (e.g. from OpenAI/AiTunnel)
+    // We split them into separate messages for GigaRequest which expects strict types
+
+    // 1. Add text content if present
+    if (msg.content.isNotBlank()) {
+        result.add(
+            GigaRequest.Message(
+                role = msg.role,
+                content = msg.content
+            )
         )
-        else -> return null
     }
-    return GigaRequest.Message(
-        role = msg.role,
-        content = content,
-        functionsStateId = msg.functionsStateId
-    )
+
+    // 2. Add function call if present
+    if (msg.functionCall != null) {
+        val jsonArgs = runCatching {
+            gigaJsonMapper.writeValueAsString(
+                mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
+            )
+        }.getOrElse { 
+            // Fallback for robust ness
+            """{"name":"${msg.functionCall.name}", "arguments": {}}""" 
+        }
+
+        result.add(
+            GigaRequest.Message(
+                role = msg.role,
+                content = jsonArgs,
+                functionsStateId = msg.functionsStateId
+            )
+        )
+    }
+
+    return result
 }
+

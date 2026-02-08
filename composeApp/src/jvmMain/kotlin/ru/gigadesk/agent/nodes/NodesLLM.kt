@@ -49,7 +49,7 @@ class NodesLLM(
             l.debug("LLM response is {}", response)
             val history = ArrayList(ctx.history).apply {
                 if (response is GigaResponse.Chat.Ok) {
-                    addAll(response.choices.mapNotNull { it.toMessage() })
+                    addAll(response.choices.flatMap { it.toMessages() })
                 }
             }
             ctx.map(history = history) { response }

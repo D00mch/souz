@@ -225,21 +225,66 @@ class AiTunnelChatAPI(
         }
     }
 
-    private fun buildMessages(messages: List<GigaRequest.Message>): List<Map<String, Any>> =
-        messages.map { msg ->
+    private fun buildMessages(messages: List<GigaRequest.Message>): List<Map<String, Any?>> {
+        val lastToolCallIds = mutableMapOf<String, String>()
+
+        return messages.map { msg ->
             when (msg.role) {
                 GigaMessageRole.function -> {
-                    // OpenAI ожидает роль 'tool' для результатов вызова функций
-                    val role = if (msg.functionsStateId != null) "tool" else "function"
-                    buildMap {
-                        put("role", role)
-                        put("content", msg.content)
-                        // Для tool_response обязателен tool_call_id
-                        msg.functionsStateId?.let { put("tool_call_id", it) }
-                        // Для старых function_call нужен name, для tool_call - нет
-                        if (msg.functionsStateId == null && msg.name != null) {
-                            put("name", msg.name)
+                    // Try to resolve tool_call_id from history matching if not present
+                    val toolCallId = msg.functionsStateId ?: msg.name?.let { lastToolCallIds[it] }
+                    
+                    if (toolCallId != null) {
+                        // OpenAI expects role 'tool' for tool results
+                        buildMap {
+                            put("role", "tool")
+                            put("content", msg.content)
+                            put("tool_call_id", toolCallId)
                         }
+                    } else {
+                        // Fallback to deprecated function role if no ID found
+                        buildMap {
+                            put("role", "function")
+                            put("content", msg.content)
+                            msg.name?.let { put("name", it) }
+                        }
+                    }
+                }
+                GigaMessageRole.assistant -> {
+                    // Check if this is a tool call (GigaChat format: has functionsStateId + content JSON)
+                    if (msg.functionsStateId != null) {
+                        try {
+                            val contentJson = objectMapper.readTree(msg.content)
+                            val name = contentJson["name"]?.asText()
+                            val argumentsNode = contentJson["arguments"]
+                            
+                            if (name != null && argumentsNode != null) {
+                                val arguments = objectMapper.writeValueAsString(argumentsNode)
+                                lastToolCallIds[name] = msg.functionsStateId
+                                
+                                return@map buildMap {
+                                    put("role", "assistant")
+                                    put("content", null)
+                                    put("tool_calls", listOf(buildMap {
+                                        put("id", msg.functionsStateId)
+                                        put("type", "function")
+                                        put("function", buildMap {
+                                            put("name", name)
+                                            put("arguments", arguments)
+                                        })
+                                    }))
+                                }
+                            }
+                        } catch (e: Exception) {
+                            l.warn("Failed to parse tool call content for AiTunnel: ${msg.content}. Falling back to standard content.", e)
+                        }
+                    }
+                    
+                    // Regular assistant message
+                    buildMap {
+                        put("role", msg.role.name)
+                        put("content", msg.content.ifBlank { null }) // OpenAI prefers null over empty string
+                        msg.name?.let { put("name", it) }
                     }
                 }
                 else -> buildMap {
@@ -249,6 +294,7 @@ class AiTunnelChatAPI(
                 }
             }
         }
+    }
 
     private fun buildTools(functions: List<GigaRequest.Function>): List<Map<String, Any>> {
         return functions.map { fn ->
@@ -341,6 +387,8 @@ class AiTunnelChatAPI(
                     val args = if (!isStream && argsText.isNotEmpty()) parseFunctionArguments(argsText) else emptyMap()
                     
                     val functionsStateId = toolCallNode["id"]?.asText()
+                    // Use original index but maybe we should ensure uniqueness if multiple tools?
+                    // For now keeping original index as it's used for correlation in streaming
                     val toolIndex = toolCallNode["index"]?.asInt() ?: choiceIndex
 
                     choices += GigaResponse.Choice(
@@ -357,13 +405,29 @@ class AiTunnelChatAPI(
             }
 
             // Обычный контент или если нет tool_calls
-            if ((messageContent.isNotEmpty()) || (toolCallsNode == null || toolCallsNode.size() == 0)) {
-                // В стриме роль может прийти только в первом пакете, далее null.
-                // GigaMessageRole.assistant - безопасный дефолт, но лучше сохранять стейт выше.
-                // В данной архитектуре мы просто возвращаем то, что пришло.
+            // AI Tunnel/OpenAI могут прислать И текст, И tool_calls.
+            // Мы должны сохранить текст как отдельный Choice.
+            if (messageContent.isNotEmpty()) {
                 choices += GigaResponse.Choice(
                     message = GigaResponse.Message(
                         content = messageContent,
+                        role = role,
+                        functionCall = null,
+                        functionsStateId = null,
+                    ),
+                    index = choiceIndex,
+                    // Если есть tool calls, то текстовая часть не является концом (stop),
+                    // она идет перед вызовом. Но OpenAI ставит finish_reason на всё сообщение.
+                    // Если мы разбили, то у текста finishReason может быть null или stop,
+                    // но логически это часть потока.
+                    // Оставим оригинальный finishReason, если нет tool_calls, иначе null (продолжение следует)
+                    finishReason = if (toolCallsNode != null && toolCallsNode.size() > 0) null else finishReason,
+                )
+            } else if (toolCallsNode == null || toolCallsNode.size() == 0) {
+                 // Если нет ни контента, ни тулов (например, начало стрима только с ролью)
+                 choices += GigaResponse.Choice(
+                    message = GigaResponse.Message(
+                        content = "",
                         role = role,
                         functionCall = null,
                         functionsStateId = null,
