@@ -5,6 +5,7 @@ A desktop Agent app to help with routines.
 # Documentation
 
 - [Agent engine](composeApp/src/jvmMain/kotlin/ru/gigadesk/agent/engine/README.md)
+- [MCP Integration](composeApp/src/jvmMain/kotlin/ru/gigadesk/mcp/README.md)
 
 # Developers notes
  
