@@ -33,10 +33,10 @@ import ru.gigadesk.giga.GigaMessageRole
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.TokenLogging
-import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.giga.toFinishReason
 import ru.gigadesk.giga.toGiga
 import ru.gigadesk.di.mainDiModule
+import ru.gigadesk.giga.gigaJsonMapper
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ToolListFiles
 import java.io.File
@@ -275,7 +275,7 @@ class QwenChatAPI(
     }
 
     private fun parseCompletionsResponse(text: String, model: String): GigaResponse.Chat {
-        val node = objectMapper.readTree(text)
+        val node = gigaJsonMapper.readTree(text)
         val choices = parseChoices(node["choices"])
         val usage = parseUsage(node["usage"])
         return GigaResponse.Chat.Ok(
@@ -287,7 +287,7 @@ class QwenChatAPI(
     }
 
     private fun parseGenerationChunk(text: String, model: String): GigaResponse.Chat {
-        val node = objectMapper.readTree(text)
+        val node = gigaJsonMapper.readTree(text)
         val output = node["output"]
         val choices = parseChoices(output?.get("choices"))
         val usage = parseUsage(node["usage"])
@@ -368,7 +368,7 @@ class QwenChatAPI(
     }
 
     private fun parseEmbeddingsResponse(text: String): GigaResponse.Embeddings {
-        val node = objectMapper.readTree(text)
+        val node = gigaJsonMapper.readTree(text)
         val data = node["data"]?.mapIndexed { index, item ->
             GigaResponse.Embedding(
                 embedding = item["embedding"]?.map { it.asDouble() } ?: emptyList(),
@@ -386,7 +386,7 @@ class QwenChatAPI(
 
     private fun parseFunctionArguments(argsText: String): Map<String, Any> {
         if (argsText.isBlank()) return emptyMap()
-        return runCatching { objectMapper.readValue<Map<String, Any>>(argsText) }
+        return runCatching { gigaJsonMapper.readValue<Map<String, Any>>(argsText) }
             .getOrElse {
                 l.warn("Failed to parse Qwen tool arguments: $argsText")
                 mapOf("raw" to argsText)

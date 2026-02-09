@@ -325,7 +325,7 @@ class McpClientManager(
     private fun parseJsonString(text: String): Any? {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return null
-        val node = runCatching { objectMapper.readTree(trimmed) }.getOrNull() ?: return null
+        val node = runCatching { gigaJsonMapper.readTree(trimmed) }.getOrNull() ?: return null
         return jsonNodeToAny(node)
     }
 

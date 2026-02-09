@@ -3,7 +3,7 @@ package ru.gigadesk.mcp
 import com.fasterxml.jackson.databind.JsonNode
 import org.slf4j.LoggerFactory
 import ru.gigadesk.db.SettingsProvider
-import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.giga.gigaJsonMapper
 import java.io.File
 
 class McpConfigProvider(
@@ -13,7 +13,7 @@ class McpConfigProvider(
 
     fun loadServers(): Map<String, McpServerConfig> {
         val source = loadRawConfig() ?: return emptyMap()
-        val root = runCatching { objectMapper.readTree(source) }.getOrElse { e ->
+        val root = runCatching { gigaJsonMapper.readTree(source) }.getOrElse { e ->
             l.warn("Failed to parse MCP config JSON: {}", e.message)
             return emptyMap()
         }

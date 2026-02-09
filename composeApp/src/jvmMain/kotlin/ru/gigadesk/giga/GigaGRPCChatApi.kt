@@ -162,7 +162,9 @@ class GigaGRPCChatApi(
                     .setRole(msg.role.name)
                     .setContent(msg.content)
                     .apply {
-                        msg.functionsStateId?.let { id -> functionsStateId = id }
+                        if (msg.role == GigaMessageRole.assistant) {
+                             msg.functionsStateId?.let { id -> functionsStateId = id }
+                        }
                         msg.attachments?.let { att -> addAllAttachments(att) }
                     }
                     .build()
@@ -198,7 +200,7 @@ class GigaGRPCChatApi(
                     functionCall = if (msg.hasFunctionCall()) {
                         GigaResponse.FunctionCall(
                             name = msg.functionCall.name,
-                            arguments = objectMapper.readValue(msg.functionCall.arguments)
+                            arguments = gigaJsonMapper.readValue(msg.functionCall.arguments)
                         )
                     } else {
                         null
@@ -222,7 +224,7 @@ class GigaGRPCChatApi(
         return Gigachatv1.Function.newBuilder()
             .setName(fn.name)
             .setDescription(fn.description)
-            .setParameters(objectMapper.writeValueAsString(fn.parameters))
+            .setParameters(gigaJsonMapper.writeValueAsString(fn.parameters))
             .addAllFewShotExamples(fn.fewShotExamples?.map { it.toGRPC() } ?: emptyList())
             .build()
     }
@@ -270,7 +272,7 @@ class GigaGRPCChatApi(
         val choices = alternativesList.map { alt ->
             val msg = alt.message
             val functionCall = if (msg.hasFunctionCall()) {
-                val args: Map<String, Any> = objectMapper.readValue(msg.functionCall.arguments)
+                val args: Map<String, Any> = gigaJsonMapper.readValue(msg.functionCall.arguments)
                 GigaResponse.FunctionCall(
                     name = msg.functionCall.name,
                     arguments = args

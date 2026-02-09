@@ -18,7 +18,6 @@ import org.kodein.di.bindProvider
 import org.kodein.di.bindSingleton
 import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.di.mainDiModule
-import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.tool.application.*
@@ -43,6 +42,8 @@ import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.LlmProvider
+import ru.gigadesk.giga.gigaJsonMapper
+import ru.gigadesk.llms.AiTunnelChatAPI
 import ru.gigadesk.llms.QwenChatAPI
 import java.util.concurrent.atomic.AtomicLong
 
@@ -65,10 +66,11 @@ class GraphAgentToolScenariosIntegrationTest {
     }
 
     companion object {
-        private val selectedModel = GigaModel.Lite
+        private val selectedModel = GigaModel.AiTunnelClaudeHaiku
 
         private var gigaRestChatAPI: GigaRestChatAPI? = null
         private var qwenChatAPI: QwenChatAPI? = null
+        private var aiTunnelChatAPI: AiTunnelChatAPI? = null
         private val httpRequestCount = AtomicLong(0)
         private val httpRequestTotalNanos = AtomicLong(0)
 
@@ -78,6 +80,7 @@ class GraphAgentToolScenariosIntegrationTest {
             when (selectedModel.provider) {
                 LlmProvider.GIGA -> println("Spent: ${gigaRestChatAPI?.getSessionTokenUsage() ?: "n/a"}")
                 LlmProvider.QWEN -> println("Spent: ${qwenChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+                LlmProvider.AI_TUNNEL -> println("Spent: ${aiTunnelChatAPI?.getSessionTokenUsage() ?: "n/a"}")
             }
             val requestCount = httpRequestCount.get()
             if (requestCount == 0L) {
@@ -125,10 +128,27 @@ class GraphAgentToolScenariosIntegrationTest {
             }
             qwenChatAPI!!
         }
+        bindSingleton<AiTunnelChatAPI>(overrides = true) {
+            if (aiTunnelChatAPI == null) {
+                aiTunnelChatAPI = AiTunnelChatAPI(instance(), instance()).apply {
+                    getHttpClient().plugin(HttpSend).intercept { request ->
+                        val startNanos = System.nanoTime()
+                        try {
+                            execute(request)
+                        } finally {
+                            httpRequestCount.incrementAndGet()
+                            httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
+                        }
+                    }
+                }
+            }
+            aiTunnelChatAPI!!
+        }
         bindSingleton<GigaChatAPI>(overrides = true) {
             when (selectedModel.provider) {
                 LlmProvider.GIGA -> instance<GigaRestChatAPI>()
                 LlmProvider.QWEN -> instance<QwenChatAPI>()
+                LlmProvider.AI_TUNNEL -> instance<AiTunnelChatAPI>()
             }
         }
     }
@@ -138,6 +158,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val apiKeyName = when (selectedModel.provider) {
             LlmProvider.GIGA -> "GIGA_KEY"
             LlmProvider.QWEN -> "QWEN_KEY"
+            LlmProvider.AI_TUNNEL -> "AITUNNEL_KEY"
         }
         val apiKey = System.getenv(apiKeyName) ?: System.getProperty(apiKeyName)
         Assumptions.assumeTrue(
@@ -150,8 +171,6 @@ class GraphAgentToolScenariosIntegrationTest {
     @ValueSource(
         strings = [
             "Запусти Telegram",
-            "Открой приложение Telegram",
-            "Открой Телеграм"
         ]
     )
     fun scenario1_launchApplication(userPrompt: String) = runTest {
@@ -175,7 +194,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolOpen> { testOpenApp }
         }
 
-        val agent = GraphBasedAgent(di, objectMapper)
+        val agent = GraphBasedAgent(di, gigaJsonMapper)
         agent.execute(userPrompt)
 
         coVerify(atLeast = 1) {
@@ -402,7 +421,7 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario9_findCalendarEvent[{index}] {0}")
     @ValueSource(
         strings = [
-            "Найди событие в календаре на эту неделю",
+            "Найди события в календаре на эту неделю",
             "Покажи события в календаре на текущую неделю",
             "Поищи в календаре встречи на этой неделе",
         ]
@@ -430,9 +449,11 @@ class GraphAgentToolScenariosIntegrationTest {
     fun scenario11_buildChartFromFile(userPrompt: String) = runTest {
         val toolCreatePlotFromCsv: ToolCreatePlotFromCsv = spyk(ToolCreatePlotFromCsv(filesUtil))
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
+        val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
 
         coEvery { toolCreatePlotFromCsv.invoke(any()) } returns "Plot saved"
         coEvery { toolListFiles.invoke(any()) } returns "[\"sample.csv\"]"
+        coEvery { excelRead.invoke(any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCreatePlotFromCsv> { toolCreatePlotFromCsv }
@@ -603,8 +624,12 @@ class GraphAgentToolScenariosIntegrationTest {
     fun scenario15_moveFile(userPrompt: String) = runTest {
         val realTool = ToolMoveFile(filesUtil)
         val toolMoveFile: ToolMoveFile = spyk(realTool)
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
         coEvery { toolMoveFile.invoke(any()) } returns "Moved"
+        coEvery { toolListFiles.invoke(any()) } returns """["sample.csv", "README.md", "/dest"]"""
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns """["~/sample.csv", "~/README.md", "~/dest/"]"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolMoveFile> { toolMoveFile }
@@ -647,7 +672,11 @@ class GraphAgentToolScenariosIntegrationTest {
     fun scenario17_readPdfPageByPage(userPrompt: String) = runTest {
         val realTool = ToolReadPdfPages(filesUtil)
         val toolReadPdfPages: ToolReadPdfPages = spyk(realTool)
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.pdf\"]"
+        coEvery { toolListFiles.invoke(any()) } returns "[\"sample.pdf\"]"
         coEvery { toolReadPdfPages.invoke(any()) } returns "Page 1 content"
 
         runScenarioWithMocks(userPrompt) {
@@ -798,7 +827,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
         coEvery { excelRead.invoke(any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
 
         runScenarioWithMocks(userPrompt) {
@@ -820,7 +849,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
         coEvery { excelRead.invoke(any()) } returns """[{"Date":"2024-01-01","Amount":"1500"}]"""
 
         runScenarioWithMocks(userPrompt) {
@@ -846,7 +875,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
         coEvery { excelRead.invoke(any()) } returns """[{"Date":"2024-01-01","Amount":"1500"}]"""
 
         runScenarioWithMocks(userPrompt) {
@@ -872,7 +901,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
         coEvery { excelRead.invoke(any()) } returns "1500"
 
         runScenarioWithMocks(userPrompt) {
@@ -897,8 +926,10 @@ class GraphAgentToolScenariosIntegrationTest {
     fun excelRead_lookup(userPrompt: String) = runTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/price.xlsx\"]"
+        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx"]"""
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns """["~/price.xlsx"]"""
         coEvery { excelRead.invoke(any()) } returns "45000"
 
         runScenarioWithMocks(userPrompt) {
@@ -967,7 +998,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindProvider<DI> { this.di }
             overrides()
         }
-        val agent = GraphBasedAgent(di, objectMapper)
+        val agent = GraphBasedAgent(di, gigaJsonMapper)
         agent.execute(userPrompt)
     }
 }

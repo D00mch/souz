@@ -42,12 +42,14 @@ class SettingsViewModel(
                 copy(
                     gigaChatKey = keysProvider.gigaChatKey ?: "",
                     qwenChatKey = keysProvider.qwenChatKey ?: "",
+                    aiTunnelKey = keysProvider.aiTunnelKey ?: "",
                     saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                     mcpServersJson = keysProvider.mcpServersJson ?: "",
                     useFewShotExamples = keysProvider.useFewShotExamples,
                     useStreaming = keysProvider.useStreaming,
                     safeModeEnabled = keysProvider.safeModeEnabled,
                     gigaModel = currentModel,
+                    embeddingsModel = keysProvider.embeddingsModel,
                     requestTimeoutMillis = keysProvider.requestTimeoutMillis,
                     requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
                     temperature = keysProvider.temperature,
@@ -96,6 +98,10 @@ class SettingsViewModel(
                 setState { copy(useStreaming = event.enabled) }
                 fetchBalance()
             }
+            is InputAiTunnelKey -> {
+                keysProvider.aiTunnelKey = event.key
+                setState { copy(aiTunnelKey = event.key) }
+            }
             is InputSafeModeEnabled -> {
                 keysProvider.safeModeEnabled = event.enabled
                 setState { copy(safeModeEnabled = event.enabled) }
@@ -104,6 +110,10 @@ class SettingsViewModel(
                 val newPrompt = graphBasedAgent.updateModel(event.model)
                 setState { copy(gigaModel = event.model, systemPrompt = newPrompt) }
                 fetchBalance()
+            }
+            is SelectEmbeddingsModel -> {
+                keysProvider.embeddingsModel = event.model
+                setState { copy(embeddingsModel = event.model) }
             }
             is InputRequestTimeoutMillis -> {
                 val normalized = event.millis.filter { it.isDigit() }
@@ -278,6 +288,17 @@ class SettingsViewModel(
                 }
                 return@launch
             }
+            LlmProvider.AI_TUNNEL -> {
+                setState {
+                    copy(
+                        balance = emptyList(),
+                        balanceError = "Баланс для AI Tunnel недоступен",
+                        isBalanceLoading = false
+                    )
+                }
+                return@launch
+            }
+
         }
 
         setState { copy(isBalanceLoading = true, balanceError = null) }

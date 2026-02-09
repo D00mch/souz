@@ -1,8 +1,6 @@
 package ru.gigadesk.giga
 
 import com.fasterxml.jackson.annotation.JsonProperty
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.util.*
 
 object GigaResponse {
@@ -111,6 +109,13 @@ const val MAX_TOKENS = 8192
 enum class LlmProvider {
     GIGA,
     QWEN,
+    AI_TUNNEL,
+}
+
+enum class EmbeddingsProvider {
+    GIGA,
+    QWEN,
+    AI_TUNNEL,
 }
 
 enum class GigaModel(
@@ -125,6 +130,25 @@ enum class GigaModel(
     QwenFlash("Qwen Flash", "qwen-flash", 32_768, LlmProvider.QWEN),
     QwenPlus("Qwen Plus", "qwen-plus", 32_768, LlmProvider.QWEN),
     QwenMax("Qwen Max", "qwen-max", 32_768, LlmProvider.QWEN),
+    AiTunnelGpt4oMini("AI-Tunnel: gpt-4o-mini", "gpt-4o-mini", 32_768, LlmProvider.AI_TUNNEL),
+    AiTunnelGpt52Codex("AI-Tunnel: gpt-5.2-codex", "gpt-5.2-codex", 32_768, LlmProvider.AI_TUNNEL),
+    AiTunnelGpt5Nano("AI-Tunnel: gpt-5-nano", "gpt-5-nano", 32_768, LlmProvider.AI_TUNNEL),
+    AiTunnelGemini3Flash("AI-Tunnel: gemini-3-flash-preview", "gemini-3-flash-preview", 32_768, LlmProvider.AI_TUNNEL),
+    AiTunnelClaudeOpus("AI-Tunnel: claude-opus-4.6", "claude-opus-4.6", 32_768, LlmProvider.AI_TUNNEL),
+    AiTunnelClaudeHaiku("AI-Tunnel: claude-haiku-4.5", "claude-haiku-4.5", 32_768, LlmProvider.AI_TUNNEL),
+    AiTunnelGrok("AI-Tunnel: grok-4.1-fast", "grok-4.1-fast", 32_768, LlmProvider.AI_TUNNEL),
+}
+
+enum class EmbeddingsModel(
+    val displayName: String,
+    val alias: String,
+    val provider: EmbeddingsProvider,
+) {
+    GigaEmbeddings("GigaChat", "Embeddings", EmbeddingsProvider.GIGA),
+    //QwenEmbeddings("Qwen", "text-embedding-v3", EmbeddingsProvider.QWEN),
+    //AiTunnelEmbedding3Small("AI-Tunnel: text-embedding-3-small", "text-embedding-3-small", EmbeddingsProvider.AI_TUNNEL),
+    //AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", EmbeddingsProvider.AI_TUNNEL),
+    //AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", EmbeddingsProvider.AI_TUNNEL),
 }
 
 object GigaRequest {
@@ -182,9 +206,6 @@ object GigaRequest {
 @Suppress("EnumEntryName")
 enum class GigaMessageRole { system, user, assistant, function }
 
-val objectMapper = jacksonObjectMapper()
-    .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-
 @Suppress("unused")
 class GigaException(body: GigaResponse.Chat.Error, override val cause: Throwable? = null) : Exception(cause)
 
@@ -203,10 +224,10 @@ operator fun GigaResponse.Usage.plus(usage: GigaResponse.Usage): GigaResponse.Us
 fun GigaResponse.Choice.toMessage(): GigaRequest.Message? {
     val msg = this.message
     val content: String = when {
-        msg.content.isNotBlank() -> msg.content
         msg.functionCall != null -> gigaJsonMapper.writeValueAsString(
             mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
         )
+        msg.content.isNotBlank() -> msg.content
         else -> return null
     }
     return GigaRequest.Message(

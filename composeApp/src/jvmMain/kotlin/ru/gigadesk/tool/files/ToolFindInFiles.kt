@@ -2,7 +2,6 @@ package ru.gigadesk.tool.files
 
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.runBlocking
-import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.tool.BadInputException
 import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
@@ -12,6 +11,7 @@ import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProviderImpl
+import ru.gigadesk.giga.gigaJsonMapper
 import java.io.File
 
 class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindInFiles.Input> {
@@ -75,7 +75,7 @@ class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
                 }
             }
             .toList()
-        return objectMapper.writeValueAsString(result)
+        return gigaJsonMapper.writeValueAsString(result)
     }
 }
 
@@ -84,7 +84,7 @@ fun main() {
     val tool = ToolFindInFiles(filesToolUtil)
     val result = tool.invoke(ToolFindInFiles.Input("~/wiki", " vr "))
     println("result: $result")
-    val results: List<List<String>> = objectMapper.readValue(result)
+    val results: List<List<String>> = gigaJsonMapper.readValue(result)
     results.forEach { (path, _) ->
         val safe = filesToolUtil.isPathSafe(File(path))
         if (safe) {

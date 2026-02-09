@@ -2,7 +2,6 @@ package ru.gigadesk.tool.files
 
 import org.slf4j.LoggerFactory
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
@@ -11,6 +10,7 @@ import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 import java.io.File
 import ru.gigadesk.db.SettingsProviderImpl
+import ru.gigadesk.giga.gigaJsonMapper
 
 class ToolFindFolders(
     private val bash: ToolRunBashCommand,
@@ -62,7 +62,7 @@ class ToolFindFolders(
         }
 
         val resultList = paths.take(20)
-        return objectMapper.writeValueAsString(resultList)
+        return gigaJsonMapper.writeValueAsString(resultList)
     }
 
     private fun executeAndFilter(rawSpotlightQuery: String, limit: Int): List<String> {

@@ -27,8 +27,10 @@ import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.agent.session.GraphSessionRepository
+import ru.gigadesk.giga.EmbeddingsModel
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
+import ru.gigadesk.giga.LlmProvider
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
@@ -64,6 +66,7 @@ fun SettingsScreen(
                 state,
                 onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
                 onQwenChatKeyInput = { key -> viewModel.send(SettingsEvent.InputQwenChatKey(key)) },
+                onAiTunnelKeyInput = { key -> viewModel.send(SettingsEvent.InputAiTunnelKey(key)) },
                 onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
                 onMcpServersJsonInput = { value -> viewModel.send(SettingsEvent.InputMcpServersJson(value)) },
                 onVoiceSpeedInput = { speed -> viewModel.send(SettingsEvent.InputVoiceSpeed(speed)) },
@@ -72,6 +75,7 @@ fun SettingsScreen(
                 onUseStreamingChange = { enabled -> viewModel.send(SettingsEvent.InputUseStreaming(enabled)) },
                 onSafeModeChange = { enabled -> viewModel.send(SettingsEvent.InputSafeModeEnabled(enabled)) },
                 onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
+                onEmbeddingsModelChange = { model -> viewModel.send(SettingsEvent.SelectEmbeddingsModel(model)) },
                 onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
                 onTemperatureInput = { value -> viewModel.send(SettingsEvent.InputTemperature(value)) },
                 onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
@@ -123,6 +127,7 @@ fun SettingsScreen(
     state: SettingsState,
     onGigaChatKeyInput: (String) -> Unit,
     onQwenChatKeyInput: (String) -> Unit,
+    onAiTunnelKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onMcpServersJsonInput: (String) -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
@@ -131,6 +136,7 @@ fun SettingsScreen(
     onUseStreamingChange: (Boolean) -> Unit,
     onSafeModeChange: (Boolean) -> Unit,
     onModelChange: (GigaModel) -> Unit,
+    onEmbeddingsModelChange: (EmbeddingsModel) -> Unit,
     onRequestTimeoutMillisChange: (String) -> Unit,
     onTemperatureInput: (String) -> Unit,
     onDefaultCalendarChange: (String?) -> Unit,
@@ -207,6 +213,12 @@ fun SettingsScreen(
                     label = "Qwen ключ",
                     value = state.qwenChatKey,
                     onValueChange = onQwenChatKeyInput,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                LabeledTextField(
+                    label = "AI Tunnel ключ",
+                    value = state.aiTunnelKey,
+                    onValueChange = onAiTunnelKeyInput,
                     modifier = Modifier.fillMaxWidth()
                 )
                 LabeledTextField(
@@ -379,6 +391,11 @@ fun SettingsScreen(
                 ModelDropdown(
                     selectedModel = state.gigaModel,
                     onModelSelected = onModelChange,
+                )
+
+                EmbeddingsModelDropdown(
+                    selectedModel = state.embeddingsModel,
+                    onModelSelected = onEmbeddingsModelChange,
                 )
 
                 Column(
@@ -698,6 +715,71 @@ private fun ModelDropdown(
     }
 }
 
+@Composable
+private fun EmbeddingsModelDropdown(
+    selectedModel: EmbeddingsModel,
+    onModelSelected: (EmbeddingsModel) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Модель эмбеддингов",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.glassColors.textPrimary
+        )
+        Box {
+            OutlinedButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.glassColors.textPrimary
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f)),
+                shape = MaterialTheme.shapes.extraSmall
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = selectedModel.displayName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.glassColors.textPrimary
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Выбрать модель эмбеддингов",
+                        tint = MaterialTheme.glassColors.textPrimary
+                    )
+                }
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.fillMaxWidth(0.6f)
+            ) {
+                EmbeddingsModel.entries.forEach { model ->
+                    DropdownMenuItem(
+                        text = { Text(model.displayName) },
+                        onClick = {
+                            onModelSelected(model)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+        Text(
+            text = "Ключи используются от привязанных провайдеров.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+        )
+    }
+}
+
 @Preview
 @Composable
 fun SettingsScreenPreview() {
@@ -706,6 +788,7 @@ fun SettingsScreenPreview() {
             state = SettingsState(gigaChatKey = "key1", saluteSpeechKey = "key2", useFewShotExamples = true),
             onGigaChatKeyInput = {},
             onQwenChatKeyInput = {},
+            onAiTunnelKeyInput = {},
             onSaluteSpeechKeyInput = {},
             onMcpServersJsonInput = {},
             onVoiceSpeedInput = {},
@@ -714,6 +797,7 @@ fun SettingsScreenPreview() {
             onUseStreamingChange = {},
             onSafeModeChange = {},
             onModelChange = {},
+            onEmbeddingsModelChange = {},
             onRequestTimeoutMillisChange = {},
             onTemperatureInput = {},
             onDefaultCalendarChange = {},

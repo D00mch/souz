@@ -1,6 +1,7 @@
 package ru.gigadesk.db
 
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
+import ru.gigadesk.giga.EmbeddingsModel
 import ru.gigadesk.giga.GigaModel
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
@@ -11,6 +12,7 @@ interface SettingsProvider {
 
     var gigaChatKey: String?
     var qwenChatKey: String?
+    var aiTunnelKey: String?
     var saluteSpeechKey: String?
     var supportEmail: String?
     var systemPrompt: String?
@@ -25,6 +27,7 @@ interface SettingsProvider {
     var initialWindowHeightDp: Int
     var temperature: Float
     var forbiddenFolders: List<String>
+    var embeddingsModel: EmbeddingsModel
     var mcpServersJson: String?
     var mcpServersFile: String?
 }
@@ -72,9 +75,14 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         configKey = NEEDS_ONBOARDING,
         envKey = NEEDS_ONBOARDING
     )
+    private var _embeddingsModelDelegate: String? by keyDelegate(
+        configKey = EMBEDDINGS_MODEL,
+        envKey = EMBEDDINGS_MODEL
+    )
 
     override var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
     override var qwenChatKey: String? by keyDelegate(configKey = QWEN_CHAT_KEY, envKey = "QWEN_KEY")
+    override var aiTunnelKey: String? by keyDelegate(configKey = AI_TUNNEL_KEY, envKey = "AITUNNEL_KEY")
     override var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
     override var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
     override var systemPrompt: String? by keyDelegate(configKey = SYSTEM_PROMPT, envKey = SYSTEM_PROMPT)
@@ -156,6 +164,14 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
                 .joinToString("\n")
         }
 
+    override var embeddingsModel: EmbeddingsModel
+        get() = _embeddingsModelDelegate?.let { value ->
+            EmbeddingsModel.entries.firstOrNull { it.name.equals(value, ignoreCase = true) || it.alias.equals(value, ignoreCase = true) }
+        } ?: EmbeddingsModel.GigaEmbeddings
+        set(value) {
+            _embeddingsModelDelegate = value.name
+        }
+
     override var mcpServersJson: String? by keyDelegate(
         configKey = MCP_SERVERS_JSON,
         envKey = MCP_SERVERS_JSON
@@ -185,6 +201,8 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     companion object {
         private const val GIGA_CHAT_KEY = "GIGA_CHAT_KEY"
         private const val QWEN_CHAT_KEY = "QWEN_CHAT_KEY"
+        private const val AI_TUNNEL_KEY = "AI_TUNNEL_KEY"
+        private const val AI_TUNNEL_MODEL_NAME = "AI_TUNNEL_MODEL_NAME"
         private const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         private const val USE_STREAMING = "USE_STREAMING"
@@ -200,6 +218,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val INITIAL_WINDOW_HEIGHT_DP = "INITIAL_WINDOW_HEIGHT_DP"
         private const val TEMPERATURE = "TEMPERATURE"
         private const val FORBIDDEN_FOLDERS = "FORBIDDEN_FOLDERS"
+        private const val EMBEDDINGS_MODEL = "EMBEDDINGS_MODEL"
         private const val MCP_SERVERS_JSON = "MCP_SERVERS_JSON"
         private const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
         private val DEFAULT_FORBIDDEN_FOLDERS = listOf("~/Library/")

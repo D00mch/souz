@@ -1,7 +1,7 @@
 package ru.gigadesk.db
 
 import com.fasterxml.jackson.module.kotlin.readValue
-import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.giga.gigaJsonMapper
 import java.util.prefs.Preferences
 
 object ConfigStore {
@@ -12,7 +12,7 @@ object ConfigStore {
         val str = when (value) {
             is String -> value
             is Int, is Long, is Float, is Double, is Boolean -> value.toString()
-            else -> objectMapper.writeValueAsString(value)
+            else -> gigaJsonMapper.writeValueAsString(value)
         }
         prefs.put(key, str)
     }
@@ -35,7 +35,7 @@ object ConfigStore {
                 Double::class -> str.toDouble()
                 Boolean::class -> str.toBooleanStrict()
                 String::class -> str
-                else -> objectMapper.readValue<T>(str)
+                else -> gigaJsonMapper.readValue<T>(str)
             } as T
         }.getOrNull()
     }

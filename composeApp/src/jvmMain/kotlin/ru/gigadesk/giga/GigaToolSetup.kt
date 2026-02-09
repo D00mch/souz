@@ -117,7 +117,7 @@ fun Exception.toGigaToolMessage(name: String?): GigaRequest.Message {
     }
     return GigaRequest.Message(
         role = GigaMessageRole.function,
-        content = objectMapper.writeValueAsString(mapOf("result" to msg)),
+        content = gigaJsonMapper.writeValueAsString(mapOf("result" to msg)),
         name = name,
     )
 }
