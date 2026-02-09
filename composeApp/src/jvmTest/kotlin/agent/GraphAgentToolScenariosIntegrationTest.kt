@@ -406,7 +406,7 @@ class GraphAgentToolScenariosIntegrationTest {
     @ParameterizedTest(name = "scenario9_findCalendarEvent[{index}] {0}")
     @ValueSource(
         strings = [
-            "Найди событие в календаре на эту неделю",
+            "Найди события в календаре на эту неделю",
             "Покажи события в календаре на текущую неделю",
             "Поищи в календаре встречи на этой неделе",
         ]
@@ -434,9 +434,11 @@ class GraphAgentToolScenariosIntegrationTest {
     fun scenario11_buildChartFromFile(userPrompt: String) = runTest {
         val toolCreatePlotFromCsv: ToolCreatePlotFromCsv = spyk(ToolCreatePlotFromCsv(filesUtil))
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
+        val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
 
         coEvery { toolCreatePlotFromCsv.invoke(any()) } returns "Plot saved"
         coEvery { toolListFiles.invoke(any()) } returns "[\"sample.csv\"]"
+        coEvery { excelRead.invoke(any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCreatePlotFromCsv> { toolCreatePlotFromCsv }
@@ -607,8 +609,12 @@ class GraphAgentToolScenariosIntegrationTest {
     fun scenario15_moveFile(userPrompt: String) = runTest {
         val realTool = ToolMoveFile(filesUtil)
         val toolMoveFile: ToolMoveFile = spyk(realTool)
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
         coEvery { toolMoveFile.invoke(any()) } returns "Moved"
+        coEvery { toolListFiles.invoke(any()) } returns """["sample.csv", "README.md", "/dest"]"""
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns """["~/sample.csv", "~/README.md", "~/dest/"]"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolMoveFile> { toolMoveFile }
@@ -651,7 +657,11 @@ class GraphAgentToolScenariosIntegrationTest {
     fun scenario17_readPdfPageByPage(userPrompt: String) = runTest {
         val realTool = ToolReadPdfPages(filesUtil)
         val toolReadPdfPages: ToolReadPdfPages = spyk(realTool)
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.pdf\"]"
+        coEvery { toolListFiles.invoke(any()) } returns "[\"sample.pdf\"]"
         coEvery { toolReadPdfPages.invoke(any()) } returns "Page 1 content"
 
         runScenarioWithMocks(userPrompt) {
@@ -802,7 +812,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
         coEvery { excelRead.invoke(any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
 
         runScenarioWithMocks(userPrompt) {
@@ -824,7 +834,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
         coEvery { excelRead.invoke(any()) } returns """[{"Date":"2024-01-01","Amount":"1500"}]"""
 
         runScenarioWithMocks(userPrompt) {
@@ -850,7 +860,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
         coEvery { excelRead.invoke(any()) } returns """[{"Date":"2024-01-01","Amount":"1500"}]"""
 
         runScenarioWithMocks(userPrompt) {
@@ -876,7 +886,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/sales.xlsx\"]"
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
         coEvery { excelRead.invoke(any()) } returns "1500"
 
         runScenarioWithMocks(userPrompt) {
@@ -901,8 +911,10 @@ class GraphAgentToolScenariosIntegrationTest {
     fun excelRead_lookup(userPrompt: String) = runTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"/tmp/price.xlsx\"]"
+        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx"]"""
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns """["~/price.xlsx"]"""
         coEvery { excelRead.invoke(any()) } returns "45000"
 
         runScenarioWithMocks(userPrompt) {
