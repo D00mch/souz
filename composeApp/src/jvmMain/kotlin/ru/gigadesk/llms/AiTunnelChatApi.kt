@@ -98,7 +98,7 @@ class AiTunnelChatAPI(
         if (response.status.isSuccess()) {
             parseCompletionsResponse(text, body.model).also { result ->
                 if (result is GigaResponse.Chat.Ok) {
-                    l.info("AiTunnel response received")
+                    l.info("Model: ${body.model}. Response received")
                     tokenLogging.logTokenUsage(result, body)
                 }
             }
@@ -109,7 +109,7 @@ class AiTunnelChatAPI(
         val text = e.response.bodyAsText()
         GigaResponse.Chat.Error(e.response.status.value, text)
     } catch (t: Throwable) {
-        l.error("Error in AiTunnel chat", t)
+        l.error("Model: ${body.model}. Error in chat", t)
         GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")
     }
 
@@ -137,16 +137,16 @@ class AiTunnelChatAPI(
                             val chunkNode = gigaJsonMapper.readTree(data)
                             val model = chunkNode["model"]?.asText() ?: body.model
                             val created = chunkNode["created"]?.asLong() ?: (System.currentTimeMillis() / 1000)
-                            
+
                             val chunks = accumulator.processChunk(chunkNode)
-                            
+
                             if (chunks.isNotEmpty()) {
                                 // Usage is typically null in chunks until the end, or never sent
                                 val usage = parseUsage(chunkNode["usage"])
                                 send(GigaResponse.Chat.Ok(chunks, created, model, usage))
                             }
                         } catch (e: Exception) {
-                            l.warn("Failed to parse AiTunnel stream chunk: $data", e)
+                            l.warn("Model: ${body.model}. Failed to parse stream chunk: $data", e)
                         }
                     }
                 }
@@ -155,7 +155,7 @@ class AiTunnelChatAPI(
             val text = e.response.bodyAsText()
             send(GigaResponse.Chat.Error(e.response.status.value, text))
         } catch (t: Throwable) {
-            l.error("Error in AiTunnel stream chat", t)
+            l.error("Model: ${body.model}. Error in AiTunnel stream chat", t)
             send(GigaResponse.Chat.Error(-1, "Connection error: ${t.message}"))
         }
     }
@@ -174,7 +174,7 @@ class AiTunnelChatAPI(
         val text = e.response.bodyAsText()
         GigaResponse.Embeddings.Error(e.response.status.value, text)
     } catch (t: Throwable) {
-        l.error("Error in AiTunnel embeddings", t)
+        l.error("Model: ${body.model}. Error in AiTunnel embeddings", t)
         GigaResponse.Embeddings.Error(-1, "Connection error: ${t.message}")
     }
 
@@ -225,7 +225,7 @@ class AiTunnelChatAPI(
                 GigaMessageRole.function -> {
                     // Try to resolve tool_call_id from history matching if not present
                     val toolCallId = msg.functionsStateId ?: msg.name?.let { lastToolCallIds[it] }
-                    
+
                     if (toolCallId != null) {
                         // OpenAI expects role 'tool' for tool results
                         buildMap {
@@ -242,6 +242,7 @@ class AiTunnelChatAPI(
                         }
                     }
                 }
+
                 GigaMessageRole.assistant -> {
                     // Check if this is a tool call (GigaChat format: has functionsStateId + content JSON)
                     if (msg.functionsStateId != null) {
@@ -249,11 +250,11 @@ class AiTunnelChatAPI(
                             val contentJson = gigaJsonMapper.readTree(msg.content)
                             val name = contentJson["name"]?.asText()
                             val argumentsNode = contentJson["arguments"]
-                            
+
                             if (name != null && argumentsNode != null) {
                                 val arguments = gigaJsonMapper.writeValueAsString(argumentsNode)
                                 lastToolCallIds[name] = msg.functionsStateId
-                                
+
                                 return@map buildMap {
                                     put("role", "assistant")
                                     put("content", null)
@@ -268,10 +269,13 @@ class AiTunnelChatAPI(
                                 }
                             }
                         } catch (e: Exception) {
-                            l.warn("Failed to parse tool call content for AiTunnel: ${msg.content}. Falling back to standard content.", e)
+                            l.warn(
+                                "Failed to parse tool call content for AiTunnel: " +
+                                        "${msg.content}. Falling back to standard content.", e
+                            )
                         }
                     }
-                    
+
                     // Regular assistant message
                     buildMap {
                         put("role", msg.role.name)
@@ -279,6 +283,7 @@ class AiTunnelChatAPI(
                         msg.name?.let { put("name", it) }
                     }
                 }
+
                 else -> buildMap {
                     put("role", msg.role.name)
                     put("content", msg.content)
@@ -358,7 +363,7 @@ class AiTunnelChatAPI(
                     val name = functionNode?.get("name")?.asText().orEmpty()
                     val argsText = functionNode?.get("arguments")?.asText() ?: ""
                     val args = if (argsText.isNotEmpty()) parseFunctionArguments(argsText) else emptyMap()
-                    
+
                     val functionsStateId = toolCallNode["id"]?.asText()
                     val toolIndex = toolCallNode["index"]?.asInt() ?: choiceIndex
 
@@ -387,7 +392,7 @@ class AiTunnelChatAPI(
                     finishReason = if (toolCallsNode != null && toolCallsNode.size() > 0) null else finishReason,
                 )
             } else if (toolCallsNode == null || toolCallsNode.size() == 0) {
-                 choices += GigaResponse.Choice(
+                choices += GigaResponse.Choice(
                     message = GigaResponse.Message(
                         content = "",
                         role = role,
@@ -435,7 +440,6 @@ class AiTunnelChatAPI(
                 emptyMap()
             }
     }
-
 
 
     private fun resolveChatModel(model: String): String {
@@ -507,8 +511,8 @@ private class StreamAccumulator {
             val finishReason = finishReasonText.toOpenAiFinishReason()
 
             // Update Role
-            delta?.get("role")?.asText()?.let { 
-                if (it.isNotBlank()) state.role = GigaMessageRole.valueOf(it) 
+            delta?.get("role")?.asText()?.let {
+                if (it.isNotBlank()) state.role = GigaMessageRole.valueOf(it)
             }
 
             // Append Content
@@ -571,8 +575,8 @@ private class StreamAccumulator {
                     // Clear tool calls after emitting to avoid duplicate emissions if multiple finish reasons (unlikely)
                     state.toolCalls.clear()
                 } else if (finishReason != GigaResponse.FinishReason.function_call) {
-                        // Signal end of stream
-                        resultChoices.add(
+                    // Signal end of stream
+                    resultChoices.add(
                         GigaResponse.Choice(
                             message = GigaResponse.Message(
                                 content = "",
@@ -640,14 +644,15 @@ suspend fun main() {
             when (response) {
                 is GigaResponse.Chat.Ok -> {
                     response.choices.forEach { choice ->
-                         val content = choice.message.content
-                         if (content.isNotEmpty()) print(content)
-                         
-                         if (choice.message.functionCall != null) {
-                             println("\nFunction call: ${choice.message.functionCall}")
-                         }
+                        val content = choice.message.content
+                        if (content.isNotEmpty()) print(content)
+
+                        if (choice.message.functionCall != null) {
+                            println("\nFunction call: ${choice.message.functionCall}")
+                        }
                     }
                 }
+
                 is GigaResponse.Chat.Error -> {
                     println("Error: ${response.message}")
                 }
