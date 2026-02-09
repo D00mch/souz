@@ -25,6 +25,8 @@ interface SettingsProvider {
     var initialWindowHeightDp: Int
     var temperature: Float
     var forbiddenFolders: List<String>
+    var mcpServersJson: String?
+    var mcpServersFile: String?
 }
 
 class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvider {
@@ -154,6 +156,16 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
                 .joinToString("\n")
         }
 
+    override var mcpServersJson: String? by keyDelegate(
+        configKey = MCP_SERVERS_JSON,
+        envKey = MCP_SERVERS_JSON
+    )
+
+    override var mcpServersFile: String? by keyDelegate(
+        configKey = MCP_SERVERS_FILE,
+        envKey = MCP_SERVERS_FILE
+    )
+
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
         object : ReadWriteProperty<Any?, String?> {
 
@@ -188,6 +200,8 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val INITIAL_WINDOW_HEIGHT_DP = "INITIAL_WINDOW_HEIGHT_DP"
         private const val TEMPERATURE = "TEMPERATURE"
         private const val FORBIDDEN_FOLDERS = "FORBIDDEN_FOLDERS"
+        private const val MCP_SERVERS_JSON = "MCP_SERVERS_JSON"
+        private const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
         private val DEFAULT_FORBIDDEN_FOLDERS = listOf("~/Library/")
     }
 }

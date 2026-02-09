@@ -43,6 +43,7 @@ class SettingsViewModel(
                     gigaChatKey = keysProvider.gigaChatKey ?: "",
                     qwenChatKey = keysProvider.qwenChatKey ?: "",
                     saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
+                    mcpServersJson = keysProvider.mcpServersJson ?: "",
                     useFewShotExamples = keysProvider.useFewShotExamples,
                     useStreaming = keysProvider.useStreaming,
                     safeModeEnabled = keysProvider.safeModeEnabled,
@@ -81,6 +82,10 @@ class SettingsViewModel(
             is InputSaluteSpeechKey -> {
                 keysProvider.saluteSpeechKey = event.key
                 setState { copy(saluteSpeechKey = event.key) }
+            }
+            is InputMcpServersJson -> {
+                keysProvider.mcpServersJson = event.json
+                setState { copy(mcpServersJson = event.json) }
             }
             is InputUseFewShotExamples -> {
                 keysProvider.useFewShotExamples = event.enabled

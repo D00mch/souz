@@ -24,6 +24,7 @@ import org.kodein.di.instance
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.di.mainDiModule
+import ru.gigadesk.mcp.McpClientManager
 import ru.gigadesk.server.AgentNode
 import ru.gigadesk.server.startLocalServer
 
@@ -38,6 +39,7 @@ fun main() {
             val say: Say by di.instance()
             val settingsProvider: SettingsProvider by di.instance()
             val agentNode: AgentNode by di.instance()
+            val mcpClientManager: McpClientManager by di.instance()
 
             DisposableEffect(Unit) {
                 println("Starting local server...")
@@ -46,6 +48,7 @@ fun main() {
                 onDispose {
                     println("Stopping local server...")
                     serverEngine.stop(1000, 2000)
+                    mcpClientManager.close()
                 }
             }
 
