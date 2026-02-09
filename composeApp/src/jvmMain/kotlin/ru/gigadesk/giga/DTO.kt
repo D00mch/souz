@@ -147,10 +147,10 @@ enum class EmbeddingsModel(
     val provider: EmbeddingsProvider,
 ) {
     GigaEmbeddings("GigaChat", "Embeddings", EmbeddingsProvider.GIGA),
-    QwenEmbeddings("Qwen", "text-embedding-v3", EmbeddingsProvider.QWEN),
-    AiTunnelEmbedding3Small("AI-Tunnel: text-embedding-3-small", "text-embedding-3-small", EmbeddingsProvider.AI_TUNNEL),
-    AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", EmbeddingsProvider.AI_TUNNEL),
-    AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", EmbeddingsProvider.AI_TUNNEL),
+    //QwenEmbeddings("Qwen", "text-embedding-v3", EmbeddingsProvider.QWEN),
+    //AiTunnelEmbedding3Small("AI-Tunnel: text-embedding-3-small", "text-embedding-3-small", EmbeddingsProvider.AI_TUNNEL),
+    //AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", EmbeddingsProvider.AI_TUNNEL),
+    //AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", EmbeddingsProvider.AI_TUNNEL),
 }
 
 object GigaRequest {
@@ -229,7 +229,7 @@ operator fun GigaResponse.Usage.plus(usage: GigaResponse.Usage): GigaResponse.Us
 fun GigaResponse.Choice.toMessage(): GigaRequest.Message? {
     val msg = this.message
     val content: String = when {
-        msg.functionCall != null -> objectMapper.writeValueAsString(
+        msg.functionCall != null -> gigaJsonMapper.writeValueAsString(
             mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
         )
         msg.content.isNotBlank() -> msg.content

@@ -2,7 +2,7 @@ package ru.gigadesk.agent.session
 
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
-import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.giga.gigaJsonMapper
 import ru.gigadesk.tool.files.FilesToolUtil
 import java.io.File
 
@@ -19,7 +19,7 @@ class GraphSessionRepository {
     fun save(session: GraphSession) {
         try {
             val file = File(sessionsDir, "${session.id}.json")
-            objectMapper.writerWithDefaultPrettyPrinter().writeValue(file, session)
+            gigaJsonMapper.writerWithDefaultPrettyPrinter().writeValue(file, session)
             l.info("Session saved: ${session.id}")
         } catch (e: Exception) {
             l.error("Failed to save session: ${session.id}", e)
@@ -31,7 +31,7 @@ class GraphSessionRepository {
         return try {
             sessionsDir.listFiles { _, name -> name.endsWith(".json") }
                 ?.mapNotNull { file ->
-                    runCatching { objectMapper.readValue<GraphSession>(file) }.getOrNull()
+                    runCatching { gigaJsonMapper.readValue<GraphSession>(file) }.getOrNull()
                 }
                 ?.sortedByDescending { it.startTime }
                 ?: emptyList()
@@ -45,7 +45,7 @@ class GraphSessionRepository {
         return try {
             val file = File(sessionsDir, "$sessionId.json")
             if (file.exists()) {
-                objectMapper.readValue<GraphSession>(file)
+                gigaJsonMapper.readValue<GraphSession>(file)
             } else null
         } catch (e: Exception) {
             l.error("Failed to load session: $sessionId", e)
