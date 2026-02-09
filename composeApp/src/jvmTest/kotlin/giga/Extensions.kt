@@ -3,6 +3,7 @@ package giga
 import io.ktor.client.HttpClient
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaRestChatAPI
+import ru.gigadesk.llms.AiTunnelChatAPI
 import ru.gigadesk.llms.QwenChatAPI
 
 fun GigaRestChatAPI.getHttpClient(): HttpClient {
@@ -26,6 +27,19 @@ fun QwenChatAPI.getHttpClient(): HttpClient {
 
 fun QwenChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
     val tokenLoggingField = QwenChatAPI::class.java.getDeclaredField("tokenLogging")
+    tokenLoggingField.isAccessible = true
+    val tokenLogging = tokenLoggingField.get(this) ?: return zeroUsage()
+    return tokenLogging.extractSessionUsage()
+}
+
+fun AiTunnelChatAPI.getHttpClient(): HttpClient {
+    val field = AiTunnelChatAPI::class.java.getDeclaredField("client")
+    field.isAccessible = true
+    return field.get(this) as HttpClient
+}
+
+fun AiTunnelChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
+    val tokenLoggingField = AiTunnelChatAPI::class.java.getDeclaredField("tokenLogging")
     tokenLoggingField.isAccessible = true
     val tokenLogging = tokenLoggingField.get(this) ?: return zeroUsage()
     return tokenLogging.extractSessionUsage()
