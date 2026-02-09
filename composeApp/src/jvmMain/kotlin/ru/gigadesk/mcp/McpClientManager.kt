@@ -111,7 +111,9 @@ class McpClientManager(
     }
 
     private fun getOrCreateSession(config: McpServerConfig): McpStdioSession =
-        sessions.getOrDefault(config.name, McpStdioSession(config))
+        sessions.computeIfAbsent(config.name) {
+            McpStdioSession(config)
+        }
 
     /** Remove and close a session if [expected] is the same as the current one */
     private fun resetSession(serverName: String, expected: McpStdioSession? = null) {
