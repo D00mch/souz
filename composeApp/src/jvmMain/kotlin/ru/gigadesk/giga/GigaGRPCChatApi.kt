@@ -162,7 +162,9 @@ class GigaGRPCChatApi(
                     .setRole(msg.role.name)
                     .setContent(msg.content)
                     .apply {
-                        msg.functionsStateId?.let { id -> functionsStateId = id }
+                        if (msg.role == GigaMessageRole.assistant) {
+                             msg.functionsStateId?.let { id -> functionsStateId = id }
+                        }
                         msg.attachments?.let { att -> addAllAttachments(att) }
                     }
                     .build()
