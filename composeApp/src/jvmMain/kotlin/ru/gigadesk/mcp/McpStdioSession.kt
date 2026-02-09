@@ -137,37 +137,35 @@ class McpStdioSession(
         }
     }
 
-    private suspend fun readResponse(requestId: Long): JsonNode {
-        return withTimeout(timeoutMillis) {
-            while (true) {
-                val line = withContext(Dispatchers.IO) {
-                    stdout.readLine()
-                } ?: throw EOFException(
-                    "MCP server ${config.name} closed stdout while waiting for response to $requestId"
-                )
-                val node = runCatching { objectMapper.readTree(line) }
-                    .onFailure { l.warn("Unexpected error on reading response line, id: $requestId", it) }
-                    .getOrNull() ?: continue
-                val idNode = node.path("id")
-                if (idNode.isMissingNode || idNode.isNull) {
-                    continue
-                }
-                val matched = when {
-                    idNode.isNumber -> idNode.asLong() == requestId
-                    idNode.isTextual -> idNode.asText() == requestId.toString()
-                    else -> false
-                }
-                if (!matched) continue
-
-                val errorNode = node.path("error")
-                if (!errorNode.isMissingNode && !errorNode.isNull) {
-                    val message = errorNode.path("message").asText(errorNode.toString())
-                    throw IllegalStateException("MCP request failed ($requestId): $message")
-                }
-                return@withTimeout node.path("result")
+    private suspend fun readResponse(requestId: Long): JsonNode = withTimeout(timeoutMillis) {
+        lateinit var result: JsonNode
+        while (true) {
+            val line = withContext(Dispatchers.IO) {
+                stdout.readLine()
+            } ?: throw EOFException(
+                "MCP server ${config.name} closed stdout while waiting for response to $requestId"
+            )
+            val node = runCatching { objectMapper.readTree(line) }
+                .onFailure { l.warn("Unexpected error on reading response line, id: $requestId", it) }
+                .getOrNull() ?: continue
+            val idNode = node.path("id")
+            if (idNode.isMissingNode || idNode.isNull) continue
+            val matched = when {
+                idNode.isNumber -> idNode.asLong() == requestId
+                idNode.isTextual -> idNode.asText() == requestId.toString()
+                else -> false
             }
-            TODO()
+            if (!matched) continue
+
+            val errorNode = node.path("error")
+            if (!errorNode.isMissingNode && !errorNode.isNull) {
+                val message = errorNode.path("message").asText(errorNode.toString())
+                throw IllegalStateException("MCP request failed ($requestId): $message")
+            }
+            result = node.path("result")
+            break
         }
+        result
     }
 
     private fun ensureProcessAlive() {
