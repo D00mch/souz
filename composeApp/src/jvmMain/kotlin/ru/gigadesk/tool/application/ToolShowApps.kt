@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.gigadesk.di.mainDiModule
-import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.giga.gigaJsonMapper
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.files.FilesToolUtil
 
@@ -56,7 +56,7 @@ The "app-pid" only returned for running apps with `${AppState.running}` input.
                     val (bundleId, appName) = line.split(" ", limit = 2)
                     Result(bundleId, appName)
                 }
-            objectMapper.writeValueAsString(appsLines)
+            gigaJsonMapper.writeValueAsString(appsLines)
         }
 
         AppState.running -> {

@@ -14,8 +14,10 @@ import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.withContext
 import org.kodein.di.DI
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
@@ -56,18 +58,6 @@ class AnthropicChatAPI(
         }
     }
 
-    // Dump function to get errors like 400
-    suspend fun dump(body: GigaRequest.Chat): GigaResponse.Chat {
-        val resp = client.post("https://api.anthropic.com/v1/messages") {
-            contentType(ContentType.Application.Json)
-            val body = buildRequest(body)
-            setBody(body + ("stream" to false)) // force non-streaming
-        }
-        val text = resp.bodyAsText()
-        println("status=${resp.status.value}, body=$text")
-        TODO("Not yet implemented")
-    }
-
     private val fileTypes = mutableMapOf<String, String>()
 
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
@@ -81,11 +71,11 @@ class AnthropicChatAPI(
         if (!response.status.isSuccess()) {
             GigaResponse.Chat.Error(response.status.value, text)
         } else {
-            val node = objectMapper.readTree(text)
+            val node = gigaJsonMapper.readTree(text)
             val model = node["model"]?.asText() ?: body.model
 
             val choices = mutableListOf<GigaResponse.Choice>()
-            val content = node["content"] ?: objectMapper.createArrayNode()
+            val content = node["content"] ?: gigaJsonMapper.createArrayNode()
             content.forEachIndexed { index, blockNode ->
                 when (blockNode["type"]?.asText()) {
                     "text" -> {
@@ -106,7 +96,7 @@ class AnthropicChatAPI(
                         val id = blockNode["id"]?.asText()
                         val inputStr = blockNode["input"]?.toString() ?: "{}"
                         val args: Map<String, Any> = if (inputStr.isNotBlank()) {
-                            objectMapper.readValue(inputStr)
+                            gigaJsonMapper.readValue(inputStr)
                         } else emptyMap()
                         choices += GigaResponse.Choice(
                             message = GigaResponse.Message(
@@ -176,7 +166,7 @@ class AnthropicChatAPI(
                 incoming.collect { event ->
                     val data = event.data ?: return@collect
                     if (data == "[DONE]") return@collect
-                    val node = objectMapper.readTree(data)
+                    val node = gigaJsonMapper.readTree(data)
                     val type = node["type"]?.asText()
                     when (type) {
                         "content_block_delta" -> {
@@ -212,7 +202,7 @@ class AnthropicChatAPI(
                                     block.initialInput
                                 }
                                 val args: Map<String, Any> = if (jsonStr.isNotBlank()) {
-                                    objectMapper.readValue(jsonStr)
+                                    gigaJsonMapper.readValue(jsonStr)
                                 } else emptyMap()
                                 send(toToolChunk(block.name, args, block.id, body.model, index))
                             }
@@ -229,7 +219,9 @@ class AnthropicChatAPI(
     override suspend fun balance(): GigaResponse.Balance = fallback.balance()
 
     override suspend fun uploadFile(file: File): GigaResponse.UploadFile {
-        val mime = Files.probeContentType(file.toPath()) ?: "application/octet-stream"
+        val mime = withContext(Dispatchers.IO) {
+            Files.probeContentType(file.toPath())
+        } ?: "application/octet-stream"
         val response = client.submitFormWithBinaryData(
             url = FILES_URL,
             formData = formData {
@@ -249,10 +241,10 @@ class AnthropicChatAPI(
         ) {
             header("anthropic-beta", "files-api-2025-04-14")
         }
-        val node = objectMapper.readTree(response.bodyAsText())
+        val node = gigaJsonMapper.readTree(response.bodyAsText())
         val upload = GigaResponse.UploadFile(
             bytes = node["bytes"]?.asLong() ?: 0L,
-            createdAt = node["created_at"]?.asLong() ?: System.currentTimeMillis() / 1000,
+            createdAt = node["created_at"]?.asLong() ?: (System.currentTimeMillis() / 1000),
             filename = node["filename"]?.asText() ?: file.name,
             id = node["id"]?.asText() ?: "",
             objectType = node["type"]?.asText() ?: node["object"]?.asText() ?: "file",

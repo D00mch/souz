@@ -1,12 +1,12 @@
 package ru.gigadesk.tool.desktop
 
-import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.giga.toGiga
 import ru.gigadesk.image.ImageUtils
 import ru.gigadesk.tool.*
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
+import ru.gigadesk.giga.gigaJsonMapper
 
 
 class ToolCollectButtons(
@@ -137,7 +137,7 @@ class ToolCollectButtons(
             )
         )
 
-        val outButtons = objectMapper.readValue<List<OsxButton>>(result)
+        val outButtons = gigaJsonMapper.readValue<List<OsxButton>>(result)
             .take(count)
             .map { osxBtn ->
                 val width = osxBtn.size[0]
@@ -146,7 +146,7 @@ class ToolCollectButtons(
                 val y = (osxBtn.position[1] + height / 2) * ImageUtils.DESKTOP_SCREENSHOT_QUALITY
                 OutButton(x.toInt(), y.toInt(), osxBtn.name)
             }
-        return objectMapper.writeValueAsString(outButtons)
+        return gigaJsonMapper.writeValueAsString(outButtons)
     }
 
     data class OsxButton(

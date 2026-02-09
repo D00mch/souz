@@ -195,7 +195,7 @@ class GigaRestChatAPI(
     }
 
     private fun parseStreamChunk(data: String): GigaResponse.Chat {
-        val node = objectMapper.readTree(data)
+        val node = gigaJsonMapper.readTree(data)
         val choicesNode = node["choices"] ?: emptyList()
 
         val choices = choicesNode.mapNotNull { choice ->
@@ -210,7 +210,7 @@ class GigaRestChatAPI(
             val functionCall = if (functionCallNode != null && !functionCallNode.isNull) {
                 val name = functionCallNode["name"]?.asText() ?: ""
                 val argsText = functionCallNode["arguments"]?.toString() ?: "{}"
-                val args: Map<String, Any> = objectMapper.readValue(argsText)
+                val args: Map<String, Any> = gigaJsonMapper.readValue(argsText)
                 GigaResponse.FunctionCall(name, args)
             } else null
 
@@ -266,7 +266,7 @@ class GigaRestChatAPI(
             )
         )
         val body = result.lines().last()
-        return objectMapper.readValue(body)
+        return gigaJsonMapper.readValue(body)
     }
 
     private fun downloadFileWithToken(

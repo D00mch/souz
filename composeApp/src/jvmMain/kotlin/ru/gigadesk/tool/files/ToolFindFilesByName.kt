@@ -2,7 +2,6 @@ package ru.gigadesk.tool.files
 
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.runBlocking
-import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.tool.BadInputException
 import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
@@ -12,6 +11,7 @@ import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProviderImpl
+import ru.gigadesk.giga.gigaJsonMapper
 import java.io.File
 
 class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindFilesByName.Input> {
@@ -72,7 +72,7 @@ class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<
             .filter { it.isNotBlank() }
             .toList()
 
-        return objectMapper.writeValueAsString(result)
+        return gigaJsonMapper.writeValueAsString(result)
     }
 }
 
@@ -90,7 +90,7 @@ fun main() {
     println("Raw JSON result: $resultJson")
 
     try {
-        val fileList: List<String> = objectMapper.readValue(resultJson)
+        val fileList: List<String> = gigaJsonMapper.readValue(resultJson)
 
         if (fileList.isEmpty()) {
             println("No files found.")

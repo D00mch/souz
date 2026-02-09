@@ -1,6 +1,6 @@
 package ru.gigadesk.tool.desktop
 
-import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.giga.gigaJsonMapper
 import ru.gigadesk.giga.toGiga
 import ru.gigadesk.tool.*
 import ru.gigadesk.libs.MediaKeysNative
@@ -68,5 +68,5 @@ class ToolMediaControl(private val bash: ToolRunBashCommand) : ToolSetup<ToolMed
 fun main() {
     val t = ToolMediaControl(ToolRunBashCommand)
     t.invoke(ToolMediaControl.Input(ToolMediaControl.Action.playpause))
-    println(objectMapper.writeValueAsString(t.toGiga().fn))
+    println(gigaJsonMapper.writeValueAsString(t.toGiga().fn))
 }

@@ -34,7 +34,7 @@ import ru.gigadesk.giga.GigaMessageRole
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.TokenLogging
-import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.giga.gigaJsonMapper
 import ru.gigadesk.giga.toFinishReason
 import ru.gigadesk.giga.toGiga
 import ru.gigadesk.tool.files.FilesToolUtil
@@ -134,7 +134,7 @@ class AiTunnelChatAPI(
                         if (data == "[DONE]") break
 
                         try {
-                            val chunkNode = objectMapper.readTree(data)
+                            val chunkNode = gigaJsonMapper.readTree(data)
                             val model = chunkNode["model"]?.asText() ?: body.model
                             val created = chunkNode["created"]?.asLong() ?: (System.currentTimeMillis() / 1000)
                             
@@ -246,12 +246,12 @@ class AiTunnelChatAPI(
                     // Check if this is a tool call (GigaChat format: has functionsStateId + content JSON)
                     if (msg.functionsStateId != null) {
                         try {
-                            val contentJson = objectMapper.readTree(msg.content)
+                            val contentJson = gigaJsonMapper.readTree(msg.content)
                             val name = contentJson["name"]?.asText()
                             val argumentsNode = contentJson["arguments"]
                             
                             if (name != null && argumentsNode != null) {
-                                val arguments = objectMapper.writeValueAsString(argumentsNode)
+                                val arguments = gigaJsonMapper.writeValueAsString(argumentsNode)
                                 lastToolCallIds[name] = msg.functionsStateId
                                 
                                 return@map buildMap {
@@ -321,7 +321,7 @@ class AiTunnelChatAPI(
     }
 
     private fun parseCompletionsResponse(text: String, requestModel: String): GigaResponse.Chat {
-        val node = objectMapper.readTree(text)
+        val node = gigaJsonMapper.readTree(text)
         val choices = parseChoices(node["choices"], isStream = false)
         val usage = parseUsage(node["usage"])
         return GigaResponse.Chat.Ok(
@@ -411,7 +411,7 @@ class AiTunnelChatAPI(
     }
 
     private fun parseEmbeddingsResponse(text: String): GigaResponse.Embeddings {
-        val node = objectMapper.readTree(text)
+        val node = gigaJsonMapper.readTree(text)
         val data = node["data"]?.mapIndexed { index, item ->
             GigaResponse.Embedding(
                 embedding = item["embedding"]?.map { it.asDouble() } ?: emptyList(),
@@ -429,7 +429,7 @@ class AiTunnelChatAPI(
 
     private fun parseFunctionArguments(argsText: String): Map<String, Any> {
         if (argsText.isBlank()) return emptyMap()
-        return runCatching { objectMapper.readValue<Map<String, Any>>(argsText) }
+        return runCatching { gigaJsonMapper.readValue<Map<String, Any>>(argsText) }
             .getOrElse {
                 l.warn("Failed to parse AiTunnel tool arguments: $argsText")
                 emptyMap()
@@ -592,7 +592,7 @@ private class StreamAccumulator {
 
     private fun parseFunctionArguments(argsText: String): Map<String, Any> {
         if (argsText.isBlank()) return emptyMap()
-        return runCatching { objectMapper.readValue<Map<String, Any>>(argsText) }
+        return runCatching { gigaJsonMapper.readValue<Map<String, Any>>(argsText) }
             .getOrElse {
                 emptyMap()
             }

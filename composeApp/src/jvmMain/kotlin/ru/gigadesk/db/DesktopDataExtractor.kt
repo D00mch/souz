@@ -1,12 +1,12 @@
 package ru.gigadesk.db
 
-import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.browser.ToolSafariInfo
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.gigadesk.di.mainDiModule
+import ru.gigadesk.giga.gigaJsonMapper
 import ru.gigadesk.tool.browser.ToolChromeInfo
 import ru.gigadesk.tool.browser.detectDefaultBrowser
 import ru.gigadesk.tool.config.ToolInstructionStore
@@ -31,7 +31,7 @@ class DesktopDataExtractor(
     fun all(): List<StorredData> {
         val installed = runCatching {
             val json = toolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
-            val arr: List<Map<String, String>> = objectMapper.readValue(json)
+            val arr: List<Map<String, String>> = gigaJsonMapper.readValue(json)
             arr.map {
                 val (appName, appBundleId) = it["app-name"] to it["app-bundle-id"]
                 val text = "Приложение: $appName, bundleId: $appBundleId"
