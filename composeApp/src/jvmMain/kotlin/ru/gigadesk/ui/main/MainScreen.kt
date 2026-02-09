@@ -519,7 +519,41 @@ fun ChatModeContent(
         }
     }
     
-    Column(modifier = modifier) {
+    Column(
+        modifier = modifier.onPreviewKeyEvent { event ->
+            if (event.type == KeyEventType.KeyDown && 
+                event.utf16CodePoint != 0 && 
+                !event.isCtrlPressed && 
+                !event.isAltPressed && 
+                !event.isMetaPressed &&
+                event.key != Key.ShiftLeft &&
+                event.key != Key.ShiftRight &&
+                event.key != Key.DirectionUp &&
+                event.key != Key.DirectionDown &&
+                event.key != Key.DirectionLeft &&
+                event.key != Key.DirectionRight &&
+                event.key != Key.Tab &&
+                event.key != Key.Enter &&
+                event.key != Key.Backspace &&
+                event.key != Key.Delete &&
+                event.key != Key.Escape &&
+                event.key != Key.PageUp &&
+                event.key != Key.PageDown &&
+                event.key != Key.Home &&
+                event.key != Key.MoveHome &&
+                event.key != Key.MoveEnd
+            ) {
+                val char = event.utf16CodePoint.toChar()
+                if (!char.isISOControl()) {
+                    focusRequester.requestFocus()
+                    val newText = inputText.text + char
+                    onInputChange(TextFieldValue(newText, TextRange(newText.length)))
+                    return@onPreviewKeyEvent true
+                }
+            }
+            false
+        }
+    ) {
         if (messages.isEmpty() && !isProcessing) {
             Box(
                 modifier = Modifier
