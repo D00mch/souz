@@ -18,7 +18,6 @@ import org.kodein.di.bindProvider
 import org.kodein.di.bindSingleton
 import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.di.mainDiModule
-import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.tool.application.*
@@ -43,6 +42,8 @@ import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.giga.LlmProvider
+import ru.gigadesk.giga.gigaJsonMapper
+import ru.gigadesk.llms.AiTunnelChatAPI
 import ru.gigadesk.llms.QwenChatAPI
 import java.util.concurrent.atomic.AtomicLong
 
@@ -65,7 +66,7 @@ class GraphAgentToolScenariosIntegrationTest {
     }
 
     companion object {
-        private val selectedModel = GigaModel.QwenFlash
+        private val selectedModel = GigaModel.AiTunnelClaudeHaiku
 
         private var gigaRestChatAPI: GigaRestChatAPI? = null
         private var qwenChatAPI: QwenChatAPI? = null
@@ -130,7 +131,7 @@ class GraphAgentToolScenariosIntegrationTest {
             when (selectedModel.provider) {
                 LlmProvider.GIGA -> instance<GigaRestChatAPI>()
                 LlmProvider.QWEN -> instance<QwenChatAPI>()
-                LlmProvider.AI_TUNNEL -> throw NotImplementedError("AiTunnel not supported in integration tests yet")
+                LlmProvider.AI_TUNNEL -> instance<AiTunnelChatAPI>()
             }
         }
     }
@@ -178,7 +179,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolOpen> { testOpenApp }
         }
 
-        val agent = GraphBasedAgent(di, objectMapper)
+        val agent = GraphBasedAgent(di, gigaJsonMapper)
         agent.execute(userPrompt)
 
         coVerify(atLeast = 1) {
@@ -970,7 +971,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindProvider<DI> { this.di }
             overrides()
         }
-        val agent = GraphBasedAgent(di, objectMapper)
+        val agent = GraphBasedAgent(di, gigaJsonMapper)
         agent.execute(userPrompt)
     }
 }

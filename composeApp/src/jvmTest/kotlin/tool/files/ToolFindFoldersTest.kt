@@ -4,7 +4,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.giga.gigaJsonMapper
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.files.ToolFindFolders
 import ru.gigadesk.tool.files.FilesToolUtil
@@ -29,7 +29,7 @@ class ToolFindFoldersTest {
         every { filesToolUtil.isPathSafe(match { it.absolutePath == unsafePath }) } returns false
 
         val resultsJson = tool.invoke(ToolFindFolders.Input("Documents"))
-        val results: List<String> = objectMapper.readValue(resultsJson)
+        val results: List<String> = gigaJsonMapper.readValue(resultsJson)
 
         assertTrue(results.contains(safePath), "Expected safe path in results")
         assertFalse(results.contains(unsafePath), "Expected unsafe path to be filtered out")
@@ -72,7 +72,7 @@ class ToolFindFoldersTest {
         every { filesToolUtil.isPathSafe(any()) } returns true
 
         val resultsJson = tool.invoke(ToolFindFolders.Input(folderName))
-        val results: List<String> = objectMapper.readValue(resultsJson)
+        val results: List<String> = gigaJsonMapper.readValue(resultsJson)
 
         assertEquals(1, results.size)
         assertEquals(partialMatchPath, results.first())
