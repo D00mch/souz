@@ -130,7 +130,7 @@ enum class GigaModel(
     QwenFlash("Qwen Flash", "qwen-flash", 32_768, LlmProvider.QWEN),
     QwenPlus("Qwen Plus", "qwen-plus", 32_768, LlmProvider.QWEN),
     QwenMax("Qwen Max", "qwen-max", 32_768, LlmProvider.QWEN),
-    AiTunnelGpt4oMini("AI-Tunnel: gpt-4o-mini", "gpt-4o-mini", MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelGpt4oMini("AI-Tunnel: gpt-4o-mini", "gpt-4o-mini", 32_768, LlmProvider.AI_TUNNEL),
     AiTunnelGpt52Codex("AI-Tunnel: gpt-5.2-codex", "gpt-5.2-codex", 32_768, LlmProvider.AI_TUNNEL),
     AiTunnelGpt5Nano("AI-Tunnel: gpt-5-nano", "gpt-5-nano", 32_768, LlmProvider.AI_TUNNEL),
     AiTunnelGemini3Flash("AI-Tunnel: gemini-3-flash-preview", "gemini-3-flash-preview", 32_768, LlmProvider.AI_TUNNEL),
