@@ -60,6 +60,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Dp
@@ -643,17 +645,27 @@ private fun ChatBubble(message: ChatMessage, isWindowFocused: Boolean) {
                 .border(0.5.dp, textColor.copy(0.1f * focusAlpha), bubbleShape)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            Text(
-                text = message.text,
-                color = textColor.copy(alpha = focusAlpha),
-                fontSize = 14.sp,
-                lineHeight = 19.sp
+            val customSelectionColors = TextSelectionColors(
+                handleColor = if (message.isUser) Color.White else MaterialTheme.colorScheme.primary,
+                backgroundColor = if (message.isUser) Color.White.copy(alpha = 0.4f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
             )
+
+            CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
+                SelectionContainer {
+                    Text(
+                        text = message.text,
+                        color = textColor.copy(alpha = focusAlpha),
+                        fontSize = 14.sp,
+                        lineHeight = 19.sp,
+                        modifier = Modifier.padding(bottom = 3.dp)
+                    )
+                }
+            }
             Text(
                 text = formatTimestamp(message.timestamp),
                 color = textColor.copy(0.4f * focusAlpha),
                 fontSize = 10.sp,
-                modifier = Modifier.padding(top = 3.dp)
+                modifier = Modifier.padding(top = 0.dp)
             )
         }
     }
