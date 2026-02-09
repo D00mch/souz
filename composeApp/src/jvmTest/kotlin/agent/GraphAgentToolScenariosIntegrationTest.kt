@@ -37,6 +37,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.kodein.di.instance
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
+import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaModel
@@ -150,6 +151,10 @@ class GraphAgentToolScenariosIntegrationTest {
                 LlmProvider.QWEN -> instance<QwenChatAPI>()
                 LlmProvider.AI_TUNNEL -> instance<AiTunnelChatAPI>()
             }
+        }
+        bindSingleton<DesktopInfoRepository>(overrides = true) {
+            val r = DesktopInfoRepository(instance(), instance(), instance())
+            spyk(r) { coEvery { search(any(), any()) } returns emptyList() }
         }
     }
 
