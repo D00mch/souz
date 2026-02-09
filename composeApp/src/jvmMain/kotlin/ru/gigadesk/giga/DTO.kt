@@ -131,12 +131,12 @@ enum class GigaModel(
     QwenPlus("Qwen Plus", "qwen-plus", 32_768, LlmProvider.QWEN),
     QwenMax("Qwen Max", "qwen-max", 32_768, LlmProvider.QWEN),
     AiTunnelGpt4oMini("AI-Tunnel: gpt-4o-mini", "gpt-4o-mini", MAX_TOKENS, LlmProvider.AI_TUNNEL),
-    AiTunnelGpt52Codex("AI-Tunnel: gpt-5.2-codex", "gpt-5.2-codex", MAX_TOKENS, LlmProvider.AI_TUNNEL),
-    AiTunnelGpt5Nano("AI-Tunnel: gpt-5-nano", "gpt-5-nano", MAX_TOKENS, LlmProvider.AI_TUNNEL),
-    AiTunnelGemini3Flash("AI-Tunnel: gemini-3-flash-preview", "gemini-3-flash-preview", MAX_TOKENS, LlmProvider.AI_TUNNEL),
-    AiTunnelClaudeOpus("AI-Tunnel: claude-opus-4.6", "claude-opus-4.6", MAX_TOKENS, LlmProvider.AI_TUNNEL),
-    AiTunnelClaudeHaiku("AI-Tunnel: claude-haiku-4.5", "claude-haiku-4.5", MAX_TOKENS, LlmProvider.AI_TUNNEL),
-    AiTunnelGrok("AI-Tunnel: grok-4.1-fast", "grok-4.1-fast", MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelGpt52Codex("AI-Tunnel: gpt-5.2-codex", "gpt-5.2-codex", 32_768, LlmProvider.AI_TUNNEL),
+    AiTunnelGpt5Nano("AI-Tunnel: gpt-5-nano", "gpt-5-nano", 32_768, LlmProvider.AI_TUNNEL),
+    AiTunnelGemini3Flash("AI-Tunnel: gemini-3-flash-preview", "gemini-3-flash-preview", 32_768, LlmProvider.AI_TUNNEL),
+    AiTunnelClaudeOpus("AI-Tunnel: claude-opus-4.6", "claude-opus-4.6", 32_768, LlmProvider.AI_TUNNEL),
+    AiTunnelClaudeHaiku("AI-Tunnel: claude-haiku-4.5", "claude-haiku-4.5", 32_768, LlmProvider.AI_TUNNEL),
+    AiTunnelGrok("AI-Tunnel: grok-4.1-fast", "grok-4.1-fast", 32_768, LlmProvider.AI_TUNNEL),
 }
 
 enum class EmbeddingsModel(
