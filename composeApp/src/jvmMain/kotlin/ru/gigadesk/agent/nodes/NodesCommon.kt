@@ -145,7 +145,7 @@ class NodesCommon(
         val fnCallMessages = ctx.input.choices.mapNotNull { choice ->
             val msg = choice.message
             if (msg.functionCall != null && msg.functionsStateId != null) {
-                executeTool(ctx.settings, msg.functionCall).copy(functionsStateId = msg.functionsStateId)
+                executeTool(ctx.settings, msg.functionCall)
             } else null
         }
         return fnCallMessages
