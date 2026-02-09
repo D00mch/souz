@@ -95,6 +95,7 @@ class QwenChatAPI(
     }
 
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
+        val body = body.rmFnIds()
         val response = client.post(CHAT_COMPLETIONS_URL) {
             setBody(buildChatRequest(body))
         }
@@ -118,6 +119,7 @@ class QwenChatAPI(
     }
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
+        val body = body.rmFnIds()
         try {
             client.sse(
                 urlString = GENERATION_SSE_URL,

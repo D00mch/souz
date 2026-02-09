@@ -162,7 +162,19 @@ object GigaRequest {
         val stream: Boolean = false,
         val maxTokens: Int = MAX_TOKENS,
         @field:JsonProperty("update_interval") val updateInterval: Int? = 1,
-    )
+    ) {
+        /**
+         * OpenAI expects function to provide call IDs, but Giga and Qwen does not.
+         */
+        fun rmFnIds(): Chat = copy(
+            messages = messages.map { m ->
+                when (m.role) {
+                    GigaMessageRole.function -> m.copy(functionsStateId = null)
+                    else -> m
+                }
+            }
+        )
+    }
 
     data class Message(
         val role: GigaMessageRole,

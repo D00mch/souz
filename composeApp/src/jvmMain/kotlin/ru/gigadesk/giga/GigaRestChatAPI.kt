@@ -69,6 +69,7 @@ class GigaRestChatAPI(
     private val uuid = UUID.randomUUID().toString() // for cache to work
 
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
+        val body = body.rmFnIds()
         val response = client.post(URL) {
             header("X-Session-ID", uuid)
             setBody(body)
@@ -103,6 +104,7 @@ class GigaRestChatAPI(
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
         try {
+            val body = body.rmFnIds()
             client.sse(
                 urlString = URL,
                 request = {

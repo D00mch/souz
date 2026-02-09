@@ -142,8 +142,9 @@ class GigaGRPCChatApi(
         }
     }
 
-    private fun GigaGRPCChatApi.request(body: GigaRequest.Chat): Gigachatv1.ChatRequest =
-        Gigachatv1.ChatRequest.newBuilder()
+    private fun GigaGRPCChatApi.request(body: GigaRequest.Chat): Gigachatv1.ChatRequest {
+        val body = body.rmFnIds()
+        return Gigachatv1.ChatRequest.newBuilder()
             .setModel(body.model)
             .setOptions(
                 Gigachatv1.ChatOptions.newBuilder()
@@ -162,14 +163,13 @@ class GigaGRPCChatApi(
                     .setRole(msg.role.name)
                     .setContent(msg.content)
                     .apply {
-                        if (msg.role == GigaMessageRole.assistant) {
-                             msg.functionsStateId?.let { id -> functionsStateId = id }
-                        }
+                        msg.functionsStateId?.let { id -> functionsStateId = id }
                         msg.attachments?.let { att -> addAllAttachments(att) }
                     }
                     .build()
             })
             .build()
+    }
 
     private fun Gigachatv1.ChatResponse.mapResponse(model: String): GigaResponse.Chat {
         val resp = this
