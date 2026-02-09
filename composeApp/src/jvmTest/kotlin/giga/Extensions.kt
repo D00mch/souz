@@ -42,7 +42,7 @@ fun AiTunnelChatAPI.getHttpClient(): HttpClient {
 fun AiTunnelChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
     val tokenLoggingField = AiTunnelChatAPI::class.java.getDeclaredField("tokenLogging")
     tokenLoggingField.isAccessible = true
-    val tokenLogging = tokenLoggingField.get(this) ?: return zeroUsage()
+    val tokenLogging = tokenLoggingField.get(this) as? TokenLogging ?: return zeroUsage()
     return tokenLogging.sessionTokenUsage()
 }
 

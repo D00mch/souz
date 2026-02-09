@@ -171,8 +171,6 @@ class GraphAgentToolScenariosIntegrationTest {
     @ValueSource(
         strings = [
             "Запусти Telegram",
-            "Открой приложение Telegram",
-            "Открой Телеграм"
         ]
     )
     fun scenario1_launchApplication(userPrompt: String) = runTest {

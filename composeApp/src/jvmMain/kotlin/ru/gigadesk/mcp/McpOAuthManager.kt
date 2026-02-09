@@ -20,7 +20,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import org.slf4j.LoggerFactory
 import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.giga.objectMapper
+import ru.gigadesk.giga.gigaJsonMapper
 import java.awt.Desktop
 import java.net.InetSocketAddress
 import java.net.URI
@@ -320,7 +320,7 @@ class McpOAuthManager(
                 "MCP OAuth dynamic client registration failed (${response.status.value}): ${text.take(500)}",
             )
         }
-        val node = runCatching { objectMapper.readTree(text) }
+        val node = runCatching { gigaJsonMapper.readTree(text) }
             .getOrElse { e -> throw IllegalStateException("Invalid registration response: ${e.message}") }
         val registeredClientId = node.path("client_id").asText("").trim()
         if (registeredClientId.isBlank()) {
@@ -358,7 +358,7 @@ class McpOAuthManager(
                 "MCP OAuth token request failed (${response.status.value}): ${text.take(500)}",
             )
         }
-        return runCatching { objectMapper.readTree(text) }
+        return runCatching { gigaJsonMapper.readTree(text) }
             .getOrElse { e -> throw IllegalStateException("Invalid token response: ${e.message}") }
     }
 
@@ -368,7 +368,7 @@ class McpOAuthManager(
         }
         if (!response.status.isSuccess()) return null
         val text = response.bodyAsText()
-        return runCatching { objectMapper.readTree(text) }.getOrNull()
+        return runCatching { gigaJsonMapper.readTree(text) }.getOrNull()
     }
 
     private fun buildAuthorizeUrl(
@@ -613,7 +613,7 @@ private data class OAuthClient(
 )
 
 private fun io.ktor.client.request.HttpRequestBuilder.setBodyFromJson(payload: Any) {
-    setBody(objectMapper.writeValueAsString(payload))
+    setBody(gigaJsonMapper.writeValueAsString(payload))
 }
 
 fun main() {
