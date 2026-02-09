@@ -282,6 +282,7 @@ fun MainScreenContent(
                             isProcessing = state.isProcessing,
                             onInputChange = onUpdateChatInput,
                             onSendMessage = onSendChatMessage,
+                            onShowSnack = onShowSnack,
                             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)
                         )
                     } else {
@@ -496,6 +497,7 @@ fun ChatModeContent(
     isProcessing: Boolean,
     onInputChange: (TextFieldValue) -> Unit,
     onSendMessage: () -> Unit,
+    onShowSnack: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -571,7 +573,11 @@ fun ChatModeContent(
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
                 items(messages, key = { it.id }) { message ->
-                    ChatBubble(message = message, isWindowFocused = isWindowFocused)
+                    ChatBubble(
+                        message = message, 
+                        isWindowFocused = isWindowFocused,
+                        onShowSnack = onShowSnack
+                    )
                 }
 
                 if (isProcessing) {
@@ -619,7 +625,11 @@ fun ChatModeContent(
 
 
 @Composable
-private fun ChatBubble(message: ChatMessage, isWindowFocused: Boolean) {
+private fun ChatBubble(
+    message: ChatMessage, 
+    isWindowFocused: Boolean,
+    onShowSnack: (String) -> Unit
+) {
     val textColor = MaterialTheme.glassColors.textPrimary
     val userBubbleColor = MaterialTheme.colorScheme.primary
     val botBubbleColor = MaterialTheme.glassColors.backgroundTop
@@ -646,28 +656,101 @@ private fun ChatBubble(message: ChatMessage, isWindowFocused: Boolean) {
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 340.dp)
+                .widthIn(max = 600.dp) // Increased width for code blocks
                 .clip(bubbleShape)
                 .background(backgroundColor)
                 .border(0.5.dp, textColor.copy(0.1f * focusAlpha), bubbleShape)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            val customSelectionColors = TextSelectionColors(
-                handleColor = if (message.isUser) Color.White else MaterialTheme.colorScheme.primary,
-                backgroundColor = if (message.isUser) Color.White.copy(alpha = 0.4f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-            )
+            if (message.isUser) {
+                // User Message - Plain Text with Selection
+                val customSelectionColors = TextSelectionColors(
+                    handleColor = Color.White,
+                    backgroundColor = Color.White.copy(alpha = 0.4f)
+                )
 
-            CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
+                CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
+                    SelectionContainer {
+                        Text(
+                            text = message.text,
+                            color = textColor.copy(alpha = focusAlpha),
+                            fontSize = 14.sp,
+                            lineHeight = 19.sp,
+                            modifier = Modifier.padding(bottom = 3.dp)
+                        )
+                    }
+                }
+            } else {
+                // LLM Message - Markdown
+                val parts = remember(message.text) { parseMarkdownContent(message.text) }
+                
+                // Define Bubble Markdown Styles
+                val baseFontSize = 14.sp
+                val baseStyle = TextStyle(
+                    color = textColor.copy(alpha = focusAlpha),
+                    fontSize = baseFontSize,
+                    lineHeight = baseFontSize * 1.4
+                )
+                val codeStyle = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = baseFontSize * 0.9,
+                    color = Color(0xFFE0E0E0)
+                )
+                
+                val bubbleTypography = DefaultMarkdownTypography(
+                    h1 = MaterialTheme.typography.titleMedium.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+                    h2 = MaterialTheme.typography.titleSmall.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+                    h3 = MaterialTheme.typography.titleSmall.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+                    h4 = MaterialTheme.typography.bodyLarge.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+                    h5 = MaterialTheme.typography.bodyMedium.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+                    h6 = MaterialTheme.typography.bodyMedium.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+                    text = baseStyle,
+                    paragraph = baseStyle,
+                    code = codeStyle,
+                    inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color.White.copy(0.1f)),
+                    quote = baseStyle.copy(color = Color.Gray, fontStyle = FontStyle.Italic),
+                    bullet = baseStyle.copy(fontWeight = FontWeight.Bold),
+                    list = baseStyle,
+                    ordered = baseStyle,
+                    link = baseStyle.copy(color = Color(0xFF82B1FF), textDecoration = TextDecoration.Underline)
+                )
+                
+                val bubbleColors = DefaultMarkdownColors(
+                    text = baseStyle.color,
+                    codeText = Color(0xFFE0E0E0),
+                    codeBackground = Color.Black.copy(alpha = 0.4f),
+                    inlineCodeText = Color(0xFF81D4FA),
+                    inlineCodeBackground = Color.White.copy(alpha = 0.1f),
+                    dividerColor = baseStyle.color.copy(alpha = 0.2f),
+                    linkText = Color(0xFF82B1FF)
+                )
+
                 SelectionContainer {
-                    Text(
-                        text = message.text,
-                        color = textColor.copy(alpha = focusAlpha),
-                        fontSize = 14.sp,
-                        lineHeight = 19.sp,
-                        modifier = Modifier.padding(bottom = 3.dp)
-                    )
+                    Column {
+                        parts.forEach { part ->
+                            when (part) {
+                                is MarkdownPart.TextContent -> {
+                                    Markdown(
+                                        content = part.content,
+                                        colors = bubbleColors,
+                                        typography = bubbleTypography,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                is MarkdownPart.CodeContent -> {
+                                    CodeBlockWithCopy(
+                                        code = part.code,
+                                        language = part.language,
+                                        style = codeStyle,
+                                        onShowSnack = onShowSnack
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
+
             Text(
                 text = formatTimestamp(message.timestamp),
                 color = textColor.copy(0.4f * focusAlpha),
