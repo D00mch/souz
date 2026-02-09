@@ -14,7 +14,7 @@ class McpClientManager(
 ) : AutoCloseable {
     private val l = LoggerFactory.getLogger(McpClientManager::class.java)
     private val discoveryLock = Mutex()
-    private val sessions = ConcurrentHashMap<String, McpStdioSession>()
+    private val sessions = ConcurrentHashMap<String, McpSession>()
     private val discoveryState = MutableStateFlow(McpDiscoveryState())
 
     suspend fun tools(): List<GigaToolSetup> = ensureDiscovered().toolSetups
@@ -60,6 +60,7 @@ class McpClientManager(
                     serverName = serverName,
                     remoteToolName = remoteTool.name,
                     functionName = functionName,
+                    inputSchema = remoteTool.inputSchema,
                     fn = fn,
                 )
                 registered[functionName] = tool
@@ -86,10 +87,11 @@ class McpClientManager(
             ?: throw IllegalArgumentException("No such MCP function: $functionName")
         val config = snapshot.serverConfigs[tool.serverName]
             ?: throw IllegalStateException("No config for MCP server ${tool.serverName}")
+        val normalizedArgs = normalizeArguments(arguments, tool.inputSchema)
 
         val firstSession = getOrCreateSession(config)
-        return runCatching {
-            firstSession.callTool(tool.remoteToolName, arguments)
+        val result = runCatching {
+            firstSession.callTool(tool.remoteToolName, normalizedArgs)
         }.getOrElse { firstError ->
             l.warn(
                 "MCP call failed via {}.{}: {}. Restarting session and retrying once.",
@@ -99,8 +101,9 @@ class McpClientManager(
             )
             resetSession(tool.serverName, firstSession)
             val restartedSession = getOrCreateSession(config)
-            restartedSession.callTool(tool.remoteToolName, arguments)
+            restartedSession.callTool(tool.remoteToolName, normalizedArgs)
         }
+        return result
     }
 
     private suspend fun ensureDiscovered(): McpDiscoveryState {
@@ -110,13 +113,16 @@ class McpClientManager(
         return discoveryState.value
     }
 
-    private fun getOrCreateSession(config: McpServerConfig): McpStdioSession =
+    private fun getOrCreateSession(config: McpServerConfig): McpSession =
         sessions.computeIfAbsent(config.name) {
-            McpStdioSession(config)
+            when (config.transport) {
+                McpTransport.STDIO -> McpStdioSession(config)
+                McpTransport.HTTP -> McpHttpSession(config)
+            }
         }
 
     /** Remove and close a session if [expected] is the same as the current one */
-    private fun resetSession(serverName: String, expected: McpStdioSession? = null) {
+    private fun resetSession(serverName: String, expected: McpSession? = null) {
         sessions.compute(serverName) { _, session ->
             if (session === expected) expected?.close()
             null
@@ -172,8 +178,8 @@ class McpClientManager(
                 val key = names.next()
                 val value = propertiesNode.path(key)
                 properties[key] = GigaRequest.Property(
-                    type = schemaType(value),
-                    description = value.path("description").asText("").ifBlank { null },
+                    type = schemaTypeForGiga(value),
+                    description = gigaPropertyDescription(value),
                     enum = value.path("enum").takeIf { it.isArray }?.map { it.asText() },
                 )
             }
@@ -210,6 +216,140 @@ class McpClientManager(
             else -> "string"
         }
     }
+
+    /**
+     * Giga tool schema validator rejects nested object/array property definitions unless full sub-schema
+     * is present, but GigaRequest.Property does not support nested schema fields. We degrade complex
+     * top-level params to string and restore structured values before MCP call.
+     */
+    private fun schemaTypeForGiga(node: JsonNode): String {
+        return when (schemaType(node)) {
+            "number" -> "number"
+            "boolean" -> "boolean"
+            else -> "string"
+        }
+    }
+
+    private fun gigaPropertyDescription(node: JsonNode): String? {
+        val base = node.path("description").asText("").trim()
+        val hint = when (schemaType(node)) {
+            "object" -> "Pass as JSON object string."
+            "array" -> "Pass as JSON array string."
+            else -> null
+        }
+        return when {
+            base.isNotBlank() && hint != null -> "$base $hint"
+            base.isNotBlank() -> base
+            hint != null -> hint
+            else -> null
+        }
+    }
+
+    private fun normalizeArguments(
+        arguments: Map<String, Any>,
+        inputSchema: JsonNode?,
+    ): Map<String, Any> {
+        if (inputSchema == null || !inputSchema.isObject) return arguments
+        val propertiesNode = inputSchema.path("properties")
+        if (!propertiesNode.isObject) return arguments
+
+        val normalized = LinkedHashMap<String, Any>(arguments.size)
+        for ((key, value) in arguments) {
+            normalized[key] = normalizeValue(value, propertiesNode.path(key))
+        }
+        return normalized
+    }
+
+    private fun normalizeValue(value: Any, schema: JsonNode): Any {
+        return when (schemaType(schema)) {
+            "object" -> normalizeObjectValue(value, schema)
+            "array" -> normalizeArrayValue(value, schema.path("items"))
+            "number" -> normalizeNumberValue(value)
+            "boolean" -> normalizeBooleanValue(value)
+            else -> value
+        }
+    }
+
+    private fun normalizeObjectValue(value: Any, schema: JsonNode): Any {
+        return when (value) {
+            is Map<*, *> -> {
+                val nestedProperties = schema.path("properties")
+                if (!nestedProperties.isObject) {
+                    value.entries
+                        .filter { it.key != null && it.value != null }
+                        .associate { it.key.toString() to it.value!! }
+                } else {
+                    value.entries
+                        .filter { it.key != null && it.value != null }
+                        .associate { (k, v) ->
+                            val key = k.toString()
+                            key to normalizeValue(v!!, nestedProperties.path(key))
+                        }
+                }
+            }
+
+            is String -> parseJsonString(value)?.takeIf { it is Map<*, *> } ?: value
+            else -> value
+        }
+    }
+
+    private fun normalizeArrayValue(value: Any, itemSchema: JsonNode): Any {
+        return when (value) {
+            is List<*> -> value.mapNotNull { item ->
+                item?.let { normalizeValue(it, itemSchema) }
+            }
+
+            is String -> parseJsonString(value)?.takeIf { it is List<*> } ?: value
+            else -> value
+        }
+    }
+
+    private fun normalizeNumberValue(value: Any): Any {
+        if (value !is String) return value
+        val trimmed = value.trim()
+        if (trimmed.isEmpty()) return value
+        return trimmed.toLongOrNull()
+            ?: trimmed.toDoubleOrNull()
+            ?: value
+    }
+
+    private fun normalizeBooleanValue(value: Any): Any {
+        if (value !is String) return value
+        return when (value.trim().lowercase()) {
+            "true" -> true
+            "false" -> false
+            else -> value
+        }
+    }
+
+    private fun parseJsonString(text: String): Any? {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return null
+        val node = runCatching { objectMapper.readTree(trimmed) }.getOrNull() ?: return null
+        return jsonNodeToAny(node)
+    }
+
+    private fun jsonNodeToAny(node: JsonNode): Any? {
+        return when {
+            node.isObject -> {
+                val map = LinkedHashMap<String, Any>()
+                val names = node.fieldNames()
+                while (names.hasNext()) {
+                    val key = names.next()
+                    val value = jsonNodeToAny(node.path(key)) ?: continue
+                    map[key] = value
+                }
+                map
+            }
+
+            node.isArray -> node.mapNotNull { jsonNodeToAny(it) }
+            node.isBoolean -> node.asBoolean()
+            node.isInt || node.isLong -> node.asLong()
+            node.isFloat || node.isDouble || node.isBigDecimal -> node.asDouble()
+            node.isNull -> null
+            else -> node.asText()
+        }
+    }
 }
 
 private data class McpDiscoveryState(
@@ -223,6 +363,7 @@ private data class RegisteredMcpTool(
     val serverName: String,
     val remoteToolName: String,
     val functionName: String,
+    val inputSchema: JsonNode?,
     val fn: GigaRequest.Function,
 )
 
@@ -252,4 +393,3 @@ private class McpGigaToolSetup(
         }
     }
 }
-

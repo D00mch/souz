@@ -224,7 +224,7 @@ fun SettingsScreen(
                         singleLine = false,
                     )
                     Text(
-                        text = "Формат: {\"mcpServers\": {\"name\": {\"command\": \"...\", \"args\": []}}}",
+                        text = "Формат: {\"mcpServers\": {\"name\": {\"command\": \"...\"} или {\"transport\": \"http\", \"url\": \"https://...\"}}}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
                     )

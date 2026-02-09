@@ -20,7 +20,7 @@ private const val MCP_PROTOCOL_VERSION = "2025-06-18"
 
 class McpStdioSession(
     private val config: McpServerConfig,
-) : AutoCloseable {
+) : McpSession {
     private val l = LoggerFactory.getLogger(McpStdioSession::class.java)
     private val process: Process
     private val stdin: BufferedWriter
@@ -29,12 +29,18 @@ class McpStdioSession(
     private val ioMutex = Mutex()
     private val initMutex = Mutex()
     private val timeoutMillis = config.timeoutMillis
+    private val toolsApi = McpToolProtocolApi(
+        initializeIfNeeded = { initializeIfNeeded() },
+        request = { method, params -> request(method, params) },
+    )
 
     private var initialized = false
 
     init {
+        val baseCommand = config.command?.trim().orEmpty()
+        require(baseCommand.isNotBlank()) { "MCP stdio server ${config.name} has empty command" }
         val command = ArrayList<String>(1 + config.args.size).apply {
-            add(config.command)
+            add(baseCommand)
             addAll(config.args)
         }
         process = ProcessBuilder(command).apply {
@@ -79,77 +85,17 @@ class McpStdioSession(
         }
     }
 
-    suspend fun listTools(): List<McpRemoteTool> {
-        initializeIfNeeded()
-
-        val tools = ArrayList<McpRemoteTool>()
-        var cursor: String? = null
-        do {
-            val result = request(
-                method = "tools/list",
-                params = cursor?.let { mapOf("cursor" to it) } ?: emptyMap<String, Any>(),
-            )
-            val toolsNode = result.path("tools")
-            if (toolsNode.isArray) {
-                toolsNode.forEach { node ->
-                    val name = node.path("name").asText("").trim()
-                    if (name.isBlank()) return@forEach
-                    val description = node.path("description").asText("").trim()
-                    val schema = node.path("inputSchema").takeIf { !it.isMissingNode && !it.isNull }
-                    tools += McpRemoteTool(
-                        name = name,
-                        description = description,
-                        inputSchema = schema,
-                    )
-                }
-            }
-            cursor = result.path("nextCursor").asText("").trim().ifBlank { null }
-        } while (cursor != null)
-
-        return tools
+    override suspend fun listTools(): List<McpRemoteTool> {
+        return toolsApi.listTools()
     }
 
-    suspend fun callTool(
+    override suspend fun callTool(
         toolName: String,
         arguments: Map<String, Any>,
     ): McpToolCallResult {
-        initializeIfNeeded()
-        val result = request(
-            method = "tools/call",
-            params = mapOf(
-                "name" to toolName,
-                "arguments" to arguments,
-            ),
-        )
-
-        val textParts = ArrayList<String>()
-        val content = result.path("content")
-        if (content.isArray) {
-            content.forEach { item ->
-                when (item.path("type").asText("")) {
-                    "text" -> {
-                        val text = item.path("text").asText("").trim()
-                        if (text.isNotBlank()) textParts += text
-                    }
-
-                    "resource", "image", "audio" -> textParts += item.toString()
-                    else -> if (!item.isMissingNode && !item.isNull) textParts += item.toString()
-                }
-            }
-        }
-
-        val structured = result.path("structuredContent")
-        if (textParts.isEmpty() && !structured.isMissingNode && !structured.isNull) {
-            textParts += structured.toString()
-        }
-        if (textParts.isEmpty()) {
-            textParts += result.toString()
-        }
-
-        return McpToolCallResult(
-            text = textParts.joinToString("\n").trim(),
-            isError = result.path("isError").asBoolean(false),
-            raw = result,
+        return toolsApi.callTool(
+            toolName = toolName,
+            arguments = arguments,
         )
     }
 
@@ -194,10 +140,14 @@ class McpStdioSession(
     private suspend fun readResponse(requestId: Long): JsonNode {
         return withTimeout(timeoutMillis) {
             while (true) {
-                val line = withContext(Dispatchers.IO) { stdout.readLine() } ?: throw EOFException(
-                    "MCP server ${config.name} closed stdout while waiting for response to $requestId",
+                val line = withContext(Dispatchers.IO) {
+                    stdout.readLine()
+                } ?: throw EOFException(
+                    "MCP server ${config.name} closed stdout while waiting for response to $requestId"
                 )
-                val node = runCatching { objectMapper.readTree(line) }.getOrNull() ?: continue
+                val node = runCatching { objectMapper.readTree(line) }
+                    .onFailure { l.warn("Unexpected error on reading response line, id: $requestId", it) }
+                    .getOrNull() ?: continue
                 val idNode = node.path("id")
                 if (idNode.isMissingNode || idNode.isNull) {
                     continue
@@ -216,7 +166,7 @@ class McpStdioSession(
                 }
                 return@withTimeout node.path("result")
             }
-            error("Unreachable")
+            TODO()
         }
     }
 

@@ -63,25 +63,60 @@ class McpConfigProvider(
         val enabled = node.path("enabled").let { !it.isBoolean || it.asBoolean() }
         if (!enabled) return null
 
-        val command = node.path("command").asText("").trim()
-        if (command.isBlank()) {
-            l.warn("Skipping MCP server {}: fissing command", name)
-            return null
-        }
-
+        val command = node.path("command").asText("").trim().ifBlank { null }
+        val url = parseHttpUrl(node)
+        val transport = parseTransport(node = node, hasUrl = !url.isNullOrBlank())
         val args = parseArgs(node.path("args"))
         val env = parseEnv(node.path("env"))
         val cwd = node.path("cwd").asText("").trim().ifBlank { null }
+        val headers = parseEnv(node.path("headers"))
+        val oauth = parseOauth(node.path("oauth"))
         val timeoutMillis = node.path("timeoutMillis").asLong(30_000L).coerceAtLeast(1_000L)
+
+        when (transport) {
+            McpTransport.STDIO -> {
+                if (command.isNullOrBlank()) {
+                    l.warn("Skipping MCP server {}: missing command for stdio transport", name)
+                    return null
+                }
+            }
+
+            McpTransport.HTTP -> {
+                if (url.isNullOrBlank()) {
+                    l.warn("Skipping MCP server {}: missing url for http transport", name)
+                    return null
+                }
+            }
+        }
 
         return McpServerConfig(
             name = name,
+            transport = transport,
             command = command,
             args = args,
             env = env,
             cwd = cwd,
+            url = url,
+            headers = headers,
+            oauth = oauth,
             timeoutMillis = timeoutMillis,
         )
+    }
+
+    private fun parseTransport(node: JsonNode, hasUrl: Boolean): McpTransport {
+        return when (node.path("transport").asText("").trim().lowercase()) {
+            "http", "streamable_http", "streamable-http" -> McpTransport.HTTP
+            "stdio" -> McpTransport.STDIO
+            else -> if (hasUrl) McpTransport.HTTP else McpTransport.STDIO
+        }
+    }
+
+    private fun parseHttpUrl(node: JsonNode): String? {
+        val candidate = sequenceOf("url", "serverUrl", "endpoint", "mcpUrl")
+            .map { key -> node.path(key).asText("").trim() }
+            .firstOrNull { it.isNotBlank() }
+            ?.ifBlank { null }
+        return candidate
     }
 
     private fun parseArgs(node: JsonNode): List<String> {
@@ -109,4 +144,37 @@ class McpConfigProvider(
         }
         return env
     }
+
+    private fun parseOauth(node: JsonNode): McpOAuthConfig {
+        if (!node.isObject) return McpOAuthConfig()
+
+        val scopes = when {
+            node.path("scopes").isArray -> node.path("scopes")
+                .mapNotNull { item -> item.asText("").trim().ifBlank { null } }
+
+            node.path("scopes").isTextual -> parseScopes(node.path("scopes").asText(""))
+            node.path("scope").isTextual -> parseScopes(node.path("scope").asText(""))
+            else -> emptyList()
+        }
+
+        return McpOAuthConfig(
+            enabled = node.path("enabled").let { !it.isBoolean || it.asBoolean() },
+            clientName = node.path("clientName").asText("").trim().ifBlank { "gigadesk" },
+            clientId = node.path("clientId").asText("").trim().ifBlank { null },
+            clientSecret = node.path("clientSecret").asText("").trim().ifBlank { null },
+            scopes = scopes,
+            audience = node.path("audience").asText("").trim().ifBlank { null },
+            redirectHost = node.path("redirectHost").asText("").trim().ifBlank { "127.0.0.1" },
+            redirectPath = node.path("redirectPath").asText("").trim().ifBlank { "/mcp/oauth/callback" },
+            authTimeoutMillis = node.path("authTimeoutMillis")
+                .asLong(180_000L)
+                .coerceAtLeast(15_000L),
+        )
+    }
+
+    private fun parseScopes(value: String): List<String> =
+        value
+            .split(" ", ",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
 }
