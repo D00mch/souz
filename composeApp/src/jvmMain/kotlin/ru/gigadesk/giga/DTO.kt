@@ -39,9 +39,7 @@ object GigaResponse {
 
     data class FunctionCall(
         val name: String,
-        val arguments: Map<String, Any>,
-        // Raw arguments string for streaming/partial tool calls.
-        val argumentsString: String? = null
+        val arguments: Map<String, Any>
     )
 
     data class RecognizeResponse(
@@ -228,43 +226,18 @@ operator fun GigaResponse.Usage.plus(usage: GigaResponse.Usage): GigaResponse.Us
     precachedTokens = this.precachedTokens + usage.precachedTokens
 )
 
-
-fun GigaResponse.Choice.toMessages(): List<GigaRequest.Message> {
+fun GigaResponse.Choice.toMessage(): GigaRequest.Message? {
     val msg = this.message
-    val result = mutableListOf<GigaRequest.Message>()
-
-    // Message can have both content and function call (e.g. from some LLMs)
-    // We split them into separate messages for GigaRequest which expects strict types
-
-    // 1. Add text content if present
-    if (msg.content.isNotBlank()) {
-        result.add(
-            GigaRequest.Message(
-                role = msg.role,
-                content = msg.content
-            )
+    val content: String = when {
+        msg.functionCall != null -> objectMapper.writeValueAsString(
+            mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
         )
+        msg.content.isNotBlank() -> msg.content
+        else -> return null
     }
-
-    // 2. Add function call if present
-    if (msg.functionCall != null) {
-        val jsonArgs = runCatching {
-            gigaJsonMapper.writeValueAsString(
-                mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
-            )
-        }.getOrElse { 
-            // Fallback for robust ness
-            """{"name":"${msg.functionCall.name}", "arguments": {}}""" 
-        }
-
-        result.add(
-            GigaRequest.Message(
-                role = msg.role,
-                content = jsonArgs,
-                functionsStateId = msg.functionsStateId
-            )
-        )
-    }
-
-    return result
+    return GigaRequest.Message(
+        role = msg.role,
+        content = content,
+        functionsStateId = msg.functionsStateId
+    )
 }

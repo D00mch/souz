@@ -288,6 +288,7 @@ class SettingsViewModel(
                 }
                 return@launch
             }
+
         }
 
         setState { copy(isBalanceLoading = true, balanceError = null) }

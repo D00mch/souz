@@ -16,7 +16,6 @@ import ru.gigadesk.giga.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
-import com.fasterxml.jackson.module.kotlin.readValue
 
 /**
  * Nodes with calls to LLM
@@ -49,7 +48,7 @@ class NodesLLM(
             l.debug("LLM response is {}", response)
             val history = ArrayList(ctx.history).apply {
                 if (response is GigaResponse.Chat.Ok) {
-                    addAll(response.choices.flatMap { it.toMessages() })
+                    addAll(response.choices.mapNotNull { it.toMessage() })
                 }
             }
             ctx.map(history = history) { response }
@@ -101,9 +100,7 @@ class NodesLLM(
     private class ChoiceAccumulator(
         var role: GigaMessageRole,
         val content: StringBuilder = StringBuilder(),
-        var functionCallName: String? = null,
-        val functionCallArguments: StringBuilder = StringBuilder(),
-        var functionCallArgumentsMap: Map<String, Any>? = null,
+        var functionCall: GigaResponse.FunctionCall? = null,
         var functionsStateId: String? = null,
         var finishReason: GigaResponse.FinishReason? = null,
     ) {
@@ -113,15 +110,7 @@ class NodesLLM(
                 content.append(msg.content)
             }
             if (msg.functionCall != null) {
-                if (msg.functionCall.name.isNotEmpty()) {
-                    functionCallName = msg.functionCall.name
-                }
-                val rawArguments = msg.functionCall.argumentsString
-                if (!rawArguments.isNullOrBlank()) {
-                    functionCallArguments.append(rawArguments)
-                } else if (msg.functionCall.arguments.isNotEmpty()) {
-                    functionCallArgumentsMap = msg.functionCall.arguments
-                }
+                functionCall = msg.functionCall
             }
             if (msg.functionsStateId != null) {
                 functionsStateId = msg.functionsStateId
@@ -130,38 +119,15 @@ class NodesLLM(
             role = msg.role
         }
 
-        fun toChoice(index: Int): GigaResponse.Choice {
-            val argsText = functionCallArguments.toString()
-            val args = when {
-                argsText.isNotBlank() -> {
-                    try {
-                        ru.gigadesk.giga.objectMapper.readValue<Map<String, Any>>(argsText)
-                    } catch (e: Exception) {
-                        mapOf<String, Any>("raw" to argsText)
-                    }
-                }
-                functionCallArgumentsMap != null -> functionCallArgumentsMap.orEmpty()
-                else -> emptyMap()
-            }
-
-            val functionCall = if (functionCallName != null) {
-                GigaResponse.FunctionCall(
-                    name = functionCallName!!,
-                    arguments = args,
-                    argumentsString = argsText.ifBlank { null }
-                )
-            } else null
-
-            return GigaResponse.Choice(
-                message = GigaResponse.Message(
-                    content = content.toString(),
-                    role = role,
-                    functionCall = functionCall,
-                    functionsStateId = functionsStateId,
-                ),
-                index = index,
-                finishReason = finishReason,
-            )
-        }
+        fun toChoice(index: Int): GigaResponse.Choice = GigaResponse.Choice(
+            message = GigaResponse.Message(
+                content = content.toString(),
+                role = role,
+                functionCall = functionCall,
+                functionsStateId = functionsStateId,
+            ),
+            index = index,
+            finishReason = finishReason,
+        )
     }
 }

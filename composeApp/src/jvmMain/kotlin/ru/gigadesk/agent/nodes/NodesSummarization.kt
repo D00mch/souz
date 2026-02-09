@@ -13,7 +13,7 @@ import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.MAX_TOKENS
-import ru.gigadesk.giga.toMessages
+import ru.gigadesk.giga.toMessage
 import ru.gigadesk.giga.toSystemPromptMessage
 import kotlin.math.ceil
 
@@ -69,7 +69,7 @@ class NodesSummarization(
 
     private inline fun <reified T> summaryToHistory(name: String = "summary->history"): Node<GigaResponse.Chat.Ok, T> =
         Node(name) { ctx ->
-            val msg: GigaRequest.Message = ctx.input.choices.flatMap { it.toMessages() }.last()
+            val msg: GigaRequest.Message = ctx.input.choices.mapNotNull { it.toMessage() }.last()
             val msgPlus = msg.copy(content = "$SUMMARIZATION_PREFIX:\n${msg.content}")
             val newHistory = listOf(ctx.systemPrompt.toSystemPromptMessage(), msgPlus)
             l.info("Summarization\n\n${msgPlus.content}")

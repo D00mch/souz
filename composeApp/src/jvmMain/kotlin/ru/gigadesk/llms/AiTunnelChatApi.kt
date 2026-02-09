@@ -11,19 +11,14 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
-import io.ktor.client.plugins.sse.SSE
-import io.ktor.client.plugins.sse.sse
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.HttpStatement
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
 import io.ktor.http.isSuccess
 import io.ktor.serialization.jackson.jackson
 import io.ktor.utils.io.readUTF8Line
@@ -33,6 +28,7 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaMessageRole
 import ru.gigadesk.giga.GigaRequest
@@ -41,11 +37,10 @@ import ru.gigadesk.giga.TokenLogging
 import ru.gigadesk.giga.objectMapper
 import ru.gigadesk.giga.toFinishReason
 import ru.gigadesk.giga.toGiga
-import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ToolListFiles
 import java.io.File
-import kotlin.time.Duration.Companion.seconds
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.measureTime
 
 class AiTunnelChatAPI(
@@ -63,12 +58,12 @@ class AiTunnelChatAPI(
     private val defaultChatModel: String
         get() = System.getenv("AITUNNEL_MODEL")
             ?: System.getProperty("AITUNNEL_MODEL")
-            ?: settingsProvider.gigaModel.alias
+            ?: "gpt-4o-mini"
 
     private val defaultEmbeddingsModel: String
         get() = System.getenv("AITUNNEL_EMBEDDINGS_MODEL")
             ?: System.getProperty("AITUNNEL_EMBEDDINGS_MODEL")
-            ?: settingsProvider.embeddingsModel.alias
+            ?: "text-embedding-3-small"
 
     private val client = HttpClient(CIO) {
         defaultRequest {
@@ -90,7 +85,6 @@ class AiTunnelChatAPI(
                     l.debug(message)
                 }
             }
-            level = LogLevel.INFO
             level = LogLevel.INFO
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
         }
@@ -121,6 +115,8 @@ class AiTunnelChatAPI(
 
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
         try {
+            val accumulator = StreamAccumulator()
+
             client.preparePost(CHAT_COMPLETIONS_URL) {
                 setBody(buildChatRequest(body, stream = true))
             }.execute { response ->
@@ -139,16 +135,15 @@ class AiTunnelChatAPI(
 
                         try {
                             val chunkNode = objectMapper.readTree(data)
-                            val choices = parseChoices(chunkNode["choices"], isStream = true)
-                            if (choices.isNotEmpty()) {
-                                // For streaming, usually created/model/usage might be present or partial
-                                // We take what we have
-                                val created = chunkNode["created"]?.asLong() ?: (System.currentTimeMillis() / 1000)
-                                val model = chunkNode["model"]?.asText() ?: body.model
+                            val model = chunkNode["model"]?.asText() ?: body.model
+                            val created = chunkNode["created"]?.asLong() ?: (System.currentTimeMillis() / 1000)
+                            
+                            val chunks = accumulator.processChunk(chunkNode)
+                            
+                            if (chunks.isNotEmpty()) {
                                 // Usage is typically null in chunks until the end, or never sent
                                 val usage = parseUsage(chunkNode["usage"])
-
-                                send(GigaResponse.Chat.Ok(choices, created, model, usage))
+                                send(GigaResponse.Chat.Ok(chunks, created, model, usage))
                             }
                         } catch (e: Exception) {
                             l.warn("Failed to parse AiTunnel stream chunk: $data", e)
@@ -192,8 +187,6 @@ class AiTunnelChatAPI(
     }
 
     override suspend fun balance(): GigaResponse.Balance {
-        // AI Tunnel обычно работает как прокси к OpenAI, стандартного эндпоинта баланса может не быть,
-        // либо он специфичен. Пока возвращаем ошибку, как в примере.
         return GigaResponse.Balance.Error(-1, "Balance check not implemented for AiTunnel")
     }
 
@@ -212,7 +205,6 @@ class AiTunnelChatAPI(
                 put("tools", tools)
                 put("tool_choice", "auto")
             }
-            // OpenAI поддерживает parallel_tool_calls по умолчанию в новых моделях
         }
     }
 
@@ -330,22 +322,7 @@ class AiTunnelChatAPI(
 
     private fun parseCompletionsResponse(text: String, requestModel: String): GigaResponse.Chat {
         val node = objectMapper.readTree(text)
-        // Для обычного ответа OpenAI данные лежат в поле "message"
         val choices = parseChoices(node["choices"], isStream = false)
-        val usage = parseUsage(node["usage"])
-        return GigaResponse.Chat.Ok(
-            choices = choices,
-            created = node["created"]?.asLong() ?: (System.currentTimeMillis() / 1000),
-            model = node["model"]?.asText() ?: requestModel,
-            usage = usage,
-        )
-    }
-
-    private fun parseStreamChunk(text: String, requestModel: String): GigaResponse.Chat {
-        val node = objectMapper.readTree(text)
-        // В стриме OpenAI данные лежат в поле "delta"
-        val choices = parseChoices(node["choices"], isStream = true)
-        // Usage может приходить в последнем чанке (если опция stream_options: {include_usage: true}), но обычно null
         val usage = parseUsage(node["usage"])
         return GigaResponse.Chat.Ok(
             choices = choices,
@@ -365,7 +342,6 @@ class AiTunnelChatAPI(
 
         val choices = mutableListOf<GigaResponse.Choice>()
         choicesNode.forEachIndexed { idx, choiceNode ->
-            // В стриминге поле называется delta, в обычном ответе message
             val messageField = if (isStream) "delta" else "message"
             val messageNode = choiceNode[messageField]
 
@@ -375,27 +351,22 @@ class AiTunnelChatAPI(
             val choiceIndex = choiceNode["index"]?.asInt() ?: idx
             val toolCallsNode = messageNode?.get("tool_calls")
 
-            // Обработка tool_calls (функций)
+            // Non-stream or complete parsing
             if (toolCallsNode != null && toolCallsNode.isArray && toolCallsNode.size() > 0) {
                 toolCallsNode.forEach { toolCallNode ->
                     val functionNode = toolCallNode["function"]
                     val name = functionNode?.get("name")?.asText().orEmpty()
                     val argsText = functionNode?.get("arguments")?.asText() ?: ""
-                    // In streaming, we pass raw text to allow accumulation upstream.
-                    // We only try to parse if it's not streaming or if it looks complete, 
-                    // but robust logic should rely on accumulation.
-                    val args = if (!isStream && argsText.isNotEmpty()) parseFunctionArguments(argsText) else emptyMap()
+                    val args = if (argsText.isNotEmpty()) parseFunctionArguments(argsText) else emptyMap()
                     
                     val functionsStateId = toolCallNode["id"]?.asText()
-                    // Use original index but maybe we should ensure uniqueness if multiple tools?
-                    // For now keeping original index as it's used for correlation in streaming
                     val toolIndex = toolCallNode["index"]?.asInt() ?: choiceIndex
 
                     choices += GigaResponse.Choice(
                         message = GigaResponse.Message(
                             content = "",
                             role = role,
-                            functionCall = GigaResponse.FunctionCall(name, args, argsText),
+                            functionCall = GigaResponse.FunctionCall(name, args),
                             functionsStateId = functionsStateId,
                         ),
                         index = toolIndex,
@@ -404,9 +375,6 @@ class AiTunnelChatAPI(
                 }
             }
 
-            // Обычный контент или если нет tool_calls
-            // AI Tunnel/OpenAI могут прислать И текст, И tool_calls.
-            // Мы должны сохранить текст как отдельный Choice.
             if (messageContent.isNotEmpty()) {
                 choices += GigaResponse.Choice(
                     message = GigaResponse.Message(
@@ -416,15 +384,9 @@ class AiTunnelChatAPI(
                         functionsStateId = null,
                     ),
                     index = choiceIndex,
-                    // Если есть tool calls, то текстовая часть не является концом (stop),
-                    // она идет перед вызовом. Но OpenAI ставит finish_reason на всё сообщение.
-                    // Если мы разбили, то у текста finishReason может быть null или stop,
-                    // но логически это часть потока.
-                    // Оставим оригинальный finishReason, если нет tool_calls, иначе null (продолжение следует)
                     finishReason = if (toolCallsNode != null && toolCallsNode.size() > 0) null else finishReason,
                 )
             } else if (toolCallsNode == null || toolCallsNode.size() == 0) {
-                 // Если нет ни контента, ни тулов (например, начало стрима только с ролью)
                  choices += GigaResponse.Choice(
                     message = GigaResponse.Message(
                         content = "",
@@ -470,29 +432,13 @@ class AiTunnelChatAPI(
         return runCatching { objectMapper.readValue<Map<String, Any>>(argsText) }
             .getOrElse {
                 l.warn("Failed to parse AiTunnel tool arguments: $argsText")
-                mapOf("raw" to argsText)
+                emptyMap()
             }
     }
 
-    private fun String?.toOpenAiFinishReason(): GigaResponse.FinishReason? {
-        if (this == null || this.equals("null", ignoreCase = true) || this.isBlank()) {
-            return null
-        }
-        return when (this) {
-            "tool_calls" -> GigaResponse.FinishReason.function_call
-            "stop" -> GigaResponse.FinishReason.stop
-            "length" -> GigaResponse.FinishReason.length
-            else -> this.toFinishReason()
-        }
-    }
 
-    private fun String?.toGigaRole(): GigaMessageRole {
-        return runCatching { GigaMessageRole.valueOf(this ?: "") }
-            .getOrDefault(GigaMessageRole.assistant)
-    }
 
     private fun resolveChatModel(model: String): String {
-        // If model is the placeholder alias or GigaChat, use the user-configured model name
         if (model.equals("ai-tunnel", ignoreCase = true) || model.startsWith("GigaChat", ignoreCase = true)) {
             return defaultChatModel
         }
@@ -511,11 +457,152 @@ class AiTunnelChatAPI(
     }
 }
 
+
+private fun String?.toOpenAiFinishReason(): GigaResponse.FinishReason? {
+    if (this == null || this.equals("null", ignoreCase = true) || this.isBlank()) {
+        return null
+    }
+    return when (this) {
+        "tool_calls" -> GigaResponse.FinishReason.function_call
+        "stop" -> GigaResponse.FinishReason.stop
+        "length" -> GigaResponse.FinishReason.length
+        else -> this.toFinishReason()
+    }
+}
+
+private fun String?.toGigaRole(): GigaMessageRole {
+    return runCatching { GigaMessageRole.valueOf(this ?: "") }
+        .getOrDefault(GigaMessageRole.assistant)
+}
+
+// Helper class to buffer tool call arguments in streaming
+private class StreamAccumulator {
+    private val choicesState = ConcurrentHashMap<Int, ChoiceState>()
+
+    data class ChoiceState(
+        var role: GigaMessageRole? = null,
+        val content: StringBuilder = StringBuilder(),
+        val toolCalls: MutableMap<Int, ToolCallState> = mutableMapOf(),
+        var finishReason: GigaResponse.FinishReason? = null
+    )
+
+    data class ToolCallState(
+        var id: String? = null,
+        var name: String? = null,
+        val arguments: StringBuilder = StringBuilder()
+    )
+
+    fun processChunk(chunkNode: com.fasterxml.jackson.databind.JsonNode): List<GigaResponse.Choice> {
+        val choicesNode = chunkNode["choices"] ?: return emptyList()
+        if (!choicesNode.isArray) return emptyList()
+
+        val resultChoices = mutableListOf<GigaResponse.Choice>()
+
+        choicesNode.forEach { choiceNode ->
+            val index = choiceNode["index"]?.asInt() ?: 0
+            val state = choicesState.getOrPut(index) { ChoiceState() }
+
+            val delta = choiceNode["delta"]
+            val finishReasonText = choiceNode["finish_reason"]?.asText()
+            val finishReason = finishReasonText.toOpenAiFinishReason()
+
+            // Update Role
+            delta?.get("role")?.asText()?.let { 
+                if (it.isNotBlank()) state.role = GigaMessageRole.valueOf(it) 
+            }
+
+            // Append Content
+            val contentOrNull = delta?.get("content")?.asText()
+            if (!contentOrNull.isNullOrEmpty()) {
+                // Emit content immediately as stream
+                resultChoices.add(
+                    GigaResponse.Choice(
+                        message = GigaResponse.Message(
+                            content = contentOrNull,
+                            role = state.role ?: GigaMessageRole.assistant,
+                            functionCall = null,
+                            functionsStateId = null
+                        ),
+                        index = index,
+                        finishReason = null
+                    )
+                )
+            }
+
+            // Process Tool Calls
+            val toolCallsNode = delta?.get("tool_calls")
+            if (toolCallsNode != null && toolCallsNode.isArray) {
+                toolCallsNode.forEach { tcNode ->
+                    val tcIndex = tcNode["index"]?.asInt() ?: 0
+                    val tcState = state.toolCalls.getOrPut(tcIndex) { ToolCallState() }
+
+                    tcNode["id"]?.asText()?.let { tcState.id = it }
+                    tcNode["function"]?.get("name")?.asText()?.let { tcState.name = it }
+                    tcNode["function"]?.get("arguments")?.asText()?.let { tcState.arguments.append(it) }
+                }
+            }
+
+            // Handle Finish Reason
+            if (finishReason != null) {
+                state.finishReason = finishReason
+                // If finish reason implies tool calls, emit them now
+                if (state.toolCalls.isNotEmpty()) {
+                    state.toolCalls.forEach { (_, tcState) ->
+                        val argsMap = parseFunctionArguments(tcState.arguments.toString())
+                        // Emit the full tool call
+                        if (tcState.name != null) {
+                            resultChoices.add(
+                                GigaResponse.Choice(
+                                    message = GigaResponse.Message(
+                                        content = "",
+                                        role = state.role ?: GigaMessageRole.assistant,
+                                        functionCall = GigaResponse.FunctionCall(
+                                            name = tcState.name!!,
+                                            arguments = argsMap
+                                        ),
+                                        functionsStateId = tcState.id
+                                    ),
+                                    index = index,
+                                    finishReason = finishReason
+                                )
+                            )
+                        }
+                    }
+                    // Clear tool calls after emitting to avoid duplicate emissions if multiple finish reasons (unlikely)
+                    state.toolCalls.clear()
+                } else if (finishReason != GigaResponse.FinishReason.function_call) {
+                        // Signal end of stream
+                        resultChoices.add(
+                        GigaResponse.Choice(
+                            message = GigaResponse.Message(
+                                content = "",
+                                role = state.role ?: GigaMessageRole.assistant,
+                                functionCall = null,
+                                functionsStateId = null
+                            ),
+                            index = index,
+                            finishReason = finishReason
+                        )
+                    )
+                }
+            }
+        }
+        return resultChoices
+    }
+
+    private fun parseFunctionArguments(argsText: String): Map<String, Any> {
+        if (argsText.isBlank()) return emptyMap()
+        return runCatching { objectMapper.readValue<Map<String, Any>>(argsText) }
+            .getOrElse {
+                emptyMap()
+            }
+    }
+}
+
+
 suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val filesToolUtil: FilesToolUtil by di.instance()
-
-    // Не забудь добавить SettingsProvider в DI или замокать его тут для теста
     val api: AiTunnelChatAPI by di.instance()
 
     val model = System.getenv("AITUNNEL_MODEL")
@@ -528,9 +615,7 @@ suspend fun main() {
         messages = listOf(
             GigaRequest.Message(
                 role = GigaMessageRole.system,
-                content = """
-                    Ты помощник, который при необходимости вызывает функции. Отвечай кратко.
-                """.trimIndent()
+                content = "Ты помощник, который при необходимости вызывает функции. Отвечай кратко."
             ),
             GigaRequest.Message(
                 role = GigaMessageRole.user,
@@ -552,12 +637,15 @@ suspend fun main() {
                 println("First response in ${System.currentTimeMillis() - millis} ms")
                 firstPrinted = true
             }
-            // Для удобства вывода в консоль
             when (response) {
                 is GigaResponse.Chat.Ok -> {
-                    val content = response.choices.firstOrNull()?.message?.content
-                    if (!content.isNullOrEmpty()) {
-                        print(content)
+                    response.choices.forEach { choice ->
+                         val content = choice.message.content
+                         if (content.isNotEmpty()) print(content)
+                         
+                         if (choice.message.functionCall != null) {
+                             println("\nFunction call: ${choice.message.functionCall}")
+                         }
                     }
                 }
                 is GigaResponse.Chat.Error -> {
