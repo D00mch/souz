@@ -511,7 +511,7 @@ fun ChatModeContent(
         }
     }
 
-    val randomTips = remember { MainState.START_TIPS.shuffled().take(3) }
+    val randomTip = remember { MainState.START_TIPS.random() }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -520,40 +520,12 @@ fun ChatModeContent(
     }
     
     Column(modifier = modifier) {
-        if (messages.isEmpty() && !isProcessing && inputText.text.isEmpty()) {
+        if (messages.isEmpty() && !isProcessing) {
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(top = 24.dp),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "Попробуйте спросить:",
-                        color = textColor.copy(0.5f),
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    randomTips.forEach { tip ->
-                        Text(
-                            text = "• $tip",
-                            color = textColor.copy(0.7f),
-                            fontSize = 14.sp,
-                            modifier = Modifier
-                                .clickable { 
-                                    onInputChange(TextFieldValue(tip, TextRange(tip.length))) 
-                                }
-                                .padding(vertical = 4.dp)
-                        )
-                    }
-                }
-            }
-        } else if (messages.isEmpty() && !isProcessing) {
-            Box(modifier = Modifier.weight(1f))
+            )
         } else {
             LazyColumn(
                 state = listState,
@@ -603,6 +575,7 @@ fun ChatModeContent(
             onSend = onSendMessage,
             enabled = !isProcessing,
             focusRequester = focusRequester,
+            placeholder = if (messages.isEmpty()) randomTip else "Введите сообщение...",
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 8.dp, bottom = 20.dp)
@@ -678,6 +651,7 @@ private fun ChatInputField(
     onSend: () -> Unit,
     enabled: Boolean,
     focusRequester: FocusRequester,
+    placeholder: String = "Введите сообщение...",
     modifier: Modifier = Modifier
 ) {
     val textColor = MaterialTheme.glassColors.textPrimary
@@ -717,7 +691,7 @@ private fun ChatInputField(
         ) {
             if (value.text.isEmpty()) {
                 Text(
-                    "Введите сообщение...",
+                    placeholder,
                     color = textColor.copy(0.35f),
                     fontSize = 14.sp
                 )
