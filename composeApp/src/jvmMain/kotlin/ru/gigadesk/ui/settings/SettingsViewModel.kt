@@ -44,8 +44,10 @@ class SettingsViewModel(
                     qwenChatKey = keysProvider.qwenChatKey ?: "",
                     aiTunnelKey = keysProvider.aiTunnelKey ?: "",
                     saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
+                    mcpServersJson = keysProvider.mcpServersJson ?: "",
                     useFewShotExamples = keysProvider.useFewShotExamples,
                     useStreaming = keysProvider.useStreaming,
+                    safeModeEnabled = keysProvider.safeModeEnabled,
                     gigaModel = currentModel,
                     embeddingsModel = keysProvider.embeddingsModel,
                     requestTimeoutMillis = keysProvider.requestTimeoutMillis,
@@ -83,6 +85,10 @@ class SettingsViewModel(
                 keysProvider.saluteSpeechKey = event.key
                 setState { copy(saluteSpeechKey = event.key) }
             }
+            is InputMcpServersJson -> {
+                keysProvider.mcpServersJson = event.json
+                setState { copy(mcpServersJson = event.json) }
+            }
             is InputUseFewShotExamples -> {
                 keysProvider.useFewShotExamples = event.enabled
                 setState { copy(useFewShotExamples = event.enabled) }
@@ -95,6 +101,10 @@ class SettingsViewModel(
             is InputAiTunnelKey -> {
                 keysProvider.aiTunnelKey = event.key
                 setState { copy(aiTunnelKey = event.key) }
+            }
+            is InputSafeModeEnabled -> {
+                keysProvider.safeModeEnabled = event.enabled
+                setState { copy(safeModeEnabled = event.enabled) }
             }
             is SelectModel -> {
                 val newPrompt = graphBasedAgent.updateModel(event.model)

@@ -6,6 +6,8 @@ import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
+import ru.gigadesk.tool.ToolPermissionBroker
+import ru.gigadesk.tool.ToolPermissionResult
 import ru.gigadesk.tool.ToolSetup
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProviderImpl
@@ -15,7 +17,10 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.StandardCopyOption
 
-class ToolMoveFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolMoveFile.Input> {
+class ToolMoveFile(
+    private val filesToolUtil: FilesToolUtil,
+    private val permissionBroker: ToolPermissionBroker? = null,
+) : ToolSetup<ToolMoveFile.Input> {
     private val l = LoggerFactory.getLogger(ToolMoveFile::class.java)
 
     data class Input(
@@ -38,6 +43,20 @@ class ToolMoveFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolMov
             "result" to ReturnProperty("string", "Move status")
         )
     )
+
+    override suspend fun suspendInvoke(input: Input): String {
+        val fixedSourcePath = filesToolUtil.applyDefaultEnvs(input.sourcePath)
+        val fixedDestinationPath = filesToolUtil.applyDefaultEnvs(input.destinationPath)
+        val result = permissionBroker?.requestPermission(
+            "Перемещаем файл?",
+            linkedMapOf(
+                "sourcePath" to fixedSourcePath,
+                "destinationPath" to fixedDestinationPath,
+            )
+        )
+        if (result is ToolPermissionResult.No) return result.msg
+        return invoke(input)
+    }
 
     override fun invoke(input: Input): String {
         val fixedSourcePath = filesToolUtil.applyDefaultEnvs(input.sourcePath)

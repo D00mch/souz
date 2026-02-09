@@ -18,6 +18,7 @@ import ru.gigadesk.agent.nodes.NodesCommon
 import ru.gigadesk.agent.nodes.NodesErrorHandling
 import ru.gigadesk.agent.nodes.NodesClassification
 import ru.gigadesk.agent.nodes.NodesLLM
+import ru.gigadesk.agent.nodes.NodesMCP
 import ru.gigadesk.agent.nodes.NodesSummarization
 import ru.gigadesk.agent.session.GraphSessionService
 import ru.gigadesk.db.SettingsProvider
@@ -40,10 +41,10 @@ class GraphBasedAgent(
     private val nodesClassify: NodesClassification by di.instance()
     private val nodesErrorHandling: NodesErrorHandling by di.instance()
     private val nodesSummarization: NodesSummarization by di.instance()
+    private val nodesMCP: NodesMCP by di.instance()
     private val settingsProvider: SettingsProvider by di.instance()
     private val sessionService: GraphSessionService by di.instance()
 
-    // Make sure summarization only happens after all tool requests from LLM are answered
     private val settings = AtomicReference(
         AgentSettings(
             model = settingsProvider.gigaModel.alias,
@@ -69,6 +70,7 @@ class GraphBasedAgent(
         val chatErrorToFinish: Node<GigaResponse.Chat, String> = nodesErrorHandling.chatErrorToFinish()
         val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
         val nodeClassify: Node<String, String> = nodesClassify.node(GraphSessionService.NODE_NAME_CLASSIFY)
+        val nodesMCP: Node<String, String> = nodesMCP.nodeProvideMcpTools("MCP Node")
         val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
         val toolUse: Node<GigaResponse.Chat.Ok, String> = nodesCommon.toolUse()
         val summary: Node<GigaResponse.Chat.Ok, String> = nodesSummarization.summarize()
@@ -76,7 +78,8 @@ class GraphBasedAgent(
         // graph
         nodeInput.edgeTo(inputToHistory)
         inputToHistory.edgeTo(nodeClassify)
-        nodeClassify.edgeTo(contextEnrich)
+        nodeClassify.edgeTo(nodesMCP)
+        nodesMCP.edgeTo(contextEnrich)
         contextEnrich.edgeTo(chatSubgraph)
         chatSubgraph.edgeTo { ctx ->
             when (ctx.input) {

@@ -20,6 +20,7 @@ interface SettingsProvider {
     var gigaModel: GigaModel
     var useFewShotExamples: Boolean
     var useStreaming: Boolean
+    var safeModeEnabled: Boolean
     var needsOnboarding: Boolean
     var requestTimeoutMillis: Long
     var initialWindowWidthDp: Int
@@ -27,6 +28,8 @@ interface SettingsProvider {
     var temperature: Float
     var forbiddenFolders: List<String>
     var embeddingsModel: EmbeddingsModel
+    var mcpServersJson: String?
+    var mcpServersFile: String?
 }
 
 class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvider {
@@ -47,6 +50,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
     private var _useStreamingDelegate: String? by keyDelegate(configKey = USE_STREAMING, envKey = USE_STREAMING)
+    private var _safeModeDelegate: String? by keyDelegate(configKey = SAFE_MODE_ENABLED, envKey = SAFE_MODE_ENABLED)
     private var _requestTimeoutDelegate: String? by keyDelegate(
         configKey = REQUEST_TIMEOUT_MILLIS,
         envKey = REQUEST_TIMEOUT_MILLIS
@@ -111,6 +115,12 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
             _useStreamingDelegate = value.toString()
         }
 
+    override var safeModeEnabled: Boolean
+        get() = _safeModeDelegate?.lowercase() == "true"
+        set(value) {
+            _safeModeDelegate = value.toString()
+        }
+
     override var needsOnboarding: Boolean
         get() = _needsOnboardingDelegate?.toBooleanStrictOrNull() ?: false
         set(value) {
@@ -162,6 +172,16 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
             _embeddingsModelDelegate = value.name
         }
 
+    override var mcpServersJson: String? by keyDelegate(
+        configKey = MCP_SERVERS_JSON,
+        envKey = MCP_SERVERS_JSON
+    )
+
+    override var mcpServersFile: String? by keyDelegate(
+        configKey = MCP_SERVERS_FILE,
+        envKey = MCP_SERVERS_FILE
+    )
+
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
         object : ReadWriteProperty<Any?, String?> {
 
@@ -186,6 +206,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         private const val USE_STREAMING = "USE_STREAMING"
+        private const val SAFE_MODE_ENABLED = "SAFE_MODE_ENABLED"
         private const val USE_GRPC_LEGACY = "USE_GRPC"
         private const val SUPPORT_EMAIL = "SUPPORT_EMAIL"
         private const val SYSTEM_PROMPT = "SYSTEM_PROMPT"
@@ -198,6 +219,8 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val TEMPERATURE = "TEMPERATURE"
         private const val FORBIDDEN_FOLDERS = "FORBIDDEN_FOLDERS"
         private const val EMBEDDINGS_MODEL = "EMBEDDINGS_MODEL"
+        private const val MCP_SERVERS_JSON = "MCP_SERVERS_JSON"
+        private const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
         private val DEFAULT_FORBIDDEN_FOLDERS = listOf("~/Library/")
     }
 }

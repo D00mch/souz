@@ -22,6 +22,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.permissions.AppRelauncher
+import ru.gigadesk.tool.ToolPermissionBroker
 import ru.gigadesk.ui.BaseViewModel
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -46,9 +47,12 @@ class MainViewModel(
     private val say: Say by di.instance()
     private val taskSideEffectJobs = ArrayList<Job>()
 
+    private val toolPermissionBroker: ToolPermissionBroker by di.instance()
+
     init {
         viewModelScope.launch { runOnboarding() }
         ioLaunch { initializeAgent() }
+        vmLaunch { observeToolPermissionRequests() }
     }
 
     override fun initialState(): MainState = MainState()
@@ -63,7 +67,9 @@ class MainViewModel(
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
             MainEvent.ToggleChatMode -> setState { copy(isChatMode = !isChatMode) }
             is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
-            MainEvent.SendChatMessage -> sendChatMessage()
+            MainEvent.SendChatMessage -> vmLaunch { sendChatMessage() }
+            MainEvent.ApproveToolPermission -> resolveToolPermission(approved = true)
+            MainEvent.RejectToolPermission -> resolveToolPermission(approved = false)
         }
     }
 
@@ -228,6 +234,25 @@ class MainViewModel(
         }
     }
 
+    private suspend fun observeToolPermissionRequests() {
+        toolPermissionBroker.requests.collect { request ->
+            setState {
+                copy(
+                    toolPermissionDialog = ToolPermissionDialogData(
+                        requestId = request.id,
+                        description = request.description,
+                        params = request.params.toSortedMap(),
+                    )
+                )
+            }
+        }
+    }
+
+    private suspend fun resolveToolPermission(approved: Boolean) {
+        val requestId = currentState.toolPermissionDialog?.requestId ?: return
+        toolPermissionBroker.resolve(requestId, approved)
+        setState { copy(toolPermissionDialog = null) }
+    }
 
     private suspend fun setPreviousText() {
         currentState.lastKnownAgentContext?.let { ctx ->
@@ -323,6 +348,9 @@ class MainViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        currentState.toolPermissionDialog?.requestId?.let { requestId ->
+            toolPermissionBroker.resolve(requestId, approved = false)
+        }
         say.clearQueue()
         killTaskSideEffectJobs()
         agentRef.get()?.cancelActiveJob()

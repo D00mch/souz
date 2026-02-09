@@ -19,8 +19,10 @@ data class SettingsState(
     val qwenChatKey: String = "",
     val aiTunnelKey: String = "",
     val saluteSpeechKey: String = "",
+    val mcpServersJson: String = "",
     val useFewShotExamples: Boolean = false,
     val useStreaming: Boolean = false,
+    val safeModeEnabled: Boolean = false,
     val gigaModel: GigaModel = GigaModel.Max,
     val embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
     val systemPrompt: String = "",
@@ -52,8 +54,10 @@ sealed interface SettingsEvent : VMEvent {
     data class InputQwenChatKey(val key: String): SettingsEvent
     data class InputAiTunnelKey(val key: String): SettingsEvent
     data class InputSaluteSpeechKey(val key: String): SettingsEvent
+    data class InputMcpServersJson(val json: String): SettingsEvent
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
     data class InputUseStreaming(val enabled: Boolean): SettingsEvent
+    data class InputSafeModeEnabled(val enabled: Boolean): SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
     data class SelectEmbeddingsModel(val model: EmbeddingsModel): SettingsEvent
     data class InputRequestTimeoutMillis(val millis: String) : SettingsEvent

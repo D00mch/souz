@@ -68,10 +68,12 @@ fun SettingsScreen(
                 onQwenChatKeyInput = { key -> viewModel.send(SettingsEvent.InputQwenChatKey(key)) },
                 onAiTunnelKeyInput = { key -> viewModel.send(SettingsEvent.InputAiTunnelKey(key)) },
                 onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
+                onMcpServersJsonInput = { value -> viewModel.send(SettingsEvent.InputMcpServersJson(value)) },
                 onVoiceSpeedInput = { speed -> viewModel.send(SettingsEvent.InputVoiceSpeed(speed)) },
                 onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
                 onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
                 onUseStreamingChange = { enabled -> viewModel.send(SettingsEvent.InputUseStreaming(enabled)) },
+                onSafeModeChange = { enabled -> viewModel.send(SettingsEvent.InputSafeModeEnabled(enabled)) },
                 onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
                 onEmbeddingsModelChange = { model -> viewModel.send(SettingsEvent.SelectEmbeddingsModel(model)) },
                 onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
@@ -127,10 +129,12 @@ fun SettingsScreen(
     onQwenChatKeyInput: (String) -> Unit,
     onAiTunnelKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
+    onMcpServersJsonInput: (String) -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
     onChooseVoice: () -> Unit,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
     onUseStreamingChange: (Boolean) -> Unit,
+    onSafeModeChange: (Boolean) -> Unit,
     onModelChange: (GigaModel) -> Unit,
     onEmbeddingsModelChange: (EmbeddingsModel) -> Unit,
     onRequestTimeoutMillisChange: (String) -> Unit,
@@ -223,6 +227,25 @@ fun SettingsScreen(
                     onValueChange = onSaluteSpeechKeyInput,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LabeledTextField(
+                        label = "MCP servers JSON",
+                        value = state.mcpServersJson,
+                        onValueChange = onMcpServersJsonInput,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = false,
+                    )
+                    Text(
+                        text = "Формат: {\"mcpServers\": {\"name\": {\"command\": \"...\"} или {\"transport\": \"http\", \"url\": \"https://...\"}}}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        text = "Изменения применятся после перезапуска приложения.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
+                    )
+                }
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     LabeledTextField(
@@ -332,6 +355,27 @@ fun SettingsScreen(
                     )
                     Text(
                         text = "Использовать streaming-режим для запросов к модели",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.glassColors.textPrimary
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Checkbox(
+                        checked = state.safeModeEnabled,
+                        onCheckedChange = onSafeModeChange,
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
+                            checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    )
+                    Text(
+                        text = "Безопасный режим: запрашивать подтверждение опасных действий",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.glassColors.textPrimary
                     )
@@ -746,10 +790,12 @@ fun SettingsScreenPreview() {
             onQwenChatKeyInput = {},
             onAiTunnelKeyInput = {},
             onSaluteSpeechKeyInput = {},
+            onMcpServersJsonInput = {},
             onVoiceSpeedInput = {},
             onChooseVoice = {},
             onUseFewShotExamplesChange = {},
             onUseStreamingChange = {},
+            onSafeModeChange = {},
             onModelChange = {},
             onEmbeddingsModelChange = {},
             onRequestTimeoutMillisChange = {},

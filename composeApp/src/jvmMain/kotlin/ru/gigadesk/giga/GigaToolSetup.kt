@@ -45,9 +45,9 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
                             Int::class, Long::class, Double::class -> "number"
                             List::class, Set::class, Array::class -> "array"
                             Map::class -> "object"
-                            else -> when {
-                                classifier is KClass<*> && classifier.isSubclassOf(Collection::class) -> "array"
-                                classifier is KClass<*> && classifier.isSubclassOf(Enum::class) -> "string"
+                            else -> when (classifier) {
+                                is KClass<*> if classifier.isSubclassOf(Collection::class) -> "array"
+                                is KClass<*> if classifier.isSubclassOf(Enum::class) -> "string"
                                 else -> "object"
                             }
                         }

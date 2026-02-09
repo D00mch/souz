@@ -3,7 +3,10 @@ package ru.gigadesk.tool.files
 import ru.gigadesk.tool.*
 import java.io.File
 
-class ToolModifyFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolModifyFile.Input> {
+class ToolModifyFile(
+    private val filesToolUtil: FilesToolUtil,
+    private val permissionBroker: ToolPermissionBroker? = null,
+) : ToolSetup<ToolModifyFile.Input> {
     data class Input(
         @InputParamDescription("The path to the file, including file name")
         val path: String,
@@ -25,6 +28,16 @@ class ToolModifyFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolM
             "result" to ReturnProperty("string", "Operation status")
         )
     )
+
+    override suspend fun suspendInvoke(input: Input): String {
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
+        val result = permissionBroker?.requestPermission(
+            "Изменяем файл?",
+            linkedMapOf("path" to fixedPath)
+        )
+        if (result is ToolPermissionResult.No) return result.msg
+        return invoke(input)
+    }
 
     override fun invoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)

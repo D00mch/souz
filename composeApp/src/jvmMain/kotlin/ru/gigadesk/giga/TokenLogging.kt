@@ -3,12 +3,13 @@
 package ru.gigadesk.giga
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import org.slf4j.Logger
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 interface TokenLogging {
     fun logTokenUsage(result: GigaResponse.Chat.Ok, body: GigaRequest.Chat)
+
+    fun sessionTokenUsage(): GigaResponse.Usage = GigaResponse.Usage(0, 0, 0, 0)
 }
 
 class SessionTokenLogging(
@@ -31,4 +32,6 @@ class SessionTokenLogging(
             """.trimMargin()
         )
     }
+
+    override fun sessionTokenUsage(): GigaResponse.Usage = currentSessionTokensUsage.load()
 }

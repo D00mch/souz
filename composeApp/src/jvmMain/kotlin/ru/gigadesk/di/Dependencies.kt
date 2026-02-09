@@ -13,6 +13,7 @@ import ru.gigadesk.agent.nodes.NodesCommon
 import ru.gigadesk.agent.nodes.NodesLLM
 import ru.gigadesk.agent.nodes.NodesSummarization
 import ru.gigadesk.agent.nodes.NodesClassification
+import ru.gigadesk.agent.nodes.NodesMCP
 import ru.gigadesk.agent.session.GraphSessionRepository
 import ru.gigadesk.agent.session.GraphSessionService
 import ru.gigadesk.server.AgentNode
@@ -35,6 +36,8 @@ import ru.gigadesk.giga.TokenLogging
 import ru.gigadesk.keys.Keys
 import ru.gigadesk.llms.AiTunnelChatAPI
 import ru.gigadesk.llms.QwenChatAPI
+import ru.gigadesk.mcp.McpClientManager
+import ru.gigadesk.mcp.McpConfigProvider
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.application.*
 import ru.gigadesk.tool.browser.*
@@ -76,15 +79,16 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance()) }
     bindSingleton { ToolsSettings(instance(), instance()) }
     bindSingleton { FilesToolUtil(instance()) }
+    bindSingleton { ToolPermissionBroker(instance()) }
 
     // Tools
     bindSingleton { ToolGetClipboard() }
     bindSingleton { ToolListFiles(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
     bindSingleton { ToolNewFile(instance()) }
-    bindSingleton { ToolDeleteFile(instance()) }
-    bindSingleton { ToolModifyFile(instance()) }
-    bindSingleton { ToolMoveFile(instance()) }
+    bindSingleton { ToolDeleteFile(instance(), instance()) }
+    bindSingleton { ToolModifyFile(instance(), instance()) }
+    bindSingleton { ToolMoveFile(instance(), instance()) }
     bindSingleton { ToolExtractText(instance()) }
     bindSingleton { ToolFindFilesByName(instance()) }
     bindSingleton { ToolReadPdfPages(instance()) }
@@ -100,7 +104,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolInstructionStore(ConfigStore, instance()) }
     bindSingleton { ToolOpenNote(ToolRunBashCommand) }
     bindSingleton { ToolCreateNote(ToolRunBashCommand) }
-    bindSingleton { ToolDeleteNote(ToolRunBashCommand) }
+    bindSingleton { ToolDeleteNote(ToolRunBashCommand, instance()) }
     bindSingleton { ToolListNotes(ToolRunBashCommand) }
     bindSingleton { ToolSearchNotes(ToolRunBashCommand) }
     bindSingleton { ToolShowApps(instance(), ToolRunBashCommand) }
@@ -152,6 +156,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { NodesErrorHandling() }
     bindSingleton { NodesCommon(instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
+    bindSingleton { NodesMCP(instance()) }
     bindSingleton { NodesSummarization(instance(), instance()) }
     bindSingleton {
         NodesClassification(
@@ -165,7 +170,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { ToolsFactory(di) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
-    
+    bindSingleton { McpConfigProvider(instance()) }
+    bindSingleton { McpClientManager(instance()) }
+
     // Server
     bindSingleton<AgentNode> { GraphAgentNode(instance()) }
 }
