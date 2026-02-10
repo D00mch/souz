@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Dp
@@ -77,6 +78,9 @@ import org.kodein.di.compose.localDI
 import kotlin.random.Random
 import ru.gigadesk.ui.common.ConnectionStatusNotification
 import ru.gigadesk.ui.common.DraggableWindowArea
+import ru.gigadesk.ui.common.parseMarkdownContent
+import ru.gigadesk.ui.common.CodeBlockWithCopy
+import ru.gigadesk.ui.common.MarkdownPart
 import ru.gigadesk.ui.glassColors
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -85,10 +89,7 @@ import androidx.compose.ui.input.key.*
 private val TopButtonSize = 24.dp
 private val TopIconSize = 14.dp
 
-sealed class MarkdownPart {
-    data class TextContent(val content: String) : MarkdownPart()
-    data class CodeContent(val language: String, val code: String) : MarkdownPart()
-}
+
 
 @Composable
 fun MainScreen(
@@ -524,29 +525,16 @@ fun ChatModeContent(
     Column(
         modifier = modifier.onPreviewKeyEvent { event ->
             if (event.type == KeyEventType.KeyDown && 
-                event.utf16CodePoint != 0 && 
-                !event.isCtrlPressed && 
-                !event.isAltPressed && 
                 !event.isMetaPressed &&
-                event.key != Key.ShiftLeft &&
-                event.key != Key.ShiftRight &&
-                event.key != Key.DirectionUp &&
-                event.key != Key.DirectionDown &&
-                event.key != Key.DirectionLeft &&
-                event.key != Key.DirectionRight &&
-                event.key != Key.Tab &&
                 event.key != Key.Enter &&
-                event.key != Key.Backspace &&
-                event.key != Key.Delete &&
-                event.key != Key.Escape &&
-                event.key != Key.PageUp &&
-                event.key != Key.PageDown &&
-                event.key != Key.Home &&
-                event.key != Key.MoveHome &&
-                event.key != Key.MoveEnd
+                event.key != Key.NumPadEnter
             ) {
                 val char = event.utf16CodePoint.toChar()
-                if (!char.isISOControl()) {
+                val isPrintable = char.isLetterOrDigit() || 
+                                  char.isWhitespace() || 
+                                  "!@#$%^&*()_+-=[]{}|;':\",./<>?`~\\".contains(char)
+
+                if (isPrintable) {
                     focusRequester.requestFocus()
                     val newText = inputText.text + char
                     onInputChange(TextFieldValue(newText, TextRange(newText.length)))
@@ -856,100 +844,7 @@ private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.L
 private fun formatTimestamp(timestamp: Long): String = 
     timestampFormatter.format(java.util.Date(timestamp))
 
-fun parseMarkdownContent(input: String): List<MarkdownPart> {
-    val parts = mutableListOf<MarkdownPart>()
-    @Suppress("RegExpRedundantEscape")
-    val regex = Regex("```([\\w\\+\\-\\.\\s]*)\\n([\\s\\S]*?)```")
 
-    var lastIndex = 0
-    regex.findAll(input).forEach { match ->
-        val textBefore = input.substring(lastIndex, match.range.first)
-        if (textBefore.isNotBlank()) {
-            parts.add(MarkdownPart.TextContent(textBefore))
-        }
-
-        val rawLang = match.groupValues[1].trim()
-        val code = match.groupValues[2].trimEnd()
-
-        parts.add(MarkdownPart.CodeContent(rawLang, code))
-        lastIndex = match.range.last + 1
-    }
-
-    if (lastIndex < input.length) {
-        val textAfter = input.substring(lastIndex)
-        if (textAfter.isNotBlank()) {
-            parts.add(MarkdownPart.TextContent(textAfter))
-        }
-    }
-
-    return parts
-}
-
-@Composable
-fun CodeBlockWithCopy(
-    code: String,
-    language: String?,
-    style: TextStyle,
-    onShowSnack: (String) -> Unit
-) {
-    val clipboardManager = LocalClipboardManager.current
-    val displayLang = if (!language.isNullOrBlank()) language.uppercase() else "CODE"
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color.Black.copy(alpha = 0.4f))
-            .border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(8.dp))
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White.copy(0.05f))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = displayLang,
-                    style = TextStyle(
-                        color = Color.White.copy(0.4f),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                )
-
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .clickable {
-                            clipboardManager.setText(AnnotatedString(code))
-                            onShowSnack("Код скопирован")
-                        }
-                        .padding(4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.ContentCopy,
-                        contentDescription = "Copy code",
-                        tint = Color.White.copy(0.6f),
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
-
-            Text(
-                text = code,
-                style = style,
-                modifier = Modifier.padding(12.dp)
-            )
-        }
-    }
-}
 
 @Composable
 fun MinimalGlassButton(
