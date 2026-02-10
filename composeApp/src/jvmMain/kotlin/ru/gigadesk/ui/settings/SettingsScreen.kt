@@ -124,86 +124,62 @@ fun SettingsScreenMain(
                         .fillMaxHeight()
                         .width(1.dp)
                         .padding(vertical = 24.dp)
-                        .background(MaterialTheme.glassColors.textPrimary.copy(alpha = 0.1f))
+                        .background(MaterialTheme.glassColors.textPrimary.copy(alpha = 0.15f))
                 )
 
                 // Content Area
                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                     // We wrap the content in DraggableWindowArea but we need to make sure interacions are still possible
-                     // Actually, we should only make the top part draggable? 
-                     // Or just separate draggable area.
-                     // In the sidebar we used it.
-                     // Let's use it here too but maybe only for the top ? 
-                     // Or just around the whole thing? 
-                     // If we put it around the whole thing, clicks might be intercepted if not careful.
-                     // But DraggableWindowArea usually passes clicks through if they are not on the background?
-                     // Let's look at existing code. It used DraggableWindowArea around the whole title row.
-                     // Here we have content which is scrollable.
-                     // Let's NOT wrap the whole content in DraggableWindowArea. 
-                     // The sidebar header is draggable. The content header should handle closing.
-                     // Maybe we can make a small strip at the top draggable?
-                     
-                     Column {
-                        // Header area (invisible) for dragging? 
-                        // Or just rely on sidebar dragging.
-                        // Let's add a draggable strip at the top.
-                         DraggableWindowArea {
-                             Box(modifier = Modifier.fillMaxWidth().height(24.dp))
-                         }
-                         
-                        when (state.activeSection) {
-                            SettingsSection.MODELS -> ModelsSettingsContent(
-                                state = state,
-                                onModelChange = { viewModel.send(SettingsEvent.SelectModel(it)) },
-                                onEmbeddingsModelChange = { viewModel.send(SettingsEvent.SelectEmbeddingsModel(it)) },
-                                onTemperatureInput = { viewModel.send(SettingsEvent.InputTemperature(it)) },
-                                onRequestTimeoutMillisChange = { viewModel.send(SettingsEvent.InputRequestTimeoutMillis(it)) },
-                                onSystemPromptChange = { viewModel.send(SettingsEvent.InputSystemPrompt(it)) },
-                                onSystemPromptReset = { viewModel.send(SettingsEvent.ResetSystemPrompt) },
-                                onRefreshBalance = { viewModel.send(SettingsEvent.RefreshBalance) },
-                                onClose = onClose
-                            )
-                            SettingsSection.GENERAL -> GeneralSettingsContent(
-                                state = state,
-                                onDefaultCalendarChange = { viewModel.send(SettingsEvent.SelectDefaultCalendar(it)) },
-                                onUseStreamingChange = { viewModel.send(SettingsEvent.InputUseStreaming(it)) },
-                                onVoiceSpeedInput = { viewModel.send(SettingsEvent.InputVoiceSpeed(it)) },
-                                onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
-                                onMcpServersJsonInput = { viewModel.send(SettingsEvent.InputMcpServersJson(it)) },
-                                onClose = onClose
-                            )
-                            SettingsSection.KEYS -> KeysSettingsContent(
-                                state = state,
-                                onGigaChatKeyInput = { viewModel.send(SettingsEvent.InputGigaChatKey(it)) },
-                                onQwenChatKeyInput = { viewModel.send(SettingsEvent.InputQwenChatKey(it)) },
-                                onAiTunnelKeyInput = { viewModel.send(SettingsEvent.InputAiTunnelKey(it)) },
-                                onSaluteSpeechKeyInput = { viewModel.send(SettingsEvent.InputSaluteSpeechKey(it)) },
-                                onClose = onClose
-                            )
-                            SettingsSection.FUNCTIONS -> FunctionsSettingsContent(
-                                state = state,
-                                onUseFewShotExamplesChange = { viewModel.send(SettingsEvent.InputUseFewShotExamples(it)) },
-                                onOpenTools = onOpenTools,
-
-                                onClose = onClose
-                            )
-                            SettingsSection.SECURITY -> SecuritySettingsContent(
-                                state = state,
-                                onSafeModeChange = { viewModel.send(SettingsEvent.InputSafeModeEnabled(it)) },
-                                onOpenFoldersManagement = { viewModel.send(SettingsEvent.OpenFoldersManagement) },
-                                onClose = onClose
-                            )
-                            SettingsSection.SUPPORT -> SupportSettingsContent(
-                                state = state,
-                                onSupportEmailInput = { viewModel.send(SettingsEvent.InputSupportEmail(it)) },
-                                onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
-                                clipboardManager = clipboardManager,
-                                onShowSnack = onShowSnack,
-                                onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) },
-                                onClose = onClose
-                            )
-                        }
-                     }
+                    when (state.activeSection) {
+                        SettingsSection.MODELS -> ModelsSettingsContent(
+                            state = state,
+                            onModelChange = { viewModel.send(SettingsEvent.SelectModel(it)) },
+                            onEmbeddingsModelChange = { viewModel.send(SettingsEvent.SelectEmbeddingsModel(it)) },
+                            onTemperatureInput = { viewModel.send(SettingsEvent.InputTemperature(it)) },
+                            onRequestTimeoutMillisChange = { viewModel.send(SettingsEvent.InputRequestTimeoutMillis(it)) },
+                            onSystemPromptChange = { viewModel.send(SettingsEvent.InputSystemPrompt(it)) },
+                            onSystemPromptReset = { viewModel.send(SettingsEvent.ResetSystemPrompt) },
+                            onRefreshBalance = { viewModel.send(SettingsEvent.RefreshBalance) },
+                            onClose = onClose
+                        )
+                        SettingsSection.GENERAL -> GeneralSettingsContent(
+                            state = state,
+                            onDefaultCalendarChange = { viewModel.send(SettingsEvent.SelectDefaultCalendar(it)) },
+                            onUseStreamingChange = { viewModel.send(SettingsEvent.InputUseStreaming(it)) },
+                            onVoiceSpeedInput = { viewModel.send(SettingsEvent.InputVoiceSpeed(it)) },
+                            onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
+                            onMcpServersJsonInput = { viewModel.send(SettingsEvent.InputMcpServersJson(it)) },
+                            onClose = onClose
+                        )
+                        SettingsSection.KEYS -> KeysSettingsContent(
+                            state = state,
+                            onGigaChatKeyInput = { viewModel.send(SettingsEvent.InputGigaChatKey(it)) },
+                            onQwenChatKeyInput = { viewModel.send(SettingsEvent.InputQwenChatKey(it)) },
+                            onAiTunnelKeyInput = { viewModel.send(SettingsEvent.InputAiTunnelKey(it)) },
+                            onSaluteSpeechKeyInput = { viewModel.send(SettingsEvent.InputSaluteSpeechKey(it)) },
+                            onClose = onClose
+                        )
+                        SettingsSection.FUNCTIONS -> FunctionsSettingsContent(
+                            state = state,
+                            onUseFewShotExamplesChange = { viewModel.send(SettingsEvent.InputUseFewShotExamples(it)) },
+                            onOpenTools = onOpenTools,
+                            onClose = onClose
+                        )
+                        SettingsSection.SECURITY -> SecuritySettingsContent(
+                            state = state,
+                            onSafeModeChange = { viewModel.send(SettingsEvent.InputSafeModeEnabled(it)) },
+                            onOpenFoldersManagement = { viewModel.send(SettingsEvent.OpenFoldersManagement) },
+                            onClose = onClose
+                        )
+                        SettingsSection.SUPPORT -> SupportSettingsContent(
+                            state = state,
+                            onSupportEmailInput = { viewModel.send(SettingsEvent.InputSupportEmail(it)) },
+                            onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
+                            clipboardManager = clipboardManager,
+                            onShowSnack = onShowSnack,
+                            onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) },
+                            onClose = onClose
+                        )
+                    }
                 }
             }
         }
@@ -214,6 +190,42 @@ fun SettingsScreenMain(
 @Composable
 fun SettingsScreenPreview() {
     AppTheme {
-       // Preview logic
+        val previewState = SettingsState(activeSection = SettingsSection.MODELS)
+
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color(0xFF0B0E11)
+        ) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                SettingsSidebar(
+                    activeSection = previewState.activeSection,
+                    onSectionSelected = {},
+                    onClose = {},
+                    modifier = Modifier.fillMaxHeight()
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(1.dp)
+                        .padding(vertical = 24.dp)
+                        .background(MaterialTheme.glassColors.textPrimary.copy(alpha = 0.15f))
+                )
+
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    ModelsSettingsContent(
+                        state = previewState,
+                        onModelChange = {},
+                        onEmbeddingsModelChange = {},
+                        onTemperatureInput = {},
+                        onRequestTimeoutMillisChange = {},
+                        onSystemPromptChange = {},
+                        onSystemPromptReset = {},
+                        onRefreshBalance = {},
+                        onClose = {}
+                    )
+                }
+            }
+        }
     }
 }

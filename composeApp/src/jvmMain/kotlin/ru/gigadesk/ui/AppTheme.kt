@@ -1,10 +1,8 @@
 package ru.gigadesk.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -32,19 +30,15 @@ data class GlassColors(
 
 @Composable
 fun AppTheme(
-    useDarkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    // Стандартные цвета Material (для Settings и других экранов)
-    val materialColors = if (useDarkTheme) DarkColors else LightColors
-
     // Внедряем нашу Glass-систему поверх Material
     CompositionLocalProvider(
         LocalGlassColors provides DefaultGlassColors,
         LocalGlassShape provides RoundedCornerShape(22.dp)
     ) {
         MaterialTheme(
-            colorScheme = materialColors,
+            colorScheme = DarkColors,
             typography = AppTypography()
         ) {
             content()
@@ -118,20 +112,4 @@ private val DarkColors = darkColorScheme(
     surfaceVariant = Color(0xFF171B20),
     onSurfaceVariant = Color(0xFFBDC3CA),
     outline = Color(0xFF31363C),
-)
-
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF6200EE),
-    onPrimary = Color.White,
-    secondary = Color(0xFF6C63FF),
-    onSecondary = Color.White,
-    tertiary = Color(0xFFFF6B6B),
-    onTertiary = Color.White,
-    background = Color(0xFFFFFFFF),
-    onBackground = Color(0xFF1A1A1A),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1A1A1A),
-    surfaceVariant = Color(0xFFF1F1F1),
-    onSurfaceVariant = Color(0xFF444746),
-    outline = Color(0x1F000000),
 )
