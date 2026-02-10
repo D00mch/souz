@@ -1,18 +1,25 @@
 package ru.gigadesk.tool.files
 
+import org.slf4j.LoggerFactory
 import ru.gigadesk.tool.*
+import java.awt.Desktop
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.exists
 
 class ToolDeleteFile(
     private val filesToolUtil: FilesToolUtil,
     private val permissionBroker: ToolPermissionBroker? = null,
 ) : ToolSetup<ToolDeleteFile.Input> {
+    private val l = LoggerFactory.getLogger(ToolDeleteFile::class.java)
+
     data class Input(
         @InputParamDescription("The path of the file to delete")
         val path: String
     )
     override val name = "DeleteFile"
-    override val description = "Deletes a file at the given path. Use ~ as the Home dir"
+    override val description = "Moves a file to Trash at the given path. Use ~ as the Home dir"
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Удали temp.txt",
@@ -44,7 +51,42 @@ class ToolDeleteFile(
         if (!file.exists() || file.isDirectory) {
             throw BadInputException("Invalid file path: ${input.path}")
         }
-        file.delete()
-        return "File deleted at ${input.path}"
+        if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.MOVE_TO_TRASH)) {
+            val movedToTrash = Desktop.getDesktop().moveToTrash(file)
+            if (movedToTrash) {
+                return "File moved to Trash from ${input.path}"
+            }
+            l.warn("Desktop trash operation reported failure for {}", fixedPath)
+        }
+
+        val trashTargetPath = resolveFallbackTrashTarget(file)
+        filesToolUtil.moveWithAtomicFallback(file.toPath(), trashTargetPath, l)
+        return "File moved to Trash from ${input.path}"
     }
+
+    private fun resolveFallbackTrashTarget(file: File): Path {
+        val fileName = file.name
+        val candidateDirectories = listOfNotNull(
+            if (isWindows()) null else File(System.getProperty("user.home"), ".Trash"),
+            if (isWindows()) null else File(System.getProperty("user.home"), ".local/share/Trash/files"),
+            File(System.getProperty("java.io.tmpdir"), "gigadesk-trash"),
+        )
+        val trashDirectory = candidateDirectories.firstOrNull { directory ->
+            directory.exists() || directory.mkdirs()
+        } ?: throw BadInputException("Unable to resolve Trash directory")
+
+        var trashTarget = trashDirectory.toPath().resolve(fileName)
+        if (trashTarget.exists()) {
+            val withSuffix = "${file.nameWithoutExtension}-${System.currentTimeMillis()}"
+            val extensionSuffix = if (file.extension.isBlank()) "" else ".${file.extension}"
+            trashTarget = trashDirectory.toPath().resolve(withSuffix + extensionSuffix)
+        }
+        if (Files.exists(trashTarget)) {
+            throw BadInputException("Unable to move file to Trash. Target exists: $trashTarget")
+        }
+        return trashTarget
+    }
+
+    private fun isWindows(): Boolean =
+        System.getProperty("os.name")?.lowercase()?.contains("win") == true
 }
