@@ -39,6 +39,7 @@ import ru.gigadesk.tool.dataAnalytics.excel.ExcelRead
 import ru.gigadesk.tool.dataAnalytics.excel.ExcelReport
 import ru.gigadesk.tool.files.*
 import ru.gigadesk.tool.mail.ToolMailListMessages
+import ru.gigadesk.tool.mail.ToolMailReplyMessage
 import ru.gigadesk.tool.mail.ToolMailSearch
 import ru.gigadesk.tool.mail.ToolMailSendNewMessage
 import ru.gigadesk.tool.mail.ToolMailUnreadMessagesCount
@@ -321,14 +322,22 @@ class GraphAgentToolScenariosIntegrationTest {
         val realToolList = ToolCalendarListEvents(ToolRunBashCommand)
         val toolCalendarListEvents: ToolCalendarListEvents = spyk(realToolList)
 
+        val realToolCreate = ToolCalendarCreateEvent(ToolRunBashCommand)
+        val toolCalendarCreateEvent: ToolCalendarCreateEvent = spyk(realToolCreate)
+
         val realToolDel = ToolCalendarDeleteEvent(ToolRunBashCommand)
         val toolCalendarDeleteEvent: ToolCalendarDeleteEvent = spyk(realToolDel)
 
-        coEvery { toolCalendarListEvents.invoke(any()) } returns "10:00 - 11:00: Важная встреча"
+        coEvery { toolCalendarListEvents.invoke(any()) } returns """
+            2026-02-11 10:00 - 11:00 | Важная встреча
+            2026-02-11 15:00 - 16:00 | Командный синк
+        """.trimIndent()
+        coEvery { toolCalendarCreateEvent.invoke(any()) } returns "Event created"
         coEvery { toolCalendarDeleteEvent.invoke(any()) } returns "Deleted"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCalendarListEvents> { toolCalendarListEvents }
+            bindSingleton<ToolCalendarCreateEvent> { toolCalendarCreateEvent }
             bindSingleton<ToolCalendarDeleteEvent> { toolCalendarDeleteEvent }
         }
 
