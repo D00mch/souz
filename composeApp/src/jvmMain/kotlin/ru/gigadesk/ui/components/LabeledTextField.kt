@@ -32,8 +32,9 @@ fun LabeledTextField(
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.titleMedium,
-            color = labelColor
+            style = MaterialTheme.typography.bodyMedium,
+            color = labelColor,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
         )
         OutlinedTextField(
             value = value,
@@ -41,6 +42,7 @@ fun LabeledTextField(
             modifier = Modifier.fillMaxWidth(),
             singleLine = singleLine,
             isError = isError,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = textColor,
                 unfocusedTextColor = textColor,
@@ -49,6 +51,8 @@ fun LabeledTextField(
                 unfocusedBorderColor = borderColor,
                 focusedLabelColor = labelColor,
                 unfocusedLabelColor = labelColor.copy(alpha = 0.6f),
+                focusedContainerColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.05f),
+                unfocusedContainerColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.05f),
             ),
         )
     }

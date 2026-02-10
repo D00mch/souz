@@ -1,38 +1,22 @@
 package ru.gigadesk.ui.settings
 
 import androidx.compose.desktop.ui.tooling.preview.Preview
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.debounce
 import org.kodein.di.compose.localDI
 import org.kodein.di.instance
-import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.agent.session.GraphSessionRepository
-import ru.gigadesk.giga.EmbeddingsModel
-import ru.gigadesk.giga.GigaModel
-import ru.gigadesk.giga.GigaResponse
-import ru.gigadesk.giga.LlmProvider
 import ru.gigadesk.ui.AppTheme
-import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.graphlog.GraphSessionsScreen
 import ru.gigadesk.ui.graphlog.GraphVisualizationScreen
@@ -54,7 +38,7 @@ fun SettingsScreen(
         @Suppress("OPT_IN_USAGE")
         viewModel.effects.debounce(2000).collect { effect ->
             when (effect) {
-                SettingsEffect.CloseScreen -> Unit
+                SettingsEffect.CloseScreen -> onClose()
                 SettingsEffect.NotifyOnSystemPrompt -> onShowSnack("Сохранено. Применится после первой суммаризации")
             }
         }
@@ -62,33 +46,12 @@ fun SettingsScreen(
     
     when (state.currentScreen) {
         SettingsSubScreen.MAIN -> {
-            SettingsScreen(
-                state,
-                onGigaChatKeyInput = { key -> viewModel.send(SettingsEvent.InputGigaChatKey(key)) },
-                onQwenChatKeyInput = { key -> viewModel.send(SettingsEvent.InputQwenChatKey(key)) },
-                onAiTunnelKeyInput = { key -> viewModel.send(SettingsEvent.InputAiTunnelKey(key)) },
-                onSaluteSpeechKeyInput = { key -> viewModel.send(SettingsEvent.InputSaluteSpeechKey(key)) },
-                onMcpServersJsonInput = { value -> viewModel.send(SettingsEvent.InputMcpServersJson(value)) },
-                onVoiceSpeedInput = { speed -> viewModel.send(SettingsEvent.InputVoiceSpeed(speed)) },
-                onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
-                onUseFewShotExamplesChange = { enabled -> viewModel.send(SettingsEvent.InputUseFewShotExamples(enabled)) },
-                onUseStreamingChange = { enabled -> viewModel.send(SettingsEvent.InputUseStreaming(enabled)) },
-                onSafeModeChange = { enabled -> viewModel.send(SettingsEvent.InputSafeModeEnabled(enabled)) },
-                onModelChange = { model -> viewModel.send(SettingsEvent.SelectModel(model)) },
-                onEmbeddingsModelChange = { model -> viewModel.send(SettingsEvent.SelectEmbeddingsModel(model)) },
-                onRequestTimeoutMillisChange = { value -> viewModel.send(SettingsEvent.InputRequestTimeoutMillis(value)) },
-                onTemperatureInput = { value -> viewModel.send(SettingsEvent.InputTemperature(value)) },
-                onDefaultCalendarChange = { calName -> viewModel.send(SettingsEvent.SelectDefaultCalendar(calName)) },
-                onSupportEmailInput = { email -> viewModel.send(SettingsEvent.InputSupportEmail(email)) },
-                onSystemPromptChange = { prompt -> viewModel.send(SettingsEvent.InputSystemPrompt(prompt)) },
-                onSystemPromptReset = { viewModel.send(SettingsEvent.ResetSystemPrompt) },
-                onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
-                onRefreshBalance = { viewModel.send(SettingsEvent.RefreshBalance) },
-                onOpenTools = onOpenTools,
+            SettingsScreenMain(
+                state = state,
+                viewModel = viewModel,
                 onClose = onClose,
-                onShowSnack = onShowSnack,
-                onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) },
-                onOpenFoldersManagement = { viewModel.send(SettingsEvent.OpenFoldersManagement) }
+                onOpenTools = onOpenTools,
+                onShowSnack = onShowSnack
             )
         }
         SettingsSubScreen.SESSIONS -> {
@@ -123,35 +86,13 @@ fun SettingsScreen(
 }
 
 @Composable
-fun SettingsScreen(
+fun SettingsScreenMain(
     state: SettingsState,
-    onGigaChatKeyInput: (String) -> Unit,
-    onQwenChatKeyInput: (String) -> Unit,
-    onAiTunnelKeyInput: (String) -> Unit,
-    onSaluteSpeechKeyInput: (String) -> Unit,
-    onMcpServersJsonInput: (String) -> Unit,
-    onVoiceSpeedInput: (String) -> Unit,
-    onChooseVoice: () -> Unit,
-    onUseFewShotExamplesChange: (Boolean) -> Unit,
-    onUseStreamingChange: (Boolean) -> Unit,
-    onSafeModeChange: (Boolean) -> Unit,
-    onModelChange: (GigaModel) -> Unit,
-    onEmbeddingsModelChange: (EmbeddingsModel) -> Unit,
-    onRequestTimeoutMillisChange: (String) -> Unit,
-    onTemperatureInput: (String) -> Unit,
-    onDefaultCalendarChange: (String?) -> Unit,
-    onSupportEmailInput: (String) -> Unit,
-    onSystemPromptChange: (String) -> Unit,
-    onSystemPromptReset: () -> Unit,
-    onSendLogs: () -> Unit,
-    onRefreshBalance: () -> Unit,
-    onOpenTools: () -> Unit,
+    viewModel: SettingsViewModel,
     onClose: () -> Unit,
-    onShowSnack: (String) -> Unit = {},
-    onOpenGraphSessions: () -> Unit = {},
-    onOpenFoldersManagement: () -> Unit = {},
+    onOpenTools: () -> Unit,
+    onShowSnack: (String) -> Unit
 ) {
-    // Получаем состояние фокуса окна
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
     val clipboardManager = LocalClipboardManager.current
@@ -160,623 +101,112 @@ fun SettingsScreen(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        // Передаем isWindowFocused в RealLiquidGlassCard
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
             isWindowFocused = isFocused
         ) {
-            val scrollState = rememberScrollState()
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 24.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                DraggableWindowArea {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "Настройки",
-                            style = MaterialTheme.typography.headlineLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.glassColors.textPrimary
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Sidebar
+                Column(modifier = Modifier.width(280.dp).fillMaxHeight()) {
+                     DraggableWindowArea {
+                        SettingsSidebar(
+                            activeSection = state.activeSection,
+                            onSectionSelected = { viewModel.send(SettingsEvent.SelectSettingsSection(it)) },
+                            onClose = onClose,
+                            modifier = Modifier.fillMaxWidth()
                         )
-                        Text(
-                            text = "Ключи и поведение",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f)
-                        )
-                    }
-                    IconButton(onClick = onClose) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "Закрыть настройки",
-                            tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f)
-                        )
-                    }
-                    }
+                     }
                 }
-
-                LabeledTextField(
-                    label = "GigaChat ключ",
-                    value = state.gigaChatKey,
-                    onValueChange = onGigaChatKeyInput,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                LabeledTextField(
-                    label = "Qwen ключ",
-                    value = state.qwenChatKey,
-                    onValueChange = onQwenChatKeyInput,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                LabeledTextField(
-                    label = "AI Tunnel ключ",
-                    value = state.aiTunnelKey,
-                    onValueChange = onAiTunnelKeyInput,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                LabeledTextField(
-                    label = "SaluteSpeech ключ",
-                    value = state.saluteSpeechKey,
-                    onValueChange = onSaluteSpeechKeyInput,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    LabeledTextField(
-                        label = "MCP servers JSON",
-                        value = state.mcpServersJson,
-                        onValueChange = onMcpServersJsonInput,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = false,
-                    )
-                    Text(
-                        text = "Формат: {\"mcpServers\": {\"name\": {\"command\": \"...\"} или {\"transport\": \"http\", \"url\": \"https://...\"}}}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = "Изменения применятся после перезапуска приложения.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-                    )
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    LabeledTextField(
-                        label = "Скорость речи",
-                        value = state.voiceSpeedInput,
-                        onValueChange = onVoiceSpeedInput,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        text = "Текущее значение: ${state.voiceSpeed}. Чем больше значение, тем быстрее речь.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-                    )
-                }
-
-
-                OutlinedButton(
-                    onClick = onChooseVoice,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Выбрать голос",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.glassColors.textPrimary
-                    )
-                }
-
-
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    LabeledTextField(
-                        label = "Таймаут запроса (мс)",
-                        value = state.requestTimeoutInput,
-                        onValueChange = onRequestTimeoutMillisChange,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        text = "Текущее значение: ${state.requestTimeoutMillis} мс.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-                    )
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    LabeledTextField(
-                        label = "Температура",
-                        value = state.temperatureInput,
-                        onValueChange = onTemperatureInput,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        text = "Текущее значение: ${state.temperature}.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-                    )
-                }
-
-                Button(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Настройка инструментов",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.glassColors.textPrimary,
-                    )
-                }
-
-                Button(onClick = onOpenFoldersManagement, modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Запретные папки",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.glassColors.textPrimary,
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Checkbox(
-                        checked = state.useFewShotExamples,
-                        onCheckedChange = onUseFewShotExamplesChange,
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = MaterialTheme.colorScheme.primary,
-                            uncheckedColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
-                            checkmarkColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    )
-                    Text(
-                        text = "Класть примеры использования тулов в контекст",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.glassColors.textPrimary
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Checkbox(
-                        checked = state.useStreaming,
-                        onCheckedChange = onUseStreamingChange,
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = MaterialTheme.colorScheme.primary,
-                            uncheckedColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
-                            checkmarkColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    )
-                    Text(
-                        text = "Использовать streaming-режим для запросов к модели",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.glassColors.textPrimary
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Checkbox(
-                        checked = state.safeModeEnabled,
-                        onCheckedChange = onSafeModeChange,
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = MaterialTheme.colorScheme.primary,
-                            uncheckedColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
-                            checkmarkColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    )
-                    Text(
-                        text = "Безопасный режим: запрашивать подтверждение опасных действий",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.glassColors.textPrimary
-                    )
-                }
-
-                CalendarDropdown(
-                    selectedCalendar = state.defaultCalendar,
-                    availableCalendars = state.availableCalendars,
-                    isLoading = state.isLoadingCalendars,
-                    onCalendarSelected = onDefaultCalendarChange
+               
+               // Vertical divider
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(1.dp)
+                        .padding(vertical = 24.dp)
+                        .background(MaterialTheme.glassColors.textPrimary.copy(alpha = 0.1f))
                 )
 
-                ModelDropdown(
-                    selectedModel = state.gigaModel,
-                    onModelSelected = onModelChange,
-                )
+                // Content Area
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                     // We wrap the content in DraggableWindowArea but we need to make sure interacions are still possible
+                     // Actually, we should only make the top part draggable? 
+                     // Or just separate draggable area.
+                     // In the sidebar we used it.
+                     // Let's use it here too but maybe only for the top ? 
+                     // Or just around the whole thing? 
+                     // If we put it around the whole thing, clicks might be intercepted if not careful.
+                     // But DraggableWindowArea usually passes clicks through if they are not on the background?
+                     // Let's look at existing code. It used DraggableWindowArea around the whole title row.
+                     // Here we have content which is scrollable.
+                     // Let's NOT wrap the whole content in DraggableWindowArea. 
+                     // The sidebar header is draggable. The content header should handle closing.
+                     // Maybe we can make a small strip at the top draggable?
+                     
+                     Column {
+                        // Header area (invisible) for dragging? 
+                        // Or just rely on sidebar dragging.
+                        // Let's add a draggable strip at the top.
+                         DraggableWindowArea {
+                             Box(modifier = Modifier.fillMaxWidth().height(24.dp))
+                         }
+                         
+                        when (state.activeSection) {
+                            SettingsSection.MODELS -> ModelsSettingsContent(
+                                state = state,
+                                onModelChange = { viewModel.send(SettingsEvent.SelectModel(it)) },
+                                onEmbeddingsModelChange = { viewModel.send(SettingsEvent.SelectEmbeddingsModel(it)) },
+                                onTemperatureInput = { viewModel.send(SettingsEvent.InputTemperature(it)) },
+                                onRequestTimeoutMillisChange = { viewModel.send(SettingsEvent.InputRequestTimeoutMillis(it)) },
+                                onSystemPromptChange = { viewModel.send(SettingsEvent.InputSystemPrompt(it)) },
+                                onSystemPromptReset = { viewModel.send(SettingsEvent.ResetSystemPrompt) },
+                                onRefreshBalance = { viewModel.send(SettingsEvent.RefreshBalance) },
+                                onClose = onClose
+                            )
+                            SettingsSection.GENERAL -> GeneralSettingsContent(
+                                state = state,
+                                onDefaultCalendarChange = { viewModel.send(SettingsEvent.SelectDefaultCalendar(it)) },
+                                onUseStreamingChange = { viewModel.send(SettingsEvent.InputUseStreaming(it)) },
+                                onVoiceSpeedInput = { viewModel.send(SettingsEvent.InputVoiceSpeed(it)) },
+                                onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
+                                onMcpServersJsonInput = { viewModel.send(SettingsEvent.InputMcpServersJson(it)) },
+                                onClose = onClose
+                            )
+                            SettingsSection.KEYS -> KeysSettingsContent(
+                                state = state,
+                                onGigaChatKeyInput = { viewModel.send(SettingsEvent.InputGigaChatKey(it)) },
+                                onQwenChatKeyInput = { viewModel.send(SettingsEvent.InputQwenChatKey(it)) },
+                                onAiTunnelKeyInput = { viewModel.send(SettingsEvent.InputAiTunnelKey(it)) },
+                                onSaluteSpeechKeyInput = { viewModel.send(SettingsEvent.InputSaluteSpeechKey(it)) },
+                                onClose = onClose
+                            )
+                            SettingsSection.FUNCTIONS -> FunctionsSettingsContent(
+                                state = state,
+                                onUseFewShotExamplesChange = { viewModel.send(SettingsEvent.InputUseFewShotExamples(it)) },
+                                onOpenTools = onOpenTools,
 
-                EmbeddingsModelDropdown(
-                    selectedModel = state.embeddingsModel,
-                    onModelSelected = onEmbeddingsModelChange,
-                )
-
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    LabeledTextField(
-                        label = "Системный промпт",
-                        value = state.systemPrompt,
-                        onValueChange = onSystemPromptChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = false,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        Button(
-                            onClick = onSystemPromptReset,
-                            enabled = state.systemPrompt != DEFAULT_SYSTEM_PROMPT
-                        ) {
-                            Text(
-                                text = "Сбросить по умолчанию",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.glassColors.textPrimary,
+                                onClose = onClose
+                            )
+                            SettingsSection.SECURITY -> SecuritySettingsContent(
+                                state = state,
+                                onSafeModeChange = { viewModel.send(SettingsEvent.InputSafeModeEnabled(it)) },
+                                onOpenFoldersManagement = { viewModel.send(SettingsEvent.OpenFoldersManagement) },
+                                onClose = onClose
+                            )
+                            SettingsSection.SUPPORT -> SupportSettingsContent(
+                                state = state,
+                                onSupportEmailInput = { viewModel.send(SettingsEvent.InputSupportEmail(it)) },
+                                onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
+                                clipboardManager = clipboardManager,
+                                onShowSnack = onShowSnack,
+                                onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) },
+                                onClose = onClose
                             )
                         }
-                    }
-                }
-
-                TokensBalanceSection(
-                    isLoading = state.isBalanceLoading,
-                    balance = state.balance,
-                    error = state.balanceError,
-                    onRefreshBalance = onRefreshBalance,
-                )
-
-                Button(onClick = onOpenGraphSessions, modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "История сессий графа",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.glassColors.textPrimary,
-                    )
-                }
-
-                LogsView(state, onSupportEmailInput, onSendLogs, clipboardManager, onShowSnack)
-            }
-        }
-    }
-}
-
-@Composable
-private fun LogsView(
-    state: SettingsState,
-    onSupportEmailInput: (String) -> Unit,
-    onSendLogs: () -> Unit,
-    clipboardManager: ClipboardManager,
-    onShowSnack: (String) -> Unit
-) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        LabeledTextField(
-            label = "Email поддержки",
-            value = state.supportEmail,
-            onValueChange = onSupportEmailInput,
-        )
-        Button(
-            onClick = onSendLogs,
-            enabled = !state.isSendingLogs,
-        ) {
-            Text(
-                text = if (state.isSendingLogs) "Отправка логов..." else "Отправить логи",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.glassColors.textPrimary
-            )
-        }
-        state.sendLogsMessage?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.glassColors.textPrimary,
-                textAlign = TextAlign.Start,
-                modifier = Modifier.clickable(enabled = state.sendLogsPath != null) {
-                    state.sendLogsPath?.let { path ->
-                        clipboardManager.setText(AnnotatedString(path))
-                        onShowSnack("Путь к логам скопирован")
-                    }
-                }
-            )
-        }
-    }
-}
-
-@Composable
-fun CalendarDropdown(
-    selectedCalendar: String?,
-    availableCalendars: List<String>,
-    isLoading: Boolean,
-    onCalendarSelected: (String?) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "Календарь по умолчанию",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.glassColors.textPrimary
-        )
-
-        Box {
-            OutlinedButton(
-                onClick = { expanded = !expanded },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = Color.Transparent,
-                    contentColor = MaterialTheme.glassColors.textPrimary
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f)),
-                shape = MaterialTheme.shapes.extraSmall
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = when {
-                            isLoading -> "Загрузка календарей..."
-                            selectedCalendar.isNullOrBlank() -> "Не выбран (системный по умолчанию)"
-                            else -> selectedCalendar
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.glassColors.textPrimary
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Выбрать календарь",
-                        tint = MaterialTheme.glassColors.textPrimary
-                    )
-                }
-            }
-
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.fillMaxWidth(0.6f)
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Не выбран (системный)") },
-                    onClick = {
-                        onCalendarSelected(null)
-                        expanded = false
-                    }
-                )
-
-                if (availableCalendars.isEmpty() && !isLoading) {
-                    DropdownMenuItem(
-                        text = { Text("Нет доступных календарей") },
-                        enabled = false,
-                        onClick = {}
-                    )
-                }
-
-                availableCalendars.forEach { calendarName ->
-                    DropdownMenuItem(
-                        text = { Text(calendarName) },
-                        onClick = {
-                            onCalendarSelected(calendarName)
-                            expanded = false
-                        }
-                    )
+                     }
                 }
             }
         }
-        Text(
-            text = "Агент будет использовать этот календарь для создания событий, если вы не укажете иное.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-        )
-    }
-}
-
-@Composable
-private fun TokensBalanceSection(
-    isLoading: Boolean,
-    balance: List<GigaResponse.BalanceItem>,
-    error: String?,
-    onRefreshBalance: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Остаток токенов",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.glassColors.textPrimary,
-            )
-
-            Button(onClick = onRefreshBalance, enabled = !isLoading) {
-                Text(
-                    text = if (isLoading) "Обновление..." else "Обновить",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.glassColors.textPrimary,
-                )
-            }
-        }
-
-        when {
-            isLoading -> Text(
-                text = "Запрашиваем баланс...",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.glassColors.textPrimary,
-            )
-
-            error != null -> Text(
-                text = error,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-
-            balance.isEmpty() -> Text(
-                text = "Нет данных о балансе",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f),
-            )
-
-            else -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                balance.forEach { item ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = item.usage,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.glassColors.textPrimary,
-                        )
-                        Text(
-                            text = item.value.toString(),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.glassColors.textPrimary,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModelDropdown(
-    selectedModel: GigaModel,
-    onModelSelected: (GigaModel) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "Модель",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.glassColors.textPrimary
-        )
-        Box {
-            OutlinedButton(
-                onClick = { expanded = !expanded },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = Color.Transparent,
-                    contentColor = MaterialTheme.glassColors.textPrimary
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f)),
-                shape = MaterialTheme.shapes.extraSmall
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "${selectedModel.displayName} (${selectedModel.alias})",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.glassColors.textPrimary
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Выбрать модель",
-                        tint = MaterialTheme.glassColors.textPrimary
-                    )
-                }
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.fillMaxWidth(0.6f)
-            ) {
-                GigaModel.entries.forEach { model ->
-                    DropdownMenuItem(
-                        text = { Text("${model.displayName} (${model.alias})") },
-                        onClick = {
-                            onModelSelected(model)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-        Text(
-            text = "Выберите основную модель (GigaChat или Qwen), которая будет использована для запросов.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-        )
-    }
-}
-
-@Composable
-private fun EmbeddingsModelDropdown(
-    selectedModel: EmbeddingsModel,
-    onModelSelected: (EmbeddingsModel) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "Модель эмбеддингов",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.glassColors.textPrimary
-        )
-        Box {
-            OutlinedButton(
-                onClick = { expanded = !expanded },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = Color.Transparent,
-                    contentColor = MaterialTheme.glassColors.textPrimary
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f)),
-                shape = MaterialTheme.shapes.extraSmall
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = selectedModel.displayName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.glassColors.textPrimary
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Выбрать модель эмбеддингов",
-                        tint = MaterialTheme.glassColors.textPrimary
-                    )
-                }
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.fillMaxWidth(0.6f)
-            ) {
-                EmbeddingsModel.entries.forEach { model ->
-                    DropdownMenuItem(
-                        text = { Text(model.displayName) },
-                        onClick = {
-                            onModelSelected(model)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-        Text(
-            text = "Ключи используются от привязанных провайдеров.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
-        )
     }
 }
 
@@ -784,31 +214,6 @@ private fun EmbeddingsModelDropdown(
 @Composable
 fun SettingsScreenPreview() {
     AppTheme {
-        SettingsScreen(
-            state = SettingsState(gigaChatKey = "key1", saluteSpeechKey = "key2", useFewShotExamples = true),
-            onGigaChatKeyInput = {},
-            onQwenChatKeyInput = {},
-            onAiTunnelKeyInput = {},
-            onSaluteSpeechKeyInput = {},
-            onMcpServersJsonInput = {},
-            onVoiceSpeedInput = {},
-            onChooseVoice = {},
-            onUseFewShotExamplesChange = {},
-            onUseStreamingChange = {},
-            onSafeModeChange = {},
-            onModelChange = {},
-            onEmbeddingsModelChange = {},
-            onRequestTimeoutMillisChange = {},
-            onTemperatureInput = {},
-            onDefaultCalendarChange = {},
-            onSupportEmailInput = {},
-            onSystemPromptChange = {},
-            onSystemPromptReset = {},
-            onSendLogs = {},
-            onRefreshBalance = {},
-            onOpenTools = {},
-            onClose = {},
-            onShowSnack = {},
-        )
+       // Preview logic
     }
 }
