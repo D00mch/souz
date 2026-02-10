@@ -38,7 +38,11 @@ class ToolCalculator : ToolSetup<ToolCalculator.Input> {
         return try {
             val result = evaluate(input.expression)
             val formattedResult = if (result % 1.0 == 0.0) {
-                result.toLong().toString()
+                if (result >= Long.MIN_VALUE && result <= Long.MAX_VALUE) {
+                    result.toLong().toString()
+                } else {
+                    java.math.BigDecimal.valueOf(result).toPlainString()
+                }
             } else {
                 result.toString()
             }
@@ -99,7 +103,7 @@ class ToolCalculator : ToolSetup<ToolCalculator.Input> {
                 val startPos = pos
                 if (eat('('.code)) { // parentheses
                     x = parseExpression()
-                    eat(')'.code)
+                    if (!eat(')'.code)) throw RuntimeException("Missing closing parenthesis")
                 } else if (ch in '0'.code..'9'.code || ch == '.'.code) { // numbers
                     while (ch in '0'.code..'9'.code || ch == '.'.code) nextChar()
                     x = expression.substring(startPos, pos).toDouble()
