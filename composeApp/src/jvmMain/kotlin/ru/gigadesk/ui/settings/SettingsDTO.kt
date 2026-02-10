@@ -14,6 +14,15 @@ enum class SettingsSubScreen {
     MAIN, SESSIONS, VISUALIZATION, FOLDERS
 }
 
+enum class SettingsSection(val title: String, val icon: String? = null) {
+    MODELS("Модели"),
+    GENERAL("Общие"),
+    KEYS("Мои ключи"),
+    FUNCTIONS("Функции"),
+    SECURITY("Безопасность"),
+    SUPPORT("Поддержка")
+}
+
 data class SettingsState(
     val gigaChatKey: String = "",
     val qwenChatKey: String = "",
@@ -46,6 +55,8 @@ data class SettingsState(
     // Graph Logs
     val currentScreen: SettingsSubScreen = SettingsSubScreen.MAIN,
     val selectedSessionId: String? = null,
+    
+    val activeSection: SettingsSection = SettingsSection.MODELS,
 ): VMState
 
 sealed interface SettingsEvent : VMEvent {
@@ -78,6 +89,8 @@ sealed interface SettingsEvent : VMEvent {
     object BackToSettings : SettingsEvent
     object BackToSessions : SettingsEvent
     object OpenFoldersManagement : SettingsEvent
+    
+    data class SelectSettingsSection(val section: SettingsSection): SettingsEvent
 }
 
 sealed interface SettingsEffect : VMSideEffect {

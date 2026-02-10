@@ -19,7 +19,6 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.ArrowUpward
@@ -28,7 +27,6 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Psychology
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -60,6 +58,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Dp
@@ -75,6 +76,9 @@ import org.kodein.di.compose.localDI
 import kotlin.random.Random
 import ru.gigadesk.ui.common.ConnectionStatusNotification
 import ru.gigadesk.ui.common.DraggableWindowArea
+import ru.gigadesk.ui.common.parseMarkdownContent
+import ru.gigadesk.ui.common.CodeBlockWithCopy
+import ru.gigadesk.ui.common.MarkdownPart
 import ru.gigadesk.ui.glassColors
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -82,11 +86,25 @@ import androidx.compose.ui.input.key.*
 
 private val TopButtonSize = 24.dp
 private val TopIconSize = 14.dp
+private val ChatUserBubbleGradientStart = Color(18, 224, 181, (255 * 0.2f).toInt())
+private val ChatUserBubbleGradientEnd = Color(18, 224, 181, (255 * 0.1f).toInt())
+private val ChatUserBubbleBorderColor = Color(18, 224, 181, (255 * 0.4f).toInt())
+private val ChatUserTextColor = Color(255, 255, 255, (255 * 0.95f).toInt())
+private val ChatUserTimestampColor = Color(18, 224, 181, (255 * 0.7f).toInt())
+private val ChatAssistantBubbleBackground = Color(0, 0, 0, (255 * 0.3f).toInt())
+private val ChatAssistantBubbleBorderColor = Color(255, 255, 255, (255 * 0.2f).toInt())
+private val ChatAssistantTextColor = Color(255, 255, 255, (255 * 0.9f).toInt())
+private val ChatAssistantTimestampColor = Color(255, 255, 255, (255 * 0.5f).toInt())
+private val ChatInputBackground = Color(0, 0, 0, (255 * 0.3f).toInt())
+private val ChatInputBorderColor = Color(255, 255, 255, (255 * 0.15f).toInt())
+private val ChatInputPlaceholderColor = Color(255, 255, 255, (255 * 0.4f).toInt())
+private val ChatInputTextColor = Color(255, 255, 255, (255 * 0.9f).toInt())
+private val ChatSendButtonActiveBackground = Color(18, 224, 181, (255 * 0.2f).toInt())
+private val ChatSendButtonInactiveBackground = Color(0, 0, 0, 0)
+private val ChatSendButtonActiveIconColor = Color(18, 224, 181, 255)
+private val ChatSendButtonInactiveIconColor = Color(255, 255, 255, (255 * 0.3f).toInt())
 
-sealed class MarkdownPart {
-    data class TextContent(val content: String) : MarkdownPart()
-    data class CodeContent(val language: String, val code: String) : MarkdownPart()
-}
+
 
 @Composable
 fun MainScreen(
@@ -194,7 +212,7 @@ fun MainScreenContent(
                             MinimalGlassButton(onClick = onToggleThinkingPanel) {
                                 Icon(Icons.Rounded.Psychology, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                             }
-                            if (state.isProcessing || state.isThinkingPanelOpen) {
+                            if (state.isProcessing) {
                                 Box(
                                     modifier = Modifier
                                         .size(8.dp)
@@ -205,7 +223,7 @@ fun MainScreenContent(
                                 )
                             }
                         }
-                        
+
                         Spacer(Modifier.width(8.dp))
 
                         Box(
@@ -215,16 +233,6 @@ fun MainScreenContent(
                             MinimalGlassButton(onClick = onToggleChatMode) {
                                 val toggleIcon = if (state.isChatMode) Icons.Rounded.Mic else Icons.Outlined.ChatBubbleOutline
                                 Icon(toggleIcon, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
-                            }
-                            if (state.isChatMode) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .offset(x = 2.dp, y = (-2).dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF00E5FF))
-                                        .border(1.dp, Color.Black.copy(0.5f), CircleShape)
-                                )
                             }
                         }
                     }
@@ -280,7 +288,8 @@ fun MainScreenContent(
                             isProcessing = state.isProcessing,
                             onInputChange = onUpdateChatInput,
                             onSendMessage = onSendChatMessage,
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)
+                            onShowSnack = onShowSnack,
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)
                         )
                     } else {
                         // Voice Mode UI
@@ -476,8 +485,7 @@ fun MarkdownViewer(
                         CodeBlockWithCopy(
                             code = part.code,
                             language = part.language,
-                            style = codeStyle,
-                            onShowSnack = onShowSnack
+                            style = codeStyle
                         )
                     }
                 }
@@ -494,6 +502,7 @@ fun ChatModeContent(
     isProcessing: Boolean,
     onInputChange: (TextFieldValue) -> Unit,
     onSendMessage: () -> Unit,
+    onShowSnack: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -509,61 +518,55 @@ fun ChatModeContent(
         }
     }
 
-    val randomTips = remember { MainState.START_TIPS.shuffled().take(3) }
-
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
     }
     
-    Column(modifier = modifier) {
-        if (messages.isEmpty() && !isProcessing && inputText.text.isEmpty()) {
+    Column(
+        modifier = modifier.onPreviewKeyEvent { event ->
+            if (event.type == KeyEventType.KeyDown && 
+                !event.isMetaPressed &&
+                event.key != Key.Enter &&
+                event.key != Key.NumPadEnter
+            ) {
+                val char = event.utf16CodePoint.toChar()
+                val isPrintable = char.isLetterOrDigit() || 
+                                  char.isWhitespace() || 
+                                  "!@#$%^&*()_+-=[]{}|;':\",./<>?`~\\".contains(char)
+
+                if (isPrintable) {
+                    focusRequester.requestFocus()
+                    val newText = inputText.text + char
+                    onInputChange(TextFieldValue(newText, TextRange(newText.length)))
+                    return@onPreviewKeyEvent true
+                }
+            }
+            false
+        }
+    ) {
+        if (messages.isEmpty() && !isProcessing) {
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(top = 24.dp),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "Попробуйте спросить:",
-                        color = textColor.copy(0.5f),
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    randomTips.forEach { tip ->
-                        Text(
-                            text = "• $tip",
-                            color = textColor.copy(0.7f),
-                            fontSize = 14.sp,
-                            modifier = Modifier
-                                .clickable { 
-                                    onInputChange(TextFieldValue(tip, TextRange(tip.length))) 
-                                }
-                                .padding(vertical = 4.dp)
-                        )
-                    }
-                }
-            }
-        } else if (messages.isEmpty() && !isProcessing) {
-            Box(modifier = Modifier.weight(1f))
+            )
         } else {
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(top = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(vertical = 8.dp)
+                    .padding(top = 0.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(vertical = 12.dp)
             ) {
                 items(messages, key = { it.id }) { message ->
-                    ChatBubble(message = message, isWindowFocused = isWindowFocused)
+                    ChatBubble(
+                        message = message, 
+                        onShowSnack = onShowSnack
+                    )
                 }
 
                 if (isProcessing) {
@@ -601,34 +604,42 @@ fun ChatModeContent(
             onSend = onSendMessage,
             enabled = !isProcessing,
             focusRequester = focusRequester,
+            placeholder = "Введите сообщение...",
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 8.dp, bottom = 20.dp)
+                .padding(top = 12.dp)
         )
     }
 }
 
 
 @Composable
-private fun ChatBubble(message: ChatMessage, isWindowFocused: Boolean) {
-    val textColor = MaterialTheme.glassColors.textPrimary
-    val userBubbleColor = MaterialTheme.colorScheme.primary
-    val botBubbleColor = MaterialTheme.glassColors.backgroundTop
-
-    val focusAlpha = if (isWindowFocused) 1f else 0.4f
-    
-    val bubbleShape = RoundedCornerShape(
-        topStart = 16.dp,
-        topEnd = 16.dp,
-        bottomStart = if (message.isUser) 16.dp else 4.dp,
-        bottomEnd = if (message.isUser) 4.dp else 16.dp
-    )
-    
-    val backgroundColor = if (message.isUser) {
-        userBubbleColor.copy(alpha = focusAlpha)
+private fun ChatBubble(
+    message: ChatMessage, 
+    onShowSnack: (String) -> Unit
+) {
+    val bubbleShape = if (message.isUser) {
+        RoundedCornerShape(
+            topStart = 16.dp,
+            topEnd = 16.dp,
+            bottomStart = 16.dp,
+            bottomEnd = 4.dp
+        )
     } else {
-        botBubbleColor.copy(alpha = focusAlpha * 0.8f)
+        RoundedCornerShape(
+            topStart = 16.dp,
+            topEnd = 16.dp,
+            bottomStart = 4.dp,
+            bottomEnd = 16.dp
+        )
     }
+
+    val bubbleBorderColor = if (message.isUser) {
+        ChatUserBubbleBorderColor
+    } else {
+        ChatAssistantBubbleBorderColor
+    }
+
     val alignment = if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart
     
     Box(
@@ -637,23 +648,117 @@ private fun ChatBubble(message: ChatMessage, isWindowFocused: Boolean) {
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 340.dp)
+                .widthIn(max = 600.dp)
                 .clip(bubbleShape)
-                .background(backgroundColor)
-                .border(0.5.dp, textColor.copy(0.1f * focusAlpha), bubbleShape)
+                .background(
+                    brush = if (message.isUser) {
+                        Brush.linearGradient(
+                            colors = listOf(
+                                ChatUserBubbleGradientStart,
+                                ChatUserBubbleGradientEnd
+                            )
+                        )
+                    } else {
+                        Brush.linearGradient(
+                            colors = listOf(
+                                ChatAssistantBubbleBackground,
+                                ChatAssistantBubbleBackground
+                            )
+                        )
+                    }
+                )
+                .border(1.dp, bubbleBorderColor, bubbleShape)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            Text(
-                text = message.text,
-                color = textColor.copy(alpha = focusAlpha),
-                fontSize = 14.sp,
-                lineHeight = 19.sp
-            )
+            if (message.isUser) {
+                val customSelectionColors = TextSelectionColors(
+                    handleColor = Color(255, 255, 255, 255),
+                    backgroundColor = Color(255, 255, 255, (255 * 0.4f).toInt())
+                )
+
+                CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
+                    SelectionContainer {
+                        Text(
+                            text = message.text,
+                            color = ChatUserTextColor,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            modifier = Modifier.padding(bottom = 3.dp)
+                        )
+                    }
+                }
+            } else {
+                val parts = remember(message.text) { parseMarkdownContent(message.text) }
+                val baseFontSize = 14.sp
+                val baseStyle = TextStyle(
+                    color = ChatAssistantTextColor,
+                    fontSize = baseFontSize,
+                    lineHeight = 20.sp
+                )
+                val codeStyle = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = baseFontSize * 0.9,
+                    color = Color(0xFFE0E0E0)
+                )
+                
+                val bubbleTypography = DefaultMarkdownTypography(
+                    h1 = MaterialTheme.typography.titleMedium.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+                    h2 = MaterialTheme.typography.titleSmall.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+                    h3 = MaterialTheme.typography.titleSmall.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+                    h4 = MaterialTheme.typography.bodyLarge.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+                    h5 = MaterialTheme.typography.bodyMedium.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+                    h6 = MaterialTheme.typography.bodyMedium.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+                    text = baseStyle,
+                    paragraph = baseStyle,
+                    code = codeStyle,
+                    inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color.White.copy(0.1f)),
+                    quote = baseStyle.copy(color = Color.Gray, fontStyle = FontStyle.Italic),
+                    bullet = baseStyle.copy(fontWeight = FontWeight.Bold),
+                    list = baseStyle,
+                    ordered = baseStyle,
+                    link = baseStyle.copy(color = Color(0xFF82B1FF), textDecoration = TextDecoration.Underline)
+                )
+                
+                val bubbleColors = DefaultMarkdownColors(
+                    text = baseStyle.color,
+                    codeText = Color(0xFFE0E0E0),
+                    codeBackground = Color.Black.copy(alpha = 0.4f),
+                    inlineCodeText = Color(0xFF81D4FA),
+                    inlineCodeBackground = Color.White.copy(alpha = 0.1f),
+                    dividerColor = baseStyle.color.copy(alpha = 0.2f),
+                    linkText = Color(0xFF82B1FF)
+                )
+
+                SelectionContainer {
+                    Column {
+                        parts.forEach { part ->
+                            when (part) {
+                                is MarkdownPart.TextContent -> {
+                                    Markdown(
+                                        content = part.content,
+                                        colors = bubbleColors,
+                                        typography = bubbleTypography,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                is MarkdownPart.CodeContent -> {
+                                    CodeBlockWithCopy(
+                                        code = part.code,
+                                        language = part.language,
+                                        style = codeStyle
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             Text(
                 text = formatTimestamp(message.timestamp),
-                color = textColor.copy(0.4f * focusAlpha),
-                fontSize = 10.sp,
-                modifier = Modifier.padding(top = 3.dp)
+                color = if (message.isUser) ChatUserTimestampColor else ChatAssistantTimestampColor,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 0.dp)
             )
         }
     }
@@ -666,24 +771,23 @@ private fun ChatInputField(
     onSend: () -> Unit,
     enabled: Boolean,
     focusRequester: FocusRequester,
+    placeholder: String = "Введите сообщение...",
     modifier: Modifier = Modifier
 ) {
-    val textColor = MaterialTheme.glassColors.textPrimary
-    val accentColor = MaterialTheme.colorScheme.primary
-    val borderColor = textColor.copy(alpha = 0.15f)
-    val bgColor = MaterialTheme.glassColors.backgroundTop.copy(alpha = 0.4f)
+    val hasText = value.text.isNotBlank() && enabled
+    val inputShape = RoundedCornerShape(24.dp)
     
     Row(
         modifier = modifier
             .heightIn(min = 44.dp, max = 120.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(bgColor)
-            .border(0.5.dp, borderColor, RoundedCornerShape(22.dp))
-            .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
+            .clip(inputShape)
+            .background(ChatInputBackground)
+            .border(1.dp, ChatInputBorderColor, inputShape)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
             .onPreviewKeyEvent { event ->
                 when {
                     event.type == KeyEventType.KeyDown && event.key == Key.Enter && !event.isShiftPressed -> {
-                        if (value.text.isNotBlank() && enabled) {
+                        if (hasText) {
                             onSend()
                         }
                         true
@@ -705,8 +809,8 @@ private fun ChatInputField(
         ) {
             if (value.text.isEmpty()) {
                 Text(
-                    "Введите сообщение...",
-                    color = textColor.copy(0.35f),
+                    placeholder,
+                    color = ChatInputPlaceholderColor,
                     fontSize = 14.sp
                 )
             }
@@ -715,13 +819,13 @@ private fun ChatInputField(
                 onValueChange = onValueChange,
                 enabled = enabled,
                 textStyle = TextStyle(
-                    color = textColor,
+                    color = ChatInputTextColor,
                     fontSize = 14.sp,
                     lineHeight = 20.sp
                 ),
                 singleLine = false,
                 maxLines = 5,
-                cursorBrush = SolidColor(accentColor),
+                cursorBrush = SolidColor(ChatSendButtonActiveIconColor),
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focusRequester)
@@ -732,16 +836,16 @@ private fun ChatInputField(
         
         Box(
             modifier = Modifier
-                .size(34.dp)
+                .size(32.dp)
                 .clip(CircleShape)
-                .background(if (value.text.isNotBlank() && enabled) accentColor else textColor.copy(0.08f))
-                .clickable(enabled = value.text.isNotBlank() && enabled) { onSend() },
+                .background(if (hasText) ChatSendButtonActiveBackground else ChatSendButtonInactiveBackground)
+                .clickable(enabled = hasText) { onSend() },
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Rounded.ArrowUpward,
                 contentDescription = "Отправить",
-                tint = if (value.text.isNotBlank() && enabled) Color.Black else textColor.copy(0.25f),
+                tint = if (hasText) ChatSendButtonActiveIconColor else ChatSendButtonInactiveIconColor,
                 modifier = Modifier.size(18.dp)
             )
         }
@@ -753,100 +857,7 @@ private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.L
 private fun formatTimestamp(timestamp: Long): String = 
     timestampFormatter.format(java.util.Date(timestamp))
 
-fun parseMarkdownContent(input: String): List<MarkdownPart> {
-    val parts = mutableListOf<MarkdownPart>()
-    @Suppress("RegExpRedundantEscape")
-    val regex = Regex("```([\\w\\+\\-\\.\\s]*)\\n([\\s\\S]*?)```")
 
-    var lastIndex = 0
-    regex.findAll(input).forEach { match ->
-        val textBefore = input.substring(lastIndex, match.range.first)
-        if (textBefore.isNotBlank()) {
-            parts.add(MarkdownPart.TextContent(textBefore))
-        }
-
-        val rawLang = match.groupValues[1].trim()
-        val code = match.groupValues[2].trimEnd()
-
-        parts.add(MarkdownPart.CodeContent(rawLang, code))
-        lastIndex = match.range.last + 1
-    }
-
-    if (lastIndex < input.length) {
-        val textAfter = input.substring(lastIndex)
-        if (textAfter.isNotBlank()) {
-            parts.add(MarkdownPart.TextContent(textAfter))
-        }
-    }
-
-    return parts
-}
-
-@Composable
-fun CodeBlockWithCopy(
-    code: String,
-    language: String?,
-    style: TextStyle,
-    onShowSnack: (String) -> Unit
-) {
-    val clipboardManager = LocalClipboardManager.current
-    val displayLang = if (!language.isNullOrBlank()) language.uppercase() else "CODE"
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color.Black.copy(alpha = 0.4f))
-            .border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(8.dp))
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White.copy(0.05f))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = displayLang,
-                    style = TextStyle(
-                        color = Color.White.copy(0.4f),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                )
-
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .clickable {
-                            clipboardManager.setText(AnnotatedString(code))
-                            onShowSnack("Код скопирован")
-                        }
-                        .padding(4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.ContentCopy,
-                        contentDescription = "Copy code",
-                        tint = Color.White.copy(0.6f),
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
-
-            Text(
-                text = code,
-                style = style,
-                modifier = Modifier.padding(12.dp)
-            )
-        }
-    }
-}
 
 @Composable
 fun MinimalGlassButton(

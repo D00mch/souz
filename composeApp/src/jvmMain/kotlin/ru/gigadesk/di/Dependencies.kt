@@ -51,6 +51,7 @@ import ru.gigadesk.tool.files.*
 import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
+import ru.gigadesk.tool.math.ToolCalculator
 
 private object DiTags {
     const val MODULE_MAIN = "main"
@@ -126,6 +127,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolDownloadFile(instance()) }
     bindSingleton { ToolTakeScreenshot(ToolRunBashCommand) }
     bindSingleton { ToolStartScreenRecording(ToolRunBashCommand) }
+    bindSingleton { ToolCalculator() }
 
     // Excel tools
     bindSingleton { ExcelRead(instance()) }

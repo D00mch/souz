@@ -25,6 +25,7 @@ enum class ToolCategory {
     CALENDAR,
     MAIL,
     TEXT_REPLACE,
+    CALCULATOR,
     CHAT,
     DESKTOP,
 }
@@ -127,6 +128,12 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("сделай скриншот|заскринь|скриншот|сфоткай экран|screenshot|capture screen"), 2.0),
             WeightedRegex(Regex("запись экрана|запиши экран|screen recording|record screen|видео экрана"), 2.0),
             WeightedRegex(Regex("рабочий стол|desktop"), 1.0),
+        )
+
+        ToolCategory.CALCULATOR -> listOf(
+            WeightedRegex(Regex("calculate|посчитай|вычисли|сколько будет|реши|math|count"), 2.0),
+            WeightedRegex(Regex("calculator|калькулятор"), 1.5),
+            WeightedRegex(Regex("\\d+\\s*[+\\-*/^]\\s*\\d+"), 1.5), // Simple math expressions
         )
     }
 

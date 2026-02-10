@@ -272,14 +272,36 @@ fun ThinkingItem(
                          
                          Spacer(Modifier.height(8.dp))
                          
-                         Text(
-                             text = content,
-                             style = MaterialTheme.typography.bodyMedium,
-                             color = Color.White.copy(0.8f),
-                             lineHeight = 18.sp,
-                             maxLines = 10,
-                             overflow = TextOverflow.Ellipsis
+
+                         val parts = remember(content) { ru.gigadesk.ui.common.parseMarkdownContent(content) }
+                         val codeStyle = MaterialTheme.typography.bodyMedium.copy(
+                             fontFamily = FontFamily.Monospace,
+                             color = Color(0xFFE0E0E0),
+                             fontSize = 12.sp
                          )
+
+                         Column {
+                             parts.forEach { part ->
+                                 when (part) {
+                                     is ru.gigadesk.ui.common.MarkdownPart.TextContent -> {
+                                         Text(
+                                             text = part.content,
+                                             style = MaterialTheme.typography.bodyMedium,
+                                             color = Color.White.copy(0.8f),
+                                             lineHeight = 18.sp,
+                                             overflow = TextOverflow.Ellipsis
+                                         )
+                                     }
+                                     is ru.gigadesk.ui.common.MarkdownPart.CodeContent -> {
+                                         ru.gigadesk.ui.common.CodeBlockWithCopy(
+                                             code = part.code,
+                                             language = part.language,
+                                             style = codeStyle
+                                         )
+                                     }
+                                 }
+                             }
+                         }
                          
                          Spacer(Modifier.height(12.dp))
                          

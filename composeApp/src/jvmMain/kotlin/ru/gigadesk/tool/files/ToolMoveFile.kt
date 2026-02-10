@@ -12,10 +12,8 @@ import ru.gigadesk.tool.ToolSetup
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProviderImpl
 import java.io.File
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.LinkOption
-import java.nio.file.StandardCopyOption
 
 class ToolMoveFile(
     private val filesToolUtil: FilesToolUtil,
@@ -93,14 +91,10 @@ class ToolMoveFile(
         if (!Files.isWritable(destinationParent.toPath())) {
             throw BadInputException("Destination directory is not writable: ${destinationParent.path}")
         }
-        try {
-            Files.move(sourcePath, destinationPath, StandardCopyOption.ATOMIC_MOVE)
-        } catch (exception: AtomicMoveNotSupportedException) {
-            l.warn("Failed to make an atomic move", exception)
-            Files.move(sourcePath, destinationPath)
-        }
+        filesToolUtil.moveWithAtomicFallback(sourcePath, destinationPath, l)
         return "File moved to ${input.destinationPath}"
     }
+
 }
 
 fun main() {
