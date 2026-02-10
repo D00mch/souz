@@ -465,6 +465,8 @@ class GraphAgentToolScenariosIntegrationTest {
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCreatePlotFromCsv> { toolCreatePlotFromCsv }
+            bindSingleton<ToolListFiles> { toolListFiles }
+            bindSingleton<ExcelRead> { excelRead }
         }
         coVerify(exactly = 1) {
             toolCreatePlotFromCsv.invoke(match { it.path.contains("sample.csv") })
@@ -641,6 +643,8 @@ class GraphAgentToolScenariosIntegrationTest {
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolMoveFile> { toolMoveFile }
+            bindSingleton<ToolListFiles> { toolListFiles }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
         }
         coVerify(exactly = 1) {
             toolMoveFile.invoke(match { it.sourcePath.contains("README") && it.destinationPath.contains("dest") })
@@ -689,6 +693,8 @@ class GraphAgentToolScenariosIntegrationTest {
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolReadPdfPages> { toolReadPdfPages }
+            bindSingleton<ToolListFiles> { toolListFiles }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
         }
         coVerify(exactly = 1) {
             toolReadPdfPages.invoke(match { it.filePath.contains("sample") })
@@ -773,13 +779,21 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolMailUnreadMessagesCount: ToolMailUnreadMessagesCount =
             spyk(ToolMailUnreadMessagesCount(ToolRunBashCommand))
         val toolMailListMessages: ToolMailListMessages = spyk(ToolMailListMessages(ToolRunBashCommand))
+        val toolMailSearch: ToolMailSearch = spyk(ToolMailSearch(ToolRunBashCommand))
 
-        coEvery { toolMailUnreadMessagesCount.invoke(any()) } returns "0"
-        coEvery { toolMailListMessages.invoke(any()) } returns "[]"
+        coEvery { toolMailUnreadMessagesCount.invoke(any()) } returns "1"
+        coEvery { toolMailListMessages.invoke(any()) } returns """
+            ID: 50101 | From: Test Contact <test@example.com> | Subject: Отчет за сегодня
+            ID: 50002 | From: Service Bot <noreply@example.com> | Subject: Daily digest
+        """.trimIndent()
+        coEvery { toolMailSearch.invoke(any()) } returns """
+            ID: 50101 | From: Test Contact <test@example.com> | Subject: Отчет за сегодня
+        """.trimIndent()
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolMailUnreadMessagesCount> { toolMailUnreadMessagesCount }
             bindSingleton<ToolMailListMessages> { toolMailListMessages }
+            bindSingleton<ToolMailSearch> { toolMailSearch }
         }
         coVerify(exactly = 1) { toolMailUnreadMessagesCount.invoke(any()) }
         coVerify(exactly = 1) { toolMailListMessages.invoke(any()) }
@@ -795,11 +809,16 @@ class GraphAgentToolScenariosIntegrationTest {
     )
     fun scenario21_sendEmail(userPrompt: String) = runTest {
         val toolMailSendNewMessage: ToolMailSendNewMessage = spyk(ToolMailSendNewMessage(ToolRunBashCommand))
+        val toolMailSearch: ToolMailSearch = spyk(ToolMailSearch(ToolRunBashCommand))
 
         coEvery { toolMailSendNewMessage.invoke(any()) } returns "Sent"
+        coEvery { toolMailSearch.invoke(any()) } returns """
+            ID: 50101 | From: Test Contact <test@example.com> | Subject: Переписка по тестам
+        """.trimIndent()
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolMailSendNewMessage> { toolMailSendNewMessage }
+            bindSingleton<ToolMailSearch> { toolMailSearch }
         }
         coVerify(exactly = 1) {
             toolMailSendNewMessage.invoke(match { it.recipientAddress.contains("test@example.com") })
@@ -834,13 +853,16 @@ class GraphAgentToolScenariosIntegrationTest {
     fun excelRead_overview(userPrompt: String) = runTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
         coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
         coEvery { excelRead.invoke(any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
+        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx"]"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelRead> { excelRead }
             bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolListFiles> { toolListFiles }
         }
         coVerify(atLeast = 1) {
             excelRead.invoke(match { it.path.contains("sales") && it.operation == ExcelRead.ReadOperation.STRUCTURE })
@@ -856,13 +878,19 @@ class GraphAgentToolScenariosIntegrationTest {
     fun excelRead_query(userPrompt: String) = runTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
         coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
-        coEvery { excelRead.invoke(any()) } returns """[{"Date":"2024-01-01","Amount":"1500"}]"""
+        coEvery { excelRead.invoke(any()) } returns """[
+            |{"Date":"2024-01-01","Amount":"1500"}
+            |{"Date":"2023-02-03","Amount":"2500"}
+            |]""".trimMargin()
+        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx"]"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelRead> { excelRead }
             bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolListFiles> { toolListFiles }
         }
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
@@ -882,13 +910,19 @@ class GraphAgentToolScenariosIntegrationTest {
     fun excelRead_sort(userPrompt: String) = runTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
         coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
-        coEvery { excelRead.invoke(any()) } returns """[{"Date":"2024-01-01","Amount":"1500"}]"""
+        coEvery { excelRead.invoke(any()) } returns """[
+            |{"Date":"2024-01-01","Amount":"1500"}
+            |{"Date":"2023-02-03","Amount":"2500"}
+            |]""".trimMargin()
+        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx"]"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelRead> { excelRead }
             bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolListFiles> { toolListFiles }
         }
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
@@ -908,13 +942,16 @@ class GraphAgentToolScenariosIntegrationTest {
     fun excelRead_cell(userPrompt: String) = runTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
         coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
         coEvery { excelRead.invoke(any()) } returns "1500"
+        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx"]"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelRead> { excelRead }
             bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolListFiles> { toolListFiles }
         }
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
@@ -943,6 +980,7 @@ class GraphAgentToolScenariosIntegrationTest {
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelRead> { excelRead }
             bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolListFiles> { toolListFiles }
         }
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
@@ -963,10 +1001,17 @@ class GraphAgentToolScenariosIntegrationTest {
     ])
     fun excelReport_newFile(userPrompt: String) = runTest {
         val excelReport: ExcelReport = spyk(ExcelReport(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
+
         coEvery { excelReport.invoke(any()) } returns "Created report.xlsx"
+        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx", "~/sales.xlsx"]"""
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[]"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelReport> { excelReport }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolListFiles> { toolListFiles }
         }
         coVerify(atLeast = 1) {
             excelReport.invoke(match {
@@ -984,10 +1029,17 @@ class GraphAgentToolScenariosIntegrationTest {
     ])
     fun excelReport_withData(userPrompt: String) = runTest {
         val excelReport: ExcelReport = spyk(ExcelReport(filesUtil))
+        val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
+
         coEvery { excelReport.invoke(any()) } returns "Created report stats.xlsx"
+        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx", "~/sales.xlsx"]"""
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[]"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelReport> { excelReport }
+            bindSingleton<ToolFindFilesByName> { toolFindFiles }
+            bindSingleton<ToolListFiles> { toolListFiles }
         }
         coVerify(atLeast = 1) {
             excelReport.invoke(match {

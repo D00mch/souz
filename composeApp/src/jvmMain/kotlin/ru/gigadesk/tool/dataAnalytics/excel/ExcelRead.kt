@@ -116,7 +116,7 @@ class ExcelRead(
             when (input.operation) {
                 ReadOperation.STRUCTURE -> readStructure(sheet)
                 ReadOperation.QUERY -> readQuery(sheet, input)
-                ReadOperation.CELL -> readCell(sheet, input.range ?: throw BadInputException("range required for CELL"))
+                ReadOperation.CELL -> readCell(sheet, input.range ?: "${input.returnColumn}:${input.returnColumn}")
                 ReadOperation.LOOKUP -> readLookup(sheet, input)
             }
         }
