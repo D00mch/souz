@@ -296,8 +296,7 @@ fun ThinkingItem(
                                          ru.gigadesk.ui.common.CodeBlockWithCopy(
                                              code = part.code,
                                              language = part.language,
-                                             style = codeStyle,
-                                             onShowSnack = {} // Snackbars might be hard to show from here, maybe ignore for now or hoist
+                                             style = codeStyle
                                          )
                                      }
                                  }

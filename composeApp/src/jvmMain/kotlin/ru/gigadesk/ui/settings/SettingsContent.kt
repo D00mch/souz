@@ -1119,22 +1119,33 @@ fun TokensBalanceSection(
                 color = SettingsDescriptionColor,
             )
 
-            else -> Row(
+            else -> Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 balance.forEach { item ->
-                    Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
                             text = item.usage,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = SettingsDescriptionColor,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            color = SettingsStrongTextColor.copy(alpha = 0.9f),
                         )
                         Text(
                             text = item.value.toString(),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = SettingsStrongTextColor,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                fontWeight = FontWeight.Normal
+                            ),
+                            color = SettingsStrongTextColor.copy(alpha = 0.7f),
                         )
                     }
                 }

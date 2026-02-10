@@ -8,10 +8,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,28 +29,101 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 sealed class MarkdownPart {
     data class TextContent(val content: String) : MarkdownPart()
     data class CodeContent(val language: String, val code: String) : MarkdownPart()
 }
 
+private data class FenceInfo(
+    val language: String,
+    val inlineCodePrefix: String?
+)
+
+private val KnownFenceLanguages = listOf(
+    "typescript",
+    "javascript",
+    "markdown",
+    "kotlin",
+    "python",
+    "dockerfile",
+    "yaml",
+    "json",
+    "bash",
+    "shell",
+    "sql",
+    "java",
+    "swift",
+    "scala",
+    "groovy",
+    "csharp",
+    "cpp",
+    "c",
+    "rust",
+    "go",
+    "php",
+    "ruby",
+    "perl",
+    "lua",
+    "xml",
+    "html",
+    "css",
+    "toml",
+    "ini",
+    "sh",
+)
+
+private fun parseFenceInfo(rawInfoLine: String): FenceInfo {
+    val info = rawInfoLine.trim()
+    if (info.isEmpty()) {
+        return FenceInfo(language = "", inlineCodePrefix = null)
+    }
+
+    val firstToken = info.takeWhile { !it.isWhitespace() }
+    val rest = info.removePrefix(firstToken).trimStart()
+    val normalizedToken = firstToken.lowercase()
+
+    if (KnownFenceLanguages.contains(normalizedToken)) {
+        return FenceInfo(
+            language = normalizedToken,
+            inlineCodePrefix = rest.ifBlank { null }
+        )
+    }
+
+    val gluedLanguage = KnownFenceLanguages
+        .firstOrNull { lang -> normalizedToken.startsWith(lang) && normalizedToken.length > lang.length }
+
+    if (gluedLanguage != null) {
+        val gluedRemainder = firstToken.substring(gluedLanguage.length)
+        val inline = listOf(gluedRemainder, rest)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .trim()
+        return FenceInfo(
+            language = gluedLanguage,
+            inlineCodePrefix = inline.ifBlank { null }
+        )
+    }
+
+    val language = Regex("^[A-Za-z0-9_+.-]+")
+        .find(firstToken)
+        ?.value
+        ?.lowercase()
+        .orEmpty()
+    return FenceInfo(
+        language = language,
+        inlineCodePrefix = rest.ifBlank { null }
+    )
+}
+
 fun parseMarkdownContent(input: String): List<MarkdownPart> {
     val parts = mutableListOf<MarkdownPart>()
-    // Enhanced regex to be more flexible with language identifier and newlines
-    // Captures:
-    // 1. Language identifier (optional, can be followed by newline or space)
-    // 2. Code content
-    // Regex explanation:
-    // ```Strart of block
-    // ([\w\+\-\.\t ]*)   -> Group 1: Language identifier (optional). letters, numbers, +, -, ., space/tab.
-    // (?:\r?\n)?         -> Optional newline after language. Non-capturing.
-    // ([\s\S]*?)         -> Group 2: Code content. Non-greedy match of any character including newlines.
-    // ```                -> End of block
-    @Suppress("RegExpRedundantEscape")
-    val regex = Regex("```([\\w\\+\\-\\.\\t ]*)(?:\\r?\\n)?([\\s\\S]*?)```")
-
-
+    // Ищем только корректные fenced code blocks:
+    // - fence открывается с начала строки
+    // - info string и код разделены переводом строки
+    // - fence закрывается на отдельной строке
+    val regex = Regex("(?m)^[\\t ]{0,3}```([^\\r\\n`]*)[\\t ]*\\r?\\n([\\s\\S]*?)\\r?\\n[\\t ]{0,3}```[\\t ]*(?=\\r?\\n|$)")
     var lastIndex = 0
     regex.findAll(input).forEach { match ->
         val textBefore = input.substring(lastIndex, match.range.first)
@@ -52,25 +131,15 @@ fun parseMarkdownContent(input: String): List<MarkdownPart> {
             parts.add(MarkdownPart.TextContent(textBefore))
         }
 
-        val rawInfoLine = match.groupValues[1]
-        val rawCode = match.groupValues[2]
-
-        // Heuristic: If info string contains space, split it.
-        // First part is language, rest is code.
-        // Unless it's a known multi-word language like "python 3" (rarely used as such in markdown, usually just python).
-        // Standard markdown: first word is language.
-        
-        val sequence = rawInfoLine.trim().split(Regex("[\\s]+"), limit = 2)
-        val lang = sequence.firstOrNull() ?: ""
-        val extra = sequence.drop(1).firstOrNull()
-        
-        val code = if (extra != null) {
-             extra + "\n" + rawCode
+        val fenceInfo = parseFenceInfo(match.groupValues[1])
+        val codeBody = match.groupValues[2].trimEnd('\r', '\n')
+        val code = if (!fenceInfo.inlineCodePrefix.isNullOrBlank()) {
+            "${fenceInfo.inlineCodePrefix}\n$codeBody".trimEnd('\r', '\n')
         } else {
-             rawCode
+            codeBody
         }
 
-        parts.add(MarkdownPart.CodeContent(lang, code.trimEnd()))
+        parts.add(MarkdownPart.CodeContent(fenceInfo.language, code))
         lastIndex = match.range.last + 1
     }
 
@@ -89,10 +158,17 @@ fun CodeBlockWithCopy(
     code: String,
     language: String?,
     style: TextStyle,
-    onShowSnack: (String) -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
     val displayLang = if (!language.isNullOrBlank()) language.uppercase() else "CODE"
+    var copied by remember(code) { mutableStateOf(false) }
+
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1200)
+            copied = false
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -129,14 +205,14 @@ fun CodeBlockWithCopy(
                             .background(Color.White.copy(0.15f)) // More visible button bg
                             .clickable {
                                 clipboardManager.setText(AnnotatedString(code))
-                                onShowSnack("Код скопирован")
+                                copied = true
                             }
                             .padding(7.dp), // Icon padding
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.ContentCopy,
-                            contentDescription = "Copy code",
+                            imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                            contentDescription = if (copied) "Copied" else "Copy code",
                             tint = Color.White, // Pure white icon
                             modifier = Modifier.fillMaxSize()
                         )

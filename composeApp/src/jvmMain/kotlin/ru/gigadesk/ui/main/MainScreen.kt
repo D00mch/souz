@@ -485,8 +485,7 @@ fun MarkdownViewer(
                         CodeBlockWithCopy(
                             code = part.code,
                             language = part.language,
-                            style = codeStyle,
-                            onShowSnack = onShowSnack
+                            style = codeStyle
                         )
                     }
                 }
@@ -746,8 +745,7 @@ private fun ChatBubble(
                                     CodeBlockWithCopy(
                                         code = part.code,
                                         language = part.language,
-                                        style = codeStyle,
-                                        onShowSnack = onShowSnack
+                                        style = codeStyle
                                     )
                                 }
                             }
