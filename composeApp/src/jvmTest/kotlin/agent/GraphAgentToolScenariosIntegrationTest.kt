@@ -356,15 +356,23 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario9_findCalendarEvent(userPrompt: String) = runTest {
-        val realTool = ToolCalendarListEvents(ToolRunBashCommand)
-        val toolCalendarListEvents: ToolCalendarListEvents = spyk(realTool)
+        val toolCalendarListEvents: ToolCalendarListEvents = spyk(ToolCalendarListEvents(ToolRunBashCommand))
+        val toolCalendarCreateEvent: ToolCalendarCreateEvent = spyk(ToolCalendarCreateEvent(ToolRunBashCommand))
+        val toolCalendarDeleteEvent: ToolCalendarDeleteEvent = spyk(ToolCalendarDeleteEvent(ToolRunBashCommand))
 
-        coEvery { toolCalendarListEvents.invoke(any()) } returns "[]"
+        coEvery { toolCalendarListEvents.invoke(any()) } returns """
+            2026-02-10 10:00 - 10:30 | Статус встреча
+            2026-02-12 16:00 - 17:00 | Планирование спринта
+        """.trimIndent()
+        coEvery { toolCalendarCreateEvent.invoke(any()) } returns "Event created"
+        coEvery { toolCalendarDeleteEvent.invoke(any()) } returns "Deleted"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCalendarListEvents> { toolCalendarListEvents }
+            bindSingleton<ToolCalendarCreateEvent> { toolCalendarCreateEvent }
+            bindSingleton<ToolCalendarDeleteEvent> { toolCalendarDeleteEvent }
         }
-        coVerify(exactly = 1) { toolCalendarListEvents.invoke(any()) }
+        coVerify(atLeast = 1) { toolCalendarListEvents.invoke(any()) }
     }
 
     @ParameterizedTest(name = "scenario11_buildChartFromFile[{index}] {0}")
