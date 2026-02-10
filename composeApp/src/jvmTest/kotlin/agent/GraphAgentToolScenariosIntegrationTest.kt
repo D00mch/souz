@@ -61,6 +61,7 @@ class GraphAgentToolScenariosIntegrationTest {
             every { forbiddenFolders } returns emptyList()
             every { useStreaming } returns false
             every { gigaModel } returns selectedModel
+            every { requestTimeoutMillis } returns 25_000L
             every { temperature } returns 0.2f
             every { systemPrompt } returns DEFAULT_SYSTEM_PROMPT
         }

@@ -104,7 +104,7 @@ fun String.toFinishReason(): GigaResponse.FinishReason? {
     return runCatching { GigaResponse.FinishReason.valueOf(this) }.getOrNull()
 }
 
-const val MAX_TOKENS = 8192
+const val MAX_TOKENS = 16384
 
 enum class LlmProvider {
     GIGA,
@@ -129,6 +129,7 @@ enum class GigaModel(
     Max("GigaChat Max", "GigaChat-Max", MAX_TOKENS, LlmProvider.GIGA),
     QwenFlash("Qwen Flash", "qwen-flash", 32_768, LlmProvider.QWEN),
     QwenPlus("Qwen Plus", "qwen-plus", 32_768, LlmProvider.QWEN),
+    Qwen3OpenSource("Qwen3 open source", "qwen3-vl-32b-instruct", 32_768, LlmProvider.QWEN),
     QwenMax("Qwen Max", "qwen-max", 32_768, LlmProvider.QWEN),
     AiTunnelGpt4oMini("AI-Tunnel: gpt-4o-mini", "gpt-4o-mini", 32_768, LlmProvider.AI_TUNNEL),
     AiTunnelGpt52Codex("AI-Tunnel: gpt-5.2-codex", "gpt-5.2-codex", 32_768, LlmProvider.AI_TUNNEL),
