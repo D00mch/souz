@@ -341,7 +341,6 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolCalendarDeleteEvent> { toolCalendarDeleteEvent }
         }
 
-        // Agent should find the event first, then delete it by title
         coVerify(atLeast = 1) { toolCalendarListEvents.invoke(any()) }
         coVerify(atLeast = 1) {
             toolCalendarDeleteEvent.invoke(match { it.title.contains("Важная встреча", ignoreCase = true) })
