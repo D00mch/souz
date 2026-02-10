@@ -1,5 +1,6 @@
 package ru.gigadesk.ui.settings
 
+import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,18 +12,21 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.apache.batik.svggen.SVGCSSStyler.style
 import org.kodein.di.compose.localDI
+import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
@@ -72,8 +76,8 @@ private fun FoldersManagementScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 24.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                    .padding(horizontal = 32.dp, vertical = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
                 Box(modifier = Modifier.fillMaxWidth()) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -81,7 +85,7 @@ private fun FoldersManagementScreen(
                             text = "Запретные папки",
                             style = MaterialTheme.typography.headlineLarge,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.glassColors.textPrimary
+                            color = Color.White.copy(alpha = 0.95f)
                         )
                         Text(
                             text = """
@@ -89,7 +93,7 @@ private fun FoldersManagementScreen(
                                 Всё вне домашней директории запрещено по умолчанию.
                             """.trimIndent(),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f)
+                            color = Color.White.copy(alpha = 0.65f)
                         )
                     }
 
@@ -113,6 +117,26 @@ private fun FoldersManagementScreen(
                     singleLine = false
                 )
             }
+        }
+    }
+}
+
+@Preview
+@Composable
+private fun FoldersManagementScreenPreview() {
+    AppTheme {
+        Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0B0E11)) {
+            FoldersManagementScreen(
+                state = FoldersManagementState(
+                    forbiddenFoldersInput = """
+                        /Users/duxx/Documents/private
+                        /Users/duxx/Downloads
+                        /Users/duxx/.ssh
+                    """.trimIndent()
+                ),
+                onFoldersChange = {},
+                onClose = {}
+            )
         }
     }
 }
