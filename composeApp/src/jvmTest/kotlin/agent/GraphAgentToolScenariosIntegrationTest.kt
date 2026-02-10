@@ -1030,6 +1030,59 @@ class GraphAgentToolScenariosIntegrationTest {
         private val testOverrideModule: DI.Module = DI.Module("TestOverrideModule") {
             bindSingleton<SettingsProvider>(overrides = true) { spySettings }
             bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
+
+            // Safe defaults: prevent accidental system mutations if a scenario doesn't explicitly mock these tools.
+            bindSingleton<ToolNewFile>(overrides = true) {
+                val tool = spyk(ToolNewFile(filesUtil))
+                coEvery { tool.invoke(any<ToolNewFile.Input>()) } returns "Created"
+                tool
+            }
+            bindSingleton<ToolModifyFile>(overrides = true) {
+                val tool = spyk(ToolModifyFile(filesUtil))
+                coEvery { tool.invoke(any<ToolModifyFile.Input>()) } returns "Modified"
+                tool
+            }
+            bindSingleton<ToolDeleteFile>(overrides = true) {
+                val tool = spyk(ToolDeleteFile(filesUtil))
+                coEvery { tool.invoke(any<ToolDeleteFile.Input>()) } returns "Deleted"
+                tool
+            }
+            bindSingleton<ToolMoveFile>(overrides = true) {
+                val tool = spyk(ToolMoveFile(filesUtil))
+                coEvery { tool.invoke(any<ToolMoveFile.Input>()) } returns "Moved"
+                tool
+            }
+            bindSingleton<ToolCreateNote>(overrides = true) {
+                val tool = spyk(ToolCreateNote(ToolRunBashCommand))
+                coEvery { tool.invoke(any<ToolCreateNote.Input>()) } returns "Created"
+                tool
+            }
+            bindSingleton<ToolDeleteNote>(overrides = true) {
+                val tool = spyk(ToolDeleteNote(ToolRunBashCommand))
+                coEvery { tool.invoke(any<ToolDeleteNote.Input>()) } returns "Deleted"
+                tool
+            }
+            bindSingleton<ToolCalendarCreateEvent>(overrides = true) {
+                val tool = spyk(ToolCalendarCreateEvent(ToolRunBashCommand))
+                coEvery { tool.invoke(any<ToolCalendarCreateEvent.Input>()) } returns "Event created"
+                tool
+            }
+            bindSingleton<ToolCalendarDeleteEvent>(overrides = true) {
+                val tool = spyk(ToolCalendarDeleteEvent(ToolRunBashCommand))
+                coEvery { tool.invoke(any<ToolCalendarDeleteEvent.Input>()) } returns "Deleted"
+                tool
+            }
+            bindSingleton<ToolMailSendNewMessage>(overrides = true) {
+                val tool = spyk(ToolMailSendNewMessage(ToolRunBashCommand))
+                coEvery { tool.invoke(any<ToolMailSendNewMessage.Input>()) } returns "Sent"
+                tool
+            }
+            bindSingleton<ToolMailReplyMessage>(overrides = true) {
+                val tool = spyk(ToolMailReplyMessage(ToolRunBashCommand))
+                coEvery { tool.invoke(any<ToolMailReplyMessage.Input>()) } returns "Replied"
+                tool
+            }
+
             bindSingleton<GigaRestChatAPI>(overrides = true) {
                 if (gigaRestChatAPI == null) {
                     gigaRestChatAPI = GigaRestChatAPI(instance(), instance(), instance()).apply {
