@@ -915,7 +915,20 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx"]"""
         coEvery { toolFindFiles.suspendInvoke(any()) } returns """["~/price.xlsx"]"""
-        coEvery { excelRead.invoke(any()) } returns "45000"
+        coEvery { excelRead.invoke(any()) } answers {
+            val input = firstArg<ExcelRead.Input>()
+            if (
+                input.path.contains("price", ignoreCase = true) &&
+                input.operation == ExcelRead.ReadOperation.LOOKUP &&
+                input.lookupValue?.contains("Ноутбук", ignoreCase = true) == true &&
+                !input.lookupColumn.isNullOrBlank() &&
+                !input.returnColumn.isNullOrBlank()
+            ) {
+                "45000"
+            } else {
+                "Error: Lookup requires operation=LOOKUP with lookupValue, lookupColumn and returnColumn."
+            }
+        }
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelRead> { excelRead }
