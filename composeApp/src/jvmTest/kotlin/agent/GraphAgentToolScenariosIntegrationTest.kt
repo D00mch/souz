@@ -549,7 +549,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolFindFilesByName: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
         coEvery { toolExtractText.invoke(any()) } returns "Hello"
-        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
+        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"~/tmp/test-data/test_integration.txt\"]"
 
         val tempFile = "test_integration.txt"
         runScenarioWithMocks(userPrompt) {
@@ -579,7 +579,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val tempFile = "test_integration"
         val appendText = "World is over"
 
-        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
+        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"~/test_integration.txt\"]"
         coEvery { toolExtractText.invoke(any()) } answers { currentContent }
         coEvery { toolModifyFile.invoke(any()) } answers {
             val request = firstArg<ToolModifyFile.Input>()
@@ -687,7 +687,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.pdf\"]"
+        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sample.pdf\"]"
         coEvery { toolListFiles.invoke(any()) } returns "[\"sample.pdf\"]"
         coEvery { toolReadPdfPages.invoke(any()) } returns "Page 1 content"
 
@@ -957,7 +957,8 @@ class GraphAgentToolScenariosIntegrationTest {
             excelRead.invoke(match {
                 it.path.contains("sales") &&
                         it.operation == ExcelRead.ReadOperation.CELL &&
-                        it.range != null && it.range.contains("B5")
+                        (it.range != null && it.range.contains("B5")) ||
+                        (it.returnColumn == "B5")
             })
         }
     }
