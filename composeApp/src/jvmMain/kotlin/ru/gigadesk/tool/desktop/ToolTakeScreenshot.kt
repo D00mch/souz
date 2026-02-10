@@ -37,17 +37,19 @@ class ToolTakeScreenshot(
 
     override fun invoke(input: Input): String {
         val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(Date())
-        val suffix = if (input.nameSuffix.isNotBlank()) "_${input.nameSuffix}" else ""
-        val fileName = "Screenshot_$timestamp$suffix.png"
+        
+        // Strict sanitization: ensure suffix only contains alphanumeric characters, underscores, or hyphens
+        val safeSuffix = if (input.nameSuffix.isNotBlank()) {
+            val sanitized = input.nameSuffix.replace(Regex("[^a-zA-Z0-9_-]"), "")
+            if (sanitized.isBlank()) "" else "_$sanitized"
+        } else ""
+
+        val fileName = "Screenshot_$timestamp$safeSuffix.png"
         val homeDir = System.getProperty("user.home")
         val desktopPath = "$homeDir/Desktop/$fileName"
         
-        // Ensure path is safe (basic check)
-        if (fileName.contains("/") || fileName.contains("\\")) {
-             throw IllegalArgumentException("Invalid filename characters")
-        }
-
-        bash.sh("screencapture -x \"$desktopPath\"")
+        // Use argument passing to avoid shell injection
+        bash.sh("screencapture -x \"$1\"", desktopPath)
         
         return "Screenshot saved to: $desktopPath"
     }
