@@ -18,6 +18,7 @@ import ru.gigadesk.tool.files.*
 import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
+import ru.gigadesk.tool.math.ToolCalculator
 
 typealias FunctionName = String
 
@@ -66,6 +67,7 @@ class ToolsFactory(di: DI) {
     private val toolTextReplace: ToolTextReplace by di.instance()
     private val toolTextUnderSelection: ToolTextUnderSelection by di.instance()
     private val toolFindFolders: ToolFindFolders by di.instance()
+    private val toolCalculator: ToolCalculator by di.instance()
 
     // Excel tools
     private val excelRead: ExcelRead by di.instance()
@@ -148,6 +150,10 @@ class ToolsFactory(di: DI) {
             toolGetClipboard.toGiga(),
             toolTextReplace.toGiga(),
             toolTextUnderSelection.toGiga(),
+        )
+
+        ToolCategory.CALCULATOR -> listOf(
+            toolCalculator.toGiga(),
         )
 
         ToolCategory.CHAT -> listOf()

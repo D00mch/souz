@@ -25,6 +25,7 @@ enum class ToolCategory {
     CALENDAR,
     MAIL,
     TEXT_REPLACE,
+    CALCULATOR,
     CHAT,
 }
 
@@ -120,6 +121,12 @@ object LocalRegexClassifier : UserMessageClassifier {
 
         ToolCategory.CHAT -> listOf(
             WeightedRegex(Regex("Кто такой|Как думаешь|Сколько .* в|Что будет если"), 1.5)
+        )
+
+        ToolCategory.CALCULATOR -> listOf(
+            WeightedRegex(Regex("calculate|посчитай|вычисли|сколько будет|реши|math|count"), 2.0),
+            WeightedRegex(Regex("calculator|калькулятор"), 1.5),
+            WeightedRegex(Regex("\\d+\\s*[+\\-*/^]\\s*\\d+"), 1.5), // Simple math expressions
         )
     }
 
