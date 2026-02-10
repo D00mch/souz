@@ -44,7 +44,6 @@ fun SettingsSidebar(
             .padding(vertical = 24.dp, horizontal = 16.dp),
         verticalArrangement = Arrangement.Top
     ) {
-        // App Title / Header
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -63,7 +62,6 @@ fun SettingsSidebar(
             )
         }
 
-        // Navigation Items
         Column(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -84,8 +82,6 @@ private fun SettingsSidebarItem(
     isActive: Boolean,
     onClick: () -> Unit
 ) {
-    // Uses a subtle transparent white for inactive hover state logic could be added here
-    // For now, active state is a distinct accent color with low opacity
     val backgroundColor = if (isActive) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
     } else {
