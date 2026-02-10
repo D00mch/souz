@@ -26,6 +26,7 @@ enum class ToolCategory {
     MAIL,
     TEXT_REPLACE,
     CHAT,
+    DESKTOP,
 }
 
 object LocalRegexClassifier : UserMessageClassifier {
@@ -120,6 +121,12 @@ object LocalRegexClassifier : UserMessageClassifier {
 
         ToolCategory.CHAT -> listOf(
             WeightedRegex(Regex("Кто такой|Как думаешь|Сколько .* в|Что будет если"), 1.5)
+        )
+
+        ToolCategory.DESKTOP -> listOf(
+            WeightedRegex(Regex("сделай скриншот|заскринь|скриншот|сфоткай экран|screenshot|capture screen"), 2.0),
+            WeightedRegex(Regex("запись экрана|запиши экран|screen recording|record screen|видео экрана"), 2.0),
+            WeightedRegex(Regex("рабочий стол|desktop"), 1.0),
         )
     }
 

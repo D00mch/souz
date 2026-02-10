@@ -124,6 +124,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolFindFolders(ToolRunBashCommand, instance()) }
     bindSingleton { ToolUploadFile(instance()) }
     bindSingleton { ToolDownloadFile(instance()) }
+    bindSingleton { ToolTakeScreenshot(ToolRunBashCommand) }
+    bindSingleton { ToolStartScreenRecording(ToolRunBashCommand) }
 
     // Excel tools
     bindSingleton { ExcelRead(instance()) }

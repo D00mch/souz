@@ -66,6 +66,8 @@ class ToolsFactory(di: DI) {
     private val toolTextReplace: ToolTextReplace by di.instance()
     private val toolTextUnderSelection: ToolTextUnderSelection by di.instance()
     private val toolFindFolders: ToolFindFolders by di.instance()
+    private val toolTakeScreenshot: ToolTakeScreenshot by di.instance()
+    private val toolStartScreenRecording: ToolStartScreenRecording by di.instance()
 
     // Excel tools
     private val excelRead: ExcelRead by di.instance()
@@ -151,6 +153,11 @@ class ToolsFactory(di: DI) {
         )
 
         ToolCategory.CHAT -> listOf()
+
+        ToolCategory.DESKTOP -> listOf(
+            toolTakeScreenshot.toGiga(),
+            toolStartScreenRecording.toGiga(),
+        )
     }.map {
         object : GigaToolSetup by it {
             override val fn: GigaRequest.Function =
