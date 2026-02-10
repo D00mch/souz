@@ -1,51 +1,52 @@
 package agent
 
+import agent.GraphAgentToolScenariosIntegrationTest.Setup.selectedModel
+import agent.GraphAgentToolScenariosIntegrationTest.Setup.spySettings
 import giga.getHttpClient
 import giga.getSessionTokenUsage
-import io.ktor.client.plugins.HttpSend
-import io.ktor.client.plugins.plugin
-import io.mockk.coEvery
-import io.mockk.coVerify
-import io.mockk.every
-import io.mockk.mockkStatic
-import io.mockk.spyk
-import io.mockk.unmockkStatic
-import ru.gigadesk.tool.ToolRunBashCommand
+import io.ktor.client.plugins.*
+import io.mockk.*
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterAll
-import org.kodein.di.DI
-import org.kodein.di.bindProvider
-import org.kodein.di.bindSingleton
-import ru.gigadesk.agent.GraphBasedAgent
-import ru.gigadesk.di.mainDiModule
-import ru.gigadesk.db.SettingsProvider
-import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.tool.application.*
-import ru.gigadesk.tool.browser.*
-import ru.gigadesk.tool.calendar.*
-import ru.gigadesk.tool.dataAnalytics.*
-import ru.gigadesk.tool.files.*
-import ru.gigadesk.tool.mail.*
-import ru.gigadesk.tool.notes.*
-import ru.gigadesk.tool.textReplace.*
-import ru.gigadesk.tool.dataAnalytics.excel.*
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.kodein.di.DI
+import org.kodein.di.bindProvider
+import org.kodein.di.bindSingleton
 import org.kodein.di.instance
-import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
+import ru.gigadesk.agent.GraphBasedAgent
+import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.DesktopInfoRepository
+import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.db.SettingsProviderImpl
-import ru.gigadesk.giga.GigaChatAPI
-import ru.gigadesk.giga.GigaModel
-import ru.gigadesk.giga.GigaRestChatAPI
-import ru.gigadesk.giga.LlmProvider
-import ru.gigadesk.giga.gigaJsonMapper
+import ru.gigadesk.di.mainDiModule
+import ru.gigadesk.giga.*
 import ru.gigadesk.llms.AiTunnelChatAPI
 import ru.gigadesk.llms.QwenChatAPI
+import ru.gigadesk.tool.ToolRunBashCommand
+import ru.gigadesk.tool.application.ToolOpen
+import ru.gigadesk.tool.application.ToolShowApps
+import ru.gigadesk.tool.browser.*
+import ru.gigadesk.tool.calendar.ToolCalendarCreateEvent
+import ru.gigadesk.tool.calendar.ToolCalendarDeleteEvent
+import ru.gigadesk.tool.calendar.ToolCalendarListEvents
+import ru.gigadesk.tool.dataAnalytics.ToolCreatePlotFromCsv
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelRead
+import ru.gigadesk.tool.dataAnalytics.excel.ExcelReport
+import ru.gigadesk.tool.files.*
+import ru.gigadesk.tool.mail.ToolMailListMessages
+import ru.gigadesk.tool.mail.ToolMailSearch
+import ru.gigadesk.tool.mail.ToolMailSendNewMessage
+import ru.gigadesk.tool.mail.ToolMailUnreadMessagesCount
+import ru.gigadesk.tool.notes.ToolCreateNote
+import ru.gigadesk.tool.notes.ToolDeleteNote
+import ru.gigadesk.tool.notes.ToolListNotes
+import ru.gigadesk.tool.notes.ToolSearchNotes
+import ru.gigadesk.tool.textReplace.ToolGetClipboard
 import java.util.concurrent.atomic.AtomicLong
 
 
@@ -56,106 +57,18 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class GraphAgentToolScenariosIntegrationTest {
 
-    private val spySettings: SettingsProviderImpl by lazy {
-        spyk(SettingsProviderImpl(ConfigStore)) {
-            every { forbiddenFolders } returns emptyList()
-            every { useStreaming } returns false
-            every { gigaModel } returns selectedModel
-            every { requestTimeoutMillis } returns 25_000L
-            every { temperature } returns 0.2f
-            every { systemPrompt } returns DEFAULT_SYSTEM_PROMPT
-        }
-    }
+    private object Setup {
+        val selectedModel = GigaModel.AiTunnelClaudeHaiku
 
-    companion object {
-        private val selectedModel = GigaModel.AiTunnelClaudeHaiku
-
-        private var gigaRestChatAPI: GigaRestChatAPI? = null
-        private var qwenChatAPI: QwenChatAPI? = null
-        private var aiTunnelChatAPI: AiTunnelChatAPI? = null
-        private val httpRequestCount = AtomicLong(0)
-        private val httpRequestTotalNanos = AtomicLong(0)
-
-        @JvmStatic
-        @AfterAll
-        fun finish() {
-            when (selectedModel.provider) {
-                LlmProvider.GIGA -> println("Spent: ${gigaRestChatAPI?.getSessionTokenUsage() ?: "n/a"}")
-                LlmProvider.QWEN -> println("Spent: ${qwenChatAPI?.getSessionTokenUsage() ?: "n/a"}")
-                LlmProvider.AI_TUNNEL -> println("Spent: ${aiTunnelChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+        val spySettings: SettingsProviderImpl by lazy {
+            spyk(SettingsProviderImpl(ConfigStore)) {
+                every { forbiddenFolders } returns emptyList()
+                every { useStreaming } returns false
+                every { gigaModel } returns selectedModel
+                every { requestTimeoutMillis } returns 25_000L
+                every { temperature } returns 0.2f
+                every { systemPrompt } returns "Будь полезен. Выполняй инструкции с помощью тулов."
             }
-            val requestCount = httpRequestCount.get()
-            if (requestCount == 0L) {
-                println("HTTP requests: 0")
-                return
-            }
-            val avgMs = httpRequestTotalNanos.get().toDouble() / requestCount / 1_000_000.0
-            println("HTTP requests: $requestCount, avg/request: ${"%.2f".format(avgMs)} ms")
-        }
-    }
-
-    private val filesUtil: FilesToolUtil by lazy { FilesToolUtil(spySettings) }
-    private val testOverrideModule: DI.Module = DI.Module("TestOverrideModule") {
-        bindSingleton<SettingsProvider>(overrides = true) { spySettings }
-        bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
-        bindSingleton<GigaRestChatAPI>(overrides = true) {
-            if (gigaRestChatAPI == null) {
-                gigaRestChatAPI = GigaRestChatAPI(instance(), instance(), instance()).apply {
-                    getHttpClient().plugin(HttpSend).intercept { request ->
-                        val startNanos = System.nanoTime()
-                        try {
-                            execute(request)
-                        } finally {
-                            httpRequestCount.incrementAndGet()
-                            httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
-                        }
-                    }
-                }
-            }
-            gigaRestChatAPI!!
-        }
-        bindSingleton<QwenChatAPI>(overrides = true) {
-            if (qwenChatAPI == null) {
-                qwenChatAPI = QwenChatAPI(instance(), instance()).apply {
-                    getHttpClient().plugin(HttpSend).intercept { request ->
-                        val startNanos = System.nanoTime()
-                        try {
-                            execute(request)
-                        } finally {
-                            httpRequestCount.incrementAndGet()
-                            httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
-                        }
-                    }
-                }
-            }
-            qwenChatAPI!!
-        }
-        bindSingleton<AiTunnelChatAPI>(overrides = true) {
-            if (aiTunnelChatAPI == null) {
-                aiTunnelChatAPI = AiTunnelChatAPI(instance(), instance()).apply {
-                    getHttpClient().plugin(HttpSend).intercept { request ->
-                        val startNanos = System.nanoTime()
-                        try {
-                            execute(request)
-                        } finally {
-                            httpRequestCount.incrementAndGet()
-                            httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
-                        }
-                    }
-                }
-            }
-            aiTunnelChatAPI!!
-        }
-        bindSingleton<GigaChatAPI>(overrides = true) {
-            when (selectedModel.provider) {
-                LlmProvider.GIGA -> instance<GigaRestChatAPI>()
-                LlmProvider.QWEN -> instance<QwenChatAPI>()
-                LlmProvider.AI_TUNNEL -> instance<AiTunnelChatAPI>()
-            }
-        }
-        bindSingleton<DesktopInfoRepository>(overrides = true) {
-            val r = DesktopInfoRepository(instance(), instance(), instance())
-            spyk(r) { coEvery { search(any(), any()) } returns emptyList() }
         }
     }
 
@@ -845,11 +758,13 @@ class GraphAgentToolScenariosIntegrationTest {
     }
 
     @ParameterizedTest(name = "excelRead_overview[{index}] {0}")
-    @ValueSource(strings = [
-        "Покажи структуру файла sales.xlsx",
-        "Какие колонки в файле sales.xlsx?",
-        "Открой превью таблицы sales.xlsx"
-    ])
+    @ValueSource(
+        strings = [
+            "Покажи структуру файла sales.xlsx",
+            "Какие колонки в файле sales.xlsx?",
+            "Открой превью таблицы sales.xlsx"
+        ]
+    )
     fun excelRead_overview(userPrompt: String) = runTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
@@ -870,11 +785,13 @@ class GraphAgentToolScenariosIntegrationTest {
     }
 
     @ParameterizedTest(name = "excelRead_query[{index}] {0}")
-    @ValueSource(strings = [
-        "Найди в sales.xlsx все продажи где Amount > 1000",
-        "Покажи строки из sales.xlsx где сумма больше 1000",
-        "Отфильтруй sales.xlsx по Amount больше 1000"
-    ])
+    @ValueSource(
+        strings = [
+            "Найди в sales.xlsx все продажи где Amount > 1000",
+            "Покажи строки из sales.xlsx где сумма больше 1000",
+            "Отфильтруй sales.xlsx по Amount больше 1000"
+        ]
+    )
     fun excelRead_query(userPrompt: String) = runTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
@@ -902,11 +819,13 @@ class GraphAgentToolScenariosIntegrationTest {
     }
 
     @ParameterizedTest(name = "excelRead_sort[{index}] {0}")
-    @ValueSource(strings = [
-        "Отсортируй продажи в sales.xlsx по Amount по убыванию",
-        "Покажи sales.xlsx сортировка по Amount DESC",
-        "Выведи данные из sales.xlsx упорядоченные по Amount"
-    ])
+    @ValueSource(
+        strings = [
+            "Отсортируй продажи в sales.xlsx по Amount по убыванию",
+            "Покажи sales.xlsx сортировка по Amount DESC",
+            "Выведи данные из sales.xlsx упорядоченные по Amount"
+        ]
+    )
     fun excelRead_sort(userPrompt: String) = runTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
@@ -934,11 +853,13 @@ class GraphAgentToolScenariosIntegrationTest {
     }
 
     @ParameterizedTest(name = "excelRead_cell[{index}] {0}")
-    @ValueSource(strings = [
-        "Покажи значение ячейки B5 в sales.xlsx",
-        "Что в ячейке B5 файла sales.xlsx?",
-        "Прочитай ячейку B5 из sales.xlsx"
-    ])
+    @ValueSource(
+        strings = [
+            "Покажи значение ячейки B5 в sales.xlsx",
+            "Что в ячейке B5 файла sales.xlsx?",
+            "Прочитай ячейку B5 из sales.xlsx"
+        ]
+    )
     fun excelRead_cell(userPrompt: String) = runTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
@@ -964,11 +885,13 @@ class GraphAgentToolScenariosIntegrationTest {
     }
 
     @ParameterizedTest(name = "excelRead_lookup[{index}] {0}")
-    @ValueSource(strings = [
-        "Найди цену товара Ноутбук в файле price.xlsx",
-        "VLOOKUP: найди в price.xlsx цену для Ноутбук",
-        "Посмотри в price.xlsx какая цена у товара Ноутбук"
-    ])
+    @ValueSource(
+        strings = [
+            "Найди цену товара Ноутбук в файле price.xlsx",
+            "VLOOKUP: найди в price.xlsx цену для Ноутбук",
+            "Посмотри в price.xlsx какая цена у товара Ноутбук"
+        ]
+    )
     fun excelRead_lookup(userPrompt: String) = runTest {
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
@@ -995,11 +918,13 @@ class GraphAgentToolScenariosIntegrationTest {
 
 
     @ParameterizedTest(name = "excelReport_newFile[{index}] {0}")
-    @ValueSource(strings = [
-        "Создай отчет report.xlsx с заголовками Имя, Телефон",
-        "Сформируй файл report.xlsx с колонками Имя, Телефон",
-        "Сделай новый отчет report.xlsx: Имя, Телефон"
-    ])
+    @ValueSource(
+        strings = [
+            "Создай отчет report.xlsx с заголовками Имя, Телефон",
+            "Сформируй файл report.xlsx с колонками Имя, Телефон",
+            "Сделай новый отчет report.xlsx: Имя, Телефон"
+        ]
+    )
     fun excelReport_newFile(userPrompt: String) = runTest {
         val excelReport: ExcelReport = spyk(ExcelReport(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
@@ -1023,11 +948,13 @@ class GraphAgentToolScenariosIntegrationTest {
     }
 
     @ParameterizedTest(name = "excelReport_withData[{index}] {0}")
-    @ValueSource(strings = [
-        "Создай отчет stats.xlsx с данными: 2024-01-01, 100; 2024-01-02, 200",
-        "Запиши в новый файл stats.xlsx данные: [[2024-01-01, 100], [2024-01-02, 200]]",
-        "Сформируй stats.xlsx и добавь туда строки: 2024-01-01, 100"
-    ])
+    @ValueSource(
+        strings = [
+            "Создай отчет stats.xlsx с данными: 2024-01-01, 100; 2024-01-02, 200",
+            "Запиши в новый файл stats.xlsx данные: [[2024-01-01, 100], [2024-01-02, 200]]",
+            "Сформируй stats.xlsx и добавь туда строки: 2024-01-01, 100"
+        ]
+    )
     fun excelReport_withData(userPrompt: String) = runTest {
         val excelReport: ExcelReport = spyk(ExcelReport(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
@@ -1061,5 +988,95 @@ class GraphAgentToolScenariosIntegrationTest {
         }
         val agent = GraphBasedAgent(di, gigaJsonMapper)
         agent.execute(userPrompt)
+    }
+
+    companion object {
+        private var gigaRestChatAPI: GigaRestChatAPI? = null
+        private var qwenChatAPI: QwenChatAPI? = null
+        private var aiTunnelChatAPI: AiTunnelChatAPI? = null
+        private val httpRequestCount = AtomicLong(0)
+        private val httpRequestTotalNanos = AtomicLong(0)
+
+        private val filesUtil: FilesToolUtil by lazy { FilesToolUtil(spySettings) }
+        private val testOverrideModule: DI.Module = DI.Module("TestOverrideModule") {
+            bindSingleton<SettingsProvider>(overrides = true) { spySettings }
+            bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
+            bindSingleton<GigaRestChatAPI>(overrides = true) {
+                if (gigaRestChatAPI == null) {
+                    gigaRestChatAPI = GigaRestChatAPI(instance(), instance(), instance()).apply {
+                        getHttpClient().plugin(HttpSend).intercept { request ->
+                            val startNanos = System.nanoTime()
+                            try {
+                                execute(request)
+                            } finally {
+                                httpRequestCount.incrementAndGet()
+                                httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
+                            }
+                        }
+                    }
+                }
+                gigaRestChatAPI!!
+            }
+            bindSingleton<QwenChatAPI>(overrides = true) {
+                if (qwenChatAPI == null) {
+                    qwenChatAPI = QwenChatAPI(instance(), instance()).apply {
+                        getHttpClient().plugin(HttpSend).intercept { request ->
+                            val startNanos = System.nanoTime()
+                            try {
+                                execute(request)
+                            } finally {
+                                httpRequestCount.incrementAndGet()
+                                httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
+                            }
+                        }
+                    }
+                }
+                qwenChatAPI!!
+            }
+            bindSingleton<AiTunnelChatAPI>(overrides = true) {
+                if (aiTunnelChatAPI == null) {
+                    aiTunnelChatAPI = AiTunnelChatAPI(instance(), instance()).apply {
+                        getHttpClient().plugin(HttpSend).intercept { request ->
+                            val startNanos = System.nanoTime()
+                            try {
+                                execute(request)
+                            } finally {
+                                httpRequestCount.incrementAndGet()
+                                httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
+                            }
+                        }
+                    }
+                }
+                aiTunnelChatAPI!!
+            }
+            bindSingleton<GigaChatAPI>(overrides = true) {
+                when (selectedModel.provider) {
+                    LlmProvider.GIGA -> instance<GigaRestChatAPI>()
+                    LlmProvider.QWEN -> instance<QwenChatAPI>()
+                    LlmProvider.AI_TUNNEL -> instance<AiTunnelChatAPI>()
+                }
+            }
+            bindSingleton<DesktopInfoRepository>(overrides = true) {
+                val r = DesktopInfoRepository(instance(), instance(), instance())
+                spyk(r) { coEvery { search(any(), any()) } returns emptyList() }
+            }
+        }
+
+        @JvmStatic
+        @AfterAll
+        fun finish() {
+            when (selectedModel.provider) {
+                LlmProvider.GIGA -> println("Spent: ${gigaRestChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+                LlmProvider.QWEN -> println("Spent: ${qwenChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+                LlmProvider.AI_TUNNEL -> println("Spent: ${aiTunnelChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+            }
+            val requestCount = httpRequestCount.get()
+            if (requestCount == 0L) {
+                println("HTTP requests: 0")
+                return
+            }
+            val avgMs = httpRequestTotalNanos.get().toDouble() / requestCount / 1_000_000.0
+            println("HTTP requests: $requestCount, avg/request: ${"%.2f".format(avgMs)} ms")
+        }
     }
 }
