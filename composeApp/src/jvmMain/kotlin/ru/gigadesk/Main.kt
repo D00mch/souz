@@ -83,7 +83,7 @@ fun main() {
             Window(
                 onCloseRequest = { isWindowVisible = false },
                 visible = isWindowVisible,
-                title = "gigadesk AI",
+                title = "Союз c ИИ",
                 state = windowState,
                 transparent = true,
                 undecorated = true,

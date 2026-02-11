@@ -185,7 +185,7 @@ fun MainScreenContent(
                             .zIndex(2f)
                     ) {
                     Text(
-                        text = "gigadesk",
+                        text = "Союз",
                         modifier = Modifier.align(Alignment.Center),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         style = TextStyle(

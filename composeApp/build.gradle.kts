@@ -115,7 +115,7 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "GigaDesk"
+            packageName = "Союз"
             packageVersion = "1.0.0"
 
             modules("java.naming") // native build crash without it
