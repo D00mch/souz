@@ -48,7 +48,21 @@ class NodesCommon(
     fun responseToString(
         name: String = "Response -> String"
     ): Node<GigaResponse.Chat.Ok, String> = Node(name) { ctx ->
-        ctx.map { ctx.input.choices.last().message.content }
+        val content = ctx.input.choices
+            .asReversed()
+            .firstOrNull { it.message.content.isNotBlank() }
+            ?.message
+            ?.content
+            ?: ctx.input.choices.lastOrNull()?.message?.content
+            ?: run {
+                l.warn(
+                    "LLM returned no choices; using empty response. model={}, created={}",
+                    ctx.input.model,
+                    ctx.input.created
+                )
+                ""
+            }
+        ctx.map { content }
     }
 
     /**
