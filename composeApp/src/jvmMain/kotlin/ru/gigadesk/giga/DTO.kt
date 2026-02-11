@@ -104,7 +104,7 @@ fun String.toFinishReason(): GigaResponse.FinishReason? {
     return runCatching { GigaResponse.FinishReason.valueOf(this) }.getOrNull()
 }
 
-const val MAX_TOKENS = 16384
+const val MAX_TOKENS = 8192
 
 enum class LlmProvider {
     GIGA,
