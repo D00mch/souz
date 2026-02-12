@@ -285,6 +285,7 @@ fun MainScreenContent(
 
                 ChatModeContent(
                     messages = state.chatMessages,
+                    chatPlaceholder = state.chatStartTip,
                     inputText = state.chatInputText,
                     selectedModel = state.selectedModel,
                     selectedContextSize = state.selectedContextSize,
@@ -466,6 +467,7 @@ fun MarkdownViewer(
 @Composable
 fun ChatModeContent(
     messages: List<ChatMessage>,
+    chatPlaceholder: String,
     inputText: TextFieldValue,
     selectedModel: String,
     selectedContextSize: Int,
@@ -597,7 +599,7 @@ fun ChatModeContent(
             onModelChange = onModelChange,
             onContextChange = onContextChange,
             scrollCloseSignal = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset,
-            placeholder = "Введите сообщение...",
+            placeholder = if (messages.isEmpty()) chatPlaceholder else "",
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 12.dp)

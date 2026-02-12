@@ -37,6 +37,7 @@ data class MainState(
     val agentHistory: List<ru.gigadesk.giga.GigaRequest.Message> = emptyList(),
     val isThinkingPanelOpen: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
+    val chatStartTip: String = randomStatusTip,
     val chatInputText: TextFieldValue = TextFieldValue(""),
     val selectedModel: String = ru.gigadesk.giga.GigaModel.Max.alias,
     val selectedContextSize: Int = 16_000,

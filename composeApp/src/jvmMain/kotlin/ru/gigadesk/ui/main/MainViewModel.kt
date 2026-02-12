@@ -168,7 +168,7 @@ class MainViewModel(
     }
 
     private suspend fun startRecording() {
-        if (currentState.isListening) return
+        if (currentState.isListening || currentState.isProcessing) return
         stopSpeechPlayback()
         agentRef.get()?.cancelActiveJob()
         ioLaunch { say.playMacPing() }
@@ -179,7 +179,7 @@ class MainViewModel(
     private suspend fun stopRecording() {
         if (!currentState.isListening) return
         audioRecorder.stop()
-        setState { copy(isListening = false, statusMessage = "Обработка входа") }
+        setState { copy(isListening = false, statusMessage = "Обработка входа", isProcessing = true) }
         delay(300)
         ioLaunch { say.playTextRand(speed = 120, "ok", "okey", "окей", "ок") }
     }
@@ -188,7 +188,7 @@ class MainViewModel(
         isVoice: Boolean,
         externalText: String? = null,
     ) {
-        if (currentState.isProcessing) return
+        if (currentState.isProcessing && externalText == null) return
         val userText = externalText?.trim() ?: currentState.chatInputText.text.trim()
         if (userText.isEmpty()) return
 
@@ -200,6 +200,7 @@ class MainViewModel(
         setState {
             copy(
                 chatMessages = chatMessages + userMessage,
+                chatStartTip = "",
                 chatInputText = TextFieldValue(""),
                 isProcessing = true,
                 statusMessage = ""
@@ -293,6 +294,7 @@ class MainViewModel(
                 userExpectCloseOnX = false,
                 isProcessing = false,
                 chatMessages = emptyList(),
+                chatStartTip = MainState.randomStatusTip(),
                 chatInputText = TextFieldValue(""),
                 showNewChatDialog = false
             )
@@ -360,6 +362,7 @@ class MainViewModel(
                         lastKnownAgentContext = lastKnownAgentContext ?: currentState.lastKnownAgentContext,
                         userExpectCloseOnX = true,
                         chatMessages = emptyList(),
+                        chatStartTip = MainState.randomStatusTip(),
                         showNewChatDialog = false
                     )
                 }
@@ -371,6 +374,7 @@ class MainViewModel(
                         displayedText = DEFAULT_CLEARED_TEXT,
                         userExpectCloseOnX = false,
                         chatMessages = emptyList(),
+                        chatStartTip = MainState.randomStatusTip(),
                         showNewChatDialog = false
                     )
                 }
