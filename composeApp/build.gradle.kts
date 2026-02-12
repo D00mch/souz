@@ -139,6 +139,7 @@ compose.desktop {
             // macOS dark mode support, works only on the release build, not in debug
             jvmArgs("-Dapple.awt.application.appearance=system")
             jvmArgs("-Xdock:icon=src/jvmMain/resources/icon-light.icns")
+            jvmArgs("-Xdock:name=Союз c ИИ")
         }
     }
 }
