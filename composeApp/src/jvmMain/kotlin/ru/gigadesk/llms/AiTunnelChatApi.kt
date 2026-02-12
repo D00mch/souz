@@ -1,6 +1,7 @@
 package ru.gigadesk.llms
 
 import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -134,7 +135,7 @@ class AiTunnelChatAPI(
                         if (data == "[DONE]") break
 
                         try {
-                            val chunkNode = gigaJsonMapper.readTree(data)
+                            val chunkNode: JsonNode = gigaJsonMapper.readTree(data)
                             val model = chunkNode["model"]?.asText() ?: body.model
                             val created = chunkNode["created"]?.asLong() ?: (System.currentTimeMillis() / 1000)
 
@@ -143,6 +144,7 @@ class AiTunnelChatAPI(
                             if (chunks.isNotEmpty()) {
                                 // Usage is typically null in chunks until the end, or never sent
                                 val usage = parseUsage(chunkNode["usage"])
+                                val chunks = prepareChoices(chunks)
                                 send(GigaResponse.Chat.Ok(chunks, created, model, usage))
                             }
                         } catch (e: Exception) {
@@ -337,8 +339,15 @@ class AiTunnelChatAPI(
         )
     }
 
+    private fun prepareChoices(chunks: List<GigaResponse.Choice>): List<GigaResponse.Choice> = chunks.map { msg ->
+        when (msg.message.content) {
+            "null" -> msg.copy(message = msg.message.copy(content = ""))
+            else -> msg
+        }
+    }
+
     private fun parseChoices(
-        choicesNode: com.fasterxml.jackson.databind.JsonNode?,
+        choicesNode: JsonNode?,
         isStream: Boolean
     ): List<GigaResponse.Choice> {
         if (choicesNode == null || !choicesNode.isArray) {
@@ -408,7 +417,7 @@ class AiTunnelChatAPI(
         return choices
     }
 
-    private fun parseUsage(node: com.fasterxml.jackson.databind.JsonNode?): GigaResponse.Usage {
+    private fun parseUsage(node: JsonNode?): GigaResponse.Usage {
         val prompt = node?.get("prompt_tokens")?.asInt() ?: 0
         val completion = node?.get("completion_tokens")?.asInt() ?: 0
         val total = node?.get("total_tokens")?.asInt() ?: (prompt + completion)
@@ -496,7 +505,7 @@ private class StreamAccumulator {
         val arguments: StringBuilder = StringBuilder()
     )
 
-    fun processChunk(chunkNode: com.fasterxml.jackson.databind.JsonNode): List<GigaResponse.Choice> {
+    fun processChunk(chunkNode: JsonNode): List<GigaResponse.Choice> {
         val choicesNode = chunkNode["choices"] ?: return emptyList()
         if (!choicesNode.isArray) return emptyList()
 
