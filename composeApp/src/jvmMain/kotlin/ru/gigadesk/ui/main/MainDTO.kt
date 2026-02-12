@@ -12,6 +12,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 data class ChatMessage(
     val text: String,
     val isUser: Boolean,
+    val isVoice: Boolean? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val id: String = java.util.UUID.randomUUID().toString()
 )
@@ -35,11 +36,12 @@ data class MainState(
     val isProcessing: Boolean = false,
     val agentHistory: List<ru.gigadesk.giga.GigaRequest.Message> = emptyList(),
     val isThinkingPanelOpen: Boolean = false,
-    val isChatMode: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
     val chatInputText: TextFieldValue = TextFieldValue(""),
     val selectedModel: String = ru.gigadesk.giga.GigaModel.Max.alias,
     val selectedContextSize: Int = 16_000,
+    val speakingMessageId: String? = null,
+    val showNewChatDialog: Boolean = false,
     val toolPermissionDialog: ToolPermissionDialogData? = null,
 ) : VMState {
 
@@ -70,11 +72,13 @@ data class MainState(
 sealed interface MainEvent : VMEvent {
     data object StartListening : MainEvent
     data object StopListening : MainEvent
+    data object RequestNewConversation : MainEvent
+    data object ConfirmNewConversation : MainEvent
+    data object DismissNewConversationDialog : MainEvent
     data object ClearContext : MainEvent
     data object StopSpeech : MainEvent
     data object ShowLastText : MainEvent
     data object ToggleThinkingPanel : MainEvent
-    data object ToggleChatMode : MainEvent
     data class UpdateChatInput(val text: TextFieldValue) : MainEvent
     data class UpdateChatModel(val model: String) : MainEvent
     data class UpdateChatContextSize(val size: Int) : MainEvent

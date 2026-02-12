@@ -32,6 +32,16 @@ class Say {
         jobs.add(j)
     }
 
+    fun speakAndWait(text: String, speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)) = managingScope.launch {
+        val j = voiceScope.launch { playText(text, speed) }
+        jobs.add(j)
+        try {
+            j.join()
+        } finally {
+            jobs.remove(j)
+        }
+    }
+
     fun clearQueue() = managingScope.launch {
         jobs.forEach { it.cancel() }
         jobs.clear()

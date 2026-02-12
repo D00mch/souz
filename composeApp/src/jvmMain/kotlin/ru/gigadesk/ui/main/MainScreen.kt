@@ -8,6 +8,8 @@ import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,7 +21,6 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,7 +40,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -133,13 +137,15 @@ fun MainScreen(
             if (state.isListening) viewModel.send(MainEvent.StopListening)
             else viewModel.send(MainEvent.StartListening)
         },
-        onClear = { viewModel.send(MainEvent.ClearContext) },
+        onClear = onCloseWindow,
+        onRequestNewConversation = { viewModel.send(MainEvent.RequestNewConversation) },
+        onConfirmNewConversation = { viewModel.send(MainEvent.ConfirmNewConversation) },
+        onDismissNewConversationDialog = { viewModel.send(MainEvent.DismissNewConversationDialog) },
         onOpenSettings = onOpenSettings,
         onStopSpeech = { viewModel.send(MainEvent.StopSpeech) },
         onShowLastText = { viewModel.send(MainEvent.ShowLastText) },
         onToggleThinkingPanel = { viewModel.send(MainEvent.ToggleThinkingPanel) },
         onShowSnack = onShowSnack,
-        onToggleChatMode = { viewModel.send(MainEvent.ToggleChatMode) },
         onUpdateChatInput = { viewModel.send(MainEvent.UpdateChatInput(it)) },
         onChatModelChange = { viewModel.send(MainEvent.UpdateChatModel(it)) },
         onChatContextSizeChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
@@ -154,13 +160,15 @@ fun MainScreenContent(
     state: MainState,
     isOnline: Boolean,
     onToggleListening: () -> Unit = {},
+    onRequestNewConversation: () -> Unit = {},
+    onConfirmNewConversation: () -> Unit = {},
+    onDismissNewConversationDialog: () -> Unit = {},
     onClear: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onStopSpeech: () -> Unit = {},
     onShowLastText: () -> Unit = {},
     onToggleThinkingPanel: () -> Unit = {},
     onShowSnack: (String) -> Unit = {},
-    onToggleChatMode: () -> Unit = {},
     onUpdateChatInput: (TextFieldValue) -> Unit = {},
     onChatModelChange: (String) -> Unit = {},
     onChatContextSizeChange: (Int) -> Unit = {},
@@ -168,7 +176,6 @@ fun MainScreenContent(
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
 ) {
-    val textContent = state.displayedText.ifEmpty { state.statusMessage }
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
 
@@ -194,7 +201,7 @@ fun MainScreenContent(
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
-                            color = Color.White.copy(alpha = 0.2f),
+                            color = Color(0x33FFFFFF),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -207,7 +214,7 @@ fun MainScreenContent(
                         horizontalArrangement = Arrangement.Start,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val iconTint = Color.White.copy(0.8f)
+                        val iconTint = Color(0xCCFFFFFF)
 
                         Box(
                             modifier = Modifier.size(TopButtonSize),
@@ -223,7 +230,7 @@ fun MainScreenContent(
                                         .offset(x = 2.dp, y = (-2).dp)
                                         .clip(CircleShape)
                                         .background(Color(0xFF00E5FF))
-                                        .border(1.dp, Color.Black.copy(0.5f), CircleShape)
+                                        .border(1.dp, Color(0x80000000), CircleShape)
                                 )
                             }
                         }
@@ -234,9 +241,13 @@ fun MainScreenContent(
                             modifier = Modifier.size(TopButtonSize),
                             contentAlignment = Alignment.TopEnd
                         ) {
-                            MinimalGlassButton(onClick = onToggleChatMode) {
-                                val toggleIcon = if (state.isChatMode) Icons.Rounded.Mic else Icons.Outlined.ChatBubbleOutline
-                                Icon(toggleIcon, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
+                            MinimalGlassButton(onClick = onRequestNewConversation) {
+                                Icon(
+                                    Icons.Rounded.Replay,
+                                    null,
+                                    tint = iconTint,
+                                    modifier = Modifier.size(TopIconSize)
+                                )
                             }
                         }
                     }
@@ -248,7 +259,7 @@ fun MainScreenContent(
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val iconTint = Color.White.copy(0.8f)
+                        val iconTint = Color(0xCCFFFFFF)
 
                         if (state.lastText != null) {
                             MinimalGlassButton(onClick = onShowLastText) {
@@ -261,15 +272,6 @@ fun MainScreenContent(
                             }
                             Spacer(Modifier.width(8.dp))
                         }
-                        MinimalGlassButton(onClick = onStopSpeech) {
-                            Icon(
-                                Icons.AutoMirrored.Rounded.VolumeOff,
-                                null,
-                                tint = iconTint,
-                                modifier = Modifier.size(TopIconSize)
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
                         MinimalGlassButton(onClick = onOpenSettings) {
                             Icon(Icons.Rounded.Settings, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                         }
@@ -281,83 +283,27 @@ fun MainScreenContent(
                 }
                 }
 
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    val baseFontSize = 18.sp
-
-                    if (state.isChatMode) {
-                        // Chat Mode UI
-                        ChatModeContent(
-                            messages = state.chatMessages,
-                            inputText = state.chatInputText,
-                            selectedModel = state.selectedModel,
-                            selectedContextSize = state.selectedContextSize,
-                            isProcessing = state.isProcessing,
-                            onInputChange = onUpdateChatInput,
-                            onModelChange = onChatModelChange,
-                            onContextChange = onChatContextSizeChange,
-                            onSendMessage = onSendChatMessage,
-                            onShowSnack = onShowSnack,
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)
-                        )
-                    } else {
-                        // Voice Mode UI
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(top = 16.dp, start = 24.dp, end = 24.dp),
-                            contentAlignment = Alignment.TopStart
-                        ) {
-                            MarkdownViewer(
-                                text = textContent,
-                                baseFontSize = baseFontSize,
-                                onShowSnack = onShowSnack,
-                                modifier = Modifier.alpha(if (state.isProcessing) 0.5f else 1f)
-                            )
-                        }
-                    }
-                }
-
-                // Bottom area: voice orb (only in voice mode)
-                if (!state.isChatMode) {
-                    TooltipArea(
-                        tooltip = {
-                            Text(
-                                text = "Нажмите и удерживайте\nправый Alt для записи",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        },
-                        delayMillis = 900,
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 20.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Bottom
-                        ) {
-                            ConnectionStatusNotification(
-                                isOnline = isOnline,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
-                            
-                            Box(
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (state.isProcessing) {
-                                    DashedSpinningWheel(
-                                        color = Color.White.copy(alpha = 0.8f),
-                                        modifier = Modifier.size(80.dp)
-                                    )
-                                }
-                                LiquidOrb(
-                                    isActive = state.isListening,
-                                    onClick = onToggleListening
-                                )
-                            }
-                        }
-                    }
-                }
+                ChatModeContent(
+                    messages = state.chatMessages,
+                    inputText = state.chatInputText,
+                    selectedModel = state.selectedModel,
+                    selectedContextSize = state.selectedContextSize,
+                    isProcessing = state.isProcessing,
+                    isListening = state.isListening,
+                    isOnline = isOnline,
+                    speakingMessageId = state.speakingMessageId,
+                    onInputChange = onUpdateChatInput,
+                    onModelChange = onChatModelChange,
+                    onContextChange = onChatContextSizeChange,
+                    onSendMessage = onSendChatMessage,
+                    onToggleListening = onToggleListening,
+                    onStopSpeech = onStopSpeech,
+                    onShowSnack = onShowSnack,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                )
             }
             
             // Thinking Panel Overlay
@@ -373,6 +319,20 @@ fun MainScreenContent(
                      onClose = onToggleThinkingPanel,
                      modifier = Modifier.fillMaxHeight().width(400.dp)
                  )
+            }
+
+            AnimatedVisibility(
+                visible = state.showNewChatDialog,
+                enter = fadeIn(animationSpec = tween(200, easing = LinearOutSlowInEasing)),
+                exit = fadeOut(animationSpec = tween(200, easing = LinearOutSlowInEasing)),
+                modifier = Modifier
+                    .matchParentSize()
+                    .zIndex(20f)
+            ) {
+                NewConversationDialog(
+                    onDismiss = onDismissNewConversationDialog,
+                    onConfirm = onConfirmNewConversation
+                )
             }
 
             state.toolPermissionDialog?.let { dialog ->
@@ -446,7 +406,7 @@ fun MarkdownViewer(
         text = baseStyle,
         paragraph = baseStyle,
         code = codeStyle,
-        inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color.White.copy(0.1f)),
+        inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color(0x1AFFFFFF)),
         quote = baseStyle.copy(color = Color.Gray, fontStyle = FontStyle.Italic),
         bullet = baseStyle.copy(fontWeight = FontWeight.Bold),
         list = baseStyle,
@@ -456,10 +416,10 @@ fun MarkdownViewer(
     val customColors = DefaultMarkdownColors(
         text = Color.White,
         codeText = Color(0xFFE0E0E0),
-        codeBackground = Color.Black.copy(alpha = 0.4f),
+        codeBackground = Color(0x66000000),
         inlineCodeText = Color(0xFF81D4FA),
-        inlineCodeBackground = Color.White.copy(alpha = 0.1f),
-        dividerColor = Color.White.copy(alpha = 0.2f),
+        inlineCodeBackground = Color(0x1AFFFFFF),
+        dividerColor = Color(0x33FFFFFF),
         linkText = Color(0xFF82B1FF)
     )
 
@@ -510,10 +470,15 @@ fun ChatModeContent(
     selectedModel: String,
     selectedContextSize: Int,
     isProcessing: Boolean,
+    isListening: Boolean,
+    isOnline: Boolean,
+    speakingMessageId: String?,
     onInputChange: (TextFieldValue) -> Unit,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
     onSendMessage: () -> Unit,
+    onToggleListening: () -> Unit,
+    onStopSpeech: () -> Unit,
     onShowSnack: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -576,7 +541,9 @@ fun ChatModeContent(
             ) {
                 items(messages, key = { it.id }) { message ->
                     ChatBubble(
-                        message = message, 
+                        message = message,
+                        isSpeaking = speakingMessageId == message.id,
+                        onStopSpeech = onStopSpeech,
                         onShowSnack = onShowSnack
                     )
                 }
@@ -610,10 +577,19 @@ fun ChatModeContent(
             }
         }
 
+        ConnectionStatusNotification(
+            isOnline = isOnline,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp, bottom = 8.dp)
+        )
+
         ChatInputWithQuickSettings(
             value = inputText,
             onValueChange = onInputChange,
             onSend = onSendMessage,
+            isListening = isListening,
+            onToggleListening = onToggleListening,
             enabled = !isProcessing,
             focusRequester = focusRequester,
             selectedModel = selectedModel,
@@ -632,7 +608,9 @@ fun ChatModeContent(
 
 @Composable
 private fun ChatBubble(
-    message: ChatMessage, 
+    message: ChatMessage,
+    isSpeaking: Boolean,
+    onStopSpeech: () -> Unit,
     onShowSnack: (String) -> Unit
 ) {
     val bubbleShape = if (message.isUser) {
@@ -689,8 +667,8 @@ private fun ChatBubble(
         ) {
             if (message.isUser) {
                 val customSelectionColors = TextSelectionColors(
-                    handleColor = Color(255, 255, 255, 255),
-                    backgroundColor = Color(255, 255, 255, (255 * 0.4f).toInt())
+                    handleColor = Color(0xFFFFFFFF),
+                    backgroundColor = Color(0x66FFFFFF)
                 )
 
                 CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
@@ -728,7 +706,7 @@ private fun ChatBubble(
                     text = baseStyle,
                     paragraph = baseStyle,
                     code = codeStyle,
-                    inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color.White.copy(0.1f)),
+                    inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color(0x1AFFFFFF)),
                     quote = baseStyle.copy(color = Color.Gray, fontStyle = FontStyle.Italic),
                     bullet = baseStyle.copy(fontWeight = FontWeight.Bold),
                     list = baseStyle,
@@ -739,9 +717,9 @@ private fun ChatBubble(
                 val bubbleColors = DefaultMarkdownColors(
                     text = baseStyle.color,
                     codeText = Color(0xFFE0E0E0),
-                    codeBackground = Color.Black.copy(alpha = 0.4f),
+                    codeBackground = Color(0x66000000),
                     inlineCodeText = Color(0xFF81D4FA),
-                    inlineCodeBackground = Color.White.copy(alpha = 0.1f),
+                    inlineCodeBackground = Color(0x1AFFFFFF),
                     dividerColor = baseStyle.color.copy(alpha = 0.2f),
                     linkText = Color(0xFF82B1FF)
                 )
@@ -771,11 +749,309 @@ private fun ChatBubble(
                 }
             }
 
+            Row(
+                modifier = Modifier.padding(top = 0.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = formatTimestamp(message.timestamp),
+                    color = if (message.isUser) ChatUserTimestampColor else ChatAssistantTimestampColor,
+                    fontSize = 11.sp
+                )
+                if (!message.isUser && isSpeaking) {
+                    SpeakingWaves(
+                        onClick = onStopSpeech
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpeakingWaves(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = when {
+            isPressed -> 0.98f
+            isHovered -> 1.05f
+            else -> 1f
+        },
+        animationSpec = tween(150)
+    )
+    val wavesColor = Color(0xFF12E0B5)
+    val transition = rememberInfiniteTransition()
+    val barHeights = listOf(
+        transition.animateFloat(
+            initialValue = 4f,
+            targetValue = 12f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 800, delayMillis = 0, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            )
+        ),
+        transition.animateFloat(
+            initialValue = 6f,
+            targetValue = 16f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 800, delayMillis = 100, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            )
+        ),
+        transition.animateFloat(
+            initialValue = 4f,
+            targetValue = 10f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 800, delayMillis = 200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            )
+        ),
+        transition.animateFloat(
+            initialValue = 8f,
+            targetValue = 14f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 800, delayMillis = 150, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            )
+        ),
+    )
+
+    TooltipArea(
+        delayMillis = 300,
+        tooltip = {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xE6000000))
+                    .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "Нажмите, чтобы остановить озвучку",
+                    color = Color(0xF2FFFFFF),
+                    fontSize = 12.sp
+                )
+            }
+        }
+    ) {
+        Row(
+            modifier = modifier
+                .height(16.dp)
+                .scale(scale)
+                .pointerHoverIcon(PointerIcon.Hand)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick
+                ),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            barHeights.forEach { animatedHeight ->
+                Box(
+                    modifier = Modifier
+                        .width(2.dp)
+                        .height(animatedHeight.value.dp)
+                        .clip(RoundedCornerShape(percent = 100))
+                        .background(wavesColor)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NewConversationDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val dialogScale by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0.95f,
+        animationSpec = tween(200, easing = LinearOutSlowInEasing)
+    )
+    val dialogAlpha by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = tween(200, easing = LinearOutSlowInEasing)
+    )
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(Color(0x99000000))
+                .blur(8.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss
+                )
+        )
+
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .fillMaxWidth()
+                .widthIn(max = 384.dp)
+                .alpha(dialogAlpha)
+                .scale(dialogScale)
+                .clip(RoundedCornerShape(16.dp))
+                .shadow(
+                    elevation = 32.dp,
+                    shape = RoundedCornerShape(16.dp),
+                    ambientColor = Color(0x80000000),
+                    spotColor = Color(0x80000000)
+                )
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {}
+                )
+        ) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color(0xD91E1E28))
+                    .blur(20.dp)
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xD91E1E28))
+                    .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(16.dp))
+                    .padding(24.dp)
+            ) {
+                Text(
+                    text = "Начать новую беседу?",
+                    color = Color(0xF2FFFFFF),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Text(
+                    text = "Текущая история сообщений будет утеряна",
+                    color = Color(0x80FFFFFF),
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(bottom = 24.dp)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    DialogActionButton(
+                        text = "Отмена",
+                        textColor = Color(0xE6FFFFFF),
+                        borderColor = Color(0x33FFFFFF),
+                        normalBrush = Brush.linearGradient(
+                            listOf(
+                                Color(0x1AFFFFFF),
+                                Color(0x1AFFFFFF)
+                            )
+                        ),
+                        hoverBrush = Brush.linearGradient(
+                            listOf(
+                                Color(0x26FFFFFF),
+                                Color(0x26FFFFFF)
+                            )
+                        ),
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f)
+                    )
+                    DialogActionButton(
+                        text = "Начать",
+                        textColor = Color(0xFF12E0B5),
+                        borderColor = Color(0x6612E0B5),
+                        normalBrush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0x4C12E0B5),
+                                Color(0x3312E0B5)
+                            )
+                        ),
+                        hoverBrush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0x6612E0B5),
+                                Color(0x4C12E0B5)
+                            )
+                        ),
+                        glowColor = Color(0x6612E0B5),
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DialogActionButton(
+    text: String,
+    textColor: Color,
+    borderColor: Color,
+    normalBrush: Brush,
+    hoverBrush: Brush,
+    modifier: Modifier = Modifier,
+    glowColor: Color = Color.Transparent,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = when {
+            isPressed -> 0.98f
+            isHovered -> 1.02f
+            else -> 1f
+        },
+        animationSpec = tween(140)
+    )
+    val brush = if (isHovered) hoverBrush else normalBrush
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .height(44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .shadow(
+                elevation = if (isHovered && glowColor != Color.Transparent) 14.dp else 0.dp,
+                shape = RoundedCornerShape(12.dp),
+                ambientColor = glowColor,
+                spotColor = glowColor
+            )
+    ) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(brush)
+                .blur(10.dp)
+        )
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clip(RoundedCornerShape(12.dp))
+                .background(brush)
+                .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick
+                ),
+            contentAlignment = Alignment.Center
+        ) {
             Text(
-                text = formatTimestamp(message.timestamp),
-                color = if (message.isUser) ChatUserTimestampColor else ChatAssistantTimestampColor,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(top = 0.dp)
+                text = text,
+                color = textColor,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
@@ -881,8 +1157,8 @@ fun MinimalGlassButton(
     onClick: () -> Unit,
     content: @Composable () -> Unit
 ) {
-    val backgroundColor = Color.White.copy(0.05f)
-    val borderColor = Color.White.copy(0.2f)
+    val backgroundColor = Color(0x0DFFFFFF)
+    val borderColor = Color(0x33FFFFFF)
 
     Box(
         modifier = Modifier
@@ -933,7 +1209,7 @@ fun RealLiquidGlassCard(
                 drawRect(brush = noiseBrush)
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(0.5f)),
+                        colors = listOf(Color.Transparent, Color(0x80000000)),
                         radius = size.maxDimension / 1.0f
                     )
                 )
@@ -944,9 +1220,9 @@ fun RealLiquidGlassCard(
             val strokeWidth = borderThickness.toPx()
             drawRoundRect(
                 brush = Brush.linearGradient(
-                    0.0f to Color.White.copy(alpha = 0.8f),
-                    0.5f to Color.White.copy(alpha = 0.0f),
-                    1.0f to Color.White.copy(alpha = 0.3f),
+                    0.0f to Color(0xCCFFFFFF),
+                    0.5f to Color(0x00FFFFFF),
+                    1.0f to Color(0x4DFFFFFF),
                     start = Offset(0f, 0f),
                     end = Offset(size.width, size.height)
                 ),
@@ -963,7 +1239,7 @@ fun RealLiquidGlassCard(
                     close()
                 },
                 brush = Brush.linearGradient(
-                    colors = listOf(Color.White.copy(0.05f), Color.Transparent),
+                    colors = listOf(Color(0x0DFFFFFF), Color.Transparent),
                     start = Offset(0f, 0f),
                     end = Offset(size.width / 2, size.height / 2)
                 )
@@ -974,7 +1250,7 @@ fun RealLiquidGlassCard(
             modifier = Modifier
                 .matchParentSize()
                 .clip(shape)
-                .background(Color.White.copy(alpha = 0.01f))
+                .background(Color(0x03FFFFFF))
         )
 
         Box(modifier = Modifier.padding(borderThickness)) {
@@ -1039,8 +1315,8 @@ fun LiquidOrb(isActive: Boolean, onClick: () -> Unit) {
                 brush = Brush.sweepGradient(
                     listOf(
                         Color.Transparent,
-                        cCyan.copy(0.7f),
-                        cPurple.copy(0.5f),
+                        Color(0xB300E5FF),
+                        Color(0x807C4DFF),
                         Color.Transparent
                     )
                 ),
@@ -1049,12 +1325,12 @@ fun LiquidOrb(isActive: Boolean, onClick: () -> Unit) {
         }
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawOval(
-                brush = Brush.linearGradient(listOf(Color.White.copy(0.95f), Color.Transparent)),
+                brush = Brush.linearGradient(listOf(Color(0xF2FFFFFF), Color.Transparent)),
                 topLeft = Offset(size.width * 0.25f, size.height * 0.15f),
                 size = Size(size.width * 0.3f, size.height * 0.2f)
             )
             drawArc(
-                color = Color.White.copy(0.4f), startAngle = 20f, sweepAngle = 140f, useCenter = false,
+                color = Color(0x66FFFFFF), startAngle = 20f, sweepAngle = 140f, useCenter = false,
                 topLeft = Offset(2f, 2f), size = Size(size.width - 4f, size.height - 4f),
                 style = Stroke(width = 1.5.dp.toPx())
             )
@@ -1086,7 +1362,6 @@ fun PreviewChatMode() {
         Box(Modifier.fillMaxSize().background(Color.Gray)) {
             MainScreenContent(
                 state = MainState(
-                    isChatMode = true,
                     chatMessages = listOf(
                         ChatMessage("Привет! Как дела?", isUser = true, timestamp = System.currentTimeMillis() - 60000),
                         ChatMessage("Привет! Все отлично, спасибо за вопрос. Чем могу помочь?", isUser = false, timestamp = System.currentTimeMillis() - 30000),
@@ -1110,7 +1385,6 @@ fun PreviewChatModeEmpty() {
         Box(Modifier.fillMaxSize().background(Color.Gray)) {
             MainScreenContent(
                 state = MainState(
-                    isChatMode = true,
                     chatMessages = emptyList(),
                     chatInputText = TextFieldValue(""),
                     displayedText = "",

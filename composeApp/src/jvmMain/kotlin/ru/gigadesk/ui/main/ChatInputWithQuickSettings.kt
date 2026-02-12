@@ -1,18 +1,22 @@
 package ru.gigadesk.ui.main
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -23,6 +27,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,7 +40,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -46,6 +53,8 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextRange
@@ -72,27 +81,40 @@ private val GlassBackground = Color(0x4D000000)
 private val GlassBackgroundDark = Color(0xFA111827)
 private val GlassBorder = Color(0x26FFFFFF)
 private val GlassBorderLight = Color(0x1AFFFFFF)
-private val GlassDivider = Color.White.copy(alpha = 0.06f)
+private val GlassDivider = Color(0x0FFFFFFF)
 
 private val TextPrimary = Color(0xE6FFFFFF)
 private val TextSecondary = Color(0xB3FFFFFF)
 private val TextTertiary = Color(0x80FFFFFF)
 private val TextDisabled = Color(0x66FFFFFF)
-private val TextPlaceholder = Color(0x4DFFFFFF)
 
 private val HoverBackground = Color(0x0DFFFFFF)
 private val ActiveBackground = Color(0x1A12E0B5)
-private val SendButtonActiveBackground = Color(0x3312E0B5)
-private val ControlTextMuted = Color.White.copy(alpha = 0.35f)
-private val ControlTextHover = Color.White.copy(alpha = 0.6f)
+private val ControlTextMuted = Color(0x59FFFFFF)
+private val ControlTextHover = Color(0x99FFFFFF)
+private val ControlButtonSize = 36.dp
+private val ControlIconSize = 18.dp
+private val SendButtonInactiveBackground = Color(0x14FFFFFF)
+private val SendButtonInactiveBorder = Color(0x1AFFFFFF)
+private val SendButtonInactiveIcon = Color(0x66FFFFFF)
+private val SendButtonActiveBorder = Color(0x6612E0B5)
+private val SendButtonActiveGradient = Brush.linearGradient(
+    colors = listOf(
+        Color(0x4D12E0B5),
+        Color(0x3312E0B5)
+    )
+)
 
 private val ContextOptions = listOf(8_000, 16_000, 32_000, 64_000, 96_000, 128_000)
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ChatInputWithQuickSettings(
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
     onSend: () -> Unit,
+    isListening: Boolean,
+    onToggleListening: () -> Unit,
     enabled: Boolean,
     focusRequester: FocusRequester,
     selectedModel: String,
@@ -104,6 +126,7 @@ internal fun ChatInputWithQuickSettings(
     modifier: Modifier = Modifier,
 ) {
     val hasText = value.text.isNotBlank() && enabled
+    val canToggleMic = enabled || isListening
     val containerShape = RoundedCornerShape(24.dp)
     var isModelDropdownOpen by remember { mutableStateOf(false) }
     var isContextDropdownOpen by remember { mutableStateOf(false) }
@@ -227,23 +250,139 @@ internal fun ChatInputWithQuickSettings(
 
                 Spacer(Modifier.width(8.dp))
 
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(if (hasText) SendButtonActiveBackground else Color.Transparent)
-                        .clickable(enabled = hasText) { onSend() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.ArrowUpward,
-                        contentDescription = "Отправить",
-                        tint = if (hasText) AccentTurquoise else TextPlaceholder,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                VoiceToggleButton(
+                    isListening = isListening,
+                    enabled = canToggleMic,
+                    onClick = onToggleListening
+                )
+
+                Spacer(Modifier.width(8.dp))
+
+                SendMessageButton(
+                    isActive = hasText,
+                    onClick = onSend
+                )
             }
         }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun VoiceToggleButton(
+    isListening: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = when {
+            isPressed -> 0.95f
+            isHovered -> 1.05f
+            else -> 1f
+        },
+        animationSpec = tween(150)
+    )
+
+    val iconColor = if (isListening) AccentTurquoise else Color(0x80FFFFFF)
+    val background = if (isListening) Color(0x3312E0B5) else Color.Transparent
+
+    TooltipArea(
+        delayMillis = 450,
+        tooltip = {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xE6000000))
+                    .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "Правый Option для записи",
+                    color = Color(0xF2FFFFFF),
+                    fontSize = 12.sp
+                )
+            }
+        }
+    ) {
+        Box(
+            modifier = Modifier
+                .size(ControlButtonSize)
+                .scale(scale)
+                .clip(CircleShape)
+                .background(background)
+                .hoverable(interactionSource = interactionSource)
+                .pointerHoverIcon(PointerIcon.Hand)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    enabled = enabled,
+                    onClick = onClick
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Mic,
+                contentDescription = "Голосовой ввод",
+                tint = iconColor,
+                modifier = Modifier.size(ControlIconSize)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SendMessageButton(
+    isActive: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = when {
+            !isActive -> 1f
+            isPressed -> 0.95f
+            isHovered -> 1.05f
+            else -> 1f
+        },
+        animationSpec = tween(150)
+    )
+
+    val backgroundBrush = if (isActive) SendButtonActiveGradient else Brush.linearGradient(
+        colors = listOf(
+            SendButtonInactiveBackground,
+            SendButtonInactiveBackground
+        )
+    )
+    val borderColor = if (isActive) SendButtonActiveBorder else SendButtonInactiveBorder
+    val iconColor = if (isActive) AccentTurquoise else SendButtonInactiveIcon
+
+    Box(
+        modifier = Modifier
+            .size(ControlButtonSize)
+            .scale(scale)
+            .clip(CircleShape)
+            .background(backgroundBrush)
+            .border(1.dp, borderColor, CircleShape)
+            .hoverable(interactionSource = interactionSource)
+            .pointerHoverIcon(if (isActive) PointerIcon.Hand else PointerIcon.Default)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = isActive,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.ArrowUpward,
+            contentDescription = "Отправить",
+            tint = iconColor,
+            modifier = Modifier.size(ControlIconSize)
+        )
     }
 }
 
