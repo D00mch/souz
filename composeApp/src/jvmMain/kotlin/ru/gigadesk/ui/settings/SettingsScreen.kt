@@ -45,6 +45,33 @@ fun SettingsScreen(
             }
         }
     }
+
+    val windowScope = ru.gigadesk.LocalWindowScope.current
+    DisposableEffect(windowScope) {
+        val window = windowScope?.window
+        val originalMinSize = window?.minimumSize
+        
+        if (window != null) {
+            val minWidth = 680
+            val minHeight = 700
+            val newMinSize = java.awt.Dimension(minWidth, minHeight)
+            
+            window.minimumSize = newMinSize
+            
+            if (window.width < minWidth || window.height < minHeight) {
+                window.setSize(
+                    maxOf(window.width, minWidth),
+                    maxOf(window.height, minHeight)
+                )
+            }
+        }
+
+        onDispose {
+            if (window != null) {
+                window.minimumSize = originalMinSize
+            }
+        }
+    }
     
     when (state.currentScreen) {
         SettingsSubScreen.MAIN -> {
