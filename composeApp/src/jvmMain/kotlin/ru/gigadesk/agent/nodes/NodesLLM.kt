@@ -40,7 +40,7 @@ class NodesLLM(
             val response = withContext(Dispatchers.IO) {
                 val req = ctx.toGigaRequest(ctx.history)
                 if (settingsProvider.useStreaming) {
-                    streamResponse(req)
+                    streamResponse(req.copy(stream = true))
                 } else {
                     llmApi.message(req)
                 }
@@ -57,6 +57,7 @@ class NodesLLM(
     private suspend fun streamResponse(request: GigaRequest.Chat): GigaResponse.Chat {
         val streamResponse = AtomicReference<GigaResponse.Chat?>(null)
         val choicesByIndex = ConcurrentHashMap<Int, ChoiceAccumulator>()
+        val pending = StringBuilder()
 
         withContext(Dispatchers.IO) {
             llmApi.messageStream(request).takeWhile { response ->
@@ -73,8 +74,13 @@ class NodesLLM(
 
                 val content = response.choices.firstOrNull()?.message?.content
                 if (content?.isNotEmpty() == true) {
-                    l.info("About to emit into sideEffects flow: {}", content)
-                    (sideEffects as MutableSharedFlow).emit(content)
+                    pending.append(content)
+                    if (pending.length >= 20) {
+                        val toEmit = pending.toString()
+                        l.info("About to emit into sideEffects flow: {}", toEmit)
+                        (sideEffects as MutableSharedFlow<String>).emit(toEmit)
+                        pending.clear()
+                    }
                 }
 
                 response.choices.forEach { choice ->
