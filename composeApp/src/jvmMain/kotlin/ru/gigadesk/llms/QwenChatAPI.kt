@@ -198,6 +198,8 @@ class QwenChatAPI(
         val parameters = HashMap<String, Any>().apply {
             put("result_format", "message")
             put("incremental_output", true)
+            put("stream", true)
+            put("result_format", "message")
             body.temperature?.let { put("temperature", it) }
             if (body.maxTokens > 0) {
                 put("max_tokens", body.maxTokens)
@@ -434,10 +436,7 @@ suspend fun main() {
     val filesToolUtil: FilesToolUtil by di.instance()
     val api: QwenChatAPI by di.instance()
 
-    val model = System.getenv("QWEN_MODEL")
-        ?: System.getProperty("QWEN_MODEL")
-        ?: "qwen-flash"
-
+    val model = "qwen-flash"
     val request = GigaRequest.Chat(
         model = model,
         stream = true,
