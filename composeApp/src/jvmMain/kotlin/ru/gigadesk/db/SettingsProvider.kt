@@ -2,7 +2,9 @@ package ru.gigadesk.db
 
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.giga.EmbeddingsModel
+import ru.gigadesk.giga.DEFAULT_MAX_TOKENS
 import ru.gigadesk.giga.GigaModel
+import ru.gigadesk.giga.MAX_TOKENS
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
@@ -23,6 +25,7 @@ interface SettingsProvider {
     var safeModeEnabled: Boolean
     var needsOnboarding: Boolean
     var requestTimeoutMillis: Long
+    var contextSize: Int
     var initialWindowWidthDp: Int
     var initialWindowHeightDp: Int
     var temperature: Float
@@ -55,6 +58,10 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         configKey = REQUEST_TIMEOUT_MILLIS,
         envKey = REQUEST_TIMEOUT_MILLIS
     )
+    private var _contextSizeDelegate: String? by keyDelegate(
+        configKey = CONTEXT_SIZE,
+        envKey = CONTEXT_SIZE
+    )
     private var _initialWindowWidthDelegate: String? by keyDelegate(
         configKey = INITIAL_WINDOW_WIDTH_DP,
         envKey = INITIAL_WINDOW_WIDTH_DP
@@ -79,6 +86,10 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         configKey = EMBEDDINGS_MODEL,
         envKey = EMBEDDINGS_MODEL
     )
+
+    init {
+        MAX_TOKENS = contextSize
+    }
 
     override var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
     override var qwenChatKey: String? by keyDelegate(configKey = QWEN_CHAT_KEY, envKey = "QWEN_KEY")
@@ -131,6 +142,14 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         get() = _requestTimeoutDelegate?.toLongOrNull() ?: 20_000L
         set(value) {
             _requestTimeoutDelegate = value.toString()
+        }
+
+    override var contextSize: Int
+        get() = _contextSizeDelegate?.toIntOrNull()?.takeIf { it > 0 } ?: DEFAULT_MAX_TOKENS
+        set(value) {
+            val normalized = value.takeIf { it > 0 } ?: DEFAULT_MAX_TOKENS
+            _contextSizeDelegate = normalized.toString()
+            MAX_TOKENS = normalized
         }
 
     override var initialWindowWidthDp: Int
@@ -214,6 +233,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val GIGA_MODEL = "GIGA_MODEL"
         private const val NEEDS_ONBOARDING = "NEEDS_ONBOARDING"
         private const val REQUEST_TIMEOUT_MILLIS = "REQUEST_TIMEOUT_MILLIS"
+        private const val CONTEXT_SIZE = "CONTEXT_SIZE"
         private const val INITIAL_WINDOW_WIDTH_DP = "INITIAL_WINDOW_WIDTH_DP"
         private const val INITIAL_WINDOW_HEIGHT_DP = "INITIAL_WINDOW_HEIGHT_DP"
         private const val TEMPERATURE = "TEMPERATURE"

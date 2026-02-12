@@ -220,6 +220,7 @@ fun ModelsSettingsContent(
     onEmbeddingsModelChange: (EmbeddingsModel) -> Unit,
     onTemperatureInput: (String) -> Unit,
     onRequestTimeoutMillisChange: (String) -> Unit,
+    onContextSizeInput: (String) -> Unit,
     onSystemPromptChange: (String) -> Unit,
     onSystemPromptReset: () -> Unit,
     onRefreshBalance: () -> Unit,
@@ -252,11 +253,6 @@ fun ModelsSettingsContent(
                         onValueChange = onTemperatureInput,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text(
-                        text = "Текущее: ${state.temperature}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SettingsHintColor
-                    )
                 }
                 Column(
                     modifier = Modifier.weight(1f),
@@ -268,12 +264,16 @@ fun ModelsSettingsContent(
                         onValueChange = onRequestTimeoutMillisChange,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text(
-                        text = "${state.requestTimeoutMillis} мс",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SettingsHintColor
-                    )
                 }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
+                LabeledTextField(
+                    label = "Размер контекстного окна",
+                    value = state.contextSizeInput,
+                    onValueChange = onContextSizeInput,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 
@@ -1332,6 +1332,8 @@ private val PreviewSettingsState = SettingsState(
     systemPrompt = "Ты полезный ассистент. Отвечай кратко и по делу.",
     requestTimeoutMillis = 15000,
     requestTimeoutInput = "15000",
+    contextSize = 16000,
+    contextSizeInput = "16000",
     temperature = 0.8f,
     temperatureInput = "0.8",
     supportEmail = "support@example.com",
@@ -1369,6 +1371,7 @@ private fun ModelsSettingsContentPreview() {
             onEmbeddingsModelChange = {},
             onTemperatureInput = {},
             onRequestTimeoutMillisChange = {},
+            onContextSizeInput = {},
             onSystemPromptChange = {},
             onSystemPromptReset = {},
             onRefreshBalance = {},

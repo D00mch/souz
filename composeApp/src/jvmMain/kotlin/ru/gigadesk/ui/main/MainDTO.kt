@@ -38,6 +38,8 @@ data class MainState(
     val isChatMode: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
     val chatInputText: TextFieldValue = TextFieldValue(""),
+    val selectedModel: String = ru.gigadesk.giga.GigaModel.Max.alias,
+    val selectedContextSize: Int = 16_000,
     val toolPermissionDialog: ToolPermissionDialogData? = null,
 ) : VMState {
 
@@ -74,6 +76,8 @@ sealed interface MainEvent : VMEvent {
     data object ToggleThinkingPanel : MainEvent
     data object ToggleChatMode : MainEvent
     data class UpdateChatInput(val text: TextFieldValue) : MainEvent
+    data class UpdateChatModel(val model: String) : MainEvent
+    data class UpdateChatContextSize(val size: Int) : MainEvent
     data object SendChatMessage : MainEvent
     data object ApproveToolPermission : MainEvent
     data object RejectToolPermission : MainEvent

@@ -86,23 +86,23 @@ import androidx.compose.ui.input.key.*
 
 private val TopButtonSize = 24.dp
 private val TopIconSize = 14.dp
-private val ChatUserBubbleGradientStart = Color(18, 224, 181, (255 * 0.2f).toInt())
-private val ChatUserBubbleGradientEnd = Color(18, 224, 181, (255 * 0.1f).toInt())
-private val ChatUserBubbleBorderColor = Color(18, 224, 181, (255 * 0.4f).toInt())
-private val ChatUserTextColor = Color(255, 255, 255, (255 * 0.95f).toInt())
-private val ChatUserTimestampColor = Color(18, 224, 181, (255 * 0.7f).toInt())
-private val ChatAssistantBubbleBackground = Color(0, 0, 0, (255 * 0.3f).toInt())
-private val ChatAssistantBubbleBorderColor = Color(255, 255, 255, (255 * 0.2f).toInt())
-private val ChatAssistantTextColor = Color(255, 255, 255, (255 * 0.9f).toInt())
-private val ChatAssistantTimestampColor = Color(255, 255, 255, (255 * 0.5f).toInt())
-private val ChatInputBackground = Color(0, 0, 0, (255 * 0.3f).toInt())
-private val ChatInputBorderColor = Color(255, 255, 255, (255 * 0.15f).toInt())
-private val ChatInputPlaceholderColor = Color(255, 255, 255, (255 * 0.4f).toInt())
-private val ChatInputTextColor = Color(255, 255, 255, (255 * 0.9f).toInt())
-private val ChatSendButtonActiveBackground = Color(18, 224, 181, (255 * 0.2f).toInt())
-private val ChatSendButtonInactiveBackground = Color(0, 0, 0, 0)
-private val ChatSendButtonActiveIconColor = Color(18, 224, 181, 255)
-private val ChatSendButtonInactiveIconColor = Color(255, 255, 255, (255 * 0.3f).toInt())
+private val ChatUserBubbleGradientStart = Color(0x3312E0B5)
+private val ChatUserBubbleGradientEnd = Color(0x1912E0B5)
+private val ChatUserBubbleBorderColor = Color(0x6612E0B5)
+private val ChatUserTextColor = Color(0xF2FFFFFF)
+private val ChatUserTimestampColor = Color(0xB212E0B5)
+private val ChatAssistantBubbleBackground = Color(0x4C000000)
+private val ChatAssistantBubbleBorderColor = Color(0x33FFFFFF)
+private val ChatAssistantTextColor = Color(0xE5FFFFFF)
+private val ChatAssistantTimestampColor = Color(0x7FFFFFFF)
+private val ChatInputBackground = Color(0x4C000000)
+private val ChatInputBorderColor = Color(0x26FFFFFF)
+private val ChatInputPlaceholderColor = Color(0x66FFFFFF)
+private val ChatInputTextColor = Color(0xE5FFFFFF)
+private val ChatSendButtonActiveBackground = Color(0x3312E0B5)
+private val ChatSendButtonInactiveBackground = Color(0x00000000)
+private val ChatSendButtonActiveIconColor = Color(0xFF12E0B5)
+private val ChatSendButtonInactiveIconColor = Color(0x4CFFFFFF)
 
 
 
@@ -141,6 +141,8 @@ fun MainScreen(
         onShowSnack = onShowSnack,
         onToggleChatMode = { viewModel.send(MainEvent.ToggleChatMode) },
         onUpdateChatInput = { viewModel.send(MainEvent.UpdateChatInput(it)) },
+        onChatModelChange = { viewModel.send(MainEvent.UpdateChatModel(it)) },
+        onChatContextSizeChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
         onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage) },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
@@ -160,6 +162,8 @@ fun MainScreenContent(
     onShowSnack: (String) -> Unit = {},
     onToggleChatMode: () -> Unit = {},
     onUpdateChatInput: (TextFieldValue) -> Unit = {},
+    onChatModelChange: (String) -> Unit = {},
+    onChatContextSizeChange: (Int) -> Unit = {},
     onSendChatMessage: () -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
@@ -285,8 +289,12 @@ fun MainScreenContent(
                         ChatModeContent(
                             messages = state.chatMessages,
                             inputText = state.chatInputText,
+                            selectedModel = state.selectedModel,
+                            selectedContextSize = state.selectedContextSize,
                             isProcessing = state.isProcessing,
                             onInputChange = onUpdateChatInput,
+                            onModelChange = onChatModelChange,
+                            onContextChange = onChatContextSizeChange,
                             onSendMessage = onSendChatMessage,
                             onShowSnack = onShowSnack,
                             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)
@@ -499,8 +507,12 @@ fun MarkdownViewer(
 fun ChatModeContent(
     messages: List<ChatMessage>,
     inputText: TextFieldValue,
+    selectedModel: String,
+    selectedContextSize: Int,
     isProcessing: Boolean,
     onInputChange: (TextFieldValue) -> Unit,
+    onModelChange: (String) -> Unit,
+    onContextChange: (Int) -> Unit,
     onSendMessage: () -> Unit,
     onShowSnack: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -598,12 +610,17 @@ fun ChatModeContent(
             }
         }
 
-        ChatInputField(
+        ChatInputWithQuickSettings(
             value = inputText,
             onValueChange = onInputChange,
             onSend = onSendMessage,
             enabled = !isProcessing,
             focusRequester = focusRequester,
+            selectedModel = selectedModel,
+            selectedContextSize = selectedContextSize,
+            onModelChange = onModelChange,
+            onContextChange = onContextChange,
+            scrollCloseSignal = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset,
             placeholder = "Введите сообщение...",
             modifier = Modifier
                 .fillMaxWidth()

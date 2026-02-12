@@ -20,6 +20,7 @@ import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
 import androidx.compose.ui.text.input.TextFieldValue
 import ru.gigadesk.giga.GigaVoiceAPI
+import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.permissions.AppRelauncher
 import ru.gigadesk.tool.ToolPermissionBroker
@@ -50,6 +51,14 @@ class MainViewModel(
     private val toolPermissionBroker: ToolPermissionBroker by di.instance()
 
     init {
+        viewModelScope.launch {
+            setState {
+                copy(
+                    selectedModel = settingsProvider.gigaModel.alias,
+                    selectedContextSize = settingsProvider.contextSize
+                )
+            }
+        }
         viewModelScope.launch { runOnboarding() }
         ioLaunch { initializeAgent() }
         vmLaunch { observeToolPermissionRequests() }
@@ -67,6 +76,8 @@ class MainViewModel(
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
             MainEvent.ToggleChatMode -> setState { copy(isChatMode = !isChatMode) }
             is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
+            is MainEvent.UpdateChatModel -> updateChatModel(event.model)
+            is MainEvent.UpdateChatContextSize -> updateChatContextSize(event.size)
             MainEvent.SendChatMessage -> vmLaunch { sendChatMessage() }
             MainEvent.ApproveToolPermission -> resolveToolPermission(approved = true)
             MainEvent.RejectToolPermission -> resolveToolPermission(approved = false)
@@ -232,6 +243,19 @@ class MainViewModel(
                 )
             }
         }
+    }
+
+    private suspend fun updateChatModel(modelAlias: String) {
+        val model = GigaModel.entries.firstOrNull { it.alias == modelAlias } ?: return
+        settingsProvider.gigaModel = model
+        graphAgent.updateModel(model)
+        setState { copy(selectedModel = model.alias) }
+    }
+
+    private suspend fun updateChatContextSize(size: Int) {
+        if (size <= 0) return
+        settingsProvider.contextSize = size
+        setState { copy(selectedContextSize = size) }
     }
 
     private suspend fun observeToolPermissionRequests() {

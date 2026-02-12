@@ -104,7 +104,8 @@ fun String.toFinishReason(): GigaResponse.FinishReason? {
     return runCatching { GigaResponse.FinishReason.valueOf(this) }.getOrNull()
 }
 
-const val MAX_TOKENS = 8192
+const val DEFAULT_MAX_TOKENS = 16_000
+var MAX_TOKENS = DEFAULT_MAX_TOKENS
 
 enum class LlmProvider {
     GIGA,
@@ -124,9 +125,9 @@ enum class GigaModel(
     val maxTokens: Int,
     val provider: LlmProvider,
 ) {
-    Lite("GigaChat Lite", "GigaChat-2", MAX_TOKENS, LlmProvider.GIGA),
-    Pro("GigaChat Pro", "GigaChat-Pro", MAX_TOKENS, LlmProvider.GIGA),
-    Max("GigaChat Max", "GigaChat-Max", MAX_TOKENS, LlmProvider.GIGA),
+    Lite("GigaChat Lite", "GigaChat-2", DEFAULT_MAX_TOKENS, LlmProvider.GIGA),
+    Pro("GigaChat Pro", "GigaChat-Pro", DEFAULT_MAX_TOKENS, LlmProvider.GIGA),
+    Max("GigaChat Max", "GigaChat-Max", DEFAULT_MAX_TOKENS, LlmProvider.GIGA),
     QwenFlash("Qwen Flash", "qwen-flash", 32_768, LlmProvider.QWEN),
     QwenPlus("Qwen Plus", "qwen-plus", 32_768, LlmProvider.QWEN),
     Qwen3OpenSource("Qwen3 open source", "qwen3-vl-32b-instruct", 32_768, LlmProvider.QWEN),

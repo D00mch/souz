@@ -52,6 +52,8 @@ class SettingsViewModel(
                     embeddingsModel = keysProvider.embeddingsModel,
                     requestTimeoutMillis = keysProvider.requestTimeoutMillis,
                     requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
+                    contextSize = keysProvider.contextSize,
+                    contextSizeInput = keysProvider.contextSize.toString(),
                     temperature = keysProvider.temperature,
                     temperatureInput = keysProvider.temperature.toString(),
                     supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
@@ -128,6 +130,19 @@ class SettingsViewModel(
                     )
                 }
             }
+            is InputContextSize -> {
+                val normalized = event.size.filter { it.isDigit() }
+                val newContextSize = normalized.toIntOrNull()?.takeIf { it > 0 }
+                if (newContextSize != null) {
+                    keysProvider.contextSize = newContextSize
+                }
+                setState {
+                    copy(
+                        contextSizeInput = normalized,
+                        contextSize = newContextSize ?: contextSize
+                    )
+                }
+            }
             is InputTemperature -> {
                 val normalized = event.temperature.replace(',', '.')
                     .filter { it.isDigit() || it == '.' }
@@ -187,7 +202,6 @@ class SettingsViewModel(
             }
             BackToSettings -> setState { copy(currentScreen = SettingsSubScreen.MAIN) }
             BackToSessions -> setState { copy(currentScreen = SettingsSubScreen.SESSIONS, selectedSessionId = null) }
-            OpenFoldersManagement -> setState { copy(currentScreen = SettingsSubScreen.FOLDERS) }
             OpenFoldersManagement -> setState { copy(currentScreen = SettingsSubScreen.FOLDERS) }
             
             is SelectSettingsSection -> setState { copy(activeSection = event.section) }

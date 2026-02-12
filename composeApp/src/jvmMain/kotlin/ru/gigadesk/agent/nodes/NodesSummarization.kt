@@ -12,6 +12,7 @@ import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaChatAPI
+import ru.gigadesk.giga.LlmProvider
 import ru.gigadesk.giga.MAX_TOKENS
 import ru.gigadesk.giga.toMessage
 import ru.gigadesk.giga.toSystemPromptMessage
@@ -86,7 +87,10 @@ private fun AgentContext<*>.historyIsTooBig(
     threshold: Double = HISTORY_SUMMARIZE_THRESHOLD,
 ): Boolean {
     val model = GigaModel.entries.firstOrNull { it.alias == settings.model }
-    val contextWindow = model?.maxTokens ?: MAX_TOKENS
+    val contextWindow = when (model?.provider) {
+        LlmProvider.GIGA -> MAX_TOKENS
+        else -> model?.maxTokens ?: MAX_TOKENS
+    }
     val estimatedTokens = systemPrompt.estimateTokenCount() +
         history.sumOf { it.content.estimateTokenCount() }
     return estimatedTokens >= contextWindow * threshold
