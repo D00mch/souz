@@ -85,6 +85,7 @@ sealed interface MainEvent : VMEvent {
     data class UpdateChatModel(val model: String) : MainEvent
     data class UpdateChatContextSize(val size: Int) : MainEvent
     data object SendChatMessage : MainEvent
+    data object RefreshSettings : MainEvent
     data object ApproveToolPermission : MainEvent
     data object RejectToolPermission : MainEvent
 }

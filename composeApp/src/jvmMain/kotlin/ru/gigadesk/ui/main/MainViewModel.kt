@@ -80,6 +80,7 @@ class MainViewModel(
             is MainEvent.UpdateChatModel -> updateChatModel(event.model)
             is MainEvent.UpdateChatContextSize -> updateChatContextSize(event.size)
             MainEvent.SendChatMessage -> vmLaunch { sendChatMessage(isVoice = false) }
+            MainEvent.RefreshSettings -> refreshSettings()
             MainEvent.ApproveToolPermission -> resolveToolPermission(approved = true)
             MainEvent.RejectToolPermission -> resolveToolPermission(approved = false)
         }
@@ -316,6 +317,15 @@ class MainViewModel(
         settingsProvider.contextSize = size
         graphAgent.updateContextSize(size)
         setState { copy(selectedContextSize = size) }
+    }
+
+    private suspend fun refreshSettings() {
+        setState {
+            copy(
+                selectedModel = settingsProvider.gigaModel.alias,
+                selectedContextSize = settingsProvider.contextSize
+            )
+        }
     }
 
     private suspend fun observeToolPermissionRequests() {

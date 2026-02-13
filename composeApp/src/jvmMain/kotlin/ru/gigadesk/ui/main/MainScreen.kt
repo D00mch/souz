@@ -103,6 +103,10 @@ fun MainScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.send(MainEvent.RefreshSettings)
+    }
+
     MainScreenContent(
         state = state,
         isOnline = isOnline,
