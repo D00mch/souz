@@ -26,6 +26,7 @@ import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.permissions.AppRelauncher
 import ru.gigadesk.tool.ToolPermissionBroker
 import ru.gigadesk.ui.BaseViewModel
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 import kotlin.time.Duration.Companion.minutes
@@ -46,7 +47,7 @@ class MainViewModel(
     private var onboardingSpeechStartedAt: Long? = null
 
     private val say: Say by di.instance()
-    private val currentSpeechJob = AtomicReference<Job?>(null)
+    private val taskSideEffectJobs = ArrayList<Job>()
 
     private val toolPermissionBroker: ToolPermissionBroker by di.instance()
 
@@ -74,13 +75,13 @@ class MainViewModel(
             MainEvent.ConfirmNewConversation -> confirmNewConversation()
             MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()
             MainEvent.ClearContext -> clearContext()
-            MainEvent.StopSpeech -> stopSpeechPlayback()
+            MainEvent.StopSpeech -> killTaskSideEffectJobs()
             MainEvent.ShowLastText -> setPreviousText()
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
             is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
             is MainEvent.UpdateChatModel -> updateChatModel(event.model)
             is MainEvent.UpdateChatContextSize -> updateChatContextSize(event.size)
-            MainEvent.SendChatMessage -> vmLaunch { sendChatMessage(isVoice = false) }
+            MainEvent.SendChatMessage -> vmLaunch { sendChatMessage(false, currentState.chatInputText.text) }
             MainEvent.RefreshSettings -> refreshSettings()
             MainEvent.ApproveToolPermission -> resolveToolPermission(approved = true)
             MainEvent.RejectToolPermission -> resolveToolPermission(approved = false)
@@ -147,7 +148,7 @@ class MainViewModel(
                 withContext(Dispatchers.Main) {
                     sendChatMessage(
                         isVoice = true,
-                        externalText = userInput
+                        chatMessage = userInput
                     )
                 }
             }
@@ -172,7 +173,7 @@ class MainViewModel(
 
     private suspend fun startRecording() {
         if (currentState.isListening || currentState.isProcessing) return
-        stopSpeechPlayback()
+        killTaskSideEffectJobs()
         agentRef.get()?.cancelActiveJob()
         ioLaunch { say.playMacPing() }
         setState { copy(isListening = true, statusMessage = "Запись запущена") }
@@ -189,10 +190,10 @@ class MainViewModel(
 
     private suspend fun sendChatMessage(
         isVoice: Boolean,
-        externalText: String? = null,
+        chatMessage: String,
     ) {
-        if (currentState.isProcessing && externalText == null) return
-        val userText = externalText?.trim() ?: currentState.chatInputText.text.trim()
+        if (currentState.isProcessing) return
+        val userText = chatMessage.trim()
         if (userText.isEmpty()) return
 
         val userMessage = ChatMessage(
@@ -211,22 +212,29 @@ class MainViewModel(
         }
 
         try {
-            val response = ioAsync {
-                graphAgent.execute(userText)
-            }
-            val botMessage = ChatMessage(
-                text = response.await(),
+            val newLastMessage = ChatMessage(
+                text = "",
                 isUser = false,
                 isVoice = isVoice
             )
+            subscribeOnTaskSideEffects(newLastMessage)
+            val response = ioAsync {
+                graphAgent.execute(userText)
+            }
+
+            val botMessage = newLastMessage.copy(text = response.await())
             setState {
                 copy(
-                    chatMessages = chatMessages + botMessage,
+                    chatMessages = if (chatMessages.last().id == botMessage.id) {
+                        chatMessages.mapLast { botMessage }
+                    } else {
+                        chatMessages + botMessage
+                    },
                     isProcessing = false
                 )
             }
-            if (isVoice) {
-                startMessageSpeech(botMessage)
+            if (isVoice && !settingsProvider.useStreaming) {
+                say.queue(prepareTextForSpeech(botMessage.text))
             }
         } catch (e: Exception) {
             l.error("Chat message failed: ${e.message}", e)
@@ -245,29 +253,34 @@ class MainViewModel(
         }
     }
 
-    private suspend fun startMessageSpeech(message: ChatMessage) {
-        val text = prepareTextForSpeech(message.text)
-        if (text.isBlank()) return
-        stopSpeechPlayback()
-        setState { copy(speakingMessageId = message.id) }
-        val job = say.speakAndWait(text)
-        currentSpeechJob.set(job)
-        job.invokeOnCompletion {
-            if (viewModelScope.isActive) {
-                viewModelScope.launch {
-                    if (currentState.speakingMessageId == message.id) {
-                        setState { copy(speakingMessageId = null) }
+    private fun subscribeOnTaskSideEffects(msg: ChatMessage) {
+        val job = viewModelScope.launch {
+            val isCodeBlockStarted = AtomicBoolean(false)
+            graphAgent.sideEffects.collect { text ->
+                setState {
+                    val newHistory = if (msg.id == currentState.chatMessages.lastOrNull()?.id) {
+                        currentState.chatMessages.mapLast { last -> last.copy(text = text) }
+                    } else {
+                        currentState.chatMessages + msg.copy(text = text)
                     }
+                    copy(chatMessages = newHistory)
+                }
+                if (text.contains(CODE_BLOCK)) {
+                    isCodeBlockStarted.set(!isCodeBlockStarted.get())
+                    if (isCodeBlockStarted.get()) {
+                        say.queue(prepareTextForSpeech(text.substringBefore(CODE_BLOCK)))
+                    }
+                }
+                if (!isCodeBlockStarted.get()) {
+                    say.queue(prepareTextForSpeech(text.substringAfter(CODE_BLOCK)))
                 }
             }
         }
+        viewModelScope.launch { taskSideEffectJobs.add(job) }
     }
 
-    private suspend fun stopSpeechPlayback() {
-        currentSpeechJob.getAndSet(null)?.cancel()
-        say.clearQueue()
-        setState { copy(speakingMessageId = null) }
-    }
+    private inline fun <T> List<T>.mapLast(transform: (T) -> T): List<T> =
+        mapIndexed { i, v -> if (i == lastIndex) transform(v) else v }
 
     private suspend fun requestNewConversation() {
         if (currentState.chatMessages.isEmpty()) {
@@ -287,7 +300,7 @@ class MainViewModel(
     }
 
     private suspend fun startNewConversation() {
-        stopSpeechPlayback()
+        killTaskSideEffectJobs()
         agentRef.get()?.clearContext()
         setState {
             copy(
@@ -359,7 +372,7 @@ class MainViewModel(
     private suspend fun clearContext() {
         val lastKnownAgentContext: AgentContext<String>? = agentRef.get()?.currentContext?.value
         agentRef.get()?.clearContext()
-        stopSpeechPlayback()
+        killTaskSideEffectJobs()
         when (currentState.userExpectCloseOnX) {
             false -> {
                 val currentText = currentState.displayedText
@@ -455,7 +468,7 @@ class MainViewModel(
         currentState.toolPermissionDialog?.requestId?.let { requestId ->
             toolPermissionBroker.resolve(requestId, approved = false)
         }
-        currentSpeechJob.getAndSet(null)?.cancel()
+        killTaskSideEffectJobs()
         say.clearQueue()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
@@ -463,12 +476,21 @@ class MainViewModel(
 
     private fun prepareTextForSpeech(text: String): String {
         var result = text.replace(Regex("$CODE_BLOCK[\\s\\S]*?$CODE_BLOCK"), "")
-        //result = result.replace(Regex("`[^`]+`"), "")
+        result = result.replace(Regex("`[^`]+`"), "")
         result = result.replace(Regex("[\"«»„“”]"), "")
         result = result.replace(Regex("[*#]"), "")
         result = result.replace(Regex("\\s+"), " ")
 
         return result.trim()
+    }
+
+    /** Stop the current voice process, rm the queue */
+    private fun killTaskSideEffectJobs() {
+        viewModelScope.launch {
+            say.clearQueue()
+            taskSideEffectJobs.forEach { it.cancel() }
+            taskSideEffectJobs.clear()
+        }
     }
 
     private companion object {
