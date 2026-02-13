@@ -6,8 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
 import org.kodein.di.DI
 import org.kodein.di.DIAware
@@ -120,10 +121,10 @@ class MainViewModel(
             val userInputFlow = audioRecorder.audioFlow
                 .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
                 .catch { l.error("Error in audio flow: ${it.message}") }
-                .map { audioData -> rawToOpusOgg(rawData = audioData) }
-                .onEach { l.debug("[Sending audio data: ${it.size} bytes]") }
-                .map { audioData ->
-                    val resp = gigaVoiceAPI.recognize(audioData)
+                .mapLatest { audioData ->
+                    val encodedAudio = rawToOpusOgg(rawData = audioData)
+                    l.debug("[Sending audio data: ${encodedAudio.size} bytes]")
+                    val resp = gigaVoiceAPI.recognize(encodedAudio)
                     l.info("Recognition response: $resp")
                     resp.result.joinToString("\n").trim()
                 }
@@ -144,7 +145,7 @@ class MainViewModel(
                 setState { copy(isProcessing = false, statusMessage = "Ошибка: ${cause.message}") }
                 delay(1000L)
                 true
-            }.collect { userInput ->
+            }.collectLatest { userInput ->
                 withContext(Dispatchers.Main) {
                     sendChatMessage(
                         isVoice = true,
@@ -212,13 +213,15 @@ class MainViewModel(
             )
         }
 
+        val newLastMessage = ChatMessage(
+            text = "",
+            isUser = false,
+            isVoice = isVoice
+        )
+        var sideEffectsJob: Job? = null
+
         try {
-            val newLastMessage = ChatMessage(
-                text = "",
-                isUser = false,
-                isVoice = isVoice
-            )
-            subscribeOnTaskSideEffects(newLastMessage)
+            sideEffectsJob = subscribeOnTaskSideEffects(newLastMessage)
             l.info("About to execute agent with user input $userText")
             val response = ioAsync {
                 graphAgent.execute(userText)
@@ -239,6 +242,22 @@ class MainViewModel(
             if (isVoice && !settingsProvider.useStreaming) {
                 say.queue(prepareTextForSpeech(botMessage.text))
             }
+        } catch (e: CancellationException) {
+            l.info("Chat message cancelled: ${e.message}")
+            withContext(NonCancellable) {
+                setState {
+                    val idsToDrop = if (isVoice) {
+                        arrayOf(userMessage.id, newLastMessage.id)
+                    } else {
+                        arrayOf(newLastMessage.id)
+                    }
+                    copy(
+                        chatMessages = chatMessages.filterNot { it.id in idsToDrop },
+                        isProcessing = false,
+                        speakingMessageId = null
+                    )
+                }
+            }
         } catch (e: Exception) {
             l.error("Chat message failed: ${e.message}", e)
             val errorMessage = ChatMessage(
@@ -253,10 +272,13 @@ class MainViewModel(
                     speakingMessageId = null
                 )
             }
+        } finally {
+            sideEffectsJob?.cancel()
+            sideEffectsJob?.let { taskSideEffectJobs.remove(it) }
         }
     }
 
-    private fun subscribeOnTaskSideEffects(msg: ChatMessage) {
+    private fun subscribeOnTaskSideEffects(msg: ChatMessage): Job {
         val job = viewModelScope.launch {
             val isCodeBlockStarted = AtomicBoolean(false)
             graphAgent.sideEffects.collect { text ->
@@ -279,7 +301,8 @@ class MainViewModel(
                 }
             }
         }
-        viewModelScope.launch { taskSideEffectJobs.add(job) }
+        taskSideEffectJobs.add(job)
+        return job
     }
 
     private inline fun <T> List<T>.mapLast(transform: (T) -> T): List<T> =
@@ -489,11 +512,9 @@ class MainViewModel(
 
     /** Stop the current voice process, rm the queue */
     private fun killTaskSideEffectJobs() {
-        viewModelScope.launch {
-            say.clearQueue()
-            taskSideEffectJobs.forEach { it.cancel() }
-            taskSideEffectJobs.clear()
-        }
+        say.clearQueue()
+        taskSideEffectJobs.forEach { it.cancel() }
+        taskSideEffectJobs.clear()
     }
 
     private companion object {
