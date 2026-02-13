@@ -172,8 +172,9 @@ class MainViewModel(
     }
 
     private suspend fun startRecording() {
-        if (currentState.isListening || currentState.isProcessing) return
+        if (currentState.isListening) return
         killTaskSideEffectJobs()
+        l.info("About to agent's cancelActiveJob")
         agentRef.get()?.cancelActiveJob()
         ioLaunch { say.playMacPing() }
         setState { copy(isListening = true, statusMessage = "Запись запущена") }
@@ -183,7 +184,7 @@ class MainViewModel(
     private suspend fun stopRecording() {
         if (!currentState.isListening) return
         audioRecorder.stop()
-        setState { copy(isListening = false, statusMessage = "Обработка входа", isProcessing = true) }
+        setState { copy(isListening = false, statusMessage = "Обработка входа") }
         delay(300)
         ioLaunch { say.playTextRand(speed = 120, "ok", "okey", "окей", "ок") }
     }
@@ -218,11 +219,13 @@ class MainViewModel(
                 isVoice = isVoice
             )
             subscribeOnTaskSideEffects(newLastMessage)
+            l.info("About to execute agent with user input $userText")
             val response = ioAsync {
                 graphAgent.execute(userText)
             }
 
             val botMessage = newLastMessage.copy(text = response.await())
+            l.info("Agent response set")
             setState {
                 copy(
                     chatMessages = if (chatMessages.last().id == botMessage.id) {
@@ -259,7 +262,7 @@ class MainViewModel(
             graphAgent.sideEffects.collect { text ->
                 setState {
                     val newHistory = if (msg.id == currentState.chatMessages.lastOrNull()?.id) {
-                        currentState.chatMessages.mapLast { last -> last.copy(text = text) }
+                        currentState.chatMessages.mapLast { last -> last.copy(text = last.text + text) }
                     } else {
                         currentState.chatMessages + msg.copy(text = text)
                     }
