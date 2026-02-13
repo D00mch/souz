@@ -19,6 +19,7 @@ import ru.gigadesk.audio.*
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
 import androidx.compose.ui.text.input.TextFieldValue
+import kotlinx.coroutines.flow.retryWhen
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.keys.HotkeyListener
@@ -136,19 +137,18 @@ class MainViewModel(
                 }
             }
 
-            runCatching {
-                userInputFlow.collect { userInput ->
-                    withContext(Dispatchers.Main) {
-                        sendChatMessage(
-                            isVoice = true,
-                            externalText = userInput
-                        )
-                    }
-                }
-            }.onFailure { e ->
-                if (e !is CancellationException) {
-                    l.error("Agent flow terminated: ${e.message}", e)
-                    setState { copy(isProcessing = false, statusMessage = "Ошибка: ${e.message}") }
+            userInputFlow.retryWhen { cause, attempt ->
+                if (cause is CancellationException) return@retryWhen false
+                l.error("Agent flow failed, attempt $attempt, cause: ${cause.message}", cause)
+                setState { copy(isProcessing = false, statusMessage = "Ошибка: ${cause.message}") }
+                delay(1000L)
+                true
+            }.collect { userInput ->
+                withContext(Dispatchers.Main) {
+                    sendChatMessage(
+                        isVoice = true,
+                        externalText = userInput
+                    )
                 }
             }
         } finally {
