@@ -8,8 +8,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -55,6 +54,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerMoveFilter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextRange
@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
@@ -108,7 +109,6 @@ private val SendButtonActiveGradient = Brush.linearGradient(
 
 private val ContextOptions = listOf(8_000, 16_000, 32_000, 64_000, 96_000, 128_000)
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ChatInputWithQuickSettings(
     value: TextFieldValue,
@@ -272,8 +272,8 @@ internal fun ChatInputWithQuickSettings(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 private fun VoiceToggleButton(
     isListening: Boolean,
     enabled: Boolean,
@@ -282,6 +282,10 @@ private fun VoiceToggleButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
     val isPressed by interactionSource.collectIsPressedAsState()
+    var showTooltip by remember { mutableStateOf(false) }
+    var tooltipHeightPx by remember { mutableStateOf(0) }
+    val density = LocalDensity.current
+    val tooltipOffset = with(density) { tooltipHeightPx.toDp() + 8.dp }
     val scale by animateFloatAsState(
         targetValue = when {
             isPressed -> 0.95f
@@ -293,31 +297,81 @@ private fun VoiceToggleButton(
 
     val iconColor = if (isListening) AccentTurquoise else Color(0x80FFFFFF)
     val background = if (isListening) Color(0x3312E0B5) else Color.Transparent
+    val hoverBorderColor = if (isHovered) Color(0x669CA3AF) else Color.Transparent
 
-    TooltipArea(
-        delayMillis = 450,
-        tooltip = {
+    Box(
+        modifier = Modifier
+            .size(ControlButtonSize)
+            .pointerMoveFilter(
+                onEnter = {
+                    showTooltip = true
+                    false
+                },
+                onExit = {
+                    showTooltip = false
+                    false
+                }
+            )
+    ) {
+        AnimatedVisibility(
+            visible = showTooltip,
+            enter = fadeIn(animationSpec = tween(150)) + slideInVertically(
+                animationSpec = tween(150),
+                initialOffsetY = { 5 }
+            ),
+            exit = fadeOut(animationSpec = tween(150)) + slideOutVertically(
+                animationSpec = tween(150),
+                targetOffsetY = { 5 }
+            ),
+            modifier = Modifier
+                .wrapContentSize(unbounded = true)
+                .align(Alignment.TopCenter)
+                .offset(y = -tooltipOffset)
+                .zIndex(2f)
+        ) {
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xE6000000))
-                    .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .onSizeChanged { tooltipHeightPx = it.height }
+                    .clip(RoundedCornerShape(12.dp))
+                    .shadow(
+                        elevation = 12.dp,
+                        shape = RoundedCornerShape(12.dp),
+                        ambientColor = Color(0x4D000000),
+                        spotColor = Color(0x4D000000)
+                    )
             ) {
-                Text(
-                    text = "Правый Option для записи",
-                    color = Color(0xF2FFFFFF),
-                    fontSize = 12.sp
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(Color(0xE6000000))
+                        .blur(20.dp)
                 )
+                Box(
+                    modifier = Modifier
+                        .widthIn(min = 156.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xE6000000))
+                        .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "Зажать правый Option",
+                        color = Color(0xE6FFFFFF),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
             }
         }
-    ) {
+
         Box(
             modifier = Modifier
                 .size(ControlButtonSize)
                 .scale(scale)
                 .clip(CircleShape)
                 .background(background)
+                .border(1.dp, hoverBorderColor, CircleShape)
                 .hoverable(interactionSource = interactionSource)
                 .pointerHoverIcon(PointerIcon.Hand)
                 .clickable(
@@ -404,6 +458,8 @@ private fun QuickSettingsPanel(
     onModelSelect: (QuickOption<String>) -> Unit,
     onContextSelect: (QuickOption<Int>) -> Unit,
 ) {
+    val selectedModelLabel = modelOptions.firstOrNull { it.value == selectedModel }?.label ?: "Модель"
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -412,7 +468,7 @@ private fun QuickSettingsPanel(
         verticalAlignment = Alignment.CenterVertically
     ) {
         QuickDropdown(
-            label = "Модель",
+            label = selectedModelLabel,
             width = 144.dp,
             expanded = isModelDropdownOpen,
             options = modelOptions,
