@@ -24,6 +24,7 @@ import ru.gigadesk.ui.graphlog.GraphSessionsScreen
 import ru.gigadesk.ui.graphlog.GraphVisualizationScreen
 import ru.gigadesk.ui.main.RealLiquidGlassCard
 import ru.gigadesk.ui.common.DraggableWindowArea
+import ru.gigadesk.ui.common.applyMinWindowSize
 
 @Composable
 fun SettingsScreen(
@@ -49,77 +50,8 @@ fun SettingsScreen(
     val windowScope = ru.gigadesk.LocalWindowScope.current
     DisposableEffect(windowScope) {
         val window = windowScope?.window
-        val originalMinSize = window?.minimumSize
-        
-        if (window != null) {
-            val minWidth = 680
-            val minHeight = 700
-            val newMinSize = java.awt.Dimension(minWidth, minHeight)
-            
-            val currentWidth = window.width
-            val currentHeight = window.height
-            
-            if (currentWidth < minWidth || currentHeight < minHeight) {
-                val targetWidth = maxOf(currentWidth, minWidth)
-                val targetHeight = maxOf(currentHeight, minHeight)
-                
-                val ge = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
-                val screens = ge.screenDevices
-                
-                var bestScreenBounds = window.graphicsConfiguration.bounds
-                var bestScreenInsets = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(window.graphicsConfiguration)
-                
-                val windowCenter = java.awt.Point(window.x + currentWidth / 2, window.y + currentHeight / 2)
-                
-                for (screen in screens) {
-                    val config = screen.defaultConfiguration
-                    if (config.bounds.contains(windowCenter)) {
-                        bestScreenBounds = config.bounds
-                        bestScreenInsets = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(config)
-                        break
-                    }
-                }
-
-                val usableX = bestScreenBounds.x + bestScreenInsets.left
-                val usableY = bestScreenBounds.y + bestScreenInsets.top
-                val usableWidth = bestScreenBounds.width - (bestScreenInsets.left + bestScreenInsets.right)
-                val usableHeight = bestScreenBounds.height - (bestScreenInsets.top + bestScreenInsets.bottom)
-
-                var newX = window.x
-                var newY = window.y
-
-                val finalWidth = minOf(targetWidth, usableWidth)
-                val finalHeight = minOf(targetHeight, usableHeight)
-
-                if (newX + finalWidth > usableX + usableWidth) {
-                    newX = usableX + usableWidth - finalWidth
-                }
-
-                if (newY + finalHeight > usableY + usableHeight) {
-                    newY = usableY + usableHeight - finalHeight
-                }
-
-                if (newX < usableX) {
-                    newX = usableX
-                }
-
-                if (newY < usableY) {
-                    newY = usableY
-                }
-
-                window.setBounds(newX, newY, finalWidth, finalHeight)
-
-                window.minimumSize = newMinSize
-            } else {
-                window.minimumSize = newMinSize
-            }
-        }
-
-        onDispose {
-            if (window != null) {
-                window.minimumSize = originalMinSize
-            }
-        }
+        val originalMinSize = window?.let { applyMinWindowSize(it, minWidth = 680, minHeight = 700) }
+        onDispose { window?.minimumSize = originalMinSize }
     }
     
     when (state.currentScreen) {

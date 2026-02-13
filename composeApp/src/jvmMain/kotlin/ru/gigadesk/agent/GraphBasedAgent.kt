@@ -49,7 +49,8 @@ class GraphBasedAgent(
         AgentSettings(
             model = settingsProvider.gigaModel.alias,
             temperature = settingsProvider.temperature,
-            toolsByCategory = toolsFactory.toolsByCategory
+            toolsByCategory = toolsFactory.toolsByCategory,
+            contextSize = settingsProvider.contextSize,
         )
     )
     private val allFunctions: List<GigaRequest.Function> = settings.load().tools.values.map { it.fn }

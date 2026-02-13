@@ -1,6 +1,7 @@
 package ru.gigadesk.ui.main
 
 import ru.gigadesk.agent.engine.AgentContext
+import ru.gigadesk.giga.DEFAULT_MAX_TOKENS
 import ru.gigadesk.ui.VMEvent
 import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
@@ -12,7 +13,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 data class ChatMessage(
     val text: String,
     val isUser: Boolean,
-    val isVoice: Boolean? = null,
+    val isVoice: Boolean = false,
     val timestamp: Long = System.currentTimeMillis(),
     val id: String = java.util.UUID.randomUUID().toString()
 )
@@ -40,7 +41,7 @@ data class MainState(
     val chatStartTip: String = randomStatusTip,
     val chatInputText: TextFieldValue = TextFieldValue(""),
     val selectedModel: String = ru.gigadesk.giga.GigaModel.Max.alias,
-    val selectedContextSize: Int = 16_000,
+    val selectedContextSize: Int = DEFAULT_MAX_TOKENS,
     val speakingMessageId: String? = null,
     val showNewChatDialog: Boolean = false,
     val toolPermissionDialog: ToolPermissionDialogData? = null,

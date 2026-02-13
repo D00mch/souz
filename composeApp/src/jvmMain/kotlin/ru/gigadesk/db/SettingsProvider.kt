@@ -4,7 +4,6 @@ import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.giga.EmbeddingsModel
 import ru.gigadesk.giga.DEFAULT_MAX_TOKENS
 import ru.gigadesk.giga.GigaModel
-import ru.gigadesk.giga.MAX_TOKENS
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
@@ -87,9 +86,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         envKey = EMBEDDINGS_MODEL
     )
 
-    init {
-        MAX_TOKENS = contextSize
-    }
+
 
     override var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
     override var qwenChatKey: String? by keyDelegate(configKey = QWEN_CHAT_KEY, envKey = "QWEN_KEY")
@@ -147,9 +144,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     override var contextSize: Int
         get() = _contextSizeDelegate?.toIntOrNull()?.takeIf { it > 0 } ?: DEFAULT_MAX_TOKENS
         set(value) {
-            val normalized = value.takeIf { it > 0 } ?: DEFAULT_MAX_TOKENS
-            _contextSizeDelegate = normalized.toString()
-            MAX_TOKENS = normalized
+            _contextSizeDelegate = (value.takeIf { it > 0 } ?: DEFAULT_MAX_TOKENS).toString()
         }
 
     override var initialWindowWidthDp: Int

@@ -1,5 +1,6 @@
 package ru.gigadesk.agent.engine
 
+import ru.gigadesk.giga.DEFAULT_MAX_TOKENS
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaToolSetup
 import ru.gigadesk.tool.ToolCategory
@@ -25,6 +26,7 @@ data class AgentSettings(
     val model: String,
     val temperature: Float,
     val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
+    val contextSize: Int = DEFAULT_MAX_TOKENS,
     val tools: Map<String, GigaToolSetup> = toolsByCategory.values
         .flatMap { it.entries }
         .associate { it.key to it.value }

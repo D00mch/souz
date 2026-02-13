@@ -366,6 +366,61 @@ fun MainScreenContent(
     }
 }
 
+private fun chatMarkdownColors(textColor: Color) = DefaultMarkdownColors(
+    text = textColor,
+    codeText = Color(0xFFE0E0E0),
+    codeBackground = Color(0x66000000),
+    inlineCodeText = Color(0xFF81D4FA),
+    inlineCodeBackground = Color(0x1AFFFFFF),
+    dividerColor = textColor.copy(alpha = 0.2f),
+    linkText = Color(0xFF82B1FF)
+)
+
+@Composable
+private fun chatMarkdownTypography(
+    baseStyle: TextStyle,
+    codeStyle: TextStyle,
+    headingScale: HeadingScale = HeadingScale.LARGE,
+): DefaultMarkdownTypography {
+    val headings = when (headingScale) {
+        HeadingScale.LARGE -> listOf(
+            MaterialTheme.typography.headlineMedium,
+            MaterialTheme.typography.titleLarge,
+            MaterialTheme.typography.titleMedium,
+            MaterialTheme.typography.titleSmall,
+            MaterialTheme.typography.bodyLarge,
+            MaterialTheme.typography.bodyMedium,
+        )
+        HeadingScale.SMALL -> listOf(
+            MaterialTheme.typography.titleMedium,
+            MaterialTheme.typography.titleSmall,
+            MaterialTheme.typography.titleSmall,
+            MaterialTheme.typography.bodyLarge,
+            MaterialTheme.typography.bodyMedium,
+            MaterialTheme.typography.bodyMedium,
+        )
+    }
+    return DefaultMarkdownTypography(
+        h1 = headings[0].copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+        h2 = headings[1].copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+        h3 = headings[2].copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+        h4 = headings[3].copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+        h5 = headings[4].copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+        h6 = headings[5].copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
+        text = baseStyle,
+        paragraph = baseStyle,
+        code = codeStyle,
+        inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color(0x1AFFFFFF)),
+        quote = baseStyle.copy(color = Color.Gray, fontStyle = FontStyle.Italic),
+        bullet = baseStyle.copy(fontWeight = FontWeight.Bold),
+        list = baseStyle,
+        ordered = baseStyle,
+        link = baseStyle.copy(color = Color(0xFF82B1FF), textDecoration = TextDecoration.Underline)
+    )
+}
+
+private enum class HeadingScale { LARGE, SMALL }
+
 @Composable
 fun MarkdownViewer(
     text: String,
@@ -397,32 +452,8 @@ fun MarkdownViewer(
         fontSize = baseFontSize * 0.9,
         color = Color(0xFFE0E0E0)
     )
-    val customTypography = DefaultMarkdownTypography(
-        h1 = MaterialTheme.typography.headlineMedium.copy(color = Color.White, fontWeight = FontWeight.Bold),
-        h2 = MaterialTheme.typography.titleLarge.copy(color = Color.White, fontWeight = FontWeight.Bold),
-        h3 = MaterialTheme.typography.titleMedium.copy(color = Color.White, fontWeight = FontWeight.Bold),
-        h4 = MaterialTheme.typography.titleSmall.copy(color = Color.White, fontWeight = FontWeight.Bold),
-        h5 = MaterialTheme.typography.bodyLarge.copy(color = Color.White, fontWeight = FontWeight.Bold),
-        h6 = MaterialTheme.typography.bodyMedium.copy(color = Color.White, fontWeight = FontWeight.Bold),
-        text = baseStyle,
-        paragraph = baseStyle,
-        code = codeStyle,
-        inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color(0x1AFFFFFF)),
-        quote = baseStyle.copy(color = Color.Gray, fontStyle = FontStyle.Italic),
-        bullet = baseStyle.copy(fontWeight = FontWeight.Bold),
-        list = baseStyle,
-        ordered = baseStyle,
-        link = baseStyle.copy(color = Color(0xFF82B1FF), textDecoration = TextDecoration.Underline)
-    )
-    val customColors = DefaultMarkdownColors(
-        text = Color.White,
-        codeText = Color(0xFFE0E0E0),
-        codeBackground = Color(0x66000000),
-        inlineCodeText = Color(0xFF81D4FA),
-        inlineCodeBackground = Color(0x1AFFFFFF),
-        dividerColor = Color(0x33FFFFFF),
-        linkText = Color(0xFF82B1FF)
-    )
+    val customTypography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.LARGE)
+    val customColors = chatMarkdownColors(Color.White)
 
     SelectionContainer(
         modifier = modifier
@@ -505,22 +536,12 @@ fun ChatModeContent(
     
     Column(
         modifier = modifier.onPreviewKeyEvent { event ->
-            if (event.type == KeyEventType.KeyDown && 
+            if (event.type == KeyEventType.KeyDown &&
                 !event.isMetaPressed &&
                 event.key != Key.Enter &&
                 event.key != Key.NumPadEnter
             ) {
-                val char = event.utf16CodePoint.toChar()
-                val isPrintable = char.isLetterOrDigit() || 
-                                  char.isWhitespace() || 
-                                  "!@#$%^&*()_+-=[]{}|;':\",./<>?`~\\".contains(char)
-
-                if (isPrintable) {
-                    focusRequester.requestFocus()
-                    val newText = inputText.text + char
-                    onInputChange(TextFieldValue(newText, TextRange(newText.length)))
-                    return@onPreviewKeyEvent true
-                }
+                focusRequester.requestFocus()
             }
             false
         }
@@ -698,33 +719,8 @@ private fun ChatBubble(
                     color = Color(0xFFE0E0E0)
                 )
                 
-                val bubbleTypography = DefaultMarkdownTypography(
-                    h1 = MaterialTheme.typography.titleMedium.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
-                    h2 = MaterialTheme.typography.titleSmall.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
-                    h3 = MaterialTheme.typography.titleSmall.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
-                    h4 = MaterialTheme.typography.bodyLarge.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
-                    h5 = MaterialTheme.typography.bodyMedium.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
-                    h6 = MaterialTheme.typography.bodyMedium.copy(color = baseStyle.color, fontWeight = FontWeight.Bold),
-                    text = baseStyle,
-                    paragraph = baseStyle,
-                    code = codeStyle,
-                    inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color(0x1AFFFFFF)),
-                    quote = baseStyle.copy(color = Color.Gray, fontStyle = FontStyle.Italic),
-                    bullet = baseStyle.copy(fontWeight = FontWeight.Bold),
-                    list = baseStyle,
-                    ordered = baseStyle,
-                    link = baseStyle.copy(color = Color(0xFF82B1FF), textDecoration = TextDecoration.Underline)
-                )
-                
-                val bubbleColors = DefaultMarkdownColors(
-                    text = baseStyle.color,
-                    codeText = Color(0xFFE0E0E0),
-                    codeBackground = Color(0x66000000),
-                    inlineCodeText = Color(0xFF81D4FA),
-                    inlineCodeBackground = Color(0x1AFFFFFF),
-                    dividerColor = baseStyle.color.copy(alpha = 0.2f),
-                    linkText = Color(0xFF82B1FF)
-                )
+                val bubbleTypography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.SMALL)
+                val bubbleColors = chatMarkdownColors(baseStyle.color)
 
                 SelectionContainer {
                     Column {
@@ -1054,94 +1050,6 @@ private fun DialogActionButton(
                 color = textColor,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold
-            )
-        }
-    }
-}
-
-@Composable
-private fun ChatInputField(
-    value: TextFieldValue,
-    onValueChange: (TextFieldValue) -> Unit,
-    onSend: () -> Unit,
-    enabled: Boolean,
-    focusRequester: FocusRequester,
-    placeholder: String = "Введите сообщение...",
-    modifier: Modifier = Modifier
-) {
-    val hasText = value.text.isNotBlank() && enabled
-    val inputShape = RoundedCornerShape(24.dp)
-    
-    Row(
-        modifier = modifier
-            .heightIn(min = 44.dp, max = 120.dp)
-            .clip(inputShape)
-            .background(ChatInputBackground)
-            .border(1.dp, ChatInputBorderColor, inputShape)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .onPreviewKeyEvent { event ->
-                when {
-                    event.type == KeyEventType.KeyDown && event.key == Key.Enter && !event.isShiftPressed -> {
-                        if (hasText) {
-                            onSend()
-                        }
-                        true
-                    }
-                    event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isShiftPressed -> {
-                        val cursorPos = value.selection.start
-                        val newText = value.text.substring(0, cursorPos) + "\n" + value.text.substring(cursorPos)
-                        onValueChange(TextFieldValue(newText, TextRange(cursorPos + 1)))
-                        true
-                    }
-                    else -> false
-                }
-            },
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier.weight(1f),
-            contentAlignment = Alignment.CenterStart
-        ) {
-            if (value.text.isEmpty()) {
-                Text(
-                    placeholder,
-                    color = ChatInputPlaceholderColor,
-                    fontSize = 14.sp
-                )
-            }
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                enabled = enabled,
-                textStyle = TextStyle(
-                    color = ChatInputTextColor,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                ),
-                singleLine = false,
-                maxLines = 5,
-                cursorBrush = SolidColor(ChatSendButtonActiveIconColor),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusRequester)
-            )
-        }
-        
-        Spacer(Modifier.width(8.dp))
-        
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(if (hasText) ChatSendButtonActiveBackground else ChatSendButtonInactiveBackground)
-                .clickable(enabled = hasText) { onSend() },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.ArrowUpward,
-                contentDescription = "Отправить",
-                tint = if (hasText) ChatSendButtonActiveIconColor else ChatSendButtonInactiveIconColor,
-                modifier = Modifier.size(18.dp)
             )
         }
     }

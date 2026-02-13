@@ -56,11 +56,10 @@ fun main() {
             
             try {
                 if (System.getProperty("os.name").contains("Mac")) {
-                    val iconStream = Thread.currentThread().contextClassLoader.getResourceAsStream("icon-light.png")
-                    if (iconStream != null) {
-                        val iconImage = javax.imageio.ImageIO.read(iconStream)
-                        java.awt.Taskbar.getTaskbar().iconImage = iconImage
-                    }
+                    Thread.currentThread().contextClassLoader
+                        .getResourceAsStream("icon-light.png")?.use {
+                            java.awt.Taskbar.getTaskbar().iconImage = javax.imageio.ImageIO.read(it)
+                        }
                 }
             } catch (e: Exception) {
                 println("Failed to set dock icon: ${e.message}")

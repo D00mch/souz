@@ -105,7 +105,6 @@ fun String.toFinishReason(): GigaResponse.FinishReason? {
 }
 
 const val DEFAULT_MAX_TOKENS = 16_000
-var MAX_TOKENS = DEFAULT_MAX_TOKENS
 
 enum class LlmProvider {
     GIGA,
@@ -162,7 +161,7 @@ object GigaRequest {
         val functions: List<Function> = emptyList(),
         val temperature: Float? = null,
         val stream: Boolean = false,
-        val maxTokens: Int = MAX_TOKENS,
+        val maxTokens: Int = DEFAULT_MAX_TOKENS,
         @field:JsonProperty("update_interval") val updateInterval: Int? = 1,
     ) {
         /**

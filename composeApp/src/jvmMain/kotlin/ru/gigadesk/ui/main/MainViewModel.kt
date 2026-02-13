@@ -45,7 +45,7 @@ class MainViewModel(
     private var onboardingSpeechStartedAt: Long? = null
 
     private val say: Say by di.instance()
-    private var currentSpeechJob: Job? = null
+    private val currentSpeechJob = AtomicReference<Job?>(null)
 
     private val toolPermissionBroker: ToolPermissionBroker by di.instance()
 
@@ -137,10 +137,12 @@ class MainViewModel(
 
             runCatching {
                 userInputFlow.collect { userInput ->
-                    sendChatMessage(
-                        isVoice = true,
-                        externalText = userInput
-                    )
+                    withContext(Dispatchers.Main) {
+                        sendChatMessage(
+                            isVoice = true,
+                            externalText = userInput
+                        )
+                    }
                 }
             }.onFailure { e ->
                 if (e !is CancellationException) {
@@ -195,7 +197,7 @@ class MainViewModel(
         val userMessage = ChatMessage(
             text = userText,
             isUser = true,
-            isVoice = isVoice.takeIf { it }
+            isVoice = isVoice
         )
         setState {
             copy(
@@ -214,7 +216,7 @@ class MainViewModel(
             val botMessage = ChatMessage(
                 text = response.await(),
                 isUser = false,
-                isVoice = isVoice.takeIf { it }
+                isVoice = isVoice
             )
             setState {
                 copy(
@@ -230,7 +232,7 @@ class MainViewModel(
             val errorMessage = ChatMessage(
                 text = "Ошибка: ${e.message}",
                 isUser = false,
-                isVoice = isVoice.takeIf { it }
+                isVoice = isVoice
             )
             setState {
                 copy(
@@ -248,19 +250,20 @@ class MainViewModel(
         stopSpeechPlayback()
         setState { copy(speakingMessageId = message.id) }
         val job = say.speakAndWait(text)
-        currentSpeechJob = job
+        currentSpeechJob.set(job)
         job.invokeOnCompletion {
-            viewModelScope.launch {
-                if (currentState.speakingMessageId == message.id) {
-                    setState { copy(speakingMessageId = null) }
+            if (viewModelScope.isActive) {
+                viewModelScope.launch {
+                    if (currentState.speakingMessageId == message.id) {
+                        setState { copy(speakingMessageId = null) }
+                    }
                 }
             }
         }
     }
 
     private suspend fun stopSpeechPlayback() {
-        currentSpeechJob?.cancel()
-        currentSpeechJob = null
+        currentSpeechJob.getAndSet(null)?.cancel()
         say.clearQueue()
         setState { copy(speakingMessageId = null) }
     }
@@ -441,8 +444,7 @@ class MainViewModel(
         currentState.toolPermissionDialog?.requestId?.let { requestId ->
             toolPermissionBroker.resolve(requestId, approved = false)
         }
-        currentSpeechJob?.cancel()
-        currentSpeechJob = null
+        currentSpeechJob.getAndSet(null)?.cancel()
         say.clearQueue()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
