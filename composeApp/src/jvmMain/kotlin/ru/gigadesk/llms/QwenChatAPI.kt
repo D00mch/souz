@@ -1,6 +1,7 @@
 package ru.gigadesk.llms
 
 import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -40,6 +41,7 @@ import ru.gigadesk.giga.gigaJsonMapper
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ToolListFiles
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.measureTime
 
@@ -121,6 +123,12 @@ class QwenChatAPI(
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
         val body = body.rmFnIds()
         try {
+            val model = resolveChatModel(body.model)
+            val streamAccumulator = QwenStreamAccumulator(
+                parseFunctionArguments = ::parseFunctionArguments,
+                finishReasonResolver = { it.toQwenFinishReason() },
+                roleResolver = { it.toGigaRole() },
+            )
             client.sse(
                 urlString = GENERATION_SSE_URL,
                 request = {
@@ -134,7 +142,14 @@ class QwenChatAPI(
                     if (data == "[DONE]" || !data.trimStart().startsWith("{")) {
                         return@collect
                     }
-                    send(parseGenerationChunk(data, resolveChatModel(body.model)))
+                    val chunk = runCatching { parseGenerationChunk(data, model, streamAccumulator) }
+                        .getOrElse {
+                            l.warn("Failed to parse Qwen stream chunk: $data", it)
+                            return@collect
+                        }
+                    if (chunk.choices.isNotEmpty()) {
+                        send(chunk)
+                    }
                 }
             }
         } catch (e: ClientRequestException) {
@@ -199,20 +214,20 @@ class QwenChatAPI(
             put("result_format", "message")
             put("incremental_output", true)
             put("stream", true)
-            put("result_format", "message")
             body.temperature?.let { put("temperature", it) }
             if (body.maxTokens > 0) {
                 put("max_tokens", body.maxTokens)
+            }
+            if (tools.isNotEmpty()) {
+                put("tools", tools)
+                put("tool_choice", "auto")
+                put("parallel_tool_calls", true)
             }
         }
         return buildMap {
             put("model", resolveChatModel(body.model))
             put("input", mapOf("messages" to buildMessages(body.messages)))
-            put("parallel_tool_calls", true)
             put("parameters", parameters)
-            if (tools.isNotEmpty()) {
-                put("tools", tools)
-            }
         }
     }
 
@@ -290,10 +305,13 @@ class QwenChatAPI(
         )
     }
 
-    private fun parseGenerationChunk(text: String, model: String): GigaResponse.Chat {
-        val node = gigaJsonMapper.readTree(text)
-        val output = node["output"]
-        val choices = parseChoices(output?.get("choices"))
+    private fun parseGenerationChunk(
+        text: String,
+        model: String,
+        streamAccumulator: QwenStreamAccumulator,
+    ): GigaResponse.Chat.Ok {
+        val node: JsonNode = gigaJsonMapper.readTree(text)
+        val choices = streamAccumulator.processChunk(node)
         val usage = parseUsage(node["usage"])
         return GigaResponse.Chat.Ok(
             choices = choices,
@@ -304,7 +322,7 @@ class QwenChatAPI(
     }
 
     private fun parseChoices(
-        choicesNode: com.fasterxml.jackson.databind.JsonNode?,
+        choicesNode: JsonNode?,
         nestedMessageField: String = "message",
     ): List<GigaResponse.Choice> {
         if (choicesNode == null || !choicesNode.isArray) {
@@ -363,7 +381,7 @@ class QwenChatAPI(
         return choices
     }
 
-    private fun parseUsage(node: com.fasterxml.jackson.databind.JsonNode?): GigaResponse.Usage {
+    private fun parseUsage(node: JsonNode?): GigaResponse.Usage {
         val prompt = node?.get("prompt_tokens")?.asInt() ?: node?.get("input_tokens")?.asInt() ?: 0
         val completion = node?.get("completion_tokens")?.asInt() ?: node?.get("output_tokens")?.asInt() ?: 0
         val total = node?.get("total_tokens")?.asInt() ?: (prompt + completion)
@@ -429,6 +447,107 @@ class QwenChatAPI(
         private const val GENERATION_SSE_URL =
             "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
     }
+
+    private class QwenStreamAccumulator(
+        private val parseFunctionArguments: (String) -> Map<String, Any>,
+        private val finishReasonResolver: (String?) -> GigaResponse.FinishReason?,
+        private val roleResolver: (String?) -> GigaMessageRole,
+    ) {
+        private val choicesState = ConcurrentHashMap<Int, ChoiceState>()
+
+        data class ChoiceState(
+            var role: GigaMessageRole = GigaMessageRole.assistant,
+            val toolCalls: MutableMap<Int, ToolCallState> = mutableMapOf(),
+        )
+
+        data class ToolCallState(
+            var id: String? = null,
+            var name: String? = null,
+            val arguments: StringBuilder = StringBuilder(),
+        )
+
+        fun processChunk(chunkNode: JsonNode): List<GigaResponse.Choice> {
+            val choicesNode = chunkNode["output"]?.get("choices") ?: return emptyList()
+            if (!choicesNode.isArray) return emptyList()
+
+            val resultChoices = mutableListOf<GigaResponse.Choice>()
+
+            choicesNode.forEach { choiceNode ->
+                val choiceIndex = choiceNode["index"]?.asInt() ?: 0
+                val state = choicesState.getOrPut(choiceIndex) { ChoiceState() }
+
+                val messageNode = choiceNode["message"]
+                val finishReason = finishReasonResolver(choiceNode["finish_reason"]?.asText())
+
+                messageNode?.get("role")?.asText()?.let { role ->
+                    state.role = roleResolver(role)
+                }
+
+                val contentChunk = messageNode?.get("content")?.asText()
+                if (!contentChunk.isNullOrEmpty()) {
+                    resultChoices += GigaResponse.Choice(
+                        message = GigaResponse.Message(
+                            content = contentChunk,
+                            role = state.role,
+                            functionCall = null,
+                            functionsStateId = null,
+                        ),
+                        index = choiceIndex,
+                        finishReason = null,
+                    )
+                }
+
+                val toolCallsNode = messageNode?.get("tool_calls")
+                if (toolCallsNode != null && toolCallsNode.isArray) {
+                    toolCallsNode.forEach { toolCallNode ->
+                        val toolIndex = toolCallNode["index"]?.asInt() ?: 0
+                        val toolState = state.toolCalls.getOrPut(toolIndex) { ToolCallState() }
+
+                        toolCallNode["id"]?.asText()?.takeIf { it.isNotBlank() }?.let { toolState.id = it }
+                        toolCallNode["function"]?.get("name")?.asText()
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { toolState.name = it }
+                        toolCallNode["function"]?.get("arguments")?.asText()?.let {
+                            toolState.arguments.append(it)
+                        }
+                    }
+                }
+
+                if (finishReason != null) {
+                    if (state.toolCalls.isNotEmpty()) {
+                        state.toolCalls.entries.sortedBy { it.key }.forEach { (toolIndex, toolState) ->
+                            val name = toolState.name ?: return@forEach
+                            val argsText = toolState.arguments.toString()
+                            resultChoices += GigaResponse.Choice(
+                                message = GigaResponse.Message(
+                                    content = "",
+                                    role = state.role,
+                                    functionCall = GigaResponse.FunctionCall(name, parseFunctionArguments(argsText)),
+                                    functionsStateId = toolState.id,
+                                ),
+                                index = toolIndex,
+                                finishReason = GigaResponse.FinishReason.function_call,
+                            )
+                        }
+                        state.toolCalls.clear()
+                    } else if (finishReason != GigaResponse.FinishReason.function_call) {
+                        resultChoices += GigaResponse.Choice(
+                            message = GigaResponse.Message(
+                                content = "",
+                                role = state.role,
+                                functionCall = null,
+                                functionsStateId = null,
+                            ),
+                            index = choiceIndex,
+                            finishReason = finishReason,
+                        )
+                    }
+                }
+            }
+
+            return resultChoices
+        }
+    }
 }
 
 suspend fun main() {
@@ -436,7 +555,7 @@ suspend fun main() {
     val filesToolUtil: FilesToolUtil by di.instance()
     val api: QwenChatAPI by di.instance()
 
-    val model = "qwen-flash"
+    val model = "qwen-plus"
     val request = GigaRequest.Chat(
         model = model,
         stream = true,
@@ -449,7 +568,7 @@ suspend fun main() {
             ),
             GigaRequest.Message(
                 role = GigaMessageRole.user,
-                content = "Покажи первые 5 файлов в домашней директории, используй функцию.",
+                content = "Расскажи сказку",
             ),
         ),
         functions = listOf(
