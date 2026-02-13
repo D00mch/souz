@@ -2,6 +2,7 @@ package ru.gigadesk.ui.settings
 
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.giga.EmbeddingsModel
+import ru.gigadesk.giga.DEFAULT_MAX_TOKENS
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.tool.config.ToolSoundConfig
@@ -37,6 +38,8 @@ data class SettingsState(
     val systemPrompt: String = "",
     val requestTimeoutMillis: Long = 10_000L,
     val requestTimeoutInput: String = "10000",
+    val contextSize: Int = DEFAULT_MAX_TOKENS,
+    val contextSizeInput: String = DEFAULT_MAX_TOKENS.toString(),
     val temperature: Float = 0.7f,
     val temperatureInput: String = "0.7",
     val supportEmail: String = DEFAULT_SUPPORT_EMAIL,
@@ -72,6 +75,7 @@ sealed interface SettingsEvent : VMEvent {
     data class SelectModel(val model: GigaModel): SettingsEvent
     data class SelectEmbeddingsModel(val model: EmbeddingsModel): SettingsEvent
     data class InputRequestTimeoutMillis(val millis: String) : SettingsEvent
+    data class InputContextSize(val size: String) : SettingsEvent
     data class InputTemperature(val temperature: String) : SettingsEvent
     data class InputSupportEmail(val email: String): SettingsEvent
     data class InputSystemPrompt(val prompt: String): SettingsEvent

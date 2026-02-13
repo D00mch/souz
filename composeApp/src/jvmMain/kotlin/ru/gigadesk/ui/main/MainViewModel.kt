@@ -20,11 +20,11 @@ import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
 import androidx.compose.ui.text.input.TextFieldValue
 import ru.gigadesk.giga.GigaVoiceAPI
+import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.permissions.AppRelauncher
 import ru.gigadesk.tool.ToolPermissionBroker
 import ru.gigadesk.ui.BaseViewModel
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 import kotlin.time.Duration.Companion.minutes
@@ -45,11 +45,19 @@ class MainViewModel(
     private var onboardingSpeechStartedAt: Long? = null
 
     private val say: Say by di.instance()
-    private val taskSideEffectJobs = ArrayList<Job>()
+    private val currentSpeechJob = AtomicReference<Job?>(null)
 
     private val toolPermissionBroker: ToolPermissionBroker by di.instance()
 
     init {
+        viewModelScope.launch {
+            setState {
+                copy(
+                    selectedModel = settingsProvider.gigaModel.alias,
+                    selectedContextSize = settingsProvider.contextSize
+                )
+            }
+        }
         viewModelScope.launch { runOnboarding() }
         ioLaunch { initializeAgent() }
         vmLaunch { observeToolPermissionRequests() }
@@ -61,13 +69,18 @@ class MainViewModel(
         when (event) {
             MainEvent.StartListening -> startRecording()
             MainEvent.StopListening -> stopRecording()
+            MainEvent.RequestNewConversation -> requestNewConversation()
+            MainEvent.ConfirmNewConversation -> confirmNewConversation()
+            MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()
             MainEvent.ClearContext -> clearContext()
-            MainEvent.StopSpeech -> killTaskSideEffectJobs()
+            MainEvent.StopSpeech -> stopSpeechPlayback()
             MainEvent.ShowLastText -> setPreviousText()
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
-            MainEvent.ToggleChatMode -> setState { copy(isChatMode = !isChatMode) }
             is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
-            MainEvent.SendChatMessage -> vmLaunch { sendChatMessage() }
+            is MainEvent.UpdateChatModel -> updateChatModel(event.model)
+            is MainEvent.UpdateChatContextSize -> updateChatContextSize(event.size)
+            MainEvent.SendChatMessage -> vmLaunch { sendChatMessage(isVoice = false) }
+            MainEvent.RefreshSettings -> refreshSettings()
             MainEvent.ApproveToolPermission -> resolveToolPermission(approved = true)
             MainEvent.RejectToolPermission -> resolveToolPermission(approved = false)
         }
@@ -123,18 +136,17 @@ class MainViewModel(
                 }
             }
 
-            while (isActive) {
-                runCatching {
-                    userInputFlow.collect { userInput ->
-                        subscribeOnTaskSideEffects(userInput)
-                        val rawText = graphAgent.execute(userInput)
-                        l.info(rawText)
-                        setState { copy(displayedText = rawText, statusMessage = "Ответ готов", isProcessing = false) }
-                        if (!settingsProvider.useStreaming) {
-                            say.queue(prepareTextForSpeech(rawText))
-                        }
+            runCatching {
+                userInputFlow.collect { userInput ->
+                    withContext(Dispatchers.Main) {
+                        sendChatMessage(
+                            isVoice = true,
+                            externalText = userInput
+                        )
                     }
-                }.onFailure { e ->
+                }
+            }.onFailure { e ->
+                if (e !is CancellationException) {
                     l.error("Agent flow terminated: ${e.message}", e)
                     setState { copy(isProcessing = false, statusMessage = "Ошибка: ${e.message}") }
                 }
@@ -148,30 +160,7 @@ class MainViewModel(
         if (recognizedText.isNotBlank()) return
         val msg = "Речь не распознана"
         ioLaunch { say.queue(msg) }
-        setState { copy(displayedText = msg, isProcessing = false) }
-    }
-
-    private fun subscribeOnTaskSideEffects(userInput: String) {
-        val job = viewModelScope.launch {
-            setState { copy(displayedText = userInput) }
-            val isCodeBlockStarted = AtomicBoolean(false)
-            graphAgent.sideEffects.collect { text ->
-                setState {
-                    val prevText = if (userInput == currentState.displayedText) "" else currentState.displayedText
-                    copy(displayedText = prevText + text)
-                }
-                if (text.contains(CODE_BLOCK)) {
-                    isCodeBlockStarted.set(!isCodeBlockStarted.get())
-                    if (isCodeBlockStarted.get()) {
-                        say.queue(prepareTextForSpeech(text.substringBefore(CODE_BLOCK)))
-                    }
-                }
-                if (!isCodeBlockStarted.get()) {
-                    say.queue(prepareTextForSpeech(text.substringAfter(CODE_BLOCK)))
-                }
-            }
-        }
-        viewModelScope.launch { taskSideEffectJobs.add(job) }
+        setState { copy(statusMessage = msg, isProcessing = false) }
     }
 
     private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch(Dispatchers.IO) {
@@ -182,8 +171,8 @@ class MainViewModel(
     }
 
     private suspend fun startRecording() {
-        if (currentState.isListening) return
-        killTaskSideEffectJobs()
+        if (currentState.isListening || currentState.isProcessing) return
+        stopSpeechPlayback()
         agentRef.get()?.cancelActiveJob()
         ioLaunch { say.playMacPing() }
         setState { copy(isListening = true, statusMessage = "Запись запущена") }
@@ -198,16 +187,26 @@ class MainViewModel(
         ioLaunch { say.playTextRand(speed = 120, "ok", "okey", "окей", "ок") }
     }
 
-    private suspend fun sendChatMessage() {
-        val userText = currentState.chatInputText.text.trim()
+    private suspend fun sendChatMessage(
+        isVoice: Boolean,
+        externalText: String? = null,
+    ) {
+        if (currentState.isProcessing && externalText == null) return
+        val userText = externalText?.trim() ?: currentState.chatInputText.text.trim()
         if (userText.isEmpty()) return
 
-        val userMessage = ChatMessage(text = userText, isUser = true)
+        val userMessage = ChatMessage(
+            text = userText,
+            isUser = true,
+            isVoice = isVoice
+        )
         setState {
             copy(
                 chatMessages = chatMessages + userMessage,
+                chatStartTip = "",
                 chatInputText = TextFieldValue(""),
-                isProcessing = true
+                isProcessing = true,
+                statusMessage = ""
             )
         }
 
@@ -215,22 +214,117 @@ class MainViewModel(
             val response = ioAsync {
                 graphAgent.execute(userText)
             }
-            val botMessage = ChatMessage(text = response.await(), isUser = false)
+            val botMessage = ChatMessage(
+                text = response.await(),
+                isUser = false,
+                isVoice = isVoice
+            )
             setState {
                 copy(
                     chatMessages = chatMessages + botMessage,
                     isProcessing = false
                 )
             }
+            if (isVoice) {
+                startMessageSpeech(botMessage)
+            }
         } catch (e: Exception) {
             l.error("Chat message failed: ${e.message}", e)
-            val errorMessage = ChatMessage(text = "Ошибка: ${e.message}", isUser = false)
+            val errorMessage = ChatMessage(
+                text = "Ошибка: ${e.message}",
+                isUser = false,
+                isVoice = isVoice
+            )
             setState {
                 copy(
                     chatMessages = chatMessages + errorMessage,
-                    isProcessing = false
+                    isProcessing = false,
+                    speakingMessageId = null
                 )
             }
+        }
+    }
+
+    private suspend fun startMessageSpeech(message: ChatMessage) {
+        val text = prepareTextForSpeech(message.text)
+        if (text.isBlank()) return
+        stopSpeechPlayback()
+        setState { copy(speakingMessageId = message.id) }
+        val job = say.speakAndWait(text)
+        currentSpeechJob.set(job)
+        job.invokeOnCompletion {
+            if (viewModelScope.isActive) {
+                viewModelScope.launch {
+                    if (currentState.speakingMessageId == message.id) {
+                        setState { copy(speakingMessageId = null) }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun stopSpeechPlayback() {
+        currentSpeechJob.getAndSet(null)?.cancel()
+        say.clearQueue()
+        setState { copy(speakingMessageId = null) }
+    }
+
+    private suspend fun requestNewConversation() {
+        if (currentState.chatMessages.isEmpty()) {
+            startNewConversation()
+            return
+        }
+        setState { copy(showNewChatDialog = true) }
+    }
+
+    private suspend fun confirmNewConversation() {
+        setState { copy(showNewChatDialog = false) }
+        startNewConversation()
+    }
+
+    private suspend fun dismissNewConversationDialog() {
+        setState { copy(showNewChatDialog = false) }
+    }
+
+    private suspend fun startNewConversation() {
+        stopSpeechPlayback()
+        agentRef.get()?.clearContext()
+        setState {
+            copy(
+                displayedText = MainState.randomStatusTip(),
+                statusMessage = "",
+                lastText = null,
+                lastKnownAgentContext = null,
+                userExpectCloseOnX = false,
+                isProcessing = false,
+                chatMessages = emptyList(),
+                chatStartTip = MainState.randomStatusTip(),
+                chatInputText = TextFieldValue(""),
+                showNewChatDialog = false
+            )
+        }
+    }
+
+    private suspend fun updateChatModel(modelAlias: String) {
+        val model = GigaModel.entries.firstOrNull { it.alias == modelAlias } ?: return
+        settingsProvider.gigaModel = model
+        graphAgent.updateModel(model)
+        setState { copy(selectedModel = model.alias) }
+    }
+
+    private suspend fun updateChatContextSize(size: Int) {
+        if (size <= 0) return
+        settingsProvider.contextSize = size
+        graphAgent.updateContextSize(size)
+        setState { copy(selectedContextSize = size) }
+    }
+
+    private suspend fun refreshSettings() {
+        setState {
+            copy(
+                selectedModel = settingsProvider.gigaModel.alias,
+                selectedContextSize = settingsProvider.contextSize
+            )
         }
     }
 
@@ -265,7 +359,7 @@ class MainViewModel(
     private suspend fun clearContext() {
         val lastKnownAgentContext: AgentContext<String>? = agentRef.get()?.currentContext?.value
         agentRef.get()?.clearContext()
-        killTaskSideEffectJobs()
+        stopSpeechPlayback()
         when (currentState.userExpectCloseOnX) {
             false -> {
                 val currentText = currentState.displayedText
@@ -281,13 +375,23 @@ class MainViewModel(
                         lastText = lastText,
                         lastKnownAgentContext = lastKnownAgentContext ?: currentState.lastKnownAgentContext,
                         userExpectCloseOnX = true,
-                        chatMessages = emptyList()
+                        chatMessages = emptyList(),
+                        chatStartTip = MainState.randomStatusTip(),
+                        showNewChatDialog = false
                     )
                 }
             }
 
             true -> {
-                setState { copy(displayedText = DEFAULT_CLEARED_TEXT, userExpectCloseOnX = false, chatMessages = emptyList()) }
+                setState {
+                    copy(
+                        displayedText = DEFAULT_CLEARED_TEXT,
+                        userExpectCloseOnX = false,
+                        chatMessages = emptyList(),
+                        chatStartTip = MainState.randomStatusTip(),
+                        showNewChatDialog = false
+                    )
+                }
                 send(MainEffect.Hide)
             }
         }
@@ -351,8 +455,8 @@ class MainViewModel(
         currentState.toolPermissionDialog?.requestId?.let { requestId ->
             toolPermissionBroker.resolve(requestId, approved = false)
         }
+        currentSpeechJob.getAndSet(null)?.cancel()
         say.clearQueue()
-        killTaskSideEffectJobs()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
     }
@@ -365,15 +469,6 @@ class MainViewModel(
         result = result.replace(Regex("\\s+"), " ")
 
         return result.trim()
-    }
-
-    /** Stop the current voice process, rm the queue */
-    private fun killTaskSideEffectJobs() {
-        viewModelScope.launch {
-            say.clearQueue()
-            taskSideEffectJobs.forEach { it.cancel() }
-            taskSideEffectJobs.clear()
-        }
     }
 
     private companion object {

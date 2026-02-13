@@ -1,6 +1,7 @@
 package ru.gigadesk.ui.main
 
 import ru.gigadesk.agent.engine.AgentContext
+import ru.gigadesk.giga.DEFAULT_MAX_TOKENS
 import ru.gigadesk.ui.VMEvent
 import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
@@ -12,6 +13,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 data class ChatMessage(
     val text: String,
     val isUser: Boolean,
+    val isVoice: Boolean = false,
     val timestamp: Long = System.currentTimeMillis(),
     val id: String = java.util.UUID.randomUUID().toString()
 )
@@ -35,9 +37,13 @@ data class MainState(
     val isProcessing: Boolean = false,
     val agentHistory: List<ru.gigadesk.giga.GigaRequest.Message> = emptyList(),
     val isThinkingPanelOpen: Boolean = false,
-    val isChatMode: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
+    val chatStartTip: String = randomStatusTip,
     val chatInputText: TextFieldValue = TextFieldValue(""),
+    val selectedModel: String = ru.gigadesk.giga.GigaModel.Max.alias,
+    val selectedContextSize: Int = DEFAULT_MAX_TOKENS,
+    val speakingMessageId: String? = null,
+    val showNewChatDialog: Boolean = false,
     val toolPermissionDialog: ToolPermissionDialogData? = null,
 ) : VMState {
 
@@ -68,13 +74,18 @@ data class MainState(
 sealed interface MainEvent : VMEvent {
     data object StartListening : MainEvent
     data object StopListening : MainEvent
+    data object RequestNewConversation : MainEvent
+    data object ConfirmNewConversation : MainEvent
+    data object DismissNewConversationDialog : MainEvent
     data object ClearContext : MainEvent
     data object StopSpeech : MainEvent
     data object ShowLastText : MainEvent
     data object ToggleThinkingPanel : MainEvent
-    data object ToggleChatMode : MainEvent
     data class UpdateChatInput(val text: TextFieldValue) : MainEvent
+    data class UpdateChatModel(val model: String) : MainEvent
+    data class UpdateChatContextSize(val size: Int) : MainEvent
     data object SendChatMessage : MainEvent
+    data object RefreshSettings : MainEvent
     data object ApproveToolPermission : MainEvent
     data object RejectToolPermission : MainEvent
 }

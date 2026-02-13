@@ -28,10 +28,12 @@ import ru.gigadesk.mcp.McpClientManager
 import ru.gigadesk.server.AgentNode
 import ru.gigadesk.server.startLocalServer
 
+import androidx.compose.ui.res.painterResource as jvmPainterResource
+
 val LocalWindowScope = staticCompositionLocalOf<WindowScope?> { null }
 
 fun main() {
-    System.setProperty("apple.awt.UIElement", "true")
+    //System.setProperty("apple.awt.UIElement", "true") // - Makes the app tray-only on macOS
 
     application {
         withDI(mainDiModule) {
@@ -50,6 +52,17 @@ fun main() {
                     serverEngine.stop(1000, 2000)
                     mcpClientManager.close()
                 }
+            }
+            
+            try {
+                if (System.getProperty("os.name").contains("Mac")) {
+                    Thread.currentThread().contextClassLoader
+                        .getResourceAsStream("icon-light.png")?.use {
+                            java.awt.Taskbar.getTaskbar().iconImage = javax.imageio.ImageIO.read(it)
+                        }
+                }
+            } catch (e: Exception) {
+                println("Failed to set dock icon: ${e.message}")
             }
 
             var isWindowVisible by remember { mutableStateOf(true) }
@@ -84,11 +97,12 @@ fun main() {
                 onCloseRequest = { isWindowVisible = false },
                 visible = isWindowVisible,
                 title = "Союз c ИИ",
+                icon = jvmPainterResource("icon-light.png"),
                 state = windowState,
                 transparent = true,
                 undecorated = true,
                 resizable = true,
-                alwaysOnTop = true
+                alwaysOnTop = false
             ) {
                 LaunchedEffect(windowState) {
                     snapshotFlow { windowState.size }

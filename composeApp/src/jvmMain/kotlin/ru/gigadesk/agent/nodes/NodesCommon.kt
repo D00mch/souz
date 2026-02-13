@@ -185,5 +185,6 @@ fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaR
         messages = history,
         functions = ctx.activeTools,
         temperature = ctx.settings.temperature,
+        maxTokens = ctx.settings.contextSize,
     )
 }

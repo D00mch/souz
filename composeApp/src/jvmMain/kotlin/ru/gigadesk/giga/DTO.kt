@@ -104,7 +104,7 @@ fun String.toFinishReason(): GigaResponse.FinishReason? {
     return runCatching { GigaResponse.FinishReason.valueOf(this) }.getOrNull()
 }
 
-const val MAX_TOKENS = 8192
+const val DEFAULT_MAX_TOKENS = 16_000
 
 enum class LlmProvider {
     GIGA,
@@ -124,20 +124,20 @@ enum class GigaModel(
     val maxTokens: Int,
     val provider: LlmProvider,
 ) {
-    Lite("GigaChat Lite", "GigaChat-2", MAX_TOKENS, LlmProvider.GIGA),
-    Pro("GigaChat Pro", "GigaChat-Pro", MAX_TOKENS, LlmProvider.GIGA),
-    Max("GigaChat Max", "GigaChat-Max", MAX_TOKENS, LlmProvider.GIGA),
-    QwenFlash("Qwen Flash", "qwen-flash", 32_768, LlmProvider.QWEN),
-    QwenPlus("Qwen Plus", "qwen-plus", 32_768, LlmProvider.QWEN),
-    Qwen3OpenSource("Qwen3 open source", "qwen3-vl-32b-instruct", 32_768, LlmProvider.QWEN),
-    QwenMax("Qwen Max", "qwen-max", 32_768, LlmProvider.QWEN),
-    AiTunnelGpt4oMini("AI-Tunnel: gpt-4o-mini", "gpt-4o-mini", 32_768, LlmProvider.AI_TUNNEL),
-    AiTunnelGpt52Codex("AI-Tunnel: gpt-5.2-codex", "gpt-5.2-codex", 32_768, LlmProvider.AI_TUNNEL),
-    AiTunnelGpt5Nano("AI-Tunnel: gpt-5-nano", "gpt-5-nano", 32_768, LlmProvider.AI_TUNNEL),
-    AiTunnelGemini3Flash("AI-Tunnel: gemini-3-flash-preview", "gemini-3-flash-preview", 32_768, LlmProvider.AI_TUNNEL),
-    AiTunnelClaudeOpus("AI-Tunnel: claude-opus-4.6", "claude-opus-4.6", 32_768, LlmProvider.AI_TUNNEL),
-    AiTunnelClaudeHaiku("AI-Tunnel: claude-haiku-4.5", "claude-haiku-4.5", 32_768, LlmProvider.AI_TUNNEL),
-    AiTunnelGrok("AI-Tunnel: grok-4.1-fast", "grok-4.1-fast", 32_768, LlmProvider.AI_TUNNEL),
+    Lite("GigaChat Lite", "GigaChat-2", DEFAULT_MAX_TOKENS, LlmProvider.GIGA),
+    Pro("GigaChat Pro", "GigaChat-Pro", DEFAULT_MAX_TOKENS, LlmProvider.GIGA),
+    Max("GigaChat Max", "GigaChat-Max", DEFAULT_MAX_TOKENS, LlmProvider.GIGA),
+    QwenFlash("Qwen Flash", "qwen-flash", DEFAULT_MAX_TOKENS, LlmProvider.QWEN),
+    QwenPlus("Qwen Plus", "qwen-plus", DEFAULT_MAX_TOKENS, LlmProvider.QWEN),
+    Qwen3OpenSource("Qwen3 open source", "qwen3-vl-32b-instruct", DEFAULT_MAX_TOKENS, LlmProvider.QWEN),
+    QwenMax("Qwen Max", "qwen-max", DEFAULT_MAX_TOKENS, LlmProvider.QWEN),
+    AiTunnelGpt4oMini("gpt-4o-mini", "gpt-4o-mini", DEFAULT_MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelGpt52Codex("gpt-5.2-codex", "gpt-5.2-codex", DEFAULT_MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelGpt5Nano("gpt-5-nano", "gpt-5-nano", DEFAULT_MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelGemini3Flash("gemini-3-flash-preview", "gemini-3-flash-preview", DEFAULT_MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelClaudeOpus("claude-opus-4.6", "claude-opus-4.6", DEFAULT_MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelClaudeHaiku("claude-haiku-4.5", "claude-haiku-4.5", DEFAULT_MAX_TOKENS, LlmProvider.AI_TUNNEL),
+    AiTunnelGrok("grok-4.1-fast", "grok-4.1-fast", DEFAULT_MAX_TOKENS, LlmProvider.AI_TUNNEL),
 }
 
 enum class EmbeddingsModel(
@@ -161,7 +161,7 @@ object GigaRequest {
         val functions: List<Function> = emptyList(),
         val temperature: Float? = null,
         val stream: Boolean = false,
-        val maxTokens: Int = MAX_TOKENS,
+        val maxTokens: Int = DEFAULT_MAX_TOKENS,
         @field:JsonProperty("update_interval") val updateInterval: Int? = 1,
     ) {
         /**

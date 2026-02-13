@@ -8,11 +8,9 @@ import ru.gigadesk.agent.engine.Node
 import ru.gigadesk.agent.engine.buildGraph
 import ru.gigadesk.giga.GigaMessageRole
 import ru.gigadesk.giga.GigaException
-import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaChatAPI
-import ru.gigadesk.giga.MAX_TOKENS
 import ru.gigadesk.giga.toMessage
 import ru.gigadesk.giga.toSystemPromptMessage
 import kotlin.math.ceil
@@ -85,8 +83,7 @@ private fun String.estimateTokenCount(): Int = ceil(length / APPROX_CHARS_PER_TO
 private fun AgentContext<*>.historyIsTooBig(
     threshold: Double = HISTORY_SUMMARIZE_THRESHOLD,
 ): Boolean {
-    val model = GigaModel.entries.firstOrNull { it.alias == settings.model }
-    val contextWindow = model?.maxTokens ?: MAX_TOKENS
+    val contextWindow = settings.contextSize
     val estimatedTokens = systemPrompt.estimateTokenCount() +
         history.sumOf { it.content.estimateTokenCount() }
     return estimatedTokens >= contextWindow * threshold

@@ -24,6 +24,7 @@ import ru.gigadesk.ui.graphlog.GraphSessionsScreen
 import ru.gigadesk.ui.graphlog.GraphVisualizationScreen
 import ru.gigadesk.ui.main.RealLiquidGlassCard
 import ru.gigadesk.ui.common.DraggableWindowArea
+import ru.gigadesk.ui.common.applyMinWindowSize
 
 @Composable
 fun SettingsScreen(
@@ -44,6 +45,13 @@ fun SettingsScreen(
                 SettingsEffect.NotifyOnSystemPrompt -> onShowSnack("Сохранено. Применится после первой суммаризации")
             }
         }
+    }
+
+    val windowScope = ru.gigadesk.LocalWindowScope.current
+    DisposableEffect(windowScope) {
+        val window = windowScope?.window
+        val originalMinSize = window?.let { applyMinWindowSize(it, minWidth = 680, minHeight = 700) }
+        onDispose { window?.minimumSize = originalMinSize }
     }
     
     when (state.currentScreen) {
@@ -150,6 +158,7 @@ fun SettingsScreenMain(
                             onEmbeddingsModelChange = { viewModel.send(SettingsEvent.SelectEmbeddingsModel(it)) },
                             onTemperatureInput = { viewModel.send(SettingsEvent.InputTemperature(it)) },
                             onRequestTimeoutMillisChange = { viewModel.send(SettingsEvent.InputRequestTimeoutMillis(it)) },
+                            onContextSizeInput = { viewModel.send(SettingsEvent.InputContextSize(it)) },
                             onSystemPromptChange = { viewModel.send(SettingsEvent.InputSystemPrompt(it)) },
                             onSystemPromptReset = { viewModel.send(SettingsEvent.ResetSystemPrompt) },
                             onRefreshBalance = { viewModel.send(SettingsEvent.RefreshBalance) },
@@ -233,6 +242,7 @@ fun SettingsScreenPreview() {
                         onEmbeddingsModelChange = {},
                         onTemperatureInput = {},
                         onRequestTimeoutMillisChange = {},
+                        onContextSizeInput = {},
                         onSystemPromptChange = {},
                         onSystemPromptReset = {},
                         onRefreshBalance = {},
