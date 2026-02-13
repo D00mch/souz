@@ -6,7 +6,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -16,19 +15,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Psychology
-import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -46,17 +38,12 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -64,11 +51,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
-import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -77,7 +61,6 @@ import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import org.kodein.di.compose.localDI
-import kotlin.random.Random
 import ru.gigadesk.ui.common.ConnectionStatusNotification
 import ru.gigadesk.ui.common.DraggableWindowArea
 import ru.gigadesk.ui.common.parseMarkdownContent
@@ -85,7 +68,6 @@ import ru.gigadesk.ui.common.CodeBlockWithCopy
 import ru.gigadesk.ui.common.MarkdownPart
 import ru.gigadesk.ui.glassColors
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
 
 private val TopButtonSize = 24.dp
@@ -99,15 +81,6 @@ private val ChatAssistantBubbleBackground = Color(0x4C000000)
 private val ChatAssistantBubbleBorderColor = Color(0x33FFFFFF)
 private val ChatAssistantTextColor = Color(0xE5FFFFFF)
 private val ChatAssistantTimestampColor = Color(0x7FFFFFFF)
-private val ChatInputBackground = Color(0x4C000000)
-private val ChatInputBorderColor = Color(0x26FFFFFF)
-private val ChatInputPlaceholderColor = Color(0x66FFFFFF)
-private val ChatInputTextColor = Color(0xE5FFFFFF)
-private val ChatSendButtonActiveBackground = Color(0x3312E0B5)
-private val ChatSendButtonInactiveBackground = Color(0x00000000)
-private val ChatSendButtonActiveIconColor = Color(0xFF12E0B5)
-private val ChatSendButtonInactiveIconColor = Color(0x4CFFFFFF)
-
 
 
 @Composable
@@ -420,80 +393,6 @@ private fun chatMarkdownTypography(
 }
 
 private enum class HeadingScale { LARGE, SMALL }
-
-@Composable
-fun MarkdownViewer(
-    text: String,
-    baseFontSize: androidx.compose.ui.unit.TextUnit,
-    onShowSnack: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val scrollState = rememberScrollState()
-    val lastText = remember { mutableStateOf("") }
-
-    val parts = remember(text) { parseMarkdownContent(text) }
-
-    LaunchedEffect(text) {
-        val previousText = lastText.value
-        val isAppend = text.startsWith(previousText) && text.length >= previousText.length
-        if (!isAppend) {
-            scrollState.animateScrollTo(0)
-        }
-        lastText.value = text
-    }
-
-    val baseStyle = TextStyle(
-        color = Color.White,
-        fontSize = baseFontSize,
-        lineHeight = baseFontSize * 1.4
-    )
-    val codeStyle = TextStyle(
-        fontFamily = FontFamily.Monospace,
-        fontSize = baseFontSize * 0.9,
-        color = Color(0xFFE0E0E0)
-    )
-    val customTypography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.LARGE)
-    val customColors = chatMarkdownColors(Color.White)
-
-    SelectionContainer(
-        modifier = modifier
-            .fillMaxSize()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .pointerHoverIcon(PointerIcon.Text)
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = { /* Перехватываем клик, чтобы не двигать окно */ }
-                    )
-                }
-        ) {
-            parts.forEach { part ->
-                when (part) {
-                    is MarkdownPart.TextContent -> {
-                        Markdown(
-                            content = part.content,
-                            colors = customColors,
-                            typography = customTypography,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    is MarkdownPart.CodeContent -> {
-                        CodeBlockWithCopy(
-                            code = part.code,
-                            language = part.language,
-                            style = codeStyle
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(40.dp))
-        }
-    }
-}
 
 @Composable
 fun ChatModeContent(
@@ -1169,85 +1068,6 @@ fun RealLiquidGlassCard(
     }
 }
 
-@Composable
-fun LiquidOrb(isActive: Boolean, onClick: () -> Unit) {
-    val infiniteTransition = rememberInfiniteTransition()
-
-    val mainRotation by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(if (isActive) 1000 else 3000, easing = LinearEasing))
-    )
-
-    val turbulenceRotation by infiniteTransition.animateFloat(
-        initialValue = 360f, targetValue = 0f,
-        animationSpec = infiniteRepeatable(tween(if (isActive) 1500 else 6000, easing = LinearEasing))
-    )
-
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f, targetValue = if (isActive) 1.25f else 1.08f,
-        animationSpec = infiniteRepeatable(
-            tween(if (isActive) 500 else 2500, easing = FastOutSlowInEasing),
-            RepeatMode.Reverse
-        )
-    )
-
-    val cPurple = Color(0xFF7C4DFF)
-    val cMagenta = Color(0xFFD500F9)
-    val cCyan = Color(0xFF00E5FF)
-    val cDeep = Color(0xFF651FFF)
-
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(52.dp)
-            .scale(pulseScale)
-            .clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = onClick
-            )
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize().scale(1.5f)) {
-            drawCircle(
-                brush = Brush.radialGradient(
-                    listOf(
-                        cPurple.copy(alpha = if (isActive) 0.6f else 0.3f),
-                        Color.Transparent
-                    )
-                )
-            )
-        }
-        Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = mainRotation }) {
-            drawCircle(brush = Brush.sweepGradient(listOf(cPurple, cMagenta, cDeep, cCyan, cPurple)))
-        }
-        Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = turbulenceRotation }) {
-            drawCircle(
-                brush = Brush.sweepGradient(
-                    listOf(
-                        Color.Transparent,
-                        Color(0xB300E5FF),
-                        Color(0x807C4DFF),
-                        Color.Transparent
-                    )
-                ),
-                radius = size.minDimension / 2.1f, center = center + Offset(3f, -3f)
-            )
-        }
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawOval(
-                brush = Brush.linearGradient(listOf(Color(0xF2FFFFFF), Color.Transparent)),
-                topLeft = Offset(size.width * 0.25f, size.height * 0.15f),
-                size = Size(size.width * 0.3f, size.height * 0.2f)
-            )
-            drawArc(
-                color = Color(0x66FFFFFF), startAngle = 20f, sweepAngle = 140f, useCenter = false,
-                topLeft = Offset(2f, 2f), size = Size(size.width - 4f, size.height - 4f),
-                style = Stroke(width = 1.5.dp.toPx())
-            )
-        }
-    }
-}
-
 @Preview
 @Composable
 fun PreviewSmartFocusGlass() {
@@ -1305,16 +1125,4 @@ fun PreviewChatModeEmpty() {
             )
         }
     }
-}
-
-@Composable
-fun DashedSpinningWheel(
-    modifier: Modifier = Modifier,
-    color: Color = Color.White,
-) {
-    CircularProgressIndicator(
-        modifier = modifier,
-        color = color,
-        strokeWidth = 2.1.dp
-    )
 }
