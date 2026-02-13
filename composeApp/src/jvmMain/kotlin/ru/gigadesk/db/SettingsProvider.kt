@@ -86,8 +86,6 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         envKey = EMBEDDINGS_MODEL
     )
 
-
-
     override var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
     override var qwenChatKey: String? by keyDelegate(configKey = QWEN_CHAT_KEY, envKey = "QWEN_KEY")
     override var aiTunnelKey: String? by keyDelegate(configKey = AI_TUNNEL_KEY, envKey = "AITUNNEL_KEY")

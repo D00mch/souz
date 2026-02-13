@@ -1062,7 +1062,8 @@ fun RealLiquidGlassCard(
                 .background(Color(0x03FFFFFF))
         )
 
-        Box(modifier = Modifier.padding(borderThickness)) {
+        val innerShape = RoundedCornerShape(cornerRadius - borderThickness)
+        Box(modifier = Modifier.padding(borderThickness).clip(innerShape)) {
             content()
         }
     }
