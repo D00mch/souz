@@ -60,6 +60,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -226,7 +227,11 @@ internal fun ChatInputWithQuickSettings(
                         Text(
                             text = placeholder,
                             color = TextDisabled,
-                            fontSize = 14.sp
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
 
