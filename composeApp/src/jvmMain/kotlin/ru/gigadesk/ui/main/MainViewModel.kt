@@ -314,6 +314,7 @@ class MainViewModel(
     private suspend fun updateChatContextSize(size: Int) {
         if (size <= 0) return
         settingsProvider.contextSize = size
+        graphAgent.updateContextSize(size)
         setState { copy(selectedContextSize = size) }
     }
 

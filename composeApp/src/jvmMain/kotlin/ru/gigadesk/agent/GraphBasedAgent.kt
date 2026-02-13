@@ -132,6 +132,12 @@ class GraphBasedAgent(
         _ctx.tryEmit(currentContext.value.copy(settings = newSettings))
     }
 
+    fun updateContextSize(contextSize: Int) {
+        val newSettings = settings.load().copy(contextSize = contextSize)
+        settings.store(newSettings)
+        _ctx.tryEmit(currentContext.value.copy(settings = newSettings))
+    }
+
     fun cancelActiveJob() {
         runningJob.load()?.cancel(CancellationException("Cleared by force"))
     }
