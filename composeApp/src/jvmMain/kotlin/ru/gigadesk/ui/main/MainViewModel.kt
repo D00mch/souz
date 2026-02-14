@@ -29,7 +29,7 @@ import ru.gigadesk.ui.main.usecases.ChatUseCase
 import ru.gigadesk.ui.main.usecases.MainUseCaseOutput
 import ru.gigadesk.ui.main.usecases.MainUseCases
 import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
-import ru.gigadesk.ui.main.usecases.PermissionsUseCase
+import ru.gigadesk.ui.main.usecases.OnboardingUseCase
 import ru.gigadesk.ui.main.usecases.SpeechUseCase
 import ru.gigadesk.ui.main.usecases.VoiceInputUseCase
 import java.util.concurrent.atomic.AtomicReference
@@ -52,7 +52,7 @@ class MainViewModel(
     private val chatUseCase: ChatUseCase = useCases.chat
     private val voiceInputUseCase: VoiceInputUseCase = useCases.voiceInput
     private val speechUseCase: SpeechUseCase = useCases.speech
-    private val permissionsUseCase: PermissionsUseCase = useCases.permissions
+    private val permissionsUseCase: OnboardingUseCase = useCases.permissions
 
     init {
         agentRef.set(graphAgent)

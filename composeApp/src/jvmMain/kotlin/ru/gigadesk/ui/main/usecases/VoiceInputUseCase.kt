@@ -28,7 +28,7 @@ class VoiceInputUseCase(
     private val gigaVoiceAPI: GigaVoiceAPI,
     private val chatUseCase: ChatUseCase,
     private val speechUseCase: SpeechUseCase,
-    private val permissionsUseCase: PermissionsUseCase,
+    private val permissionsUseCase: OnboardingUseCase,
 ) {
     private val l = LoggerFactory.getLogger(VoiceInputUseCase::class.java)
     private var lastRecognizedText: String? = null
