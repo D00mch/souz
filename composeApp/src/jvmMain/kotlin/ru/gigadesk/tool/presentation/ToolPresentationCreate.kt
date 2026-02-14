@@ -11,12 +11,15 @@ import java.io.FileOutputStream
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Data
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 
 data class SlideContent(
     @InputParamDescription("Title of the slide")
     val title: String,
+    @InputParamDescription("Subtitle for Title slides")
+    val subtitle: String? = null,
     @InputParamDescription("Bullet points for the slide body")
     val points: List<String> = emptyList(),
     @InputParamDescription("Speaker notes for this slide")
@@ -248,10 +251,13 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
         val customTheme = flatCustomTheme
         
         // 1. Load Template or Create New
-        val ppt = if (input.templatePath != null) {
-            val resolvedTemplatePath = if (input.templatePath.startsWith("~")) 
-                input.templatePath.replaceFirst("~", System.getProperty("user.home")) 
-            else input.templatePath
+        // Treat blank/empty templatePath as null
+        val effectiveTemplatePath = if (input.templatePath.isNullOrBlank()) null else input.templatePath
+        
+        val ppt = if (effectiveTemplatePath != null) {
+            val resolvedTemplatePath = if (effectiveTemplatePath.startsWith("~")) 
+                effectiveTemplatePath.replaceFirst("~", System.getProperty("user.home")) 
+            else effectiveTemplatePath
             
             val file = File(resolvedTemplatePath)
             if (file.exists()) {
@@ -287,7 +293,9 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
         // 3. Create Content Slides
         // Parse slides from JSON string
         val slides: List<SlideContent> = try {
-            jacksonObjectMapper().readValue(input.slidesData)
+            val mapper = jacksonObjectMapper()
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+            mapper.readValue(input.slidesData)
         } catch (e: Exception) {
             println("Error parsing slides JSON: ${e.message}")
             // Fallback for simple error handling
@@ -347,7 +355,7 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                 slideTitle.text = slideData.title
                 
                 // Explicitly apply theme to title (master inheritance can be flaky with .text setter)
-                if (input.templatePath == null && input.theme != null) {
+                if (effectiveTemplatePath == null && input.theme != null) {
                      try {
                         val theme = PresentationTheme.valueOf(input.theme.uppercase())
                         slideTitle.textParagraphs.forEach { p ->
@@ -361,6 +369,16 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                 }
             }
             
+            val allPlaceholders = slide.placeholders.toList()
+            
+            // Set Subtitle (if available and placeholder exists)
+            val subtitlePlaceholder = allPlaceholders.firstOrNull { 
+                it.placeholderDetails.placeholder == org.apache.poi.sl.usermodel.Placeholder.SUBTITLE 
+            }
+            if (subtitlePlaceholder != null && slideData.subtitle != null) {
+                subtitlePlaceholder.text = slideData.subtitle
+            }
+            
             // Iterate over all placeholders to find the best match for Text and Image
             var textPlaceholder: org.apache.poi.xslf.usermodel.XSLFTextShape? = null
             var imagePlaceholder: org.apache.poi.xslf.usermodel.XSLFTextShape? = null
@@ -368,8 +386,6 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             // Priority: 
             // Text -> BODY, CONTENT, or fallback to any non-title if not found
             // Image -> PICTURE, or CONTENT (if text didn't take it), or fallback
-            
-            val allPlaceholders = slide.placeholders.toList()
             
             // Find specific placeholders first
             val titlePlaceholder = allPlaceholders.firstOrNull { 
@@ -407,51 +423,109 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                  }
             }
 
-            // Fill Text
-            if (textPlaceholder != null) {
-                textPlaceholder.clearText()
-                slideData.points.forEach { point ->
-                    val paragraph = textPlaceholder.addNewTextParagraph()
-                    val isTitleLayout = layoutType == SlideLayout.TITLE || layoutType == SlideLayout.SECTION_HEADER || layoutType == SlideLayout.TITLE_ONLY
-                    val cleanPoint = point.trim()
-                    
-                    // Logic to avoid double bullets or bullets where not needed
-                    // 1. If layout is Title-based, NO bullets.
-                    // 2. If point starts with an Emoji (e.g. 💰) or specific bullet chars (- * •), NO system bullet.
-                    // 3. Otherwise, use system bullet for content layouts.
-                    
-                    val hasVisualBullet = cleanPoint.isNotEmpty() && (
-                        !cleanPoint.first().isLetterOrDigit() && cleanPoint.first() !in listOf('"', '\'', '(', '[', '{', '<')
-                    )
-                    
-                    paragraph.isBullet = !isTitleLayout && !hasVisualBullet
-                    val run = paragraph.addNewTextRun()
-                    run.setText(point)
-                    
-                    if (input.templatePath == null && input.theme != null) {
-                         try {
-                            val theme = PresentationTheme.valueOf(input.theme.uppercase())
-                            run.fontColor = org.apache.poi.sl.draw.DrawPaint.createSolidPaint(theme.contentColor)
-                            run.fontFamily = theme.bodyFont
-                         } catch (e: Exception) {}
-                    }
+                // Fill Text
+                val effectiveTextPlaceholder = if (textPlaceholder == null && slideData.points.isNotEmpty()) {
+                    // Fallback: Create a new text box if no placeholder found
+                    val textBox = slide.createTextBox()
+                    textBox.anchor = java.awt.Rectangle(50, 150, 400, 300) // Default left-side position
+                    textBox
+                } else textPlaceholder
+                
+            // Smart Layout Logic: Detect potential intersection
+            
+            // Check if we have both Text and Image, but they might conflict
+            val hasText = slideData.points.isNotEmpty()
+            val hasImage = effectiveImagePath != null
+            
+            // Initial assumption: custom position is valid ONLY if specified
+            val isCustomImagePos = slideData.imageX != null
+            
+            var effectiveTextAnchor = effectiveTextPlaceholder?.anchor
+            var forceSplitView = false
+            
+            // COLLISION DETECTION: Check if intended image position overlaps with text
+            if (hasText && hasImage && effectiveTextPlaceholder != null) {
+                val textRect = effectiveTextPlaceholder.anchor
+                
+                val imageRect = if (
+                    slideData.imageX != null && slideData.imageY != null && 
+                    slideData.imageWidth != null && slideData.imageHeight != null
+                ) {
+                    java.awt.Rectangle(slideData.imageX, slideData.imageY, slideData.imageWidth, slideData.imageHeight)
+                } else {
+                    // Default fallback position
+                    java.awt.Rectangle(450, 150, 250, 250)
+                }
+                
+                // Check intersection
+                if (textRect.intersects(imageRect)) {
+                    // Start of Smart Override
+                    // If they intersect, we MUST fix it. 
+                    // Trusting LLM coordinates that cover text is bad.
+                    // We will FORCE split view.
+                    forceSplitView = true
+                } else if (!isCustomImagePos && imagePlaceholder == null) {
+                    // Standard case without coordinates: also force split
+                     forceSplitView = true
                 }
             }
-
             
-
-
+            if (forceSplitView && effectiveTextPlaceholder != null) {
+                 val currentTextAnchor = effectiveTextPlaceholder.anchor
+                 
+                 // Only resize if text anchor looks like a full-width body (width > 400)
+                 // If it's already a narrow column, maybe we don't need to resize, just move image.
+                 if (currentTextAnchor.width > 350) {
+                     // Resize Text to Left Half (with some padding)
+                     val newTextWidth = (currentTextAnchor.width / 2.0) - 20
+                     val newTextRect = java.awt.Rectangle(
+                         currentTextAnchor.x.toInt(), 
+                         currentTextAnchor.y.toInt(), 
+                         newTextWidth.toInt(), 
+                         currentTextAnchor.height.toInt()
+                     )
+                     effectiveTextPlaceholder.anchor = newTextRect
+                     effectiveTextAnchor = newTextRect
+                 }
+            }
             
-            // Resolve Theme: Custom > Preset > Default
+            if (effectiveTextPlaceholder != null && slideData.points.isNotEmpty()) {
+                    effectiveTextPlaceholder.clearText()
+                    // ... (existing text filling logic)
+                    slideData.points.forEach { point ->
+                        val paragraph = effectiveTextPlaceholder.addNewTextParagraph()
+                        val isTitleLayout = layoutType == SlideLayout.TITLE || layoutType == SlideLayout.SECTION_HEADER || layoutType == SlideLayout.TITLE_ONLY
+                        val cleanPoint = point.trim()
+                        
+                        val hasVisualBullet = cleanPoint.isNotEmpty() && (
+                            !cleanPoint.first().isLetterOrDigit() && cleanPoint.first() !in listOf('"', '\'', '(', '[', '{', '<')
+                        )
+                        
+                        paragraph.isBullet = !isTitleLayout && !hasVisualBullet
+                        val run = paragraph.addNewTextRun()
+                        run.setText(point)
+                        
+                        // Apply Styles (Theme or Default)
+                        if (input.templatePath == null && input.theme != null) {
+                             try {
+                                val theme = PresentationTheme.valueOf(input.theme.uppercase())
+                                run.fontColor = org.apache.poi.sl.draw.DrawPaint.createSolidPaint(theme.contentColor)
+                                run.fontFamily = theme.bodyFont
+                                run.fontSize = 20.0 // Ensure decent size
+                             } catch (e: Exception) {}
+                        } else if (run.fontSize == null || run.fontSize < 12.0) {
+                            run.fontSize = 18.0 // Min size fallback
+                        }
+                    }
+            }
+            
             // Resolve Theme: Custom > Preset > Default
             val theme = if (customTheme != null) {
                 null
             } else if (input.theme != null) {
-                try { PresentationTheme.valueOf(input.theme.uppercase()) } catch (e: Exception) { null }
+                 try { PresentationTheme.valueOf(input.theme.uppercase()) } catch (e: Exception) { null }
             } else null
-
-
-
+            
             // Fill Image
             if (effectiveImagePath != null) {
                 val imageFile = File(effectiveImagePath)
@@ -463,8 +537,9 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                         "gif" -> org.apache.poi.sl.usermodel.PictureData.PictureType.GIF
                         "bmp" -> org.apache.poi.sl.usermodel.PictureData.PictureType.BMP
                         "svg" -> org.apache.poi.sl.usermodel.PictureData.PictureType.SVG
-                        "webp" -> {
-                            // Convert WebP to PNG using Skia
+                        "webp", "avif" -> {
+                             // ... (existing conversion logic)
+                             // Convert WebP/AVIF to PNG using Skia
                             try {
                                 val skiaImage = Image.makeFromEncoded(pictureData)
                                 val pngData = skiaImage.encodeToData(EncodedImageFormat.PNG)
@@ -473,7 +548,7 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                                     org.apache.poi.sl.usermodel.PictureData.PictureType.PNG
                                 } else null
                             } catch (e: Exception) {
-                                println("Failed to convert WebP image: ${e.message}")
+                                println("Failed to convert image ${imageFile.name}: ${e.message}")
                                 null
                             }
                         }
@@ -485,7 +560,9 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                         val picture = slide.createPicture(pictureIdx)
                         
                         // Determine anchor
+                        // Use Custom Anchor ONLY if not forced to split
                         val customAnchor = if (
+                            !forceSplitView &&
                             slideData.imageX != null && slideData.imageY != null && 
                             slideData.imageWidth != null && slideData.imageHeight != null
                         ) {
@@ -494,18 +571,27 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                         
                         if (customAnchor != null) {
                              picture.anchor = customAnchor
-                             // If we used a custom anchor, we might still want to clear the placeholder text if one was auto-selected
                              if (imagePlaceholder != null) imagePlaceholder.clearText()
                         } else if (imagePlaceholder != null) {
                              val anchor = imagePlaceholder.anchor
                              picture.anchor = anchor
-                             
-                             // Optional: clear text from the placeholder if it was a text shape used for image
                              imagePlaceholder.clearText()
                         } else {
-                             // Default position if no placeholder found: Right side, moderate size
-                             // Assuming slide size is roughly 720x540 or 960x540
-                             picture.setAnchor(java.awt.Rectangle(450, 150, 250, 250))
+                             // Calculated position based on text overlap check
+                             // If we resized the text, we should place the image in the space we freed up.
+                             
+                             if (effectiveTextAnchor != null && effectiveTextPlaceholder != null && hasText) {
+                                 // Smart Placement: Right side of text
+                                 val x = effectiveTextAnchor.x + effectiveTextAnchor.width + 40
+                                 val y = effectiveTextAnchor.y
+                                 val w = minOf(450.0, 900.0 - x) // Don't go off screen
+                                 val h = effectiveTextAnchor.height
+                                 
+                                 picture.setAnchor(java.awt.Rectangle(x.toInt(), y.toInt(), w.toInt(), h.toInt()))
+                             } else {
+                                 // Default position if no text conflict logic applied
+                                 picture.setAnchor(java.awt.Rectangle(450, 150, 250, 250))
+                             }
                         }
                     } else {
                         println("Unsupported image format: ${imageFile.extension}")
@@ -518,15 +604,10 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                 // Try to use imagePlaceholder for table if image is not present
                 val tablePlaceholder = if (effectiveImagePath == null) imagePlaceholder else null
                 
-                // Or fallback to textPlaceholder if text is empty? 
-                // Better: if both image and table are present, and we have 2 cols, use one for each.
-                // But for now, let's prioritize explicit placeholders logic.
-                
                 val anchor = tablePlaceholder?.anchor ?: java.awt.Rectangle(100, 150, 500, 300)
                 
                 // If using placeholder, clear it
                 tablePlaceholder?.clearText()
-                
                 
                 createTable(slide, slideData.table, theme, anchor)
             }
@@ -547,19 +628,19 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                 }
             }
             
-            // Auto-Decoration for Custom Themes to ensure colors are visible
+            // Auto-Decoration for Custom Themes
             if (customTheme != null) {
                 addThemeDecoration(slide, customTheme)
             }
             
-            // CLEANUP: Remove any unused text placeholders to avoid "Click to add text" ghost text or "Master text styles"
-            // We identify used placeholders by checking if we wrote to them.
-            // The following objects were potentially used: slideTitle, textPlaceholder, imagePlaceholder (if used for text or image), tablePlaceholder
+            // CLEANUP: Remove any unused text placeholders
             
             val usedShapes = mutableSetOf<org.apache.poi.xslf.usermodel.XSLFShape>()
             if (slideTitle != null) usedShapes.add(slideTitle)
-            if (textPlaceholder != null) usedShapes.add(textPlaceholder)
-            if (imagePlaceholder != null) usedShapes.add(imagePlaceholder)
+            
+            if (effectiveTextPlaceholder != null && slideData.points.isNotEmpty()) usedShapes.add(effectiveTextPlaceholder)
+            
+            if (imagePlaceholder != null && effectiveImagePath != null) usedShapes.add(imagePlaceholder)
             
             // Check table usage
             if (slideData.table != null) {
