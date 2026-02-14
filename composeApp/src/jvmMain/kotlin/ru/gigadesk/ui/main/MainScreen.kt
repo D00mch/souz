@@ -111,10 +111,8 @@ fun MainScreen(
     MainScreenContent(
         state = state,
         isOnline = isOnline,
-        onToggleListening = {
-            if (state.isListening) viewModel.send(MainEvent.StopListening)
-            else viewModel.send(MainEvent.StartListening)
-        },
+        onStartListening = { viewModel.send(MainEvent.StartListening) },
+        onStopListening = { viewModel.send(MainEvent.StopListening) },
         onClear = onCloseWindow,
         onMinimize = onMinimizeWindow,
         onRequestNewConversation = { viewModel.send(MainEvent.RequestNewConversation) },
@@ -139,7 +137,8 @@ fun MainScreen(
 fun MainScreenContent(
     state: MainState,
     isOnline: Boolean,
-    onToggleListening: () -> Unit = {},
+    onStartListening: () -> Unit = {},
+    onStopListening: () -> Unit = {},
     onRequestNewConversation: () -> Unit = {},
     onConfirmNewConversation: () -> Unit = {},
     onDismissNewConversationDialog: () -> Unit = {},
@@ -280,7 +279,8 @@ fun MainScreenContent(
                     onContextChange = onChatContextSizeChange,
                     onSendMessage = onSendChatMessage,
                     onCancelProcessing = onClearContext,
-                    onToggleListening = onToggleListening,
+                    onStartListening = onStartListening,
+                    onStopListening = onStopListening,
                     onStopSpeech = onStopSpeech,
                     onShowSnack = onShowSnack,
                     modifier = Modifier
@@ -420,7 +420,8 @@ fun ChatModeContent(
     onContextChange: (Int) -> Unit,
     onSendMessage: () -> Unit,
     onCancelProcessing: () -> Unit = {},
-    onToggleListening: () -> Unit,
+    onStartListening: () -> Unit,
+    onStopListening: () -> Unit,
     onStopSpeech: () -> Unit,
     onShowSnack: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -525,7 +526,8 @@ fun ChatModeContent(
             onCancel = onCancelProcessing,
             isProcessing = isProcessing,
             isListening = isListening,
-            onToggleListening = onToggleListening,
+            onStartListening = onStartListening,
+            onStopListening = onStopListening,
             enabled = !isProcessing,
             focusRequester = focusRequester,
             selectedModel = selectedModel,
