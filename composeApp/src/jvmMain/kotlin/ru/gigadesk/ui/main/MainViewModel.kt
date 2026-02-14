@@ -2,35 +2,38 @@
 
 package ru.gigadesk.ui.main
 
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.viewModelScope
-import com.github.kwhat.jnativehook.GlobalScreen
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.mapLatest
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.agent.engine.AgentContext
-import ru.gigadesk.audio.*
+import ru.gigadesk.audio.InMemoryAudioRecorder
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
-import androidx.compose.ui.text.input.TextFieldValue
-import kotlinx.coroutines.flow.retryWhen
-import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.giga.GigaModel
-import ru.gigadesk.keys.HotkeyListener
-import ru.gigadesk.permissions.AppRelauncher
-import ru.gigadesk.tool.ToolPermissionBroker
 import ru.gigadesk.ui.BaseViewModel
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
+import ru.gigadesk.ui.main.interactors.ChatInteractor
+import ru.gigadesk.ui.main.interactors.MainInteractorOutput
+import ru.gigadesk.ui.main.interactors.MainInteractors
+import ru.gigadesk.ui.main.interactors.MainInteractorsFactory
+import ru.gigadesk.ui.main.interactors.PermissionsInteractor
+import ru.gigadesk.ui.main.interactors.SpeechInteractor
+import ru.gigadesk.ui.main.interactors.VoiceInputInteractor
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.math.max
 import kotlin.time.Duration.Companion.minutes
 
 class MainViewModel(
@@ -38,58 +41,90 @@ class MainViewModel(
 ) : BaseViewModel<MainState, MainEvent, MainEffect>(), DIAware {
 
     private val l = LoggerFactory.getLogger(MainViewModel::class.java)
-    private val audioRecorder = InMemoryAudioRecorder(ActiveSoundRecorderImpl(), viewModelScope)
-    private val agentRef = AtomicReference<GraphBasedAgent?>(null)
-    private var permissionWatcherJob: Job? = null
 
     private val graphAgent by di.instance<GraphBasedAgent>()
-    private val gigaVoiceAPI: GigaVoiceAPI by di.instance()
     private val desktopInfoRepository: DesktopInfoRepository by di.instance()
     private val settingsProvider: SettingsProvider by di.instance()
-    private var onboardingSpeechStartedAt: Long? = null
+    private val mainInteractorsFactory: MainInteractorsFactory by di.instance()
 
-    private val say: Say by di.instance()
-    private val taskSideEffectJobs = ArrayList<Job>()
-    private val activeChatRequestId = AtomicLong(0L)
+    private val agentRef = AtomicReference<GraphBasedAgent?>(null)
 
-    private val toolPermissionBroker: ToolPermissionBroker by di.instance()
+    private val interactors: MainInteractors = mainInteractorsFactory.create(ioDispatchers)
+    private val chatInteractor: ChatInteractor = interactors.chat
+    private val voiceInputInteractor: VoiceInputInteractor = interactors.voiceInput
+    private val speechInteractor: SpeechInteractor = interactors.speech
+    private val permissionsInteractor: PermissionsInteractor = interactors.permissions
+    private val audioRecorder: InMemoryAudioRecorder = voiceInputInteractor.audioRecorder
 
     init {
+        agentRef.set(graphAgent)
+        chatInteractor.bindAgentRef(agentRef)
+
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectInteractorOutputs() }
+
         viewModelScope.launch {
             setState {
                 copy(
                     selectedModel = settingsProvider.gigaModel.alias,
-                    selectedContextSize = settingsProvider.contextSize
+                    selectedContextSize = settingsProvider.contextSize,
                 )
             }
         }
-        viewModelScope.launch { runOnboarding() }
-        ioLaunch { initializeAgent() }
-        vmLaunch { observeSpeakingState() }
-        vmLaunch { observeToolPermissionRequests() }
+
+        chatInteractor.start(viewModelScope)
+        speechInteractor.start(viewModelScope)
+        permissionsInteractor.start(viewModelScope)
+
+        viewModelScope.launch { permissionsInteractor.runOnboardingIfNeeded() }
+        ioLaunch {
+            voiceInputInteractor.initialize(
+                scope = viewModelScope,
+                stateProvider = { currentState },
+                onRecognizedText = { recognizedText ->
+                    withContext(Dispatchers.Main) {
+                        chatInteractor.sendChatMessage(
+                            scope = viewModelScope,
+                            isVoice = true,
+                            chatMessage = recognizedText,
+                        )
+                    }
+                },
+            )
+        }
+        viewModelScope.launchDbSetup(desktopInfoRepository)
     }
 
     override fun initialState(): MainState = MainState()
 
     override suspend fun handleEvent(event: MainEvent) {
         when (event) {
-            MainEvent.StartListening -> startRecording()
-            MainEvent.StopListening -> stopRecording()
+            MainEvent.StartListening -> voiceInputInteractor.startRecording(currentState.isListening)
+            MainEvent.StopListening -> voiceInputInteractor.stopRecording(currentState.isListening)
             MainEvent.RequestNewConversation -> requestNewConversation()
             MainEvent.ConfirmNewConversation -> confirmNewConversation()
             MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()
             MainEvent.ClearContext -> clearContext()
-            MainEvent.StopSpeech -> killTaskSideEffectJobs()
-            MainEvent.StopAgentJob -> agentRef.get()?.cancelActiveJob()
+            MainEvent.StopSpeech -> chatInteractor.stopSpeechAndSideEffects()
+            MainEvent.StopAgentJob -> chatInteractor.cancelActiveJob()
             MainEvent.ShowLastText -> setPreviousText()
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
             is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
             is MainEvent.UpdateChatModel -> updateChatModel(event.model)
             is MainEvent.UpdateChatContextSize -> updateChatContextSize(event.size)
-            MainEvent.SendChatMessage -> vmLaunch { sendChatMessage(false, currentState.chatInputText.text) }
+            MainEvent.SendChatMessage -> vmLaunch {
+                chatInteractor.sendChatMessage(
+                    scope = viewModelScope,
+                    isVoice = false,
+                    chatMessage = currentState.chatInputText.text,
+                )
+            }
+
             MainEvent.RefreshSettings -> refreshSettings()
-            MainEvent.ApproveToolPermission -> resolveToolPermission(approved = true)
-            MainEvent.RejectToolPermission -> resolveToolPermission(approved = false)
+            MainEvent.ApproveToolPermission ->
+                permissionsInteractor.resolveToolPermission(currentState.toolPermissionDialog?.requestId, approved = true)
+
+            MainEvent.RejectToolPermission ->
+                permissionsInteractor.resolveToolPermission(currentState.toolPermissionDialog?.requestId, approved = false)
         }
     }
 
@@ -100,229 +135,33 @@ class MainViewModel(
         }
     }
 
-    private suspend fun initializeAgent() = coroutineScope {
-        val hotkeyListener = HotkeyListener(
-            onPressed = { pressed ->
-                l.info(if (pressed) "onStart" else "onStop")
-                when {
-                    pressed -> viewModelScope.launch { startRecording() }
-                    else -> viewModelScope.launch { stopRecording() }
-                }
-            },
-            onDoubleClick = { agentRef.get()?.cancelActiveJob() },
-        )
-
-        launch { audioRecorder.logState() }
-        viewModelScope.launchDbSetup(desktopInfoRepository)
-
-        if (!registerNativeHook()) {
-            handleMissingInputMonitoringPermission()
-            return@coroutineScope
-        }
-
-        try {
-            GlobalScreen.addNativeKeyListener(hotkeyListener)
-            val userInputFlow = audioRecorder.audioFlow
-                .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
-                .catch { l.error("Error in audio flow: ${it.message}") }
-                .mapLatest { audioData ->
-                    val encodedAudio = rawToOpusOgg(rawData = audioData)
-                    l.debug("[Sending audio data: ${encodedAudio.size} bytes]")
-                    val resp = gigaVoiceAPI.recognize(encodedAudio)
-                    l.info("Recognition response: $resp")
-                    resp.result.joinToString("\n").trim()
-                }
-                .onEach(::onTextRecognizeSideEffects)
-                .filter { it.isNotBlank() }
-
-            agentRef.set(graphAgent)
-
-            launch {
-                graphAgent.currentContext.collect { ctx ->
-                     setState { copy(agentHistory = ctx.history) }
-                }
+    private suspend fun collectInteractorOutputs() {
+        merge(
+            chatInteractor.outputs,
+            voiceInputInteractor.outputs,
+            speechInteractor.outputs,
+            permissionsInteractor.outputs,
+        ).collect { output ->
+            when (output) {
+                is MainInteractorOutput.State -> setState(output.reduce)
+                is MainInteractorOutput.Effect -> send(output.effect)
             }
-
-            userInputFlow.retryWhen { cause, attempt ->
-                if (cause is CancellationException) return@retryWhen false
-                l.error("Agent flow failed, attempt $attempt, cause: ${cause.message}", cause)
-                setState { copy(isProcessing = false, statusMessage = "Ошибка: ${cause.message}") }
-                delay(1000L)
-                true
-            }.collectLatest { userInput ->
-                withContext(Dispatchers.Main) {
-                    sendChatMessage(
-                        isVoice = true,
-                        chatMessage = userInput
-                    )
-                }
-            }
-        } finally {
-            GlobalScreen.unregisterNativeHook()
         }
     }
 
-    private suspend fun onTextRecognizeSideEffects(recognizedText: String) {
-        if (recognizedText.isNotBlank()) return
-        val msg = "Речь не распознана"
-        ioLaunch { say.queue(msg) }
-        setState { copy(statusMessage = msg, isProcessing = false) }
-    }
-
-    private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository) = launch(Dispatchers.IO) {
+    private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository): Job = launch(ioDispatchers) {
         while (isActive) {
             repo.storeDesktopDataDaily()
             delay(5.minutes)
         }
     }
 
-    private suspend fun startRecording() {
-        if (currentState.isListening) return
-        killTaskSideEffectJobs()
-        l.info("About to agent's cancelActiveJob")
-        agentRef.get()?.cancelActiveJob()
-        ioLaunch { say.playMacPing() }
-        setState { copy(isListening = true, statusMessage = "Запись запущена") }
-        audioRecorder.start()
-    }
-
-    private suspend fun stopRecording() {
-        if (!currentState.isListening) return
-        audioRecorder.stop()
-        setState { copy(isListening = false, statusMessage = "Обработка входа") }
-        delay(300)
-        ioLaunch { say.playTextRand(speed = 120, "ok", "okey", "окей", "ок") }
-    }
-
-    private suspend fun sendChatMessage(
-        isVoice: Boolean,
-        chatMessage: String,
-    ) {
-        killTaskSideEffectJobs()
-        agentRef.get()?.cancelActiveJob()
-        val userText = chatMessage.trim()
-        if (userText.isEmpty()) return
-        val requestId = activeChatRequestId.incrementAndGet()
-
-        val userMessage = ChatMessage(
-            text = userText,
-            isUser = true,
-            isVoice = isVoice
-        )
-        setState {
-            copy(
-                chatMessages = chatMessages + userMessage,
-                chatStartTip = "",
-                chatInputText = TextFieldValue(""),
-                isProcessing = true,
-                statusMessage = ""
-            )
-        }
-
-        val newLastMessage = ChatMessage(
-            text = "",
-            isUser = false,
-            isVoice = isVoice
-        )
-        var sideEffectsJob: Job? = null
-
-        try {
-            sideEffectsJob = subscribeOnTaskSideEffects(newLastMessage)
-            l.info("About to execute agent with user input $userText")
-            val response = ioAsync {
-                graphAgent.execute(userText)
-            }
-
-            val botMessage = newLastMessage.copy(text = response.await())
-            if (activeChatRequestId.get() != requestId) {
-                l.info("Skipping stale chat response for request {}", requestId)
-                return
-            }
-            l.info("Agent response set")
-            setState {
-                copy(
-                    chatMessages = if (chatMessages.last().id == botMessage.id) {
-                        chatMessages.mapLast { botMessage }
-                    } else {
-                        chatMessages + botMessage
-                    },
-                    isProcessing = false
-                )
-            }
-            if (isVoice && !settingsProvider.useStreaming) {
-                say.queue(prepareTextForSpeech(botMessage.text))
-            }
-        } catch (e: CancellationException) {
-            l.info("Chat message cancelled: ${e.message}")
-            val isCurrentRequest = activeChatRequestId.get() == requestId
-            withContext(NonCancellable) {
-                setState {
-                    val idsToDrop = arrayOf(userMessage.id, newLastMessage.id)
-                    copy(
-                        chatMessages = chatMessages.filterNot { it.id in idsToDrop },
-                        isProcessing = if (isCurrentRequest) false else isProcessing
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            if (activeChatRequestId.get() != requestId) {
-                l.info("Ignoring stale chat failure for request {}: {}", requestId, e.message)
-                return
-            }
-            l.error("Chat message failed: ${e.message}", e)
-            val errorMessage = ChatMessage(
-                text = "Ошибка: ${e.message}",
-                isUser = false,
-                isVoice = isVoice
-            )
-            setState {
-                copy(
-                    chatMessages = chatMessages + errorMessage,
-                    isProcessing = false
-                )
-            }
-        } finally {
-            sideEffectsJob?.cancel()
-            sideEffectsJob?.let { taskSideEffectJobs.remove(it) }
-        }
-    }
-
-    private fun subscribeOnTaskSideEffects(msg: ChatMessage): Job {
-        val job = viewModelScope.launch {
-            val isCodeBlockStarted = AtomicBoolean(false)
-            graphAgent.sideEffects.collect { text ->
-                setState {
-                    val newHistory = if (msg.id == currentState.chatMessages.lastOrNull()?.id) {
-                        currentState.chatMessages.mapLast { last -> last.copy(text = last.text + text) }
-                    } else {
-                        currentState.chatMessages + msg.copy(text = text)
-                    }
-                    copy(chatMessages = newHistory)
-                }
-                if (!msg.isVoice) return@collect
-                if (text.contains(CODE_BLOCK)) {
-                    isCodeBlockStarted.set(!isCodeBlockStarted.get())
-                    if (isCodeBlockStarted.get()) {
-                        say.queue(prepareTextForSpeech(text.substringBefore(CODE_BLOCK)))
-                    }
-                }
-                if (!isCodeBlockStarted.get()) {
-                    say.queue(prepareTextForSpeech(text.substringAfter(CODE_BLOCK)))
-                }
-            }
-        }
-        taskSideEffectJobs.add(job)
-        return job
-    }
-
-    private inline fun <T> List<T>.mapLast(transform: (T) -> T): List<T> =
-        mapIndexed { i, v -> if (i == lastIndex) transform(v) else v }
-
     private suspend fun requestNewConversation() {
         if (currentState.chatMessages.isEmpty()) {
             startNewConversation()
             return
         }
+
         setState { copy(showNewChatDialog = true) }
     }
 
@@ -336,8 +175,9 @@ class MainViewModel(
     }
 
     private suspend fun startNewConversation() {
-        killTaskSideEffectJobs()
-        agentRef.get()?.clearContext()
+        chatInteractor.stopSpeechAndSideEffects()
+        chatInteractor.clearContext()
+
         setState {
             copy(
                 displayedText = MainState.randomStatusTip(),
@@ -349,7 +189,7 @@ class MainViewModel(
                 chatMessages = emptyList(),
                 chatStartTip = MainState.randomStatusTip(),
                 chatInputText = TextFieldValue(""),
-                showNewChatDialog = false
+                showNewChatDialog = false,
             )
         }
     }
@@ -357,14 +197,14 @@ class MainViewModel(
     private suspend fun updateChatModel(modelAlias: String) {
         val model = GigaModel.entries.firstOrNull { it.alias == modelAlias } ?: return
         settingsProvider.gigaModel = model
-        graphAgent.updateModel(model)
+        chatInteractor.updateModel(model)
         setState { copy(selectedModel = model.alias) }
     }
 
     private suspend fun updateChatContextSize(size: Int) {
         if (size <= 0) return
         settingsProvider.contextSize = size
-        graphAgent.updateContextSize(size)
+        chatInteractor.updateContextSize(size)
         setState { copy(selectedContextSize = size) }
     }
 
@@ -372,52 +212,25 @@ class MainViewModel(
         setState {
             copy(
                 selectedModel = settingsProvider.gigaModel.alias,
-                selectedContextSize = settingsProvider.contextSize
+                selectedContextSize = settingsProvider.contextSize,
             )
         }
     }
 
-    private suspend fun observeSpeakingState() {
-        say.isSpeaking.collect { isSpeaking ->
-            setState {
-                val userAskWithVoice = chatMessages.lastOrNull()?.isVoice == true
-                copy(isSpeaking = isSpeaking && userAskWithVoice)
-            }
-        }
-    }
-
-    private suspend fun observeToolPermissionRequests() {
-        toolPermissionBroker.requests.collect { request ->
-            setState {
-                copy(
-                    toolPermissionDialog = ToolPermissionDialogData(
-                        requestId = request.id,
-                        description = request.description,
-                        params = request.params.toSortedMap(),
-                    )
-                )
-            }
-        }
-    }
-
-    private suspend fun resolveToolPermission(approved: Boolean) {
-        val requestId = currentState.toolPermissionDialog?.requestId ?: return
-        toolPermissionBroker.resolve(requestId, approved)
-        setState { copy(toolPermissionDialog = null) }
-    }
-
     private suspend fun setPreviousText() {
         currentState.lastKnownAgentContext?.let { ctx ->
-            agentRef.get()?.setContext(ctx)
+            chatInteractor.setContext(ctx)
         }
+
         val prevText = currentState.lastText ?: return
         setState { copy(displayedText = prevText, lastText = null, userExpectCloseOnX = false) }
     }
 
     private suspend fun clearContext() {
-        val lastKnownAgentContext: AgentContext<String>? = agentRef.get()?.currentContext?.value
-        agentRef.get()?.clearContext()
-        killTaskSideEffectJobs()
+        val lastKnownAgentContext: AgentContext<String>? = chatInteractor.snapshotContext()
+        chatInteractor.clearContext()
+        chatInteractor.stopSpeechAndSideEffects()
+
         when (currentState.userExpectCloseOnX) {
             false -> {
                 val currentText = currentState.displayedText
@@ -435,7 +248,7 @@ class MainViewModel(
                         userExpectCloseOnX = true,
                         chatMessages = emptyList(),
                         chatStartTip = MainState.randomStatusTip(),
-                        showNewChatDialog = false
+                        showNewChatDialog = false,
                     )
                 }
             }
@@ -447,7 +260,7 @@ class MainViewModel(
                         userExpectCloseOnX = false,
                         chatMessages = emptyList(),
                         chatStartTip = MainState.randomStatusTip(),
-                        showNewChatDialog = false
+                        showNewChatDialog = false,
                     )
                 }
                 send(MainEffect.Hide)
@@ -455,111 +268,14 @@ class MainViewModel(
         }
     }
 
-    private fun registerNativeHook(): Boolean = runCatching {
-        GlobalScreen.registerNativeHook()
-        true
-    }.getOrElse { e ->
-        l.error("Failed to initialize hotkey listener: ${e.message}")
-        false
-    }
-
-    private fun handleMissingInputMonitoringPermission() {
-        permissionWatcherJob?.cancel()
-        permissionWatcherJob = viewModelScope.launch {
-            val startAt = onboardingSpeechStartedAt
-            if (startAt != null) {
-                val elapsed = System.currentTimeMillis() - startAt
-                val waitMs = max(0, ONBOARDING_PERMISSION_DELAY_MS - elapsed)
-                if (waitMs > 0) {
-                    delay(waitMs)
-                }
-            }
-            setState {
-                copy(
-                    statusMessage = "Разрешите доступ к мониторингу ввода в настройках macOS — " +
-                            "после подтверждения приложение перезапустится автоматически"
-                )
-            }
-
-            while (isActive) {
-                delay(4_000)
-                if (canRegisterNativeHookNow()) {
-                    l.info("Input monitoring permission granted, relaunching application")
-                    AppRelauncher.relaunch()
-                }
-            }
-        }
-    }
-
-    private fun canRegisterNativeHookNow(): Boolean = runCatching {
-        GlobalScreen.registerNativeHook()
-        GlobalScreen.unregisterNativeHook()
-        true
-    }.getOrElse { false }
-
-    private suspend fun runOnboarding() {
-        if (!settingsProvider.needsOnboarding) return
-        settingsProvider.needsOnboarding = false
-        setState { copy(displayedText = ONBOARDING_DISPLAY_TEXT) }
-        val onboardingSpeech = prepareTextForSpeech(ONBOARDING_SPEECH_TEXT)
-        onboardingSpeechStartedAt = System.currentTimeMillis()
-        ioLaunch {
-            say.queue(onboardingSpeech)
-        }
-    }
-
     override fun onCleared() {
         super.onCleared()
-        currentState.toolPermissionDialog?.requestId?.let { requestId ->
-            toolPermissionBroker.resolve(requestId, approved = false)
-        }
-        killTaskSideEffectJobs()
-        say.clearQueue()
-        agentRef.get()?.cancelActiveJob()
-        permissionWatcherJob?.cancel()
-    }
-
-    private fun prepareTextForSpeech(text: String): String {
-        var result = text.replace(Regex("$CODE_BLOCK[\\s\\S]*?$CODE_BLOCK"), "")
-        result = result.replace(Regex("`[^`]+`"), "")
-        result = result.replace(Regex("[\"«»„“”]"), "")
-        result = result.replace(Regex("[*#]"), "")
-        result = result.replace(Regex("\\s+"), " ")
-
-        return result.trim()
-    }
-
-    /** Stop the current voice process, rm the queue */
-    private fun killTaskSideEffectJobs() {
-        say.clearQueue()
-        taskSideEffectJobs.forEach { it.cancel() }
-        taskSideEffectJobs.clear()
+        permissionsInteractor.rejectPendingPermissionRequest(currentState.toolPermissionDialog?.requestId)
+        chatInteractor.onCleared()
+        permissionsInteractor.onCleared()
     }
 
     private companion object {
-        const val CODE_BLOCK = "```"
         const val DEFAULT_CLEARED_TEXT = "Контекст очищен"
-        const val ONBOARDING_PERMISSION_DELAY_MS = 100000
-        const val ONBOARDING_SPEECH_TEXT = "Привет! Я ГигаДэ́ск! умный помощник на твоем компьютере... " +
-            "Сейчас я попрошу доступы к приложениям, системе и файлам, чтобы работать корректно... " +
-            "Я умею пользоваться браузером, работать с почтой и календарем, работать с файлами на вашем ПК, " +
-            "объяснить и переписать выделенный текст, открывать приложения, создавать заметки, отвечать на вопросы, " +
-            "строить графики, диаграммы на основе данных."
-        val ONBOARDING_DISPLAY_TEXT = """
-            Привет! Я GigaDesk, умный помощник на твоем компьютере.
-            Сейчас я попрошу доступы к приложениям, системе и файлам, чтобы работать корректно.
-            Я умею:
-            - Пользоваться браузером
-            - Работать с почтой и календарем
-            - Работать с файлами на вашем ПК
-            - Объяснить и переписать выделенный текст
-            - Открывать приложения, создавать заметки, отвечать на вопросы
-            - Строить графики, диаграммы на основе данных
-            
-            
-            Для запуска голосового ввода - зажми правый opt(alt)
-            Для очистки контекста беседы - нажми X
-            Для скрытия окна - нажми Х два раза
-        """.trimIndent()
     }
 }
