@@ -58,6 +58,7 @@ class NodesLLM(
         val streamResponse = AtomicReference<GigaResponse.Chat?>(null)
         val choicesByIndex = ConcurrentHashMap<Int, ChoiceAccumulator>()
         val pending = StringBuilder()
+        var increasingChunkSize = 20
 
         withContext(Dispatchers.IO) {
             llmApi.messageStream(request).takeWhile { response ->
@@ -75,11 +76,12 @@ class NodesLLM(
                 val content = response.choices.firstOrNull()?.message?.content
                 if (content?.isNotEmpty() == true) {
                     pending.append(content)
-                    if (pending.length >= 20) {
+                    if (pending.length >= increasingChunkSize) {
                         val toEmit = pending.toString()
                         l.info("About to emit into sideEffects flow: {}", toEmit)
                         (sideEffects as MutableSharedFlow<String>).emit(toEmit)
                         pending.clear()
+                        increasingChunkSize *= 3
                     }
                 }
 
@@ -97,6 +99,12 @@ class NodesLLM(
                     model = response.model,
                     usage = response.usage,
                 ).also(streamResponse::store)
+            }
+
+            if (pending.isNotEmpty()) {
+                val toEmit = pending.toString()
+                l.info("About to emit final chunk into sideEffects flow: {}", toEmit)
+                (sideEffects as MutableSharedFlow<String>).emit(toEmit)
             }
         }
 
