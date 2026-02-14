@@ -45,6 +45,7 @@ import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.tool.ToolPermissionBroker
 import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
+import ru.gigadesk.ui.main.usecases.VoiceInputUseCase
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.AfterTest
@@ -287,9 +288,10 @@ class MainViewModelTest {
     }
 
     private suspend fun emitAudioFlowEvent(viewModel: MainViewModel, data: ByteArray) {
-        val audioRecorderField = MainViewModel::class.java.getDeclaredField("audioRecorder")
-        audioRecorderField.isAccessible = true
-        val recorder = audioRecorderField.get(viewModel) as InMemoryAudioRecorder
+        val voiceInputUseCaseField = MainViewModel::class.java.getDeclaredField("voiceInputUseCase")
+        voiceInputUseCaseField.isAccessible = true
+        val voiceInputUseCase = voiceInputUseCaseField.get(viewModel) as VoiceInputUseCase
+        val recorder = voiceInputUseCase.audioRecorder
 
         val flowField = InMemoryAudioRecorder::class.java.getDeclaredField("_audioFlow")
         flowField.isAccessible = true

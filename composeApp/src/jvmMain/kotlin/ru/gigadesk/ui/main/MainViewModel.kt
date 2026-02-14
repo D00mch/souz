@@ -21,7 +21,6 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.agent.engine.AgentContext
-import ru.gigadesk.audio.InMemoryAudioRecorder
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaModel
@@ -54,7 +53,6 @@ class MainViewModel(
     private val voiceInputUseCase: VoiceInputUseCase = useCases.voiceInput
     private val speechUseCase: SpeechUseCase = useCases.speech
     private val permissionsUseCase: PermissionsUseCase = useCases.permissions
-    private val audioRecorder: InMemoryAudioRecorder = voiceInputUseCase.audioRecorder
 
     init {
         agentRef.set(graphAgent)
