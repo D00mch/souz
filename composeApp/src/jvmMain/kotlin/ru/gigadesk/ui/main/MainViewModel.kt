@@ -198,12 +198,8 @@ class MainViewModel(
         isVoice: Boolean,
         chatMessage: String,
     ) {
-        if (currentState.isProcessing) {
-            if (!isVoice) return
-            l.info("Interrupting active chat task with new voice input")
-            killTaskSideEffectJobs()
-            agentRef.get()?.cancelActiveJob()
-        }
+        killTaskSideEffectJobs()
+        agentRef.get()?.cancelActiveJob()
         val userText = chatMessage.trim()
         if (userText.isEmpty()) return
         val requestId = activeChatRequestId.incrementAndGet()
@@ -303,6 +299,7 @@ class MainViewModel(
                     }
                     copy(chatMessages = newHistory)
                 }
+                if (!msg.isVoice) return@collect
                 if (text.contains(CODE_BLOCK)) {
                     isCodeBlockStarted.set(!isCodeBlockStarted.get())
                     if (isCodeBlockStarted.get()) {
@@ -382,7 +379,10 @@ class MainViewModel(
 
     private suspend fun observeSpeakingState() {
         say.isSpeaking.collect { isSpeaking ->
-            setState { copy(isSpeaking = isSpeaking) }
+            setState {
+                val userAskWithVoice = chatMessages.lastOrNull()?.isVoice == true
+                copy(isSpeaking = isSpeaking && userAskWithVoice)
+            }
         }
     }
 

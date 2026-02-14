@@ -187,16 +187,19 @@ class MainViewModelTest {
                 executeBehavior = { input ->
                     if (input != "hello") error("Unexpected input: $input")
                     response.await()
-                })
+                },
+                recognizeBehavior = {
+                    GigaResponse.RecognizeResponse(result = listOf("hello"))
+                },
+            )
 
             try {
                 val viewModel = harness.viewModel
                 advanceUntilIdle()
 
-                viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("hello")))
-                viewModel.handleEvent(MainEvent.SendChatMessage)
-
-                awaitState(viewModel) { it.isProcessing }
+                awaitVoiceRequestStarted(viewModel, byteArrayOf(1, 2, 3)) { state ->
+                    state.isProcessing && state.chatMessages.any { it.isUser && it.text == "hello" }
+                }
 
                 harness.isSpeakingFlow.value = true
                 response.complete("hi there")
@@ -224,6 +227,22 @@ class MainViewModelTest {
             withContext(Dispatchers.Default) { yield() }
         }
         error("Timed out waiting for expected MainState")
+    }
+
+    private suspend fun TestScope.awaitVoiceRequestStarted(
+        viewModel: MainViewModel,
+        data: ByteArray,
+        predicate: (MainState) -> Boolean,
+    ): MainState {
+        val deadlineMs = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < deadlineMs) {
+            emitAudioFlowEvent(viewModel, data)
+            runCurrent()
+            val state = viewModel.uiState.value
+            if (predicate(state)) return state
+            withContext(Dispatchers.Default) { yield() }
+        }
+        error("Timed out waiting for voice request to start")
     }
 
     private suspend fun emitAudioFlowEvent(viewModel: MainViewModel, data: ByteArray) {
