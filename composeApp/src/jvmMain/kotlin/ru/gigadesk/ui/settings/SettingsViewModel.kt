@@ -35,34 +35,7 @@ class SettingsViewModel(
 
     init {
         viewModelScope.launch {
-            val voiceSpeed = ConfigStore.get(ToolSoundConfig.SPEED_KEY, ToolSoundConfig.DEFAULT_SPEED)
-            val currentModel = keysProvider.gigaModel
-            val currentPrompt = keysProvider.getSystemPromptForModel(currentModel) ?: DEFAULT_SYSTEM_PROMPT
-            setState {
-                copy(
-                    gigaChatKey = keysProvider.gigaChatKey ?: "",
-                    qwenChatKey = keysProvider.qwenChatKey ?: "",
-                    aiTunnelKey = keysProvider.aiTunnelKey ?: "",
-                    saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
-                    mcpServersJson = keysProvider.mcpServersJson ?: "",
-                    useFewShotExamples = keysProvider.useFewShotExamples,
-                    useStreaming = keysProvider.useStreaming,
-                    safeModeEnabled = keysProvider.safeModeEnabled,
-                    gigaModel = currentModel,
-                    embeddingsModel = keysProvider.embeddingsModel,
-                    requestTimeoutMillis = keysProvider.requestTimeoutMillis,
-                    requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
-                    contextSize = keysProvider.contextSize,
-                    contextSizeInput = keysProvider.contextSize.toString(),
-                    temperature = keysProvider.temperature,
-                    temperatureInput = keysProvider.temperature.toString(),
-                    supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
-                    systemPrompt = currentPrompt,
-                    defaultCalendar = keysProvider.defaultCalendar,
-                    voiceSpeed = voiceSpeed,
-                    voiceSpeedInput = voiceSpeed.toString(),
-                )
-            }
+            refreshFromProvider()
             fetchBalance()
             fetchCalendars()
         }
@@ -135,6 +108,7 @@ class SettingsViewModel(
                 val newContextSize = normalized.toIntOrNull()?.takeIf { it > 0 }
                 if (newContextSize != null) {
                     keysProvider.contextSize = newContextSize
+                    graphBasedAgent.updateContextSize(newContextSize)
                 }
                 setState {
                     copy(
@@ -175,6 +149,7 @@ class SettingsViewModel(
                 }
                 setState { copy(voiceSpeedInput = normalized, voiceSpeed = newSpeed ?: voiceSpeed) }
             }
+            RefreshFromProvider -> refreshFromProvider()
             ChooseVoice -> {
                 runCatching { say.chooseVoice() }
                     .onFailure { l.warn("Failed to open voice settings", it) }
@@ -211,6 +186,37 @@ class SettingsViewModel(
     override suspend fun handleSideEffect(effect: SettingsEffect) = when (effect) {
         SettingsEffect.CloseScreen,
         SettingsEffect.NotifyOnSystemPrompt -> l.debug { "ignore effect: $effect" }
+    }
+
+    private suspend fun refreshFromProvider() {
+        val voiceSpeed = ConfigStore.get(ToolSoundConfig.SPEED_KEY, ToolSoundConfig.DEFAULT_SPEED)
+        val currentModel = keysProvider.gigaModel
+        val currentPrompt = keysProvider.getSystemPromptForModel(currentModel) ?: DEFAULT_SYSTEM_PROMPT
+        setState {
+            copy(
+                gigaChatKey = keysProvider.gigaChatKey ?: "",
+                qwenChatKey = keysProvider.qwenChatKey ?: "",
+                aiTunnelKey = keysProvider.aiTunnelKey ?: "",
+                saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
+                mcpServersJson = keysProvider.mcpServersJson ?: "",
+                useFewShotExamples = keysProvider.useFewShotExamples,
+                useStreaming = keysProvider.useStreaming,
+                safeModeEnabled = keysProvider.safeModeEnabled,
+                gigaModel = currentModel,
+                embeddingsModel = keysProvider.embeddingsModel,
+                requestTimeoutMillis = keysProvider.requestTimeoutMillis,
+                requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
+                contextSize = keysProvider.contextSize,
+                contextSizeInput = keysProvider.contextSize.toString(),
+                temperature = keysProvider.temperature,
+                temperatureInput = keysProvider.temperature.toString(),
+                supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
+                systemPrompt = currentPrompt,
+                defaultCalendar = keysProvider.defaultCalendar,
+                voiceSpeed = voiceSpeed,
+                voiceSpeedInput = voiceSpeed.toString(),
+            )
+        }
     }
 
     private fun fetchCalendars() = viewModelScope.launch(Dispatchers.IO) {

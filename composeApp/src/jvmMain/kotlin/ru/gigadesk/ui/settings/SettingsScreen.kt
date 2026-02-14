@@ -47,6 +47,10 @@ fun SettingsScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.send(SettingsEvent.RefreshFromProvider)
+    }
+
     val windowScope = ru.gigadesk.LocalWindowScope.current
     DisposableEffect(windowScope) {
         val window = windowScope?.window
