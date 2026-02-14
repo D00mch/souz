@@ -79,6 +79,7 @@ class MainViewModel(
             MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()
             MainEvent.ClearContext -> clearContext()
             MainEvent.StopSpeech -> killTaskSideEffectJobs()
+            MainEvent.StopAgentJob -> agentRef.get()?.cancelActiveJob()
             MainEvent.ShowLastText -> setPreviousText()
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
             is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
