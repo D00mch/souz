@@ -42,7 +42,7 @@ data class MainState(
     val chatInputText: TextFieldValue = TextFieldValue(""),
     val selectedModel: String = ru.gigadesk.giga.GigaModel.Max.alias,
     val selectedContextSize: Int = DEFAULT_MAX_TOKENS,
-    val speakingMessageId: String? = null,
+    val isSpeaking: Boolean = false,
     val showNewChatDialog: Boolean = false,
     val toolPermissionDialog: ToolPermissionDialogData? = null,
 ) : VMState {

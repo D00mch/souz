@@ -7,6 +7,9 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.newSingleThreadContext
 import java.io.File
@@ -24,27 +27,28 @@ class Say {
     private val random = Random()
 
     private val jobs = ArrayList<Job>()
+    private val _isSpeaking = MutableStateFlow(false)
     private val managingScope = CoroutineScope(SupervisorJob() + newSingleThreadContext("say-manage"))
     private val voiceScope = CoroutineScope(SupervisorJob() + newSingleThreadContext("say"))
 
-    fun queue(text: String, speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)) = managingScope.launch {
-        val j = voiceScope.launch { playText(text, speed) }
-        jobs.add(j)
-    }
+    val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
 
-    fun speakAndWait(text: String, speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)) = managingScope.launch {
-        val j = voiceScope.launch { playText(text, speed) }
-        jobs.add(j)
-        try {
-            j.join()
-        } finally {
-            jobs.remove(j)
+    fun queue(text: String, speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED)) = managingScope.launch {
+        val job = voiceScope.launch { playText(text, speed) }
+        jobs.add(job)
+        updateSpeakingState()
+        job.invokeOnCompletion {
+            managingScope.launch {
+                jobs.remove(job)
+                updateSpeakingState()
+            }
         }
     }
 
     fun clearQueue() = managingScope.launch {
         jobs.forEach { it.cancel() }
         jobs.clear()
+        updateSpeakingState()
         stopPlayText()
     }
 
@@ -60,6 +64,12 @@ class Say {
     private fun stopPlayText() {
         sayProcess?.destroyForcibly()
         sayProcess = null
+    }
+
+    private fun updateSpeakingState() {
+        managingScope.launch {
+            _isSpeaking.value = jobs.isNotEmpty()
+        }
     }
 
     fun playTextRand(speed: Int = ConfigStore.get(SPEED_KEY, DEFAULT_SPEED), vararg texts: String) {
