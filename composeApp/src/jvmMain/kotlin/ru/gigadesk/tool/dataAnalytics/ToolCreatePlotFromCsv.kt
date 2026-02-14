@@ -51,7 +51,8 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
     override val name: String = "CreatePlot"
     override val description: String = "Create a plot from a CSV or Excel file. " +
             "Handles paths with '~'. " +
-            "Supports Bar, Line, Scatter, and Pie charts."
+            "Supports Bar, Line, Scatter, and Pie charts. " +
+            "Returns the path to the saved PNG image, which can be used in 'PresentationCreate'."
 
     override val fewShotExamples = listOf(
         FewShotExample(
