@@ -149,8 +149,8 @@ class GraphBasedAgent(
 
         sessionService.startTask(input)
 
-        val result: Deferred<AgentContext<String>> = coroutineScope {
-            async {
+        val newContext = coroutineScope {
+            val result: Deferred<AgentContext<String>> = async {
                 graph.start(ctx) { step, node, from, to ->
                     val prettyInput = logObjectMapper.writeValueAsString(from.input)
                     l.debug { "Step: ${step.index}, node: ${node.name}, input: $prettyInput" }
@@ -158,9 +158,13 @@ class GraphBasedAgent(
                     sessionService.onStep(step, node, from, to)
                 }
             }
+            runningJob.store(result)
+            try {
+                result.await()
+            } finally {
+                runningJob.compareAndSet(result, null)
+            }
         }
-        runningJob.store(result)
-        val newContext = result.await()
 
         try {
             sessionService.finishTask()

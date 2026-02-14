@@ -114,6 +114,8 @@ internal fun ChatInputWithQuickSettings(
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
     onSend: () -> Unit,
+    onCancel: () -> Unit,
+    isProcessing: Boolean,
     isListening: Boolean,
     onToggleListening: () -> Unit,
     enabled: Boolean,
@@ -127,6 +129,7 @@ internal fun ChatInputWithQuickSettings(
     modifier: Modifier = Modifier,
 ) {
     val hasText = value.text.isNotBlank() && enabled
+    val canSendOrCancel = hasText || isProcessing
     val canToggleMic = enabled || isListening
     val containerShape = RoundedCornerShape(24.dp)
     var isModelDropdownOpen by remember { mutableStateOf(false) }
@@ -264,8 +267,12 @@ internal fun ChatInputWithQuickSettings(
                 Spacer(Modifier.width(8.dp))
 
                 SendMessageButton(
-                    isActive = hasText,
-                    onClick = onSend
+                    isActive = canSendOrCancel,
+                    isProcessing = isProcessing,
+                    onClick = {
+                        if (isProcessing) onCancel()
+                        else onSend()
+                    }
                 )
             }
         }
@@ -395,6 +402,7 @@ private fun VoiceToggleButton(
 @Composable
 private fun SendMessageButton(
     isActive: Boolean,
+    isProcessing: Boolean,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -436,12 +444,20 @@ private fun SendMessageButton(
             ),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = Icons.Rounded.ArrowUpward,
-            contentDescription = "Отправить",
-            tint = iconColor,
-            modifier = Modifier.size(ControlIconSize)
-        )
+        if (isProcessing) {
+            Text(
+                text = "x",
+                color = iconColor,
+                fontSize = 16.sp
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Rounded.ArrowUpward,
+                contentDescription = "Отправить",
+                tint = iconColor,
+                modifier = Modifier.size(ControlIconSize)
+            )
+        }
     }
 }
 

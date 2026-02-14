@@ -79,6 +79,7 @@ sealed interface MainEvent : VMEvent {
     data object DismissNewConversationDialog : MainEvent
     data object ClearContext : MainEvent
     data object StopSpeech : MainEvent
+    data object StopAgentJob : MainEvent
     data object ShowLastText : MainEvent
     data object ToggleThinkingPanel : MainEvent
     data class UpdateChatInput(val text: TextFieldValue) : MainEvent

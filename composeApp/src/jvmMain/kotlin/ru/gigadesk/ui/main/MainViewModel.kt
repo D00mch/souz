@@ -6,8 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
 import org.kodein.di.DI
 import org.kodein.di.DIAware
@@ -19,12 +20,15 @@ import ru.gigadesk.audio.*
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
 import androidx.compose.ui.text.input.TextFieldValue
+import kotlinx.coroutines.flow.retryWhen
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.permissions.AppRelauncher
 import ru.gigadesk.tool.ToolPermissionBroker
 import ru.gigadesk.ui.BaseViewModel
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 import kotlin.time.Duration.Companion.minutes
@@ -45,7 +49,8 @@ class MainViewModel(
     private var onboardingSpeechStartedAt: Long? = null
 
     private val say: Say by di.instance()
-    private val currentSpeechJob = AtomicReference<Job?>(null)
+    private val taskSideEffectJobs = ArrayList<Job>()
+    private val activeChatRequestId = AtomicLong(0L)
 
     private val toolPermissionBroker: ToolPermissionBroker by di.instance()
 
@@ -73,13 +78,14 @@ class MainViewModel(
             MainEvent.ConfirmNewConversation -> confirmNewConversation()
             MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()
             MainEvent.ClearContext -> clearContext()
-            MainEvent.StopSpeech -> stopSpeechPlayback()
+            MainEvent.StopSpeech -> killTaskSideEffectJobs()
+            MainEvent.StopAgentJob -> agentRef.get()?.cancelActiveJob()
             MainEvent.ShowLastText -> setPreviousText()
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
             is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
             is MainEvent.UpdateChatModel -> updateChatModel(event.model)
             is MainEvent.UpdateChatContextSize -> updateChatContextSize(event.size)
-            MainEvent.SendChatMessage -> vmLaunch { sendChatMessage(isVoice = false) }
+            MainEvent.SendChatMessage -> vmLaunch { sendChatMessage(false, currentState.chatInputText.text) }
             MainEvent.RefreshSettings -> refreshSettings()
             MainEvent.ApproveToolPermission -> resolveToolPermission(approved = true)
             MainEvent.RejectToolPermission -> resolveToolPermission(approved = false)
@@ -118,10 +124,10 @@ class MainViewModel(
             val userInputFlow = audioRecorder.audioFlow
                 .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
                 .catch { l.error("Error in audio flow: ${it.message}") }
-                .map { audioData -> rawToOpusOgg(rawData = audioData) }
-                .onEach { l.debug("[Sending audio data: ${it.size} bytes]") }
-                .map { audioData ->
-                    val resp = gigaVoiceAPI.recognize(audioData)
+                .mapLatest { audioData ->
+                    val encodedAudio = rawToOpusOgg(rawData = audioData)
+                    l.debug("[Sending audio data: ${encodedAudio.size} bytes]")
+                    val resp = gigaVoiceAPI.recognize(encodedAudio)
                     l.info("Recognition response: $resp")
                     resp.result.joinToString("\n").trim()
                 }
@@ -136,19 +142,18 @@ class MainViewModel(
                 }
             }
 
-            runCatching {
-                userInputFlow.collect { userInput ->
-                    withContext(Dispatchers.Main) {
-                        sendChatMessage(
-                            isVoice = true,
-                            externalText = userInput
-                        )
-                    }
-                }
-            }.onFailure { e ->
-                if (e !is CancellationException) {
-                    l.error("Agent flow terminated: ${e.message}", e)
-                    setState { copy(isProcessing = false, statusMessage = "Ошибка: ${e.message}") }
+            userInputFlow.retryWhen { cause, attempt ->
+                if (cause is CancellationException) return@retryWhen false
+                l.error("Agent flow failed, attempt $attempt, cause: ${cause.message}", cause)
+                setState { copy(isProcessing = false, statusMessage = "Ошибка: ${cause.message}") }
+                delay(1000L)
+                true
+            }.collectLatest { userInput ->
+                withContext(Dispatchers.Main) {
+                    sendChatMessage(
+                        isVoice = true,
+                        chatMessage = userInput
+                    )
                 }
             }
         } finally {
@@ -171,8 +176,9 @@ class MainViewModel(
     }
 
     private suspend fun startRecording() {
-        if (currentState.isListening || currentState.isProcessing) return
-        stopSpeechPlayback()
+        if (currentState.isListening) return
+        killTaskSideEffectJobs()
+        l.info("About to agent's cancelActiveJob")
         agentRef.get()?.cancelActiveJob()
         ioLaunch { say.playMacPing() }
         setState { copy(isListening = true, statusMessage = "Запись запущена") }
@@ -182,18 +188,24 @@ class MainViewModel(
     private suspend fun stopRecording() {
         if (!currentState.isListening) return
         audioRecorder.stop()
-        setState { copy(isListening = false, statusMessage = "Обработка входа", isProcessing = true) }
+        setState { copy(isListening = false, statusMessage = "Обработка входа") }
         delay(300)
         ioLaunch { say.playTextRand(speed = 120, "ok", "okey", "окей", "ок") }
     }
 
     private suspend fun sendChatMessage(
         isVoice: Boolean,
-        externalText: String? = null,
+        chatMessage: String,
     ) {
-        if (currentState.isProcessing && externalText == null) return
-        val userText = externalText?.trim() ?: currentState.chatInputText.text.trim()
+        if (currentState.isProcessing) {
+            if (!isVoice) return
+            l.info("Interrupting active chat task with new voice input")
+            killTaskSideEffectJobs()
+            agentRef.get()?.cancelActiveJob()
+        }
+        val userText = chatMessage.trim()
         if (userText.isEmpty()) return
+        val requestId = activeChatRequestId.incrementAndGet()
 
         val userMessage = ChatMessage(
             text = userText,
@@ -210,25 +222,61 @@ class MainViewModel(
             )
         }
 
+        val newLastMessage = ChatMessage(
+            text = "",
+            isUser = false,
+            isVoice = isVoice
+        )
+        var sideEffectsJob: Job? = null
+
         try {
+            sideEffectsJob = subscribeOnTaskSideEffects(newLastMessage)
+            l.info("About to execute agent with user input $userText")
             val response = ioAsync {
                 graphAgent.execute(userText)
             }
-            val botMessage = ChatMessage(
-                text = response.await(),
-                isUser = false,
-                isVoice = isVoice
-            )
+
+            val botMessage = newLastMessage.copy(text = response.await())
+            if (activeChatRequestId.get() != requestId) {
+                l.info("Skipping stale chat response for request {}", requestId)
+                return
+            }
+            l.info("Agent response set")
             setState {
                 copy(
-                    chatMessages = chatMessages + botMessage,
+                    chatMessages = if (chatMessages.last().id == botMessage.id) {
+                        chatMessages.mapLast { botMessage }
+                    } else {
+                        chatMessages + botMessage
+                    },
                     isProcessing = false
                 )
             }
-            if (isVoice) {
-                startMessageSpeech(botMessage)
+            if (isVoice && !settingsProvider.useStreaming) {
+                say.queue(prepareTextForSpeech(botMessage.text))
+            }
+        } catch (e: CancellationException) {
+            l.info("Chat message cancelled: ${e.message}")
+            val isCurrentRequest = activeChatRequestId.get() == requestId
+            withContext(NonCancellable) {
+                setState {
+                    val idsToDrop = if (isVoice) {
+                        arrayOf(userMessage.id, newLastMessage.id)
+                    } else {
+                        arrayOf(newLastMessage.id)
+                    }
+                    copy(
+                        chatMessages = chatMessages.filterNot { it.id in idsToDrop },
+                        isProcessing = if (isCurrentRequest) false else isProcessing,
+                        speakingMessageId = if (isCurrentRequest) null else speakingMessageId
+                    )
+                }
             }
         } catch (e: Exception) {
+            if (activeChatRequestId.get() != requestId) {
+                l.info("Ignoring stale chat failure for request {}: {}", requestId, e.message)
+                return
+            }
             l.error("Chat message failed: ${e.message}", e)
             val errorMessage = ChatMessage(
                 text = "Ошибка: ${e.message}",
@@ -242,32 +290,41 @@ class MainViewModel(
                     speakingMessageId = null
                 )
             }
+        } finally {
+            sideEffectsJob?.cancel()
+            sideEffectsJob?.let { taskSideEffectJobs.remove(it) }
         }
     }
 
-    private suspend fun startMessageSpeech(message: ChatMessage) {
-        val text = prepareTextForSpeech(message.text)
-        if (text.isBlank()) return
-        stopSpeechPlayback()
-        setState { copy(speakingMessageId = message.id) }
-        val job = say.speakAndWait(text)
-        currentSpeechJob.set(job)
-        job.invokeOnCompletion {
-            if (viewModelScope.isActive) {
-                viewModelScope.launch {
-                    if (currentState.speakingMessageId == message.id) {
-                        setState { copy(speakingMessageId = null) }
+    private fun subscribeOnTaskSideEffects(msg: ChatMessage): Job {
+        val job = viewModelScope.launch {
+            val isCodeBlockStarted = AtomicBoolean(false)
+            graphAgent.sideEffects.collect { text ->
+                setState {
+                    val newHistory = if (msg.id == currentState.chatMessages.lastOrNull()?.id) {
+                        currentState.chatMessages.mapLast { last -> last.copy(text = last.text + text) }
+                    } else {
+                        currentState.chatMessages + msg.copy(text = text)
                     }
+                    copy(chatMessages = newHistory)
+                }
+                if (text.contains(CODE_BLOCK)) {
+                    isCodeBlockStarted.set(!isCodeBlockStarted.get())
+                    if (isCodeBlockStarted.get()) {
+                        say.queue(prepareTextForSpeech(text.substringBefore(CODE_BLOCK)))
+                    }
+                }
+                if (!isCodeBlockStarted.get()) {
+                    say.queue(prepareTextForSpeech(text.substringAfter(CODE_BLOCK)))
                 }
             }
         }
+        taskSideEffectJobs.add(job)
+        return job
     }
 
-    private suspend fun stopSpeechPlayback() {
-        currentSpeechJob.getAndSet(null)?.cancel()
-        say.clearQueue()
-        setState { copy(speakingMessageId = null) }
-    }
+    private inline fun <T> List<T>.mapLast(transform: (T) -> T): List<T> =
+        mapIndexed { i, v -> if (i == lastIndex) transform(v) else v }
 
     private suspend fun requestNewConversation() {
         if (currentState.chatMessages.isEmpty()) {
@@ -287,7 +344,7 @@ class MainViewModel(
     }
 
     private suspend fun startNewConversation() {
-        stopSpeechPlayback()
+        killTaskSideEffectJobs()
         agentRef.get()?.clearContext()
         setState {
             copy(
@@ -359,7 +416,7 @@ class MainViewModel(
     private suspend fun clearContext() {
         val lastKnownAgentContext: AgentContext<String>? = agentRef.get()?.currentContext?.value
         agentRef.get()?.clearContext()
-        stopSpeechPlayback()
+        killTaskSideEffectJobs()
         when (currentState.userExpectCloseOnX) {
             false -> {
                 val currentText = currentState.displayedText
@@ -455,7 +512,7 @@ class MainViewModel(
         currentState.toolPermissionDialog?.requestId?.let { requestId ->
             toolPermissionBroker.resolve(requestId, approved = false)
         }
-        currentSpeechJob.getAndSet(null)?.cancel()
+        killTaskSideEffectJobs()
         say.clearQueue()
         agentRef.get()?.cancelActiveJob()
         permissionWatcherJob?.cancel()
@@ -463,12 +520,19 @@ class MainViewModel(
 
     private fun prepareTextForSpeech(text: String): String {
         var result = text.replace(Regex("$CODE_BLOCK[\\s\\S]*?$CODE_BLOCK"), "")
-        //result = result.replace(Regex("`[^`]+`"), "")
+        result = result.replace(Regex("`[^`]+`"), "")
         result = result.replace(Regex("[\"«»„“”]"), "")
         result = result.replace(Regex("[*#]"), "")
         result = result.replace(Regex("\\s+"), " ")
 
         return result.trim()
+    }
+
+    /** Stop the current voice process, rm the queue */
+    private fun killTaskSideEffectJobs() {
+        say.clearQueue()
+        taskSideEffectJobs.forEach { it.cancel() }
+        taskSideEffectJobs.clear()
     }
 
     private companion object {
