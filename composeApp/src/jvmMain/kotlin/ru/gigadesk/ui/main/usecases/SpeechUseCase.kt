@@ -1,16 +1,19 @@
 package ru.gigadesk.ui.main.usecases
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import org.slf4j.LoggerFactory
 import ru.gigadesk.audio.Say
 import ru.gigadesk.ui.main.MainState
 
 class SpeechUseCase(
     private val say: Say,
 ) {
+    private val l = LoggerFactory.getLogger(SpeechUseCase::class.java)
 
     private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
     val outputs: Flow<MainUseCaseOutput> = _outputs.asSharedFlow()
@@ -37,8 +40,11 @@ class SpeechUseCase(
         say.queue(prepared)
     }
 
-    fun playMacPing() {
-        say.playMacPing()
+    fun playMacPingSafely(scope: CoroutineScope) {
+        scope.launch(Dispatchers.IO) {
+            runCatching { say.playMacPing() }
+                .onFailure { l.warn("Failed to play mac ping: {}", it.message) }
+        }
     }
 
     fun playInputConfirmation() {

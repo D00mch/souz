@@ -96,7 +96,7 @@ class MainViewModel(
 
     override suspend fun handleEvent(event: MainEvent) {
         when (event) {
-            MainEvent.StartListening -> voiceInputUseCase.startRecording(currentState.isListening)
+            MainEvent.StartListening -> voiceInputUseCase.startRecording(viewModelScope, currentState.isListening)
             MainEvent.StopListening -> voiceInputUseCase.stopRecording(currentState.isListening)
             MainEvent.RequestNewConversation -> requestNewConversation()
             MainEvent.ConfirmNewConversation -> confirmNewConversation()

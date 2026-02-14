@@ -47,7 +47,7 @@ class VoiceInputUseCase(
                 l.info(if (pressed) "onStart" else "onStop")
                 scope.launch {
                     when {
-                        pressed -> startRecording(stateProvider().isListening)
+                        pressed -> startRecording(scope, stateProvider().isListening)
                         else -> stopRecording(stateProvider().isListening)
                     }
                 }
@@ -94,12 +94,12 @@ class VoiceInputUseCase(
         }
     }
 
-    suspend fun startRecording(isListening: Boolean) {
+    suspend fun startRecording(scope: CoroutineScope, isListening: Boolean) {
         if (isListening) return
 
         chatUseCase.stopSpeechAndSideEffects()
         chatUseCase.cancelActiveJob()
-        speechUseCase.playMacPing()
+        speechUseCase.playMacPingSafely(scope)
 
         emitState {
             copy(
