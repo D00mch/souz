@@ -1,8 +1,16 @@
 package ru.gigadesk.ui.main
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -46,6 +54,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -68,7 +77,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
@@ -96,10 +104,18 @@ private val ControlTextMuted = Color(0x59FFFFFF)
 private val ControlTextHover = Color(0x99FFFFFF)
 private val ControlButtonSize = 36.dp
 private val ControlIconSize = 18.dp
+private val StopIconSize = 11.2.dp
 private val SendButtonInactiveBackground = Color(0x14FFFFFF)
 private val SendButtonInactiveBorder = Color(0x1AFFFFFF)
 private val SendButtonInactiveIcon = Color(0x66FFFFFF)
 private val SendButtonActiveBorder = Color(0x6612E0B5)
+private val StopButtonBackground = Color(0xE61E1E28)
+private val StopButtonBorder = Color(0x26FFFFFF)
+private val StopButtonIcon = Color(0xE6FFFFFF)
+private val StopButtonPulseRing = Color(0x33FFFFFF)
+private val ControlTooltipBackground = Color(0xE6000000)
+private val ControlTooltipBorder = Color(0x33FFFFFF)
+private val EaseInOut = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 private val SendButtonActiveGradient = Brush.linearGradient(
     colors = listOf(
         Color(0x4D12E0B5),
@@ -290,9 +306,6 @@ private fun VoiceToggleButton(
     val isHovered by interactionSource.collectIsHoveredAsState()
     val isPressed by interactionSource.collectIsPressedAsState()
     var showTooltip by remember { mutableStateOf(false) }
-    var tooltipHeightPx by remember { mutableStateOf(0) }
-    val density = LocalDensity.current
-    val tooltipOffset = with(density) { tooltipHeightPx.toDp() + 8.dp }
     val scale by animateFloatAsState(
         targetValue = when {
             isPressed -> 0.95f
@@ -320,57 +333,7 @@ private fun VoiceToggleButton(
                 }
             )
     ) {
-        AnimatedVisibility(
-            visible = showTooltip,
-            enter = fadeIn(animationSpec = tween(150)) + slideInVertically(
-                animationSpec = tween(150),
-                initialOffsetY = { 5 }
-            ),
-            exit = fadeOut(animationSpec = tween(150)) + slideOutVertically(
-                animationSpec = tween(150),
-                targetOffsetY = { 5 }
-            ),
-            modifier = Modifier
-                .wrapContentSize(unbounded = true)
-                .align(Alignment.TopCenter)
-                .offset(y = -tooltipOffset)
-                .zIndex(2f)
-        ) {
-            Box(
-                modifier = Modifier
-                    .onSizeChanged { tooltipHeightPx = it.height }
-                    .clip(RoundedCornerShape(12.dp))
-                    .shadow(
-                        elevation = 12.dp,
-                        shape = RoundedCornerShape(12.dp),
-                        ambientColor = Color(0x4D000000),
-                        spotColor = Color(0x4D000000)
-                    )
-            ) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(Color(0xE6000000))
-                        .blur(20.dp)
-                )
-                Box(
-                    modifier = Modifier
-                        .widthIn(min = 156.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xE6000000))
-                        .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "Зажать правый Option",
-                        color = Color(0xE6FFFFFF),
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                }
-            }
-        }
+        ControlTooltip(visible = showTooltip, text = "Зажать правый Option")
 
         Box(
             modifier = Modifier
@@ -408,6 +371,8 @@ private fun SendMessageButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
     val isPressed by interactionSource.collectIsPressedAsState()
+    val showTooltip = isHovered
+    val tooltipText = if (isProcessing) "Остановить запрос" else "Отправить (Enter)"
     val scale by animateFloatAsState(
         targetValue = when {
             !isActive -> 1f
@@ -417,46 +382,204 @@ private fun SendMessageButton(
         },
         animationSpec = tween(150)
     )
-
-    val backgroundBrush = if (isActive) SendButtonActiveGradient else Brush.linearGradient(
-        colors = listOf(
-            SendButtonInactiveBackground,
-            SendButtonInactiveBackground
+    val stopRotation by animateFloatAsState(
+        targetValue = if (isProcessing) 0f else -90f,
+        animationSpec = tween(220)
+    )
+    val pulseTransition = rememberInfiniteTransition()
+    val pulseScale by pulseTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 2_000
+                1f at 0 using EaseInOut
+                1.15f at 1_000 using EaseInOut
+                1f at 2_000
+            },
+            repeatMode = RepeatMode.Restart
         )
     )
-    val borderColor = if (isActive) SendButtonActiveBorder else SendButtonInactiveBorder
-    val iconColor = if (isActive) AccentTurquoise else SendButtonInactiveIcon
+    val pulseAlpha by pulseTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.3f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 2_000
+                0.3f at 0 using EaseInOut
+                0f at 1_000 using EaseInOut
+                0.3f at 2_000
+            },
+            repeatMode = RepeatMode.Restart
+        )
+    )
+
+    val backgroundBrush = when {
+        isProcessing -> Brush.linearGradient(colors = listOf(StopButtonBackground, StopButtonBackground))
+        isActive -> SendButtonActiveGradient
+        else -> Brush.linearGradient(
+            colors = listOf(
+                SendButtonInactiveBackground,
+                SendButtonInactiveBackground
+            )
+        )
+    }
+    val borderColor = when {
+        isProcessing -> StopButtonBorder
+        isActive -> SendButtonActiveBorder
+        else -> SendButtonInactiveBorder
+    }
+    val iconColor = when {
+        isProcessing -> StopButtonIcon
+        isActive -> AccentTurquoise
+        else -> SendButtonInactiveIcon
+    }
 
     Box(
-        modifier = Modifier
-            .size(ControlButtonSize)
-            .scale(scale)
-            .clip(CircleShape)
-            .background(backgroundBrush)
-            .border(1.dp, borderColor, CircleShape)
-            .hoverable(interactionSource = interactionSource)
-            .pointerHoverIcon(if (isActive) PointerIcon.Hand else PointerIcon.Default)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                enabled = isActive,
-                onClick = onClick
-            ),
-        contentAlignment = Alignment.Center
+        modifier = Modifier.size(ControlButtonSize)
     ) {
+        ControlTooltip(visible = showTooltip, text = tooltipText)
+
         if (isProcessing) {
-            Text(
-                text = "x",
-                color = iconColor,
-                fontSize = 16.sp
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        scaleX = pulseScale
+                        scaleY = pulseScale
+                        alpha = pulseAlpha
+                    }
+                    .border(2.dp, StopButtonPulseRing, CircleShape)
             )
-        } else {
-            Icon(
-                imageVector = Icons.Rounded.ArrowUpward,
-                contentDescription = "Отправить",
-                tint = iconColor,
-                modifier = Modifier.size(ControlIconSize)
+        }
+
+        Box(
+            modifier = Modifier
+                .size(ControlButtonSize)
+                .scale(scale)
+                .clip(CircleShape)
+                .background(backgroundBrush)
+                .border(1.dp, borderColor, CircleShape)
+                .hoverable(interactionSource = interactionSource)
+                .pointerHoverIcon(if (isActive) PointerIcon.Hand else PointerIcon.Default)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    enabled = isActive,
+                    onClick = onClick
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            AnimatedVisibility(
+                visible = !isProcessing,
+                enter = fadeIn(animationSpec = tween(150)) + scaleIn(
+                    animationSpec = tween(150),
+                    initialScale = 0.85f
+                ),
+                exit = fadeOut(animationSpec = tween(150)) + scaleOut(
+                    animationSpec = tween(150),
+                    targetScale = 0.85f
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.ArrowUpward,
+                    contentDescription = "Отправить",
+                    tint = iconColor,
+                    modifier = Modifier.size(ControlIconSize)
+                )
+            }
+
+            AnimatedVisibility(
+                visible = isProcessing,
+                enter = fadeIn(animationSpec = tween(200)) + scaleIn(
+                    animationSpec = tween(200),
+                    initialScale = 0.5f
+                ),
+                exit = fadeOut(animationSpec = tween(150)) + scaleOut(
+                    animationSpec = tween(150),
+                    targetScale = 0.5f
+                )
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(StopIconSize)
+                        .graphicsLayer { rotationZ = stopRotation }
+                        .background(iconColor, RoundedCornerShape(2.dp))
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ControlTooltip(
+    visible: Boolean,
+    text: String,
+) {
+    val popupTransitionState = remember { MutableTransitionState(false) }
+    val density = LocalDensity.current
+    val popupPositionProvider = remember(density) {
+        CenteredAboveAnchorPopupPositionProvider(gapPx = with(density) { 8.dp.roundToPx() })
+    }
+
+    LaunchedEffect(visible) {
+        popupTransitionState.targetState = visible
+    }
+
+    if (popupTransitionState.currentState || popupTransitionState.targetState) {
+        Popup(
+            popupPositionProvider = popupPositionProvider,
+            onDismissRequest = {},
+            properties = PopupProperties(
+                focusable = false,
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
             )
+        ) {
+            AnimatedVisibility(
+                visibleState = popupTransitionState,
+                enter = fadeIn(animationSpec = tween(150)) + slideInVertically(
+                    animationSpec = tween(150),
+                    initialOffsetY = { 5 }
+                ),
+                exit = fadeOut(animationSpec = tween(150)) + slideOutVertically(
+                    animationSpec = tween(150),
+                    targetOffsetY = { 5 }
+                )
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .shadow(
+                            elevation = 12.dp,
+                            shape = RoundedCornerShape(12.dp),
+                            ambientColor = Color(0x4D000000),
+                            spotColor = Color(0x4D000000)
+                        )
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(ControlTooltipBackground)
+                            .blur(20.dp)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(ControlTooltipBackground)
+                            .border(1.dp, ControlTooltipBorder, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = text,
+                            color = Color(0xE6FFFFFF),
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -659,6 +782,24 @@ private class AboveAnchorPopupPositionProvider(
         }
         val maxAllowedX = max(0, windowSize.width - popupContentSize.width)
         val clampedX = popupX.coerceIn(0, maxAllowedX)
+        val popupY = (anchorBounds.top - popupContentSize.height - gapPx).coerceAtLeast(0)
+        return IntOffset(clampedX, popupY)
+    }
+}
+
+private class CenteredAboveAnchorPopupPositionProvider(
+    private val gapPx: Int,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val anchorWidth = anchorBounds.right - anchorBounds.left
+        val centeredX = anchorBounds.left + (anchorWidth - popupContentSize.width) / 2
+        val maxAllowedX = max(0, windowSize.width - popupContentSize.width)
+        val clampedX = centeredX.coerceIn(0, maxAllowedX)
         val popupY = (anchorBounds.top - popupContentSize.height - gapPx).coerceAtLeast(0)
         return IntOffset(clampedX, popupY)
     }
