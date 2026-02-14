@@ -8,6 +8,9 @@ import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolSetupWithAttachments
 import java.io.File
 import java.io.FileOutputStream
+import org.jetbrains.skia.Image
+import org.jetbrains.skia.EncodedImageFormat
+import org.jetbrains.skia.Data
 
 data class SlideContent(
     @InputParamDescription("Title of the slide")
@@ -97,8 +100,19 @@ data class CustomThemeParam(
     val templatePath: String? = null,
     @InputParamDescription("Visual theme. Supports 30+ themes. PREFERRED: Use 'customTheme' for unique designs instead of presets.")
     val theme: String? = null,
-    @InputParamDescription("Define a purely custom theme (colors, fonts) instead of using a preset")
-    val customTheme: CustomThemeParam? = null
+    // Flat parameters for Custom Theme (to avoid schema nesting issues)
+    @InputParamDescription("Custom Theme: Background color (HEX). Gets priority over 'theme'.")
+    val themeBackgroundColor: String? = null,
+    @InputParamDescription("Custom Theme: Title text color (HEX)")
+    val themeTitleColor: String? = null,
+    @InputParamDescription("Custom Theme: Body text color (HEX)")
+    val themeContentColor: String? = null,
+    @InputParamDescription("Custom Theme: Accent color (HEX)")
+    val themeAccentColor: String? = null,
+    @InputParamDescription("Custom Theme: Font family for titles")
+    val themeTitleFont: String? = null,
+    @InputParamDescription("Custom Theme: Font family for body text")
+    val themeBodyFont: String? = null
 )
 
 class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput> {
@@ -107,7 +121,7 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             "Supports creating slides with bullet points, speaker notes, and images. " +
             "Can use a custom template (.pptx) and specific slide layouts (e.g. TITLE, PIC_TX, TWO_COL_TX). " +
             "To include charts, use the 'chart' block with data, OR use 'CreatePlot' tool to generate an image.\n" +
-            "Supports 30+ built-in visual themes (e.g. STARTUP, CYBERPUNK) AND Custom Themes via 'customTheme'.\n" +
+            "Supports 30+ built-in visual themes (e.g. STARTUP, CYBERPUNK) AND Custom Themes via 'themeBackgroundColor', 'themeAccentColor' etc.\n" +
             "\n\nBEST PRACTICES (Pyramid Principle & Barbara Minto):" +
             "\n- **SCQA Structure**: Situation (Context) -> Complication (Problem) -> Question (What to do?) -> Answer (Solution)." +
             "\n- **Top-Down Logic**: Start with the main conclusion/recommendation, then support it with arguments." +
@@ -133,7 +147,10 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                     mapOf("layout" to "PIC_TX", "title" to "The Problem", "points" to listOf("Chaos in files", "Lost productivity")),
                     mapOf("layout" to "PIC_TX", "title" to "The Solution", "points" to listOf("AI Agent Integration", "Automated Workflows")),
                     mapOf("layout" to "TITLE", "title" to "Join Us")
-                )
+                ),
+                "themeTitleColor" to "#FFFFFF",
+                "themeBackgroundColor" to "#1A1A1A",
+                "themeAccentColor" to "#00FF99"
             )
         ),
         ru.gigadesk.tool.FewShotExample(
@@ -162,6 +179,7 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
         )
     )
 
+
     override val returnParameters = ReturnParameters(
         properties = mapOf(
             "path" to ReturnProperty("string", "Absolute path to the created .pptx file"),
@@ -170,8 +188,26 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
     )
     
     override val attachments: List<String> = emptyList()
-
+    
     override fun invoke(input: PresentationCreateInput): String {
+
+        // Construct Custom Theme from either nested object or flat parameters (priority to flat if present)
+        val flatCustomTheme = if (
+            input.themeBackgroundColor != null || input.themeTitleColor != null || 
+            input.themeContentColor != null || input.themeAccentColor != null
+        ) {
+            CustomThemeParam(
+                backgroundColor = input.themeBackgroundColor,
+                titleColor = input.themeTitleColor,
+                contentColor = input.themeContentColor,
+                accentColor = input.themeAccentColor,
+                titleFont = input.themeTitleFont,
+                bodyFont = input.themeBodyFont
+            )
+        } else null
+        
+        val customTheme = flatCustomTheme
+        
         // 1. Load Template or Create New
         val ppt = if (input.templatePath != null) {
             val resolvedTemplatePath = if (input.templatePath.startsWith("~")) 
@@ -192,8 +228,8 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
 
         // Apply Theme if specified and NO template is used (template takes precedence)
         if (input.templatePath == null) {
-            if (input.customTheme != null) {
-                applyCustomTheme(master, input.customTheme)
+            if (customTheme != null) {
+                applyCustomTheme(master, customTheme)
             } else if (input.theme != null) {
                 try {
                     val theme = PresentationTheme.valueOf(input.theme.uppercase())
@@ -322,7 +358,19 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                 textPlaceholder.clearText()
                 slideData.points.forEach { point ->
                     val paragraph = textPlaceholder.addNewTextParagraph()
-                    paragraph.isBullet = true
+                    val isTitleLayout = layoutType == SlideLayout.TITLE || layoutType == SlideLayout.SECTION_HEADER || layoutType == SlideLayout.TITLE_ONLY
+                    val cleanPoint = point.trim()
+                    
+                    // Logic to avoid double bullets or bullets where not needed
+                    // 1. If layout is Title-based, NO bullets.
+                    // 2. If point starts with an Emoji (e.g. 💰) or specific bullet chars (- * •), NO system bullet.
+                    // 3. Otherwise, use system bullet for content layouts.
+                    
+                    val hasVisualBullet = cleanPoint.isNotEmpty() && (
+                        !cleanPoint.first().isLetterOrDigit() && cleanPoint.first() !in listOf('"', '\'', '(', '[', '{', '<')
+                    )
+                    
+                    paragraph.isBullet = !isTitleLayout && !hasVisualBullet
                     val run = paragraph.addNewTextRun()
                     run.setText(point)
                     
@@ -341,20 +389,12 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
 
             
             // Resolve Theme: Custom > Preset > Default
-            val theme = if (input.customTheme != null) {
-                // Create a synthetic PresentationTheme or use properties directly
-                // Since PresentationTheme is an enum, we can't instantiate it. 
-                // But we can create a temporary object or use the custom colors directly.
-                // Refactor: We should probably change PresentationTheme to a data class, but that's a big refactor.
-                // Shortcut: We will use the custom properties where 'theme' was used.
-                // But 'theme' variable expects PresentationTheme enum.
-                // Let's make 'theme' nullable enum, and handle customTheme explicitly in calls.
+            // Resolve Theme: Custom > Preset > Default
+            val theme = if (customTheme != null) {
                 null
             } else if (input.theme != null) {
                 try { PresentationTheme.valueOf(input.theme.uppercase()) } catch (e: Exception) { null }
             } else null
-
-            val customTheme = input.customTheme
 
 
 
@@ -362,13 +402,27 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             if (effectiveImagePath != null) {
                 val imageFile = File(effectiveImagePath)
                 if (imageFile.exists()) {
-                    val pictureData = imageFile.readBytes()
-                    val format = when (imageFile.extension.lowercase()) {
+                    var pictureData = imageFile.readBytes()
+                    var format = when (imageFile.extension.lowercase()) {
                         "png" -> org.apache.poi.sl.usermodel.PictureData.PictureType.PNG
                         "jpeg", "jpg" -> org.apache.poi.sl.usermodel.PictureData.PictureType.JPEG
                         "gif" -> org.apache.poi.sl.usermodel.PictureData.PictureType.GIF
                         "bmp" -> org.apache.poi.sl.usermodel.PictureData.PictureType.BMP
                         "svg" -> org.apache.poi.sl.usermodel.PictureData.PictureType.SVG
+                        "webp" -> {
+                            // Convert WebP to PNG using Skia
+                            try {
+                                val skiaImage = Image.makeFromEncoded(pictureData)
+                                val pngData = skiaImage.encodeToData(EncodedImageFormat.PNG)
+                                if (pngData != null) {
+                                    pictureData = pngData.bytes
+                                    org.apache.poi.sl.usermodel.PictureData.PictureType.PNG
+                                } else null
+                            } catch (e: Exception) {
+                                println("Failed to convert WebP image: ${e.message}")
+                                null
+                            }
+                        }
                         else -> null
                     }
 
@@ -432,6 +486,33 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             if (customTheme != null) {
                 addThemeDecoration(slide, customTheme)
             }
+            
+            // CLEANUP: Remove any unused text placeholders to avoid "Click to add text" ghost text or "Master text styles"
+            // We identify used placeholders by checking if we wrote to them.
+            // The following objects were potentially used: slideTitle, textPlaceholder, imagePlaceholder (if used for text or image), tablePlaceholder
+            
+            val usedShapes = mutableSetOf<org.apache.poi.xslf.usermodel.XSLFShape>()
+            if (slideTitle != null) usedShapes.add(slideTitle)
+            if (textPlaceholder != null) usedShapes.add(textPlaceholder)
+            if (imagePlaceholder != null) usedShapes.add(imagePlaceholder)
+            
+            // Check table usage
+            if (slideData.table != null) {
+                val tablePlaceholder = if (effectiveImagePath == null) imagePlaceholder else null
+                if (tablePlaceholder != null) usedShapes.add(tablePlaceholder)
+            }
+
+            // Iterate and remove unused placeholders
+            val shapesToRemove = mutableListOf<org.apache.poi.xslf.usermodel.XSLFShape>()
+            slide.shapes.forEach { shape ->
+                if (shape is org.apache.poi.xslf.usermodel.XSLFTextShape && shape.placeholderDetails.placeholder != null) {
+                    if (!usedShapes.contains(shape)) {
+                        shapesToRemove.add(shape)
+                    }
+                }
+            }
+            
+            shapesToRemove.forEach { slide.removeShape(it) }
         }
 
         // 4. Save file
@@ -439,7 +520,12 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
 
 
 
-        val safeTitle = input.filename ?: input.title.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+        // Sanitize filename, but allow letters and digits from any language (Unicode) AND combining marks (accents)
+        // \p{L} matches any unicode letter, \p{N} matches any unicode number, \p{M} matches marks (accents)
+        var safeTitle = (input.filename ?: input.title).replace(Regex("[^\\p{L}\\p{N}\\p{M} ._-]"), "_")
+        if (safeTitle.isBlank() || safeTitle.all { it == '_' || it == '.' }) {
+            safeTitle = "Presentation_${System.currentTimeMillis()}"
+        }
         val fileName = if (safeTitle.endsWith(".pptx")) safeTitle else "$safeTitle.pptx"
         val userHome = System.getProperty("user.home")
         val desktopPath = File(userHome, "Desktop")
