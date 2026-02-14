@@ -28,6 +28,7 @@ import ru.gigadesk.permissions.AppRelauncher
 import ru.gigadesk.tool.ToolPermissionBroker
 import ru.gigadesk.ui.BaseViewModel
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 import kotlin.time.Duration.Companion.minutes
@@ -49,6 +50,7 @@ class MainViewModel(
 
     private val say: Say by di.instance()
     private val taskSideEffectJobs = ArrayList<Job>()
+    private val activeChatRequestId = AtomicLong(0L)
 
     private val toolPermissionBroker: ToolPermissionBroker by di.instance()
 
@@ -194,9 +196,15 @@ class MainViewModel(
         isVoice: Boolean,
         chatMessage: String,
     ) {
-        if (currentState.isProcessing) return
+        if (currentState.isProcessing) {
+            if (!isVoice) return
+            l.info("Interrupting active chat task with new voice input")
+            killTaskSideEffectJobs()
+            agentRef.get()?.cancelActiveJob()
+        }
         val userText = chatMessage.trim()
         if (userText.isEmpty()) return
+        val requestId = activeChatRequestId.incrementAndGet()
 
         val userMessage = ChatMessage(
             text = userText,
@@ -228,6 +236,10 @@ class MainViewModel(
             }
 
             val botMessage = newLastMessage.copy(text = response.await())
+            if (activeChatRequestId.get() != requestId) {
+                l.info("Skipping stale chat response for request {}", requestId)
+                return
+            }
             l.info("Agent response set")
             setState {
                 copy(
@@ -244,6 +256,7 @@ class MainViewModel(
             }
         } catch (e: CancellationException) {
             l.info("Chat message cancelled: ${e.message}")
+            val isCurrentRequest = activeChatRequestId.get() == requestId
             withContext(NonCancellable) {
                 setState {
                     val idsToDrop = if (isVoice) {
@@ -253,12 +266,16 @@ class MainViewModel(
                     }
                     copy(
                         chatMessages = chatMessages.filterNot { it.id in idsToDrop },
-                        isProcessing = false,
-                        speakingMessageId = null
+                        isProcessing = if (isCurrentRequest) false else isProcessing,
+                        speakingMessageId = if (isCurrentRequest) null else speakingMessageId
                     )
                 }
             }
         } catch (e: Exception) {
+            if (activeChatRequestId.get() != requestId) {
+                l.info("Ignoring stale chat failure for request {}: {}", requestId, e.message)
+                return
+            }
             l.error("Chat message failed: ${e.message}", e)
             val errorMessage = ChatMessage(
                 text = "Ошибка: ${e.message}",
