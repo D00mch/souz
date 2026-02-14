@@ -17,13 +17,13 @@ import ru.gigadesk.ui.main.MainState
 import ru.gigadesk.ui.main.ToolPermissionDialogData
 import kotlin.math.max
 
-class PermissionsUseCase(
+class OnboardingUseCase(
     private val settingsProvider: SettingsProvider,
     private val toolPermissionBroker: ToolPermissionBroker,
     private val speechUseCase: SpeechUseCase,
     private val relaunchApp: () -> Unit = { AppRelauncher.relaunch() },
 ) {
-    private val l = LoggerFactory.getLogger(PermissionsUseCase::class.java)
+    private val l = LoggerFactory.getLogger(OnboardingUseCase::class.java)
     private var onboardingSpeechStartedAt: Long? = null
     private var permissionWatcherJob: Job? = null
 
