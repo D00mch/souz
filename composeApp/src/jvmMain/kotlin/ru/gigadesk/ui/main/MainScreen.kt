@@ -274,7 +274,7 @@ fun MainScreenContent(
                     isProcessing = state.isProcessing,
                     isListening = state.isListening,
                     isOnline = isOnline,
-                    speakingMessageId = state.speakingMessageId,
+                    isSpeaking = state.isSpeaking,
                     onInputChange = onUpdateChatInput,
                     onModelChange = onChatModelChange,
                     onContextChange = onChatContextSizeChange,
@@ -414,7 +414,7 @@ fun ChatModeContent(
     isProcessing: Boolean,
     isListening: Boolean,
     isOnline: Boolean,
-    speakingMessageId: String?,
+    isSpeaking: Boolean,
     onInputChange: (TextFieldValue) -> Unit,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
@@ -428,6 +428,7 @@ fun ChatModeContent(
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
     val textColor = MaterialTheme.glassColors.textPrimary
+    val speakingAssistantMessageId = remember(messages) { messages.lastOrNull { !it.isUser }?.id }
 
     val windowInfo = LocalWindowInfo.current
     val isWindowFocused = windowInfo.isWindowFocused
@@ -475,7 +476,7 @@ fun ChatModeContent(
                 items(messages, key = { it.id }) { message ->
                     ChatBubble(
                         message = message,
-                        isSpeaking = speakingMessageId == message.id,
+                        isSpeaking = isSpeaking && speakingAssistantMessageId == message.id,
                         onStopSpeech = onStopSpeech,
                         onShowSnack = onShowSnack
                     )

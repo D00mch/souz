@@ -65,6 +65,7 @@ class MainViewModel(
         }
         viewModelScope.launch { runOnboarding() }
         ioLaunch { initializeAgent() }
+        vmLaunch { observeSpeakingState() }
         vmLaunch { observeToolPermissionRequests() }
     }
 
@@ -267,8 +268,7 @@ class MainViewModel(
                     }
                     copy(
                         chatMessages = chatMessages.filterNot { it.id in idsToDrop },
-                        isProcessing = if (isCurrentRequest) false else isProcessing,
-                        speakingMessageId = if (isCurrentRequest) null else speakingMessageId
+                        isProcessing = if (isCurrentRequest) false else isProcessing
                     )
                 }
             }
@@ -286,8 +286,7 @@ class MainViewModel(
             setState {
                 copy(
                     chatMessages = chatMessages + errorMessage,
-                    isProcessing = false,
-                    speakingMessageId = null
+                    isProcessing = false
                 )
             }
         } finally {
@@ -382,6 +381,12 @@ class MainViewModel(
                 selectedModel = settingsProvider.gigaModel.alias,
                 selectedContextSize = settingsProvider.contextSize
             )
+        }
+    }
+
+    private suspend fun observeSpeakingState() {
+        say.isSpeaking.collect { isSpeaking ->
+            setState { copy(isSpeaking = isSpeaking) }
         }
     }
 
