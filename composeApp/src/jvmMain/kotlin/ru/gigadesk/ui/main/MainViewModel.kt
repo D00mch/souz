@@ -26,13 +26,13 @@ import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.ui.BaseViewModel
-import ru.gigadesk.ui.main.interactors.ChatInteractor
-import ru.gigadesk.ui.main.interactors.MainInteractorOutput
-import ru.gigadesk.ui.main.interactors.MainInteractors
-import ru.gigadesk.ui.main.interactors.MainInteractorsFactory
-import ru.gigadesk.ui.main.interactors.PermissionsInteractor
-import ru.gigadesk.ui.main.interactors.SpeechInteractor
-import ru.gigadesk.ui.main.interactors.VoiceInputInteractor
+import ru.gigadesk.ui.main.usecases.ChatUseCase
+import ru.gigadesk.ui.main.usecases.MainUseCaseOutput
+import ru.gigadesk.ui.main.usecases.MainUseCases
+import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
+import ru.gigadesk.ui.main.usecases.PermissionsUseCase
+import ru.gigadesk.ui.main.usecases.SpeechUseCase
+import ru.gigadesk.ui.main.usecases.VoiceInputUseCase
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.minutes
 
@@ -45,22 +45,22 @@ class MainViewModel(
     private val graphAgent by di.instance<GraphBasedAgent>()
     private val desktopInfoRepository: DesktopInfoRepository by di.instance()
     private val settingsProvider: SettingsProvider by di.instance()
-    private val mainInteractorsFactory: MainInteractorsFactory by di.instance()
+    private val mainUseCasesFactory: MainUseCasesFactory by di.instance()
 
     private val agentRef = AtomicReference<GraphBasedAgent?>(null)
 
-    private val interactors: MainInteractors = mainInteractorsFactory.create(ioDispatchers)
-    private val chatInteractor: ChatInteractor = interactors.chat
-    private val voiceInputInteractor: VoiceInputInteractor = interactors.voiceInput
-    private val speechInteractor: SpeechInteractor = interactors.speech
-    private val permissionsInteractor: PermissionsInteractor = interactors.permissions
-    private val audioRecorder: InMemoryAudioRecorder = voiceInputInteractor.audioRecorder
+    private val useCases: MainUseCases = mainUseCasesFactory.create(ioDispatchers)
+    private val chatUseCase: ChatUseCase = useCases.chat
+    private val voiceInputUseCase: VoiceInputUseCase = useCases.voiceInput
+    private val speechUseCase: SpeechUseCase = useCases.speech
+    private val permissionsUseCase: PermissionsUseCase = useCases.permissions
+    private val audioRecorder: InMemoryAudioRecorder = voiceInputUseCase.audioRecorder
 
     init {
         agentRef.set(graphAgent)
-        chatInteractor.bindAgentRef(agentRef)
+        chatUseCase.bindAgentRef(agentRef)
 
-        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectInteractorOutputs() }
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectUseCaseOutputs() }
 
         viewModelScope.launch {
             setState {
@@ -71,18 +71,18 @@ class MainViewModel(
             }
         }
 
-        chatInteractor.start(viewModelScope)
-        speechInteractor.start(viewModelScope)
-        permissionsInteractor.start(viewModelScope)
+        chatUseCase.start(viewModelScope)
+        speechUseCase.start(viewModelScope)
+        permissionsUseCase.start(viewModelScope)
 
-        viewModelScope.launch { permissionsInteractor.runOnboardingIfNeeded() }
+        viewModelScope.launch { permissionsUseCase.runOnboardingIfNeeded() }
         ioLaunch {
-            voiceInputInteractor.initialize(
+            voiceInputUseCase.initialize(
                 scope = viewModelScope,
                 stateProvider = { currentState },
                 onRecognizedText = { recognizedText ->
                     withContext(Dispatchers.Main) {
-                        chatInteractor.sendChatMessage(
+                        chatUseCase.sendChatMessage(
                             scope = viewModelScope,
                             isVoice = true,
                             chatMessage = recognizedText,
@@ -98,21 +98,21 @@ class MainViewModel(
 
     override suspend fun handleEvent(event: MainEvent) {
         when (event) {
-            MainEvent.StartListening -> voiceInputInteractor.startRecording(currentState.isListening)
-            MainEvent.StopListening -> voiceInputInteractor.stopRecording(currentState.isListening)
+            MainEvent.StartListening -> voiceInputUseCase.startRecording(currentState.isListening)
+            MainEvent.StopListening -> voiceInputUseCase.stopRecording(currentState.isListening)
             MainEvent.RequestNewConversation -> requestNewConversation()
             MainEvent.ConfirmNewConversation -> confirmNewConversation()
             MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()
             MainEvent.ClearContext -> clearContext()
-            MainEvent.StopSpeech -> chatInteractor.stopSpeechAndSideEffects()
-            MainEvent.StopAgentJob -> chatInteractor.cancelActiveJob()
+            MainEvent.StopSpeech -> chatUseCase.stopSpeechAndSideEffects()
+            MainEvent.StopAgentJob -> chatUseCase.cancelActiveJob()
             MainEvent.ShowLastText -> setPreviousText()
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
             is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
             is MainEvent.UpdateChatModel -> updateChatModel(event.model)
             is MainEvent.UpdateChatContextSize -> updateChatContextSize(event.size)
             MainEvent.SendChatMessage -> vmLaunch {
-                chatInteractor.sendChatMessage(
+                chatUseCase.sendChatMessage(
                     scope = viewModelScope,
                     isVoice = false,
                     chatMessage = currentState.chatInputText.text,
@@ -121,10 +121,10 @@ class MainViewModel(
 
             MainEvent.RefreshSettings -> refreshSettings()
             MainEvent.ApproveToolPermission ->
-                permissionsInteractor.resolveToolPermission(currentState.toolPermissionDialog?.requestId, approved = true)
+                permissionsUseCase.resolveToolPermission(currentState.toolPermissionDialog?.requestId, approved = true)
 
             MainEvent.RejectToolPermission ->
-                permissionsInteractor.resolveToolPermission(currentState.toolPermissionDialog?.requestId, approved = false)
+                permissionsUseCase.resolveToolPermission(currentState.toolPermissionDialog?.requestId, approved = false)
         }
     }
 
@@ -135,16 +135,16 @@ class MainViewModel(
         }
     }
 
-    private suspend fun collectInteractorOutputs() {
+    private suspend fun collectUseCaseOutputs() {
         merge(
-            chatInteractor.outputs,
-            voiceInputInteractor.outputs,
-            speechInteractor.outputs,
-            permissionsInteractor.outputs,
+            chatUseCase.outputs,
+            voiceInputUseCase.outputs,
+            speechUseCase.outputs,
+            permissionsUseCase.outputs,
         ).collect { output ->
             when (output) {
-                is MainInteractorOutput.State -> setState(output.reduce)
-                is MainInteractorOutput.Effect -> send(output.effect)
+                is MainUseCaseOutput.State -> setState(output.reduce)
+                is MainUseCaseOutput.Effect -> send(output.effect)
             }
         }
     }
@@ -175,8 +175,8 @@ class MainViewModel(
     }
 
     private suspend fun startNewConversation() {
-        chatInteractor.stopSpeechAndSideEffects()
-        chatInteractor.clearContext()
+        chatUseCase.stopSpeechAndSideEffects()
+        chatUseCase.clearContext()
 
         setState {
             copy(
@@ -197,14 +197,14 @@ class MainViewModel(
     private suspend fun updateChatModel(modelAlias: String) {
         val model = GigaModel.entries.firstOrNull { it.alias == modelAlias } ?: return
         settingsProvider.gigaModel = model
-        chatInteractor.updateModel(model)
+        chatUseCase.updateModel(model)
         setState { copy(selectedModel = model.alias) }
     }
 
     private suspend fun updateChatContextSize(size: Int) {
         if (size <= 0) return
         settingsProvider.contextSize = size
-        chatInteractor.updateContextSize(size)
+        chatUseCase.updateContextSize(size)
         setState { copy(selectedContextSize = size) }
     }
 
@@ -219,7 +219,7 @@ class MainViewModel(
 
     private suspend fun setPreviousText() {
         currentState.lastKnownAgentContext?.let { ctx ->
-            chatInteractor.setContext(ctx)
+            chatUseCase.setContext(ctx)
         }
 
         val prevText = currentState.lastText ?: return
@@ -227,9 +227,9 @@ class MainViewModel(
     }
 
     private suspend fun clearContext() {
-        val lastKnownAgentContext: AgentContext<String>? = chatInteractor.snapshotContext()
-        chatInteractor.clearContext()
-        chatInteractor.stopSpeechAndSideEffects()
+        val lastKnownAgentContext: AgentContext<String>? = chatUseCase.snapshotContext()
+        chatUseCase.clearContext()
+        chatUseCase.stopSpeechAndSideEffects()
 
         when (currentState.userExpectCloseOnX) {
             false -> {
@@ -270,9 +270,9 @@ class MainViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        permissionsInteractor.rejectPendingPermissionRequest(currentState.toolPermissionDialog?.requestId)
-        chatInteractor.onCleared()
-        permissionsInteractor.onCleared()
+        permissionsUseCase.rejectPendingPermissionRequest(currentState.toolPermissionDialog?.requestId)
+        chatUseCase.onCleared()
+        permissionsUseCase.onCleared()
     }
 
     private companion object {

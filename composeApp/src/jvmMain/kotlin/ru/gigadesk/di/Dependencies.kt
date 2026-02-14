@@ -54,7 +54,7 @@ import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
 import ru.gigadesk.tool.math.ToolCalculator
-import ru.gigadesk.ui.main.interactors.MainInteractorsFactory
+import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
 
 private object DiTags {
     const val MODULE_MAIN = "main"
@@ -178,7 +178,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { ToolsFactory(di) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
-    bindSingleton { MainInteractorsFactory(instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { McpConfigProvider(instance()) }
     bindSingleton { McpClientManager(instance()) }
 

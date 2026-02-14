@@ -1,4 +1,4 @@
-package ru.gigadesk.ui.main.interactors
+package ru.gigadesk.ui.main.usecases
 
 import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.CoroutineScope
@@ -17,18 +17,18 @@ import ru.gigadesk.ui.main.MainState
 import ru.gigadesk.ui.main.ToolPermissionDialogData
 import kotlin.math.max
 
-class PermissionsInteractor(
+class PermissionsUseCase(
     private val settingsProvider: SettingsProvider,
     private val toolPermissionBroker: ToolPermissionBroker,
-    private val speechInteractor: SpeechInteractor,
+    private val speechUseCase: SpeechUseCase,
     private val relaunchApp: () -> Unit = { AppRelauncher.relaunch() },
 ) {
-    private val l = LoggerFactory.getLogger(PermissionsInteractor::class.java)
+    private val l = LoggerFactory.getLogger(PermissionsUseCase::class.java)
     private var onboardingSpeechStartedAt: Long? = null
     private var permissionWatcherJob: Job? = null
 
-    private val _outputs = MutableSharedFlow<MainInteractorOutput>(replay = 1, extraBufferCapacity = 64)
-    val outputs: Flow<MainInteractorOutput> = _outputs.asSharedFlow()
+    private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
+    val outputs: Flow<MainUseCaseOutput> = _outputs.asSharedFlow()
 
     fun start(scope: CoroutineScope) {
         scope.launch {
@@ -59,7 +59,7 @@ class PermissionsInteractor(
         emitState { copy(displayedText = ONBOARDING_DISPLAY_TEXT) }
 
         onboardingSpeechStartedAt = System.currentTimeMillis()
-        speechInteractor.queuePrepared(ONBOARDING_SPEECH_TEXT)
+        speechUseCase.queuePrepared(ONBOARDING_SPEECH_TEXT)
     }
 
     fun registerNativeHook(): Boolean = runCatching {
@@ -114,7 +114,7 @@ class PermissionsInteractor(
     }.getOrElse { false }
 
     private suspend fun emitState(reduce: MainState.() -> MainState) {
-        _outputs.emit(MainInteractorOutput.State(reduce))
+        _outputs.emit(MainUseCaseOutput.State(reduce))
     }
 
     companion object {

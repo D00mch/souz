@@ -1,4 +1,4 @@
-package ru.gigadesk.ui.main.interactors
+package ru.gigadesk.ui.main.usecases
 
 import androidx.compose.ui.text.input.TextFieldValue
 import kotlinx.coroutines.CancellationException
@@ -24,19 +24,19 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.collections.plus
 
-class ChatInteractor(
+class ChatUseCase(
     private val graphAgent: GraphBasedAgent,
     private val settingsProvider: SettingsProvider,
-    private val speechInteractor: SpeechInteractor,
+    private val speechUseCase: SpeechUseCase,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    private val l = LoggerFactory.getLogger(ChatInteractor::class.java)
+    private val l = LoggerFactory.getLogger(ChatUseCase::class.java)
     private val taskSideEffectJobs = ArrayList<Job>()
     private val activeChatRequestId = AtomicLong(0L)
     private var agentRef: AtomicReference<GraphBasedAgent?> = AtomicReference(graphAgent)
 
-    private val _outputs = MutableSharedFlow<MainInteractorOutput>(replay = 1, extraBufferCapacity = 64)
-    val outputs: Flow<MainInteractorOutput> = _outputs.asSharedFlow()
+    private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
+    val outputs: Flow<MainUseCaseOutput> = _outputs.asSharedFlow()
 
     fun bindAgentRef(agentRef: AtomicReference<GraphBasedAgent?>) {
         this.agentRef = agentRef
@@ -108,7 +108,7 @@ class ChatInteractor(
             }
 
             if (isVoice && !settingsProvider.useStreaming) {
-                speechInteractor.queuePrepared(botMessage.text)
+                speechUseCase.queuePrepared(botMessage.text)
             }
         } catch (e: CancellationException) {
             l.info("Chat message cancelled: {}", e.message)
@@ -196,12 +196,12 @@ class ChatInteractor(
                 if (text.contains(CODE_BLOCK)) {
                     isCodeBlockStarted.set(!isCodeBlockStarted.get())
                     if (isCodeBlockStarted.get()) {
-                        speechInteractor.queuePrepared(text.substringBefore(CODE_BLOCK))
+                        speechUseCase.queuePrepared(text.substringBefore(CODE_BLOCK))
                     }
                 }
 
                 if (!isCodeBlockStarted.get()) {
-                    speechInteractor.queuePrepared(text.substringAfter(CODE_BLOCK))
+                    speechUseCase.queuePrepared(text.substringAfter(CODE_BLOCK))
                 }
             }
         }
@@ -212,13 +212,13 @@ class ChatInteractor(
     private fun activeAgent(): GraphBasedAgent = agentRef.get() ?: graphAgent
 
     private fun killTaskSideEffectJobs() {
-        speechInteractor.clearQueue()
+        speechUseCase.clearQueue()
         taskSideEffectJobs.forEach { it.cancel() }
         taskSideEffectJobs.clear()
     }
 
     private suspend fun emitState(reduce: MainState.() -> MainState) {
-        _outputs.emit(MainInteractorOutput.State(reduce))
+        _outputs.emit(MainUseCaseOutput.State(reduce))
     }
 
     private inline fun <T> List<T>.mapLast(transform: (T) -> T): List<T> =

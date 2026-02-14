@@ -1,4 +1,4 @@
-package ru.gigadesk.ui.main.interactors
+package ru.gigadesk.ui.main.usecases
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -8,12 +8,12 @@ import kotlinx.coroutines.launch
 import ru.gigadesk.audio.Say
 import ru.gigadesk.ui.main.MainState
 
-class SpeechInteractor(
+class SpeechUseCase(
     private val say: Say,
 ) {
 
-    private val _outputs = MutableSharedFlow<MainInteractorOutput>(replay = 1, extraBufferCapacity = 64)
-    val outputs: Flow<MainInteractorOutput> = _outputs.asSharedFlow()
+    private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
+    val outputs: Flow<MainUseCaseOutput> = _outputs.asSharedFlow()
 
     fun start(scope: CoroutineScope) {
         scope.launch {
@@ -50,7 +50,7 @@ class SpeechInteractor(
     }
 
     private suspend fun emitState(reduce: MainState.() -> MainState) {
-        _outputs.emit(MainInteractorOutput.State(reduce))
+        _outputs.emit(MainUseCaseOutput.State(reduce))
     }
 
     companion object {

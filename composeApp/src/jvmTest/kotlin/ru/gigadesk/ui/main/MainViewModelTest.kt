@@ -44,7 +44,7 @@ import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.tool.ToolPermissionBroker
-import ru.gigadesk.ui.main.interactors.MainInteractorsFactory
+import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.AfterTest
@@ -346,7 +346,7 @@ class MainViewModelTest {
             bindSingleton { toolPermissionBroker }
             bindSingleton { InMemoryAudioRecorder() }
             bindSingleton {
-                MainInteractorsFactory(instance(), instance(), instance(), instance(), instance(), instance())
+                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance())
             }
         }
 

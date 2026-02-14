@@ -1,4 +1,4 @@
-package ru.gigadesk.ui.main.interactors
+package ru.gigadesk.ui.main.usecases
 
 import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.CancellationException
@@ -23,19 +23,19 @@ import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.ui.main.MainState
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class VoiceInputInteractor(
+class VoiceInputUseCase(
     val audioRecorder: InMemoryAudioRecorder,
     private val gigaVoiceAPI: GigaVoiceAPI,
-    private val chatInteractor: ChatInteractor,
-    private val speechInteractor: SpeechInteractor,
-    private val permissionsInteractor: PermissionsInteractor,
+    private val chatUseCase: ChatUseCase,
+    private val speechUseCase: SpeechUseCase,
+    private val permissionsUseCase: PermissionsUseCase,
 ) {
-    private val l = LoggerFactory.getLogger(VoiceInputInteractor::class.java)
+    private val l = LoggerFactory.getLogger(VoiceInputUseCase::class.java)
     private var lastRecognizedText: String? = null
     private var lastRecognizedAtMs: Long = 0L
 
-    private val _outputs = MutableSharedFlow<MainInteractorOutput>(replay = 1, extraBufferCapacity = 64)
-    val outputs: Flow<MainInteractorOutput> = _outputs.asSharedFlow()
+    private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
+    val outputs: Flow<MainUseCaseOutput> = _outputs.asSharedFlow()
 
     suspend fun initialize(
         scope: CoroutineScope,
@@ -52,13 +52,13 @@ class VoiceInputInteractor(
                     }
                 }
             },
-            onDoubleClick = { chatInteractor.cancelActiveJob() },
+            onDoubleClick = { chatUseCase.cancelActiveJob() },
         )
 
         launch { audioRecorder.logState() }
 
-        if (!permissionsInteractor.registerNativeHook()) {
-            permissionsInteractor.handleMissingInputMonitoringPermission(scope)
+        if (!permissionsUseCase.registerNativeHook()) {
+            permissionsUseCase.handleMissingInputMonitoringPermission(scope)
             return@coroutineScope
         }
 
@@ -97,9 +97,9 @@ class VoiceInputInteractor(
     suspend fun startRecording(isListening: Boolean) {
         if (isListening) return
 
-        chatInteractor.stopSpeechAndSideEffects()
-        chatInteractor.cancelActiveJob()
-        speechInteractor.playMacPing()
+        chatUseCase.stopSpeechAndSideEffects()
+        chatUseCase.cancelActiveJob()
+        speechUseCase.playMacPing()
 
         emitState {
             copy(
@@ -123,19 +123,19 @@ class VoiceInputInteractor(
         }
 
         delay(300)
-        speechInteractor.playInputConfirmation()
+        speechUseCase.playInputConfirmation()
     }
 
     private suspend fun onTextRecognizeSideEffects(recognizedText: String) {
         if (recognizedText.isNotBlank()) return
 
         val msg = "Речь не распознана"
-        speechInteractor.queue(msg)
+        speechUseCase.queue(msg)
         emitState { copy(statusMessage = msg, isProcessing = false) }
     }
 
     private suspend fun emitState(reduce: MainState.() -> MainState) {
-        _outputs.emit(MainInteractorOutput.State(reduce))
+        _outputs.emit(MainUseCaseOutput.State(reduce))
     }
 
     private fun isDuplicateRecognition(text: String): Boolean {
