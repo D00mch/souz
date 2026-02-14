@@ -18,6 +18,8 @@ import ru.gigadesk.agent.session.GraphSessionRepository
 import ru.gigadesk.agent.session.GraphSessionService
 import ru.gigadesk.server.AgentNode
 import ru.gigadesk.server.GraphAgentNode
+import ru.gigadesk.audio.ActiveSoundRecorderImpl
+import ru.gigadesk.audio.InMemoryAudioRecorder
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.DesktopDataExtractor
@@ -52,6 +54,7 @@ import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
 import ru.gigadesk.tool.math.ToolCalculator
+import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
 
 private object DiTags {
     const val MODULE_MAIN = "main"
@@ -69,6 +72,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             .enable(SerializationFeature.INDENT_OUTPUT)
     }
     bindSingleton { Say() }
+    bindSingleton { InMemoryAudioRecorder(ActiveSoundRecorderImpl()) }
 
     // Native
     bindSingleton { Keys() }
@@ -174,6 +178,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { ToolsFactory(di) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
+    bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { McpConfigProvider(instance()) }
     bindSingleton { McpClientManager(instance()) }
 

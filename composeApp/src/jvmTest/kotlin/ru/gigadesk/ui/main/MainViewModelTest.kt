@@ -12,6 +12,7 @@ import io.mockk.mockkConstructor
 import io.mockk.mockkStatic
 import io.mockk.runs
 import io.mockk.unmockkAll
+import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,6 +30,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
+import org.kodein.di.instance
 import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.agent.engine.AgentSettings
@@ -42,6 +44,8 @@ import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.tool.ToolPermissionBroker
+import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
+import ru.gigadesk.ui.main.usecases.VoiceInputUseCase
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.AfterTest
@@ -215,6 +219,44 @@ class MainViewModelTest {
             }
         }
 
+    @Test
+    fun `missing input monitoring permission updates status message`() = runTest(mainDispatcher) {
+        every { GlobalScreen.registerNativeHook() } throws RuntimeException("Input monitoring denied")
+        val harness = createHarness()
+
+        try {
+            val viewModel = harness.viewModel
+
+            val permissionState = awaitState(viewModel) { state ->
+                state.statusMessage.contains("мониторингу ввода")
+            }
+
+            assertTrue(permissionState.statusMessage.contains("приложение перезапустится автоматически"))
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `onboarding shows welcome text and marks onboarding as completed`() = runTest(mainDispatcher) {
+        val harness = createHarness(needsOnboarding = true)
+
+        try {
+            val viewModel = harness.viewModel
+
+            val onboardingState = awaitState(viewModel) { state ->
+                state.displayedText.contains("Привет! Я GigaDesk")
+            }
+
+            assertTrue(onboardingState.displayedText.contains("Для запуска голосового ввода"))
+            verify { harness.settingsProvider.needsOnboarding = false }
+            verify(exactly = 1) { harness.say.queue(any()) }
+        } finally {
+            harness.clear()
+        }
+    }
+
+
     private suspend fun TestScope.awaitState(
         viewModel: MainViewModel,
         predicate: (MainState) -> Boolean,
@@ -246,9 +288,10 @@ class MainViewModelTest {
     }
 
     private suspend fun emitAudioFlowEvent(viewModel: MainViewModel, data: ByteArray) {
-        val audioRecorderField = MainViewModel::class.java.getDeclaredField("audioRecorder")
-        audioRecorderField.isAccessible = true
-        val recorder = audioRecorderField.get(viewModel) as InMemoryAudioRecorder
+        val voiceInputUseCaseField = MainViewModel::class.java.getDeclaredField("voiceInputUseCase")
+        voiceInputUseCaseField.isAccessible = true
+        val voiceInputUseCase = voiceInputUseCaseField.get(viewModel) as VoiceInputUseCase
+        val recorder = voiceInputUseCase.audioRecorder
 
         val flowField = InMemoryAudioRecorder::class.java.getDeclaredField("_audioFlow")
         flowField.isAccessible = true
@@ -257,8 +300,9 @@ class MainViewModelTest {
     }
 
     private fun createHarness(
-        executeBehavior: suspend (String) -> String,
+        executeBehavior: suspend (String) -> String = { "stub response" },
         onCancelActiveJob: () -> Unit = {},
+        needsOnboarding: Boolean = false,
         recognizeBehavior: suspend (ByteArray) -> GigaResponse.RecognizeResponse = {
             GigaResponse.RecognizeResponse()
         },
@@ -276,7 +320,9 @@ class MainViewModelTest {
         every { settingsProvider.gigaModel } returns GigaModel.Max
         every { settingsProvider.contextSize } returns 16_000
         every { settingsProvider.useStreaming } returns false
-        every { settingsProvider.needsOnboarding } returns false
+        var needsOnboardingState = needsOnboarding
+        every { settingsProvider.needsOnboarding } answers { needsOnboardingState }
+        every { settingsProvider.needsOnboarding = any() } answers { needsOnboardingState = firstArg() }
         every { settingsProvider.safeModeEnabled } returns false
 
         val say = mockk<Say>(relaxed = true)
@@ -300,6 +346,10 @@ class MainViewModelTest {
             bindSingleton<SettingsProvider> { settingsProvider }
             bindSingleton { say }
             bindSingleton { toolPermissionBroker }
+            bindSingleton { InMemoryAudioRecorder() }
+            bindSingleton {
+                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance())
+            }
         }
 
         val viewModel = MainViewModel(di)
@@ -308,7 +358,12 @@ class MainViewModelTest {
         @Suppress("UNCHECKED_CAST") val agentRef = agentRefField.get(viewModel) as AtomicReference<GraphBasedAgent?>
         agentRef.set(graphAgent)
 
-        return TestHarness(viewModel = viewModel, isSpeakingFlow = speakingFlow)
+        return TestHarness(
+            viewModel = viewModel,
+            isSpeakingFlow = speakingFlow,
+            settingsProvider = settingsProvider,
+            say = say,
+        )
     }
 
     private fun emptyAgentContext() = AgentContext(
@@ -320,6 +375,8 @@ class MainViewModelTest {
     private data class TestHarness(
         val viewModel: MainViewModel,
         val isSpeakingFlow: MutableStateFlow<Boolean>,
+        val settingsProvider: SettingsProvider,
+        val say: Say,
     ) {
         fun clear() {
             val onCleared = MainViewModel::class.java.getDeclaredMethod("onCleared")
