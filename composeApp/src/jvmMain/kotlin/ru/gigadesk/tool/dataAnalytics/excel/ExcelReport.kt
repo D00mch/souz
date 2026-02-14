@@ -18,8 +18,8 @@ class ExcelReport(
         @InputParamDescription("Headers for the first row (comma separated string, e.g. 'Name, Age')")
         val headers: String? = null,
 
-        @InputParamDescription("Data to write. List of lists (rows).")
-        val data: List<List<Any?>>? = null,
+        @InputParamDescription("Data to write (CSV format). Rows separated by newline, cells by comma.")
+        val csvData: String? = null,
 
         @InputParamDescription("Sheet name")
         val sheetName: String? = null
@@ -28,7 +28,7 @@ class ExcelReport(
     override val name = "ExcelReport"
     override val description = """Create a NEW Excel file with headers and data.
 - headers: comma-separated, e.g. 'Name, Age, City'
-- data: list of rows, e.g. [["John", 25], ["Jane", 30]]
+- csvData: data in CSV format, e.g. "John,25\nJane,30"
 File must not exist. For reading use ExcelRead."""
 
     override val fewShotExamples = listOf(
@@ -37,7 +37,7 @@ File must not exist. For reading use ExcelRead."""
             params = mapOf(
                 "path" to "sales_report.xlsx", 
                 "headers" to "Date, Amount",
-                "data" to listOf(listOf("2024-01-01", 100), listOf("2024-01-02", 200))
+                "csvData" to "2024-01-01,100\n2024-01-02,200"
             )
         )
     )
@@ -71,15 +71,43 @@ File must not exist. For reading use ExcelRead."""
             }
 
             // Data
-            input.data?.forEach { rowData ->
-                val row = sheet.createRow(rowIdx++)
-                rowData.forEachIndexed { i, value ->
-                    val cell = row.createCell(i)
-                    when (value) {
-                        is Number -> cell.setCellValue(value.toDouble())
-                        is Boolean -> cell.setCellValue(value)
-                        null -> cell.setBlank()
-                        else -> cell.setCellValue(value.toString())
+            if (!input.csvData.isNullOrBlank()) {
+                val rawData = input.csvData.replace("\r\n", "\n").replace("\r", "\n")
+                
+                rawData.lineSequence().forEach { line ->
+                    if (line.isNotBlank()) {
+                         val row = sheet.createRow(rowIdx++)
+                         // Simple CSV parsing (handling quotes)
+                         val cells = mutableListOf<String>()
+                         var currentCell = StringBuilder()
+                         var insideQuote = false
+                         
+                         for (char in line) {
+                             if (char == '"') {
+                                 insideQuote = !insideQuote
+                             } else if (char == ',' && !insideQuote) {
+                                 cells.add(currentCell.toString().trim { it == ' ' || it == '"' })
+                                 currentCell = StringBuilder()
+                             } else {
+                                 currentCell.append(char)
+                             }
+                         }
+                         cells.add(currentCell.toString().trim { it == ' ' || it == '"' })
+                         
+                         cells.forEachIndexed { i, valueStr ->
+                             val cell = row.createCell(i)
+                             // Try to detect type
+                             val doubleVal = valueStr.toDoubleOrNull()
+                             val boolVal = if (valueStr.equals("true", ignoreCase = true)) true else if (valueStr.equals("false", ignoreCase = true)) false else null
+                             
+                             if (doubleVal != null) {
+                                 cell.setCellValue(doubleVal)
+                             } else if (boolVal != null) {
+                                 cell.setCellValue(boolVal)
+                             } else {
+                                 cell.setCellValue(valueStr)
+                             }
+                         }
                     }
                 }
             }

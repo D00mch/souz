@@ -11,6 +11,8 @@ import java.io.FileOutputStream
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Data
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 
 data class SlideContent(
     @InputParamDescription("Title of the slide")
@@ -21,6 +23,14 @@ data class SlideContent(
     val notes: String? = null,
     @InputParamDescription("Absolute path to an image file to insert on the slide")
     val imagePath: String? = null,
+    @InputParamDescription("Optional: X coordinate for image (in points, default auto-layout).")
+    val imageX: Int? = null,
+    @InputParamDescription("Optional: Y coordinate for image (in points, default auto-layout).")
+    val imageY: Int? = null,
+    @InputParamDescription("Optional: Width for image (in points, default auto-layout).")
+    val imageWidth: Int? = null,
+    @InputParamDescription("Optional: Height for image (in points, default auto-layout).")
+    val imageHeight: Int? = null,
     @InputParamDescription("Slide layout name. Options: TITLE, TITLE_ONLY, TITLE_AND_CONTENT (default), SECTION_HEADER, TWO_COL_TX, TWO_COL_TX_IMG, PIC_TX")
     val layout: String? = null,
     @InputParamDescription("Table data to include on the slide")
@@ -36,16 +46,27 @@ data class PresentationChart(
     val title: String,
     @InputParamDescription("Chart type. Options: BAR, PIE, LINE, DOUGHNUT")
     val type: String,
-    @InputParamDescription("Categories (labels for X axis or Pie slices)")
+    @InputParamDescription("""
+        JSON String representing the chart data.
+        Example:
+        {
+          "categories": ["Q1", "Q2", "Q3"],
+          "series": [
+            { "name": "Revenue", "values": [100.5, 200.0, 150.0] },
+            { "name": "Cost", "values": [50.0, 80.0, 70.0] }
+          ]
+        }
+    """)
+    val dataJson: String
+)
+
+data class PresentationChartData(
     val categories: List<String>,
-    @InputParamDescription("Data series. For Pie charts, only one series is used.")
     val series: List<PresentationChartSeries>
 )
 
 data class PresentationChartSeries(
-    @InputParamDescription("Name of the series")
     val name: String,
-    @InputParamDescription("Numerical values")
     val values: List<Double>
 )
 
@@ -68,11 +89,13 @@ data class PresentationShape(
 )
 
 data class PresentationTable(
-    @InputParamDescription("List of rows, where each row is a list of cell text strings")
-    val rows: List<List<String>>,
+    @InputParamDescription("CSV string representing the table data. Cells separated by comma, rows by newline.")
+    val csvData: String,
     @InputParamDescription("Whether the first row is a header row (will be styled differently)")
     val hasHeader: Boolean = true
 )
+
+// data class PresentationTableRow removed as it's no longer needed
 
 data class CustomThemeParam(
     @InputParamDescription("Background color (HEX)")
@@ -92,8 +115,24 @@ data class CustomThemeParam(
     data class PresentationCreateInput(
     @InputParamDescription("Title of the presentation")
     val title: String,
-    @InputParamDescription("List of slides to include")
-    val slides: List<SlideContent>,
+    @InputParamDescription("""
+        JSON String representing the list of slides. 
+        Example: 
+        [
+          {
+            "layout": "TITLE", 
+            "title": "Slide Title", 
+            "subtitle": "Subtitle",
+            "points": ["Point 1", "Point 2"],
+            "imagePath": "/path/to/image.png",
+            "imageX": 50, "imageY": 100, "imageWidth": 200, "imageHeight": 150,
+            "table": { "csvData": "Header1,Header2\nVal1,Val2" },
+            "chart": { "title": "Chart", "type": "BAR", "series": [...] }
+          }
+        ]
+        Valid layouts: TITLE, TITLE_ONLY, SECTION_HEADER, PIC_TX, TWO_COL_TX, TWO_COL_TX_IMG, TITLE_AND_CONTENT.
+    """)
+    val slidesData: String,
     @InputParamDescription("Optional output filename (without extension). Defaults to 'Presentation_<Title>'")
     val filename: String? = null,
     @InputParamDescription("Absolute path to a .pptx file to use as a template")
@@ -246,7 +285,22 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
 
 
         // 3. Create Content Slides
-        input.slides.forEach { slideData ->
+        // Parse slides from JSON string
+        val slides: List<SlideContent> = try {
+            jacksonObjectMapper().readValue(input.slidesData)
+        } catch (e: Exception) {
+            println("Error parsing slides JSON: ${e.message}")
+            // Fallback for simple error handling
+             try {
+                 // aggressive unescaping if needed? 
+                 // For now, assume model produces valid JSON string
+                 emptyList()
+             } catch (e2: Exception) {
+                 emptyList()
+             }
+        }
+
+        slides.forEach { slideData ->
             // Smart Layout Fallback: Check if image is actually available
             var effectiveLayoutName = slideData.layout?.uppercase()
             var effectiveImagePath = slideData.imagePath?.let { 
@@ -428,16 +482,27 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
 
                     if (format != null) {
                         val pictureIdx = ppt.addPicture(pictureData, format)
+                        val picture = slide.createPicture(pictureIdx)
                         
-                        if (imagePlaceholder != null) {
+                        // Determine anchor
+                        val customAnchor = if (
+                            slideData.imageX != null && slideData.imageY != null && 
+                            slideData.imageWidth != null && slideData.imageHeight != null
+                        ) {
+                            java.awt.Rectangle(slideData.imageX, slideData.imageY, slideData.imageWidth, slideData.imageHeight)
+                        } else null
+                        
+                        if (customAnchor != null) {
+                             picture.anchor = customAnchor
+                             // If we used a custom anchor, we might still want to clear the placeholder text if one was auto-selected
+                             if (imagePlaceholder != null) imagePlaceholder.clearText()
+                        } else if (imagePlaceholder != null) {
                              val anchor = imagePlaceholder.anchor
-                             val picture = slide.createPicture(pictureIdx)
                              picture.anchor = anchor
                              
                              // Optional: clear text from the placeholder if it was a text shape used for image
                              imagePlaceholder.clearText()
                         } else {
-                             val picture = slide.createPicture(pictureIdx)
                              // Default position if no placeholder found: Right side, moderate size
                              // Assuming slide size is roughly 720x540 or 960x540
                              picture.setAnchor(java.awt.Rectangle(450, 150, 250, 250))
@@ -554,6 +619,14 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
     ) {
         val title = chartData.title
         
+        // Parse Chart Data from JSON
+        val data = try {
+            jacksonObjectMapper().readValue<PresentationChartData>(chartData.dataJson)
+        } catch (e: Exception) {
+            println("Error parsing chart JSON: ${e.message}")
+            PresentationChartData(emptyList(), emptyList())
+        }
+
         // 1. Draw Title
         val textBox = slide.createTextBox()
         textBox.anchor = java.awt.Rectangle(100, 100, 500, 50)
@@ -577,7 +650,7 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
         
         val infoText = slide.createTextBox()
         infoText.anchor = java.awt.Rectangle(120, 170, 460, 260)
-        infoText.text = "Data: ${chartData.series.map { "${it.name}: ${it.values}" }}"
+        infoText.text = "Data: ${data.series.map { "${it.name}: ${it.values}" }}"
     }
 
     private fun createTable(
@@ -593,16 +666,51 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
         val textColor = theme?.contentColor ?: java.awt.Color.BLACK
         val fontFamily = theme?.bodyFont ?: "Arial"
         
-        tableData.rows.forEachIndexed { rowIndex, rowData ->
+        // Parse CSV Data
+        // Simple CSV parser that handles quotes
+        val rows = mutableListOf<List<String>>()
+        val currentLine = StringBuilder()
+        var inQuotes = false
+        
+        // Normalize line endings
+        val rawData = tableData.csvData.replace("\r\n", "\n").replace("\r", "\n")
+        
+        // We do a line-by-line split but need to respect quotes containing newlines
+        // For simplicity in this tool, we'll assume row breaks are reliable newlines if not in quotes.
+        // Actually, let's just use a standard char-by-char parse for robustness or a simple split if we assume simple data.
+        // Given LLM output, it might be simple. Let's try a simple split by newline first, but handle commas inside quotes.
+        
+        rawData.lineSequence().forEach { line ->
+            if (line.isNotBlank()) {
+                val cells = mutableListOf<String>()
+                var currentCell = StringBuilder()
+                var insideQuote = false
+                
+                for (char in line) {
+                    if (char == '"') {
+                        insideQuote = !insideQuote
+                    } else if (char == ',' && !insideQuote) {
+                        cells.add(currentCell.toString().trim { it == ' ' || it == '"' }) // Trim spaces and surrounding quotes
+                        currentCell = StringBuilder()
+                    } else {
+                        currentCell.append(char)
+                    }
+                }
+                cells.add(currentCell.toString().trim { it == ' ' || it == '"' })
+                rows.add(cells)
+            }
+        }
+        
+        rows.forEachIndexed { rowIndex, cells ->
             val row = table.addRow()
             val isHeader = tableData.hasHeader && rowIndex == 0
             
             // Set row height (default)
             row.height = 30.0
             
-            rowData.forEach { cellData ->
+            cells.forEach { cellText ->
                 val cell = row.addCell()
-                cell.setText(cellData)
+                cell.setText(cellText)
                 
                 // Styling
                 cell.verticalAlignment = org.apache.poi.sl.usermodel.VerticalAlignment.MIDDLE
