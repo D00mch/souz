@@ -87,6 +87,7 @@ private val ChatAssistantTimestampColor = Color(0x7FFFFFFF)
 fun MainScreen(
     onOpenSettings: () -> Unit,
     onCloseWindow: () -> Unit,
+    onMinimizeWindow: () -> Unit,
     onShowSnack: (String) -> Unit = {},
     isOnline: Boolean = true,
 ) {
@@ -115,6 +116,7 @@ fun MainScreen(
             else viewModel.send(MainEvent.StartListening)
         },
         onClear = onCloseWindow,
+        onMinimize = onMinimizeWindow,
         onRequestNewConversation = { viewModel.send(MainEvent.RequestNewConversation) },
         onConfirmNewConversation = { viewModel.send(MainEvent.ConfirmNewConversation) },
         onDismissNewConversationDialog = { viewModel.send(MainEvent.DismissNewConversationDialog) },
@@ -142,6 +144,7 @@ fun MainScreenContent(
     onConfirmNewConversation: () -> Unit = {},
     onDismissNewConversationDialog: () -> Unit = {},
     onClear: () -> Unit = {},
+    onMinimize: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onStopSpeech: () -> Unit = {},
     onShowLastText: () -> Unit = {},
@@ -255,7 +258,7 @@ fun MainScreenContent(
                             Icon(Icons.Rounded.Settings, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                         }
                         Spacer(Modifier.width(8.dp))
-                        MinimalGlassButton(onClick = onClear) {
+                        MinimalGlassButton(onClick = onMinimize) {
                             Icon(Icons.Rounded.Close, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                         }
                     }

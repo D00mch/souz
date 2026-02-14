@@ -116,7 +116,8 @@ fun main() {
                 // Provide WindowScope to nested composables via CompositionLocal
                 CompositionLocalProvider(LocalWindowScope provides this) {
                     App(
-                        onCloseWindow = { isWindowVisible = false }
+                        onCloseWindow = { isWindowVisible = false },
+                        onMinimizeWindow = { windowState.isMinimized = true }
                     )
                 }
             }

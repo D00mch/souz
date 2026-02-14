@@ -34,7 +34,8 @@ import java.net.URI
 @Composable
 @Preview
 fun App(
-    onCloseWindow: () -> Unit
+    onCloseWindow: () -> Unit,
+    onMinimizeWindow: () -> Unit
 ) {
     var currentScreen: Screen by remember { mutableStateOf(Setup) }
     var toolsScreen by remember { mutableStateOf<Tools?>(null) }
@@ -77,6 +78,7 @@ fun App(
                             Main -> MainScreen(
                                 onOpenSettings = { currentScreen = Settings },
                                 onCloseWindow = onCloseWindow,
+                                onMinimizeWindow = onMinimizeWindow,
                                 onShowSnack = { message ->
                                     snackbarScope.launch { snackbarHostState.showSnackbar(message) }
                                 },
