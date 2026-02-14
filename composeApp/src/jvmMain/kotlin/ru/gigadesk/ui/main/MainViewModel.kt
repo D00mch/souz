@@ -261,11 +261,7 @@ class MainViewModel(
             val isCurrentRequest = activeChatRequestId.get() == requestId
             withContext(NonCancellable) {
                 setState {
-                    val idsToDrop = if (isVoice) {
-                        arrayOf(userMessage.id, newLastMessage.id)
-                    } else {
-                        arrayOf(newLastMessage.id)
-                    }
+                    val idsToDrop = arrayOf(userMessage.id, newLastMessage.id)
                     copy(
                         chatMessages = chatMessages.filterNot { it.id in idsToDrop },
                         isProcessing = if (isCurrentRequest) false else isProcessing
