@@ -64,6 +64,7 @@ data class SettingsState(
 
 sealed interface SettingsEvent : VMEvent {
     object GoToMain : SettingsEvent
+    object RefreshFromProvider : SettingsEvent
     data class InputGigaChatKey(val key: String): SettingsEvent
     data class InputQwenChatKey(val key: String): SettingsEvent
     data class InputAiTunnelKey(val key: String): SettingsEvent
