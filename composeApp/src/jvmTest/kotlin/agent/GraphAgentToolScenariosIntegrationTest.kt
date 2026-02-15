@@ -1000,7 +1000,7 @@ class GraphAgentToolScenariosIntegrationTest {
         }
         coVerify(atLeast = 1) {
             excelReport.invoke(match {
-                it.path.contains("stats") && !it.data.isNullOrEmpty()
+                it.path.contains("stats") && !it.csvData.isNullOrEmpty()
             })
         }
     }

@@ -41,7 +41,11 @@ data class SlideContent(
     @InputParamDescription("List of geometric shapes to add")
     val shapes: List<PresentationShape>? = null,
     @InputParamDescription("Chart data to include on the slide")
-    val chart: PresentationChart? = null
+    val chart: PresentationChart? = null,
+    @InputParamDescription("Optional: Design ID. One of: MINIMALIST_MODERN, CLEAN_LINES, SWISS_DESIGN, CORPORATE_BLUE, CORPORATE_ELEGANT, EXECUTIVE, CREATIVE_CHAOS, CREATIVE_SPLASH, ARTISTIC_FLOW, TECH_GRID, DIGITAL_WAVE, CYBERPUNK, NATURE_GREEN, OCEAN_BLUE, FOREST, SUNSET_GRADIENT, NEON_GRADIENT, SOFT_PASTEL, GEOMETRIC_CIRCLES, GEOMETRIC_TRIANGLES, GEOMETRIC_HEXAGON, MODERN_SPLIT")
+    val designId: String? = null,
+    @InputParamDescription("Optional: List of shapes to be rendered in the background (behind text/images).")
+    val backgroundShapes: List<PresentationShape>? = null
 )
 
 data class PresentationChart(
@@ -49,24 +53,13 @@ data class PresentationChart(
     val title: String,
     @InputParamDescription("Chart type. Options: BAR, PIE, LINE, DOUGHNUT")
     val type: String,
-    @InputParamDescription("""
-        JSON String representing the chart data.
-        Example:
-        {
-          "categories": ["Q1", "Q2", "Q3"],
-          "series": [
-            { "name": "Revenue", "values": [100.5, 200.0, 150.0] },
-            { "name": "Cost", "values": [50.0, 80.0, 70.0] }
-          ]
-        }
-    """)
-    val dataJson: String
+    @InputParamDescription("List of categories (X-axis labels)")
+    val categories: List<String>? = null,
+    @InputParamDescription("List of data series")
+    val series: List<PresentationChartSeries>? = null
 )
 
-data class PresentationChartData(
-    val categories: List<String>,
-    val series: List<PresentationChartSeries>
-)
+// PresentationChartData removed
 
 data class PresentationChartSeries(
     val name: String,
@@ -212,10 +205,23 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             params = mapOf(
                 "title" to "Q3 Financial Report",
                 "theme" to "EXECUTIVE",
+                "designId" to "CORPORATE_ELEGANT",
                 "slides" to listOf(
                     mapOf("layout" to "TITLE", "title" to "Q3 Financial Results"),
                     mapOf("layout" to "TITLE_AND_CONTENT", "title" to "Executive Summary", "points" to listOf("Revenue up 15%", "Costs down 5%")),
-                    mapOf("layout" to "PIC_TX", "title" to "Growth Metrics", "points" to listOf("User base doubled", "Retention 90%"))
+                    mapOf("layout" to "PIC_TX", "title" to "Growth Metrics", "points" to listOf("User base doubled"))
+                )
+            )
+        ),
+        ru.gigadesk.tool.FewShotExample(
+            request = "Сделай дерзкую презентацию про киберпанк. Дизайн должен быть уникальным.",
+            params = mapOf(
+                "title" to "Cyberpunk Aesthetics",
+                "theme" to "CYBERPUNK",
+                "designId" to "CYBERPUNK", 
+                "slides" to listOf(
+                    mapOf("layout" to "TITLE", "title" to "High Tech, Low Life"),
+                    mapOf("layout" to "PIC_TX", "title" to "Visual Style", "points" to listOf("Neon lights", "Chrome surfaces", "Dark alleys"), "imagePath" to "/path/to/city.jpg")
                 )
             )
         )
@@ -271,17 +277,17 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
         
         val master = ppt.slideMasters[0]
 
+        // Resolve Theme once (for reuse across slides)
+        val resolvedThemeObj: PresentationTheme? = if (input.theme != null) {
+            try { PresentationTheme.valueOf(input.theme.uppercase()) } catch (e: Exception) { null }
+        } else null
+
         // Apply Theme if specified and NO template is used (template takes precedence)
         if (input.templatePath == null) {
             if (customTheme != null) {
                 applyCustomTheme(master, customTheme)
-            } else if (input.theme != null) {
-                try {
-                    val theme = PresentationTheme.valueOf(input.theme.uppercase())
-                    applyTheme(master, theme)
-                } catch (e: IllegalArgumentException) {
-                    // Warning: invalid theme, ignore or log
-                }
+            } else if (resolvedThemeObj != null) {
+                applyTheme(master, resolvedThemeObj)
             }
         }
 
@@ -320,7 +326,7 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                 val hasValidImage = if (effectiveImagePath != null) {
                     val imgFile = File(effectiveImagePath)
                     val isSupported = when (imgFile.extension.lowercase()) {
-                        "png", "jpeg", "jpg", "gif", "bmp", "svg" -> true
+                        "png", "jpeg", "jpg", "gif", "bmp", "svg", "webp" -> true
                         else -> false
                     }
                     imgFile.exists() && imgFile.isFile && imgFile.length() > 0 && isSupported
@@ -348,6 +354,36 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             
             val contentLayout = master.getLayout(layoutType)
             val slide = ppt.createSlide(contentLayout)
+            
+            // --- APPLY BACKGROUND DESIGN (Before Content) ---
+            if (slideData.designId != null) {
+                PresentationDesignSystem.applyDesign(slide, slideData.designId, resolvedThemeObj)
+            }
+            
+            // Add Speaker Notes
+            if (slideData.notes != null) {
+                 val notesSlide = ppt.getNotesSlide(slide) ?: try {
+                     val method = XMLSlideShow::class.java.getDeclaredMethod("createNotesSlide", org.apache.poi.xslf.usermodel.XSLFSlide::class.java)
+                     method.isAccessible = true
+                     method.invoke(ppt, slide) as org.apache.poi.xslf.usermodel.XSLFNotes
+                 } catch (e: Exception) {
+                     null
+                 }
+                 
+                 if (notesSlide != null) {
+                     val notesPlaceholder = notesSlide.getPlaceholder(0) as? org.apache.poi.xslf.usermodel.XSLFTextShape
+                     if (notesPlaceholder != null) {
+                         notesPlaceholder.text = slideData.notes
+                     }
+                 }
+            }
+            
+            if (slideData.backgroundShapes != null) {
+                slideData.backgroundShapes.forEach { shape ->
+                     createShape(slide, shape, resolvedThemeObj, customTheme)
+                }
+            }
+            // ------------------------------------------------
 
             // Set Title
             val slideTitle = slide.getPlaceholder(0)
@@ -443,11 +479,13 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             var effectiveTextAnchor = effectiveTextPlaceholder?.anchor
             var forceSplitView = false
             
-            // COLLISION DETECTION: Check if intended image position overlaps with text
-            if (hasText && hasImage && effectiveTextPlaceholder != null) {
-                val textRect = effectiveTextPlaceholder.anchor
-                
-                val imageRect = if (
+            // List of text shapes to check for collision (Title, Subtitle, Body)
+            val textShapesToCheck = listOfNotNull(titlePlaceholder, subtitlePlaceholder, effectiveTextPlaceholder)
+            val hasAnyText = textShapesToCheck.any { it.text != null && it.text.isNotEmpty() } || slideData.points.isNotEmpty() || slideData.title.isNotEmpty()
+
+            // COLLISION DETECTION: Check if intended image position overlaps with ANY text
+            if (hasAnyText && hasImage) {
+                 val imageRect = if (
                     slideData.imageX != null && slideData.imageY != null && 
                     slideData.imageWidth != null && slideData.imageHeight != null
                 ) {
@@ -457,35 +495,43 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                     java.awt.Rectangle(450, 150, 250, 250)
                 }
                 
-                // Check intersection
-                if (textRect.intersects(imageRect)) {
-                    // Start of Smart Override
-                    // If they intersect, we MUST fix it. 
-                    // Trusting LLM coordinates that cover text is bad.
-                    // We will FORCE split view.
-                    forceSplitView = true
-                } else if (!isCustomImagePos && imagePlaceholder == null) {
-                    // Standard case without coordinates: also force split
+                // Check intersection with multiple text blocks
+                for (textShape in textShapesToCheck) {
+                    if (textShape.anchor.intersects(imageRect)) {
+                        forceSplitView = true
+                        break
+                    }
+                }
+                
+                if (!forceSplitView && !isCustomImagePos && imagePlaceholder == null) {
+                     // Standard case without coordinates: also force split
                      forceSplitView = true
                 }
             }
             
-            if (forceSplitView && effectiveTextPlaceholder != null) {
-                 val currentTextAnchor = effectiveTextPlaceholder.anchor
+            if (forceSplitView) {
+                 // Resize Text to Left Half (with some padding)
+                 // We need to resize ALL text shapes if they are in the way? 
+                 // Or typically just the main content. 
+                 // For Title slides, we might need to move Title/Subtitle to left.
                  
-                 // Only resize if text anchor looks like a full-width body (width > 400)
-                 // If it's already a narrow column, maybe we don't need to resize, just move image.
-                 if (currentTextAnchor.width > 350) {
-                     // Resize Text to Left Half (with some padding)
-                     val newTextWidth = (currentTextAnchor.width / 2.0) - 20
-                     val newTextRect = java.awt.Rectangle(
-                         currentTextAnchor.x.toInt(), 
-                         currentTextAnchor.y.toInt(), 
-                         newTextWidth.toInt(), 
-                         currentTextAnchor.height.toInt()
-                     )
-                     effectiveTextPlaceholder.anchor = newTextRect
-                     effectiveTextAnchor = newTextRect
+                 val safeWidth = (slide.slideShow.pageSize.width / 2.0) - 20
+                 
+                 textShapesToCheck.forEach { shape ->
+                     val anchor = shape.anchor
+                     // Only resize if it's wide (spanning across the slide)
+                     if (anchor.width > safeWidth + 50) {
+                         val newRect = java.awt.Rectangle(
+                             anchor.x.toInt(), 
+                             anchor.y.toInt(), 
+                             safeWidth.toInt(), 
+                             anchor.height.toInt()
+                         )
+                         shape.anchor = newRect
+                         if (shape == effectiveTextPlaceholder) {
+                              effectiveTextAnchor = newRect
+                         }
+                     }
                  }
             }
             
@@ -569,6 +615,24 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                             java.awt.Rectangle(slideData.imageX, slideData.imageY, slideData.imageWidth, slideData.imageHeight)
                         } else null
                         
+                        // IF force detected (or just fallback), use SMART SIZING
+                        val smartAnchor = if (forceSplitView) {
+                             // Place to the right of text area
+                             // We assume text has been pushed to left (0..width/2)
+                             // So image goes to right (width/2..width)
+                             
+                             val slideWidth = slide.slideShow.pageSize.width
+                             val slideHeight = slide.slideShow.pageSize.height
+                             val x = (slideWidth / 2.0) + 20
+                             val w = (slideWidth / 2.0) - 40
+                             
+                             // Try to center vertically or fill height
+                             val y = 100.0 // Header margin
+                             val h = slideHeight - 150.0
+                             
+                             java.awt.Rectangle(x.toInt(), y.toInt(), w.toInt(), h.toInt())
+                        } else null
+
                         if (customAnchor != null) {
                              picture.anchor = customAnchor
                              if (imagePlaceholder != null) imagePlaceholder.clearText()
@@ -576,23 +640,16 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                              val anchor = imagePlaceholder.anchor
                              picture.anchor = anchor
                              imagePlaceholder.clearText()
+                        } else if (smartAnchor != null) {
+                             // Apply Smart Anchor (Split View)
+                             picture.anchor = smartAnchor
                         } else {
-                             // Calculated position based on text overlap check
-                             // If we resized the text, we should place the image in the space we freed up.
-                             
-                             if (effectiveTextAnchor != null && effectiveTextPlaceholder != null && hasText) {
-                                 // Smart Placement: Right side of text
-                                 val x = effectiveTextAnchor.x + effectiveTextAnchor.width + 40
-                                 val y = effectiveTextAnchor.y
-                                 val w = minOf(450.0, 900.0 - x) // Don't go off screen
-                                 val h = effectiveTextAnchor.height
-                                 
-                                 picture.setAnchor(java.awt.Rectangle(x.toInt(), y.toInt(), w.toInt(), h.toInt()))
-                             } else {
-                                 // Default position if no text conflict logic applied
-                                 picture.setAnchor(java.awt.Rectangle(450, 150, 250, 250))
-                             }
+                             // Default Fallback (Bottom Right, reasonable size)
+                             val sw = slide.slideShow.pageSize.width
+                             val sh = slide.slideShow.pageSize.height
+                             picture.anchor = java.awt.Rectangle(sw/2, sh/4, sw/2 - 50, sh/2)
                         }
+
                     } else {
                         println("Unsupported image format: ${imageFile.extension}")
                     }
@@ -700,13 +757,9 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
     ) {
         val title = chartData.title
         
-        // Parse Chart Data from JSON
-        val data = try {
-            jacksonObjectMapper().readValue<PresentationChartData>(chartData.dataJson)
-        } catch (e: Exception) {
-            println("Error parsing chart JSON: ${e.message}")
-            PresentationChartData(emptyList(), emptyList())
-        }
+        // Use data directly from the object
+        val categories = chartData.categories ?: emptyList()
+        val series = chartData.series ?: emptyList()
 
         // 1. Draw Title
         val textBox = slide.createTextBox()
@@ -731,7 +784,7 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
         
         val infoText = slide.createTextBox()
         infoText.anchor = java.awt.Rectangle(120, 170, 460, 260)
-        infoText.text = "Data: ${data.series.map { "${it.name}: ${it.values}" }}"
+        infoText.text = "Data: ${series.map { "${it.name}: ${it.values}" }}"
     }
 
     private fun createTable(

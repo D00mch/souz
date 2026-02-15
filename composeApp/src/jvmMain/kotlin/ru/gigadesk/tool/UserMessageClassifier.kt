@@ -138,9 +138,9 @@ object LocalRegexClassifier : UserMessageClassifier {
         )
 
         ToolCategory.PRESENTATION -> listOf(
-            WeightedRegex(Regex("презентац|слайд|pptx|powerpoint|keynote|выступлени|доклад|presentation|slide"), 2.0),
+            WeightedRegex(Regex("презентац|слайд|pptx|powerpoint|keynote|выступлени|доклад|presentation|slide"), 1.5),
             WeightedRegex(Regex("создай презентац|сделай слайд|напиши презентац|слайды"), 2.0),
-            WeightedRegex(Regex("прочитай презентац|анализ слайд|что в презентац"), 1.5),
+            WeightedRegex(Regex("прочитай презентац|анализ слайд|что в презентац"), 1.7),
         )
     }
 

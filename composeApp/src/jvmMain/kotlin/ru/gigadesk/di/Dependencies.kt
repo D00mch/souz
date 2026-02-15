@@ -130,12 +130,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolTakeScreenshot(ToolRunBashCommand) }
     bindSingleton { ToolStartScreenRecording(ToolRunBashCommand) }
     bindSingleton { ToolCalculator() }
-
-    // Excel tools
     bindSingleton { ExcelRead(instance()) }
     bindSingleton { ExcelReport(instance()) }
-
-    // Presentation tools
     bindSingleton { ToolPresentationCreate() }
     bindSingleton { ToolPresentationRead() }
 
