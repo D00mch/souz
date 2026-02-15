@@ -13,6 +13,11 @@ Primary stack:
 - gRPC/Protobuf
 - JUnit 5 + MockK for testing
 
+### UI architecture principles
+
+- UI layers (Screens and Composables) should not do neither business logic, nor IO operations.
+- UI-logic should be coordinated from ViewModels. ViewModel may delegate business logic to UseCases.
+
 ### Features
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
 - **Multi-model LLM integrations** for GigaChat (REST/gRPC/voice), Qwen, AiTunnel APIs.
