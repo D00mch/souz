@@ -46,6 +46,7 @@ import ru.gigadesk.ui.main.RealLiquidGlassCard
 import ru.gigadesk.ui.common.DraggableWindowArea
 import kotlin.math.roundToInt
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.JsonNode
 import androidx.compose.material.icons.rounded.Check
 
 private val jsonMapper = ObjectMapper()
@@ -82,6 +83,45 @@ data class GraphProcessResult(
     val nodes: Map<String, DisplayNode>,
     val edges: List<GraphEdge>
 )
+
+private data class ActiveToolsDiff(
+    val before: List<String>,
+    val after: List<String>,
+    val added: List<String>,
+    val removed: List<String>,
+)
+
+private fun extractActiveToolsDiff(data: String): ActiveToolsDiff? {
+    return try {
+        val root = jsonMapper.readTree(data)
+        val beforeTools = parseActiveTools(root.get("in")?.get("activeTools")).orEmpty()
+        val afterTools = parseActiveTools(root.get("out")?.get("activeTools")).orEmpty()
+
+        if (beforeTools.isEmpty() && afterTools.isEmpty()) {
+            return null
+        }
+
+        val beforeSet = beforeTools.toSet()
+        val afterSet = afterTools.toSet()
+        val added = afterTools.filterNot { it in beforeSet }
+        val removed = beforeTools.filterNot { it in afterSet }
+
+        if (added.isEmpty() && removed.isEmpty()) {
+            null
+        } else {
+            ActiveToolsDiff(before = beforeTools, after = afterTools, added = added, removed = removed)
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun parseActiveTools(node: JsonNode?): List<String>? {
+    if (node == null || !node.isArray) return null
+    return node.mapNotNull { tool ->
+        tool.asText(null)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+}
 
 // ============= Force-Directed Layout Algorithm =============
 
@@ -940,6 +980,7 @@ fun ExpandableStepItem(
 ) {
     val clipboardManager = LocalClipboardManager.current
     var isCopied by remember { mutableStateOf(false) }
+    val activeToolsDiff = remember(step.data) { extractActiveToolsDiff(step.data) }
 
     LaunchedEffect(isCopied) {
         if (isCopied) {
@@ -948,7 +989,7 @@ fun ExpandableStepItem(
         }
     }
 
-    val copyContent = remember(step) {
+    val copyContent = remember(step, activeToolsDiff) {
         buildString {
             appendLine("=== Step #${step.stepIndex}: ${step.nodeName} ===")
             appendLine()
@@ -963,6 +1004,16 @@ fun ExpandableStepItem(
                 appendLine()
                 appendLine("SAVED TO HISTORY:")
                 appendLine(it.trim())
+            }
+            activeToolsDiff?.let {
+                appendLine()
+                appendLine("ACTIVE TOOLS CHANGED:")
+                if (it.added.isNotEmpty()) {
+                    appendLine("+ ${it.added.joinToString(", ")}")
+                }
+                if (it.removed.isNotEmpty()) {
+                    appendLine("- ${it.removed.joinToString(", ")}")
+                }
             }
         }
     }
@@ -1047,6 +1098,35 @@ fun ExpandableStepItem(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
                                         color = Color(0xFFA5D6A7)
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    
+                    if (activeToolsDiff != null) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                "ACTIVE TOOLS CHANGED",
+                                style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                            )
+                            if (activeToolsDiff.added.isNotEmpty()) {
+                                Text(
+                                    text = "+ ${activeToolsDiff.added.joinToString(", ")}",
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        color = Color(0xFFB9F6CA)
+                                    )
+                                )
+                            }
+                            if (activeToolsDiff.removed.isNotEmpty()) {
+                                Text(
+                                    text = "- ${activeToolsDiff.removed.joinToString(", ")}",
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        color = Color(0xFFFF8A80)
                                     )
                                 )
                             }
