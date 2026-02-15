@@ -28,6 +28,8 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
@@ -46,9 +48,12 @@ import ru.gigadesk.ui.main.RealLiquidGlassCard
 import ru.gigadesk.ui.common.DraggableWindowArea
 import kotlin.math.roundToInt
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.JsonNode
 import androidx.compose.material.icons.rounded.Check
+import java.awt.Cursor
 
 private val jsonMapper = ObjectMapper()
+private val horizontalResizePointerIcon = PointerIcon(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR))
 
 // Layout node for force-directed algorithm
 data class LayoutNode(
@@ -82,6 +87,45 @@ data class GraphProcessResult(
     val nodes: Map<String, DisplayNode>,
     val edges: List<GraphEdge>
 )
+
+private data class ActiveToolsDiff(
+    val before: List<String>,
+    val after: List<String>,
+    val added: List<String>,
+    val removed: List<String>,
+)
+
+private fun extractActiveToolsDiff(data: String): ActiveToolsDiff? {
+    return try {
+        val root = jsonMapper.readTree(data)
+        val beforeTools = parseActiveTools(root.get("in")?.get("activeTools")).orEmpty()
+        val afterTools = parseActiveTools(root.get("out")?.get("activeTools")).orEmpty()
+
+        if (beforeTools.isEmpty() && afterTools.isEmpty()) {
+            return null
+        }
+
+        val beforeSet = beforeTools.toSet()
+        val afterSet = afterTools.toSet()
+        val added = afterTools.filterNot { it in beforeSet }
+        val removed = beforeTools.filterNot { it in afterSet }
+
+        if (added.isEmpty() && removed.isEmpty()) {
+            null
+        } else {
+            ActiveToolsDiff(before = beforeTools, after = afterTools, added = added, removed = removed)
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun parseActiveTools(node: JsonNode?): List<String>? {
+    if (node == null || !node.isArray) return null
+    return node.mapNotNull { tool ->
+        tool.asText(null)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+}
 
 // ============= Force-Directed Layout Algorithm =============
 
@@ -441,6 +485,9 @@ fun GraphVisualizationScreen(
     
     var selectedNodeId by remember { mutableStateOf<String?>(null) }
     var selectedStep by remember { mutableStateOf<GraphStepRecord?>(null) }
+    var detailsPanelFraction by remember { mutableStateOf(0.38f) }
+    val minDetailsPanelFraction = 0.24f
+    val maxDetailsPanelFraction = 0.60f
     
     // Focus requester for keyboard handling
     val focusRequester = remember { FocusRequester() }
@@ -525,49 +572,79 @@ fun GraphVisualizationScreen(
                 }
 
                 // Main Content Split
-                Row(
+                BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
                         .padding(horizontal = 16.dp)
                 ) {
-                    // LEFT: Graph Canvas
-                    Box(
-                        modifier = Modifier
-                            .weight(0.7f)
-                            .fillMaxHeight()
-                    ) {
-                        GraphCanvas(
-                            data = graphData,
-                            selectedNodeId = selectedNodeId,
-                            onNodeClick = { selectedNodeId = it }
-                        )
-                    }
+                    val containerWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
 
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    // RIGHT: Details Panel
-                    Box(
-                        modifier = Modifier
-                            .weight(0.3f)
-                            .fillMaxHeight()
+                    Row(
+                        modifier = Modifier.fillMaxSize()
                     ) {
-                        SideDetailsPanel(
-                            selectedNode = selectedNodeId?.let { graphData.nodes[it] },
-                            selectedStep = selectedStep,
-                            onStepSelect = { step ->
-                                selectedStep = if (selectedStep == step) null else step
-                            },
-                            availableGroups = allSessionGroups,
-                            collapsedSubgraphs = collapsedSubgraphs,
-                            onToggleSubgraph = { group ->
-                                collapsedSubgraphs = if (collapsedSubgraphs.contains(group)) {
-                                    collapsedSubgraphs - group
-                                } else {
-                                    collapsedSubgraphs + group
+                        // LEFT: Graph Canvas
+                        Box(
+                            modifier = Modifier
+                                .weight(1f - detailsPanelFraction)
+                                .fillMaxHeight()
+                        ) {
+                            GraphCanvas(
+                                data = graphData,
+                                selectedNodeId = selectedNodeId,
+                                onNodeClick = { selectedNodeId = it }
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .width(12.dp)
+                                .padding(horizontal = 2.dp, vertical = 12.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(Color.White.copy(alpha = 0.08f))
+                                .border(
+                                    1.dp,
+                                    Color.White.copy(alpha = 0.12f),
+                                    RoundedCornerShape(999.dp)
+                                )
+                                .pointerHoverIcon(horizontalResizePointerIcon)
+                                .pointerInput(containerWidthPx) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        val deltaFraction = dragAmount.x / containerWidthPx
+                                        detailsPanelFraction =
+                                            (detailsPanelFraction - deltaFraction).coerceIn(
+                                                minDetailsPanelFraction,
+                                                maxDetailsPanelFraction
+                                            )
+                                    }
                                 }
-                            }
                         )
+
+                        // RIGHT: Details Panel (resizable)
+                        Box(
+                            modifier = Modifier
+                                .weight(detailsPanelFraction)
+                                .fillMaxHeight()
+                        ) {
+                            SideDetailsPanel(
+                                selectedNode = selectedNodeId?.let { graphData.nodes[it] },
+                                selectedStep = selectedStep,
+                                onStepSelect = { step ->
+                                    selectedStep = if (selectedStep == step) null else step
+                                },
+                                availableGroups = allSessionGroups,
+                                collapsedSubgraphs = collapsedSubgraphs,
+                                onToggleSubgraph = { group ->
+                                    collapsedSubgraphs = if (collapsedSubgraphs.contains(group)) {
+                                        collapsedSubgraphs - group
+                                    } else {
+                                        collapsedSubgraphs + group
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
 
@@ -940,6 +1017,7 @@ fun ExpandableStepItem(
 ) {
     val clipboardManager = LocalClipboardManager.current
     var isCopied by remember { mutableStateOf(false) }
+    val activeToolsDiff = remember(step.data) { extractActiveToolsDiff(step.data) }
 
     LaunchedEffect(isCopied) {
         if (isCopied) {
@@ -948,7 +1026,7 @@ fun ExpandableStepItem(
         }
     }
 
-    val copyContent = remember(step) {
+    val copyContent = remember(step, activeToolsDiff) {
         buildString {
             appendLine("=== Step #${step.stepIndex}: ${step.nodeName} ===")
             appendLine()
@@ -963,6 +1041,16 @@ fun ExpandableStepItem(
                 appendLine()
                 appendLine("SAVED TO HISTORY:")
                 appendLine(it.trim())
+            }
+            activeToolsDiff?.let {
+                appendLine()
+                appendLine("ACTIVE TOOLS CHANGED:")
+                if (it.added.isNotEmpty()) {
+                    appendLine("+ ${it.added.joinToString(", ")}")
+                }
+                if (it.removed.isNotEmpty()) {
+                    appendLine("- ${it.removed.joinToString(", ")}")
+                }
             }
         }
     }
@@ -1047,6 +1135,35 @@ fun ExpandableStepItem(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
                                         color = Color(0xFFA5D6A7)
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    
+                    if (activeToolsDiff != null) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                "ACTIVE TOOLS CHANGED",
+                                style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                            )
+                            if (activeToolsDiff.added.isNotEmpty()) {
+                                Text(
+                                    text = "+ ${activeToolsDiff.added.joinToString(", ")}",
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        color = Color(0xFFB9F6CA)
+                                    )
+                                )
+                            }
+                            if (activeToolsDiff.removed.isNotEmpty()) {
+                                Text(
+                                    text = "- ${activeToolsDiff.removed.joinToString(", ")}",
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        color = Color(0xFFFF8A80)
                                     )
                                 )
                             }

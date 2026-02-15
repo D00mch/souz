@@ -19,6 +19,8 @@ class GraphSessionService(
     companion object {
         const val NODE_NAME_CLASSIFY = "classify"
         private const val DATA_KEY_SELECTED_CATEGORIES = "selectedCategories"
+        private const val DATA_KEY_INPUT = "input"
+        private const val DATA_KEY_ACTIVE_TOOLS = "activeTools"
         private const val DATA_KEY_IN = "in"
         private const val DATA_KEY_OUT = "out"
     }
@@ -52,10 +54,13 @@ class GraphSessionService(
         }
 
         val debugData = try {
-            val baseData = mutableMapOf(DATA_KEY_IN to from.input, DATA_KEY_OUT to to.input)
-            
+            val baseData = mutableMapOf<String, Any?>(
+                DATA_KEY_IN to contextDebugData(from),
+                DATA_KEY_OUT to contextDebugData(to),
+            )
+
             if (node.name.lowercase().contains(NODE_NAME_CLASSIFY)) {
-                val toToolNames = to.activeTools.map { it.name }.toSet()
+                val toToolNames = to.activeToolNames().toSet()
                 val selectedCategories = to.settings.toolsByCategory
                     .filter { (_, tools) -> tools.keys.any { it in toToolNames } }
                     .keys
@@ -64,7 +69,7 @@ class GraphSessionService(
                     baseData[DATA_KEY_SELECTED_CATEGORIES] = selectedCategories
                 }
             }
-            
+
             logObjectMapper.writeValueAsString(baseData)
         } catch (e: Exception) {
             logObjectMapper.writeValueAsString(mapOf("error" to e.toString()))
@@ -92,6 +97,16 @@ class GraphSessionService(
             )
         )
     }
+
+    private fun contextDebugData(ctx: AgentContext<*>): Map<String, Any?> = mapOf(
+        DATA_KEY_INPUT to ctx.input,
+        DATA_KEY_ACTIVE_TOOLS to ctx.activeToolNames()
+    )
+
+    private fun AgentContext<*>.activeToolNames(): List<String> = activeTools
+        .map { it.name }
+        .distinct()
+        .sorted()
 
     fun finishTask() {
         val sessionId = currentSessionId.getAndSet(null) ?: return

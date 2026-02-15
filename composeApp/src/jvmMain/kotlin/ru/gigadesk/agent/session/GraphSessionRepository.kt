@@ -13,7 +13,7 @@ import java.io.File
 class GraphSessionRepository {
     private val l = LoggerFactory.getLogger(GraphSessionRepository::class.java)
     private val sessionsDir: File by lazy {
-        File(FilesToolUtil.homeDirectory, "${FilesToolUtil.homeStr}/.local/state/gigadesk/").apply { mkdirs() }
+        File(FilesToolUtil.homeDirectory, ".local/state/gigadesk/").apply { mkdirs() }
     }
 
     fun save(session: GraphSession) {
