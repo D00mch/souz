@@ -68,6 +68,7 @@ object FinderService {
             path == "~" -> home
             path.equals("home", ignoreCase = true) -> home
             path.startsWith("~/") -> File(home, path.removePrefix("~/")).path
+            path.startsWith("home/", ignoreCase = true) -> File(home, path.substring(5)).path
             path == "\$HOME" -> home
             path.startsWith("\$HOME/") -> File(home, path.removePrefix("\$HOME/")).path
             else -> path

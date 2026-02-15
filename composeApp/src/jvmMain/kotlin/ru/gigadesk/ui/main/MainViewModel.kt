@@ -109,6 +109,12 @@ class MainViewModel(
             is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
             is MainEvent.UpdateChatModel -> updateChatModel(event.model)
             is MainEvent.UpdateChatContextSize -> updateChatContextSize(event.size)
+            is MainEvent.OpenPath -> {
+                ru.gigadesk.ui.common.FinderService.openInFinder(event.path)
+                    .onFailure { error ->
+                        send(MainEffect.ShowError(error.message ?: "Не удалось открыть путь"))
+                    }
+            }
             MainEvent.SendChatMessage -> vmLaunch {
                 chatUseCase.sendChatMessage(
                     scope = viewModelScope,

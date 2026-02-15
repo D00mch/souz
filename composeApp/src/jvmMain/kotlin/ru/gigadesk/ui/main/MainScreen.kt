@@ -92,11 +92,11 @@ private val ChatAssistantTimestampColor = Color(0x7FFFFFFF)
 private val FinderPathChipBackground = Color(0x2625CAB0)
 private val FinderPathChipBorder = Color(0x8812E0B5)
 private val FinderPathChipTextColor = Color(0xFF12E0B5)
-private val FinderQuotedPathPattern = Regex("""["']((?:~/|/)[^"'\r\n]+)["']""")
-private val FinderMarkdownLinkPathPattern = Regex("""\[[^\]]+]\(((?:~/|/)[^)]+)\)""")
-private val FinderInlineCodePathPattern = Regex("""`((?:~/|/)[^`\r\n]+)`""")
-private val FinderRawPathPattern = Regex("""(?<![A-Za-z0-9._~:/-])((?:~/|/)[^\s`"'<>|]+)""")
-private val FinderLineTailPathPattern = Regex("""(^|\s)((?:~/|/).+)$""")
+private val FinderQuotedPathPattern = Regex("""["']((?:~/|/|${'$'}HOME/)[^"'\r\n]+)["']""")
+private val FinderMarkdownLinkPathPattern = Regex("""\[[^\]]+]\(((?:~/|/|${'$'}HOME/)[^)]+)\)""")
+private val FinderInlineCodePathPattern = Regex("""`((?:~/|/|${'$'}HOME/)[^`\r\n]+)`""")
+private val FinderRawPathPattern = Regex("""(?<![A-Za-z0-9._~:/-])((?:~/|/|${'$'}HOME/)[^\s`"'<>|]+)""")
+private val FinderLineTailPathPattern = Regex("""(^|\s)((?:~/|/|${'$'}HOME/).+)$""")
 private val FinderPathTrailingChars = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '"', '\'')
 
 private data class FinderPathItem(
@@ -153,6 +153,7 @@ fun MainScreen(
         onClearContext = { viewModel.send(MainEvent.StopAgentJob) },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
+        onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
     )
 }
 
@@ -179,6 +180,7 @@ fun MainScreenContent(
     onClearContext: () -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
+    onOpenPath: (String) -> Unit = {},
 ) {
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
@@ -306,6 +308,7 @@ fun MainScreenContent(
                     onStopListening = onStopListening,
                     onStopSpeech = onStopSpeech,
                     onShowSnack = onShowSnack,
+                    onOpenPath = onOpenPath,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
@@ -447,6 +450,7 @@ fun ChatModeContent(
     onStopListening: () -> Unit,
     onStopSpeech: () -> Unit,
     onShowSnack: (String) -> Unit,
+    onOpenPath: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -502,7 +506,8 @@ fun ChatModeContent(
                         message = message,
                         isSpeaking = isSpeaking && speakingAssistantMessageId == message.id,
                         onStopSpeech = onStopSpeech,
-                        onShowSnack = onShowSnack
+                        onShowSnack = onShowSnack,
+                        onOpenPath = onOpenPath
                     )
                 }
 
@@ -572,7 +577,8 @@ private fun ChatBubble(
     message: ChatMessage,
     isSpeaking: Boolean,
     onStopSpeech: () -> Unit,
-    onShowSnack: (String) -> Unit
+    onShowSnack: (String) -> Unit,
+    onOpenPath: (String) -> Unit
 ) {
     val bubbleShape = if (message.isUser) {
         RoundedCornerShape(
@@ -701,10 +707,7 @@ private fun ChatBubble(
                                 displayName = item.displayName,
                                 isDirectory = item.isDirectory,
                                 onClick = {
-                                    FinderService.openInFinder(item.path)
-                                        .onFailure { error ->
-                                            onShowSnack(error.message ?: "Не удалось открыть путь")
-                                        }
+                                    onOpenPath(item.path)
                                 }
                             )
                         }
