@@ -1,0 +1,387 @@
+@file:OptIn(ExperimentalCoroutinesApi::class)
+
+package ru.gigadesk.ui.main
+
+import androidx.compose.ui.text.input.TextFieldValue
+import com.github.kwhat.jnativehook.GlobalScreen
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.mockkConstructor
+import io.mockk.mockkStatic
+import io.mockk.runs
+import io.mockk.unmockkAll
+import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
+import org.kodein.di.DI
+import org.kodein.di.bindSingleton
+import org.kodein.di.instance
+import ru.gigadesk.agent.GraphBasedAgent
+import ru.gigadesk.agent.engine.AgentContext
+import ru.gigadesk.agent.engine.AgentSettings
+import ru.gigadesk.audio.ActiveSoundRecorderImpl
+import ru.gigadesk.audio.InMemoryAudioRecorder
+import ru.gigadesk.audio.Say
+import ru.gigadesk.audio.rawToOpusOgg
+import ru.gigadesk.db.DesktopInfoRepository
+import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.giga.GigaModel
+import ru.gigadesk.giga.GigaResponse
+import ru.gigadesk.giga.GigaVoiceAPI
+import ru.gigadesk.tool.ToolPermissionBroker
+import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
+import ru.gigadesk.ui.main.usecases.VoiceInputUseCase
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class MainViewModelTest {
+
+    private lateinit var mainDispatcher: TestDispatcher
+
+    @BeforeTest
+    fun setUp() {
+        mainDispatcher = StandardTestDispatcher()
+        Dispatchers.setMain(mainDispatcher)
+
+        mockkConstructor(ActiveSoundRecorderImpl::class)
+        every { anyConstructed<ActiveSoundRecorderImpl>().prepare() } just runs
+        every { anyConstructed<ActiveSoundRecorderImpl>().startRecording() } just runs
+        coEvery { anyConstructed<ActiveSoundRecorderImpl>().stopRecording() } returns ByteArray(0)
+
+        mockkStatic(GlobalScreen::class)
+        every { GlobalScreen.registerNativeHook() } just runs
+        every { GlobalScreen.addNativeKeyListener(any()) } just runs
+        every { GlobalScreen.unregisterNativeHook() } just runs
+
+        mockkStatic("ru.gigadesk.audio.ActiveSoundRecorderKt")
+        every {
+            rawToOpusOgg(
+                rawData = any(), sampleRate = any(), sampleSizeInBits = any(), channels = any(), bitRate = any()
+            )
+        } returns byteArrayOf(1, 2, 3)
+    }
+
+    @AfterTest
+    fun tearDown() {
+        Dispatchers.resetMain()
+        unmockkAll()
+    }
+
+    @Test
+    fun `send stop, send drops, canceled first message, and keeps processing state`() = runTest(mainDispatcher) {
+        val firstResponse = CompletableDeferred<String>()
+        val secondResponse = CompletableDeferred<String>()
+        val harness = createHarness(executeBehavior = { input ->
+            when (input) {
+                "first request" -> firstResponse.await()
+                "second request" -> secondResponse.await()
+                else -> error("Unexpected input: $input")
+            }
+        }, onCancelActiveJob = {
+            firstResponse.completeExceptionally(CancellationException("Stopped by user"))
+        })
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("first request")))
+            viewModel.handleEvent(MainEvent.SendChatMessage)
+
+            val firstInProgress = awaitState(viewModel) { it.isProcessing }
+            assertTrue(firstInProgress.chatMessages.any { it.isUser && it.text == "first request" })
+
+            viewModel.handleEvent(MainEvent.StopAgentJob)
+
+            val afterStop = awaitState(viewModel) { !it.isProcessing }
+            assertFalse(afterStop.chatMessages.any { it.text == "first request" })
+
+            viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("second request")))
+            viewModel.handleEvent(MainEvent.SendChatMessage)
+
+            awaitState(viewModel) { state ->
+                state.isProcessing && state.chatMessages.any { it.isUser && it.text == "second request" }
+            }
+
+            secondResponse.complete("second answer")
+
+            val finalState = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "second answer" }
+            }
+            assertEquals(listOf("second request", "second answer"), finalState.chatMessages.map { it.text })
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `audio flow event cancels first message and runs second request`() = runTest(mainDispatcher) {
+        val firstResponse = CompletableDeferred<String>()
+        val secondResponse = CompletableDeferred<String>()
+        val harness: TestHarness = createHarness(
+            executeBehavior = { input ->
+                when (input) {
+                    "first request" -> firstResponse.await()
+                    "second request" -> secondResponse.await()
+                    else -> error("Unexpected input: $input")
+                }
+            },
+            onCancelActiveJob = {
+                firstResponse.completeExceptionally(CancellationException("Cancelled by alt press"))
+            },
+            recognizeBehavior = {
+                GigaResponse.RecognizeResponse(result = listOf("second request"))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("first request")))
+            viewModel.handleEvent(MainEvent.SendChatMessage)
+
+            awaitState(viewModel) { state ->
+                state.isProcessing && state.chatMessages.any { it.isUser && it.text == "first request" }
+            }
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(9, 8, 7))
+            val secondInProgress = awaitState(viewModel) { state ->
+                state.isProcessing && state.chatMessages.any { it.isUser && it.text == "second request" }
+            }
+            assertFalse(secondInProgress.chatMessages.any { it.text == "first request" })
+
+            secondResponse.complete("second answer")
+
+            val finalState = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "second answer" }
+            }
+            assertEquals(listOf("second request", "second answer"), finalState.chatMessages.map { it.text })
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `response while speaking sets isSpeaking true, updates history, completes processing`() =
+        runTest(mainDispatcher) {
+            val response = CompletableDeferred<String>()
+            val harness = createHarness(
+                executeBehavior = { input ->
+                    if (input != "hello") error("Unexpected input: $input")
+                    response.await()
+                },
+                recognizeBehavior = {
+                    GigaResponse.RecognizeResponse(result = listOf("hello"))
+                },
+            )
+
+            try {
+                val viewModel = harness.viewModel
+                advanceUntilIdle()
+
+                awaitVoiceRequestStarted(viewModel, byteArrayOf(1, 2, 3)) { state ->
+                    state.isProcessing && state.chatMessages.any { it.isUser && it.text == "hello" }
+                }
+
+                harness.isSpeakingFlow.value = true
+                response.complete("hi there")
+
+                val finalState = awaitState(viewModel) { state ->
+                    !state.isProcessing && state.isSpeaking && state.chatMessages.any { !it.isUser && it.text == "hi there" }
+                }
+
+                assertTrue(finalState.isSpeaking)
+                assertEquals(listOf("hello", "hi there"), finalState.chatMessages.map { it.text })
+            } finally {
+                harness.clear()
+            }
+        }
+
+    @Test
+    fun `missing input monitoring permission updates status message`() = runTest(mainDispatcher) {
+        every { GlobalScreen.registerNativeHook() } throws RuntimeException("Input monitoring denied")
+        val harness = createHarness()
+
+        try {
+            val viewModel = harness.viewModel
+
+            val permissionState = awaitState(viewModel) { state ->
+                state.statusMessage.contains("мониторингу ввода")
+            }
+
+            assertTrue(permissionState.statusMessage.contains("приложение перезапустится автоматически"))
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `onboarding shows welcome text and marks onboarding as completed`() = runTest(mainDispatcher) {
+        val harness = createHarness(needsOnboarding = true)
+
+        try {
+            val viewModel = harness.viewModel
+
+            val onboardingState = awaitState(viewModel) { state ->
+                state.displayedText.contains("Привет! Я GigaDesk")
+            }
+
+            assertTrue(onboardingState.displayedText.contains("Для запуска голосового ввода"))
+            verify { harness.settingsProvider.needsOnboarding = false }
+            verify(exactly = 1) { harness.say.queue(any()) }
+        } finally {
+            harness.clear()
+        }
+    }
+
+
+    private suspend fun TestScope.awaitState(
+        viewModel: MainViewModel,
+        predicate: (MainState) -> Boolean,
+    ): MainState {
+        val deadlineMs = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < deadlineMs) {
+            runCurrent()
+            val state = viewModel.uiState.value
+            if (predicate(state)) return state
+            withContext(Dispatchers.Default) { yield() }
+        }
+        error("Timed out waiting for expected MainState")
+    }
+
+    private suspend fun TestScope.awaitVoiceRequestStarted(
+        viewModel: MainViewModel,
+        data: ByteArray,
+        predicate: (MainState) -> Boolean,
+    ): MainState {
+        val deadlineMs = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < deadlineMs) {
+            emitAudioFlowEvent(viewModel, data)
+            runCurrent()
+            val state = viewModel.uiState.value
+            if (predicate(state)) return state
+            withContext(Dispatchers.Default) { yield() }
+        }
+        error("Timed out waiting for voice request to start")
+    }
+
+    private suspend fun emitAudioFlowEvent(viewModel: MainViewModel, data: ByteArray) {
+        val voiceInputUseCaseField = MainViewModel::class.java.getDeclaredField("voiceInputUseCase")
+        voiceInputUseCaseField.isAccessible = true
+        val voiceInputUseCase = voiceInputUseCaseField.get(viewModel) as VoiceInputUseCase
+        val recorder = voiceInputUseCase.audioRecorder
+
+        val flowField = InMemoryAudioRecorder::class.java.getDeclaredField("_audioFlow")
+        flowField.isAccessible = true
+        @Suppress("UNCHECKED_CAST") val audioFlow = flowField.get(recorder) as MutableSharedFlow<ByteArray>
+        audioFlow.emit(data)
+    }
+
+    private fun createHarness(
+        executeBehavior: suspend (String) -> String = { "stub response" },
+        onCancelActiveJob: () -> Unit = {},
+        needsOnboarding: Boolean = false,
+        recognizeBehavior: suspend (ByteArray) -> GigaResponse.RecognizeResponse = {
+            GigaResponse.RecognizeResponse()
+        },
+    ): TestHarness {
+        val graphAgent = mockk<GraphBasedAgent>(relaxed = true)
+        val sideEffects = MutableSharedFlow<String>()
+        every { graphAgent.sideEffects } returns sideEffects
+        every { graphAgent.currentContext } returns MutableStateFlow(emptyAgentContext())
+        every { graphAgent.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
+        coEvery { graphAgent.execute(any()) } coAnswers {
+            executeBehavior.invoke(firstArg())
+        }
+
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        every { settingsProvider.gigaModel } returns GigaModel.Max
+        every { settingsProvider.contextSize } returns 16_000
+        every { settingsProvider.useStreaming } returns false
+        var needsOnboardingState = needsOnboarding
+        every { settingsProvider.needsOnboarding } answers { needsOnboardingState }
+        every { settingsProvider.needsOnboarding = any() } answers { needsOnboardingState = firstArg() }
+        every { settingsProvider.safeModeEnabled } returns false
+
+        val say = mockk<Say>(relaxed = true)
+        val speakingFlow = MutableStateFlow(false)
+        every { say.isSpeaking } returns speakingFlow
+
+        val desktopInfoRepository = mockk<DesktopInfoRepository>(relaxed = true)
+        coEvery { desktopInfoRepository.storeDesktopDataDaily() } returns Unit
+
+        val gigaVoiceApi = mockk<GigaVoiceAPI>(relaxed = true)
+        coEvery { gigaVoiceApi.recognize(any()) } coAnswers {
+            recognizeBehavior.invoke(firstArg())
+        }
+
+        val toolPermissionBroker = ToolPermissionBroker(settingsProvider)
+
+        val di = DI {
+            bindSingleton { graphAgent }
+            bindSingleton { gigaVoiceApi }
+            bindSingleton { desktopInfoRepository }
+            bindSingleton<SettingsProvider> { settingsProvider }
+            bindSingleton { say }
+            bindSingleton { toolPermissionBroker }
+            bindSingleton { InMemoryAudioRecorder() }
+            bindSingleton {
+                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance())
+            }
+        }
+
+        val viewModel = MainViewModel(di)
+        val agentRefField = MainViewModel::class.java.getDeclaredField("agentRef")
+        agentRefField.isAccessible = true
+        @Suppress("UNCHECKED_CAST") val agentRef = agentRefField.get(viewModel) as AtomicReference<GraphBasedAgent?>
+        agentRef.set(graphAgent)
+
+        return TestHarness(
+            viewModel = viewModel,
+            isSpeakingFlow = speakingFlow,
+            settingsProvider = settingsProvider,
+            say = say,
+        )
+    }
+
+    private fun emptyAgentContext() = AgentContext(
+        input = "", settings = AgentSettings(
+            model = GigaModel.Max.alias, temperature = 0f, toolsByCategory = emptyMap()
+        ), history = emptyList(), activeTools = emptyList(), systemPrompt = ""
+    )
+
+    private data class TestHarness(
+        val viewModel: MainViewModel,
+        val isSpeakingFlow: MutableStateFlow<Boolean>,
+        val settingsProvider: SettingsProvider,
+        val say: Say,
+    ) {
+        fun clear() {
+            val onCleared = MainViewModel::class.java.getDeclaredMethod("onCleared")
+            onCleared.isAccessible = true
+            onCleared.invoke(viewModel)
+        }
+    }
+}

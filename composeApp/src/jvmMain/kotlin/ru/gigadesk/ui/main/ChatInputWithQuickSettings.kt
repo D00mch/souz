@@ -19,6 +19,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -64,6 +65,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerMoveFilter
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextRange
@@ -133,7 +135,8 @@ internal fun ChatInputWithQuickSettings(
     onCancel: () -> Unit,
     isProcessing: Boolean,
     isListening: Boolean,
-    onToggleListening: () -> Unit,
+    onStartListening: () -> Unit,
+    onStopListening: () -> Unit,
     enabled: Boolean,
     focusRequester: FocusRequester,
     selectedModel: String,
@@ -277,7 +280,8 @@ internal fun ChatInputWithQuickSettings(
                 VoiceToggleButton(
                     isListening = isListening,
                     enabled = canToggleMic,
-                    onClick = onToggleListening
+                    onPressStart = onStartListening,
+                    onPressEnd = onStopListening
                 )
 
                 Spacer(Modifier.width(8.dp))
@@ -300,15 +304,16 @@ internal fun ChatInputWithQuickSettings(
 private fun VoiceToggleButton(
     isListening: Boolean,
     enabled: Boolean,
-    onClick: () -> Unit,
+    onPressStart: () -> Unit,
+    onPressEnd: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
-    val isPressed by interactionSource.collectIsPressedAsState()
+    var isPressing by remember { mutableStateOf(false) }
     var showTooltip by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = when {
-            isPressed -> 0.95f
+            isPressing -> 0.95f
             isHovered -> 1.05f
             else -> 1f
         },
@@ -344,12 +349,21 @@ private fun VoiceToggleButton(
                 .border(1.dp, hoverBorderColor, CircleShape)
                 .hoverable(interactionSource = interactionSource)
                 .pointerHoverIcon(PointerIcon.Hand)
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    enabled = enabled,
-                    onClick = onClick
-                ),
+                .pointerInput(enabled) {
+                    detectTapGestures(
+                        onPress = {
+                            if (!enabled) return@detectTapGestures
+                            isPressing = true
+                            onPressStart()
+                            try {
+                                tryAwaitRelease()
+                            } finally {
+                                isPressing = false
+                                onPressEnd()
+                            }
+                        }
+                    )
+                },
             contentAlignment = Alignment.Center
         ) {
             Icon(

@@ -162,7 +162,7 @@ object GigaRequest {
         val temperature: Float? = null,
         val stream: Boolean = false,
         val maxTokens: Int = DEFAULT_MAX_TOKENS,
-        @field:JsonProperty("update_interval") val updateInterval: Int? = 1,
+        @field:JsonProperty("update_interval") val updateInterval: Int? = 0,
     ) {
         /**
          * OpenAI expects function to provide call IDs, but Giga and Qwen does not.

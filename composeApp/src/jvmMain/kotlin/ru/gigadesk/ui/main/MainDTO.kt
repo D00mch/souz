@@ -6,6 +6,7 @@ import ru.gigadesk.ui.VMEvent
 import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
 import androidx.compose.ui.text.input.TextFieldValue
+import ru.gigadesk.giga.GigaRequest
 
 /**
  * Chat message for the chat mode.
@@ -35,7 +36,7 @@ data class MainState(
     val lastKnownAgentContext: AgentContext<String>? = null,
     val userExpectCloseOnX: Boolean = false,
     val isProcessing: Boolean = false,
-    val agentHistory: List<ru.gigadesk.giga.GigaRequest.Message> = emptyList(),
+    val agentHistory: List<GigaRequest.Message> = emptyList(),
     val isThinkingPanelOpen: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
     val chatStartTip: String = randomStatusTip,
