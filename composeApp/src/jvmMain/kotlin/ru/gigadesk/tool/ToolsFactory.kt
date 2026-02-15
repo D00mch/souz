@@ -19,6 +19,8 @@ import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
 import ru.gigadesk.tool.math.ToolCalculator
+import ru.gigadesk.tool.presentation.ToolPresentationCreate
+import ru.gigadesk.tool.presentation.ToolPresentationRead
 
 typealias FunctionName = String
 
@@ -74,6 +76,10 @@ class ToolsFactory(di: DI) {
     // Excel tools
     private val excelRead: ExcelRead by di.instance()
     private val excelReport: ExcelReport by di.instance()
+
+    // Presentation tools
+    private val toolPresentationCreate: ToolPresentationCreate by di.instance()
+    private val toolPresentationRead: ToolPresentationRead by di.instance()
 
     val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
@@ -163,6 +169,13 @@ class ToolsFactory(di: DI) {
         ToolCategory.DESKTOP -> listOf(
             toolTakeScreenshot.toGiga(),
             toolStartScreenRecording.toGiga(),
+        )
+
+        ToolCategory.PRESENTATION -> listOf(
+            toolPresentationCreate.toGiga(),
+            toolPresentationRead.toGiga(),
+            toolListFiles.toGiga(),
+            toolFindFilesByName.toGiga(),
         )
     }.map {
         object : GigaToolSetup by it {

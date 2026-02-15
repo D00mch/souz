@@ -59,14 +59,14 @@ import java.util.concurrent.atomic.AtomicLong
 class GraphAgentToolScenariosIntegrationTest {
 
     private object Setup {
-        val selectedModel = GigaModel.AiTunnelClaudeHaiku
+        val selectedModel = GigaModel.AiTunnelGpt5Nano
 
         val spySettings: SettingsProviderImpl by lazy {
             spyk(SettingsProviderImpl(ConfigStore)) {
                 every { forbiddenFolders } returns emptyList()
                 every { useStreaming } returns false
                 every { gigaModel } returns selectedModel
-                every { requestTimeoutMillis } returns 25_000L
+                every { requestTimeoutMillis } returns 60_000L
                 every { temperature } returns 0.2f
                 every { systemPrompt } returns "Будь полезен. Выполняй инструкции с помощью тулов."
             }
@@ -1000,7 +1000,7 @@ class GraphAgentToolScenariosIntegrationTest {
         }
         coVerify(atLeast = 1) {
             excelReport.invoke(match {
-                it.path.contains("stats") && !it.data.isNullOrEmpty()
+                it.path.contains("stats") && !it.csvData.isNullOrEmpty()
             })
         }
     }

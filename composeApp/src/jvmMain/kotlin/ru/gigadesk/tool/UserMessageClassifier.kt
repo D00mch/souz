@@ -28,6 +28,7 @@ enum class ToolCategory {
     CALCULATOR,
     CHAT,
     DESKTOP,
+    PRESENTATION,
 }
 
 object LocalRegexClassifier : UserMessageClassifier {
@@ -134,6 +135,12 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("calculate|посчитай|вычисли|сколько будет|реши|math|count"), 2.0),
             WeightedRegex(Regex("calculator|калькулятор"), 1.5),
             WeightedRegex(Regex("\\d+\\s*[+\\-*/^]\\s*\\d+"), 1.5), // Simple math expressions
+        )
+
+        ToolCategory.PRESENTATION -> listOf(
+            WeightedRegex(Regex("презентац|слайд|pptx|powerpoint|keynote|выступлени|доклад|presentation|slide"), 1.5),
+            WeightedRegex(Regex("создай презентац|сделай слайд|напиши презентац|слайды"), 2.0),
+            WeightedRegex(Regex("прочитай презентац|анализ слайд|что в презентац"), 1.7),
         )
     }
 

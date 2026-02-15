@@ -1,11 +1,14 @@
 package ru.gigadesk.tool.dataAnalytics.excel
 
+import org.apache.commons.csv.CSVFormat
+import org.apache.commons.csv.CSVParser
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ForbiddenFolder
 import java.io.File
 import java.io.FileOutputStream
+import java.io.StringReader
 
 class ExcelReport(
     private val filesToolUtil: FilesToolUtil
@@ -18,8 +21,8 @@ class ExcelReport(
         @InputParamDescription("Headers for the first row (comma separated string, e.g. 'Name, Age')")
         val headers: String? = null,
 
-        @InputParamDescription("Data to write. List of lists (rows).")
-        val data: List<List<Any?>>? = null,
+        @InputParamDescription("Data to write (CSV format). Rows separated by newline, cells by comma.")
+        val csvData: String? = null,
 
         @InputParamDescription("Sheet name")
         val sheetName: String? = null
@@ -28,7 +31,7 @@ class ExcelReport(
     override val name = "ExcelReport"
     override val description = """Create a NEW Excel file with headers and data.
 - headers: comma-separated, e.g. 'Name, Age, City'
-- data: list of rows, e.g. [["John", 25], ["Jane", 30]]
+- csvData: data in CSV format, e.g. "John,25\nJane,30"
 File must not exist. For reading use ExcelRead."""
 
     override val fewShotExamples = listOf(
@@ -37,7 +40,7 @@ File must not exist. For reading use ExcelRead."""
             params = mapOf(
                 "path" to "sales_report.xlsx", 
                 "headers" to "Date, Amount",
-                "data" to listOf(listOf("2024-01-01", 100), listOf("2024-01-02", 200))
+                "csvData" to "2024-01-01,100\n2024-01-02,200"
             )
         )
     )
@@ -55,6 +58,7 @@ File must not exist. For reading use ExcelRead."""
             val sheet = wb.createSheet(input.sheetName ?: "Report")
             
             var rowIdx = 0
+            var maxColumns = 0
 
             if (!input.headers.isNullOrBlank()) {
                 val row = sheet.createRow(rowIdx++)
@@ -63,35 +67,56 @@ File must not exist. For reading use ExcelRead."""
                 font.bold = true
                 style.setFont(font)
 
-                input.headers.split(",").forEachIndexed { i, h ->
+                parseCsvRows(input.headers).firstOrNull().orEmpty().forEachIndexed { i, h ->
                     val cell = row.createCell(i)
-                    cell.setCellValue(h.trim())
+                    cell.setCellValue(h)
                     cell.cellStyle = style
                 }
+                maxColumns = maxOf(maxColumns, row.lastCellNum.toInt())
             }
 
             // Data
-            input.data?.forEach { rowData ->
-                val row = sheet.createRow(rowIdx++)
-                rowData.forEachIndexed { i, value ->
-                    val cell = row.createCell(i)
-                    when (value) {
-                        is Number -> cell.setCellValue(value.toDouble())
-                        is Boolean -> cell.setCellValue(value)
-                        null -> cell.setBlank()
-                        else -> cell.setCellValue(value.toString())
+            if (!input.csvData.isNullOrBlank()) {
+                parseCsvRows(input.csvData).forEach { cells ->
+                    val row = sheet.createRow(rowIdx++)
+
+                    cells.forEachIndexed { i, valueStr ->
+                        val cell = row.createCell(i)
+                        val doubleVal = valueStr.toDoubleOrNull()
+                        val boolVal = when {
+                            valueStr.equals("true", ignoreCase = true) -> true
+                            valueStr.equals("false", ignoreCase = true) -> false
+                            else -> null
+                        }
+
+                        when {
+                            doubleVal != null -> cell.setCellValue(doubleVal)
+                            boolVal != null -> cell.setCellValue(boolVal)
+                            else -> cell.setCellValue(valueStr)
+                        }
                     }
+                    maxColumns = maxOf(maxColumns, row.lastCellNum.toInt())
                 }
             }
 
-            if (rowIdx > 0) {
-                 val cols = sheet.getRow(0)?.lastCellNum?.toInt() ?: 0
-                 for(i in 0 until cols) sheet.autoSizeColumn(i)
+            if (rowIdx > 0 && maxColumns > 0) {
+                for (i in 0 until maxColumns) sheet.autoSizeColumn(i)
             }
 
             FileOutputStream(file).use { wb.write(it) }
         }
 
         return "Created report ${input.path}"
+    }
+
+    private fun parseCsvRows(csvData: String): List<List<String>> {
+        val format = CSVFormat.DEFAULT.builder()
+            .setTrim(true)
+            .setIgnoreEmptyLines(true)
+            .build()
+
+        return CSVParser(StringReader(csvData), format).use { parser ->
+            parser.records.map { record -> record.map { it } }
+        }
     }
 }
