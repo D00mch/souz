@@ -46,9 +46,7 @@ import org.kodein.di.compose.localDI
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
-import java.awt.FileDialog
-import java.awt.Frame
-import java.io.File
+import javax.swing.JFileChooser
 
 @Composable
 fun FoldersManagementScreen(
@@ -293,35 +291,17 @@ private fun ForbiddenFolderCard(
 }
 
 private fun chooseFolderFromFinder(): String? {
-    val propertyKey = "apple.awt.fileDialogForDirectories"
-    val previousValue = System.getProperty(propertyKey)
-    var dialog: FileDialog? = null
-
-    return try {
-        System.setProperty(propertyKey, "true")
-        dialog = FileDialog(null as Frame?, "Выберите папку", FileDialog.LOAD).apply {
-            isMultipleMode = false
-            isVisible = true
-        }
-
-        val selected = dialog.files.firstOrNull()
-            ?: dialog.file?.let { fileName ->
-                val directory = dialog.directory ?: return null
-                File(directory, fileName)
-            }
-            ?: return null
-
-        runCatching { selected.canonicalPath }.getOrElse { selected.absolutePath }
-    } catch (_: Throwable) {
-        null
-    } finally {
-        dialog?.dispose()
-        if (previousValue == null) {
-            System.clearProperty(propertyKey)
-        } else {
-            System.setProperty(propertyKey, previousValue)
-        }
+    val chooser = JFileChooser().apply {
+        dialogTitle = "Выберите папку"
+        fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+        isMultiSelectionEnabled = false
+        isAcceptAllFileFilterUsed = false
     }
+    val result = chooser.showOpenDialog(null)
+    if (result != JFileChooser.APPROVE_OPTION) return null
+
+    val selected = chooser.selectedFile ?: return null
+    return runCatching { selected.canonicalPath }.getOrElse { selected.absolutePath }
 }
 
 @Preview

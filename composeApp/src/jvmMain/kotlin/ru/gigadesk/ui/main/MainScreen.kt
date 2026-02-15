@@ -62,6 +62,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.kodein.di.compose.localDI
 import ru.gigadesk.ui.common.ConnectionStatusNotification
 import ru.gigadesk.ui.common.DraggableWindowArea
@@ -96,6 +98,12 @@ private val FinderInlineCodePathPattern = Regex("""`((?:~/|/)[^`\r\n]+)`""")
 private val FinderRawPathPattern = Regex("""(?<![A-Za-z0-9._~:/-])((?:~/|/)[^\s`"'<>|]+)""")
 private val FinderLineTailPathPattern = Regex("""(^|\s)((?:~/|/).+)$""")
 private val FinderPathTrailingChars = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '"', '\'')
+
+private data class FinderPathItem(
+    val path: String,
+    val displayName: String,
+    val isDirectory: Boolean,
+)
 
 
 @Composable
@@ -648,7 +656,14 @@ private fun ChatBubble(
                     fontSize = baseFontSize * 0.9,
                     color = Color(0xFFE0E0E0)
                 )
-                val clickablePaths = remember(message.text) { extractExistingPathsFromMessage(message.text) }
+                val clickablePaths by produceState(
+                    initialValue = emptyList<FinderPathItem>(),
+                    key1 = message.text
+                ) {
+                    value = withContext(Dispatchers.IO) {
+                        extractFinderPathItemsFromMessage(message.text)
+                    }
+                }
                 
                 val bubbleTypography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.SMALL)
                 val bubbleColors = chatMarkdownColors(baseStyle.color)
@@ -680,13 +695,13 @@ private fun ChatBubble(
                 if (clickablePaths.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        clickablePaths.forEach { path ->
+                        clickablePaths.forEach { item ->
                             FinderPathChip(
-                                path = path,
-                                displayName = FinderService.displayName(path),
-                                isDirectory = FinderService.isDirectory(path),
+                                path = item.path,
+                                displayName = item.displayName,
+                                isDirectory = item.isDirectory,
                                 onClick = {
-                                    FinderService.openInFinder(path)
+                                    FinderService.openInFinder(item.path)
                                         .onFailure { error ->
                                             onShowSnack(error.message ?: "Не удалось открыть путь")
                                         }
@@ -771,6 +786,15 @@ private fun FinderPathChip(
         }
     }
 }
+
+private fun extractFinderPathItemsFromMessage(content: String): List<FinderPathItem> =
+    extractExistingPathsFromMessage(content).map { path ->
+        FinderPathItem(
+            path = path,
+            displayName = FinderService.displayName(path),
+            isDirectory = FinderService.isDirectory(path)
+        )
+    }
 
 private fun extractExistingPathsFromMessage(content: String): List<String> {
     if (content.isBlank()) return emptyList()

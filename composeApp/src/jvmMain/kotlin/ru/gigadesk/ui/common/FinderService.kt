@@ -6,20 +6,22 @@ import java.io.File
 object FinderService {
 
     private const val fileSchemePrefix = "file://"
+    private val windowsRootPathPattern = Regex("""^[A-Za-z]:/$""")
 
     fun normalizePath(rawPath: String): String? {
         val trimmed = rawPath.trim()
             .removeSurrounding("\"")
             .removeSurrounding("'")
-            .removePrefix(fileSchemePrefix)
+            .let(::stripFileSchemePrefix)
         if (trimmed.isBlank()) return null
 
-        val expanded = expandHome(trimmed)
-        val normalized = runCatching { File(expanded).canonicalPath }
-            .getOrElse { File(expanded).absolutePath }
+        val expanded = expandHomeAliases(trimmed)
+        val normalizedFile = resolveRelativeToHome(expanded)
+        val normalized = runCatching { normalizedFile.canonicalPath }
+            .getOrElse { normalizedFile.absolutePath }
             .replace('\\', '/')
 
-        return if (normalized.length > 1) normalized.trimEnd('/') else normalized
+        return trimTrailingSeparator(normalized)
     }
 
     fun displayName(rawPath: String): String {
@@ -60,16 +62,42 @@ object FinderService {
         desktop.open(openTarget)
     }
 
-    private fun expandHome(path: String): String {
-        val home = System.getProperty("user.home")
-            ?: System.getenv("HOME")
-            ?: return path
+    private fun expandHomeAliases(path: String): String {
+        val home = currentHomePath() ?: return path
         return when {
             path == "~" -> home
+            path.equals("home", ignoreCase = true) -> home
             path.startsWith("~/") -> File(home, path.removePrefix("~/")).path
+            path == "\$HOME" -> home
+            path.startsWith("\$HOME/") -> File(home, path.removePrefix("\$HOME/")).path
             else -> path
         }
     }
+
+    private fun resolveRelativeToHome(path: String): File {
+        val file = File(path)
+        if (file.isAbsolute) return file
+
+        val home = currentHomePath() ?: return file
+        return File(home, file.path)
+    }
+
+    private fun stripFileSchemePrefix(path: String): String {
+        return if (path.startsWith(fileSchemePrefix, ignoreCase = true)) {
+            path.substring(fileSchemePrefix.length)
+        } else {
+            path
+        }
+    }
+
+    private fun trimTrailingSeparator(path: String): String {
+        if (path.length <= 1) return path
+        if (windowsRootPathPattern.matches(path)) return path
+        return path.trimEnd('/')
+    }
+
+    private fun currentHomePath(): String? =
+        System.getProperty("user.home") ?: System.getenv("HOME")
 
     private fun isMacOs(): Boolean =
         System.getProperty("os.name")

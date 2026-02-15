@@ -16,7 +16,11 @@ class FoldersManagementViewModel(
     private val settingsProvider: SettingsProvider by di.instance()
 
     init {
-        vmLaunch { refreshFoldersState(settingsProvider.forbiddenFolders) }
+        vmLaunch {
+            setState {
+                copy(forbiddenFolders = mapFoldersToItems(settingsProvider.forbiddenFolders))
+            }
+        }
     }
 
     override fun initialState(): FoldersManagementState = FoldersManagementState()
@@ -48,20 +52,23 @@ class FoldersManagementViewModel(
     }
 
     private suspend fun refreshFoldersState(rawFolders: List<String>) {
-        val normalizedFolders = rawFolders
-            .mapNotNull(FinderService::normalizePath)
-            .distinctBy { it.lowercase() }
-
-        settingsProvider.forbiddenFolders = normalizedFolders
+        val folders = mapFoldersToItems(rawFolders)
+        settingsProvider.forbiddenFolders = folders.map { it.path }
         setState {
             copy(
-                forbiddenFolders = normalizedFolders.map { path ->
-                    ForbiddenFolderItem(
-                        title = FinderService.displayName(path),
-                        path = path
-                    )
-                }
+                forbiddenFolders = folders
             )
         }
     }
+
+    private fun mapFoldersToItems(rawFolders: List<String>): List<ForbiddenFolderItem> =
+        rawFolders
+            .mapNotNull(FinderService::normalizePath)
+            .distinctBy { it.lowercase() }
+            .map { path ->
+                ForbiddenFolderItem(
+                    title = FinderService.displayName(path),
+                    path = path
+                )
+            }
 }
