@@ -18,10 +18,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Replay
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -81,6 +83,9 @@ private val ChatAssistantBubbleBackground = Color(0x4C000000)
 private val ChatAssistantBubbleBorderColor = Color(0x33FFFFFF)
 private val ChatAssistantTextColor = Color(0xE5FFFFFF)
 private val ChatAssistantTimestampColor = Color(0x7FFFFFFF)
+private val FinderPathChipBackground = Color(0x2625CAB0)
+private val FinderPathChipBorder = Color(0x8812E0B5)
+private val FinderPathChipTextColor = Color(0xFF12E0B5)
 
 
 @Composable
@@ -130,6 +135,7 @@ fun MainScreen(
         onClearContext = { viewModel.send(MainEvent.StopAgentJob) },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
+        onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
     )
 }
 
@@ -156,6 +162,7 @@ fun MainScreenContent(
     onClearContext: () -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
+    onOpenPath: (String) -> Unit = {},
 ) {
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
@@ -283,6 +290,7 @@ fun MainScreenContent(
                     onStopListening = onStopListening,
                     onStopSpeech = onStopSpeech,
                     onShowSnack = onShowSnack,
+                    onOpenPath = onOpenPath,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
@@ -424,6 +432,7 @@ fun ChatModeContent(
     onStopListening: () -> Unit,
     onStopSpeech: () -> Unit,
     onShowSnack: (String) -> Unit,
+    onOpenPath: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -479,7 +488,8 @@ fun ChatModeContent(
                         message = message,
                         isSpeaking = isSpeaking && speakingAssistantMessageId == message.id,
                         onStopSpeech = onStopSpeech,
-                        onShowSnack = onShowSnack
+                        onShowSnack = onShowSnack,
+                        onOpenPath = onOpenPath
                     )
                 }
 
@@ -549,7 +559,8 @@ private fun ChatBubble(
     message: ChatMessage,
     isSpeaking: Boolean,
     onStopSpeech: () -> Unit,
-    onShowSnack: (String) -> Unit
+    onShowSnack: (String) -> Unit,
+    onOpenPath: (String) -> Unit
 ) {
     val bubbleShape = if (message.isUser) {
         RoundedCornerShape(
@@ -633,6 +644,7 @@ private fun ChatBubble(
                     fontSize = baseFontSize * 0.9,
                     color = Color(0xFFE0E0E0)
                 )
+                val clickablePaths = message.finderPaths
                 
                 val bubbleTypography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.SMALL)
                 val bubbleColors = chatMarkdownColors(baseStyle.color)
@@ -660,6 +672,22 @@ private fun ChatBubble(
                         }
                     }
                 }
+
+                if (clickablePaths.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        clickablePaths.forEach { item ->
+                            FinderPathChip(
+                                path = item.path,
+                                displayName = item.displayName,
+                                isDirectory = item.isDirectory,
+                                onClick = {
+                                    onOpenPath(item.path)
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             Row(
@@ -678,6 +706,61 @@ private fun ChatBubble(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun FinderPathChip(
+    path: String,
+    displayName: String,
+    isDirectory: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    TooltipArea(
+        delayMillis = 250,
+        tooltip = {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xE6000000))
+                    .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = path,
+                    color = Color(0xF2FFFFFF),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+    ) {
+        Row(
+            modifier = Modifier
+                .clip(shape)
+                .background(FinderPathChipBackground)
+                .border(1.dp, FinderPathChipBorder, shape)
+                .pointerHoverIcon(PointerIcon.Hand)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = if (isDirectory) Icons.Rounded.Folder else Icons.Rounded.Description,
+                contentDescription = null,
+                tint = FinderPathChipTextColor,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = displayName,
+                color = FinderPathChipTextColor,
+                fontSize = 14.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
