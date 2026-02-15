@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -32,6 +34,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
@@ -104,16 +107,19 @@ fun SetupScreenContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp, vertical = 24.dp),
+                    .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 DraggableWindowArea {
-                    Text(
-                        text = "Подключите API-ключи",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.glassColors.textPrimary
-                    )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Spacer(Modifier.height(24.dp))
+                        Text(
+                            text = "Подключите API-ключи",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.glassColors.textPrimary
+                        )
+                    }
                 }
 
                 Text(
@@ -192,6 +198,49 @@ fun SetupScreenContent(
                     )
                 }
             }
+        }
+        SetupBorderDragAreas(
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+@Composable
+private fun SetupBorderDragAreas(
+    modifier: Modifier = Modifier,
+    edgeThickness: Dp = 12.dp,
+) {
+    Box(modifier = modifier) {
+        DraggableWindowArea {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(edgeThickness)
+            )
+        }
+        DraggableWindowArea {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(edgeThickness)
+            )
+        }
+        DraggableWindowArea {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxHeight()
+                    .width(edgeThickness)
+            )
+        }
+        DraggableWindowArea {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(edgeThickness)
+            )
         }
     }
 }
