@@ -53,9 +53,12 @@ class OnboardingUseCase(
     }
 
     suspend fun runOnboardingIfNeeded() {
+        // TODO: do we need both checks? Can we refactor to use only one?
+        if (settingsProvider.onboardingCompleted) return
         if (!settingsProvider.needsOnboarding) return
 
         settingsProvider.needsOnboarding = false
+        settingsProvider.onboardingCompleted = true
         emitState { copy(displayedText = ONBOARDING_DISPLAY_TEXT) }
 
         onboardingSpeechStartedAt = System.currentTimeMillis()

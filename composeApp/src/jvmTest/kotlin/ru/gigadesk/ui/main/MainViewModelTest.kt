@@ -250,6 +250,7 @@ class MainViewModelTest {
 
             assertTrue(onboardingState.displayedText.contains("Для запуска голосового ввода"))
             verify { harness.settingsProvider.needsOnboarding = false }
+            verify { harness.settingsProvider.onboardingCompleted = true }
             verify(exactly = 1) { harness.say.queue(any()) }
         } finally {
             harness.clear()
@@ -323,6 +324,9 @@ class MainViewModelTest {
         var needsOnboardingState = needsOnboarding
         every { settingsProvider.needsOnboarding } answers { needsOnboardingState }
         every { settingsProvider.needsOnboarding = any() } answers { needsOnboardingState = firstArg() }
+        var onboardingCompletedState = false
+        every { settingsProvider.onboardingCompleted } answers { onboardingCompletedState }
+        every { settingsProvider.onboardingCompleted = any() } answers { onboardingCompletedState = firstArg() }
         every { settingsProvider.safeModeEnabled } returns false
 
         val say = mockk<Say>(relaxed = true)

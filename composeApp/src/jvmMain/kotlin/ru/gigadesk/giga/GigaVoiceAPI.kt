@@ -16,13 +16,14 @@ import ru.gigadesk.di.mainDiModule
 
 private val l = LoggerFactory.getLogger("GigaVoiceAPI")
 
+class MissingVoiceKeyException : IllegalStateException("VOICE_KEY is not set")
+
 class GigaVoiceAPI(
     private val auth: GigaAuth,
     private val keysProvider: SettingsProvider,
 ) {
     private val client = HttpClient(CIO) {
         var token = ""
-        val voiceKey = keysProvider.saluteSpeechKey ?: throw IllegalStateException("VOICE_KEY is not set")
         gigaDefaults(keysProvider)
         install(Auth) {
             bearer {
@@ -30,6 +31,7 @@ class GigaVoiceAPI(
                     BearerTokens(token, "")
                 }
                 refreshTokens {
+                    val voiceKey = requireVoiceKey()
                     token = auth.requestToken(voiceKey, "SALUTE_SPEECH_PERS")
                     BearerTokens(token, "")
                 }
@@ -56,6 +58,12 @@ class GigaVoiceAPI(
     }
 
     fun clear() = client.close()
+
+    private fun requireVoiceKey(): String =
+        keysProvider.saluteSpeechKey
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: throw MissingVoiceKeyException()
 }
 
 suspend fun main() {

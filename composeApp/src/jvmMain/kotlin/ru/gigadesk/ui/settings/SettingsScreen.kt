@@ -183,6 +183,7 @@ fun SettingsScreenMain(
                             onQwenChatKeyInput = { viewModel.send(SettingsEvent.InputQwenChatKey(it)) },
                             onAiTunnelKeyInput = { viewModel.send(SettingsEvent.InputAiTunnelKey(it)) },
                             onSaluteSpeechKeyInput = { viewModel.send(SettingsEvent.InputSaluteSpeechKey(it)) },
+                            onOpenProviderLink = { viewModel.send(SettingsEvent.OpenProviderLink(it)) },
                             onClose = onClose
                         )
                         SettingsSection.FUNCTIONS -> FunctionsSettingsContent(

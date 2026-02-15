@@ -19,13 +19,16 @@ import org.slf4j.LoggerFactory
 import ru.gigadesk.audio.InMemoryAudioRecorder
 import ru.gigadesk.audio.rawToOpusOgg
 import ru.gigadesk.giga.GigaVoiceAPI
+import ru.gigadesk.giga.MissingVoiceKeyException
 import ru.gigadesk.keys.HotkeyListener
+import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.ui.main.MainState
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceInputUseCase(
     val audioRecorder: InMemoryAudioRecorder,
     private val gigaVoiceAPI: GigaVoiceAPI,
+    private val settingsProvider: SettingsProvider,
     private val chatUseCase: ChatUseCase,
     private val speechUseCase: SpeechUseCase,
     private val permissionsUseCase: OnboardingUseCase,
@@ -80,6 +83,10 @@ class VoiceInputUseCase(
 
             userInputFlow.retryWhen { cause, attempt ->
                 if (cause is CancellationException) return@retryWhen false
+                if (cause is MissingVoiceKeyException) {
+                    emitVoiceKeyMissing()
+                    return@retryWhen true
+                }
 
                 l.error("Agent flow failed, attempt {}, cause: {}", attempt, cause.message, cause)
                 emitState { copy(isProcessing = false, statusMessage = "Ошибка: ${cause.message}") }
@@ -96,6 +103,10 @@ class VoiceInputUseCase(
 
     suspend fun startRecording(scope: CoroutineScope, isListening: Boolean) {
         if (isListening) return
+        if (settingsProvider.saluteSpeechKey.isNullOrBlank()) {
+            emitVoiceKeyMissing()
+            return
+        }
 
         chatUseCase.stopSpeechAndSideEffects()
         chatUseCase.cancelActiveJob()
@@ -132,6 +143,12 @@ class VoiceInputUseCase(
         val msg = "Речь не распознана"
         speechUseCase.queue(msg)
         emitState { copy(statusMessage = msg, isProcessing = false) }
+    }
+
+    private suspend fun emitVoiceKeyMissing() {
+        val msg = "Добавьте ключ SaluteSpeech в Настройки > Мои ключи, чтобы использовать голосовые команды"
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }
 
     private suspend fun emitState(reduce: MainState.() -> MainState) {

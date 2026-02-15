@@ -40,6 +40,7 @@ class MainUseCasesFactory(
         val voiceInputUseCase = VoiceInputUseCase(
             audioRecorder = audioRecorder,
             gigaVoiceAPI = gigaVoiceAPI,
+            settingsProvider = settingsProvider,
             chatUseCase = chatUseCase,
             speechUseCase = speechUseCase,
             permissionsUseCase = permissionsUseCase,
