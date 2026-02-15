@@ -13,8 +13,7 @@ import ru.gigadesk.giga.LlmProvider
 import ru.gigadesk.ui.BaseViewModel
 import ru.gigadesk.ui.common.configuredApiKeysCount
 import ru.gigadesk.ui.common.hasAnyConfiguredApiKey
-import java.awt.Desktop
-import java.net.URI
+import ru.gigadesk.ui.common.openProviderLink
 
 class SetupViewModel(
     override val di: DI,
@@ -126,7 +125,7 @@ class SetupViewModel(
             SetupEvent.ChooseVoice -> runCatching { say.chooseVoice() }
                 .onFailure { l.warn("Failed to open voice settings", it) }
 
-            is SetupEvent.OpenProviderLink -> openProviderLink(event.provider.url)
+            is SetupEvent.OpenProviderLink -> openProviderLink(url = event.provider.url, logger = l)
 
             SetupEvent.Proceed -> {
                 if (currentState.canProceed) {
@@ -200,13 +199,4 @@ class SetupViewModel(
         GigaModel.AiTunnelClaudeOpus, GigaModel.AiTunnelGpt4oMini, GigaModel.AiTunnelGrok -> false
     }
 
-    // TODO: rm duplicate
-    private fun openProviderLink(url: String) {
-        runCatching {
-            if (!Desktop.isDesktopSupported()) error("Desktop browsing is not supported")
-            val desktop = Desktop.getDesktop()
-            if (!desktop.isSupported(Desktop.Action.BROWSE)) error("Desktop browsing action is not supported")
-            desktop.browse(URI(url))
-        }.onFailure { l.warn("Failed to open provider link: $url", it) }
-    }
 }

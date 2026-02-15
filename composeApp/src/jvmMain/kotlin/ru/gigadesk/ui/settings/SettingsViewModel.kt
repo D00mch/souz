@@ -20,9 +20,8 @@ import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.calendar.CalendarAppleScriptCommands
 import ru.gigadesk.ui.BaseViewModel
+import ru.gigadesk.ui.common.openProviderLink
 import ru.gigadesk.ui.settings.SettingsEvent.*
-import java.awt.Desktop
-import java.net.URI
 
 class SettingsViewModel(
     override val di: DI,
@@ -62,7 +61,7 @@ class SettingsViewModel(
                 keysProvider.saluteSpeechKey = event.key
                 setState { copy(saluteSpeechKey = event.key) }
             }
-            is OpenProviderLink -> openProviderLink(event.provider.url)
+            is OpenProviderLink -> openProviderLink(url = event.provider.url, logger = l)
             is InputMcpServersJson -> {
                 keysProvider.mcpServersJson = event.json
                 setState { copy(mcpServersJson = event.json) }
@@ -348,12 +347,4 @@ class SettingsViewModel(
         }
     }
 
-    private fun openProviderLink(url: String) {
-        runCatching {
-            if (!Desktop.isDesktopSupported()) error("Desktop browsing is not supported")
-            val desktop = Desktop.getDesktop()
-            if (!desktop.isSupported(Desktop.Action.BROWSE)) error("Desktop browsing action is not supported")
-            desktop.browse(URI(url))
-        }.onFailure { l.warn("Failed to open provider link: $url", it) }
-    }
 }
