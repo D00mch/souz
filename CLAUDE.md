@@ -37,7 +37,7 @@ Primary stack:
 │       │   │   └── drawable/           # Application icons and drawable assets
 │       │   ├── kotlin/
 │       │   │   └── ru/gigadesk/        # Application Kotlin code
-│       │   │       ├── agent/          # Graph-based agent assembly
+│       │   │       ├── agent/          # Graph-based agent assembly. The main agent related logic is here
 │       │   │       │   ├── engine/     # Core graph primitives (Node, Graph, runner/runtime)
 │       │   │       │   ├── nodes/      # Graph node implementations (LLM, MCP, classification, etc.)
 │       │   │       │   └── session/    # Graph session models, repository, and service
@@ -71,7 +71,7 @@ Primary stack:
 │       │   │           ├── common/     # Shared UI utilities/components
 │       │   │           ├── components/ # Reusable UI widgets
 │       │   │           ├── graphlog/   # Graph sessions visualization screens
-│       │   │           ├── main/       # Main chat screen/view-model
+│       │   │           ├── main/       # Main chat screen/view-model. Agent interaction happens here
 │       │   │           │   └── usecases/   # Main flow use cases (chat, speech, onboarding)
 │       │   │           ├── settings/   # Settings screens and view-models
 │       │   │           ├── setup/      # First-run setup flow
