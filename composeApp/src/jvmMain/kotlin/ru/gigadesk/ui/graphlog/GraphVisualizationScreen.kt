@@ -28,6 +28,8 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
@@ -48,8 +50,10 @@ import kotlin.math.roundToInt
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.JsonNode
 import androidx.compose.material.icons.rounded.Check
+import java.awt.Cursor
 
 private val jsonMapper = ObjectMapper()
+private val horizontalResizePointerIcon = PointerIcon(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR))
 
 // Layout node for force-directed algorithm
 data class LayoutNode(
@@ -481,6 +485,9 @@ fun GraphVisualizationScreen(
     
     var selectedNodeId by remember { mutableStateOf<String?>(null) }
     var selectedStep by remember { mutableStateOf<GraphStepRecord?>(null) }
+    var detailsPanelFraction by remember { mutableStateOf(0.38f) }
+    val minDetailsPanelFraction = 0.24f
+    val maxDetailsPanelFraction = 0.60f
     
     // Focus requester for keyboard handling
     val focusRequester = remember { FocusRequester() }
@@ -565,49 +572,79 @@ fun GraphVisualizationScreen(
                 }
 
                 // Main Content Split
-                Row(
+                BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
                         .padding(horizontal = 16.dp)
                 ) {
-                    // LEFT: Graph Canvas
-                    Box(
-                        modifier = Modifier
-                            .weight(0.7f)
-                            .fillMaxHeight()
-                    ) {
-                        GraphCanvas(
-                            data = graphData,
-                            selectedNodeId = selectedNodeId,
-                            onNodeClick = { selectedNodeId = it }
-                        )
-                    }
+                    val containerWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
 
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    // RIGHT: Details Panel
-                    Box(
-                        modifier = Modifier
-                            .weight(0.3f)
-                            .fillMaxHeight()
+                    Row(
+                        modifier = Modifier.fillMaxSize()
                     ) {
-                        SideDetailsPanel(
-                            selectedNode = selectedNodeId?.let { graphData.nodes[it] },
-                            selectedStep = selectedStep,
-                            onStepSelect = { step ->
-                                selectedStep = if (selectedStep == step) null else step
-                            },
-                            availableGroups = allSessionGroups,
-                            collapsedSubgraphs = collapsedSubgraphs,
-                            onToggleSubgraph = { group ->
-                                collapsedSubgraphs = if (collapsedSubgraphs.contains(group)) {
-                                    collapsedSubgraphs - group
-                                } else {
-                                    collapsedSubgraphs + group
+                        // LEFT: Graph Canvas
+                        Box(
+                            modifier = Modifier
+                                .weight(1f - detailsPanelFraction)
+                                .fillMaxHeight()
+                        ) {
+                            GraphCanvas(
+                                data = graphData,
+                                selectedNodeId = selectedNodeId,
+                                onNodeClick = { selectedNodeId = it }
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .width(12.dp)
+                                .padding(horizontal = 2.dp, vertical = 12.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(Color.White.copy(alpha = 0.08f))
+                                .border(
+                                    1.dp,
+                                    Color.White.copy(alpha = 0.12f),
+                                    RoundedCornerShape(999.dp)
+                                )
+                                .pointerHoverIcon(horizontalResizePointerIcon)
+                                .pointerInput(containerWidthPx) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        val deltaFraction = dragAmount.x / containerWidthPx
+                                        detailsPanelFraction =
+                                            (detailsPanelFraction - deltaFraction).coerceIn(
+                                                minDetailsPanelFraction,
+                                                maxDetailsPanelFraction
+                                            )
+                                    }
                                 }
-                            }
                         )
+
+                        // RIGHT: Details Panel (resizable)
+                        Box(
+                            modifier = Modifier
+                                .weight(detailsPanelFraction)
+                                .fillMaxHeight()
+                        ) {
+                            SideDetailsPanel(
+                                selectedNode = selectedNodeId?.let { graphData.nodes[it] },
+                                selectedStep = selectedStep,
+                                onStepSelect = { step ->
+                                    selectedStep = if (selectedStep == step) null else step
+                                },
+                                availableGroups = allSessionGroups,
+                                collapsedSubgraphs = collapsedSubgraphs,
+                                onToggleSubgraph = { group ->
+                                    collapsedSubgraphs = if (collapsedSubgraphs.contains(group)) {
+                                        collapsedSubgraphs - group
+                                    } else {
+                                        collapsedSubgraphs + group
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
 
