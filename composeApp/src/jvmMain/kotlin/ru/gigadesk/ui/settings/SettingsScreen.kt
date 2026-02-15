@@ -195,6 +195,13 @@ fun SettingsScreenMain(
                             state = state,
                             onSafeModeChange = { viewModel.send(SettingsEvent.InputSafeModeEnabled(it)) },
                             onOpenFoldersManagement = { viewModel.send(SettingsEvent.OpenFoldersManagement) },
+                            onTelegramPhoneInput = { viewModel.send(SettingsEvent.InputTelegramPhone(it)) },
+                            onTelegramCodeInput = { viewModel.send(SettingsEvent.InputTelegramCode(it)) },
+                            onTelegramPasswordInput = { viewModel.send(SettingsEvent.InputTelegramPassword(it)) },
+                            onTelegramSubmitPhone = { viewModel.send(SettingsEvent.SubmitTelegramPhone) },
+                            onTelegramSubmitCode = { viewModel.send(SettingsEvent.SubmitTelegramCode) },
+                            onTelegramSubmitPassword = { viewModel.send(SettingsEvent.SubmitTelegramPassword) },
+                            onTelegramLogout = { viewModel.send(SettingsEvent.TelegramLogout) },
                             onClose = onClose
                         )
                         SettingsSection.SUPPORT -> SupportSettingsContent(

@@ -558,6 +558,13 @@ fun SecuritySettingsContent(
     state: SettingsState,
     onSafeModeChange: (Boolean) -> Unit,
     onOpenFoldersManagement: () -> Unit,
+    onTelegramPhoneInput: (String) -> Unit,
+    onTelegramCodeInput: (String) -> Unit,
+    onTelegramPasswordInput: (String) -> Unit,
+    onTelegramSubmitPhone: () -> Unit,
+    onTelegramSubmitCode: () -> Unit,
+    onTelegramSubmitPassword: () -> Unit,
+    onTelegramLogout: () -> Unit,
     onClose: () -> Unit
 ) {
     SettingsSectionScreen(
@@ -617,6 +624,19 @@ fun SecuritySettingsContent(
                     )
                 }
             }
+
+            SettingsGroupDivider()
+
+            TelegramLoginContent(
+                state = state,
+                onPhoneInput = onTelegramPhoneInput,
+                onCodeInput = onTelegramCodeInput,
+                onPasswordInput = onTelegramPasswordInput,
+                onSubmitPhone = onTelegramSubmitPhone,
+                onSubmitCode = onTelegramSubmitCode,
+                onSubmitPassword = onTelegramSubmitPassword,
+                onLogout = onTelegramLogout,
+            )
         }
     }
 }
@@ -1432,6 +1452,13 @@ private fun SecuritySettingsContentPreview() {
             state = PreviewSettingsState,
             onSafeModeChange = {},
             onOpenFoldersManagement = {},
+            onTelegramPhoneInput = {},
+            onTelegramCodeInput = {},
+            onTelegramPasswordInput = {},
+            onTelegramSubmitPhone = {},
+            onTelegramSubmitCode = {},
+            onTelegramSubmitPassword = {},
+            onTelegramLogout = {},
             onClose = {}
         )
     }

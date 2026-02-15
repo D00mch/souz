@@ -1,0 +1,80 @@
+package ru.gigadesk.tool.telegram
+
+import kotlinx.coroutines.runBlocking
+import ru.gigadesk.giga.gigaJsonMapper
+import ru.gigadesk.service.telegram.TelegramChatAction
+import ru.gigadesk.service.telegram.TelegramService
+import ru.gigadesk.tool.BadInputException
+import ru.gigadesk.tool.FewShotExample
+import ru.gigadesk.tool.InputParamDescription
+import ru.gigadesk.tool.ReturnParameters
+import ru.gigadesk.tool.ReturnProperty
+import ru.gigadesk.tool.ToolSetup
+
+class ToolTelegramSetState(
+    private val telegramService: TelegramService,
+) : ToolSetup<ToolTelegramSetState.Input> {
+
+    enum class Action {
+        Mute,
+        Archive,
+        MarkRead,
+        Delete,
+    }
+
+    data class Input(
+        @InputParamDescription("Chat name for fuzzy lookup")
+        val chatName: String,
+        @InputParamDescription("Action to apply: Mute, Archive, MarkRead, Delete")
+        val action: Action,
+    )
+
+    override val name: String = "ToolTelegramSetState"
+    override val description: String = "Apply Telegram chat state action: mute/archive/mark-read/delete."
+    override val fewShotExamples: List<FewShotExample> = listOf(
+        FewShotExample(
+            request = "Отправь чат 'Работа' в архив",
+            params = mapOf("chatName" to "Работа", "action" to "Archive"),
+        ),
+        FewShotExample(
+            request = "Пометь чат 'Вася' как прочитанный",
+            params = mapOf("chatName" to "Вася", "action" to "MarkRead"),
+        )
+    )
+    override val returnParameters: ReturnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "JSON with updated chat state"),
+        )
+    )
+
+    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+
+    override suspend fun suspendInvoke(input: Input): String {
+        if (input.chatName.isBlank()) {
+            throw BadInputException("chatName is required")
+        }
+
+        val action = when (input.action) {
+            Action.Mute -> TelegramChatAction.Mute
+            Action.Archive -> TelegramChatAction.Archive
+            Action.MarkRead -> TelegramChatAction.MarkRead
+            Action.Delete -> TelegramChatAction.Delete
+        }
+
+        val chat = runCatching {
+            telegramService.setChatState(input.chatName, action)
+        }.getOrElse { error ->
+            throw BadInputException(error.message ?: "Failed to apply Telegram chat action")
+        }
+
+        return gigaJsonMapper.writeValueAsString(
+            mapOf(
+                "status" to "ok",
+                "action" to input.action.name,
+                "chatId" to chat.chatId,
+                "title" to chat.title,
+                "unreadCount" to chat.unreadCount,
+            )
+        )
+    }
+}

@@ -21,6 +21,13 @@ import ru.gigadesk.tool.textReplace.*
 import ru.gigadesk.tool.math.ToolCalculator
 import ru.gigadesk.tool.presentation.ToolPresentationCreate
 import ru.gigadesk.tool.presentation.ToolPresentationRead
+import ru.gigadesk.tool.telegram.ToolTelegramForward
+import ru.gigadesk.tool.telegram.ToolTelegramGetHistory
+import ru.gigadesk.tool.telegram.ToolTelegramReadInbox
+import ru.gigadesk.tool.telegram.ToolTelegramSavedMessages
+import ru.gigadesk.tool.telegram.ToolTelegramSearch
+import ru.gigadesk.tool.telegram.ToolTelegramSend
+import ru.gigadesk.tool.telegram.ToolTelegramSetState
 
 typealias FunctionName = String
 
@@ -72,6 +79,13 @@ class ToolsFactory(di: DI) {
     private val toolCalculator: ToolCalculator by di.instance()
     private val toolTakeScreenshot: ToolTakeScreenshot by di.instance()
     private val toolStartScreenRecording: ToolStartScreenRecording by di.instance()
+    private val toolTelegramReadInbox: ToolTelegramReadInbox by di.instance()
+    private val toolTelegramGetHistory: ToolTelegramGetHistory by di.instance()
+    private val toolTelegramSetState: ToolTelegramSetState by di.instance()
+    private val toolTelegramSend: ToolTelegramSend by di.instance()
+    private val toolTelegramForward: ToolTelegramForward by di.instance()
+    private val toolTelegramSearch: ToolTelegramSearch by di.instance()
+    private val toolTelegramSavedMessages: ToolTelegramSavedMessages by di.instance()
 
     // Excel tools
     private val excelRead: ExcelRead by di.instance()
@@ -165,6 +179,16 @@ class ToolsFactory(di: DI) {
         )
 
         ToolCategory.CHAT -> listOf()
+
+        ToolCategory.TELEGRAM -> listOf(
+            toolTelegramReadInbox.toGiga(),
+            toolTelegramGetHistory.toGiga(),
+            toolTelegramSetState.toGiga(),
+            toolTelegramSend.toGiga(),
+            toolTelegramForward.toGiga(),
+            toolTelegramSearch.toGiga(),
+            toolTelegramSavedMessages.toGiga(),
+        )
 
         ToolCategory.DESKTOP -> listOf(
             toolTakeScreenshot.toGiga(),

@@ -15,6 +15,16 @@ enum class SettingsSubScreen {
     MAIN, SESSIONS, VISUALIZATION, FOLDERS
 }
 
+enum class TelegramAuthStepUi {
+    INITIALIZING,
+    PHONE,
+    CODE,
+    PASSWORD,
+    CONNECTED,
+    LOGGING_OUT,
+    ERROR,
+}
+
 enum class SettingsSection(val title: String, val icon: String? = null) {
     MODELS("Модели"),
     GENERAL("Общие"),
@@ -54,6 +64,17 @@ data class SettingsState(
     val isLoadingCalendars: Boolean = false,
     val voiceSpeed: Int = ToolSoundConfig.DEFAULT_SPEED,
     val voiceSpeedInput: String = ToolSoundConfig.DEFAULT_SPEED.toString(),
+
+    // Telegram auth wizard
+    val telegramPhoneInput: String = "",
+    val telegramCodeInput: String = "",
+    val telegramPasswordInput: String = "",
+    val telegramAuthStep: TelegramAuthStepUi = TelegramAuthStepUi.INITIALIZING,
+    val telegramActiveSessionPhone: String? = null,
+    val telegramCodeHint: String? = null,
+    val telegramPasswordHint: String? = null,
+    val telegramAuthBusy: Boolean = false,
+    val telegramAuthError: String? = null,
     
     // Graph Logs
     val currentScreen: SettingsSubScreen = SettingsSubScreen.MAIN,
@@ -81,6 +102,13 @@ sealed interface SettingsEvent : VMEvent {
     data class InputSupportEmail(val email: String): SettingsEvent
     data class InputSystemPrompt(val prompt: String): SettingsEvent
     data class InputVoiceSpeed(val speed: String): SettingsEvent
+    data class InputTelegramPhone(val value: String): SettingsEvent
+    data class InputTelegramCode(val value: String): SettingsEvent
+    data class InputTelegramPassword(val value: String): SettingsEvent
+    object SubmitTelegramPhone : SettingsEvent
+    object SubmitTelegramCode : SettingsEvent
+    object SubmitTelegramPassword : SettingsEvent
+    object TelegramLogout : SettingsEvent
     object ChooseVoice : SettingsEvent
     object ResetSystemPrompt: SettingsEvent
     object SendLogsToSupport: SettingsEvent
