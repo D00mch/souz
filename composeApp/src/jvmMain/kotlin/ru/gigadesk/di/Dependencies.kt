@@ -55,6 +55,8 @@ import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
 import ru.gigadesk.tool.math.ToolCalculator
 import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
+import ru.gigadesk.tool.presentation.ToolPresentationCreate
+import ru.gigadesk.tool.presentation.ToolPresentationRead
 
 private object DiTags {
     const val MODULE_MAIN = "main"
@@ -132,10 +134,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolTakeScreenshot(ToolRunBashCommand) }
     bindSingleton { ToolStartScreenRecording(ToolRunBashCommand) }
     bindSingleton { ToolCalculator() }
-
-    // Excel tools
     bindSingleton { ExcelRead(instance()) }
     bindSingleton { ExcelReport(instance()) }
+    bindSingleton { ToolPresentationCreate(instance()) }
+    bindSingleton { ToolPresentationRead() }
 
     bindSingleton { GraphSessionRepository() }
     bindSingleton { GraphSessionService(instance(), instance(DiTags.TAG_LOG)) }

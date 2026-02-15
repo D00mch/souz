@@ -46,12 +46,16 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
 
         @InputParamDescription("Output file path. Defaults to '~/GigaDesk/Documents/plot.png'")
         val output: String? = "~/GigaDesk/Documents/plot.png",
+
+        @InputParamDescription("Open generated file on this machine after save. Default: false.")
+        val openAfterCreate: Boolean = false,
     )
 
     override val name: String = "CreatePlot"
     override val description: String = "Create a plot from a CSV or Excel file. " +
             "Handles paths with '~'. " +
-            "Supports Bar, Line, Scatter, and Pie charts."
+            "Supports Bar, Line, Scatter, and Pie charts. " +
+            "Returns the path to the saved PNG image, which can be used in 'PresentationCreate'."
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -112,7 +116,9 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
 
         val plot = createPlot(xData, yData, input)
         ggsave(plot, outputFile.absolutePath)
-        openFileInOS(outputFile)
+        if (input.openAfterCreate) {
+            openFileInOS(outputFile)
+        }
 
         return "Plot saved to ${outputFile.absolutePath}"
     }
@@ -237,11 +243,15 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
 
     private fun openFileInOS(file: File) {
         try {
-            if (Desktop.isDesktopSupported() && file.exists()) {
-                Desktop.getDesktop().open(file)
-            }
+            if (!file.exists() || java.awt.GraphicsEnvironment.isHeadless()) return
+            if (!Desktop.isDesktopSupported()) return
+
+            val desktop = Desktop.getDesktop()
+            if (!desktop.isSupported(Desktop.Action.OPEN)) return
+
+            desktop.open(file)
         } catch (e: Exception) {
-            l.error("Could not open image: ${e.message}")
+            l.warn("Could not open image automatically: ${e.message}")
         }
     }
 
