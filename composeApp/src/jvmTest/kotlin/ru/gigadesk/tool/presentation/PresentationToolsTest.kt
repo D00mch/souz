@@ -18,7 +18,7 @@ class PresentationToolsTest {
         val readTool = mockk<ToolPresentationRead>()
 
         // Mock parameters
-        val fakePath = "/tmp/mock_presentation.pptx"
+        val fakePath = "~/tmp/mock_presentation.pptx"
         val expectedSlidesJson = """
             {
                 "totalSlides": 2,
@@ -85,7 +85,7 @@ class PresentationToolsTest {
     fun `test create presentation with image and layout`() {
         val createTool = mockk<ToolPresentationCreate>()
         
-        val fakePath = "/tmp/mock_image_presentation.pptx"
+        val fakePath = "~/tmp/mock_image_presentation.pptx"
         every { createTool.invoke(any()) } returns """{"path": "$fakePath", "slideCount": 1}"""
 
         val slide1 = SlideContent(
@@ -114,7 +114,7 @@ class PresentationToolsTest {
     fun `test create presentation with theme`() {
         val createTool = mockk<ToolPresentationCreate>()
         
-        val fakePath = "/tmp/mock_themed_presentation.pptx"
+        val fakePath = "~/tmp/mock_themed_presentation.pptx"
         every { createTool.invoke(any()) } returns """{"path": "$fakePath", "slideCount": 2}"""
         
         val slides = listOf(
@@ -142,7 +142,7 @@ class PresentationToolsTest {
     fun `test presentation with tables and shapes`() {
         val createTool = mockk<ToolPresentationCreate>()
         
-        val fakePath = "/tmp/mock_complex_presentation.pptx"
+        val fakePath = "~/tmp/mock_complex_presentation.pptx"
         every { createTool.invoke(any()) } returns """{"path": "$fakePath", "slideCount": 2}"""
 
         val slides = listOf(
@@ -180,7 +180,7 @@ class PresentationToolsTest {
     @Test
     fun `test presentation with chart`() {
         val createTool = mockk<ToolPresentationCreate>()
-        val fakePath = "/tmp/mock_chart_presentation.pptx"
+        val fakePath = "~/tmp/mock_chart_presentation.pptx"
         every { createTool.invoke(any()) } returns """{"path": "$fakePath", "slideCount": 1}"""
 
         val slides = listOf(
