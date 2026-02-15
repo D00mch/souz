@@ -26,7 +26,7 @@ class NodesLLM(
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
 
-    val sideEffects: Flow<String> = MutableSharedFlow()
+    val sideEffects: Flow<String> = MutableSharedFlow(extraBufferCapacity = 16)
     
     /**
      * Calls LLM's API with the current [AgentContext.history].
@@ -79,7 +79,7 @@ class NodesLLM(
                     if (pending.length >= increasingChunkSize) {
                         val toEmit = pending.toString()
                         l.info("About to emit into sideEffects flow: {}", toEmit)
-                        (sideEffects as MutableSharedFlow<String>).emit(toEmit)
+                        (sideEffects as MutableSharedFlow<String>).tryEmit(toEmit)
                         pending.clear()
                         increasingChunkSize *= 3
                     }
@@ -104,7 +104,7 @@ class NodesLLM(
             if (pending.isNotEmpty()) {
                 val toEmit = pending.toString()
                 l.info("About to emit final chunk into sideEffects flow: {}", toEmit)
-                (sideEffects as MutableSharedFlow<String>).emit(toEmit)
+                (sideEffects as MutableSharedFlow<String>).tryEmit(toEmit)
             }
         }
 

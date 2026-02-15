@@ -2,9 +2,9 @@ package ru.gigadesk.ui.main.usecases
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.gigadesk.audio.Say
@@ -15,8 +15,8 @@ class SpeechUseCase(
 ) {
     private val l = LoggerFactory.getLogger(SpeechUseCase::class.java)
 
-    private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
-    val outputs: Flow<MainUseCaseOutput> = _outputs.asSharedFlow()
+    private val _outputs = Channel<MainUseCaseOutput>()
+    val outputs: Flow<MainUseCaseOutput> = _outputs.consumeAsFlow()
 
     fun start(scope: CoroutineScope) {
         scope.launch {
@@ -56,7 +56,7 @@ class SpeechUseCase(
     }
 
     private suspend fun emitState(reduce: MainState.() -> MainState) {
-        _outputs.emit(MainUseCaseOutput.State(reduce))
+        _outputs.send(MainUseCaseOutput.State(reduce))
     }
 
     companion object {

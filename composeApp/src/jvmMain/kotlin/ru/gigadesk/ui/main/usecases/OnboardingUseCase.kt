@@ -3,10 +3,10 @@ package ru.gigadesk.ui.main.usecases
 import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -27,8 +27,8 @@ class OnboardingUseCase(
     private var onboardingSpeechStartedAt: Long? = null
     private var permissionWatcherJob: Job? = null
 
-    private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
-    val outputs: Flow<MainUseCaseOutput> = _outputs.asSharedFlow()
+    private val _outputs = Channel<MainUseCaseOutput>()
+    val outputs: Flow<MainUseCaseOutput> = _outputs.consumeAsFlow()
 
     fun start(scope: CoroutineScope) {
         scope.launch {
@@ -114,7 +114,7 @@ class OnboardingUseCase(
     }.getOrElse { false }
 
     private suspend fun emitState(reduce: MainState.() -> MainState) {
-        _outputs.emit(MainUseCaseOutput.State(reduce))
+        _outputs.send(MainUseCaseOutput.State(reduce))
     }
 
     companion object {

@@ -4,12 +4,12 @@ import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
@@ -34,8 +34,8 @@ class VoiceInputUseCase(
     private var lastRecognizedText: String? = null
     private var lastRecognizedAtMs: Long = 0L
 
-    private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
-    val outputs: Flow<MainUseCaseOutput> = _outputs.asSharedFlow()
+    private val _outputs = Channel<MainUseCaseOutput>()
+    val outputs: Flow<MainUseCaseOutput> = _outputs.consumeAsFlow()
 
     suspend fun initialize(
         scope: CoroutineScope,
@@ -135,7 +135,7 @@ class VoiceInputUseCase(
     }
 
     private suspend fun emitState(reduce: MainState.() -> MainState) {
-        _outputs.emit(MainUseCaseOutput.State(reduce))
+        _outputs.send(MainUseCaseOutput.State(reduce))
     }
 
     private fun isDuplicateRecognition(text: String): Boolean {
