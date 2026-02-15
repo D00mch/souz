@@ -8,6 +8,8 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.giga.GigaModel
+import ru.gigadesk.giga.LlmProvider
 import ru.gigadesk.ui.BaseViewModel
 import ru.gigadesk.ui.common.configuredApiKeysCount
 import ru.gigadesk.ui.common.hasAnyConfiguredApiKey
@@ -21,6 +23,12 @@ class SetupViewModel(
     private val l = LoggerFactory.getLogger(SetupViewModel::class.java)
     private val settingsProvider: SettingsProvider by di.instance()
     private val say: Say by di.instance()
+    private val startedWithoutAnyApiKeys: Boolean = !hasAnyConfiguredApiKey(
+        gigaChatKey = settingsProvider.gigaChatKey.orEmpty(),
+        qwenChatKey = settingsProvider.qwenChatKey.orEmpty(),
+        aiTunnelKey = settingsProvider.aiTunnelKey.orEmpty(),
+        saluteSpeechKey = settingsProvider.saluteSpeechKey.orEmpty(),
+    )
 
     init {
         viewModelScope.launch {
@@ -53,31 +61,55 @@ class SetupViewModel(
         when (event) {
             is SetupEvent.InputGigaChatKey -> {
                 settingsProvider.gigaChatKey = event.key
+                val qwenChatKey = currentState.qwenChatKey
+                val aiTunnelKey = currentState.aiTunnelKey
+                val saluteSpeechKey = currentState.saluteSpeechKey
                 updateKeysState(
                     gigaChatKey = event.key,
-                    qwenChatKey = currentState.qwenChatKey,
-                    aiTunnelKey = currentState.aiTunnelKey,
-                    saluteSpeechKey = currentState.saluteSpeechKey,
+                    qwenChatKey = qwenChatKey,
+                    aiTunnelKey = aiTunnelKey,
+                    saluteSpeechKey = saluteSpeechKey,
+                )
+                tryToChooseDefaultMode(
+                    gigaChatKey = event.key,
+                    qwenChatKey = qwenChatKey,
+                    aiTunnelKey = aiTunnelKey,
                 )
             }
 
             is SetupEvent.InputQwenChatKey -> {
                 settingsProvider.qwenChatKey = event.key
+                val gigaChatKey = currentState.gigaChatKey
+                val aiTunnelKey = currentState.aiTunnelKey
+                val saluteSpeechKey = currentState.saluteSpeechKey
                 updateKeysState(
-                    gigaChatKey = currentState.gigaChatKey,
+                    gigaChatKey = gigaChatKey,
                     qwenChatKey = event.key,
-                    aiTunnelKey = currentState.aiTunnelKey,
-                    saluteSpeechKey = currentState.saluteSpeechKey,
+                    aiTunnelKey = aiTunnelKey,
+                    saluteSpeechKey = saluteSpeechKey,
+                )
+                tryToChooseDefaultMode(
+                    gigaChatKey = gigaChatKey,
+                    qwenChatKey = event.key,
+                    aiTunnelKey = aiTunnelKey,
                 )
             }
 
             is SetupEvent.InputAiTunnelKey -> {
                 settingsProvider.aiTunnelKey = event.key
+                val gigaChatKey = currentState.gigaChatKey
+                val qwenChatKey = currentState.qwenChatKey
+                val saluteSpeechKey = currentState.saluteSpeechKey
                 updateKeysState(
-                    gigaChatKey = currentState.gigaChatKey,
-                    qwenChatKey = currentState.qwenChatKey,
+                    gigaChatKey = gigaChatKey,
+                    qwenChatKey = qwenChatKey,
                     aiTunnelKey = event.key,
-                    saluteSpeechKey = currentState.saluteSpeechKey,
+                    saluteSpeechKey = saluteSpeechKey,
+                )
+                tryToChooseDefaultMode(
+                    gigaChatKey = gigaChatKey,
+                    qwenChatKey = qwenChatKey,
+                    aiTunnelKey = event.key,
                 )
             }
 
@@ -135,6 +167,37 @@ class SetupViewModel(
         if (hasAnyConfiguredKey && !settingsProvider.onboardingCompleted) {
             settingsProvider.needsOnboarding = true
         }
+    }
+
+    /** Choose default LLM base on the keys provided */
+    private fun tryToChooseDefaultMode(
+        gigaChatKey: String,
+        qwenChatKey: String,
+        aiTunnelKey: String,
+    ) {
+        if (!startedWithoutAnyApiKeys) return
+
+        val preferredProvider = when {
+            gigaChatKey.isNotBlank() -> LlmProvider.GIGA
+            qwenChatKey.isNotBlank() -> LlmProvider.QWEN
+            aiTunnelKey.isNotBlank() -> LlmProvider.AI_TUNNEL
+            else -> return
+        }
+        settingsProvider.gigaModel = defaultSetupModelForProvider(preferredProvider)
+    }
+
+    private fun defaultSetupModelForProvider(provider: LlmProvider): GigaModel =
+        GigaModel.entries.singleOrNull { model ->
+            model.provider == provider && model.isDefaultSetupModel()
+        } ?: error("Default setup model is not configured for provider: $provider")
+
+    private fun GigaModel.isDefaultSetupModel(): Boolean = when (this) {
+        GigaModel.Max -> true
+        GigaModel.QwenMax -> true
+        GigaModel.AiTunnelClaudeHaiku -> true
+        GigaModel.Lite, GigaModel.Pro, GigaModel.QwenFlash, GigaModel.QwenPlus, GigaModel.Qwen3OpenSource,
+        GigaModel.AiTunnelGpt52Codex, GigaModel.AiTunnelGpt5Nano, GigaModel.AiTunnelGemini3Flash,
+        GigaModel.AiTunnelClaudeOpus, GigaModel.AiTunnelGpt4oMini, GigaModel.AiTunnelGrok -> false
     }
 
     // TODO: rm duplicate

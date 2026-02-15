@@ -15,6 +15,7 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.giga.GigaModel
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -93,6 +94,85 @@ class SetupViewModelTest {
         verify(exactly = 0) { settingsProvider.needsOnboarding = true }
     }
 
+    @Test
+    fun `setup picks qwen default model when first configured key is qwen`() = runTest(dispatcher) {
+        val settingsProvider = settingsProviderStub(
+            giga = "",
+            qwen = "",
+            aiTunnel = "",
+            speech = "",
+            onboardingCompleted = false,
+            gigaModel = GigaModel.Max,
+        )
+        val viewModel = createViewModel(settingsProvider)
+
+        advanceUntilIdle()
+        viewModel.send(SetupEvent.InputQwenChatKey("qwen-token"))
+        advanceUntilIdle()
+
+        assertEquals(GigaModel.QwenMax, settingsProvider.gigaModel)
+    }
+
+    @Test
+    fun `setup picks ai tunnel default model when first configured key is ai tunnel`() = runTest(dispatcher) {
+        val settingsProvider = settingsProviderStub(
+            giga = "",
+            qwen = "",
+            aiTunnel = "",
+            speech = "",
+            onboardingCompleted = false,
+            gigaModel = GigaModel.Max,
+        )
+        val viewModel = createViewModel(settingsProvider)
+
+        advanceUntilIdle()
+        viewModel.send(SetupEvent.InputAiTunnelKey("ait-token"))
+        advanceUntilIdle()
+
+        assertEquals(GigaModel.AiTunnelGpt4oMini, settingsProvider.gigaModel)
+    }
+
+    @Test
+    fun `setup prefers giga model when giga key appears during first setup`() = runTest(dispatcher) {
+        val settingsProvider = settingsProviderStub(
+            giga = "",
+            qwen = "",
+            aiTunnel = "",
+            speech = "",
+            onboardingCompleted = false,
+            gigaModel = GigaModel.Max,
+        )
+        val viewModel = createViewModel(settingsProvider)
+
+        advanceUntilIdle()
+        viewModel.send(SetupEvent.InputQwenChatKey("qwen-token"))
+        advanceUntilIdle()
+        assertEquals(GigaModel.QwenMax, settingsProvider.gigaModel)
+
+        viewModel.send(SetupEvent.InputGigaChatKey("giga-token"))
+        advanceUntilIdle()
+        assertEquals(GigaModel.Max, settingsProvider.gigaModel)
+    }
+
+    @Test
+    fun `setup does not auto-change model when setup starts with existing keys`() = runTest(dispatcher) {
+        val settingsProvider = settingsProviderStub(
+            giga = "giga-token",
+            qwen = "",
+            aiTunnel = "",
+            speech = "",
+            onboardingCompleted = false,
+            gigaModel = GigaModel.Pro,
+        )
+        val viewModel = createViewModel(settingsProvider)
+
+        advanceUntilIdle()
+        viewModel.send(SetupEvent.InputAiTunnelKey("ait-token"))
+        advanceUntilIdle()
+
+        assertEquals(GigaModel.Pro, settingsProvider.gigaModel)
+    }
+
     private fun createViewModel(settingsProvider: SettingsProvider): SetupViewModel {
         val say = mockk<Say>(relaxed = true)
         val di = DI {
@@ -108,6 +188,7 @@ class SetupViewModelTest {
         aiTunnel: String,
         speech: String,
         onboardingCompleted: Boolean,
+        gigaModel: GigaModel = GigaModel.Max,
     ): SettingsProvider {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
 
@@ -115,6 +196,7 @@ class SetupViewModelTest {
         var qwenValue = qwen
         var aiTunnelValue = aiTunnel
         var speechValue = speech
+        var gigaModelValue = gigaModel
         var onboardingCompletedValue = onboardingCompleted
         var needsOnboardingValue = false
 
@@ -129,6 +211,9 @@ class SetupViewModelTest {
 
         every { settingsProvider.saluteSpeechKey } answers { speechValue }
         every { settingsProvider.saluteSpeechKey = any() } answers { speechValue = firstArg() }
+
+        every { settingsProvider.gigaModel } answers { gigaModelValue }
+        every { settingsProvider.gigaModel = any() } answers { gigaModelValue = firstArg() }
 
         every { settingsProvider.onboardingCompleted } answers { onboardingCompletedValue }
         every { settingsProvider.onboardingCompleted = any() } answers { onboardingCompletedValue = firstArg() }
