@@ -1,19 +1,23 @@
 package ru.gigadesk.tool.presentation
 
+import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
+import org.apache.commons.csv.CSVFormat
+import org.apache.commons.csv.CSVParser
 import org.apache.poi.xslf.usermodel.SlideLayout
 import org.apache.poi.xslf.usermodel.XMLSlideShow
+import org.jetbrains.skia.EncodedImageFormat
+import org.jetbrains.skia.Image
+import ru.gigadesk.tool.BadInputException
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
 import ru.gigadesk.tool.ToolSetupWithAttachments
+import ru.gigadesk.tool.files.FilesToolUtil
 import java.io.File
 import java.io.FileOutputStream
-import org.jetbrains.skia.Image
-import org.jetbrains.skia.EncodedImageFormat
-import org.jetbrains.skia.Data
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
+import java.io.StringReader
 
 data class SlideContent(
     @InputParamDescription("Title of the slide")
@@ -59,15 +63,12 @@ data class PresentationChart(
     val series: List<PresentationChartSeries>? = null
 )
 
-// PresentationChartData removed
-
 data class PresentationChartSeries(
     val name: String,
     val values: List<Double>
 )
 
 data class PresentationShape(
-// ... (keep existing PresentationShape properties)
     @InputParamDescription("Shape type. Options: RECT/RECTANGLE, OVAL/ELLIPSE, TRIANGLE, ARROW_RIGHT, STAR_5")
     val type: String,
     @InputParamDescription("Text to display inside the shape")
@@ -91,8 +92,6 @@ data class PresentationTable(
     val hasHeader: Boolean = true
 )
 
-// data class PresentationTableRow removed as it's no longer needed
-
 data class CustomThemeParam(
     @InputParamDescription("Background color (HEX)")
     val backgroundColor: String? = null,
@@ -108,12 +107,19 @@ data class CustomThemeParam(
     val bodyFont: String? = null
 )
 
-    data class PresentationCreateInput(
+data class PresentationCreateInput(
     @InputParamDescription("Title of the presentation")
     val title: String,
     @InputParamDescription("""
-        JSON String representing the list of slides. 
-        Example: 
+        Preferred typed slides payload. 
+        Pass an array of slide objects with fields like `layout`, `title`, `points`, `imagePath`, `table`, `chart`.
+        Valid layouts: TITLE, TITLE_ONLY, SECTION_HEADER, PIC_TX, TWO_COL_TX, TWO_COL_TX_IMG, TITLE_AND_CONTENT.
+    """)
+    val slides: List<SlideContent>? = null,
+    @InputParamDescription("""
+        Legacy fallback: JSON string representing the list of slides.
+        Use `slides` instead when possible.
+        Example:
         [
           {
             "layout": "TITLE", 
@@ -128,9 +134,11 @@ data class CustomThemeParam(
         ]
         Valid layouts: TITLE, TITLE_ONLY, SECTION_HEADER, PIC_TX, TWO_COL_TX, TWO_COL_TX_IMG, TITLE_AND_CONTENT.
     """)
-    val slidesData: String,
+    val slidesData: String? = null,
     @InputParamDescription("Optional output filename (without extension). Defaults to 'Presentation_<Title>'")
     val filename: String? = null,
+    @InputParamDescription("Optional output path (file or directory). If omitted, uses ~/GigaDesk/Documents.")
+    val outputPath: String? = null,
     @InputParamDescription("Absolute path to a .pptx file to use as a template")
     val templatePath: String? = null,
     @InputParamDescription("Visual theme. Supports 30+ themes. PREFERRED: Use 'customTheme' for unique designs instead of presets.")
@@ -150,12 +158,18 @@ data class CustomThemeParam(
     val themeBodyFont: String? = null
 )
 
-class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput> {
+class ToolPresentationCreate(
+    private val filesToolUtil: FilesToolUtil
+) : ToolSetupWithAttachments<PresentationCreateInput> {
+    private val mapper = jacksonObjectMapper()
+        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+
     override val name: String = "PresentationCreate"
     override val description: String = "Create a PowerPoint presentation (.pptx) from text content. " +
             "Supports creating slides with bullet points, speaker notes, and images. " +
             "Can use a custom template (.pptx) and specific slide layouts (e.g. TITLE, PIC_TX, TWO_COL_TX). " +
-            "To include charts, use the 'chart' block with data, OR use 'CreatePlot' tool to generate an image.\n" +
+            "Chart blocks currently render a clear placeholder with source data summary (not a native PPT chart). " +
+            "For real charts, use the 'CreatePlot' tool and insert the image via `imagePath`.\n" +
             "Supports 30+ built-in visual themes (e.g. STARTUP, CYBERPUNK) AND Custom Themes via 'themeBackgroundColor', 'themeAccentColor' etc.\n" +
             "\n\nBEST PRACTICES (Pyramid Principle & Barbara Minto):" +
             "\n- **SCQA Structure**: Situation (Context) -> Complication (Problem) -> Question (What to do?) -> Answer (Solution)." +
@@ -238,23 +252,8 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
     override val attachments: List<String> = emptyList()
     
     override fun invoke(input: PresentationCreateInput): String {
-
-        // Construct Custom Theme from either nested object or flat parameters (priority to flat if present)
-        val flatCustomTheme = if (
-            input.themeBackgroundColor != null || input.themeTitleColor != null || 
-            input.themeContentColor != null || input.themeAccentColor != null
-        ) {
-            CustomThemeParam(
-                backgroundColor = input.themeBackgroundColor,
-                titleColor = input.themeTitleColor,
-                contentColor = input.themeContentColor,
-                accentColor = input.themeAccentColor,
-                titleFont = input.themeTitleFont,
-                bodyFont = input.themeBodyFont
-            )
-        } else null
-        
-        val customTheme = flatCustomTheme
+        val customTheme = buildCustomTheme(input)
+        val slides = resolveSlides(input)
         
         // 1. Load Template or Create New
         // Treat blank/empty templatePath as null
@@ -267,7 +266,9 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             
             val file = File(resolvedTemplatePath)
             if (file.exists()) {
-                XMLSlideShow(java.io.FileInputStream(file))
+                file.inputStream().use { inputStream ->
+                    XMLSlideShow(inputStream)
+                }
             } else {
                 throw IllegalArgumentException("Template file not found at: ${input.templatePath}")
             }
@@ -275,46 +276,22 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             XMLSlideShow()
         }
         
-        val master = ppt.slideMasters[0]
+        try {
+            val master = ppt.slideMasters[0]
 
-        // Resolve Theme once (for reuse across slides)
-        val resolvedThemeObj: PresentationTheme? = if (input.theme != null) {
-            try { PresentationTheme.valueOf(input.theme.uppercase()) } catch (e: Exception) { null }
-        } else null
+            // Resolve Theme once (for reuse across slides)
+            val resolvedThemeObj = resolveTheme(input.theme)
 
-        // Apply Theme if specified and NO template is used (template takes precedence)
-        if (input.templatePath == null) {
-            if (customTheme != null) {
-                applyCustomTheme(master, customTheme)
-            } else if (resolvedThemeObj != null) {
-                applyTheme(master, resolvedThemeObj)
+            // Apply Theme if specified and NO template is used (template takes precedence)
+            if (effectiveTemplatePath == null) {
+                if (customTheme != null) {
+                    applyCustomTheme(master, customTheme)
+                } else if (resolvedThemeObj != null) {
+                    applyTheme(master, resolvedThemeObj)
+                }
             }
-        }
 
-        // 2. Create Title Slide (only if not using a template, or if explicitly requested - for now, always create if not template)
-        // ... (rest of the logic remains same, but we need to ensure text runs pick up theme colors if not handled by master)
-        
-
-
-        // 3. Create Content Slides
-        // Parse slides from JSON string
-        val slides: List<SlideContent> = try {
-            val mapper = jacksonObjectMapper()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-            mapper.readValue(input.slidesData)
-        } catch (e: Exception) {
-            println("Error parsing slides JSON: ${e.message}")
-            // Fallback for simple error handling
-             try {
-                 // aggressive unescaping if needed? 
-                 // For now, assume model produces valid JSON string
-                 emptyList()
-             } catch (e2: Exception) {
-                 emptyList()
-             }
-        }
-
-        slides.forEach { slideData ->
+            slides.forEach { slideData ->
             // Smart Layout Fallback: Check if image is actually available
             var effectiveLayoutName = slideData.layout?.uppercase()
             var effectiveImagePath = slideData.imagePath?.let { 
@@ -390,18 +367,14 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             if (slideTitle != null) {
                 slideTitle.text = slideData.title
                 
-                // Explicitly apply theme to title (master inheritance can be flaky with .text setter)
-                if (effectiveTemplatePath == null && input.theme != null) {
-                     try {
-                        val theme = PresentationTheme.valueOf(input.theme.uppercase())
-                        slideTitle.textParagraphs.forEach { p ->
-                            p.textRuns.forEach { r ->
-                                r.fontColor = org.apache.poi.sl.draw.DrawPaint.createSolidPaint(theme.titleColor)
-                                r.fontFamily = theme.titleFont
-                                r.isBold = true // Force bold for titles
-                            }
+                if (effectiveTemplatePath == null && resolvedThemeObj != null) {
+                    slideTitle.textParagraphs.forEach { p ->
+                        p.textRuns.forEach { r ->
+                            r.fontColor = org.apache.poi.sl.draw.DrawPaint.createSolidPaint(resolvedThemeObj.titleColor)
+                            r.fontFamily = resolvedThemeObj.titleFont
+                            r.isBold = true
                         }
-                     } catch (e: Exception) {}
+                    }
                 }
             }
             
@@ -470,13 +443,11 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             // Smart Layout Logic: Detect potential intersection
             
             // Check if we have both Text and Image, but they might conflict
-            val hasText = slideData.points.isNotEmpty()
             val hasImage = effectiveImagePath != null
             
             // Initial assumption: custom position is valid ONLY if specified
             val isCustomImagePos = slideData.imageX != null
             
-            var effectiveTextAnchor = effectiveTextPlaceholder?.anchor
             var forceSplitView = false
             
             // List of text shapes to check for collision (Title, Subtitle, Body)
@@ -528,9 +499,6 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                              anchor.height.toInt()
                          )
                          shape.anchor = newRect
-                         if (shape == effectiveTextPlaceholder) {
-                              effectiveTextAnchor = newRect
-                         }
                      }
                  }
             }
@@ -551,26 +519,17 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
                         val run = paragraph.addNewTextRun()
                         run.setText(point)
                         
-                        // Apply Styles (Theme or Default)
-                        if (input.templatePath == null && input.theme != null) {
-                             try {
-                                val theme = PresentationTheme.valueOf(input.theme.uppercase())
-                                run.fontColor = org.apache.poi.sl.draw.DrawPaint.createSolidPaint(theme.contentColor)
-                                run.fontFamily = theme.bodyFont
-                                run.fontSize = 20.0 // Ensure decent size
-                             } catch (e: Exception) {}
+                        if (effectiveTemplatePath == null && resolvedThemeObj != null) {
+                            run.fontColor = org.apache.poi.sl.draw.DrawPaint.createSolidPaint(resolvedThemeObj.contentColor)
+                            run.fontFamily = resolvedThemeObj.bodyFont
+                            run.fontSize = 20.0
                         } else if (run.fontSize == null || run.fontSize < 12.0) {
-                            run.fontSize = 18.0 // Min size fallback
+                            run.fontSize = 18.0
                         }
                     }
             }
             
-            // Resolve Theme: Custom > Preset > Default
-            val theme = if (customTheme != null) {
-                null
-            } else if (input.theme != null) {
-                 try { PresentationTheme.valueOf(input.theme.uppercase()) } catch (e: Exception) { null }
-            } else null
+            val theme = if (customTheme != null) null else resolvedThemeObj
             
             // Fill Image
             if (effectiveImagePath != null) {
@@ -679,7 +638,7 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             // Fill Chart
             if (slideData.chart != null) {
                 try {
-                   createChart(slide, slideData.chart, theme, customTheme)
+                   createChartPlaceholder(slide, slideData.chart, theme, customTheme)
                 } catch (e: Exception) {
                     println("Error creating chart: ${e.message}")
                 }
@@ -718,38 +677,95 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             shapesToRemove.forEach { slide.removeShape(it) }
         }
 
-        // 4. Save file
-// ... (rest of file)
-
-
-
-        // Sanitize filename, but allow letters and digits from any language (Unicode) AND combining marks (accents)
-        // \p{L} matches any unicode letter, \p{N} matches any unicode number, \p{M} matches marks (accents)
-        var safeTitle = (input.filename ?: input.title).replace(Regex("[^\\p{L}\\p{N}\\p{M} ._-]"), "_")
-        if (safeTitle.isBlank() || safeTitle.all { it == '_' || it == '.' }) {
-            safeTitle = "Presentation_${System.currentTimeMillis()}"
-        }
-        val fileName = if (safeTitle.endsWith(".pptx")) safeTitle else "$safeTitle.pptx"
-        val userHome = System.getProperty("user.home")
-        val desktopPath = File(userHome, "Desktop")
-        val outputFile = File(desktopPath, fileName)
-
-        FileOutputStream(outputFile).use { out ->
-            ppt.write(out)
-        }
-        
-        val slideCount = ppt.slides.size
-        ppt.close()
-
-        return """
-            {
-                "path": "${outputFile.absolutePath}",
-                "slideCount": $slideCount
+            // Sanitize filename, but allow letters and digits from any language (Unicode) and combining marks.
+            var safeTitle = (input.filename ?: input.title).replace(Regex("[^\\p{L}\\p{N}\\p{M} ._-]"), "_")
+            if (safeTitle.isBlank() || safeTitle.all { it == '_' || it == '.' }) {
+                safeTitle = "Presentation_${System.currentTimeMillis()}"
             }
-        """.trimIndent()
+            val fileName = if (safeTitle.endsWith(".pptx", ignoreCase = true)) safeTitle else "$safeTitle.pptx"
+
+            val outputFile = resolveOutputFile(input, fileName)
+            outputFile.parentFile?.mkdirs()
+            filesToolUtil.requirePathIsSave(outputFile)
+
+            FileOutputStream(outputFile).use { out ->
+                ppt.write(out)
+            }
+
+            val slideCount = ppt.slides.size
+            return """
+                {
+                    "path": "${outputFile.absolutePath}",
+                    "slideCount": $slideCount
+                }
+            """.trimIndent()
+        } finally {
+            ppt.close()
+        }
     }
 
-    private fun createChart(
+    private fun buildCustomTheme(input: PresentationCreateInput): CustomThemeParam? {
+        val hasCustomThemeInput = input.themeBackgroundColor != null ||
+            input.themeTitleColor != null ||
+            input.themeContentColor != null ||
+            input.themeAccentColor != null
+
+        if (!hasCustomThemeInput) return null
+
+        return CustomThemeParam(
+            backgroundColor = input.themeBackgroundColor,
+            titleColor = input.themeTitleColor,
+            contentColor = input.themeContentColor,
+            accentColor = input.themeAccentColor,
+            titleFont = input.themeTitleFont,
+            bodyFont = input.themeBodyFont
+        )
+    }
+
+    private fun resolveSlides(input: PresentationCreateInput): List<SlideContent> {
+        if (!input.slides.isNullOrEmpty()) return input.slides
+        if (input.slidesData.isNullOrBlank()) {
+            throw BadInputException("No slides provided. Pass `slides` (preferred) or legacy `slidesData`.")
+        }
+
+        return try {
+            mapper.readValue(input.slidesData)
+        } catch (e: Exception) {
+            throw BadInputException("Failed to parse `slidesData` JSON: ${e.message}")
+        }
+    }
+
+    private fun resolveTheme(themeName: String?): PresentationTheme? {
+        if (themeName.isNullOrBlank()) return null
+        return try {
+            PresentationTheme.valueOf(themeName.uppercase())
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun resolveOutputFile(input: PresentationCreateInput, defaultFileName: String): File {
+        val rawOutputPath = input.outputPath?.takeIf { it.isNotBlank() } ?: "~/GigaDesk/Documents/$defaultFileName"
+        val expandedPath = filesToolUtil.applyDefaultEnvs(rawOutputPath)
+        val outputTarget = File(expandedPath)
+
+        val looksLikeDirectory = rawOutputPath.endsWith("/") ||
+            rawOutputPath.endsWith("\\") ||
+            outputTarget.isDirectory
+
+        if (looksLikeDirectory) {
+            return File(outputTarget, defaultFileName)
+        }
+
+        val hasExtension = outputTarget.name.contains(".")
+        return when {
+            outputTarget.extension.equals("pptx", ignoreCase = true) -> outputTarget
+            hasExtension -> File(outputTarget.parentFile ?: File("."), "${outputTarget.nameWithoutExtension}.pptx")
+            else -> File(outputTarget.parentFile ?: File("."), "${outputTarget.name}.pptx")
+        }
+    }
+
+    private fun createChartPlaceholder(
         slide: org.apache.poi.xslf.usermodel.XSLFSlide,
         chartData: PresentationChart,
         theme: PresentationTheme?,
@@ -757,14 +773,12 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
     ) {
         val title = chartData.title
         
-        // Use data directly from the object
         val categories = chartData.categories ?: emptyList()
         val series = chartData.series ?: emptyList()
 
-        // 1. Draw Title
         val textBox = slide.createTextBox()
         textBox.anchor = java.awt.Rectangle(100, 100, 500, 50)
-        textBox.text = "Chart: $title (Native rendering placeholder)"
+        textBox.text = "Chart placeholder: $title"
         textBox.textParagraphs.first().textRuns.first().apply {
             fontSize = 18.0
             isBold = true
@@ -775,7 +789,6 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
             )
         }
         
-        // 2. Draw a placeholder rectangle
         val bg = slide.createAutoShape()
         bg.shapeType = org.apache.poi.sl.usermodel.ShapeType.RECT
         bg.anchor = java.awt.Rectangle(100, 150, 500, 300)
@@ -784,7 +797,13 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
         
         val infoText = slide.createTextBox()
         infoText.anchor = java.awt.Rectangle(120, 170, 460, 260)
-        infoText.text = "Data: ${series.map { "${it.name}: ${it.values}" }}"
+        infoText.text = buildString {
+            append("Native chart rendering is not implemented in PresentationCreate.\n")
+            append("Use CreatePlot + imagePath for a real chart image.\n\n")
+            append("Requested type: ${chartData.type}\n")
+            append("Categories: $categories\n")
+            append("Series: ${series.map { "${it.name}: ${it.values}" }}")
+        }
     }
 
     private fun createTable(
@@ -800,39 +819,13 @@ class ToolPresentationCreate : ToolSetupWithAttachments<PresentationCreateInput>
         val textColor = theme?.contentColor ?: java.awt.Color.BLACK
         val fontFamily = theme?.bodyFont ?: "Arial"
         
-        // Parse CSV Data
-        // Simple CSV parser that handles quotes
-        val rows = mutableListOf<List<String>>()
-        val currentLine = StringBuilder()
-        var inQuotes = false
-        
-        // Normalize line endings
-        val rawData = tableData.csvData.replace("\r\n", "\n").replace("\r", "\n")
-        
-        // We do a line-by-line split but need to respect quotes containing newlines
-        // For simplicity in this tool, we'll assume row breaks are reliable newlines if not in quotes.
-        // Actually, let's just use a standard char-by-char parse for robustness or a simple split if we assume simple data.
-        // Given LLM output, it might be simple. Let's try a simple split by newline first, but handle commas inside quotes.
-        
-        rawData.lineSequence().forEach { line ->
-            if (line.isNotBlank()) {
-                val cells = mutableListOf<String>()
-                var currentCell = StringBuilder()
-                var insideQuote = false
-                
-                for (char in line) {
-                    if (char == '"') {
-                        insideQuote = !insideQuote
-                    } else if (char == ',' && !insideQuote) {
-                        cells.add(currentCell.toString().trim { it == ' ' || it == '"' }) // Trim spaces and surrounding quotes
-                        currentCell = StringBuilder()
-                    } else {
-                        currentCell.append(char)
-                    }
-                }
-                cells.add(currentCell.toString().trim { it == ' ' || it == '"' })
-                rows.add(cells)
-            }
+        val format = CSVFormat.DEFAULT.builder()
+            .setTrim(true)
+            .setIgnoreEmptyLines(true)
+            .build()
+
+        val rows = CSVParser(StringReader(tableData.csvData), format).use { parser ->
+            parser.records.map { record -> record.map { it } }
         }
         
         rows.forEachIndexed { rowIndex, cells ->

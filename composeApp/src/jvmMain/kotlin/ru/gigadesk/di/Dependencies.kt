@@ -132,7 +132,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolCalculator() }
     bindSingleton { ExcelRead(instance()) }
     bindSingleton { ExcelReport(instance()) }
-    bindSingleton { ToolPresentationCreate() }
+    bindSingleton { ToolPresentationCreate(instance()) }
     bindSingleton { ToolPresentationRead() }
 
     bindSingleton { GraphSessionRepository() }

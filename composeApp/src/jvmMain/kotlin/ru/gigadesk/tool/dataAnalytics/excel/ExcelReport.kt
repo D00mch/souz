@@ -1,11 +1,14 @@
 package ru.gigadesk.tool.dataAnalytics.excel
 
+import org.apache.commons.csv.CSVFormat
+import org.apache.commons.csv.CSVParser
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.tool.files.ForbiddenFolder
 import java.io.File
 import java.io.FileOutputStream
+import java.io.StringReader
 
 class ExcelReport(
     private val filesToolUtil: FilesToolUtil
@@ -55,6 +58,7 @@ File must not exist. For reading use ExcelRead."""
             val sheet = wb.createSheet(input.sheetName ?: "Report")
             
             var rowIdx = 0
+            var maxColumns = 0
 
             if (!input.headers.isNullOrBlank()) {
                 val row = sheet.createRow(rowIdx++)
@@ -63,63 +67,56 @@ File must not exist. For reading use ExcelRead."""
                 font.bold = true
                 style.setFont(font)
 
-                input.headers.split(",").forEachIndexed { i, h ->
+                parseCsvRows(input.headers).firstOrNull().orEmpty().forEachIndexed { i, h ->
                     val cell = row.createCell(i)
-                    cell.setCellValue(h.trim())
+                    cell.setCellValue(h)
                     cell.cellStyle = style
                 }
+                maxColumns = maxOf(maxColumns, row.lastCellNum.toInt())
             }
 
             // Data
             if (!input.csvData.isNullOrBlank()) {
-                val rawData = input.csvData.replace("\r\n", "\n").replace("\r", "\n")
-                
-                rawData.lineSequence().forEach { line ->
-                    if (line.isNotBlank()) {
-                         val row = sheet.createRow(rowIdx++)
-                         // Simple CSV parsing (handling quotes)
-                         val cells = mutableListOf<String>()
-                         var currentCell = StringBuilder()
-                         var insideQuote = false
-                         
-                         for (char in line) {
-                             if (char == '"') {
-                                 insideQuote = !insideQuote
-                             } else if (char == ',' && !insideQuote) {
-                                 cells.add(currentCell.toString().trim { it == ' ' || it == '"' })
-                                 currentCell = StringBuilder()
-                             } else {
-                                 currentCell.append(char)
-                             }
-                         }
-                         cells.add(currentCell.toString().trim { it == ' ' || it == '"' })
-                         
-                         cells.forEachIndexed { i, valueStr ->
-                             val cell = row.createCell(i)
-                             // Try to detect type
-                             val doubleVal = valueStr.toDoubleOrNull()
-                             val boolVal = if (valueStr.equals("true", ignoreCase = true)) true else if (valueStr.equals("false", ignoreCase = true)) false else null
-                             
-                             if (doubleVal != null) {
-                                 cell.setCellValue(doubleVal)
-                             } else if (boolVal != null) {
-                                 cell.setCellValue(boolVal)
-                             } else {
-                                 cell.setCellValue(valueStr)
-                             }
-                         }
+                parseCsvRows(input.csvData).forEach { cells ->
+                    val row = sheet.createRow(rowIdx++)
+
+                    cells.forEachIndexed { i, valueStr ->
+                        val cell = row.createCell(i)
+                        val doubleVal = valueStr.toDoubleOrNull()
+                        val boolVal = when {
+                            valueStr.equals("true", ignoreCase = true) -> true
+                            valueStr.equals("false", ignoreCase = true) -> false
+                            else -> null
+                        }
+
+                        when {
+                            doubleVal != null -> cell.setCellValue(doubleVal)
+                            boolVal != null -> cell.setCellValue(boolVal)
+                            else -> cell.setCellValue(valueStr)
+                        }
                     }
+                    maxColumns = maxOf(maxColumns, row.lastCellNum.toInt())
                 }
             }
 
-            if (rowIdx > 0) {
-                 val cols = sheet.getRow(0)?.lastCellNum?.toInt() ?: 0
-                 for(i in 0 until cols) sheet.autoSizeColumn(i)
+            if (rowIdx > 0 && maxColumns > 0) {
+                for (i in 0 until maxColumns) sheet.autoSizeColumn(i)
             }
 
             FileOutputStream(file).use { wb.write(it) }
         }
 
         return "Created report ${input.path}"
+    }
+
+    private fun parseCsvRows(csvData: String): List<List<String>> {
+        val format = CSVFormat.DEFAULT.builder()
+            .setTrim(true)
+            .setIgnoreEmptyLines(true)
+            .build()
+
+        return CSVParser(StringReader(csvData), format).use { parser ->
+            parser.records.map { record -> record.map { it } }
+        }
     }
 }
