@@ -15,6 +15,9 @@ import java.nio.file.StandardCopyOption
 
 class FilesToolUtil(private val settingsProvider: SettingsProvider) {
 
+    val homeStr: String
+        get() = Companion.homeStr
+
     /**
      * Generally, we don't want Agent to mess around anything out of $HOME and everything user disallowed
      */

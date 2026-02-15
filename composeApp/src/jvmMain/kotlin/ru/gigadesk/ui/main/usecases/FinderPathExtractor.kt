@@ -1,12 +1,15 @@
 package ru.gigadesk.ui.main.usecases
 
+import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.ui.common.FinderService
 import ru.gigadesk.ui.main.FinderPathItem
 import java.io.File
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
-object FinderPathExtractor {
+class FinderPathExtractor(
+    private val filesToolUtil: FilesToolUtil,
+) {
     private val quotedPathPattern = Regex("""["']((?:~/|/|${'$'}HOME/)[^"'\r\n]+)["']""")
     private val markdownLinkPathPattern = Regex("""\[[^\]]+]\(((?:~/|/|${'$'}HOME/)[^)]+)\)""")
     private val inlineCodePathPattern = Regex("""`((?:~/|/|${'$'}HOME/)[^`\r\n]+)`""")
@@ -52,6 +55,7 @@ object FinderPathExtractor {
         val normalizedCandidate = decodePathCandidate(rawCandidate)
             .trim()
             .removeSurrounding("`")
+            .let(filesToolUtil::applyDefaultEnvs)
             .let(::trimPathCandidate)
         if (normalizedCandidate.isBlank()) return null
 

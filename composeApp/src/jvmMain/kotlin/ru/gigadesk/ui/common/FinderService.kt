@@ -1,5 +1,6 @@
 package ru.gigadesk.ui.common
 
+import ru.gigadesk.tool.files.FilesToolUtil
 import java.awt.Desktop
 import java.io.File
 
@@ -63,7 +64,7 @@ object FinderService {
     }
 
     private fun expandHomeAliases(path: String): String {
-        val home = currentHomePath() ?: return path
+        val home = currentHomePath()
         return when {
             path == "~" -> home
             path.equals("home", ignoreCase = true) -> home
@@ -79,7 +80,7 @@ object FinderService {
         val file = File(path)
         if (file.isAbsolute) return file
 
-        val home = currentHomePath() ?: return file
+        val home = currentHomePath()
         return File(home, file.path)
     }
 
@@ -97,8 +98,7 @@ object FinderService {
         return path.trimEnd('/')
     }
 
-    private fun currentHomePath(): String? =
-        System.getProperty("user.home") ?: System.getenv("HOME")
+    private fun currentHomePath(): String = FilesToolUtil.homeStr
 
     private fun isMacOs(): Boolean =
         System.getProperty("os.name")

@@ -18,7 +18,6 @@ import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.ui.main.ChatMessage
-import ru.gigadesk.ui.main.FinderPathItem
 import ru.gigadesk.ui.main.MainState
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -29,6 +28,7 @@ class ChatUseCase(
     private val graphAgent: GraphBasedAgent,
     private val settingsProvider: SettingsProvider,
     private val speechUseCase: SpeechUseCase,
+    private val finderPathExtractor: FinderPathExtractor,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val l = LoggerFactory.getLogger(ChatUseCase::class.java)
@@ -188,11 +188,9 @@ class ChatUseCase(
             var accumulatedText = ""
             activeAgent().sideEffects.collect { text ->
                 accumulatedText += text
-                val finderPaths = extractFinderPaths(accumulatedText)
                 emitState {
                     val updatedMessage = msg.copy(
                         text = accumulatedText,
-                        finderPaths = finderPaths,
                     )
                     val updatedMessages = if (msg.id == chatMessages.lastOrNull()?.id) {
                         chatMessages.mapLast { updatedMessage }
@@ -232,9 +230,10 @@ class ChatUseCase(
         _outputs.emit(MainUseCaseOutput.State(reduce))
     }
 
-    private suspend fun extractFinderPaths(text: String): List<FinderPathItem> =
+
+    private suspend fun extractFinderPaths(text: String) =
         withContext(ioDispatcher) {
-            FinderPathExtractor.extract(text)
+            finderPathExtractor.extract(text)
         }
 
     private inline fun <T> List<T>.mapLast(transform: (T) -> T): List<T> =
