@@ -6,6 +6,7 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.ui.BaseViewModel
+import ru.gigadesk.ui.common.FinderService
 
 class FoldersManagementViewModel(
     override val di: DI,
@@ -15,8 +16,7 @@ class FoldersManagementViewModel(
     private val settingsProvider: SettingsProvider by di.instance()
 
     init {
-        val foldersText = settingsProvider.forbiddenFolders.joinToString("\n")
-        vmLaunch { setState { copy(forbiddenFoldersInput = foldersText) } }
+        vmLaunch { refreshFoldersState(settingsProvider.forbiddenFolders) }
     }
 
     override fun initialState(): FoldersManagementState = FoldersManagementState()
@@ -24,13 +24,19 @@ class FoldersManagementViewModel(
     override suspend fun handleEvent(event: FoldersManagementEvent) {
         l.debug("handleEvent: {}", event)
         when (event) {
-            is FoldersManagementEvent.InputForbiddenFolders -> {
-                val folders = event.folders
-                    .lines()
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                settingsProvider.forbiddenFolders = folders
-                setState { copy(forbiddenFoldersInput = event.folders) }
+            is FoldersManagementEvent.AddForbiddenFolder -> {
+                val newFolder = FinderService.normalizePath(event.path) ?: return
+                val updated = (currentState.forbiddenFolders.map { it.path } + newFolder)
+                    .distinctBy { it.lowercase() }
+                refreshFoldersState(updated)
+            }
+
+            is FoldersManagementEvent.RemoveForbiddenFolder -> {
+                val target = FinderService.normalizePath(event.path) ?: return
+                val updated = currentState.forbiddenFolders
+                    .map { it.path }
+                    .filterNot { it.equals(target, ignoreCase = true) }
+                refreshFoldersState(updated)
             }
 
             FoldersManagementEvent.CloseScreen -> send(FoldersManagementEffect.CloseScreen)
@@ -39,5 +45,23 @@ class FoldersManagementViewModel(
 
     override suspend fun handleSideEffect(effect: FoldersManagementEffect) = when (effect) {
         FoldersManagementEffect.CloseScreen -> l.debug("ignore effect: {}", effect)
+    }
+
+    private suspend fun refreshFoldersState(rawFolders: List<String>) {
+        val normalizedFolders = rawFolders
+            .mapNotNull(FinderService::normalizePath)
+            .distinctBy { it.lowercase() }
+
+        settingsProvider.forbiddenFolders = normalizedFolders
+        setState {
+            copy(
+                forbiddenFolders = normalizedFolders.map { path ->
+                    ForbiddenFolderItem(
+                        title = FinderService.displayName(path),
+                        path = path
+                    )
+                }
+            )
+        }
     }
 }

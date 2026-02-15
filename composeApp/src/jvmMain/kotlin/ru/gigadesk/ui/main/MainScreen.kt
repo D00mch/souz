@@ -18,10 +18,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Replay
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -63,12 +65,16 @@ import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import org.kodein.di.compose.localDI
 import ru.gigadesk.ui.common.ConnectionStatusNotification
 import ru.gigadesk.ui.common.DraggableWindowArea
+import ru.gigadesk.ui.common.FinderService
 import ru.gigadesk.ui.common.parseMarkdownContent
 import ru.gigadesk.ui.common.CodeBlockWithCopy
 import ru.gigadesk.ui.common.MarkdownPart
 import ru.gigadesk.ui.glassColors
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.key.*
+import java.io.File
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 private val TopButtonSize = 24.dp
 private val TopIconSize = 14.dp
@@ -81,6 +87,15 @@ private val ChatAssistantBubbleBackground = Color(0x4C000000)
 private val ChatAssistantBubbleBorderColor = Color(0x33FFFFFF)
 private val ChatAssistantTextColor = Color(0xE5FFFFFF)
 private val ChatAssistantTimestampColor = Color(0x7FFFFFFF)
+private val FinderPathChipBackground = Color(0x2625CAB0)
+private val FinderPathChipBorder = Color(0x8812E0B5)
+private val FinderPathChipTextColor = Color(0xFF12E0B5)
+private val FinderQuotedPathPattern = Regex("""["']((?:~/|/)[^"'\r\n]+)["']""")
+private val FinderMarkdownLinkPathPattern = Regex("""\[[^\]]+]\(((?:~/|/)[^)]+)\)""")
+private val FinderInlineCodePathPattern = Regex("""`((?:~/|/)[^`\r\n]+)`""")
+private val FinderRawPathPattern = Regex("""(?<![A-Za-z0-9._~:/-])((?:~/|/)[^\s`"'<>|]+)""")
+private val FinderLineTailPathPattern = Regex("""(^|\s)((?:~/|/).+)$""")
+private val FinderPathTrailingChars = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '"', '\'')
 
 
 @Composable
@@ -633,6 +648,7 @@ private fun ChatBubble(
                     fontSize = baseFontSize * 0.9,
                     color = Color(0xFFE0E0E0)
                 )
+                val clickablePaths = remember(message.text) { extractExistingPathsFromMessage(message.text) }
                 
                 val bubbleTypography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.SMALL)
                 val bubbleColors = chatMarkdownColors(baseStyle.color)
@@ -660,6 +676,25 @@ private fun ChatBubble(
                         }
                     }
                 }
+
+                if (clickablePaths.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        clickablePaths.forEach { path ->
+                            FinderPathChip(
+                                path = path,
+                                displayName = FinderService.displayName(path),
+                                isDirectory = FinderService.isDirectory(path),
+                                onClick = {
+                                    FinderService.openInFinder(path)
+                                        .onFailure { error ->
+                                            onShowSnack(error.message ?: "Не удалось открыть путь")
+                                        }
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             Row(
@@ -680,6 +715,128 @@ private fun ChatBubble(
             }
         }
     }
+}
+
+@Composable
+private fun FinderPathChip(
+    path: String,
+    displayName: String,
+    isDirectory: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    TooltipArea(
+        delayMillis = 250,
+        tooltip = {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xE6000000))
+                    .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = path,
+                    color = Color(0xF2FFFFFF),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+    ) {
+        Row(
+            modifier = Modifier
+                .clip(shape)
+                .background(FinderPathChipBackground)
+                .border(1.dp, FinderPathChipBorder, shape)
+                .pointerHoverIcon(PointerIcon.Hand)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = if (isDirectory) Icons.Rounded.Folder else Icons.Rounded.Description,
+                contentDescription = null,
+                tint = FinderPathChipTextColor,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = displayName,
+                color = FinderPathChipTextColor,
+                fontSize = 14.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+private fun extractExistingPathsFromMessage(content: String): List<String> {
+    if (content.isBlank()) return emptyList()
+
+    val candidates = LinkedHashSet<String>()
+
+    FinderQuotedPathPattern.findAll(content).forEach { candidates += it.groupValues[1] }
+    FinderMarkdownLinkPathPattern.findAll(content).forEach { candidates += it.groupValues[1] }
+    FinderInlineCodePathPattern.findAll(content).forEach { candidates += it.groupValues[1] }
+    FinderRawPathPattern.findAll(content).forEach { candidates += it.groupValues[1] }
+
+    content.lineSequence().forEach { line ->
+        FinderLineTailPathPattern.find(line)
+            ?.groupValues
+            ?.getOrNull(2)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { candidates += it }
+    }
+
+    return candidates
+        .asSequence()
+        .mapNotNull(::resolveExistingPath)
+        .distinctBy { it.lowercase() }
+        .toList()
+}
+
+private fun resolveExistingPath(rawCandidate: String): String? {
+    val normalizedCandidate = decodePathCandidate(rawCandidate)
+        .trim()
+        .removeSurrounding("`")
+        .let(::trimPathCandidate)
+    if (normalizedCandidate.isBlank()) return null
+
+    val attempts = LinkedHashSet<String>()
+    attempts += normalizedCandidate
+
+    if (normalizedCandidate.contains(' ')) {
+        var trimmed = normalizedCandidate
+        while (trimmed.contains(' ')) {
+            trimmed = trimmed.substringBeforeLast(' ').trimEnd()
+            if (trimmed.isBlank()) break
+            attempts += trimPathCandidate(trimmed)
+        }
+    }
+
+    return attempts
+        .asSequence()
+        .mapNotNull { FinderService.normalizePath(it) }
+        .filter { it != "/" && File(it).exists() }
+        .maxByOrNull { it.length }
+}
+
+private fun trimPathCandidate(candidate: String): String {
+    val trimmed = candidate.trim()
+    if (trimmed.isEmpty()) return trimmed
+    return if (trimmed.length > 1) trimmed.trimEnd { it in FinderPathTrailingChars } else trimmed
+}
+
+private fun decodePathCandidate(candidate: String): String {
+    val unescapedSpaces = candidate.replace("\\ ", " ")
+    if (!unescapedSpaces.contains('%')) return unescapedSpaces
+
+    val encodedPlusSafe = unescapedSpaces.replace("+", "%2B")
+    return runCatching {
+        URLDecoder.decode(encodedPlusSafe, StandardCharsets.UTF_8)
+    }.getOrDefault(unescapedSpaces)
 }
 
 @Composable
