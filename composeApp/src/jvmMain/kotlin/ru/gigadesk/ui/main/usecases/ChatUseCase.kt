@@ -18,6 +18,7 @@ import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.ui.main.ChatMessage
+import ru.gigadesk.ui.main.FinderPathItem
 import ru.gigadesk.ui.main.MainState
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -90,7 +91,10 @@ class ChatUseCase(
                 activeAgent().execute(userText)
             }
 
-            val botMessage = pendingBotMessage.copy(text = response)
+            val botMessage = pendingBotMessage.copy(
+                text = response,
+                finderPaths = extractFinderPaths(response),
+            )
             if (activeChatRequestId.get() != requestId) {
                 l.info("Skipping stale chat response for request {}", requestId)
                 return
@@ -181,12 +185,19 @@ class ChatUseCase(
     private fun subscribeOnTaskSideEffects(scope: CoroutineScope, msg: ChatMessage): Job {
         val job = scope.launch {
             val isCodeBlockStarted = AtomicBoolean(false)
+            var accumulatedText = ""
             activeAgent().sideEffects.collect { text ->
+                accumulatedText += text
+                val finderPaths = extractFinderPaths(accumulatedText)
                 emitState {
+                    val updatedMessage = msg.copy(
+                        text = accumulatedText,
+                        finderPaths = finderPaths,
+                    )
                     val updatedMessages = if (msg.id == chatMessages.lastOrNull()?.id) {
-                        chatMessages.mapLast { last -> last.copy(text = last.text + text) }
+                        chatMessages.mapLast { updatedMessage }
                     } else {
-                        chatMessages + msg.copy(text = text)
+                        chatMessages + updatedMessage
                     }
                     copy(chatMessages = updatedMessages)
                 }
@@ -220,6 +231,11 @@ class ChatUseCase(
     private suspend fun emitState(reduce: MainState.() -> MainState) {
         _outputs.emit(MainUseCaseOutput.State(reduce))
     }
+
+    private suspend fun extractFinderPaths(text: String): List<FinderPathItem> =
+        withContext(ioDispatcher) {
+            FinderPathExtractor.extract(text)
+        }
 
     private inline fun <T> List<T>.mapLast(transform: (T) -> T): List<T> =
         mapIndexed { index, value -> if (index == lastIndex) transform(value) else value }

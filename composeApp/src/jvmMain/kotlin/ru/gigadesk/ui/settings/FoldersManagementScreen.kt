@@ -46,7 +46,6 @@ import org.kodein.di.compose.localDI
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
-import javax.swing.JFileChooser
 
 @Composable
 fun FoldersManagementScreen(
@@ -66,11 +65,7 @@ fun FoldersManagementScreen(
 
     FoldersManagementScreen(
         state = state,
-        onBrowseFolder = {
-            chooseFolderFromFinder()?.let { selectedPath ->
-                viewModel.send(FoldersManagementEvent.AddForbiddenFolder(selectedPath))
-            }
-        },
+        onBrowseFolder = { viewModel.send(FoldersManagementEvent.BrowseFolder) },
         onRemoveFolder = { path ->
             viewModel.send(FoldersManagementEvent.RemoveForbiddenFolder(path))
         },
@@ -288,20 +283,6 @@ private fun ForbiddenFolderCard(
             )
         }
     }
-}
-
-private fun chooseFolderFromFinder(): String? {
-    val chooser = JFileChooser().apply {
-        dialogTitle = "Выберите папку"
-        fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-        isMultiSelectionEnabled = false
-        isAcceptAllFileFilterUsed = false
-    }
-    val result = chooser.showOpenDialog(null)
-    if (result != JFileChooser.APPROVE_OPTION) return null
-
-    val selected = chooser.selectedFile ?: return null
-    return runCatching { selected.canonicalPath }.getOrElse { selected.absolutePath }
 }
 
 @Preview

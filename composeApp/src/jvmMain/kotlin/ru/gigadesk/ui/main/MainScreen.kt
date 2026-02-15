@@ -62,21 +62,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.kodein.di.compose.localDI
 import ru.gigadesk.ui.common.ConnectionStatusNotification
 import ru.gigadesk.ui.common.DraggableWindowArea
-import ru.gigadesk.ui.common.FinderService
 import ru.gigadesk.ui.common.parseMarkdownContent
 import ru.gigadesk.ui.common.CodeBlockWithCopy
 import ru.gigadesk.ui.common.MarkdownPart
 import ru.gigadesk.ui.glassColors
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.key.*
-import java.io.File
-import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 
 private val TopButtonSize = 24.dp
 private val TopIconSize = 14.dp
@@ -92,18 +86,6 @@ private val ChatAssistantTimestampColor = Color(0x7FFFFFFF)
 private val FinderPathChipBackground = Color(0x2625CAB0)
 private val FinderPathChipBorder = Color(0x8812E0B5)
 private val FinderPathChipTextColor = Color(0xFF12E0B5)
-private val FinderQuotedPathPattern = Regex("""["']((?:~/|/|${'$'}HOME/)[^"'\r\n]+)["']""")
-private val FinderMarkdownLinkPathPattern = Regex("""\[[^\]]+]\(((?:~/|/|${'$'}HOME/)[^)]+)\)""")
-private val FinderInlineCodePathPattern = Regex("""`((?:~/|/|${'$'}HOME/)[^`\r\n]+)`""")
-private val FinderRawPathPattern = Regex("""(?<![A-Za-z0-9._~:/-])((?:~/|/|${'$'}HOME/)[^\s`"'<>|]+)""")
-private val FinderLineTailPathPattern = Regex("""(^|\s)((?:~/|/|${'$'}HOME/).+)$""")
-private val FinderPathTrailingChars = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '"', '\'')
-
-private data class FinderPathItem(
-    val path: String,
-    val displayName: String,
-    val isDirectory: Boolean,
-)
 
 
 @Composable
@@ -662,14 +644,7 @@ private fun ChatBubble(
                     fontSize = baseFontSize * 0.9,
                     color = Color(0xFFE0E0E0)
                 )
-                val clickablePaths by produceState(
-                    initialValue = emptyList<FinderPathItem>(),
-                    key1 = message.text
-                ) {
-                    value = withContext(Dispatchers.IO) {
-                        extractFinderPathItemsFromMessage(message.text)
-                    }
-                }
+                val clickablePaths = message.finderPaths
                 
                 val bubbleTypography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.SMALL)
                 val bubbleColors = chatMarkdownColors(baseStyle.color)
@@ -788,82 +763,6 @@ private fun FinderPathChip(
             )
         }
     }
-}
-
-private fun extractFinderPathItemsFromMessage(content: String): List<FinderPathItem> =
-    extractExistingPathsFromMessage(content).map { path ->
-        FinderPathItem(
-            path = path,
-            displayName = FinderService.displayName(path),
-            isDirectory = FinderService.isDirectory(path)
-        )
-    }
-
-private fun extractExistingPathsFromMessage(content: String): List<String> {
-    if (content.isBlank()) return emptyList()
-
-    val candidates = LinkedHashSet<String>()
-
-    FinderQuotedPathPattern.findAll(content).forEach { candidates += it.groupValues[1] }
-    FinderMarkdownLinkPathPattern.findAll(content).forEach { candidates += it.groupValues[1] }
-    FinderInlineCodePathPattern.findAll(content).forEach { candidates += it.groupValues[1] }
-    FinderRawPathPattern.findAll(content).forEach { candidates += it.groupValues[1] }
-
-    content.lineSequence().forEach { line ->
-        FinderLineTailPathPattern.find(line)
-            ?.groupValues
-            ?.getOrNull(2)
-            ?.takeIf { it.isNotBlank() }
-            ?.let { candidates += it }
-    }
-
-    return candidates
-        .asSequence()
-        .mapNotNull(::resolveExistingPath)
-        .distinctBy { it.lowercase() }
-        .toList()
-}
-
-private fun resolveExistingPath(rawCandidate: String): String? {
-    val normalizedCandidate = decodePathCandidate(rawCandidate)
-        .trim()
-        .removeSurrounding("`")
-        .let(::trimPathCandidate)
-    if (normalizedCandidate.isBlank()) return null
-
-    val attempts = LinkedHashSet<String>()
-    attempts += normalizedCandidate
-
-    if (normalizedCandidate.contains(' ')) {
-        var trimmed = normalizedCandidate
-        while (trimmed.contains(' ')) {
-            trimmed = trimmed.substringBeforeLast(' ').trimEnd()
-            if (trimmed.isBlank()) break
-            attempts += trimPathCandidate(trimmed)
-        }
-    }
-
-    return attempts
-        .asSequence()
-        .mapNotNull { FinderService.normalizePath(it) }
-        .filter { it != "/" && File(it).exists() }
-        .maxByOrNull { it.length }
-}
-
-private fun trimPathCandidate(candidate: String): String {
-    val trimmed = candidate.trim()
-    if (trimmed.isEmpty()) return trimmed
-    return if (trimmed.length > 1) trimmed.trimEnd { it in FinderPathTrailingChars } else trimmed
-}
-
-private fun decodePathCandidate(candidate: String): String {
-    val unescapedSpaces = candidate.replace("\\ ", " ")
-    if (!unescapedSpaces.contains('%')) return unescapedSpaces
-
-    val encodedPlusSafe = unescapedSpaces.replace("+", "%2B")
-    return runCatching {
-        URLDecoder.decode(encodedPlusSafe, StandardCharsets.UTF_8)
-    }.getOrDefault(unescapedSpaces)
 }
 
 @Composable

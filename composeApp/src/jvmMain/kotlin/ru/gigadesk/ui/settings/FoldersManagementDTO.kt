@@ -14,6 +14,7 @@ data class ForbiddenFolderItem(
 )
 
 sealed interface FoldersManagementEvent : VMEvent {
+    object BrowseFolder : FoldersManagementEvent
     data class AddForbiddenFolder(val path: String) : FoldersManagementEvent
     data class RemoveForbiddenFolder(val path: String) : FoldersManagementEvent
     object CloseScreen : FoldersManagementEvent

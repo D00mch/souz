@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.ui.BaseViewModel
 import ru.gigadesk.ui.common.FinderService
+import javax.swing.JFileChooser
 
 class FoldersManagementViewModel(
     override val di: DI,
@@ -28,12 +29,9 @@ class FoldersManagementViewModel(
     override suspend fun handleEvent(event: FoldersManagementEvent) {
         l.debug("handleEvent: {}", event)
         when (event) {
-            is FoldersManagementEvent.AddForbiddenFolder -> {
-                val newFolder = FinderService.normalizePath(event.path) ?: return
-                val updated = (currentState.forbiddenFolders.map { it.path } + newFolder)
-                    .distinctBy { it.lowercase() }
-                refreshFoldersState(updated)
-            }
+            FoldersManagementEvent.BrowseFolder -> browseFolder()
+
+            is FoldersManagementEvent.AddForbiddenFolder -> addForbiddenFolder(event.path)
 
             is FoldersManagementEvent.RemoveForbiddenFolder -> {
                 val target = FinderService.normalizePath(event.path) ?: return
@@ -49,6 +47,18 @@ class FoldersManagementViewModel(
 
     override suspend fun handleSideEffect(effect: FoldersManagementEffect) = when (effect) {
         FoldersManagementEffect.CloseScreen -> l.debug("ignore effect: {}", effect)
+    }
+
+    private suspend fun browseFolder() {
+        val selectedPath = chooseFolderFromFinder() ?: return
+        addForbiddenFolder(selectedPath)
+    }
+
+    private suspend fun addForbiddenFolder(path: String) {
+        val newFolder = FinderService.normalizePath(path) ?: return
+        val updated = (currentState.forbiddenFolders.map { it.path } + newFolder)
+            .distinctBy { it.lowercase() }
+        refreshFoldersState(updated)
     }
 
     private suspend fun refreshFoldersState(rawFolders: List<String>) {
@@ -71,4 +81,18 @@ class FoldersManagementViewModel(
                     path = path
                 )
             }
+
+    private fun chooseFolderFromFinder(): String? {
+        val chooser = JFileChooser().apply {
+            dialogTitle = "Выберите папку"
+            fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+            isMultiSelectionEnabled = false
+            isAcceptAllFileFilterUsed = false
+        }
+        val result = chooser.showOpenDialog(null)
+        if (result != JFileChooser.APPROVE_OPTION) return null
+
+        val selected = chooser.selectedFile ?: return null
+        return runCatching { selected.canonicalPath }.getOrElse { selected.absolutePath }
+    }
 }

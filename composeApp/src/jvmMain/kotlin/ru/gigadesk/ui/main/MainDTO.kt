@@ -11,10 +11,17 @@ import ru.gigadesk.giga.GigaRequest
 /**
  * Chat message for the chat mode.
  */
+data class FinderPathItem(
+    val path: String,
+    val displayName: String,
+    val isDirectory: Boolean,
+)
+
 data class ChatMessage(
     val text: String,
     val isUser: Boolean,
     val isVoice: Boolean = false,
+    val finderPaths: List<FinderPathItem> = emptyList(),
     val timestamp: Long = System.currentTimeMillis(),
     val id: String = java.util.UUID.randomUUID().toString()
 )
