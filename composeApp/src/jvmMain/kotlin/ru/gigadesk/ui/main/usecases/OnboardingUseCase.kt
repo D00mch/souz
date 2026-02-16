@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.permissions.AppRelauncher
 import ru.gigadesk.tool.ToolPermissionBroker
+import ru.gigadesk.ui.main.ChatMessage
 import ru.gigadesk.ui.main.MainState
 import ru.gigadesk.ui.main.ToolPermissionDialogData
 import kotlin.math.max
@@ -59,7 +60,16 @@ class OnboardingUseCase(
 
         settingsProvider.needsOnboarding = false
         settingsProvider.onboardingCompleted = true
-        emitState { copy(displayedText = ONBOARDING_DISPLAY_TEXT) }
+        emitState {
+            copy(
+                displayedText = ONBOARDING_DISPLAY_TEXT,
+                chatStartTip = "",
+                chatMessages = chatMessages + ChatMessage(
+                    text = ONBOARDING_DISPLAY_TEXT,
+                    isUser = false,
+                ),
+            )
+        }
 
         onboardingSpeechStartedAt = System.currentTimeMillis()
         speechUseCase.queuePrepared(ONBOARDING_SPEECH_TEXT)
