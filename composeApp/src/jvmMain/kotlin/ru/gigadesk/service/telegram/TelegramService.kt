@@ -196,6 +196,15 @@ class TelegramService(
         restartClient()
     }
 
+    suspend fun requestCodeAgain(phoneNumber: String) {
+        val normalized = normalizePhone(phoneNumber)
+        if (normalized.isBlank()) {
+            throw IllegalArgumentException("Phone number is required")
+        }
+        restartClient()
+        submitPhoneNumber(normalized)
+    }
+
     suspend fun readUnreadInbox(limit: Int = 50): List<TelegramInboxItem> {
         requireReady()
         val cappedLimit = limit.coerceIn(1, TELEGRAM_MAX_CHATS_CACHE)
@@ -920,15 +929,30 @@ class TelegramService(
             else -> throwable.message ?: throwable::class.simpleName.orEmpty()
         }
         val message = formatUserError(rawMessage)
+        val nextStep = resolveStepAfterError(authStateFlow.value.step, rawMessage)
 
         l.debug("Telegram client error: {}", sanitizeTelegramError(rawMessage), throwable)
 
         authStateFlow.update {
             it.copy(
-                step = if (it.step == TelegramAuthStep.READY) it.step else TelegramAuthStep.ERROR,
+                step = nextStep,
                 isBusy = false,
                 errorMessage = message,
             )
+        }
+    }
+
+    private fun resolveStepAfterError(currentStep: TelegramAuthStep, rawMessage: String?): TelegramAuthStep {
+        val normalized = rawMessage.orEmpty()
+        return when {
+            currentStep == TelegramAuthStep.READY -> TelegramAuthStep.READY
+            normalized.contains("PHONE_CODE", ignoreCase = true) -> TelegramAuthStep.WAIT_CODE
+            normalized.contains("PASSWORD", ignoreCase = true) -> TelegramAuthStep.WAIT_PASSWORD
+            normalized.contains("PHONE_NUMBER", ignoreCase = true) -> TelegramAuthStep.WAIT_PHONE
+            currentStep == TelegramAuthStep.WAIT_PHONE ||
+                currentStep == TelegramAuthStep.WAIT_CODE ||
+                currentStep == TelegramAuthStep.WAIT_PASSWORD -> currentStep
+            else -> TelegramAuthStep.ERROR
         }
     }
 
@@ -1046,6 +1070,8 @@ class TelegramService(
         private val codeFutureRef = AtomicReference<CompletableFuture<String>?>(null)
         private val passwordFutureRef = AtomicReference<CompletableFuture<String>?>(null)
         private val queuedPhoneRef = AtomicReference<String?>(null)
+        private val queuedCodeRef = AtomicReference<String?>(null)
+        private val queuedPasswordRef = AtomicReference<String?>(null)
 
         override fun get(): CompletableFuture<AuthenticationData> {
             val queuedPhone = queuedPhoneRef.getAndSet(null)
@@ -1070,9 +1096,22 @@ class TelegramService(
         override fun onParameterRequest(parameter: InputParameter, parameterInfo: ParameterInfo): CompletableFuture<String> {
             return when (parameter) {
                 InputParameter.ASK_CODE -> {
+                    val hintPhone = (parameterInfo as? ParameterInfoCode)?.phoneNumber
+                    val queuedCode = queuedCodeRef.getAndSet(null)
+                    if (!queuedCode.isNullOrBlank()) {
+                        authStateFlow.update {
+                            it.copy(
+                                step = TelegramAuthStep.WAIT_CODE,
+                                codeHint = hintPhone,
+                                isBusy = true,
+                                errorMessage = null,
+                            )
+                        }
+                        return CompletableFuture.completedFuture(queuedCode)
+                    }
+
                     val future = CompletableFuture<String>()
                     codeFutureRef.set(future)
-                    val hintPhone = (parameterInfo as? ParameterInfoCode)?.phoneNumber
                     authStateFlow.update {
                         it.copy(
                             step = TelegramAuthStep.WAIT_CODE,
@@ -1085,9 +1124,22 @@ class TelegramService(
                 }
 
                 InputParameter.ASK_PASSWORD -> {
+                    val hint = (parameterInfo as? ParameterInfoPasswordHint)?.hint
+                    val queuedPassword = queuedPasswordRef.getAndSet(null)
+                    if (!queuedPassword.isNullOrBlank()) {
+                        authStateFlow.update {
+                            it.copy(
+                                step = TelegramAuthStep.WAIT_PASSWORD,
+                                passwordHint = hint,
+                                isBusy = true,
+                                errorMessage = null,
+                            )
+                        }
+                        return CompletableFuture.completedFuture(queuedPassword)
+                    }
+
                     val future = CompletableFuture<String>()
                     passwordFutureRef.set(future)
-                    val hint = (parameterInfo as? ParameterInfoPasswordHint)?.hint
                     authStateFlow.update {
                         it.copy(
                             step = TelegramAuthStep.WAIT_PASSWORD,
@@ -1115,14 +1167,20 @@ class TelegramService(
 
         fun provideCode(code: String) {
             val pending = codeFutureRef.getAndSet(null)
-                ?: throw IllegalStateException("Telegram is not waiting for login code")
-            pending.complete(code)
+            if (pending != null && !pending.isDone) {
+                pending.complete(code)
+            } else {
+                queuedCodeRef.set(code)
+            }
         }
 
         fun providePassword(password: String) {
             val pending = passwordFutureRef.getAndSet(null)
-                ?: throw IllegalStateException("Telegram is not waiting for 2FA password")
-            pending.complete(password)
+            if (pending != null && !pending.isDone) {
+                pending.complete(password)
+            } else {
+                queuedPasswordRef.set(password)
+            }
         }
 
         fun reset() {
@@ -1130,6 +1188,8 @@ class TelegramService(
             codeFutureRef.getAndSet(null)?.cancel(true)
             passwordFutureRef.getAndSet(null)?.cancel(true)
             queuedPhoneRef.set(null)
+            queuedCodeRef.set(null)
+            queuedPasswordRef.set(null)
         }
     }
 }

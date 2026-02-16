@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -38,11 +39,11 @@ import ru.gigadesk.ui.components.LabeledTextField
 import gigadesk.composeapp.generated.resources.Res
 import gigadesk.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
-import org.jetbrains.compose.resources.getString
 
 @Composable
 fun TelegramLoginContent(
     state: SettingsState,
+    onStartWork: () -> Unit,
 ) {
     val di = localDI()
     val telegramService: TelegramService by di.instance()
@@ -61,12 +62,17 @@ fun TelegramLoginContent(
     val errorFailedVerifyCode = stringResource(Res.string.error_failed_verify_code)
     val errorFailedVerifyPassword = stringResource(Res.string.error_failed_verify_password)
     val errorFailedLogout = stringResource(Res.string.error_failed_logout)
+    val telegramBtnRequestCodeAgain = stringResource(Res.string.telegram_btn_request_code_again)
+    val telegramBtnStartOver = stringResource(Res.string.telegram_btn_start_over)
+    val telegramBtnStartWork = stringResource(Res.string.telegram_btn_start_work)
+    val telegramInfoCodeRequestedAgain = stringResource(Res.string.telegram_info_code_requested_again)
 
     LaunchedEffect(state.telegramAuthStep) {
         if (state.telegramAuthStep == TelegramAuthStepUi.CONNECTED) {
             codeValue = ""
             passwordValue = ""
             localError = null
+            localInfo = null
         }
     }
 
@@ -91,10 +97,16 @@ fun TelegramLoginContent(
             val trimmed = phoneValue.trim()
             if (trimmed.isBlank()) {
                 localError = errorEnterPhone
+                localInfo = null
             } else {
                 scope.launch {
                     runCatching { telegramService.submitPhoneNumber(trimmed) }
+                        .onSuccess {
+                            localError = null
+                            localInfo = null
+                        }
                         .onFailure {
+                            localInfo = null
                             localError = it.message ?: errorFailedRequestCode
                         }
                 }
@@ -105,14 +117,17 @@ fun TelegramLoginContent(
             val trimmed = codeValue.trim()
             if (trimmed.isBlank()) {
                 localError = errorEnterCode
+                localInfo = null
             } else {
                 scope.launch {
                     runCatching { telegramService.submitLoginCode(trimmed) }
                         .onFailure {
+                            localInfo = null
                             localError = it.message ?: errorFailedVerifyCode
                         }
                         .onSuccess {
-                            codeValue = ""
+                            localError = null
+                            localInfo = null
                         }
                 }
             }
@@ -121,22 +136,63 @@ fun TelegramLoginContent(
         val submitPassword = {
             if (passwordValue.isBlank()) {
                 localError = errorEnterPassword
+                localInfo = null
             } else {
                 scope.launch {
                     runCatching { telegramService.submitTwoFaPassword(passwordValue) }
                         .onFailure {
+                            localInfo = null
                             localError = it.message ?: errorFailedVerifyPassword
                         }
                         .onSuccess {
+                            localError = null
+                            localInfo = null
                             passwordValue = ""
                         }
                 }
             }
         }
 
+        val requestCodeAgain = {
+            val trimmedPhone = phoneValue.trim()
+            if (trimmedPhone.isBlank()) {
+                localError = errorEnterPhone
+                localInfo = null
+            } else {
+                scope.launch {
+                    runCatching { telegramService.requestCodeAgain(trimmedPhone) }
+                        .onSuccess {
+                            codeValue = ""
+                            passwordValue = ""
+                            localError = null
+                            localInfo = telegramInfoCodeRequestedAgain
+                        }
+                        .onFailure {
+                            localInfo = null
+                            localError = it.message ?: errorFailedRequestCode
+                        }
+                }
+            }
+        }
+
+        val startAuthFromBeginning = {
+            scope.launch {
+                runCatching { telegramService.cancelAuth() }
+                    .onSuccess {
+                        codeValue = ""
+                        passwordValue = ""
+                        localError = null
+                        localInfo = null
+                    }
+                    .onFailure {
+                        localInfo = null
+                        localError = it.message
+                    }
+            }
+        }
+
         when (state.telegramAuthStep) {
             TelegramAuthStepUi.PHONE,
-            TelegramAuthStepUi.ERROR,
             TelegramAuthStepUi.INITIALIZING -> {
                 LabeledTextField(
                     label = stringResource(Res.string.telegram_label_phone),
@@ -145,6 +201,7 @@ fun TelegramLoginContent(
                         val filtered = newValue.filter { it.isDigit() || it == '+' }
                         phoneValue = filtered
                         localError = null
+                        localInfo = null
                     },
                     modifier = Modifier.fillMaxWidth().onPreviewKeyEvent {
                         if (it.type == KeyEventType.KeyDown && (it.key == Key.Enter || it.key == Key.NumPadEnter)) {
@@ -173,6 +230,7 @@ fun TelegramLoginContent(
                     onValueChange = {
                         codeValue = it
                         localError = null
+                        localInfo = null
                     },
                     modifier = Modifier.fillMaxWidth().onPreviewKeyEvent {
                         if (it.type == KeyEventType.KeyDown && (it.key == Key.Enter || it.key == Key.NumPadEnter)) {
@@ -204,18 +262,26 @@ fun TelegramLoginContent(
                     Text(stringResource(Res.string.telegram_btn_verify_code))
                 }
                 OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            runCatching { telegramService.cancelAuth() }
-                                .onFailure { localError = it.message }
-                        }
-                    },
+                    onClick = { requestCodeAgain() },
+                    enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(46.dp),
                     shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text("Back")
+                    Text(telegramBtnRequestCodeAgain)
+                }
+                OutlinedButton(
+                    onClick = {
+                        startAuthFromBeginning()
+                    },
+                    enabled = !state.telegramAuthBusy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text(telegramBtnStartOver)
                 }
             }
 
@@ -225,6 +291,7 @@ fun TelegramLoginContent(
                     onValueChange = {
                         passwordValue = it
                         localError = null
+                        localInfo = null
                     },
                     modifier = Modifier.fillMaxWidth().onPreviewKeyEvent {
                         if (it.type == KeyEventType.KeyDown && (it.key == Key.Enter || it.key == Key.NumPadEnter)) {
@@ -257,17 +324,56 @@ fun TelegramLoginContent(
                 }
                 OutlinedButton(
                     onClick = {
-                        scope.launch {
-                            runCatching { telegramService.cancelAuth() }
-                                .onFailure { localError = it.message }
-                        }
+                        startAuthFromBeginning()
                     },
+                    enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(46.dp),
                     shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text("Back")
+                    Text(telegramBtnStartOver)
+                }
+            }
+
+            TelegramAuthStepUi.ERROR -> {
+                LabeledTextField(
+                    label = stringResource(Res.string.telegram_label_phone),
+                    value = phoneValue,
+                    onValueChange = { newValue ->
+                        val filtered = newValue.filter { it.isDigit() || it == '+' }
+                        phoneValue = filtered
+                        localError = null
+                        localInfo = null
+                    },
+                    modifier = Modifier.fillMaxWidth().onPreviewKeyEvent {
+                        if (it.type == KeyEventType.KeyDown && (it.key == Key.Enter || it.key == Key.NumPadEnter)) {
+                            submitPhone()
+                            true
+                        } else {
+                            false
+                        }
+                    },
+                )
+                Button(
+                    onClick = { submitPhone() },
+                    enabled = !state.telegramAuthBusy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text(stringResource(Res.string.telegram_btn_request_code))
+                }
+                OutlinedButton(
+                    onClick = { startAuthFromBeginning() },
+                    enabled = !state.telegramAuthBusy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text(telegramBtnStartOver)
                 }
             }
 
@@ -277,10 +383,25 @@ fun TelegramLoginContent(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
+                Button(
+                    onClick = onStartWork,
+                    enabled = !state.telegramAuthBusy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0x4D000000),
+                        contentColor = Color(0xF2FFFFFF),
+                    ),
+                    border = BorderStroke(1.dp, Color(0x26FFFFFF)),
+                ) {
+                    Text(telegramBtnStartWork)
+                }
                 OutlinedButton(
                     onClick = {
                         scope.launch {
-                        runCatching { telegramService.logout() }
+                            runCatching { telegramService.logout() }
                                 .onFailure {
                                     localError = it.message ?: errorFailedLogout
                                 }

@@ -266,12 +266,16 @@
     <string name="telegram_label_code">Login Code</string>
     <string name="telegram_label_password">2FA Password</string>
     <string name="telegram_btn_request_code">Request Code</string>
+    <string name="telegram_btn_request_code_again">Request code again</string>
     <string name="telegram_btn_verify_code">Verify Code</string>
     <string name="telegram_btn_verify_password">Verify Password</string>
+    <string name="telegram_btn_start_over">Start over</string>
+    <string name="telegram_btn_start_work">Start work</string>
     <string name="telegram_status_connected">Connected</string>
     <string name="telegram_btn_logout">Logout</string>
     <string name="telegram_hint_code_sent">Code sent to: %1$s</string>
     <string name="telegram_hint_password">Password hint: %1$s</string>
+    <string name="telegram_info_code_requested_again">Requested a new code. Check Telegram.</string>
 
     <!-- Setup -->
     <string name="setup_btn_choose_voice">Choose voice</string>

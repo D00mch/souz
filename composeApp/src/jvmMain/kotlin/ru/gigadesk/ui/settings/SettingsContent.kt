@@ -781,13 +781,17 @@ fun SecuritySettingsContent(
 fun TelegramSettingsScreen(
     state: SettingsState,
     onClose: () -> Unit,
+    onStartWork: () -> Unit,
 ) {
     SettingsSectionScreen(
         title = "Telegram",
         subtitle = "",
         onClose = onClose
     ) {
-        TelegramLoginContent(state = state)
+        TelegramLoginContent(
+            state = state,
+            onStartWork = onStartWork,
+        )
     }
 }
 
@@ -1617,6 +1621,7 @@ private fun TelegramSettingsScreenPreview() {
         TelegramSettingsScreen(
             state = PreviewSettingsState.copy(telegramAuthStep = TelegramAuthStepUi.PHONE),
             onClose = {},
+            onStartWork = {},
         )
     }
 }
