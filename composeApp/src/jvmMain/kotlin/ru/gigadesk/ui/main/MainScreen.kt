@@ -65,6 +65,8 @@ import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import org.kodein.di.compose.localDI
 import ru.gigadesk.ui.common.ConnectionStatusNotification
 import ru.gigadesk.ui.common.DraggableWindowArea
+import ru.gigadesk.ui.common.ConfirmDialog
+import ru.gigadesk.ui.common.ConfirmDialogType
 import ru.gigadesk.ui.common.parseMarkdownContent
 import ru.gigadesk.ui.common.CodeBlockWithCopy
 import ru.gigadesk.ui.common.MarkdownPart
@@ -313,44 +315,31 @@ fun MainScreenContent(
                  )
             }
 
-            AnimatedVisibility(
-                visible = state.showNewChatDialog,
-                enter = fadeIn(animationSpec = tween(200, easing = LinearOutSlowInEasing)),
-                exit = fadeOut(animationSpec = tween(200, easing = LinearOutSlowInEasing)),
-                modifier = Modifier
-                    .matchParentSize()
-                    .zIndex(20f)
-            ) {
-                NewConversationDialog(
-                    onDismiss = onDismissNewConversationDialog,
-                    onConfirm = onConfirmNewConversation
+            if (state.showNewChatDialog) {
+                ConfirmDialog(
+                    type = ConfirmDialogType.INFO,
+                    title = "Начать новую беседу?",
+                    message = "Текущая история сообщений будет утеряна",
+                    confirmText = "Начать",
+                    onConfirm = onConfirmNewConversation,
+                    onDismiss = onDismissNewConversationDialog
                 )
             }
 
             state.toolPermissionDialog?.let { dialog ->
-                AlertDialog(
-                    onDismissRequest = onRejectToolPermission,
-                    title = { Text("Подтверждение действия") },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(dialog.description)
-                            if (dialog.params.isNotEmpty()) {
-                                dialog.params.forEach { (key, value) ->
-                                    Text("$key: $value")
-                                }
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = onApproveToolPermission) {
-                            Text("Разрешить")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = onRejectToolPermission) {
-                            Text("Запретить")
-                        }
-                    }
+                val paramsString = if (dialog.params.isNotEmpty()) {
+                    dialog.params.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+                } else null
+
+                ConfirmDialog(
+                    type = ConfirmDialogType.WARNING,
+                    title = "Подтверждение действия",
+                    message = dialog.description,
+                    details = paramsString,
+                    confirmText = "Разрешить",
+                    cancelText = "Запретить",
+                    onConfirm = onApproveToolPermission,
+                    onDismiss = onRejectToolPermission
                 )
             }
         }
@@ -862,196 +851,7 @@ private fun SpeakingWaves(
     }
 }
 
-@Composable
-private fun NewConversationDialog(
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit
-) {
-    var appeared by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { appeared = true }
-    val dialogScale by animateFloatAsState(
-        targetValue = if (appeared) 1f else 0.95f,
-        animationSpec = tween(200, easing = LinearOutSlowInEasing)
-    )
-    val dialogAlpha by animateFloatAsState(
-        targetValue = if (appeared) 1f else 0f,
-        animationSpec = tween(200, easing = LinearOutSlowInEasing)
-    )
 
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(Color(0x99000000))
-                .blur(8.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss
-                )
-        )
-
-        Box(
-            modifier = Modifier
-                .padding(horizontal = 24.dp)
-                .fillMaxWidth()
-                .widthIn(max = 384.dp)
-                .alpha(dialogAlpha)
-                .scale(dialogScale)
-                .clip(RoundedCornerShape(16.dp))
-                .shadow(
-                    elevation = 32.dp,
-                    shape = RoundedCornerShape(16.dp),
-                    ambientColor = Color(0x80000000),
-                    spotColor = Color(0x80000000)
-                )
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {}
-                )
-        ) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(Color(0xD91E1E28))
-                    .blur(20.dp)
-            )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xD91E1E28))
-                    .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(16.dp))
-                    .padding(24.dp)
-            ) {
-                Text(
-                    text = "Начать новую беседу?",
-                    color = Color(0xF2FFFFFF),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                Text(
-                    text = "Текущая история сообщений будет утеряна",
-                    color = Color(0x80FFFFFF),
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 24.dp)
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DialogActionButton(
-                        text = "Отмена",
-                        textColor = Color(0xE6FFFFFF),
-                        borderColor = Color(0x33FFFFFF),
-                        normalBrush = Brush.linearGradient(
-                            listOf(
-                                Color(0x1AFFFFFF),
-                                Color(0x1AFFFFFF)
-                            )
-                        ),
-                        hoverBrush = Brush.linearGradient(
-                            listOf(
-                                Color(0x26FFFFFF),
-                                Color(0x26FFFFFF)
-                            )
-                        ),
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f)
-                    )
-                    DialogActionButton(
-                        text = "Начать",
-                        textColor = Color(0xFF12E0B5),
-                        borderColor = Color(0x6612E0B5),
-                        normalBrush = Brush.linearGradient(
-                            colors = listOf(
-                                Color(0x4C12E0B5),
-                                Color(0x3312E0B5)
-                            )
-                        ),
-                        hoverBrush = Brush.linearGradient(
-                            colors = listOf(
-                                Color(0x6612E0B5),
-                                Color(0x4C12E0B5)
-                            )
-                        ),
-                        glowColor = Color(0x6612E0B5),
-                        onClick = onConfirm,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DialogActionButton(
-    text: String,
-    textColor: Color,
-    borderColor: Color,
-    normalBrush: Brush,
-    hoverBrush: Brush,
-    modifier: Modifier = Modifier,
-    glowColor: Color = Color.Transparent,
-    onClick: () -> Unit,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = when {
-            isPressed -> 0.98f
-            isHovered -> 1.02f
-            else -> 1f
-        },
-        animationSpec = tween(140)
-    )
-    val brush = if (isHovered) hoverBrush else normalBrush
-
-    Box(
-        modifier = modifier
-            .scale(scale)
-            .height(44.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .shadow(
-                elevation = if (isHovered && glowColor != Color.Transparent) 14.dp else 0.dp,
-                shape = RoundedCornerShape(12.dp),
-                ambientColor = glowColor,
-                spotColor = glowColor
-            )
-    ) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(brush)
-                .blur(10.dp)
-        )
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .clip(RoundedCornerShape(12.dp))
-                .background(brush)
-                .border(1.dp, borderColor, RoundedCornerShape(12.dp))
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onClick
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = text,
-                color = textColor,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-    }
-}
 
 private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
 
