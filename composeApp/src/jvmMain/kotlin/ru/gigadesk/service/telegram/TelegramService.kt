@@ -553,18 +553,19 @@ class TelegramService(
             }
 
             TdApi.AuthorizationStateReady.CONSTRUCTOR -> {
-                authStateFlow.update {
-                    it.copy(
-                        step = TelegramAuthStep.READY,
-                        isBusy = false,
-                        codeHint = null,
-                        passwordHint = null,
-                        errorMessage = null,
-                    )
-                }
+                authStateFlow.update { it.copy(isBusy = true) }
                 scope.launch {
                     runCatching {
                         refreshMeAndCaches()
+                        authStateFlow.update {
+                            it.copy(
+                                step = TelegramAuthStep.READY,
+                                isBusy = false,
+                                codeHint = null,
+                                passwordHint = null,
+                                errorMessage = null,
+                            )
+                        }
                     }.onFailure {
                         onUnhandledError(it)
                     }

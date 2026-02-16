@@ -129,7 +129,7 @@ object LocalRegexClassifier : UserMessageClassifier {
         ToolCategory.TELEGRAM -> listOf(
             WeightedRegex(Regex("телеграм|telegram|\\bтг\\b|\\btg\\b"), 2.0),
             WeightedRegex(Regex("прочитай.*телеграм|покажи.*телеграм|в телеграм"), 1.5),
-            WeightedRegex(Regex("напиши.*(в|через).*телеграм|отправь.*(в|через).*телеграм|поиск.*телеграм|"), 2.0),
+            WeightedRegex(Regex("напиши.*(в|через).*телеграм|отправь.*(в|через).*телеграм|поиск.*телеграм"), 2.0),
             WeightedRegex(Regex("архивир|замьют|mute|mark readsaved messages|избранное"), 1.2),
         )
 
