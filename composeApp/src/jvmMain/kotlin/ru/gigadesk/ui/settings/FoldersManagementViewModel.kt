@@ -8,6 +8,9 @@ import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.ui.BaseViewModel
 import ru.gigadesk.ui.common.FinderService
 import javax.swing.JFileChooser
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
 class FoldersManagementViewModel(
     override val di: DI,
@@ -82,9 +85,10 @@ class FoldersManagementViewModel(
                 )
             }
 
-    private fun chooseFolderFromFinder(): String? {
+    private suspend fun chooseFolderFromFinder(): String? {
+        val title = getString(Res.string.title_select_folder)
         val chooser = JFileChooser().apply {
-            dialogTitle = "Выберите папку"
+            dialogTitle = title
             fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
             isMultiSelectionEnabled = false
             isAcceptAllFileFilterUsed = false

@@ -1,0 +1,306 @@
+<resources>
+    <string name="app_name">Gigadesk AI</string>
+    <string name="app_title_short">Union</string>
+
+    <!-- Tray -->
+    <string name="tray_tooltip">Gigadesk AI</string>
+    <string name="tray_show_hide">Show/Hide</string>
+    <string name="tray_mute">Mute</string>
+    <string name="tray_exit">Exit</string>
+
+    <!-- Main Screen -->
+    <string name="status_processing">Processing...</string>
+    <string name="chat_placeholder_tip">Ask me anything...</string>
+    
+    <!-- Dialogs -->
+    <string name="dialog_confirm">Confirm</string>
+    <string name="dialog_cancel">Cancel</string>
+    <string name="dialog_new_chat_title">Start new conversation?</string>
+    <string name="dialog_new_chat_text">Current message history will be lost</string>
+    <string name="dialog_new_chat_confirm">Start</string>
+    <string name="dialog_permission_title">Action confirmation</string>
+    <string name="dialog_permission_allow">Allow</string>
+    <string name="dialog_permission_deny">Deny</string>
+
+    <!-- Settings Sidebar -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_configuration">Configuration</string>
+    <string name="settings_section_models">Models</string>
+    <string name="settings_section_general">General</string>
+    <string name="settings_section_keys">My Keys</string>
+    <string name="settings_section_functions">Functions</string>
+    <string name="settings_section_security">Security</string>
+    <string name="settings_section_support">Support</string>
+
+    <!-- Settings Content -->
+    <string name="settings_models_subtitle">Models and generation parameters</string>
+    <string name="settings_general_subtitle">General application settings</string>
+    <string name="settings_keys_subtitle">Keys configuration and quick links</string>
+    <string name="settings_functions_subtitle">Tools and agent capabilities</string>
+    <string name="settings_security_subtitle">Security and restrictions</string>
+
+    <!-- Models Settings -->
+    <string name="label_temperature">Temperature</string>
+    <string name="label_timeout">Timeout (ms)</string>
+    <string name="label_context_size">Context window size</string>
+    <string name="label_system_prompt">System prompt</string>
+    <string name="button_reset">Reset</string>
+    <string name="hint_system_prompt_reset">Reset system prompt to default</string>
+
+    <!-- General Settings -->
+    <string name="setting_streaming_title">Streaming mode</string>
+    <string name="setting_streaming_desc">Responses appear gradually as they are generated</string>
+    <string name="label_voice_speed">Voice speed</string>
+    <string name="hint_voice_speed">Current value: %d. Higher is faster.</string>
+    <string name="label_voice_selection">Voice selection</string>
+    <string name="button_select_voice">Select voice</string>
+    <string name="label_mcp_servers">MCP servers JSON</string>
+    <string name="hint_restart_required">Changes will apply after application restart</string>
+
+    <!-- Keys Settings -->
+    <string name="keys_configured_count">Configured keys: %d / 4</string>
+    <string name="keys_hint_chat">One key is enough to chat: GigaChat, Qwen, or AI Tunnel.</string>
+    <string name="keys_hint_voice">For voice commands, a SaluteSpeech key from Sber cabinet is required.</string>
+    <string name="label_key_gigachat">GigaChat Key</string>
+    <string name="label_key_qwen">Qwen Key</string>
+    <string name="label_key_aitunnel">AI Tunnel Key</string>
+    <string name="label_key_salutespeech">SaluteSpeech Key</string>
+    <string name="header_where_to_get_keys">Where to get keys</string>
+    
+    <!-- API Providers -->
+    <string name="provider_aitunnel_title">AiTunnel</string>
+    <string name="provider_aitunnel_desc">Unified key for popular foreign models.</string>
+    <string name="provider_aitunnel_details">OpenAI, Anthropic, and Grok models available.</string>
+
+    <string name="provider_qwen_title">Alibaba Model Studio (Qwen)</string>
+    <string name="provider_qwen_desc">Keys and management for Qwen family models.</string>
+    <string name="provider_qwen_details">Suitable for chat and generation on Qwen models.</string>
+
+    <string name="provider_sber_title">Sber Studio (GigaChat + Speech)</string>
+    <string name="provider_sber_desc">Cabinet for GigaChat and SaluteSpeech keys.</string>
+    <string name="provider_sber_details">If planning voice commands, get Speech API key here.</string>
+
+    <!-- Functions Settings -->
+    <string name="setting_fewshot_title">Few-Shot Examples</string>
+    <string name="setting_fewshot_desc">Put tool usage examples into context</string>
+    <string name="button_configure_tools">Configure tools</string>
+    <string name="button_configure_telegram">Configure Telegram connection</string>
+    <string name="telegram_status_connected_format">Connected: %s</string>
+    <string name="telegram_session_default">Active session</string>
+    <string name="telegram_status_logging_out">Logging out...</string>
+    <string name="telegram_status_initializing">Initializing...</string>
+    <string name="telegram_status_not_connected">Not connected</string>
+
+    <!-- Security Settings -->
+    <string name="setting_safemode_title">Safe Mode</string>
+    <string name="setting_safemode_desc">Request confirmation for dangerous actions (deleting files, sending data)</string>
+    <string name="label_forbidden_folders">Forbidden folders</string>
+    <string name="hint_forbidden_folders">Open separate folder access management screen</string>
+    <string name="button_manage_forbidden_folders">Manage forbidden folders</string>
+
+    <!-- Support Settings -->
+    <string name="label_support_email">Support Email</string>
+    <string name="button_send_logs">Send logs</string>
+    <string name="button_view_sessions">View graph sessions</string>
+
+    <!-- Tools Screen -->
+    <string name="tools_title">Tools</string>
+    <string name="tools_subtitle">Select available categories and functions</string>
+    <string name="button_close">Close</string>
+    <string name="button_save">Save</string>
+    <string name="button_saving">Saving...</string>
+    <string name="tooltip_collapse">Collapse</string>
+    <string name="tooltip_expand">Expand</string>
+
+    <!-- Folders Management -->
+    <string name="folders_title">Forbidden\nfolders</string>
+    <string name="button_browse">Browse...</string>
+    <string name="folder_list_empty">List is empty. Add a folder via "Browse...".</string>
+    <string name="hint_folders_default">Everything outside home directory is forbidden by default</string>
+    <string name="tooltip_remove_folder">Remove folder from forbidden list</string>
+
+    <!-- Setup Screen -->
+    <string name="setup_title">Connect API Keys</string>
+    <string name="setup_hint_add_key">Add at least one key to start. Others can be connected later in settings.</string>
+    <string name="setup_hint_keys_found">Keys found: %d. You can continue.</string>
+    <string name="setup_hint_voice_required">Voice commands use SaluteSpeech API. If you want to use voice, be sure to add this key.</string>
+    <string name="button_open_gigadesk">Open GigaDesk</string>
+    <string name="button_add_key_to_proceed">Add at least one key</string>
+
+    <!-- Common -->
+    <string name="back">Back</string>
+    <string name="session_not_found">Session not found</string>
+    <string name="snack_saved_summarization">Saved. Will be applied after the first summarization</string>
+
+    <!-- Support Settings & Logs -->
+    <string name="settings_support_subtitle">Contact developers and debugging</string>
+    <string name="button_sending_logs">Sending logs...</string>
+    <string name="snack_logs_path_copied">Path to logs copied</string>
+    
+    <!-- Calendars -->
+    <string name="label_default_calendar">Default calendar</string>
+    <string name="status_loading_calendars">Loading calendars...</string>
+    <string name="calendar_not_selected">Not selected (system default)</string>
+    <string name="calendar_not_selected_short">Not selected (system)</string>
+    <string name="calendar_no_available">No available calendars</string>
+    <string name="hint_calendar_usage">Agent will use this calendar for creating events unless specified otherwise.</string>
+    <string name="content_desc_choose_calendar">Choose calendar</string>
+    
+    <!-- Token Balance -->
+    <string name="label_tokens_balance">Tokens balance</string>
+    <string name="status_checking_balance">Checking balance...</string>
+    <string name="status_balance_no_data">No balance data</string>
+
+    <!-- Dropdowns -->
+    <string name="label_model">Model</string>
+    <string name="label_embeddings_model">Embeddings model</string>
+
+    <!-- Finder Service -->
+    <string name="error_empty_path">Empty path</string>
+    <string name="error_path_not_found">Path not found: %s</string>
+    <string name="error_desktop_not_supported">Desktop API not supported</string>
+    <string name="error_opening_paths_not_supported">Opening paths not supported</string>
+
+    <!-- Graph Sessions -->
+    <string name="graph_sessions_title">Graph Session History</string>
+    <string name="graph_sessions_count_format">%d sessions</string>
+    <string name="action_close">Close</string>
+    <string name="graph_sessions_empty">No saved sessions.\nSend a request to the agent to create the first session.</string>
+    <string name="status_in_progress">in progress</string>
+    <string name="graph_steps_count">%d steps</string>
+    <string name="duration_suffix_s">s</string>
+
+    <!-- Chat Input -->
+    <string name="chat_input_placeholder">Type a message...</string>
+    <string name="tooltip_hold_option">Hold right Option</string>
+    <string name="content_desc_voice_input">Voice input</string>
+    <string name="tooltip_stop_request">Stop request</string>
+    <string name="tooltip_send_enter">Send (Enter)</string>
+    <string name="content_desc_send">Send</string>
+    <string name="content_desc_open_label">Open %s</string>
+    <string name="label_model_default">Model</string>
+    <string name="label_context">Context</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_speech_text">Hello! I am GigaDesk, your smart assistant on your computer... I will now ask for permissions to access applications, the system, and files to work correctly... I can use the browser, work with mail and calendar, work with files on your PC, explain and rewrite selected text, open applications, create notes, answer questions, and build charts and diagrams based on data.</string>
+    <string name="onboarding_display_text">Hello! I am GigaDesk, a smart assistant on your computer.\nNow I will ask for permissions to access applications, the system, and files to work correctly.\nI can:\n- Use the browser\n- Work with mail and calendar\n- Work with files on your PC\n- Explain and rewrite selected text\n- Open applications, create notes, answer questions\n- Build charts and diagrams based on data\n\n\nTo start voice input - hold right opt(alt)\nTo clear conversation context - press X\nTo hide the window - press X twice</string>
+    <string name="onboarding_input_permission_request">Allow access to input monitoring in macOS settings — the application will restart automatically after confirmation</string>
+
+    <!-- Voice Input -->
+    <string name="error_prefix">Error: %s</string>
+    <string name="voice_status_recording_started">Recording started</string>
+    <string name="voice_status_processing_input">Processing input</string>
+    <string name="voice_status_speech_not_recognized">Speech not recognized</string>
+    <string name="voice_error_missing_key">Add SaluteSpeech key in Settings > My Keys to use voice commands</string>
+
+    <!-- Main ViewModel & status -->
+    <string name="status_context_cleared">Context cleared</string>
+    <string name="status_context_cleared_hint">%s. Press again to hide.</string>
+    <string name="status_context_cleared_default">Context cleared</string>
+    <string name="error_failed_to_open_path">Failed to open path</string>
+
+    <string-array name="start_tips">
+        <item>Want me to check the weather in Moscow?</item>
+        <item>Check the calendar?</item>
+        <item>Want me to check mail?</item>
+        <item>Find a file, read it, or create a new one?</item>
+        <item>Need to send an email or reply?</item>
+        <item>Show unread emails?</item>
+        <item>Create or cancel a meeting in the calendar?</item>
+        <item>Show to-do list for today?</item>
+        <item>Restore a closed browser tab?</item>
+        <item>Find a site in Safari or Chrome history?</item>
+        <item>Open a note or create a new one?</item>
+        <item>Delete an unnecessary file?</item>
+        <item>Read an email and prepare a reply?</item>
+        <item>Help with text work?</item>
+    </string-array>
+
+    <!-- Thinking Panel -->
+    <string name="thinking_panel_title">Thinking Process</string>
+    <string name="thinking_user_request">User Request</string>
+    <string name="thinking_reasoning">Reasoning</string>
+    <string name="thinking_answer">Answer</string>
+    <string name="thinking_generating_answer">Generating answer...</string>
+    <string name="thinking_status_in_progress">In progress...</string>
+    <string name="thinking_status_completed">Completed</string>
+
+    <!-- Settings & Misc -->
+    <string name="title_select_folder">Select folder</string>
+    <string name="snack_saved_system_prompt">Saved. Will apply after first summarization</string>
+    <string name="error_session_not_found">Session not found</string>
+    <string name="button_back">Back</string>
+    <string name="settings_subtitle_config">Configuration</string>
+    
+    <string name="error_enter_phone">Enter phone number</string>
+    <string name="error_enter_code">Enter code</string>
+    <string name="error_enter_password">Enter 2FA password</string>
+    <string name="error_failed_request_code">Failed to request Telegram code</string>
+    <string name="error_failed_verify_code">Failed to verify code</string>
+    <string name="error_failed_verify_password">Failed to verify 2FA password</string>
+    <string name="error_failed_logout">Failed to logout from Telegram</string>
+    
+    <string name="error_gigachat_key_missing">Specify GigaChat key</string>
+    <string name="error_balance_unavailable_qwen">Balance unavailable for Qwen</string>
+    <string name="error_balance_unavailable_aitunnel">Balance unavailable for AI Tunnel</string>
+    <string name="error_failed_send_logs">Failed to send logs</string>
+    <string name="support_email_subject">Gigadesk logs</string>
+    <string name="support_email_body">Hello! Attached are the application log files.</string>
+    <string name="support_email_success_format">Email created. If the attachment did not appear automatically, please attach the file %s manually.</string>
+
+    <!-- Tools Permissions -->
+    <string name="permission_modify_file">Modify file?</string>
+    <string name="permission_move_file">Move file?</string>
+    <string name="permission_delete_file">Delete file?</string>
+    <string name="permission_delete_note">Delete note?</string>
+
+    <!-- Telegram Login -->
+    <string name="telegram_step_phone">Step 1: enter phone number</string>
+    <string name="telegram_step_code">Step 2: enter code from Telegram</string>
+    <string name="telegram_step_password">Step 3: enter 2FA password (if enabled)</string>
+    <string name="telegram_step_connected">Connection active</string>
+    <string name="telegram_step_logging_out">Logging out...</string>
+    <string name="telegram_step_initializing">Connecting Telegram client...</string>
+    <string name="telegram_step_error">Check data and try again</string>
+    <string name="telegram_label_phone">Phone Number</string>
+    <string name="telegram_label_code">Login Code</string>
+    <string name="telegram_label_password">2FA Password</string>
+    <string name="telegram_btn_request_code">Request Code</string>
+    <string name="telegram_btn_verify_code">Verify Code</string>
+    <string name="telegram_btn_verify_password">Verify Password</string>
+    <string name="telegram_status_connected">Connected</string>
+    <string name="telegram_btn_logout">Logout</string>
+    <string name="telegram_hint_code_sent">Code sent to: %1$s</string>
+    <string name="telegram_hint_password">Password hint: %1$s</string>
+
+    <!-- Setup -->
+    <string name="setup_btn_choose_voice">Choose voice</string>
+    <string name="setup_title_keys">Where to get keys</string>
+
+    <!-- Tool Details -->
+    <string name="tool_details_title">Tool details</string>
+    <string name="tool_details_subtitle">Configure tool description and examples</string>
+    <string name="tool_details_reset_desc">Reset to default</string>
+    <string name="tool_details_back_desc">Back</string>
+    <string name="tool_details_checkbox_enabled">Tool enabled</string>
+    <string name="tool_details_label_desc">Description</string>
+    <string name="tool_details_section_examples">Examples</string>
+    <string name="tool_details_btn_add_example">Add example</string>
+    <string name="tool_details_no_examples">No examples</string>
+    <string name="tool_details_btn_reset">Reset</string>
+    <string name="tool_details_btn_save">Save</string>
+    <string name="tool_details_btn_saving">Saving...</string>
+    <string name="tool_details_example_title">Example %1$d</string>
+    <string name="tool_details_delete_example_desc">Delete example</string>
+    <string name="tool_details_label_request">Request</string>
+    <string name="tool_details_label_params">Params (JSON)</string>
+    <string name="tool_details_saved">Tool settings saved</string>
+    <string name="tools_settings_saved">Tool settings saved</string>
+    <string name="tool_details_error_json">Invalid params JSON: %1$s</string>
+    <string name="tool_details_error_missing">Tool is missing in the factory</string>
+
+    <!-- Tools Screen -->
+    <string name="tools_expand">Expand</string>
+    <string name="tools_collapse">Collapse</string>
+
+</resources>

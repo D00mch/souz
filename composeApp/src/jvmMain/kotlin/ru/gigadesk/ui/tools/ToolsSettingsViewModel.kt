@@ -13,6 +13,9 @@ import ru.gigadesk.tool.ToolsFactory
 import ru.gigadesk.tool.ToolsSettings
 import ru.gigadesk.ui.BaseViewModel
 import ru.gigadesk.tool.ToolsSettingsState as StoredToolsSettingsState
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
 class ToolsSettingsViewModel(
     override val di: DI,
@@ -124,6 +127,7 @@ class ToolsSettingsViewModel(
         )
         toolsSettings.save(settingsState)
         setState { copy(isSaving = false) }
-        send(ToolsSettingsEffect.SettingsSaved("Настройки инструментов сохранены"))
+        val msg = getString(Res.string.tools_settings_saved)
+        send(ToolsSettingsEffect.SettingsSaved(msg))
     }
 }

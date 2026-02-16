@@ -9,6 +9,9 @@ import ru.gigadesk.tool.ToolPermissionBroker
 import ru.gigadesk.tool.ToolPermissionResult
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
 class ToolDeleteNote(
     private val bash: ToolRunBashCommand,
@@ -37,7 +40,7 @@ class ToolDeleteNote(
 
     override suspend fun suspendInvoke(input: Input): String {
         val result = permissionBroker?.requestPermission(
-            "Удаляем заметку?",
+            getString(Res.string.permission_delete_note),
             linkedMapOf("noteName" to input.noteName)
         )
         if (result is ToolPermissionResult.No) return result.msg

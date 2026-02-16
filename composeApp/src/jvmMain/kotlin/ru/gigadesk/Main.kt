@@ -3,7 +3,7 @@
 package ru.gigadesk
 
 import gigadesk.composeapp.generated.resources.Res
-import gigadesk.composeapp.generated.resources.iconT
+import gigadesk.composeapp.generated.resources.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
@@ -69,18 +69,18 @@ fun main() {
 
             Tray(
                 icon = painterResource(Res.drawable.iconT),
-                tooltip = "gigadesk AI",
+                tooltip = org.jetbrains.compose.resources.stringResource(Res.string.tray_tooltip),
                 onAction = { isWindowVisible = !isWindowVisible },
                 menu = {
-                    Item("Показать/Скрыть", onClick = { isWindowVisible = !isWindowVisible })
+                    Item(org.jetbrains.compose.resources.stringResource(Res.string.tray_show_hide), onClick = { isWindowVisible = !isWindowVisible })
                     Separator()
 
-                    Item("Выключить звук", onClick = {
+                    Item(org.jetbrains.compose.resources.stringResource(Res.string.tray_mute), onClick = {
                         say.clearQueue()
                     })
                     Separator()
 
-                    Item("Выход", onClick = ::exitApplication)
+                    Item(org.jetbrains.compose.resources.stringResource(Res.string.tray_exit), onClick = ::exitApplication)
                 }
             )
 
@@ -96,7 +96,7 @@ fun main() {
             Window(
                 onCloseRequest = { isWindowVisible = false },
                 visible = isWindowVisible,
-                title = "Союз c ИИ",
+                title = org.jetbrains.compose.resources.stringResource(Res.string.app_name),
                 icon = jvmPainterResource("icon-light.png"),
                 state = windowState,
                 transparent = true,

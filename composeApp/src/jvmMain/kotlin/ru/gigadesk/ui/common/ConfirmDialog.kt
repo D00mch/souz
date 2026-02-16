@@ -34,6 +34,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.dialog_confirm
+import gigadesk.composeapp.generated.resources.dialog_cancel
+import org.jetbrains.compose.resources.stringResource
 
 enum class ConfirmDialogType(
     val icon: ImageVector,
@@ -91,8 +95,8 @@ fun ConfirmDialog(
     title: String,
     message: String? = null,
     details:String? = null,
-    confirmText: String = "Подтвердить",
-    cancelText: String = "Отмена",
+    confirmText: String = stringResource(Res.string.dialog_confirm),
+    cancelText: String = stringResource(Res.string.dialog_cancel),
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {

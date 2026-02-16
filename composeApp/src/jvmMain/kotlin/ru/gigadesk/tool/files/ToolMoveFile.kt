@@ -11,6 +11,9 @@ import ru.gigadesk.tool.ToolPermissionResult
 import ru.gigadesk.tool.ToolSetup
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProviderImpl
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -46,7 +49,7 @@ class ToolMoveFile(
         val fixedSourcePath = filesToolUtil.applyDefaultEnvs(input.sourcePath)
         val fixedDestinationPath = filesToolUtil.applyDefaultEnvs(input.destinationPath)
         val result = permissionBroker?.requestPermission(
-            "Перемещаем файл?",
+            getString(Res.string.permission_move_file),
             linkedMapOf(
                 "sourcePath" to fixedSourcePath,
                 "destinationPath" to fixedDestinationPath,

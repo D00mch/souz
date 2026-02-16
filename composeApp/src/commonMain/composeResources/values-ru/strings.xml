@@ -1,0 +1,306 @@
+<resources>
+    <string name="app_name">Союз с ИИ</string>
+    <string name="app_title_short">Союз</string>
+
+    <!-- Tray -->
+    <string name="tray_tooltip">Gigadesk AI</string>
+    <string name="tray_show_hide">Показать/Скрыть</string>
+    <string name="tray_mute">Выключить звук</string>
+    <string name="tray_exit">Выход</string>
+
+    <!-- Main Screen -->
+    <string name="status_processing">Обработка...</string>
+    <string name="chat_placeholder_tip">Спроси меня о чем угодно...</string>
+    
+    <!-- Dialogs -->
+    <string name="dialog_confirm">Подтвердить</string>
+    <string name="dialog_cancel">Отмена</string>
+    <string name="dialog_new_chat_title">Начать новую беседу?</string>
+    <string name="dialog_new_chat_text">Текущая история сообщений будет утеряна</string>
+    <string name="dialog_new_chat_confirm">Начать</string>
+    <string name="dialog_permission_title">Подтверждение действия</string>
+    <string name="dialog_permission_allow">Разрешить</string>
+    <string name="dialog_permission_deny">Запретить</string>
+
+    <!-- Settings Sidebar -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_section_configuration">Конфигурация</string>
+    <string name="settings_section_models">Модели</string>
+    <string name="settings_section_general">Общие</string>
+    <string name="settings_section_keys">Мои ключи</string>
+    <string name="settings_section_functions">Функции</string>
+    <string name="settings_section_security">Безопасность</string>
+    <string name="settings_section_support">Поддержка</string>
+
+    <!-- Settings Content -->
+    <string name="settings_models_subtitle">Настройки моделей и параметров генерации</string>
+    <string name="settings_general_subtitle">Основные настройки приложения</string>
+    <string name="settings_keys_subtitle">Настройка ключей и быстрые ссылки на сервисы</string>
+    <string name="settings_functions_subtitle">Настройки инструментов и возможностей агента</string>
+    <string name="settings_security_subtitle">Настройки безопасности и ограничений</string>
+
+    <!-- Models Settings -->
+    <string name="label_temperature">Температура</string>
+    <string name="label_timeout">Таймаут (мс)</string>
+    <string name="label_context_size">Размер контекстного окна</string>
+    <string name="label_system_prompt">Системный промпт</string>
+    <string name="button_reset">Сбросить</string>
+    <string name="hint_system_prompt_reset">Сбросить системный промпт к значению по умолчанию</string>
+
+    <!-- General Settings -->
+    <string name="setting_streaming_title">Streaming-режим</string>
+    <string name="setting_streaming_desc">Ответы появляются постепенно, по мере генерации</string>
+    <string name="label_voice_speed">Скорость речи</string>
+    <string name="hint_voice_speed">Текущее значение: %d. Чем больше, тем быстрее речь.</string>
+    <string name="label_voice_selection">Выбор голоса</string>
+    <string name="button_select_voice">Выбрать голос</string>
+    <string name="label_mcp_servers">MCP servers JSON</string>
+    <string name="hint_restart_required">Изменения применятся после перезапуска приложения</string>
+
+    <!-- Keys Settings -->
+    <string name="keys_configured_count">Настроено ключей: %d / 4</string>
+    <string name="keys_hint_chat">Для чата достаточно одного ключа: GigaChat, Qwen или AI Tunnel.</string>
+    <string name="keys_hint_voice">Для голосовых команд нужен SaluteSpeech ключ из кабинета Sber.</string>
+    <string name="label_key_gigachat">GigaChat ключ</string>
+    <string name="label_key_qwen">Qwen ключ</string>
+    <string name="label_key_aitunnel">AI Tunnel ключ</string>
+    <string name="label_key_salutespeech">SaluteSpeech ключ</string>
+    <string name="header_where_to_get_keys">Где получить ключи</string>
+    
+    <!-- API Providers -->
+    <string name="provider_aitunnel_title">AiTunnel</string>
+    <string name="provider_aitunnel_desc">Единый ключ для популярных зарубежных моделей.</string>
+    <string name="provider_aitunnel_details">Доступны модели OpenAI, Anthropic и Grok.</string>
+
+    <string name="provider_qwen_title">Alibaba Model Studio (Qwen)</string>
+    <string name="provider_qwen_desc">Ключи и управление для моделей семейства Qwen.</string>
+    <string name="provider_qwen_details">Подходит для чата и генерации на моделях Qwen.</string>
+
+    <string name="provider_sber_title">Sber Studio (GigaChat + Speech)</string>
+    <string name="provider_sber_desc">Кабинет для ключей GigaChat и SaluteSpeech.</string>
+    <string name="provider_sber_details">Если планируете голосовые команды, здесь же получите ключ для Speech API.</string>
+
+    <!-- Functions Settings -->
+    <string name="setting_fewshot_title">Few-Shot Examples</string>
+    <string name="setting_fewshot_desc">Класть примеры использования тулов в контекст</string>
+    <string name="button_configure_tools">Настройка инструментов</string>
+    <string name="button_configure_telegram">Настройка подключения к Telegram</string>
+    <string name="telegram_status_connected_format">Подключено: %s</string>
+    <string name="telegram_session_default">Активная сессия</string>
+    <string name="telegram_status_logging_out">Отключение...</string>
+    <string name="telegram_status_initializing">Инициализация...</string>
+    <string name="telegram_status_not_connected">Не подключено</string>
+
+    <!-- Security Settings -->
+    <string name="setting_safemode_title">Безопасный режим</string>
+    <string name="setting_safemode_desc">Запрашивать подтверждение опасных действий (удаление файлов, отправка данных)</string>
+    <string name="label_forbidden_folders">Запретные папки</string>
+    <string name="hint_forbidden_folders">Открыть отдельный экран управления доступом к папкам</string>
+    <string name="button_manage_forbidden_folders">Управление запретными папками</string>
+
+    <!-- Support Settings -->
+    <string name="label_support_email">Email поддержки</string>
+    <string name="button_send_logs">Отправить логи</string>
+    <string name="button_view_sessions">Просмотр графа сессий</string>
+
+    <!-- Tools Screen -->
+    <string name="tools_title">Tools</string>
+    <string name="tools_subtitle">Выберите доступные категории и функции</string>
+    <string name="button_close">Закрыть</string>
+    <string name="button_save">Save</string>
+    <string name="button_saving">Сохранение...</string>
+    <string name="tooltip_collapse">Свернуть</string>
+    <string name="tooltip_expand">Развернуть</string>
+
+    <!-- Folders Management -->
+    <string name="folders_title">Запретные\nпапки</string>
+    <string name="button_browse">Обзор...</string>
+    <string name="folder_list_empty">Список пуст. Добавьте папку через «Обзор...».</string>
+    <string name="hint_folders_default">Всё вне домашней директории запрещено по умолчанию</string>
+    <string name="tooltip_remove_folder">Удалить папку из запретных</string>
+
+    <!-- Setup Screen -->
+    <string name="setup_title">Подключите API-ключи</string>
+    <string name="setup_hint_add_key">Для старта добавьте хотя бы один ключ. Остальные можно подключить позже в настройках.</string>
+    <string name="setup_hint_keys_found">Найдено ключей: %d. Можно продолжать.</string>
+    <string name="setup_hint_voice_required">Голосовые команды используют SaluteSpeech API. Если хотите общаться голосом, обязательно добавьте этот ключ.</string>
+    <string name="button_open_gigadesk">Открыть GigaDesk</string>
+    <string name="button_add_key_to_proceed">Добавьте хотя бы один ключ</string>
+
+    <!-- Common -->
+    <string name="back">Назад</string>
+    <string name="session_not_found">Сессия не найдена</string>
+    <string name="snack_saved_summarization">Сохранено. Применится после первой суммаризации</string>
+
+    <!-- Support Settings & Logs -->
+    <string name="settings_support_subtitle">Связь с разработчиками и отладка</string>
+    <string name="button_sending_logs">Отправка логов...</string>
+    <string name="snack_logs_path_copied">Путь к логам скопирован</string>
+    
+    <!-- Calendars -->
+    <string name="label_default_calendar">Календарь по умолчанию</string>
+    <string name="status_loading_calendars">Загрузка календарей...</string>
+    <string name="calendar_not_selected">Не выбран (системный по умолчанию)</string>
+    <string name="calendar_not_selected_short">Не выбран (системный)</string>
+    <string name="calendar_no_available">Нет доступных календарей</string>
+    <string name="hint_calendar_usage">Агент будет использовать этот календарь для создания событий, если вы не укажете иное.</string>
+    <string name="content_desc_choose_calendar">Выбрать календарь</string>
+    
+    <!-- Token Balance -->
+    <string name="label_tokens_balance">Остаток токенов</string>
+    <string name="status_checking_balance">Запрашиваем баланс...</string>
+    <string name="status_balance_no_data">Нет данных о балансе</string>
+
+    <!-- Dropdowns -->
+    <string name="label_model">Модель</string>
+    <string name="label_embeddings_model">Модель эмбеддингов</string>
+
+    <!-- Finder Service -->
+    <string name="error_empty_path">Пустой путь</string>
+    <string name="error_path_not_found">Путь не найден: %s</string>
+    <string name="error_desktop_not_supported">Desktop API не поддерживается</string>
+    <string name="error_opening_paths_not_supported">Открытие путей не поддерживается</string>
+
+    <!-- Graph Sessions -->
+    <string name="graph_sessions_title">История сессий графа</string>
+    <string name="graph_sessions_count_format">%d сессий</string>
+    <string name="action_close">Закрыть</string>
+    <string name="graph_sessions_empty">Нет сохранённых сессий.\nОтправьте запрос агенту, чтобы создать первую сессию.</string>
+    <string name="status_in_progress">в процессе</string>
+    <string name="graph_steps_count">%d шагов</string>
+    <string name="duration_suffix_s">с</string>
+
+    <!-- Chat Input -->
+    <string name="chat_input_placeholder">Введите сообщение...</string>
+    <string name="tooltip_hold_option">Зажать правый Option</string>
+    <string name="content_desc_voice_input">Голосовой ввод</string>
+    <string name="tooltip_stop_request">Остановить запрос</string>
+    <string name="tooltip_send_enter">Отправить (Enter)</string>
+    <string name="content_desc_send">Отправить</string>
+    <string name="content_desc_open_label">Открыть %s</string>
+    <string name="label_model_default">Модель</string>
+    <string name="label_context">Контекст</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_speech_text">Привет! Я ГигаДэ́ск! умный помощник на твоем компьютере... Сейчас я попрошу доступы к приложениям, системе и файлам, чтобы работать корректно... Я умею пользоваться браузером, работать с почтой и календарем, работать с файлами на вашем ПК, объяснить и переписать выделенный текст, открывать приложения, создавать заметки, отвечать на вопросы, строить графики, диаграммы на основе данных.</string>
+    <string name="onboarding_display_text">Привет! Я GigaDesk, умный помощник на твоем компьютере.\nСейчас я попрошу доступы к приложениям, системе и файлам, чтобы работать корректно.\nЯ умею:\n- Пользоваться браузером\n- Работать с почтой и календарем\n- Работать с файлами на вашем ПК\n- Объяснить и переписать выделенный текст\n- Открывать приложения, создавать заметки, отвечать на вопросы\n- Строить графики, диаграммы на основе данных\n\n\nДля запуска голосового ввода - зажми правый opt(alt)\nДля очистки контекста беседы - нажми X\nДля скрытия окна - нажми Х два раза</string>
+    <string name="onboarding_input_permission_request">Разрешите доступ к мониторингу ввода в настройках macOS — после подтверждения приложение перезапустится автоматически</string>
+
+    <!-- Voice Input -->
+    <string name="error_prefix">Ошибка: %s</string>
+    <string name="voice_status_recording_started">Запись запущена</string>
+    <string name="voice_status_processing_input">Обработка входа</string>
+    <string name="voice_status_speech_not_recognized">Речь не распознана</string>
+    <string name="voice_error_missing_key">Добавьте ключ SaluteSpeech в Настройки > Мои ключи, чтобы использовать голосовые команды</string>
+
+    <!-- Main ViewModel & status -->
+    <string name="status_context_cleared">Контекст очищен</string>
+    <string name="status_context_cleared_hint">%s. Нажмите еще раз, чтобы скрыть.</string>
+    <string name="status_context_cleared_default">Контекст очищен</string>
+    <string name="error_failed_to_open_path">Не удалось открыть путь</string>
+
+    <string-array name="start_tips">
+        <item>Хочешь узнаю погоду в Москве?</item>
+        <item>Посмотреть календарь?</item>
+        <item>Хочешь, я проверю почту?</item>
+        <item>Найти файл, прочитать его или создать новый?</item>
+        <item>Нужно отправить письмо или ответить?</item>
+        <item>Показать непрочитанные в почте?</item>
+        <item>Создать или отменить встречу в календаре?</item>
+        <item>Показать список дел на сегодня?</item>
+        <item>Вернуть закрытую вкладку браузера?</item>
+        <item>Найти сайт в истории Safari или Chrome?</item>
+        <item>Открыть заметку или создать новую?</item>
+        <item>Удалить лишний файл?</item>
+        <item>Прочитать письмо и подготовить ответ?</item>
+        <item>Помочь в работе с текстом?</item>
+    </string-array>
+
+    <!-- Thinking Panel -->
+    <string name="thinking_panel_title">Процесс мышления</string>
+    <string name="thinking_user_request">Запрос пользователя</string>
+    <string name="thinking_reasoning">Размышление</string>
+    <string name="thinking_answer">Ответ</string>
+    <string name="thinking_generating_answer">Генерация ответа...</string>
+    <string name="thinking_status_in_progress">В процессе...</string>
+    <string name="thinking_status_completed">Завершено</string>
+
+    <!-- Settings & Misc -->
+    <string name="title_select_folder">Выберите папку</string>
+    <string name="snack_saved_system_prompt">Сохранено. Применится после первой суммаризации</string>
+    <string name="error_session_not_found">Сессия не найдена</string>
+    <string name="button_back">Назад</string>
+    <string name="settings_subtitle_config">Конфигурация</string>
+
+    <string name="error_enter_phone">Введите номер телефона</string>
+    <string name="error_enter_code">Введите код входа</string>
+    <string name="error_enter_password">Введите пароль 2FA</string>
+    <string name="error_failed_request_code">Не удалось запросить код Telegram</string>
+    <string name="error_failed_verify_code">Не удалось подтвердить код</string>
+    <string name="error_failed_verify_password">Не удалось подтвердить пароль 2FA</string>
+    <string name="error_failed_logout">Не удалось завершить Telegram-сессию</string>
+
+    <string name="error_gigachat_key_missing">Укажите GigaChat ключ</string>
+    <string name="error_balance_unavailable_qwen">Баланс для Qwen недоступен</string>
+    <string name="error_balance_unavailable_aitunnel">Баланс для AI Tunnel недоступен</string>
+    <string name="error_failed_send_logs">Не удалось отправить логи</string>
+    <string name="support_email_subject">Логи gigadesk</string>
+    <string name="support_email_body">Добрый день! Во вложении файлы логов приложения.</string>
+    <string name="support_email_success_format">Письмо создано. Если вложение не появилось автоматически, приложите файл %s вручную.</string>
+
+    <!-- Tools Permissions -->
+    <string name="permission_modify_file">Изменяем файл?</string>
+    <string name="permission_move_file">Перемещаем файл?</string>
+    <string name="permission_delete_file">Удаляем файл?</string>
+    <string name="permission_delete_note">Удаляем заметку?</string>
+
+    <!-- Telegram Login -->
+    <string name="telegram_step_phone">Шаг 1: укажите номер телефона</string>
+    <string name="telegram_step_code">Шаг 2: введите код из Telegram</string>
+    <string name="telegram_step_password">Шаг 3: введите пароль 2FA (если включен)</string>
+    <string name="telegram_step_connected">Подключение активно</string>
+    <string name="telegram_step_logging_out">Завершаем сессию...</string>
+    <string name="telegram_step_initializing">Подключаем Telegram клиент...</string>
+    <string name="telegram_step_error">Проверьте данные и повторите вход</string>
+    <string name="telegram_label_phone">Номер телефона</string>
+    <string name="telegram_label_code">Код входа</string>
+    <string name="telegram_label_password">Пароль 2FA</string>
+    <string name="telegram_btn_request_code">Запросить код</string>
+    <string name="telegram_btn_verify_code">Подтвердить код</string>
+    <string name="telegram_btn_verify_password">Подтвердить пароль</string>
+    <string name="telegram_status_connected">Подключено</string>
+    <string name="telegram_btn_logout">Выйти</string>
+    <string name="telegram_hint_code_sent">Код отправлен на: %1$s</string>
+    <string name="telegram_hint_password">Подсказка пароля: %1$s</string>
+
+    <!-- Setup -->
+    <string name="setup_btn_choose_voice">Выбрать голос</string>
+    <string name="setup_title_keys">Где получить ключи</string>
+
+    <!-- Tool Details -->
+    <string name="tool_details_title">Tool details</string>
+    <string name="tool_details_subtitle">Настройте описание и примеры инструмента</string>
+    <string name="tool_details_reset_desc">Сбросить по умолчанию</string>
+    <string name="tool_details_back_desc">Назад</string>
+    <string name="tool_details_checkbox_enabled">Инструмент включен</string>
+    <string name="tool_details_label_desc">Описание</string>
+    <string name="tool_details_section_examples">Примеры</string>
+    <string name="tool_details_btn_add_example">Добавить пример</string>
+    <string name="tool_details_no_examples">Примеры отсутствуют</string>
+    <string name="tool_details_btn_reset">Сбросить</string>
+    <string name="tool_details_btn_save">Сохранить</string>
+    <string name="tool_details_btn_saving">Сохранение...</string>
+    <string name="tool_details_example_title">Пример %1$d</string>
+    <string name="tool_details_delete_example_desc">Удалить пример</string>
+    <string name="tool_details_label_request">Запрос</string>
+    <string name="tool_details_label_params">Параметры (JSON)</string>
+    <string name="tool_details_saved">Настройки инструмента сохранены</string>
+    <string name="tools_settings_saved">Настройки инструментов сохранены</string>
+    <string name="tool_details_error_json">Некорректный JSON параметров: %1$s</string>
+    <string name="tool_details_error_missing">Инструмент отсутствует на фабрике</string>
+
+    <!-- Tools Screen -->
+    <string name="tools_expand">Развернуть</string>
+    <string name="tools_collapse">Свернуть</string>
+
+</resources>

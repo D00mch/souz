@@ -1,6 +1,9 @@
 package ru.gigadesk.ui.common
 
 import ru.gigadesk.tool.files.FilesToolUtil
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 import java.awt.Desktop
 import java.io.File
 
@@ -38,12 +41,12 @@ object FinderService {
         return if (target.exists()) target.isDirectory else rawPath.trimEnd().endsWith("/")
     }
 
-    fun openInFinder(rawPath: String): Result<Unit> = runCatching {
+    suspend fun openInFinder(rawPath: String): Result<Unit> = runCatching {
         val normalized = normalizePath(rawPath)
-            ?: error("Пустой путь")
+            ?: error(getString(Res.string.error_empty_path))
 
         val target = File(normalized)
-        require(target.exists()) { "Путь не найден: $normalized" }
+        require(target.exists()) { getString(Res.string.error_path_not_found).format(normalized) }
 
         if (isMacOs()) {
             val command = if (target.isDirectory) {
@@ -55,9 +58,9 @@ object FinderService {
             return@runCatching
         }
 
-        require(Desktop.isDesktopSupported()) { "Desktop API не поддерживается" }
+        require(Desktop.isDesktopSupported()) { getString(Res.string.error_desktop_not_supported) }
         val desktop = Desktop.getDesktop()
-        require(desktop.isSupported(Desktop.Action.OPEN)) { "Открытие путей не поддерживается" }
+        require(desktop.isSupported(Desktop.Action.OPEN)) { getString(Res.string.error_opening_paths_not_supported) }
 
         val openTarget = if (target.isDirectory) target else target.parentFile ?: target
         desktop.open(openTarget)

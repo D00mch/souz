@@ -35,6 +35,10 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import ru.gigadesk.ui.components.LabeledTextField
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.getString
 
 @Composable
 fun TelegramLoginContent(
@@ -50,6 +54,14 @@ fun TelegramLoginContent(
     var localError by remember { mutableStateOf<String?>(null) }
     var localInfo by remember { mutableStateOf<String?>(null) }
 
+    val errorEnterPhone = stringResource(Res.string.error_enter_phone)
+    val errorEnterCode = stringResource(Res.string.error_enter_code)
+    val errorEnterPassword = stringResource(Res.string.error_enter_password)
+    val errorFailedRequestCode = stringResource(Res.string.error_failed_request_code)
+    val errorFailedVerifyCode = stringResource(Res.string.error_failed_verify_code)
+    val errorFailedVerifyPassword = stringResource(Res.string.error_failed_verify_password)
+    val errorFailedLogout = stringResource(Res.string.error_failed_logout)
+
     LaunchedEffect(state.telegramAuthStep) {
         if (state.telegramAuthStep == TelegramAuthStepUi.CONNECTED) {
             codeValue = ""
@@ -60,13 +72,13 @@ fun TelegramLoginContent(
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val hint = when (state.telegramAuthStep) {
-            TelegramAuthStepUi.PHONE -> "Шаг 1: укажите номер телефона"
-            TelegramAuthStepUi.CODE -> "Шаг 2: введите код из Telegram"
-            TelegramAuthStepUi.PASSWORD -> "Шаг 3: введите пароль 2FA (если включен)"
-            TelegramAuthStepUi.CONNECTED -> "Подключение активно"
-            TelegramAuthStepUi.LOGGING_OUT -> "Завершаем сессию..."
-            TelegramAuthStepUi.INITIALIZING -> "Подключаем Telegram клиент..."
-            TelegramAuthStepUi.ERROR -> "Проверьте данные и повторите вход"
+            TelegramAuthStepUi.PHONE -> stringResource(Res.string.telegram_step_phone)
+            TelegramAuthStepUi.CODE -> stringResource(Res.string.telegram_step_code)
+            TelegramAuthStepUi.PASSWORD -> stringResource(Res.string.telegram_step_password)
+            TelegramAuthStepUi.CONNECTED -> stringResource(Res.string.telegram_step_connected)
+            TelegramAuthStepUi.LOGGING_OUT -> stringResource(Res.string.telegram_step_logging_out)
+            TelegramAuthStepUi.INITIALIZING -> stringResource(Res.string.telegram_step_initializing)
+            TelegramAuthStepUi.ERROR -> stringResource(Res.string.telegram_step_error)
         }
 
         Text(
@@ -78,12 +90,12 @@ fun TelegramLoginContent(
         val submitPhone = {
             val trimmed = phoneValue.trim()
             if (trimmed.isBlank()) {
-                localError = "Введите номер телефона"
+                localError = errorEnterPhone
             } else {
                 scope.launch {
                     runCatching { telegramService.submitPhoneNumber(trimmed) }
                         .onFailure {
-                            localError = it.message ?: "Не удалось запросить код Telegram"
+                            localError = it.message ?: errorFailedRequestCode
                         }
                 }
             }
@@ -92,12 +104,12 @@ fun TelegramLoginContent(
         val submitCode = {
             val trimmed = codeValue.trim()
             if (trimmed.isBlank()) {
-                localError = "Введите код входа"
+                localError = errorEnterCode
             } else {
                 scope.launch {
                     runCatching { telegramService.submitLoginCode(trimmed) }
                         .onFailure {
-                            localError = it.message ?: "Не удалось подтвердить код"
+                            localError = it.message ?: errorFailedVerifyCode
                         }
                         .onSuccess {
                             codeValue = ""
@@ -108,12 +120,12 @@ fun TelegramLoginContent(
 
         val submitPassword = {
             if (passwordValue.isBlank()) {
-                localError = "Введите пароль 2FA"
+                localError = errorEnterPassword
             } else {
                 scope.launch {
                     runCatching { telegramService.submitTwoFaPassword(passwordValue) }
                         .onFailure {
-                            localError = it.message ?: "Не удалось подтвердить пароль 2FA"
+                            localError = it.message ?: errorFailedVerifyPassword
                         }
                         .onSuccess {
                             passwordValue = ""
@@ -127,7 +139,7 @@ fun TelegramLoginContent(
             TelegramAuthStepUi.ERROR,
             TelegramAuthStepUi.INITIALIZING -> {
                 LabeledTextField(
-                    label = "Phone Number",
+                    label = stringResource(Res.string.telegram_label_phone),
                     value = phoneValue,
                     onValueChange = { newValue ->
                         val filtered = newValue.filter { it.isDigit() || it == '+' }
@@ -151,7 +163,7 @@ fun TelegramLoginContent(
                         .height(46.dp),
                     shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text("Request Code")
+                    Text(stringResource(Res.string.telegram_btn_request_code))
                 }
             }
 
@@ -172,7 +184,7 @@ fun TelegramLoginContent(
                     },
                     singleLine = true,
                     visualTransformation = VisualTransformation.None,
-                    label = { Text("Login Code") },
+                    label = { Text(stringResource(Res.string.telegram_label_code)) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = MaterialTheme.colorScheme.onSurface,
                         unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -189,7 +201,7 @@ fun TelegramLoginContent(
                         .height(46.dp),
                     shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text("Verify Code")
+                    Text(stringResource(Res.string.telegram_btn_verify_code))
                 }
                 OutlinedButton(
                     onClick = {
@@ -224,7 +236,7 @@ fun TelegramLoginContent(
                     },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
-                    label = { Text("2FA Password") },
+                    label = { Text(stringResource(Res.string.telegram_label_password)) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = MaterialTheme.colorScheme.onSurface,
                         unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -241,7 +253,7 @@ fun TelegramLoginContent(
                         .height(46.dp),
                     shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text("Verify Password")
+                    Text(stringResource(Res.string.telegram_btn_verify_password))
                 }
                 OutlinedButton(
                     onClick = {
@@ -261,16 +273,16 @@ fun TelegramLoginContent(
 
             TelegramAuthStepUi.CONNECTED -> {
                 Text(
-                    text = state.telegramActiveSessionPhone ?: "Connected",
+                    text = state.telegramActiveSessionPhone ?: stringResource(Res.string.telegram_status_connected),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 OutlinedButton(
                     onClick = {
                         scope.launch {
-                            runCatching { telegramService.logout() }
+                        runCatching { telegramService.logout() }
                                 .onFailure {
-                                    localError = it.message ?: "Не удалось завершить Telegram-сессию"
+                                    localError = it.message ?: errorFailedLogout
                                 }
                         }
                     },
@@ -284,7 +296,7 @@ fun TelegramLoginContent(
                     ),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
                 ) {
-                    Text("Logout")
+                    Text(stringResource(Res.string.telegram_btn_logout))
                 }
             }
 
@@ -295,7 +307,7 @@ fun TelegramLoginContent(
 
         state.telegramCodeHint?.takeIf { it.isNotBlank() }?.let { codeHint ->
             Text(
-                text = "Код отправлен на: $codeHint",
+                text = stringResource(Res.string.telegram_hint_code_sent).format(codeHint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
             )
@@ -303,7 +315,7 @@ fun TelegramLoginContent(
 
         state.telegramPasswordHint?.takeIf { it.isNotBlank() }?.let { passwordHint ->
             Text(
-                text = "Подсказка пароля: $passwordHint",
+                text = stringResource(Res.string.telegram_hint_password).format(passwordHint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
             )

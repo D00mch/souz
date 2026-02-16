@@ -25,6 +25,9 @@ import ru.gigadesk.tool.calendar.CalendarAppleScriptCommands
 import ru.gigadesk.ui.BaseViewModel
 import ru.gigadesk.ui.common.openProviderLink
 import ru.gigadesk.ui.settings.SettingsEvent.*
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
 class SettingsViewModel(
     override val di: DI,
@@ -315,10 +318,11 @@ class SettingsViewModel(
                 }
             }
             .onFailure { error ->
+                val errorMsg = error.message ?: getString(Res.string.error_failed_send_logs)
                 setState {
                     copy(
                         isSendingLogs = false,
-                        sendLogsMessage = error.message ?: "Не удалось отправить логи",
+                        sendLogsMessage = errorMsg,
                         sendLogsPath = resolvedLogDir,
                     )
                 }
@@ -331,10 +335,11 @@ class SettingsViewModel(
         when (currentState.gigaModel.provider) {
             LlmProvider.GIGA -> {
                 if (currentState.gigaChatKey.isBlank()) {
+                    val errorMsg = getString(Res.string.error_gigachat_key_missing)
                     setState {
                         copy(
                             balance = emptyList(),
-                            balanceError = "Укажите GigaChat ключ",
+                            balanceError = errorMsg,
                             isBalanceLoading = false
                         )
                     }
@@ -342,20 +347,22 @@ class SettingsViewModel(
                 }
             }
             LlmProvider.QWEN -> {
+                val errorMsg = getString(Res.string.error_balance_unavailable_qwen)
                 setState {
                     copy(
                         balance = emptyList(),
-                        balanceError = "Баланс для Qwen недоступен",
+                        balanceError = errorMsg,
                         isBalanceLoading = false
                     )
                 }
                 return@launch
             }
             LlmProvider.AI_TUNNEL -> {
+                val errorMsg = getString(Res.string.error_balance_unavailable_aitunnel)
                 setState {
                     copy(
                         balance = emptyList(),
-                        balanceError = "Баланс для AI Tunnel недоступен",
+                        balanceError = errorMsg,
                         isBalanceLoading = false
                     )
                 }
@@ -388,46 +395,53 @@ class SettingsViewModel(
     private fun submitTelegramPhone() = viewModelScope.launch(Dispatchers.IO) {
         val phone = currentState.telegramPhoneInput.trim()
         if (phone.isBlank()) {
-            setState { copy(telegramAuthError = "Введите номер телефона") }
+            val errorMsg = getString(Res.string.error_enter_phone)
+            setState { copy(telegramAuthError = errorMsg) }
             return@launch
         }
 
         runCatching { telegramService.submitPhoneNumber(phone) }
             .onFailure { error ->
-                setState { copy(telegramAuthError = error.message ?: "Не удалось запросить код Telegram") }
+                val errorMsg = error.message ?: getString(Res.string.error_failed_request_code)
+                setState { copy(telegramAuthError = errorMsg) }
             }
     }
 
     private fun submitTelegramCode() = viewModelScope.launch(Dispatchers.IO) {
         val code = currentState.telegramCodeInput.trim()
         if (code.isBlank()) {
-            setState { copy(telegramAuthError = "Введите код входа") }
+            val errorMsg = getString(Res.string.error_enter_code)
+            setState { copy(telegramAuthError = errorMsg) }
             return@launch
         }
 
         runCatching { telegramService.submitLoginCode(code) }
             .onFailure { error ->
-                setState { copy(telegramAuthError = error.message ?: "Не удалось подтвердить код") }
+                val errorMsg = error.message ?: getString(Res.string.error_failed_verify_code)
+                setState { copy(telegramAuthError = errorMsg) }
             }
     }
 
     private fun submitTelegramPassword() = viewModelScope.launch(Dispatchers.IO) {
         val password = currentState.telegramPasswordInput
         if (password.isBlank()) {
-            setState { copy(telegramAuthError = "Введите пароль 2FA") }
+            val errorMsg = getString(Res.string.error_enter_password)
+            setState { copy(telegramAuthError = errorMsg) }
             return@launch
         }
 
         runCatching { telegramService.submitTwoFaPassword(password) }
             .onFailure { error ->
-                setState { copy(telegramAuthError = error.message ?: "Не удалось подтвердить пароль 2FA") }
+                val errorMsg = error.message ?: getString(Res.string.error_failed_verify_password)
+                setState { copy(telegramAuthError = errorMsg) }
             }
     }
 
     private fun telegramLogout() = viewModelScope.launch(Dispatchers.IO) {
         runCatching { telegramService.logout() }
             .onFailure { error ->
-                setState { copy(telegramAuthError = error.message ?: "Не удалось завершить Telegram-сессию") }
+                val errorMsg = error.message ?: getString(Res.string.error_failed_logout)
+                setState { copy(telegramAuthError = errorMsg) }
             }
     }
 }

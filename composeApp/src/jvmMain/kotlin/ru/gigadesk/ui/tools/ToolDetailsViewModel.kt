@@ -17,6 +17,9 @@ import ru.gigadesk.tool.ToolsSettings
 import ru.gigadesk.tool.ToolsSettingsState
 import ru.gigadesk.ui.BaseViewModel
 import java.util.UUID
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
 private val paramsTypeRef = object : TypeReference<Map<String, Any>>() {}
 
@@ -56,7 +59,8 @@ class ToolDetailsViewModel(
     private suspend fun load() {
         val setup = toolsFactory.toolsByCategory[theCategory]?.get(theToolName)
         if (setup == null) {
-            setState { copy(error = "Tool is missing in the factory") }
+            val errorMsg = getString(Res.string.tool_details_error_missing)
+            setState { copy(error = errorMsg) }
             return
         }
 
@@ -179,10 +183,10 @@ class ToolDetailsViewModel(
 
         toolsSettings.save(ToolsSettingsState(categories = updatedCategories))
         setState { copy(isSaving = false) }
-        send(ToolDetailsEffect.Saved("Настройки инструмента сохранены"))
+        send(ToolDetailsEffect.Saved(getString(Res.string.tool_details_saved)))
     }
 
-    private fun parseExamples(examples: List<ToolExampleUi>): ExamplesParseResult {
+    private suspend fun parseExamples(examples: List<ToolExampleUi>): ExamplesParseResult {
         val parsed = mutableListOf<FewShotExample>()
         for (example in examples) {
             val params = if (example.paramsJson.isBlank()) {
@@ -194,7 +198,7 @@ class ToolDetailsViewModel(
                             examples = null,
                             error = ExampleParseError(
                                 exampleId = example.id,
-                                message = "Некорректный JSON параметров: ${it.message ?: it.toString()}",
+                                message = getString(Res.string.tool_details_error_json).format(it.message ?: it.toString()),
                             )
                         )
                     }
