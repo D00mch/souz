@@ -37,19 +37,6 @@ interface SettingsProvider {
 
 class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvider {
 
-    override fun getSystemPromptForModel(model: GigaModel): String? {
-        val key = "${SYSTEM_PROMPT}_${model.name}"
-        return configStore.get<String>(key)
-    }
-
-    override fun setSystemPromptForModel(model: GigaModel, prompt: String?) {
-        val key = "${SYSTEM_PROMPT}_${model.name}"
-        when {
-            prompt.isNullOrBlank() || prompt == DEFAULT_SYSTEM_PROMPT -> configStore.rm(key)
-            else -> configStore.put(key, prompt)
-        }
-    }
-
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
     private var _useStreamingDelegate: String? by keyDelegate(configKey = USE_STREAMING, envKey = USE_STREAMING)
@@ -90,6 +77,24 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         configKey = EMBEDDINGS_MODEL,
         envKey = EMBEDDINGS_MODEL
     )
+
+    init {
+        // apply defaults
+        if (_safeModeDelegate.isNullOrBlank()) _safeModeDelegate = "true"
+    }
+
+    override fun getSystemPromptForModel(model: GigaModel): String? {
+        val key = "${SYSTEM_PROMPT}_${model.name}"
+        return configStore.get<String>(key)
+    }
+
+    override fun setSystemPromptForModel(model: GigaModel, prompt: String?) {
+        val key = "${SYSTEM_PROMPT}_${model.name}"
+        when {
+            prompt.isNullOrBlank() || prompt == DEFAULT_SYSTEM_PROMPT -> configStore.rm(key)
+            else -> configStore.put(key, prompt)
+        }
+    }
 
     override var gigaChatKey: String? by keyDelegate(configKey = GIGA_CHAT_KEY, envKey = "GIGA_KEY")
     override var qwenChatKey: String? by keyDelegate(configKey = QWEN_CHAT_KEY, envKey = "QWEN_KEY")
@@ -225,7 +230,6 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val GIGA_CHAT_KEY = "GIGA_CHAT_KEY"
         private const val QWEN_CHAT_KEY = "QWEN_CHAT_KEY"
         private const val AI_TUNNEL_KEY = "AI_TUNNEL_KEY"
-        private const val AI_TUNNEL_MODEL_NAME = "AI_TUNNEL_MODEL_NAME"
         private const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         private const val USE_STREAMING = "USE_STREAMING"
