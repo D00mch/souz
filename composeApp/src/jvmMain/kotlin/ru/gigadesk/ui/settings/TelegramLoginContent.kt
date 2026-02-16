@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -23,17 +21,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.gigadesk.service.telegram.TelegramService
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import ru.gigadesk.ui.components.LabeledTextField
 
 @Composable
@@ -50,19 +50,6 @@ fun TelegramLoginContent(
     var localError by remember { mutableStateOf<String?>(null) }
     var localInfo by remember { mutableStateOf<String?>(null) }
 
-    var advancedExpanded by remember { mutableStateOf(false) }
-    var debugLogsEnabled by remember { mutableStateOf(false) }
-
-    suspend fun reloadClientConfig() {
-        val config = telegramService.getClientConfig()
-        debugLogsEnabled = config.debugLogsEnabled
-    }
-
-    LaunchedEffect(Unit) {
-        runCatching { reloadClientConfig() }
-            .onFailure { localError = it.message ?: "Не удалось загрузить Telegram-конфиг" }
-    }
-
     LaunchedEffect(state.telegramAuthStep) {
         if (state.telegramAuthStep == TelegramAuthStepUi.CONNECTED) {
             codeValue = ""
@@ -72,15 +59,6 @@ fun TelegramLoginContent(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            text = "Telegram User Client",
-            style = MaterialTheme.typography.titleMedium.copy(
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-            ),
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-
         val hint = when (state.telegramAuthStep) {
             TelegramAuthStepUi.PHONE -> "Шаг 1: укажите номер телефона"
             TelegramAuthStepUi.CODE -> "Шаг 2: введите код из Telegram"
@@ -97,6 +75,53 @@ fun TelegramLoginContent(
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
         )
 
+        val submitPhone = {
+            val trimmed = phoneValue.trim()
+            if (trimmed.isBlank()) {
+                localError = "Введите номер телефона"
+            } else {
+                scope.launch {
+                    runCatching { telegramService.submitPhoneNumber(trimmed) }
+                        .onFailure {
+                            localError = it.message ?: "Не удалось запросить код Telegram"
+                        }
+                }
+            }
+        }
+
+        val submitCode = {
+            val trimmed = codeValue.trim()
+            if (trimmed.isBlank()) {
+                localError = "Введите код входа"
+            } else {
+                scope.launch {
+                    runCatching { telegramService.submitLoginCode(trimmed) }
+                        .onFailure {
+                            localError = it.message ?: "Не удалось подтвердить код"
+                        }
+                        .onSuccess {
+                            codeValue = ""
+                        }
+                }
+            }
+        }
+
+        val submitPassword = {
+            if (passwordValue.isBlank()) {
+                localError = "Введите пароль 2FA"
+            } else {
+                scope.launch {
+                    runCatching { telegramService.submitTwoFaPassword(passwordValue) }
+                        .onFailure {
+                            localError = it.message ?: "Не удалось подтвердить пароль 2FA"
+                        }
+                        .onSuccess {
+                            passwordValue = ""
+                        }
+                }
+            }
+        }
+
         when (state.telegramAuthStep) {
             TelegramAuthStepUi.PHONE,
             TelegramAuthStepUi.ERROR,
@@ -108,20 +133,17 @@ fun TelegramLoginContent(
                         phoneValue = it
                         localError = null
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button(
-                    onClick = {
-                        val trimmed = phoneValue.trim()
-                        if (trimmed.isBlank()) {
-                            localError = "Введите номер телефона"
-                            return@Button
-                        }
-                        scope.launch {
-                            runCatching { telegramService.submitPhoneNumber(trimmed) }
-                                .onFailure { localError = it.message ?: "Не удалось запросить код Telegram" }
+                    modifier = Modifier.fillMaxWidth().onPreviewKeyEvent {
+                        if (it.type == KeyEventType.KeyDown && (it.key == Key.Enter || it.key == Key.NumPadEnter)) {
+                            submitPhone()
+                            true
+                        } else {
+                            false
                         }
                     },
+                )
+                Button(
+                    onClick = { submitPhone() },
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -139,7 +161,14 @@ fun TelegramLoginContent(
                         codeValue = it
                         localError = null
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().onPreviewKeyEvent {
+                        if (it.type == KeyEventType.KeyDown && (it.key == Key.Enter || it.key == Key.NumPadEnter)) {
+                            submitCode()
+                            true
+                        } else {
+                            false
+                        }
+                    },
                     singleLine = true,
                     visualTransformation = VisualTransformation.None,
                     label = { Text("Login Code") },
@@ -152,20 +181,7 @@ fun TelegramLoginContent(
                     ),
                 )
                 Button(
-                    onClick = {
-                        val trimmed = codeValue.trim()
-                        if (trimmed.isBlank()) {
-                            localError = "Введите код входа"
-                            return@Button
-                        }
-                        scope.launch {
-                            runCatching { telegramService.submitLoginCode(trimmed) }
-                                .onFailure { localError = it.message ?: "Не удалось подтвердить код" }
-                                .onSuccess {
-                                    codeValue = ""
-                                }
-                        }
-                    },
+                    onClick = { submitCode() },
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -183,7 +199,14 @@ fun TelegramLoginContent(
                         passwordValue = it
                         localError = null
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().onPreviewKeyEvent {
+                        if (it.type == KeyEventType.KeyDown && (it.key == Key.Enter || it.key == Key.NumPadEnter)) {
+                            submitPassword()
+                            true
+                        } else {
+                            false
+                        }
+                    },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     label = { Text("2FA Password") },
@@ -196,19 +219,7 @@ fun TelegramLoginContent(
                     ),
                 )
                 Button(
-                    onClick = {
-                        if (passwordValue.isBlank()) {
-                            localError = "Введите пароль 2FA"
-                            return@Button
-                        }
-                        scope.launch {
-                            runCatching { telegramService.submitTwoFaPassword(passwordValue) }
-                                .onFailure { localError = it.message ?: "Не удалось подтвердить пароль 2FA" }
-                                .onSuccess {
-                                    passwordValue = ""
-                                }
-                        }
-                    },
+                    onClick = { submitPassword() },
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -221,7 +232,7 @@ fun TelegramLoginContent(
 
             TelegramAuthStepUi.CONNECTED -> {
                 Text(
-                    text = "Active Session: ${state.telegramActiveSessionPhone ?: "Connected"}",
+                    text = state.telegramActiveSessionPhone ?: "Connected",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -229,7 +240,9 @@ fun TelegramLoginContent(
                     onClick = {
                         scope.launch {
                             runCatching { telegramService.logout() }
-                                .onFailure { localError = it.message ?: "Не удалось завершить Telegram-сессию" }
+                                .onFailure {
+                                    localError = it.message ?: "Не удалось завершить Telegram-сессию"
+                                }
                         }
                     },
                     enabled = !state.telegramAuthBusy,
@@ -283,82 +296,5 @@ fun TelegramLoginContent(
                 color = MaterialTheme.colorScheme.primary,
             )
         }
-
-        OutlinedButton(
-            onClick = { advancedExpanded = !advancedExpanded },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Text(
-                if (advancedExpanded) "Скрыть расширенные параметры" else "Расширенные параметры Telegram",
-            )
-        }
-
-        if (advancedExpanded) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Встроенные Telegram credentials поставляются с приложением.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                )
-
-                OutlinedButton(
-                    onClick = { debugLogsEnabled = !debugLogsEnabled },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    RowLikeCheckbox(
-                        checked = debugLogsEnabled,
-                        text = "Debug-логи Telegram",
-                    )
-                }
-
-                Button(
-                    onClick = {
-                        localError = null
-                        localInfo = null
-                        scope.launch {
-                            runCatching {
-                                telegramService.updateClientConfig(
-                                    debugLogsEnabled = debugLogsEnabled,
-                                )
-                            }
-                                .onSuccess {
-                                    localInfo = "Telegram-конфиг применен. Клиент перезапущен."
-                                    reloadClientConfig()
-                                }
-                                .onFailure { localError = it.message ?: "Не удалось применить Telegram-конфиг" }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Text("Применить и перезапустить Telegram")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RowLikeCheckbox(
-    checked: Boolean,
-    text: String,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Checkbox(
-            checked = checked,
-            onCheckedChange = null,
-        )
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
     }
 }

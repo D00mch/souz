@@ -96,10 +96,6 @@ data class TelegramMessageView(
     val text: String?,
 )
 
-data class TelegramClientConfig(
-    val debugLogsEnabled: Boolean,
-)
-
 enum class TelegramChatAction {
     Mute,
     Archive,
@@ -137,20 +133,6 @@ class TelegramService(
         }
     }
 
-    fun getClientConfig(): TelegramClientConfig {
-        return TelegramClientConfig(
-            debugLogsEnabled = isTelegramDebugLogsEnabled(),
-        )
-    }
-
-    suspend fun updateClientConfig(
-        debugLogsEnabled: Boolean,
-    ) {
-        ConfigStore.put(TELEGRAM_CFG_DEBUG_LOGS, debugLogsEnabled)
-        applyTdlightLogLevel(debugLogsEnabled)
-        restartClient()
-    }
-
     suspend fun submitPhoneNumber(phoneNumber: String) {
         val normalized = normalizePhone(phoneNumber)
         if (normalized.isBlank()) {
@@ -167,7 +149,7 @@ class TelegramService(
         }
     }
 
-    suspend fun submitLoginCode(code: String) {
+    fun submitLoginCode(code: String) {
         val normalized = code.trim()
         if (normalized.isBlank()) {
             throw IllegalArgumentException("Login code is required")
@@ -181,7 +163,7 @@ class TelegramService(
         }
     }
 
-    suspend fun submitTwoFaPassword(password: String) {
+    fun submitTwoFaPassword(password: String) {
         if (password.isBlank()) {
             throw IllegalArgumentException("2FA password is required")
         }
@@ -432,9 +414,9 @@ class TelegramService(
         requireClient().send(TdApi.SendChatAction(chatId, 0L, null, action)).awaitResult()
     }
 
-    private suspend fun requireReady() {
+    private fun requireReady() {
         if (authState.value.step != TelegramAuthStep.READY) {
-            throw IllegalStateException("Telegram is not connected. Open Settings -> Security and complete login")
+            throw IllegalStateException("Telegram is not connected. Open Settings -> Functions and complete login")
         }
     }
 
@@ -950,7 +932,7 @@ class TelegramService(
         return when {
             normalized.contains("API_ID_PUBLISHED_FLOOD", ignoreCase = true) ->
                 "Telegram отклонил встроенные API credentials (API_ID_PUBLISHED_FLOOD). " +
-                    "Откройте Settings -> Функции -> Telegram и укажите персональные API ID/API Hash."
+                    "Обратитесь в поддержку и опишите проблему."
 
             normalized.contains("PHONE_NUMBER_INVALID", ignoreCase = true) ->
                 "Неверный номер телефона Telegram."
@@ -1032,7 +1014,7 @@ class TelegramService(
         settings.isChatInfoDatabaseEnabled = true
         settings.isMessageDatabaseEnabled = true
         settings.applicationVersion = "0.0.1"
-        settings.deviceModel = "Souz Desktop"
+        settings.deviceModel = "Souz AI"
         return settings
     }
 

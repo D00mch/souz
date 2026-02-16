@@ -145,6 +145,7 @@ private fun SettingsSectionScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .clip(RoundedCornerShape(22.dp))
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
@@ -680,7 +681,7 @@ fun TelegramSettingsScreen(
 ) {
     SettingsSectionScreen(
         title = "Telegram",
-        subtitle = "Управление подключением Telegram User Client",
+        subtitle = "",
         onClose = onClose
     ) {
         TelegramLoginContent(state = state)
