@@ -48,6 +48,7 @@ import ru.gigadesk.tool.ToolPermissionBroker
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.ui.main.usecases.FinderPathExtractor
 import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
+import ru.gigadesk.ui.main.usecases.OnboardingUseCase
 import ru.gigadesk.ui.main.usecases.VoiceInputUseCase
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
@@ -248,9 +249,11 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
 
             val onboardingState = awaitState(viewModel) { state ->
-                state.displayedText.contains("Привет! Я GigaDesk")
+                state.chatMessages.any { !it.isUser && it.text.contains("Привет! Я GigaDesk") }
             }
 
+            assertEquals(1, onboardingState.chatMessages.size)
+            assertEquals(OnboardingUseCase.ONBOARDING_DISPLAY_TEXT, onboardingState.chatMessages.single().text)
             assertTrue(onboardingState.displayedText.contains("Для запуска голосового ввода"))
             verify { harness.settingsProvider.needsOnboarding = false }
             verify { harness.settingsProvider.onboardingCompleted = true }
