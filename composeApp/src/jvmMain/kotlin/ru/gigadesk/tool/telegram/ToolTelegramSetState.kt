@@ -1,6 +1,9 @@
 package ru.gigadesk.tool.telegram
 
 import kotlinx.coroutines.runBlocking
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.giga.gigaJsonMapper
 import ru.gigadesk.service.telegram.TelegramChatAction
 import ru.gigadesk.service.telegram.TelegramService
@@ -14,6 +17,7 @@ import ru.gigadesk.tool.ToolSetup
 class ToolTelegramSetState(
     private val telegramService: TelegramService,
 ) : ToolSetup<ToolTelegramSetState.Input> {
+    private val settingsProvider: SettingsProvider by lazy { SettingsProviderImpl(ConfigStore) }
 
     enum class Action {
         Mute,
@@ -27,6 +31,8 @@ class ToolTelegramSetState(
         val chatName: String,
         @InputParamDescription("Action to apply: Mute, Archive, MarkRead, Delete")
         val action: Action,
+        @InputParamDescription("Set true only after explicit user confirmation when SafeMode is enabled")
+        val confirmed: Boolean = false,
     )
 
     override val name: String = "ToolTelegramSetState"
@@ -52,6 +58,12 @@ class ToolTelegramSetState(
     override suspend fun suspendInvoke(input: Input): String {
         if (input.chatName.isBlank()) {
             throw BadInputException("chatName is required")
+        }
+
+        if (settingsProvider.safeModeEnabled && !input.confirmed) {
+            throw BadInputException(
+                "SafeMode enabled: ask user confirmation and repeat call with confirmed=true"
+            )
         }
 
         val action = when (input.action) {

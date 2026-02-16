@@ -96,6 +96,12 @@ fun SettingsScreen(
                 onClose = { viewModel.send(SettingsEvent.BackToSettings) }
             )
         }
+        SettingsSubScreen.TELEGRAM -> {
+            TelegramSettingsScreen(
+                state = state,
+                onClose = { viewModel.send(SettingsEvent.BackToSettings) }
+            )
+        }
     }
 }
 
@@ -189,19 +195,13 @@ fun SettingsScreenMain(
                             state = state,
                             onUseFewShotExamplesChange = { viewModel.send(SettingsEvent.InputUseFewShotExamples(it)) },
                             onOpenTools = onOpenTools,
+                            onOpenTelegramSettings = { viewModel.send(SettingsEvent.OpenTelegramSettings) },
                             onClose = onClose
                         )
                         SettingsSection.SECURITY -> SecuritySettingsContent(
                             state = state,
                             onSafeModeChange = { viewModel.send(SettingsEvent.InputSafeModeEnabled(it)) },
                             onOpenFoldersManagement = { viewModel.send(SettingsEvent.OpenFoldersManagement) },
-                            onTelegramPhoneInput = { viewModel.send(SettingsEvent.InputTelegramPhone(it)) },
-                            onTelegramCodeInput = { viewModel.send(SettingsEvent.InputTelegramCode(it)) },
-                            onTelegramPasswordInput = { viewModel.send(SettingsEvent.InputTelegramPassword(it)) },
-                            onTelegramSubmitPhone = { viewModel.send(SettingsEvent.SubmitTelegramPhone) },
-                            onTelegramSubmitCode = { viewModel.send(SettingsEvent.SubmitTelegramCode) },
-                            onTelegramSubmitPassword = { viewModel.send(SettingsEvent.SubmitTelegramPassword) },
-                            onTelegramLogout = { viewModel.send(SettingsEvent.TelegramLogout) },
                             onClose = onClose
                         )
                         SettingsSection.SUPPORT -> SupportSettingsContent(

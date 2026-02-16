@@ -215,6 +215,7 @@ class SettingsViewModel(
             BackToSettings -> setState { copy(currentScreen = SettingsSubScreen.MAIN) }
             BackToSessions -> setState { copy(currentScreen = SettingsSubScreen.SESSIONS, selectedSessionId = null) }
             OpenFoldersManagement -> setState { copy(currentScreen = SettingsSubScreen.FOLDERS) }
+            OpenTelegramSettings -> setState { copy(currentScreen = SettingsSubScreen.TELEGRAM) }
             
             is SelectSettingsSection -> setState { copy(activeSection = event.section) }
         }

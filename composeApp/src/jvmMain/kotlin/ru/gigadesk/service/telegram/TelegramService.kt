@@ -1,5 +1,7 @@
 package ru.gigadesk.service.telegram
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.LoggerContext
 import it.tdlight.client.APIToken
 import it.tdlight.client.AuthenticationData
 import it.tdlight.client.AuthenticationSupplier
@@ -27,6 +29,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
+import ru.gigadesk.db.ConfigStore
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -36,6 +39,10 @@ import kotlin.coroutines.resumeWithException
 
 private const val TELEGRAM_MAX_CONTACTS_CACHE = 5_000
 private const val TELEGRAM_MAX_CHATS_CACHE = 100
+private const val TELEGRAM_DEFAULT_API_ID = 34456605
+private const val TELEGRAM_DEFAULT_API_HASH = "04779e90346d857b3f0f313ff8d2aa39"
+private const val TELEGRAM_CFG_DEBUG_LOGS = "TELEGRAM_DEBUG_LOGS"
+private const val TELEGRAM_ENV_DEBUG_LOGS = "SOUZ_TG_DEBUG_LOGS"
 
 enum class TelegramAuthStep {
     INITIALIZING,
@@ -89,6 +96,10 @@ data class TelegramMessageView(
     val text: String?,
 )
 
+data class TelegramClientConfig(
+    val debugLogsEnabled: Boolean,
+)
+
 enum class TelegramChatAction {
     Mute,
     Archive,
@@ -120,9 +131,24 @@ class TelegramService(
     private var client: SimpleTelegramClient? = null
 
     init {
+        applyTdlightLogLevel(isTelegramDebugLogsEnabled())
         scope.launch {
             startClientIfNeeded()
         }
+    }
+
+    fun getClientConfig(): TelegramClientConfig {
+        return TelegramClientConfig(
+            debugLogsEnabled = isTelegramDebugLogsEnabled(),
+        )
+    }
+
+    suspend fun updateClientConfig(
+        debugLogsEnabled: Boolean,
+    ) {
+        ConfigStore.put(TELEGRAM_CFG_DEBUG_LOGS, debugLogsEnabled)
+        applyTdlightLogLevel(debugLogsEnabled)
+        restartClient()
     }
 
     suspend fun submitPhoneNumber(phoneNumber: String) {
@@ -179,7 +205,7 @@ class TelegramService(
         }
         runCatching { currentClient.logOutAsync().awaitResult() }
             .onFailure { err ->
-                l.warn("Telegram logout returned error", err)
+                l.debug("Telegram logout returned error", err)
             }
         restartClient()
     }
@@ -487,7 +513,7 @@ class TelegramService(
             runCatching {
                 oldClient?.closeAsync()?.awaitResult()
             }.onFailure { err ->
-                l.warn("Error while closing Telegram client", err)
+                l.debug("Error while closing Telegram client", err)
             }
         }
 
@@ -902,12 +928,13 @@ class TelegramService(
     }
 
     private fun onUnhandledError(throwable: Throwable) {
-        val message = when (throwable) {
+        val rawMessage = when (throwable) {
             is TelegramError -> throwable.errorMessage
             else -> throwable.message ?: throwable::class.simpleName.orEmpty()
         }
+        val message = formatUserError(rawMessage)
 
-        l.warn("Telegram client error: {}", message, throwable)
+        l.debug("Telegram client error: {}", sanitizeTelegramError(rawMessage), throwable)
 
         authStateFlow.update {
             it.copy(
@@ -915,6 +942,61 @@ class TelegramService(
                 isBusy = false,
                 errorMessage = message,
             )
+        }
+    }
+
+    private fun formatUserError(message: String?): String {
+        val normalized = message.orEmpty()
+        return when {
+            normalized.contains("API_ID_PUBLISHED_FLOOD", ignoreCase = true) ->
+                "Telegram отклонил встроенные API credentials (API_ID_PUBLISHED_FLOOD). " +
+                    "Откройте Settings -> Функции -> Telegram и укажите персональные API ID/API Hash."
+
+            normalized.contains("PHONE_NUMBER_INVALID", ignoreCase = true) ->
+                "Неверный номер телефона Telegram."
+
+            normalized.contains("PHONE_CODE_INVALID", ignoreCase = true) ->
+                "Неверный код подтверждения Telegram."
+
+            normalized.contains("PHONE_CODE_EXPIRED", ignoreCase = true) ->
+                "Срок действия кода Telegram истек. Запросите новый код."
+
+            normalized.contains("PASSWORD_HASH_INVALID", ignoreCase = true) ->
+                "Неверный пароль 2FA Telegram."
+
+            else -> normalized.ifBlank { "Telegram error" }
+        }
+    }
+
+    private fun sanitizeTelegramError(message: String?): String {
+        if (message.isNullOrBlank()) return ""
+        return message
+            .replace(TELEGRAM_DEFAULT_API_HASH, "***")
+            .replace(Regex("(?i)api_hash\\s*=\\s*\"[^\"]+\""), "api_hash=\"***\"")
+            .replace(Regex("\\b[0-9a-fA-F]{24,}\\b"), "***")
+    }
+
+    private fun resolveApiToken(): APIToken {
+        return APIToken(TELEGRAM_DEFAULT_API_ID, TELEGRAM_DEFAULT_API_HASH)
+    }
+
+    private fun isTelegramDebugLogsEnabled(): Boolean {
+        val cfgValue = ConfigStore.get<Boolean>(TELEGRAM_CFG_DEBUG_LOGS)
+        if (cfgValue != null) return cfgValue
+
+        val envValue = System.getenv(TELEGRAM_ENV_DEBUG_LOGS) ?: System.getProperty(TELEGRAM_ENV_DEBUG_LOGS)
+        return envValue?.equals("true", ignoreCase = true) == true
+    }
+
+    private fun applyTdlightLogLevel(debugLogsEnabled: Boolean) {
+        runCatching {
+            val loggerContext = LoggerFactory.getILoggerFactory() as? LoggerContext ?: return
+            val level = if (debugLogsEnabled) Level.INFO else Level.WARN
+            loggerContext.getLogger("it.tdlight").level = level
+            loggerContext.getLogger("it.tdlight.TDLight").level = level
+            loggerContext.getLogger("it.tdlight.TelegramClient").level = level
+        }.onFailure {
+            l.debug("Failed to configure tdlight logger level", it)
         }
     }
 
@@ -942,15 +1024,15 @@ class TelegramService(
     }
 
     private fun buildTdLibSettings(): TDLibSettings {
-        val settings = TDLibSettings.create(APIToken(94575, "a3406de8d171bb422bb6ddf3bbd800e2"))
-        val sessionDir: Path = Path.of(System.getProperty("user.home"), ".abledo", "tdlight")
+        val settings = TDLibSettings.create(resolveApiToken())
+        val sessionDir: Path = Path.of(System.getProperty("user.home"), ".souz", "tdlight")
         settings.databaseDirectoryPath = sessionDir.resolve("data")
         settings.downloadedFilesDirectoryPath = sessionDir.resolve("downloads")
         settings.isFileDatabaseEnabled = true
         settings.isChatInfoDatabaseEnabled = true
         settings.isMessageDatabaseEnabled = true
-        settings.applicationVersion = "Abledo"
-        settings.deviceModel = "Abledo Desktop"
+        settings.applicationVersion = "0.0.1"
+        settings.deviceModel = "Souz Desktop"
         return settings
     }
 

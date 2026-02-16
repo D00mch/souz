@@ -1,6 +1,9 @@
 package ru.gigadesk.tool.telegram
 
 import kotlinx.coroutines.runBlocking
+import ru.gigadesk.db.ConfigStore
+import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.giga.gigaJsonMapper
 import ru.gigadesk.service.telegram.TelegramService
 import ru.gigadesk.tool.BadInputException
@@ -13,6 +16,7 @@ import ru.gigadesk.tool.ToolSetup
 class ToolTelegramForward(
     private val telegramService: TelegramService,
 ) : ToolSetup<ToolTelegramForward.Input> {
+    private val settingsProvider: SettingsProvider by lazy { SettingsProviderImpl(ConfigStore) }
 
     data class Input(
         @InputParamDescription("Source chat name")
@@ -21,6 +25,8 @@ class ToolTelegramForward(
         val toChat: String,
         @InputParamDescription("Message id to forward, or 'last'")
         val messageId: String = "last",
+        @InputParamDescription("Set true only after explicit user confirmation when SafeMode is enabled")
+        val confirmed: Boolean = false,
     )
 
     override val name: String = "ToolTelegramForward"
@@ -49,6 +55,12 @@ class ToolTelegramForward(
         }
         if (input.toChat.isBlank()) {
             throw BadInputException("toChat is required")
+        }
+
+        if (settingsProvider.safeModeEnabled && !input.confirmed) {
+            throw BadInputException(
+                "SafeMode enabled: ask user confirmation and repeat call with confirmed=true"
+            )
         }
 
         val forwarded = runCatching {

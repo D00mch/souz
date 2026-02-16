@@ -12,7 +12,7 @@ import ru.gigadesk.ui.VMState
 
 
 enum class SettingsSubScreen {
-    MAIN, SESSIONS, VISUALIZATION, FOLDERS
+    MAIN, SESSIONS, VISUALIZATION, FOLDERS, TELEGRAM
 }
 
 enum class TelegramAuthStepUi {
@@ -122,6 +122,7 @@ sealed interface SettingsEvent : VMEvent {
     object BackToSettings : SettingsEvent
     object BackToSessions : SettingsEvent
     object OpenFoldersManagement : SettingsEvent
+    object OpenTelegramSettings : SettingsEvent
     
     data class SelectSettingsSection(val section: SettingsSection): SettingsEvent
 }
