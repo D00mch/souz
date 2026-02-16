@@ -34,6 +34,9 @@ kotlin {
         testRuns.named("test") {
             executionTask.configure {
                 useJUnitPlatform()
+
+                systemProperty("junit.jupiter.execution.timeout.default", "5 m")
+                systemProperty("junit.jupiter.execution.timeout.mode", "enabled")
             }
         }
     }

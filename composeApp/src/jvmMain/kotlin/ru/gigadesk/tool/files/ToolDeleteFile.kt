@@ -18,11 +18,11 @@ class ToolDeleteFile(
     private val l = LoggerFactory.getLogger(ToolDeleteFile::class.java)
 
     data class Input(
-        @InputParamDescription("The path of the file to delete")
+        @InputParamDescription("The path of the file or folder to delete")
         val path: String
     )
     override val name = "DeleteFile"
-    override val description = "Moves a file to Trash at the given path. Use ~ as the Home dir"
+    override val description = "Moves a file or folder to Trash at the given path. Use ~ as the Home dir"
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Удали temp.txt",
@@ -51,20 +51,20 @@ class ToolDeleteFile(
         if (!filesToolUtil.isPathSafe(file)) {
             throw ForbiddenFolder(fixedPath)
         }
-        if (!file.exists() || file.isDirectory) {
-            throw BadInputException("Invalid file path: ${input.path}")
+        if (!file.exists()) {
+            throw BadInputException("Invalid path: ${input.path}")
         }
         if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.MOVE_TO_TRASH)) {
             val movedToTrash = Desktop.getDesktop().moveToTrash(file)
             if (movedToTrash) {
-                return "File moved to Trash from ${input.path}"
+                return "Path moved to Trash from ${input.path}"
             }
             l.warn("Desktop trash operation reported failure for {}", fixedPath)
         }
 
         val trashTargetPath = resolveFallbackTrashTarget(file)
         filesToolUtil.moveWithAtomicFallback(file.toPath(), trashTargetPath, l)
-        return "File moved to Trash from ${input.path}"
+        return "Path moved to Trash from ${input.path}"
     }
 
     private fun resolveFallbackTrashTarget(file: File): Path {

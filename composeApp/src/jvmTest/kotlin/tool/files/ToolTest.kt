@@ -194,4 +194,21 @@ class ToolTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun `test ToolDeleteFile deletes folder`() {
+        val tempDir = Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "gigadesk-test-delete-folder-").toFile()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val folderToDelete = File(tempDir, "folder-to-delete").apply { mkdirs() }
+            File(folderToDelete, "nested.txt").writeText("nested")
+
+            val result = ToolDeleteFile(filesToolUtil).invoke(ToolDeleteFile.Input(folderToDelete.absolutePath))
+
+            assertContains(result, "Path moved to Trash")
+            assertEquals(false, folderToDelete.exists())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
 }
