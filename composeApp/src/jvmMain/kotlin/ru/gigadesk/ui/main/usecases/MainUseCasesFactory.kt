@@ -22,6 +22,7 @@ class MainUseCasesFactory(
     private val audioRecorder: InMemoryAudioRecorder,
     private val say: Say,
     private val toolPermissionBroker: ToolPermissionBroker,
+    private val finderPathExtractor: FinderPathExtractor,
 ) {
 
     fun create(ioDispatcher: CoroutineDispatcher): MainUseCases {
@@ -30,6 +31,7 @@ class MainUseCasesFactory(
             graphAgent = graphAgent,
             settingsProvider = settingsProvider,
             speechUseCase = speechUseCase,
+            finderPathExtractor = finderPathExtractor,
             ioDispatcher = ioDispatcher,
         )
         val permissionsUseCase = OnboardingUseCase(
@@ -40,6 +42,7 @@ class MainUseCasesFactory(
         val voiceInputUseCase = VoiceInputUseCase(
             audioRecorder = audioRecorder,
             gigaVoiceAPI = gigaVoiceAPI,
+            settingsProvider = settingsProvider,
             chatUseCase = chatUseCase,
             speechUseCase = speechUseCase,
             permissionsUseCase = permissionsUseCase,

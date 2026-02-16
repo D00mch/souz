@@ -28,6 +28,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import org.apache.tika.exception.FileTooLongException
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -44,6 +45,8 @@ import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.tool.ToolPermissionBroker
+import ru.gigadesk.tool.files.FilesToolUtil
+import ru.gigadesk.ui.main.usecases.FinderPathExtractor
 import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
 import ru.gigadesk.ui.main.usecases.VoiceInputUseCase
 import java.util.concurrent.atomic.AtomicReference
@@ -250,6 +253,7 @@ class MainViewModelTest {
 
             assertTrue(onboardingState.displayedText.contains("Для запуска голосового ввода"))
             verify { harness.settingsProvider.needsOnboarding = false }
+            verify { harness.settingsProvider.onboardingCompleted = true }
             verify(exactly = 1) { harness.say.queue(any()) }
         } finally {
             harness.clear()
@@ -323,6 +327,9 @@ class MainViewModelTest {
         var needsOnboardingState = needsOnboarding
         every { settingsProvider.needsOnboarding } answers { needsOnboardingState }
         every { settingsProvider.needsOnboarding = any() } answers { needsOnboardingState = firstArg() }
+        var onboardingCompletedState = false
+        every { settingsProvider.onboardingCompleted } answers { onboardingCompletedState }
+        every { settingsProvider.onboardingCompleted = any() } answers { onboardingCompletedState = firstArg() }
         every { settingsProvider.safeModeEnabled } returns false
 
         val say = mockk<Say>(relaxed = true)
@@ -347,8 +354,10 @@ class MainViewModelTest {
             bindSingleton { say }
             bindSingleton { toolPermissionBroker }
             bindSingleton { InMemoryAudioRecorder() }
+            bindSingleton { FilesToolUtil(instance()) }
+            bindSingleton { FinderPathExtractor(instance()) }
             bindSingleton {
-                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance())
+                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance())
             }
         }
 

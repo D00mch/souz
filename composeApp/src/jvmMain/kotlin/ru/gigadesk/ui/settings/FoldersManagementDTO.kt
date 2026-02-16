@@ -5,11 +5,18 @@ import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
 
 data class FoldersManagementState(
-    val forbiddenFoldersInput: String = "",
+    val forbiddenFolders: List<ForbiddenFolderItem> = emptyList(),
 ): VMState
 
+data class ForbiddenFolderItem(
+    val title: String,
+    val path: String,
+)
+
 sealed interface FoldersManagementEvent : VMEvent {
-    data class InputForbiddenFolders(val folders: String) : FoldersManagementEvent
+    object BrowseFolder : FoldersManagementEvent
+    data class AddForbiddenFolder(val path: String) : FoldersManagementEvent
+    data class RemoveForbiddenFolder(val path: String) : FoldersManagementEvent
     object CloseScreen : FoldersManagementEvent
 }
 

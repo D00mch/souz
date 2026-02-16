@@ -12,7 +12,8 @@ import org.slf4j.LoggerFactory
 
 class InMemoryAudioRecorder(
     private val recorder: ActiveSoundRecorder = ActiveSoundRecorderImpl(),
-    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
+    warmupOnInit: Boolean = false,
 ) {
     private val l = LoggerFactory.getLogger(InMemoryAudioRecorder::class.java)
     private val _audioFlow = MutableSharedFlow<ByteArray>()
@@ -23,8 +24,9 @@ class InMemoryAudioRecorder(
     val audioFlow: Flow<ByteArray> = _audioFlow
 
     init {
-        // Warm up the microphone so the first spoken words are captured
-        recorder.prepare()
+        if (warmupOnInit) {
+            recorder.prepare()
+        }
     }
 
     suspend fun logState(): Nothing {

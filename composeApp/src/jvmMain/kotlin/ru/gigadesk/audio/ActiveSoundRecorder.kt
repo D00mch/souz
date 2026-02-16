@@ -30,8 +30,7 @@ class ActiveSoundRecorderImpl(
     sampleRate: Float = 16_000f,
     sampleSizeBits: Int = 16,
     channels: Int = 1,
-    frameMillis: Int = 20,     // 20 ms frames
-    preRollMillis: Int = 300,  // ~0.3 s pre-roll
+    frameMillis: Int = 20,
     private val lineBufferBytes: Int = 16384,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 ) : ActiveSoundRecorder {
@@ -42,10 +41,8 @@ class ActiveSoundRecorderImpl(
     private val bytesPerSample = sampleSizeBits / 8
     private val samplesPerFrame = (sampleRate * frameMillis / 1000f).toInt()
     private val frameBytes = samplesPerFrame * bytesPerSample * channels
-    private val maxFrames = ((preRollMillis + frameMillis - 1) / frameMillis).coerceAtLeast(1)
 
-    private val ringLock = ReentrantLock()
-    private val ring = ArrayDeque<ByteArray>(maxFrames)
+    private val channelLock = ReentrantLock()
 
     private var captureJob: Job? = null
     private var line: TargetDataLine? = null
@@ -54,11 +51,12 @@ class ActiveSoundRecorderImpl(
     private val activeChannelRef = AtomicReference<Channel<ByteArray>?>(null)
 
     override fun prepare() {
-        if (prepared.compareAndSet(false, true)) {
+        if (prepared.get()) return
+        channelLock.withLock {
+            if (prepared.get()) return
             val info = DataLine.Info(TargetDataLine::class.java, format)
             val localLine = AudioSystem.getLine(info) as TargetDataLine
             localLine.open(format, maxOf(lineBufferBytes, frameBytes * 8))
-            localLine.start()
             line = localLine
 
             captureJob = scope.launch {
@@ -69,34 +67,34 @@ class ActiveSoundRecorderImpl(
                     if (r <= 0) continue
                     filled += r
                     if (filled == buf.size) {
-                        val frame = buf.copyOf()       // immutable frame snapshot
+                        val frame = buf.copyOf()
                         filled = 0
-                        // Keep ordering between ring update and channel send by holding same lock
-                        ringLock.withLock {
-                            ring.addLast(frame)
-                            while (ring.size > maxFrames) ring.removeFirst()
+                        channelLock.withLock {
                             activeChannelRef.get()?.trySend(frame)
                         }
                     }
                 }
             }
+            prepared.set(true)
         }
     }
 
     override fun startRecording() {
         if (!prepared.get()) prepare() // idempotent
+        val localLine = line ?: throw IllegalStateException("Recorder is not prepared")
         val ch = Channel<ByteArray>(capacity = 3072)
 
-        // Ensure pre-roll frames precede any live frames sent after activation.
-        ringLock.withLock {
+        channelLock.withLock {
             activeChannelRef.getAndSet(ch)?.close()
-            // prepend pre-roll in correct order
-            ring.forEach { ch.trySend(it) }
         }
+        localLine.flush()
+        localLine.start()
     }
 
     override suspend fun stopRecording(): ByteArray {
-        val ch = ringLock.withLock { activeChannelRef.getAndSet(null) } ?: return ByteArray(0)
+        val ch = channelLock.withLock { activeChannelRef.getAndSet(null) } ?: return ByteArray(0)
+        line?.stop()
+        line?.flush()
         ch.close() // stop producers to this channel
 
         val chunks = ArrayList<ByteArray>(256)
@@ -115,8 +113,12 @@ class ActiveSoundRecorderImpl(
     /** Optional: call when app exits to release the mic. */
     suspend fun close() {
         activeChannelRef.getAndSet(null)?.close()
+        line?.apply {
+            stop()
+            flush()
+            close()
+        }
         captureJob?.cancelAndJoin()
-        line?.apply { stop(); close() }
         scope.cancel()
     }
 }
@@ -124,13 +126,12 @@ class ActiveSoundRecorderImpl(
 interface ActiveSoundRecorder {
 
     /**
-     * Open the microphone line and begin continuously capturing audio into a
-     * small circular buffer. Call this once at start-up or shortly before the
-     * user is expected to trigger recording.
+     * Open the microphone line and create internal capture resources.
+     * The line is not started until [startRecording] is called.
      */
     fun prepare()
 
-    /** Begin writing audio data (including pre-buffered audio) to the main stream. */
+    /** Begin writing live audio data to the main stream. */
     fun startRecording()
 
     /** Stop capturing and return the recorded audio. */

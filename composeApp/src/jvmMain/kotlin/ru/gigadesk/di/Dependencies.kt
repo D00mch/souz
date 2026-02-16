@@ -56,6 +56,7 @@ import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
 import ru.gigadesk.tool.math.ToolCalculator
 import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
+import ru.gigadesk.ui.main.usecases.FinderPathExtractor
 import ru.gigadesk.tool.presentation.ToolPresentationCreate
 import ru.gigadesk.tool.presentation.ToolPresentationRead
 import ru.gigadesk.tool.telegram.ToolTelegramForward
@@ -196,7 +197,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { ToolsFactory(di) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
-    bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { FinderPathExtractor(instance()) }
+    bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { McpConfigProvider(instance()) }
     bindSingleton { McpClientManager(instance()) }
 

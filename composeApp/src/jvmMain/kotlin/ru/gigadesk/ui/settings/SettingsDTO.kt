@@ -9,6 +9,7 @@ import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.ui.VMEvent
 import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
+import ru.gigadesk.ui.common.ApiKeyProvider
 
 
 enum class SettingsSubScreen {
@@ -90,6 +91,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputQwenChatKey(val key: String): SettingsEvent
     data class InputAiTunnelKey(val key: String): SettingsEvent
     data class InputSaluteSpeechKey(val key: String): SettingsEvent
+    data class OpenProviderLink(val provider: ApiKeyProvider): SettingsEvent
     data class InputMcpServersJson(val json: String): SettingsEvent
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
     data class InputUseStreaming(val enabled: Boolean): SettingsEvent
