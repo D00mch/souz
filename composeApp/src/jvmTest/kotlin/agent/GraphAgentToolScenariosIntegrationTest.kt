@@ -6,7 +6,7 @@ import giga.getHttpClient
 import giga.getSessionTokenUsage
 import io.ktor.client.plugins.*
 import io.mockk.*
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.TestScope
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -49,6 +49,8 @@ import ru.gigadesk.tool.notes.ToolListNotes
 import ru.gigadesk.tool.notes.ToolSearchNotes
 import ru.gigadesk.tool.textReplace.ToolGetClipboard
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 
 /**
@@ -1162,3 +1164,9 @@ class GraphAgentToolScenariosIntegrationTest {
         }
     }
 }
+
+private val DEFAULT_TEST_TIMEOUT: Duration = 5.minutes
+
+private fun runTest(
+    block: suspend TestScope.() -> Unit
+) = kotlinx.coroutines.test.runTest(timeout = DEFAULT_TEST_TIMEOUT, testBody = block)
