@@ -3,6 +3,7 @@ package ru.gigadesk.ui.settings
 import androidx.lifecycle.viewModelScope
 import io.ktor.util.logging.debug
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.kodein.di.DI
 import org.kodein.di.DIAware
@@ -16,6 +17,8 @@ import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.LlmProvider
+import ru.gigadesk.service.telegram.TelegramAuthStep
+import ru.gigadesk.service.telegram.TelegramService
 import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.calendar.CalendarAppleScriptCommands
@@ -31,6 +34,7 @@ class SettingsViewModel(
     private val keysProvider: SettingsProvider by di.instance()
     private val chatApi: GigaChatAPI by di.instance()
     private val graphBasedAgent: GraphBasedAgent by di.instance()
+    private val telegramService: TelegramService by di.instance()
     private val supportLogSender = SupportLogSender()
     private val say: Say by di.instance()
 
@@ -39,6 +43,32 @@ class SettingsViewModel(
             refreshFromProvider()
             fetchBalance()
             fetchCalendars()
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            telegramService.authState.collectLatest { auth ->
+                setState {
+                    copy(
+                        telegramAuthStep = when (auth.step) {
+                            TelegramAuthStep.INITIALIZING -> TelegramAuthStepUi.INITIALIZING
+                            TelegramAuthStep.WAIT_PHONE -> TelegramAuthStepUi.PHONE
+                            TelegramAuthStep.WAIT_CODE -> TelegramAuthStepUi.CODE
+                            TelegramAuthStep.WAIT_PASSWORD -> TelegramAuthStepUi.PASSWORD
+                            TelegramAuthStep.READY -> TelegramAuthStepUi.CONNECTED
+                            TelegramAuthStep.LOGGING_OUT -> TelegramAuthStepUi.LOGGING_OUT
+                            TelegramAuthStep.CLOSED -> TelegramAuthStepUi.INITIALIZING
+                            TelegramAuthStep.ERROR -> TelegramAuthStepUi.ERROR
+                        },
+                        telegramActiveSessionPhone = auth.activePhoneMasked,
+                        telegramCodeHint = auth.codeHint,
+                        telegramPasswordHint = auth.passwordHint,
+                        telegramAuthBusy = auth.isBusy,
+                        telegramAuthError = auth.errorMessage,
+                        telegramCodeInput = if (auth.step == TelegramAuthStep.READY) "" else telegramCodeInput,
+                        telegramPasswordInput = if (auth.step == TelegramAuthStep.READY) "" else telegramPasswordInput,
+                    )
+                }
+            }
         }
     }
 
@@ -151,6 +181,13 @@ class SettingsViewModel(
                 }
                 setState { copy(voiceSpeedInput = normalized, voiceSpeed = newSpeed ?: voiceSpeed) }
             }
+            is InputTelegramPhone -> setState { copy(telegramPhoneInput = event.value) }
+            is InputTelegramCode -> setState { copy(telegramCodeInput = event.value) }
+            is InputTelegramPassword -> setState { copy(telegramPasswordInput = event.value) }
+            SubmitTelegramPhone -> submitTelegramPhone()
+            SubmitTelegramCode -> submitTelegramCode()
+            SubmitTelegramPassword -> submitTelegramPassword()
+            TelegramLogout -> telegramLogout()
             RefreshFromProvider -> refreshFromProvider()
             ChooseVoice -> {
                 runCatching { say.chooseVoice() }
@@ -180,7 +217,8 @@ class SettingsViewModel(
             BackToSettings -> setState { copy(currentScreen = SettingsSubScreen.MAIN) }
             BackToSessions -> setState { copy(currentScreen = SettingsSubScreen.SESSIONS, selectedSessionId = null) }
             OpenFoldersManagement -> setState { copy(currentScreen = SettingsSubScreen.FOLDERS) }
-            
+            OpenTelegramSettings -> setState { copy(currentScreen = SettingsSubScreen.TELEGRAM) }
+
             is SelectSettingsSection -> setState { copy(activeSection = event.section) }
         }
     }
@@ -347,4 +385,49 @@ class SettingsViewModel(
         }
     }
 
+    private fun submitTelegramPhone() = viewModelScope.launch(Dispatchers.IO) {
+        val phone = currentState.telegramPhoneInput.trim()
+        if (phone.isBlank()) {
+            setState { copy(telegramAuthError = "Введите номер телефона") }
+            return@launch
+        }
+
+        runCatching { telegramService.submitPhoneNumber(phone) }
+            .onFailure { error ->
+                setState { copy(telegramAuthError = error.message ?: "Не удалось запросить код Telegram") }
+            }
+    }
+
+    private fun submitTelegramCode() = viewModelScope.launch(Dispatchers.IO) {
+        val code = currentState.telegramCodeInput.trim()
+        if (code.isBlank()) {
+            setState { copy(telegramAuthError = "Введите код входа") }
+            return@launch
+        }
+
+        runCatching { telegramService.submitLoginCode(code) }
+            .onFailure { error ->
+                setState { copy(telegramAuthError = error.message ?: "Не удалось подтвердить код") }
+            }
+    }
+
+    private fun submitTelegramPassword() = viewModelScope.launch(Dispatchers.IO) {
+        val password = currentState.telegramPasswordInput
+        if (password.isBlank()) {
+            setState { copy(telegramAuthError = "Введите пароль 2FA") }
+            return@launch
+        }
+
+        runCatching { telegramService.submitTwoFaPassword(password) }
+            .onFailure { error ->
+                setState { copy(telegramAuthError = error.message ?: "Не удалось подтвердить пароль 2FA") }
+            }
+    }
+
+    private fun telegramLogout() = viewModelScope.launch(Dispatchers.IO) {
+        runCatching { telegramService.logout() }
+            .onFailure { error ->
+                setState { copy(telegramAuthError = error.message ?: "Не удалось завершить Telegram-сессию") }
+            }
+    }
 }

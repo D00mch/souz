@@ -1,5 +1,27 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
+fun tdlightNativeClassifier(): String {
+    val osName = System.getProperty("os.name", "").lowercase()
+    val osArch = System.getProperty("os.arch", "").lowercase()
+
+    return when {
+        osName.contains("mac") -> if (osArch.contains("aarch64") || osArch.contains("arm64")) {
+            "macos_arm64"
+        } else {
+            "macos_amd64"
+        }
+
+        osName.contains("win") -> "windows_amd64"
+        osName.contains("linux") -> if (osArch.contains("aarch64") || osArch.contains("arm64")) {
+            "linux_arm64_gnu_ssl3"
+        } else {
+            "linux_amd64_gnu_ssl3"
+        }
+
+        else -> error("Unsupported OS for tdlight natives: $osName ($osArch)")
+    }
+}
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeMultiplatform)
@@ -89,6 +111,10 @@ kotlin {
             // Excel support
             implementation(libs.poi)
             implementation(libs.poi.ooxml)
+
+            // Telegram user client (TDLib)
+            implementation(libs.tdlight.java)
+            implementation("it.tdlight:tdlight-natives:${libs.versions.tdlight.natives.get()}:${tdlightNativeClassifier()}")
         }
 
         jvmTest.dependencies {

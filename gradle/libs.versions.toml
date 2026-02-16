@@ -28,6 +28,8 @@ protobufGradlePlugin = "0.9.4"
 slfj = "2.0.17"
 tika = "2.9.1"
 poi = "5.2.5"
+tdlight-java = "3.4.4+td.1.8.52"
+tdlight-natives = "4.0.558"
 
 
 [libraries]
@@ -80,6 +82,7 @@ tika-parsersStandardPackage = { module = "org.apache.tika:tika-parsers-standard-
 compose-ui-tooling-preview-desktop = { module = "org.jetbrains.compose.ui:ui-tooling-preview-desktop", version.ref = "composeMultiplatform" }
 poi = { module = "org.apache.poi:poi", version.ref = "poi" }
 poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "poi" }
+tdlight-java = { module = "it.tdlight:tdlight-java", version.ref = "tdlight-java" }
 
 [bundles]
 ktorClient = [
