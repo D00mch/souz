@@ -266,12 +266,16 @@
     <string name="telegram_label_code">Код входа</string>
     <string name="telegram_label_password">Пароль 2FA</string>
     <string name="telegram_btn_request_code">Запросить код</string>
+    <string name="telegram_btn_request_code_again">Запросить код снова</string>
     <string name="telegram_btn_verify_code">Подтвердить код</string>
     <string name="telegram_btn_verify_password">Подтвердить пароль</string>
+    <string name="telegram_btn_start_over">Начать сначала</string>
+    <string name="telegram_btn_start_work">Начать работу</string>
     <string name="telegram_status_connected">Подключено</string>
     <string name="telegram_btn_logout">Выйти</string>
     <string name="telegram_hint_code_sent">Код отправлен на: %1$s</string>
     <string name="telegram_hint_password">Подсказка пароля: %1$s</string>
+    <string name="telegram_info_code_requested_again">Запросили новый код. Проверьте Telegram.</string>
 
     <!-- Setup -->
     <string name="setup_btn_choose_voice">Выбрать голос</string>

@@ -104,7 +104,8 @@ fun SettingsScreen(
         SettingsSubScreen.TELEGRAM -> {
             TelegramSettingsScreen(
                 state = state,
-                onClose = { viewModel.send(SettingsEvent.BackToSettings) }
+                onClose = { viewModel.send(SettingsEvent.BackToSettings) },
+                onStartWork = onClose,
             )
         }
     }
