@@ -192,6 +192,10 @@ class TelegramService(
         restartClient()
     }
 
+    suspend fun cancelAuth() {
+        restartClient()
+    }
+
     suspend fun readUnreadInbox(limit: Int = 50): List<TelegramInboxItem> {
         requireReady()
         val cappedLimit = limit.coerceIn(1, TELEGRAM_MAX_CHATS_CACHE)
@@ -1002,7 +1006,8 @@ class TelegramService(
     private fun maskPhone(phone: String?): String? {
         if (phone.isNullOrBlank()) return null
         val normalized = if (phone.startsWith("+")) phone else "+$phone"
-        return if (normalized.length <= 5) normalized else normalized.take(5) + "..."
+        if (normalized.length <= 9) return normalized.take(5) + "***"
+        return normalized.take(5) + "***" + normalized.takeLast(4)
     }
 
     private fun buildTdLibSettings(): TDLibSettings {

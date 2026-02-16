@@ -129,8 +129,9 @@ fun TelegramLoginContent(
                 LabeledTextField(
                     label = "Phone Number",
                     value = phoneValue,
-                    onValueChange = {
-                        phoneValue = it
+                    onValueChange = { newValue ->
+                        val filtered = newValue.filter { it.isDigit() || it == '+' }
+                        phoneValue = filtered
                         localError = null
                     },
                     modifier = Modifier.fillMaxWidth().onPreviewKeyEvent {
@@ -190,6 +191,20 @@ fun TelegramLoginContent(
                 ) {
                     Text("Verify Code")
                 }
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            runCatching { telegramService.cancelAuth() }
+                                .onFailure { localError = it.message }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text("Back")
+                }
             }
 
             TelegramAuthStepUi.PASSWORD -> {
@@ -227,6 +242,20 @@ fun TelegramLoginContent(
                     shape = RoundedCornerShape(12.dp),
                 ) {
                     Text("Verify Password")
+                }
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            runCatching { telegramService.cancelAuth() }
+                                .onFailure { localError = it.message }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text("Back")
                 }
             }
 
