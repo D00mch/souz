@@ -40,6 +40,7 @@ import ru.gigadesk.llms.AiTunnelChatAPI
 import ru.gigadesk.llms.QwenChatAPI
 import ru.gigadesk.mcp.McpClientManager
 import ru.gigadesk.mcp.McpConfigProvider
+import ru.gigadesk.service.telegram.TelegramService
 import ru.gigadesk.tool.*
 import ru.gigadesk.tool.application.*
 import ru.gigadesk.tool.browser.*
@@ -58,6 +59,13 @@ import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
 import ru.gigadesk.ui.main.usecases.FinderPathExtractor
 import ru.gigadesk.tool.presentation.ToolPresentationCreate
 import ru.gigadesk.tool.presentation.ToolPresentationRead
+import ru.gigadesk.tool.telegram.ToolTelegramForward
+import ru.gigadesk.tool.telegram.ToolTelegramGetHistory
+import ru.gigadesk.tool.telegram.ToolTelegramReadInbox
+import ru.gigadesk.tool.telegram.ToolTelegramSavedMessages
+import ru.gigadesk.tool.telegram.ToolTelegramSearch
+import ru.gigadesk.tool.telegram.ToolTelegramSend
+import ru.gigadesk.tool.telegram.ToolTelegramSetState
 
 private object DiTags {
     const val MODULE_MAIN = "main"
@@ -88,6 +96,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolsSettings(instance(), instance()) }
     bindSingleton { FilesToolUtil(instance()) }
     bindSingleton { ToolPermissionBroker(instance()) }
+    bindSingleton { TelegramService() }
 
     // Tools
     bindSingleton { ToolGetClipboard() }
@@ -139,6 +148,13 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ExcelReport(instance()) }
     bindSingleton { ToolPresentationCreate(instance()) }
     bindSingleton { ToolPresentationRead() }
+    bindSingleton { ToolTelegramReadInbox(instance()) }
+    bindSingleton { ToolTelegramGetHistory(instance()) }
+    bindSingleton { ToolTelegramSetState(instance()) }
+    bindSingleton { ToolTelegramSend(instance()) }
+    bindSingleton { ToolTelegramForward(instance()) }
+    bindSingleton { ToolTelegramSearch(instance()) }
+    bindSingleton { ToolTelegramSavedMessages(instance()) }
 
     bindSingleton { GraphSessionRepository() }
     bindSingleton { GraphSessionService(instance(), instance(DiTags.TAG_LOG)) }

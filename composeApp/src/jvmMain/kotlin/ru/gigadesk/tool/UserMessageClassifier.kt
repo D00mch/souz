@@ -27,6 +27,7 @@ enum class ToolCategory {
     TEXT_REPLACE,
     CALCULATOR,
     CHAT,
+    TELEGRAM,
     DESKTOP,
     PRESENTATION,
 }
@@ -123,6 +124,13 @@ object LocalRegexClassifier : UserMessageClassifier {
 
         ToolCategory.CHAT -> listOf(
             WeightedRegex(Regex("Кто такой|Как думаешь|Сколько .* в|Что будет если"), 1.5)
+        )
+
+        ToolCategory.TELEGRAM -> listOf(
+            WeightedRegex(Regex("телеграм|telegram|\\bтг\\b|\\btg\\b"), 2.0),
+            WeightedRegex(Regex("прочитай.*телеграм|покажи.*телеграм|в телеграм"), 1.5),
+            WeightedRegex(Regex("напиши.*(в|через).*телеграм|отправь.*(в|через).*телеграм|поиск.*телеграм"), 2.0),
+            WeightedRegex(Regex("архивир|замьют|mute|mark readsaved messages|избранное"), 1.2),
         )
 
         ToolCategory.DESKTOP -> listOf(

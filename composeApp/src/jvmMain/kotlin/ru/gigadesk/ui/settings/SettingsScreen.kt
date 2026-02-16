@@ -96,6 +96,12 @@ fun SettingsScreen(
                 onClose = { viewModel.send(SettingsEvent.BackToSettings) }
             )
         }
+        SettingsSubScreen.TELEGRAM -> {
+            TelegramSettingsScreen(
+                state = state,
+                onClose = { viewModel.send(SettingsEvent.BackToSettings) }
+            )
+        }
     }
 }
 
@@ -190,6 +196,7 @@ fun SettingsScreenMain(
                             state = state,
                             onUseFewShotExamplesChange = { viewModel.send(SettingsEvent.InputUseFewShotExamples(it)) },
                             onOpenTools = onOpenTools,
+                            onOpenTelegramSettings = { viewModel.send(SettingsEvent.OpenTelegramSettings) },
                             onClose = onClose
                         )
                         SettingsSection.SECURITY -> SecuritySettingsContent(

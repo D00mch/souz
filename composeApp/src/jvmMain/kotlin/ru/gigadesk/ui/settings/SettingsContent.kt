@@ -147,6 +147,7 @@ private fun SettingsSectionScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .clip(RoundedCornerShape(22.dp))
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
@@ -606,7 +607,7 @@ fun FunctionsSettingsContent(
     state: SettingsState,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
     onOpenTools: () -> Unit,
-
+    onOpenTelegramSettings: () -> Unit,
     onClose: () -> Unit
 ) {
     SettingsSectionScreen(
@@ -647,6 +648,57 @@ fun FunctionsSettingsContent(
                     ),
                     color = SettingsStrongTextColor,
                 )
+            }
+
+            val telegramStatus = when (state.telegramAuthStep) {
+                TelegramAuthStepUi.CONNECTED -> "Подключено: ${state.telegramActiveSessionPhone ?: "Активная сессия"}"
+                TelegramAuthStepUi.LOGGING_OUT -> "Отключение..."
+                TelegramAuthStepUi.INITIALIZING -> "Инициализация..."
+                TelegramAuthStepUi.PHONE,
+                TelegramAuthStepUi.CODE,
+                TelegramAuthStepUi.PASSWORD,
+                TelegramAuthStepUi.ERROR -> "Не подключено"
+            }
+
+            Button(
+                onClick = onOpenTelegramSettings,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = SettingsButtonBackground,
+                    contentColor = SettingsStrongTextColor
+                ),
+                border = BorderStroke(1.dp, SettingsDefaultBorder),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "Настройка подключения к Telegram",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontSize = 15.sp,
+                            lineHeight = 20.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = SettingsStrongTextColor,
+                    )
+                    Text(
+                        text = telegramStatus,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            fontWeight = FontWeight.Normal
+                        ),
+                        color = if (state.telegramAuthStep == TelegramAuthStepUi.CONNECTED) {
+                            SettingsAccent
+                        } else {
+                            SettingsHintColor
+                        }
+                    )
+                }
             }
         }
     }
@@ -716,7 +768,22 @@ fun SecuritySettingsContent(
                     )
                 }
             }
+
         }
+    }
+}
+
+@Composable
+fun TelegramSettingsScreen(
+    state: SettingsState,
+    onClose: () -> Unit,
+) {
+    SettingsSectionScreen(
+        title = "Telegram",
+        subtitle = "",
+        onClose = onClose
+    ) {
+        TelegramLoginContent(state = state)
     }
 }
 
@@ -1519,6 +1586,7 @@ private fun FunctionsSettingsContentPreview() {
             state = PreviewSettingsState,
             onUseFewShotExamplesChange = {},
             onOpenTools = {},
+            onOpenTelegramSettings = {},
             onClose = {}
         )
     }
@@ -1533,6 +1601,17 @@ private fun SecuritySettingsContentPreview() {
             onSafeModeChange = {},
             onOpenFoldersManagement = {},
             onClose = {}
+        )
+    }
+}
+
+@Preview
+@Composable
+private fun TelegramSettingsScreenPreview() {
+    SettingsSectionPreviewContainer {
+        TelegramSettingsScreen(
+            state = PreviewSettingsState.copy(telegramAuthStep = TelegramAuthStepUi.PHONE),
+            onClose = {},
         )
     }
 }
