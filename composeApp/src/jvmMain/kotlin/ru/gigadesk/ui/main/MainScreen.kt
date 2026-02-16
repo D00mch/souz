@@ -2,6 +2,9 @@
 
 package ru.gigadesk.ui.main
 
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.desktop.ui.tooling.preview.Preview
@@ -169,6 +172,15 @@ fun MainScreenContent(
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
 
+    val stringAppName = stringResource(Res.string.app_title_short)
+    val stringProcessing = stringResource(Res.string.status_processing)
+    val stringNewChatTitle = stringResource(Res.string.dialog_new_chat_title)
+    val stringNewChatText = stringResource(Res.string.dialog_new_chat_text)
+    val stringNewChatConfirm = stringResource(Res.string.dialog_new_chat_confirm)
+    val stringPermissionTitle = stringResource(Res.string.dialog_permission_title)
+    val stringPermissionAllow = stringResource(Res.string.dialog_permission_allow)
+    val stringPermissionDeny = stringResource(Res.string.dialog_permission_deny)
+
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -186,7 +198,7 @@ fun MainScreenContent(
                             .zIndex(2f)
                     ) {
                     Text(
-                        text = "Союз",
+                        text = stringAppName,
                         modifier = Modifier.align(Alignment.Center),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         style = TextStyle(
@@ -318,9 +330,9 @@ fun MainScreenContent(
             if (state.showNewChatDialog) {
                 ConfirmDialog(
                     type = ConfirmDialogType.INFO,
-                    title = "Начать новую беседу?",
-                    message = "Текущая история сообщений будет утеряна",
-                    confirmText = "Начать",
+                    title = stringNewChatTitle,
+                    message = stringNewChatText,
+                    confirmText = stringNewChatConfirm,
                     onConfirm = onConfirmNewConversation,
                     onDismiss = onDismissNewConversationDialog
                 )
@@ -333,11 +345,11 @@ fun MainScreenContent(
 
                 ConfirmDialog(
                     type = ConfirmDialogType.WARNING,
-                    title = "Подтверждение действия",
+                    title = stringPermissionTitle,
                     message = dialog.description,
                     details = paramsString,
-                    confirmText = "Разрешить",
-                    cancelText = "Запретить",
+                    confirmText = stringPermissionAllow,
+                    cancelText = stringPermissionDeny,
                     onConfirm = onApproveToolPermission,
                     onDismiss = onRejectToolPermission
                 )
@@ -428,6 +440,7 @@ fun ChatModeContent(
     val focusRequester = remember { FocusRequester() }
     val textColor = MaterialTheme.glassColors.textPrimary
     val speakingAssistantMessageId = remember(messages) { messages.lastOrNull { !it.isUser }?.id }
+    val stringProcessing = stringResource(Res.string.status_processing)
 
     val windowInfo = LocalWindowInfo.current
     val isWindowFocused = windowInfo.isWindowFocused
@@ -500,7 +513,7 @@ fun ChatModeContent(
                                     strokeWidth = 2.dp
                                 )
                                 Text(
-                                    text = "Обработка...",
+                                    text = stringProcessing,
                                     color = textColor.copy(0.5f),
                                     fontSize = 13.sp
                                 )

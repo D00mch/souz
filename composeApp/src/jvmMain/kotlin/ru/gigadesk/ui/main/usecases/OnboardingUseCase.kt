@@ -17,6 +17,9 @@ import ru.gigadesk.ui.main.ChatMessage
 import ru.gigadesk.ui.main.MainState
 import ru.gigadesk.ui.main.ToolPermissionDialogData
 import kotlin.math.max
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
 class OnboardingUseCase(
     private val settingsProvider: SettingsProvider,
@@ -60,19 +63,20 @@ class OnboardingUseCase(
 
         settingsProvider.needsOnboarding = false
         settingsProvider.onboardingCompleted = true
+        val displayText = getString(Res.string.onboarding_display_text)
         emitState {
             copy(
-                displayedText = ONBOARDING_DISPLAY_TEXT,
+                displayedText = displayText,
                 chatStartTip = "",
                 chatMessages = chatMessages + ChatMessage(
-                    text = ONBOARDING_DISPLAY_TEXT,
+                    text = displayText,
                     isUser = false,
                 ),
             )
         }
 
         onboardingSpeechStartedAt = System.currentTimeMillis()
-        speechUseCase.queuePrepared(ONBOARDING_SPEECH_TEXT)
+        speechUseCase.queuePrepared(getString(Res.string.onboarding_speech_text))
     }
 
     fun registerNativeHook(): Boolean = runCatching {
@@ -95,10 +99,10 @@ class OnboardingUseCase(
                 }
             }
 
+            val statusMsg = getString(Res.string.onboarding_input_permission_request)
             emitState {
                 copy(
-                    statusMessage = "Разрешите доступ к мониторингу ввода в настройках macOS — " +
-                            "после подтверждения приложение перезапустится автоматически"
+                    statusMessage = statusMsg
                 )
             }
 
@@ -132,27 +136,5 @@ class OnboardingUseCase(
 
     companion object {
         private const val ONBOARDING_PERMISSION_DELAY_MS = 100000
-        private const val ONBOARDING_SPEECH_TEXT = "Привет! Я ГигаДэ́ск! умный помощник на твоем компьютере... " +
-            "Сейчас я попрошу доступы к приложениям, системе и файлам, чтобы работать корректно... " +
-            "Я умею пользоваться браузером, работать с почтой и календарем, работать с файлами на вашем ПК, " +
-            "объяснить и переписать выделенный текст, открывать приложения, создавать заметки, отвечать на вопросы, " +
-            "строить графики, диаграммы на основе данных."
-
-        val ONBOARDING_DISPLAY_TEXT = """
-            Привет! Я GigaDesk, умный помощник на твоем компьютере.
-            Сейчас я попрошу доступы к приложениям, системе и файлам, чтобы работать корректно.
-            Я умею:
-            - Пользоваться браузером
-            - Работать с почтой и календарем
-            - Работать с файлами на вашем ПК
-            - Объяснить и переписать выделенный текст
-            - Открывать приложения, создавать заметки, отвечать на вопросы
-            - Строить графики, диаграммы на основе данных
-
-
-            Для запуска голосового ввода - зажми правый opt(alt)
-            Для очистки контекста беседы - нажми X
-            Для скрытия окна - нажми Х два раза
-        """.trimIndent()
     }
 }

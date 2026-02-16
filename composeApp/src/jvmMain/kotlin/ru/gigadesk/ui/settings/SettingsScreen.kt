@@ -24,7 +24,12 @@ import ru.gigadesk.ui.graphlog.GraphSessionsScreen
 import ru.gigadesk.ui.graphlog.GraphVisualizationScreen
 import ru.gigadesk.ui.main.RealLiquidGlassCard
 import ru.gigadesk.ui.common.DraggableWindowArea
+import ru.gigadesk.ui.common.DraggableWindowArea
 import ru.gigadesk.ui.common.applyMinWindowSize
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.getString
 
 @Composable
 fun SettingsScreen(
@@ -42,7 +47,7 @@ fun SettingsScreen(
         viewModel.effects.debounce(2000).collect { effect ->
             when (effect) {
                 SettingsEffect.CloseScreen -> onClose()
-                SettingsEffect.NotifyOnSystemPrompt -> onShowSnack("Сохранено. Применится после первой суммаризации")
+                SettingsEffect.NotifyOnSystemPrompt -> onShowSnack(getString(Res.string.snack_saved_system_prompt))
             }
         }
     }
@@ -86,8 +91,8 @@ fun SettingsScreen(
                 )
             } else {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Сессия не найдена", color = Color.White)
-                    Button(onClick = { viewModel.send(SettingsEvent.BackToSessions) }) { Text("Назад") }
+                    Text(stringResource(Res.string.error_session_not_found), color = Color.White)
+                    Button(onClick = { viewModel.send(SettingsEvent.BackToSessions) }) { Text(stringResource(Res.string.button_back)) }
                 }
             }
         }

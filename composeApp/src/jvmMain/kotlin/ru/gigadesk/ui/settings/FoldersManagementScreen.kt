@@ -46,6 +46,9 @@ import org.kodein.di.compose.localDI
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
+import org.jetbrains.compose.resources.stringResource
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
 
 @Composable
 fun FoldersManagementScreen(
@@ -104,7 +107,7 @@ private fun FoldersManagementScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Запретные\nпапки",
+                        text = stringResource(Res.string.folders_title),
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold,
                         color = Color.White.copy(alpha = 0.95f),
@@ -130,7 +133,7 @@ private fun FoldersManagementScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
-                                text = "Обзор...",
+                                text = stringResource(Res.string.button_browse),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -143,7 +146,7 @@ private fun FoldersManagementScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Close,
-                            contentDescription = "Назад",
+                            contentDescription = stringResource(Res.string.back),
                             tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.85f)
                         )
                     }
@@ -173,7 +176,7 @@ private fun FoldersManagementScreen(
                                     .padding(horizontal = 18.dp, vertical = 22.dp)
                             ) {
                                 Text(
-                                    text = "Список пуст. Добавьте папку через «Обзор...».",
+                                    text = stringResource(Res.string.folder_list_empty),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color.White.copy(alpha = 0.65f)
                                 )
@@ -191,7 +194,7 @@ private fun FoldersManagementScreen(
                 }
 
                 Text(
-                    text = "Всё вне домашней директории запрещено по умолчанию",
+                    text = stringResource(Res.string.hint_folders_default),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.55f),
                 )
@@ -277,7 +280,7 @@ private fun ForbiddenFolderCard(
         ) {
             Icon(
                 imageVector = Icons.Rounded.Close,
-                contentDescription = "Удалить папку из запретных",
+                contentDescription = stringResource(Res.string.tooltip_remove_folder),
                 tint = Color.White.copy(alpha = 0.78f),
                 modifier = Modifier.size(16.dp)
             )

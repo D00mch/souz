@@ -46,6 +46,9 @@ import ru.gigadesk.tool.ToolCategory
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
+import org.jetbrains.compose.resources.stringResource
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
 import ru.gigadesk.ui.common.DraggableWindowArea
 
 private val ToolsWindowSize = DpSize(width = 640.dp, height = 720.dp)
@@ -136,21 +139,21 @@ fun ToolsScreen(
                             ) {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
-                                    text = "Tools",
-                                    style = MaterialTheme.typography.headlineLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.glassColors.textPrimary
-                                )
+                text = stringResource(Res.string.tools_title),
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.glassColors.textPrimary,
+                fontWeight = FontWeight.Bold
+            )
                                 Text(
-                                    text = "Выберите доступные категории и функции",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f)
-                                )
+                text = stringResource(Res.string.tools_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f)
+            )
                             }
                             IconButton(onClick = onClose) {
                                 Icon(
                                     imageVector = Icons.Rounded.Close,
-                                    contentDescription = "Закрыть",
+                                    contentDescription = stringResource(Res.string.button_close),
                                     tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f)
                                 )
                             }
@@ -200,10 +203,10 @@ fun ToolsScreen(
                             enabled = !state.isSaving,
                         ) {
                             Text(
-                                text = if (state.isSaving) "Сохранение..." else "Save",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.glassColors.textPrimary,
-                            )
+                            text = if (state.isSaving) stringResource(Res.string.button_saving) else stringResource(Res.string.button_save),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color.White
+                        )
                         }
                     }
                 }
@@ -265,7 +268,7 @@ private fun CategorySection(
             IconButton(onClick = { onExpandedChange(!expanded) }) {
                 Icon(
                     imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                    contentDescription = if (expanded) "Свернуть" else "Развернуть",
+                    contentDescription = if (expanded) stringResource(Res.string.tools_collapse) else stringResource(Res.string.tools_expand),
                     tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f),
                 )
             }

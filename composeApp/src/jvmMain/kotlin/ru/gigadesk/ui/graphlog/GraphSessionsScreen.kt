@@ -25,6 +25,9 @@ import ru.gigadesk.ui.main.RealLiquidGlassCard
 import ru.gigadesk.ui.common.DraggableWindowArea
 import java.text.SimpleDateFormat
 import java.util.*
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun GraphSessionsScreen(
@@ -57,13 +60,13 @@ fun GraphSessionsScreen(
                     ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = "История сессий графа",
+                            text = stringResource(Res.string.graph_sessions_title),
                             style = MaterialTheme.typography.headlineLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.glassColors.textPrimary
                         )
                         Text(
-                            text = "${sessions.size} сессий",
+                            text = stringResource(Res.string.graph_sessions_count_format).format(sessions.size),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f)
                         )
@@ -71,7 +74,7 @@ fun GraphSessionsScreen(
                     IconButton(onClick = onClose) {
                         Icon(
                             imageVector = Icons.Rounded.Close,
-                            contentDescription = "Закрыть",
+                            contentDescription = stringResource(Res.string.action_close),
                             tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f)
                         )
                     }
@@ -86,7 +89,7 @@ fun GraphSessionsScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Нет сохранённых сессий.\nОтправьте запрос агенту, чтобы создать первую сессию.",
+                            text = stringResource(Res.string.graph_sessions_empty),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
                         )
@@ -112,11 +115,15 @@ private fun SessionCard(
 ) {
     val dateFormat = remember { SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault()) }
     val startDate = remember(session.startTime) { dateFormat.format(Date(session.startTime)) }
-    val duration = remember(session.startTime, session.endTime) {
+    
+    val suffixS = stringResource(Res.string.duration_suffix_s)
+    val statusInProgress = stringResource(Res.string.status_in_progress)
+    
+    val duration = remember(session.endTime, session.startTime, suffixS, statusInProgress) {
         session.endTime?.let { end ->
             val ms = end - session.startTime
-            "${ms / 1000}.${(ms % 1000) / 100}с"
-        } ?: "в процессе"
+            "${ms / 1000}.${(ms % 1000) / 100}$suffixS"
+        } ?: statusInProgress
     }
 
     Box(
@@ -140,7 +147,7 @@ private fun SessionCard(
                     color = MaterialTheme.glassColors.textPrimary
                 )
                 Text(
-                    text = "${session.steps.size} шагов • $duration",
+                    text = "${stringResource(Res.string.graph_steps_count).format(session.steps.size)} • $duration",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f)
                 )

@@ -27,6 +27,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun SettingsSidebar(
@@ -50,13 +53,13 @@ fun SettingsSidebar(
                 .padding(bottom = 32.dp, start = 12.dp)
         ) {
             Text(
-                text = "Настройки",
+                text = stringResource(Res.string.settings_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.glassColors.textPrimary
             )
             Text(
-                text = "Конфигурация",
+                text = stringResource(Res.string.settings_subtitle_config),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.65f)
             )
@@ -125,7 +128,7 @@ private fun SettingsSidebarItem(
             modifier = Modifier.size(20.dp)
         )
         Text(
-            text = section.title,
+            text = org.jetbrains.compose.resources.stringResource(section.title),
             style = MaterialTheme.typography.bodyLarge,
             color = contentColor,
             fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Medium

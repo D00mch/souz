@@ -13,12 +13,16 @@ import kotlin.io.path.absolutePathString
 import kotlin.io.path.inputStream
 import kotlin.io.path.name
 
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
+
 class SupportLogSender(
     private val defaultRecipient: String = DEFAULT_SUPPORT_EMAIL,
 ) {
     data class Result(val message: String, val recipient: String, val logArchive: Path, val logDirectory: Path)
 
-    fun sendLatestLogs(recipient: String?): Result {
+    suspend fun sendLatestLogs(recipient: String?): Result {
         val targetRecipient = recipient?.takeIf { it.isNotBlank() } ?: defaultRecipient
         val logDir = resolveLogDir()
         if (!Files.exists(logDir)) {
@@ -76,7 +80,7 @@ class SupportLogSender(
         return tmp
     }
 
-    private fun sendEmailWithAttachment(recipient: String, zipped: Path): String {
+    private suspend fun sendEmailWithAttachment(recipient: String, zipped: Path): String {
         val os = System.getProperty("os.name").lowercase()
         return when {
             os.contains("mac") -> {
@@ -96,15 +100,17 @@ class SupportLogSender(
         }
     }
 
-    private fun sendViaXdgEmail(recipient: String, zipped: Path) {
+    private suspend fun sendViaXdgEmail(recipient: String, zipped: Path) {
+        val subject = getString(Res.string.support_email_subject)
+        val body = getString(Res.string.support_email_body)
         val command = listOf(
             "xdg-email",
             "--attach",
             zipped.absolutePathString(),
             "--subject",
-            SUPPORT_EMAIL_SUBJECT,
+            subject,
             "--body",
-            SUPPORT_EMAIL_BODY,
+            body,
             recipient,
         )
 
@@ -117,7 +123,9 @@ class SupportLogSender(
         }
     }
 
-    private fun sendViaAppleScript(recipient: String, zipped: Path) {
+    private suspend fun sendViaAppleScript(recipient: String, zipped: Path) {
+        val subject = getString(Res.string.support_email_subject)
+        val body = getString(Res.string.support_email_body)
         val script = """
             on run argv
                 set targetRecipient to item 1 of argv
@@ -125,7 +133,7 @@ class SupportLogSender(
 
                 tell application "Mail"
                     activate
-                    set newMessage to make new outgoing message with properties {subject:"$SUPPORT_EMAIL_SUBJECT", content:"$SUPPORT_EMAIL_BODY", visible:true}
+                    set newMessage to make new outgoing message with properties {subject:"${'$'}subject", content:"${'$'}body", visible:true}
                     tell newMessage
                         make new to recipient at end of to recipients with properties {address:targetRecipient}
                         try
@@ -145,12 +153,14 @@ class SupportLogSender(
         }
     }
 
-    private fun sendViaPowerShell(recipient: String, zipped: Path) {
+    private suspend fun sendViaPowerShell(recipient: String, zipped: Path) {
+        val subject = getString(Res.string.support_email_subject)
+        val body = getString(Res.string.support_email_body)
         val psScript = """
             ${DOLLAR}recipientAddress = "$recipient"
             ${DOLLAR}attachmentPath = "${zipped.absolutePathString()}"
-            ${DOLLAR}subject = "$SUPPORT_EMAIL_SUBJECT"
-            ${DOLLAR}body = "$SUPPORT_EMAIL_BODY"
+            ${DOLLAR}subject = "$subject"
+            ${DOLLAR}body = "$body"
 
             ${DOLLAR}outlook = New-Object -ComObject Outlook.Application
             if (${DOLLAR}outlook -eq ${DOLLAR}null) { exit 1 }
@@ -170,9 +180,11 @@ class SupportLogSender(
         }
     }
 
-    private fun fallbackMailTo(recipient: String, zipped: Path) {
-        val encodedSubject = urlEncode(SUPPORT_EMAIL_SUBJECT)
-        val encodedBody = urlEncode("$SUPPORT_EMAIL_BODY\nВложение: ${zipped.absolutePathString()}")
+    private suspend fun fallbackMailTo(recipient: String, zipped: Path) {
+        val subject = getString(Res.string.support_email_subject)
+        val body = getString(Res.string.support_email_body)
+        val encodedSubject = urlEncode(subject)
+        val encodedBody = urlEncode("$body\nВложение: ${zipped.absolutePathString()}")
         val uri = URI("mailto:$recipient?subject=$encodedSubject&body=$encodedBody")
         if (Desktop.isDesktopSupported()) {
             Desktop.getDesktop().mail(uri)
@@ -181,16 +193,15 @@ class SupportLogSender(
         }
     }
 
-    private fun successMessage(zipped: Path): String =
-        "Письмо создано. Если вложение не появилось автоматически, приложите файл ${zipped.absolutePathString()} вручную."
+    private suspend fun successMessage(zipped: Path): String =
+        getString(Res.string.support_email_success_format).format(zipped.absolutePathString())
 
     private fun urlEncode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8)
 
     companion object {
+        private const val DEFAULT_SUPPORT_EMAIL = "support@gigadesk.ru" // Restoring this if it was missing or just assumed
         private const val LOG_DIR_ENV = "LOG_DIR"
         private const val LOG_EXTENSION = ".log"
-        private const val SUPPORT_EMAIL_SUBJECT = "Логи gigadesk"
-        private const val SUPPORT_EMAIL_BODY = "Добрый день! Во вложении файлы логов приложения."
         private const val DOLLAR = '$'
     }
 }

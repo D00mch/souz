@@ -85,6 +85,9 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import kotlin.math.max
 import ru.gigadesk.giga.GigaModel
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 private val AccentTurquoise = Color(0xFF12E0B5)
 private val AccentTurquoiseDark = Color(0xFF0EA889)
@@ -144,7 +147,7 @@ internal fun ChatInputWithQuickSettings(
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
     scrollCloseSignal: Pair<Int, Int>,
-    placeholder: String = "Введите сообщение...",
+    placeholder: String = stringResource(Res.string.chat_input_placeholder),
     modifier: Modifier = Modifier,
 ) {
     val hasText = value.text.isNotBlank() && enabled
@@ -338,7 +341,7 @@ private fun VoiceToggleButton(
                 }
             )
     ) {
-        ControlTooltip(visible = showTooltip, text = "Зажать правый Option")
+        ControlTooltip(visible = showTooltip, text = stringResource(Res.string.tooltip_hold_option))
 
         Box(
             modifier = Modifier
@@ -368,7 +371,7 @@ private fun VoiceToggleButton(
         ) {
             Icon(
                 imageVector = Icons.Rounded.Mic,
-                contentDescription = "Голосовой ввод",
+                contentDescription = stringResource(Res.string.content_desc_voice_input),
                 tint = iconColor,
                 modifier = Modifier.size(ControlIconSize)
             )
@@ -386,7 +389,7 @@ private fun SendMessageButton(
     val isHovered by interactionSource.collectIsHoveredAsState()
     val isPressed by interactionSource.collectIsPressedAsState()
     val showTooltip = isHovered
-    val tooltipText = if (isProcessing) "Остановить запрос" else "Отправить (Enter)"
+    val tooltipText = if (isProcessing) stringResource(Res.string.tooltip_stop_request) else stringResource(Res.string.tooltip_send_enter)
     val scale by animateFloatAsState(
         targetValue = when {
             !isActive -> 1f
@@ -497,7 +500,7 @@ private fun SendMessageButton(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.ArrowUpward,
-                    contentDescription = "Отправить",
+                    contentDescription = stringResource(Res.string.content_desc_send),
                     tint = iconColor,
                     modifier = Modifier.size(ControlIconSize)
                 )
@@ -611,7 +614,7 @@ private fun QuickSettingsPanel(
     onModelSelect: (QuickOption<String>) -> Unit,
     onContextSelect: (QuickOption<Int>) -> Unit,
 ) {
-    val selectedModelLabel = modelOptions.firstOrNull { it.value == selectedModel }?.label ?: "Модель"
+    val selectedModelLabel = modelOptions.firstOrNull { it.value == selectedModel }?.label ?: stringResource(Res.string.label_model_default)
 
     Row(
         modifier = Modifier
@@ -632,7 +635,7 @@ private fun QuickSettingsPanel(
         )
 
         QuickDropdown(
-            label = "Контекст",
+            label = stringResource(Res.string.label_context),
             width = 160.dp,
             expanded = isContextDropdownOpen,
             options = contextOptions,
@@ -692,7 +695,7 @@ private fun <T> QuickDropdown(
             )
             Icon(
                 imageVector = Icons.Rounded.KeyboardArrowDown,
-                contentDescription = "Открыть $label",
+                contentDescription = stringResource(Res.string.content_desc_open_label).format(label),
                 tint = if (isHovered || expanded) ControlTextHover else ControlTextMuted,
                 modifier = Modifier.size(10.dp)
             )

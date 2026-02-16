@@ -35,6 +35,11 @@ import ru.gigadesk.ui.main.usecases.VoiceInputUseCase
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.minutes
 
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.getStringArray
+
 class MainViewModel(
     override val di: DI,
 ) : BaseViewModel<MainState, MainEvent, MainEffect>(), DIAware {
@@ -53,6 +58,7 @@ class MainViewModel(
     private val voiceInputUseCase: VoiceInputUseCase = useCases.voiceInput
     private val speechUseCase: SpeechUseCase = useCases.speech
     private val permissionsUseCase: OnboardingUseCase = useCases.permissions
+    private var startTips: List<String> = emptyList()
 
     init {
         agentRef.set(graphAgent)
@@ -61,10 +67,14 @@ class MainViewModel(
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectUseCaseOutputs() }
 
         viewModelScope.launch {
+            startTips = getStringArray(Res.array.start_tips)
+            val randomTip = startTips.randomOrNull() ?: ""
             setState {
                 copy(
                     selectedModel = settingsProvider.gigaModel.alias,
                     selectedContextSize = settingsProvider.contextSize,
+                    displayedText = randomTip,
+                    chatStartTip = randomTip
                 )
             }
         }
@@ -112,7 +122,7 @@ class MainViewModel(
             is MainEvent.OpenPath -> {
                 ru.gigadesk.ui.common.FinderService.openInFinder(event.path)
                     .onFailure { error ->
-                        send(MainEffect.ShowError(error.message ?: "Не удалось открыть путь"))
+                        send(MainEffect.ShowError(error.message ?: getString(Res.string.error_failed_to_open_path)))
                     }
             }
             MainEvent.SendChatMessage -> vmLaunch {
@@ -184,14 +194,14 @@ class MainViewModel(
 
         setState {
             copy(
-                displayedText = MainState.randomStatusTip(),
+                displayedText = startTips.randomOrNull() ?: "",
                 statusMessage = "",
                 lastText = null,
                 lastKnownAgentContext = null,
                 userExpectCloseOnX = false,
                 isProcessing = false,
                 chatMessages = emptyList(),
-                chatStartTip = MainState.randomStatusTip(),
+                chatStartTip = startTips.randomOrNull() ?: "",
                 chatInputText = TextFieldValue(""),
                 showNewChatDialog = false,
             )
@@ -238,8 +248,8 @@ class MainViewModel(
         when (currentState.userExpectCloseOnX) {
             false -> {
                 val currentText = currentState.displayedText
-                val clearedText = "$DEFAULT_CLEARED_TEXT. Нажмите еще раз, чтобы скрыть."
-                val lastText = if (currentText == DEFAULT_CLEARED_TEXT || MainState.START_TIPS.contains(currentText)) {
+                val clearedText = getString(Res.string.status_context_cleared_hint).format(getString(Res.string.status_context_cleared))
+                val lastText = if (currentText == getString(Res.string.status_context_cleared) || startTips.contains(currentText)) {
                     null
                 } else {
                     currentText
@@ -251,19 +261,20 @@ class MainViewModel(
                         lastKnownAgentContext = lastKnownAgentContext ?: currentState.lastKnownAgentContext,
                         userExpectCloseOnX = true,
                         chatMessages = emptyList(),
-                        chatStartTip = MainState.randomStatusTip(),
+                        chatStartTip = startTips.randomOrNull() ?: "",
                         showNewChatDialog = false,
                     )
                 }
             }
 
             true -> {
+                val clearedText = getString(Res.string.status_context_cleared_default)
                 setState {
                     copy(
-                        displayedText = DEFAULT_CLEARED_TEXT,
+                        displayedText = clearedText,
                         userExpectCloseOnX = false,
                         chatMessages = emptyList(),
-                        chatStartTip = MainState.randomStatusTip(),
+                        chatStartTip = startTips.randomOrNull() ?: "",
                         showNewChatDialog = false,
                     )
                 }
@@ -277,9 +288,5 @@ class MainViewModel(
         permissionsUseCase.rejectPendingPermissionRequest(currentState.toolPermissionDialog?.requestId)
         chatUseCase.onCleared()
         permissionsUseCase.onCleared()
-    }
-
-    private companion object {
-        const val DEFAULT_CLEARED_TEXT = "Контекст очищен"
     }
 }

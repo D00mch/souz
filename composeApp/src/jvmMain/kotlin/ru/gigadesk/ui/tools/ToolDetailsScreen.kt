@@ -32,6 +32,10 @@ import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
 import ru.gigadesk.ui.common.DraggableWindowArea
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.getString
 
 private val ToolDetailsWindowSize = DpSize(width = 640.dp, height = 720.dp)
 
@@ -122,13 +126,13 @@ fun ToolDetailsScreen(
                     ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = "Tool details",
+                            text = stringResource(Res.string.tool_details_title),
                             style = MaterialTheme.typography.headlineLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.glassColors.textPrimary
                         )
                         Text(
-                            text = "Настройте описание и примеры инструмента",
+                            text = stringResource(Res.string.tool_details_subtitle),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f)
                         )
@@ -137,14 +141,14 @@ fun ToolDetailsScreen(
                         IconButton(onClick = onReset) {
                             Icon(
                                 imageVector = Icons.Rounded.Restore,
-                                contentDescription = "Reset to default",
+                                contentDescription = stringResource(Res.string.tool_details_reset_desc),
                                 tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f)
                             )
                         }
                         IconButton(onClick = onClose) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                contentDescription = "Back",
+                                contentDescription = stringResource(Res.string.tool_details_back_desc),
                                 tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f)
                             )
                         }
@@ -193,7 +197,7 @@ fun ToolDetailsScreen(
                             ),
                         )
                         Text(
-                            text = "Инструмент включен",
+                            text = stringResource(Res.string.tool_details_checkbox_enabled),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.glassColors.textPrimary,
                         )
@@ -205,7 +209,7 @@ fun ToolDetailsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     value = state.description,
                     onValueChange = onDescriptionChange,
-                    label = { Text("Описание") },
+                    label = { Text(stringResource(Res.string.tool_details_label_desc)) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = MaterialTheme.glassColors.textPrimary,
                         unfocusedTextColor = MaterialTheme.glassColors.textPrimary,
@@ -227,14 +231,14 @@ fun ToolDetailsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "Примеры",
+                            text = stringResource(Res.string.tool_details_section_examples),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.glassColors.textPrimary,
                         )
                         Button(onClick = onAddExample) {
                             Text(
-                                text = "Добавить пример",
+                                text = stringResource(Res.string.tool_details_btn_add_example),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.glassColors.textPrimary,
                             )
@@ -243,7 +247,7 @@ fun ToolDetailsScreen(
 
                     if (state.examples.isEmpty()) {
                         Text(
-                            text = "Примеры отсутствуют",
+                            text = stringResource(Res.string.tool_details_no_examples),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f),
                         )
@@ -282,7 +286,7 @@ fun ToolDetailsScreen(
                             modifier = Modifier.padding(end = 6.dp)
                         )
                         Text(
-                            text = "Сбросить",
+                            text = stringResource(Res.string.tool_details_btn_reset),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.glassColors.textPrimary,
                         )
@@ -296,7 +300,7 @@ fun ToolDetailsScreen(
                             modifier = Modifier.padding(end = 6.dp)
                         )
                         Text(
-                            text = if (state.isSaving) "Сохранение..." else "Сохранить",
+                            text = if (state.isSaving) stringResource(Res.string.tool_details_btn_saving) else stringResource(Res.string.tool_details_btn_save),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.glassColors.textPrimary,
                         )
@@ -334,7 +338,7 @@ private fun ExampleEditor(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Пример $index",
+                text = stringResource(Res.string.tool_details_example_title).format(index),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.glassColors.textPrimary,
@@ -342,7 +346,7 @@ private fun ExampleEditor(
             IconButton(onClick = onRemove) {
                 Icon(
                     imageVector = Icons.Rounded.Delete,
-                    contentDescription = "Удалить пример",
+                    contentDescription = stringResource(Res.string.tool_details_delete_example_desc),
                     tint = MaterialTheme.colorScheme.error,
                 )
             }
@@ -352,7 +356,7 @@ private fun ExampleEditor(
             modifier = Modifier.fillMaxWidth(),
             value = example.request,
             onValueChange = onRequestChange,
-            label = { Text("Request") },
+            label = { Text(stringResource(Res.string.tool_details_label_request)) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = MaterialTheme.glassColors.textPrimary,
                 unfocusedTextColor = MaterialTheme.glassColors.textPrimary,
@@ -368,7 +372,7 @@ private fun ExampleEditor(
             modifier = Modifier.fillMaxWidth(),
             value = example.paramsJson,
             onValueChange = onParamsChange,
-            label = { Text("Params (JSON)") },
+            label = { Text(stringResource(Res.string.tool_details_label_params)) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = MaterialTheme.glassColors.textPrimary,
                 unfocusedTextColor = MaterialTheme.glassColors.textPrimary,

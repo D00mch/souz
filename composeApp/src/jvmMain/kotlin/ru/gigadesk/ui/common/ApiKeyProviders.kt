@@ -1,28 +1,32 @@
 package ru.gigadesk.ui.common
 
+import org.jetbrains.compose.resources.StringResource
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+
 enum class ApiKeyProvider(
-    val title: String,
+    val title: StringResource,
     val url: String,
-    val description: String,
-    val details: String,
+    val description: StringResource,
+    val details: StringResource,
 ) {
     AI_TUNNEL(
-        title = "AiTunnel",
+        title = Res.string.provider_aitunnel_title,
         url = "https://aitunnel.ru/",
-        description = "Единый ключ для популярных зарубежных моделей.",
-        details = "Доступны модели OpenAI, Anthropic и Grok.",
+        description = Res.string.provider_aitunnel_desc,
+        details = Res.string.provider_aitunnel_details,
     ),
     QWEN(
-        title = "Alibaba Model Studio (Qwen)",
+        title = Res.string.provider_qwen_title,
         url = "https://modelstudio.console.alibabacloud.com/",
-        description = "Ключи и управление для моделей семейства Qwen.",
-        details = "Подходит для чата и генерации на моделях Qwen.",
+        description = Res.string.provider_qwen_desc,
+        details = Res.string.provider_qwen_details,
     ),
     SBER(
-        title = "Sber Studio (GigaChat + Speech)",
+        title = Res.string.provider_sber_title,
         url = "https://developers.sber.ru/studio/workspaces",
-        description = "Кабинет для ключей GigaChat и SaluteSpeech.",
-        details = "Если планируете голосовые команды, здесь же получите ключ для Speech API.",
+        description = Res.string.provider_sber_desc,
+        details = Res.string.provider_sber_details,
     )
 }
 

@@ -36,14 +36,22 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.onEach
+import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.common.ApiKeyProvider
+import ru.gigadesk.ui.common.configuredApiKeysCount
+import ru.gigadesk.ui.common.hasAnyConfiguredApiKey
 import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
 import ru.gigadesk.ui.common.DraggableWindowArea
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
 
 private val SetupWindowSize = DpSize(width = 640.dp, height = 760.dp)
 
@@ -114,19 +122,19 @@ fun SetupScreenContent(
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Spacer(Modifier.height(24.dp))
                         Text(
-                            text = "Подключите API-ключи",
+                            text = stringResource(Res.string.setup_title_keys),
                             style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.glassColors.textPrimary
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
 
                 Text(
                     text = if (hasNoKeys) {
-                        "Для старта добавьте хотя бы один ключ. Остальные можно подключить позже в настройках."
+                        stringResource(Res.string.setup_hint_add_key)
                     } else {
-                        "Найдено ключей: ${state.configuredKeysCount}. Можно продолжать."
+                        stringResource(Res.string.setup_hint_keys_found).format(state.configuredKeysCount)
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (hasNoKeys) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onBackground
@@ -139,28 +147,28 @@ fun SetupScreenContent(
                 Spacer(Modifier.height(4.dp))
 
                 LabeledTextField(
-                    label = "GigaChat ключ",
+                    label = stringResource(Res.string.label_key_gigachat),
                     value = state.gigaChatKey,
                     onValueChange = onGigaChatKeyInput,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 LabeledTextField(
-                    label = "Qwen ключ",
+                    label = stringResource(Res.string.label_key_qwen),
                     value = state.qwenChatKey,
                     onValueChange = onQwenChatKeyInput,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 LabeledTextField(
-                    label = "AI Tunnel ключ",
+                    label = stringResource(Res.string.label_key_aitunnel),
                     value = state.aiTunnelKey,
                     onValueChange = onAiTunnelKeyInput,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 LabeledTextField(
-                    label = "SaluteSpeech ключ (для голосовых команд)",
+                    label = stringResource(Res.string.label_key_salutespeech),
                     value = state.saluteSpeechKey,
                     onValueChange = onSaluteSpeechKeyInput,
                     modifier = Modifier.fillMaxWidth(),
@@ -169,10 +177,9 @@ fun SetupScreenContent(
                 Spacer(Modifier.height(4.dp))
 
                 Text(
-                    text = "Голосовые команды используют SaluteSpeech API. " +
-                        "Если хотите общаться голосом, обязательно добавьте этот ключ.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onBackground
+                    text = stringResource(Res.string.setup_hint_voice_required),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.5f)
                 )
 
                 OutlinedButton(
@@ -180,7 +187,7 @@ fun SetupScreenContent(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Выбрать голос",
+                        text = stringResource(Res.string.setup_btn_choose_voice),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.glassColors.textPrimary
                     )
@@ -191,8 +198,10 @@ fun SetupScreenContent(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = if (state.canProceed) "Открыть GigaDesk" else "Добавьте хотя бы один ключ",
-                        style = MaterialTheme.typography.titleMedium,
+                        text = if (state.canProceed) stringResource(Res.string.button_open_gigadesk) else stringResource(Res.string.button_add_key_to_proceed),
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontSize = 16.sp,
+                        ),
                         color = Color.White,
                         textAlign = TextAlign.Center
                     )
@@ -251,7 +260,7 @@ private fun KeyProvidersSection(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            text = "Где получить ключи",
+            text = stringResource(Res.string.setup_title_keys),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.glassColors.textPrimary
@@ -286,18 +295,17 @@ private fun ProviderLinkCard(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(
-                text = provider.title,
+                text = stringResource(provider.title),
                 style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.glassColors.textPrimary
+                color = Color.White
             )
             Text(
-                text = provider.description,
+                text = stringResource(provider.description),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.78f)
+                color = Color.White.copy(alpha = 0.7f)
             )
             Text(
-                text = provider.details,
+                text = stringResource(provider.details),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.72f)
             )

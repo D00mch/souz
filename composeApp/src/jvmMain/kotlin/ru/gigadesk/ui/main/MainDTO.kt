@@ -36,7 +36,7 @@ data class ToolPermissionDialogData(
  * State for the main screen that mirrors the floating glass panel experience.
  */
 data class MainState(
-    val displayedText: String = randomStatusTip,
+    val displayedText: String = "",
     val isListening: Boolean = false,
     val statusMessage: String = "",
     val lastText: String? = null,
@@ -46,7 +46,7 @@ data class MainState(
     val agentHistory: List<GigaRequest.Message> = emptyList(),
     val isThinkingPanelOpen: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
-    val chatStartTip: String = randomStatusTip,
+    val chatStartTip: String = "",
     val chatInputText: TextFieldValue = TextFieldValue(""),
     val selectedModel: String = ru.gigadesk.giga.GigaModel.Max.alias,
     val selectedContextSize: Int = DEFAULT_MAX_TOKENS,
@@ -56,26 +56,7 @@ data class MainState(
 ) : VMState {
 
     companion object {
-        val START_TIPS = listOf(
-            "Хочешь узнаю погоду в Москве?",
-            "Посмотреть календарь?",
-            "Хочешь, я проверю почту?",
-            "Найти файл, прочитать его или создать новый?",
-            "Нужно отправить письмо или ответить?",
-            "Показать непрочитанные в почте?",
-            "Создать или отменить встречу в календаре?",
-            "Показать список дел на сегодня?",
-            "Вернуть закрытую вкладку браузера?",
-            "Найти сайт в истории Safari или Chrome?",
-            "Открыть заметку или создать новую?",
-            "Удалить лишний файл?",
-            "Прочитать письмо и подготовить ответ?",
-            "Помочь в работе с текстом?",
-        )
-
-        private val randomStatusTip: String = START_TIPS.random()
-
-        fun randomStatusTip(): String = START_TIPS.random()
+        fun randomStatusTip(): String = ""
     }
 }
 

@@ -10,6 +10,10 @@ import ru.gigadesk.ui.VMEvent
 import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
 import ru.gigadesk.ui.common.ApiKeyProvider
+import org.jetbrains.compose.resources.StringResource
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+
 
 
 enum class SettingsSubScreen {
@@ -26,13 +30,15 @@ enum class TelegramAuthStepUi {
     ERROR,
 }
 
-enum class SettingsSection(val title: String, val icon: String? = null) {
-    MODELS("Модели"),
-    GENERAL("Общие"),
-    KEYS("Мои ключи"),
-    FUNCTIONS("Функции"),
-    SECURITY("Безопасность"),
-    SUPPORT("Поддержка")
+
+
+enum class SettingsSection(val title: StringResource, val icon: String? = null) {
+    MODELS(Res.string.settings_section_models),
+    GENERAL(Res.string.settings_section_general),
+    KEYS(Res.string.settings_section_keys),
+    FUNCTIONS(Res.string.settings_section_functions),
+    SECURITY(Res.string.settings_section_security),
+    SUPPORT(Res.string.settings_section_support)
 }
 
 data class SettingsState(

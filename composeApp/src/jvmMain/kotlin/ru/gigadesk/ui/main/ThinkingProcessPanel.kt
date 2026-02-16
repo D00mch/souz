@@ -31,6 +31,9 @@ import ru.gigadesk.giga.GigaMessageRole
 import ru.gigadesk.giga.GigaRequest
 import java.text.SimpleDateFormat
 import java.util.*
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun ThinkingProcessPanel(
@@ -116,7 +119,7 @@ fun ThinkingProcessPanel(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Title
                     Text(
-                        text = "Процесс мышления",
+                        text = stringResource(Res.string.thinking_panel_title),
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White,
                         fontWeight = FontWeight.Bold
@@ -134,7 +137,7 @@ fun ThinkingProcessPanel(
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                        contentDescription = "Close",
+                        contentDescription = stringResource(Res.string.action_close),
                         tint = Color.White.copy(0.7f),
                         modifier = Modifier.size(18.dp)
                     )
@@ -152,7 +155,7 @@ fun ThinkingProcessPanel(
                 if (userRequest != null) {
                     item {
                         ThinkingItem(
-                            title = "Запрос пользователя",
+                            title = stringResource(Res.string.thinking_user_request),
                             content = userRequest.content,
                             icon = Icons.Rounded.Person,
                             status = ItemStatus.Completed,
@@ -165,7 +168,7 @@ fun ThinkingProcessPanel(
                 // Reasoning
                 items(reasoningMessages) { msg ->
                     ThinkingItem(
-                        title = "Размышление",
+                        title = stringResource(Res.string.thinking_reasoning),
                         content = msg.content,
                         icon = Icons.Rounded.Psychology,
                         status = ItemStatus.Completed,
@@ -177,7 +180,7 @@ fun ThinkingProcessPanel(
                 if (answerMessage != null) {
                     item {
                         ThinkingItem(
-                            title = "Ответ",
+                            title = stringResource(Res.string.thinking_answer),
                             content = answerMessage.content,
                             icon = Icons.Rounded.ChatBubbleOutline,
                              // Answer is final if we promoted it here
@@ -188,11 +191,11 @@ fun ThinkingProcessPanel(
                 } else if (isProcessing) {
                     item {
                         ThinkingItem(
-                            title = "Ответ",
-                            content = "Генерация ответа...",
+                            title = stringResource(Res.string.thinking_answer),
+                            content = stringResource(Res.string.thinking_generating_answer),
                             icon = Icons.Rounded.ChatBubbleOutline,
                             status = ItemStatus.InProgress,
-                            timestamp = "В процессе..."
+                            timestamp = stringResource(Res.string.thinking_status_in_progress)
                         )
                     }
                 }
@@ -313,9 +316,9 @@ fun ThinkingItem(
                                      tint = Color.Gray,
                                      modifier = Modifier.size(14.dp)
                                  )
-                                 Spacer(Modifier.width(4.dp))
-                                 Text(
-                                     text = "Завершено",
+                                  Spacer(Modifier.width(4.dp))
+                                  Text(
+                                     text = stringResource(Res.string.thinking_status_completed),
                                      style = MaterialTheme.typography.bodySmall,
                                      color = Color.Gray,
                                      fontSize = 11.sp
@@ -328,7 +331,7 @@ fun ThinkingItem(
                                   )
                                   Spacer(Modifier.width(4.dp))
                                   Text(
-                                     text = "В процессе...",
+                                     text = stringResource(Res.string.thinking_status_in_progress),
                                      style = MaterialTheme.typography.bodySmall,
                                      color = Color.Gray,
                                      fontSize = 11.sp

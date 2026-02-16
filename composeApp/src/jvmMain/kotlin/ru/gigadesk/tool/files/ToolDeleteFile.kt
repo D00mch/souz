@@ -2,6 +2,9 @@ package ru.gigadesk.tool.files
 
 import org.slf4j.LoggerFactory
 import ru.gigadesk.tool.*
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 import java.awt.Desktop
 import java.io.File
 import java.nio.file.Files
@@ -35,7 +38,7 @@ class ToolDeleteFile(
     override suspend fun suspendInvoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         val result = permissionBroker?.requestPermission(
-            "Удаляем файл?",
+            getString(Res.string.permission_delete_file),
             linkedMapOf("path" to fixedPath)
         )
         if (result is ToolPermissionResult.No) return result.msg

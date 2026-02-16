@@ -23,6 +23,9 @@ import ru.gigadesk.giga.MissingVoiceKeyException
 import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.ui.main.MainState
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceInputUseCase(
@@ -89,7 +92,8 @@ class VoiceInputUseCase(
                 }
 
                 l.error("Agent flow failed, attempt {}, cause: {}", attempt, cause.message, cause)
-                emitState { copy(isProcessing = false, statusMessage = "Ошибка: ${cause.message}") }
+                val errorMsg = getString(Res.string.error_prefix).format(cause.message ?: "")
+                emitState { copy(isProcessing = false, statusMessage = errorMsg) }
                 delay(1000L)
                 true
             }.collect { userInput ->
@@ -112,10 +116,11 @@ class VoiceInputUseCase(
         chatUseCase.cancelActiveJob()
         speechUseCase.playMacPingSafely(scope)
 
+        val statusMsg = getString(Res.string.voice_status_recording_started)
         emitState {
             copy(
                 isListening = true,
-                statusMessage = "Запись запущена",
+                statusMessage = statusMsg,
             )
         }
 
@@ -126,10 +131,11 @@ class VoiceInputUseCase(
         if (!isListening) return
 
         audioRecorder.stop()
+        val statusMsg = getString(Res.string.voice_status_processing_input)
         emitState {
             copy(
                 isListening = false,
-                statusMessage = "Обработка входа",
+                statusMessage = statusMsg,
             )
         }
 
@@ -140,13 +146,13 @@ class VoiceInputUseCase(
     private suspend fun onTextRecognizeSideEffects(recognizedText: String) {
         if (recognizedText.isNotBlank()) return
 
-        val msg = "Речь не распознана"
+        val msg = getString(Res.string.voice_status_speech_not_recognized)
         speechUseCase.queue(msg)
         emitState { copy(statusMessage = msg, isProcessing = false) }
     }
 
     private suspend fun emitVoiceKeyMissing() {
-        val msg = "Добавьте ключ SaluteSpeech в Настройки > Мои ключи, чтобы использовать голосовые команды"
+        val msg = getString(Res.string.voice_error_missing_key)
         speechUseCase.queue(msg)
         emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }

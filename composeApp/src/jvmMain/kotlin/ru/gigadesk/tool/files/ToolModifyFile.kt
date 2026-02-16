@@ -1,6 +1,9 @@
 package ru.gigadesk.tool.files
 
 import ru.gigadesk.tool.*
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 import java.io.File
 
 class ToolModifyFile(
@@ -32,7 +35,7 @@ class ToolModifyFile(
     override suspend fun suspendInvoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         val result = permissionBroker?.requestPermission(
-            "Изменяем файл?",
+            getString(Res.string.permission_modify_file),
             linkedMapOf("path" to fixedPath)
         )
         if (result is ToolPermissionResult.No) return result.msg

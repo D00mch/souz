@@ -50,6 +50,9 @@ import ru.gigadesk.ui.common.ApiKeyProvider
 import ru.gigadesk.ui.common.configuredApiKeysCount
 import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
+import org.jetbrains.compose.resources.stringResource
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
 
 private val SettingsFieldBackground = Color(0x66000000)
 private val SettingsButtonBackground = Color(0x4D000000)
@@ -230,8 +233,8 @@ fun ModelsSettingsContent(
     onClose: () -> Unit
 ) {
     SettingsSectionScreen(
-        title = "Модели",
-        subtitle = "Настройки моделей и параметров генерации",
+        title = stringResource(Res.string.settings_section_models),
+        subtitle = stringResource(Res.string.settings_models_subtitle),
         onClose = onClose
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
@@ -251,7 +254,7 @@ fun ModelsSettingsContent(
                     verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)
                 ) {
                     LabeledTextField(
-                        label = "Температура",
+                        label = stringResource(Res.string.label_temperature),
                         value = state.temperatureInput,
                         onValueChange = onTemperatureInput,
                         modifier = Modifier.fillMaxWidth()
@@ -262,7 +265,7 @@ fun ModelsSettingsContent(
                     verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)
                 ) {
                     LabeledTextField(
-                        label = "Таймаут (мс)",
+                        label = stringResource(Res.string.label_timeout),
                         value = state.requestTimeoutInput,
                         onValueChange = onRequestTimeoutMillisChange,
                         modifier = Modifier.fillMaxWidth()
@@ -272,7 +275,7 @@ fun ModelsSettingsContent(
 
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
                 LabeledTextField(
-                    label = "Размер контекстного окна",
+                    label = stringResource(Res.string.label_context_size),
                     value = state.contextSizeInput,
                     onValueChange = onContextSizeInput,
                     modifier = Modifier.fillMaxWidth()
@@ -299,7 +302,7 @@ fun ModelsSettingsContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                  Text(
-                    text = "Системный промпт",
+                    text = stringResource(Res.string.label_system_prompt),
                     style = MaterialTheme.typography.titleMedium,
                     color = SettingsStrongTextColor
                 )
@@ -318,7 +321,7 @@ fun ModelsSettingsContent(
                     )
                 ) {
                     Text(
-                        text = "Сбросить",
+                        text = stringResource(Res.string.button_reset),
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontSize = 15.sp,
                             lineHeight = 22.sp,
@@ -359,8 +362,8 @@ fun GeneralSettingsContent(
     onClose: () -> Unit
 ) {
     SettingsSectionScreen(
-        title = "Общие",
-        subtitle = "Основные настройки приложения",
+        title = stringResource(Res.string.settings_section_general),
+        subtitle = stringResource(Res.string.settings_general_subtitle),
         onClose = onClose
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
@@ -374,8 +377,8 @@ fun GeneralSettingsContent(
             SettingsGroupDivider()
 
             SettingsRow(
-                title = "Streaming-режим",
-                description = "Ответы появляются постепенно, по мере генерации",
+                title = stringResource(Res.string.setting_streaming_title),
+                description = stringResource(Res.string.setting_streaming_desc),
                 content = {
                     SettingsCheckbox(
                         checked = state.useStreaming,
@@ -386,13 +389,13 @@ fun GeneralSettingsContent(
 
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
                 LabeledTextField(
-                    label = "Скорость речи",
+                    label = stringResource(Res.string.label_voice_speed),
                     value = state.voiceSpeedInput,
                     onValueChange = onVoiceSpeedInput,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    text = "Текущее значение: ${state.voiceSpeed}. Чем больше, тем быстрее речь",
+                    text = stringResource(Res.string.hint_voice_speed).format(state.voiceSpeed),
                     style = MaterialTheme.typography.bodySmall,
                     color = SettingsHintColor
                 )
@@ -400,7 +403,7 @@ fun GeneralSettingsContent(
 
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
                 Text(
-                    text = "Выбор голоса",
+                    text = stringResource(Res.string.label_voice_selection),
                      style = MaterialTheme.typography.labelMedium.copy(
                          fontSize = 14.sp,
                          lineHeight = 20.sp,
@@ -421,7 +424,7 @@ fun GeneralSettingsContent(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        text = "Выбрать голос",
+                        text = stringResource(Res.string.button_select_voice),
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontSize = 15.sp,
                             lineHeight = 22.sp,
@@ -434,7 +437,7 @@ fun GeneralSettingsContent(
             
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
                 Text(
-                    text = "MCP servers JSON",
+                    text = stringResource(Res.string.label_mcp_servers),
                      style = MaterialTheme.typography.labelMedium.copy(
                          fontSize = 14.sp,
                          lineHeight = 20.sp,
@@ -450,7 +453,7 @@ fun GeneralSettingsContent(
                     singleLine = false,
                 )
                 Text(
-                    text = "Изменения применятся после перезапуска приложения",
+                    text = stringResource(Res.string.hint_restart_required),
                     style = MaterialTheme.typography.bodySmall,
                     color = SettingsHintColor
                 )
@@ -476,8 +479,8 @@ fun KeysSettingsContent(
         saluteSpeechKey = state.saluteSpeechKey,
     )
     SettingsSectionScreen(
-        title = "Мои ключи",
-        subtitle = "Настройка ключей и быстрые ссылки на сервисы",
+        title = stringResource(Res.string.settings_section_keys),
+        subtitle = stringResource(Res.string.settings_keys_subtitle),
         onClose = onClose
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
@@ -492,37 +495,38 @@ fun KeysSettingsContent(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "Настроено ключей: $configuredKeysCount / 4",
+                        text = stringResource(Res.string.keys_configured_count).format(configuredKeysCount),
                         style = MaterialTheme.typography.titleSmall,
                         color = SettingsStrongTextColor
                     )
                     Text(
-                        text = "Для чата достаточно одного ключа: GigaChat, Qwen или AI Tunnel.",
+                        text = stringResource(Res.string.keys_hint_chat),
                         style = MaterialTheme.typography.bodySmall,
                         color = SettingsHintColor
                     )
                     Text(
-                        text = "Для голосовых команд нужен SaluteSpeech ключ из кабинета Sber.",
+                        text = stringResource(Res.string.keys_hint_voice),
                         style = MaterialTheme.typography.bodySmall,
                         color = SettingsHintColor
                     )
                 }
             }
 
+
             LabeledTextField(
-                label = "GigaChat ключ",
+                label = stringResource(Res.string.label_key_gigachat),
                 value = state.gigaChatKey,
                 onValueChange = onGigaChatKeyInput,
                 modifier = Modifier.fillMaxWidth()
             )
             LabeledTextField(
-                label = "Qwen ключ",
+                label = stringResource(Res.string.label_key_qwen),
                 value = state.qwenChatKey,
                 onValueChange = onQwenChatKeyInput,
                 modifier = Modifier.fillMaxWidth()
             )
             LabeledTextField(
-                label = "AI Tunnel ключ",
+                label = stringResource(Res.string.label_key_aitunnel),
                 value = state.aiTunnelKey,
                 onValueChange = onAiTunnelKeyInput,
                 modifier = Modifier.fillMaxWidth()
@@ -532,7 +536,7 @@ fun KeysSettingsContent(
         SettingsGroupDivider()
 
         LabeledTextField(
-            label = "SaluteSpeech ключ",
+            label = stringResource(Res.string.label_key_salutespeech),
             value = state.saluteSpeechKey,
             onValueChange = onSaluteSpeechKeyInput,
             modifier = Modifier.fillMaxWidth()
@@ -542,7 +546,7 @@ fun KeysSettingsContent(
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                text = "Где получить ключи",
+                text = stringResource(Res.string.header_where_to_get_keys),
                 style = MaterialTheme.typography.titleMedium,
                 color = SettingsStrongTextColor
             )
@@ -572,17 +576,17 @@ private fun ProviderLinkCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = provider.title,
+                text = stringResource(provider.title),
                 style = MaterialTheme.typography.titleSmall,
                 color = SettingsStrongTextColor
             )
             Text(
-                text = provider.description,
+                text = stringResource(provider.description),
                 style = MaterialTheme.typography.bodySmall,
                 color = SettingsHintColor
             )
             Text(
-                text = provider.details,
+                text = stringResource(provider.details),
                 style = MaterialTheme.typography.bodySmall,
                 color = SettingsHintColor
             )
@@ -611,14 +615,14 @@ fun FunctionsSettingsContent(
     onClose: () -> Unit
 ) {
     SettingsSectionScreen(
-        title = "Функции",
-        subtitle = "Настройки инструментов и возможностей агента",
+        title = stringResource(Res.string.settings_section_functions),
+        subtitle = stringResource(Res.string.settings_functions_subtitle),
         onClose = onClose
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
             SettingsRow(
-                title = "Few-Shot Examples",
-                description = "Класть примеры использования тулов в контекст",
+                title = stringResource(Res.string.setting_fewshot_title),
+                description = stringResource(Res.string.setting_fewshot_desc),
                 content = {
                     SettingsCheckbox(
                         checked = state.useFewShotExamples,
@@ -640,7 +644,7 @@ fun FunctionsSettingsContent(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text(
-                    text = "Настройка инструментов",
+                    text = stringResource(Res.string.button_configure_tools),
                     style = MaterialTheme.typography.labelLarge.copy(
                         fontSize = 15.sp,
                         lineHeight = 22.sp,
@@ -651,13 +655,13 @@ fun FunctionsSettingsContent(
             }
 
             val telegramStatus = when (state.telegramAuthStep) {
-                TelegramAuthStepUi.CONNECTED -> "Подключено: ${state.telegramActiveSessionPhone ?: "Активная сессия"}"
-                TelegramAuthStepUi.LOGGING_OUT -> "Отключение..."
-                TelegramAuthStepUi.INITIALIZING -> "Инициализация..."
+                TelegramAuthStepUi.CONNECTED -> stringResource(Res.string.telegram_status_connected_format).format(state.telegramActiveSessionPhone ?: stringResource(Res.string.telegram_session_default))
+                TelegramAuthStepUi.LOGGING_OUT -> stringResource(Res.string.telegram_status_logging_out)
+                TelegramAuthStepUi.INITIALIZING -> stringResource(Res.string.telegram_status_initializing)
                 TelegramAuthStepUi.PHONE,
                 TelegramAuthStepUi.CODE,
                 TelegramAuthStepUi.PASSWORD,
-                TelegramAuthStepUi.ERROR -> "Не подключено"
+                TelegramAuthStepUi.ERROR -> stringResource(Res.string.telegram_status_not_connected)
             }
 
             Button(
@@ -677,7 +681,7 @@ fun FunctionsSettingsContent(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        text = "Настройка подключения к Telegram",
+                        text = stringResource(Res.string.button_configure_telegram),
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontSize = 15.sp,
                             lineHeight = 20.sp,
@@ -712,14 +716,14 @@ fun SecuritySettingsContent(
     onClose: () -> Unit
 ) {
     SettingsSectionScreen(
-        title = "Безопасность",
-        subtitle = "Настройки безопасности и ограничений",
+        title = stringResource(Res.string.settings_section_security),
+        subtitle = stringResource(Res.string.settings_security_subtitle),
         onClose = onClose
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
             SettingsRow(
-                title = "Безопасный режим",
-                description = "Запрашивать подтверждение опасных действий (удаление файлов, отправка данных)",
+                title = stringResource(Res.string.setting_safemode_title),
+                description = stringResource(Res.string.setting_safemode_desc),
                 content = {
                     SettingsCheckbox(
                         checked = state.safeModeEnabled,
@@ -730,7 +734,7 @@ fun SecuritySettingsContent(
 
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
                 Text(
-                    text = "Запретные папки",
+                    text = stringResource(Res.string.label_forbidden_folders),
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
@@ -739,7 +743,7 @@ fun SecuritySettingsContent(
                     color = SettingsStrongTextColor
                 )
                 Text(
-                    text = "Открыть отдельный экран управления доступом к папкам",
+                    text = stringResource(Res.string.hint_forbidden_folders),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontSize = 12.sp,
                         lineHeight = 16.sp
@@ -759,7 +763,7 @@ fun SecuritySettingsContent(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        text = "Управление запретными папками",
+                        text = stringResource(Res.string.button_manage_forbidden_folders),
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontSize = 15.sp,
                             lineHeight = 22.sp,
@@ -798,8 +802,8 @@ fun SupportSettingsContent(
     onClose: () -> Unit
 ) {
     SettingsSectionScreen(
-        title = "Поддержка",
-        subtitle = "Связь с разработчиками и отладка",
+        title = stringResource(Res.string.settings_section_support),
+        subtitle = stringResource(Res.string.settings_support_subtitle),
         onClose = onClose
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
@@ -816,7 +820,7 @@ fun SupportSettingsContent(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text(
-                    text = "История сессий графа",
+                    text = stringResource(Res.string.button_view_sessions),
                     style = MaterialTheme.typography.labelLarge.copy(
                         fontSize = 15.sp,
                         lineHeight = 22.sp,
@@ -881,7 +885,7 @@ fun LogsView(
         verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)
     ) {
         LabeledTextField(
-            label = "Email поддержки",
+            label = stringResource(Res.string.label_support_email),
             value = state.supportEmail,
             onValueChange = onSupportEmailInput,
             modifier = Modifier.fillMaxWidth()
@@ -890,6 +894,7 @@ fun LogsView(
             isSending = state.isSendingLogs,
             onSendLogs = onSendLogs
         )
+        val snackMessage = stringResource(Res.string.snack_logs_path_copied)
         state.sendLogsMessage?.let { message ->
             Text(
                 text = message,
@@ -899,7 +904,7 @@ fun LogsView(
                 modifier = Modifier.clickable(enabled = state.sendLogsPath != null) {
                     state.sendLogsPath?.let { path ->
                         clipboardManager.setText(AnnotatedString(path))
-                        onShowSnack("Путь к логам скопирован")
+                        onShowSnack(snackMessage)
                     }
                 }
             )
@@ -1030,7 +1035,7 @@ private fun SendLogsButton(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Отправка логов...",
+                        text = stringResource(Res.string.button_sending_logs),
                         color = textColor,
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontSize = 15.sp,
@@ -1041,7 +1046,7 @@ private fun SendLogsButton(
                 }
             } else {
                 Text(
-                    text = "Отправить логи",
+                    text = stringResource(Res.string.button_send_logs),
                     color = textColor,
                     style = MaterialTheme.typography.labelLarge.copy(
                         fontSize = 15.sp,
@@ -1065,7 +1070,7 @@ fun CalendarDropdown(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "Календарь по умолчанию",
+            text = stringResource(Res.string.label_default_calendar),
             style = MaterialTheme.typography.labelMedium.copy(
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
@@ -1092,8 +1097,8 @@ fun CalendarDropdown(
                 ) {
                     Text(
                         text = when {
-                            isLoading -> "Загрузка календарей..."
-                            selectedCalendar.isNullOrBlank() -> "Не выбран (системный по умолчанию)"
+                            isLoading -> stringResource(Res.string.status_loading_calendars)
+                            selectedCalendar.isNullOrBlank() -> stringResource(Res.string.calendar_not_selected)
                             else -> selectedCalendar
                         },
                         style = MaterialTheme.typography.bodyLarge.copy(
@@ -1104,7 +1109,7 @@ fun CalendarDropdown(
                     )
                     Icon(
                         imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Выбрать календарь",
+                        contentDescription = stringResource(Res.string.content_desc_choose_calendar),
                         tint = SettingsStrongTextColor
                     )
                 }
@@ -1121,7 +1126,7 @@ fun CalendarDropdown(
                 DropdownMenuItem(
                     text = {
                         Text(
-                            text = "Не выбран (системный)",
+                            text = stringResource(Res.string.calendar_not_selected_short),
                             style = MaterialTheme.typography.bodyLarge.copy(
                                 fontSize = 15.sp,
                                 lineHeight = 22.sp
@@ -1139,7 +1144,7 @@ fun CalendarDropdown(
                     DropdownMenuItem(
                         text = {
                             Text(
-                                text = "Нет доступных календарей",
+                                text = stringResource(Res.string.calendar_no_available),
                                 style = MaterialTheme.typography.bodyLarge.copy(
                                     fontSize = 15.sp,
                                     lineHeight = 22.sp
@@ -1173,7 +1178,7 @@ fun CalendarDropdown(
             }
         }
         Text(
-            text = "Агент будет использовать этот календарь для создания событий, если вы не укажете иное.",
+            text = stringResource(Res.string.hint_calendar_usage),
             style = MaterialTheme.typography.bodySmall,
             color = SettingsHintColor
         )
@@ -1225,7 +1230,7 @@ fun TokensBalanceSection(
                     tint = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = "Остаток токенов",
+                    text = stringResource(Res.string.label_tokens_balance),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = SettingsStrongTextColor,
@@ -1268,7 +1273,7 @@ fun TokensBalanceSection(
 
         when {
             isLoading -> Text(
-                text = "Запрашиваем баланс...",
+                text = stringResource(Res.string.status_checking_balance),
                 style = MaterialTheme.typography.bodyMedium,
                 color = SettingsStrongTextColor,
             )
@@ -1280,7 +1285,7 @@ fun TokensBalanceSection(
             )
 
             balance.isEmpty() -> Text(
-                text = "Нет данных о балансе",
+                text = stringResource(Res.string.status_balance_no_data),
                 style = MaterialTheme.typography.bodyMedium,
                 color = SettingsDescriptionColor,
             )
@@ -1329,7 +1334,7 @@ fun ModelDropdown(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "Модель",
+            text = stringResource(Res.string.label_model),
             style = MaterialTheme.typography.labelMedium.copy(
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
@@ -1408,7 +1413,7 @@ fun EmbeddingsModelDropdown(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "Модель эмбеддингов",
+            text = stringResource(Res.string.label_embeddings_model),
             style = MaterialTheme.typography.labelMedium.copy(
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
