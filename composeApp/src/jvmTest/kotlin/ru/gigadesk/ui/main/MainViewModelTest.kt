@@ -28,6 +28,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import org.apache.tika.exception.FileTooLongException
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -44,6 +45,8 @@ import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.tool.ToolPermissionBroker
+import ru.gigadesk.tool.files.FilesToolUtil
+import ru.gigadesk.ui.main.usecases.FinderPathExtractor
 import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
 import ru.gigadesk.ui.main.usecases.VoiceInputUseCase
 import java.util.concurrent.atomic.AtomicReference
@@ -351,8 +354,10 @@ class MainViewModelTest {
             bindSingleton { say }
             bindSingleton { toolPermissionBroker }
             bindSingleton { InMemoryAudioRecorder() }
+            bindSingleton { FilesToolUtil(instance()) }
+            bindSingleton { FinderPathExtractor(instance()) }
             bindSingleton {
-                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance())
+                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance())
             }
         }
 
