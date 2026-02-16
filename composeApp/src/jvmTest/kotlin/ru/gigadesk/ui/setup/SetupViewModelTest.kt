@@ -129,7 +129,7 @@ class SetupViewModelTest {
         viewModel.send(SetupEvent.InputAiTunnelKey("ait-token"))
         advanceUntilIdle()
 
-        assertEquals(GigaModel.AiTunnelGpt4oMini, settingsProvider.gigaModel)
+        assertEquals(GigaModel.AiTunnelClaudeHaiku, settingsProvider.gigaModel)
     }
 
     @Test
