@@ -112,6 +112,10 @@ class SettingsViewModel(
                 keysProvider.aiTunnelKey = event.key
                 setState { copy(aiTunnelKey = event.key) }
             }
+            is InputAnthropicKey -> {
+                keysProvider.anthropicKey = event.key
+                setState { copy(anthropicKey = event.key) }
+            }
             is InputSafeModeEnabled -> {
                 keysProvider.safeModeEnabled = event.enabled
                 setState { copy(safeModeEnabled = event.enabled) }
@@ -240,6 +244,7 @@ class SettingsViewModel(
                 gigaChatKey = keysProvider.gigaChatKey ?: "",
                 qwenChatKey = keysProvider.qwenChatKey ?: "",
                 aiTunnelKey = keysProvider.aiTunnelKey ?: "",
+                anthropicKey = keysProvider.anthropicKey ?: "",
                 saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                 mcpServersJson = keysProvider.mcpServersJson ?: "",
                 useFewShotExamples = keysProvider.useFewShotExamples,
@@ -363,6 +368,16 @@ class SettingsViewModel(
                     copy(
                         balance = emptyList(),
                         balanceError = errorMsg,
+                        isBalanceLoading = false
+                    )
+                }
+                return@launch
+            }
+            LlmProvider.ANTHROPIC -> {
+                setState {
+                    copy(
+                        balance = emptyList(),
+                        balanceError = "Баланс для Anthropic недоступен",
                         isBalanceLoading = false
                     )
                 }

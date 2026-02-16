@@ -45,6 +45,7 @@ data class SettingsState(
     val gigaChatKey: String = "",
     val qwenChatKey: String = "",
     val aiTunnelKey: String = "",
+    val anthropicKey: String = "",
     val saluteSpeechKey: String = "",
     val mcpServersJson: String = "",
     val useFewShotExamples: Boolean = false,
@@ -96,6 +97,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputGigaChatKey(val key: String): SettingsEvent
     data class InputQwenChatKey(val key: String): SettingsEvent
     data class InputAiTunnelKey(val key: String): SettingsEvent
+    data class InputAnthropicKey(val key: String): SettingsEvent
     data class InputSaluteSpeechKey(val key: String): SettingsEvent
     data class OpenProviderLink(val provider: ApiKeyProvider): SettingsEvent
     data class InputMcpServersJson(val json: String): SettingsEvent

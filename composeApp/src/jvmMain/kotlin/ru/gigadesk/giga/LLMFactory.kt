@@ -3,6 +3,7 @@ package ru.gigadesk.giga
 import kotlinx.coroutines.flow.Flow
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.llms.AiTunnelChatAPI
+import ru.gigadesk.llms.AnthropicChatAPI
 import ru.gigadesk.llms.QwenChatAPI
 import java.io.File
 
@@ -12,6 +13,7 @@ class LLMFactory(
     private val grpcApi: GigaGRPCChatApi,
     private val qwenApi: QwenChatAPI,
     private val aiTunnelApi: AiTunnelChatAPI,
+    private val anthropicApi: AnthropicChatAPI,
 ) : GigaChatAPI {
 
     fun current(): GigaChatAPI {
@@ -19,6 +21,7 @@ class LLMFactory(
         return when (model.provider) {
             LlmProvider.QWEN -> qwenApi
             LlmProvider.AI_TUNNEL -> aiTunnelApi
+            LlmProvider.ANTHROPIC -> anthropicApi
             LlmProvider.GIGA -> if (settingsProvider.useStreaming) grpcApi else restApi
         }
     }

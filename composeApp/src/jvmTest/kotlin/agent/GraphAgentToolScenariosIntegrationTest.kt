@@ -26,6 +26,7 @@ import ru.gigadesk.db.SettingsProviderImpl
 import ru.gigadesk.di.mainDiModule
 import ru.gigadesk.giga.*
 import ru.gigadesk.llms.AiTunnelChatAPI
+import ru.gigadesk.llms.AnthropicChatAPI
 import ru.gigadesk.llms.QwenChatAPI
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.application.ToolOpen
@@ -81,6 +82,7 @@ class GraphAgentToolScenariosIntegrationTest {
             LlmProvider.GIGA -> "GIGA_KEY"
             LlmProvider.QWEN -> "QWEN_KEY"
             LlmProvider.AI_TUNNEL -> "AITUNNEL_KEY"
+            LlmProvider.ANTHROPIC -> "ANTHROPIC_API_KEY"
         }
         val apiKey = System.getenv(apiKeyName) ?: System.getProperty(apiKeyName)
         Assumptions.assumeTrue(
@@ -1025,6 +1027,7 @@ class GraphAgentToolScenariosIntegrationTest {
         private var gigaRestChatAPI: GigaRestChatAPI? = null
         private var qwenChatAPI: QwenChatAPI? = null
         private var aiTunnelChatAPI: AiTunnelChatAPI? = null
+        private var anthropicChatAPI: AnthropicChatAPI? = null
         private val httpRequestCount = AtomicLong(0)
         private val httpRequestTotalNanos = AtomicLong(0)
 
@@ -1133,11 +1136,28 @@ class GraphAgentToolScenariosIntegrationTest {
                 }
                 aiTunnelChatAPI!!
             }
+            bindSingleton<AnthropicChatAPI>(overrides = true) {
+                if (anthropicChatAPI == null) {
+                    anthropicChatAPI = AnthropicChatAPI(instance(), instance()).apply {
+                        getHttpClient().plugin(HttpSend).intercept { request ->
+                            val startNanos = System.nanoTime()
+                            try {
+                                execute(request)
+                            } finally {
+                                httpRequestCount.incrementAndGet()
+                                httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
+                            }
+                        }
+                    }
+                }
+                anthropicChatAPI!!
+            }
             bindSingleton<GigaChatAPI>(overrides = true) {
                 when (selectedModel.provider) {
                     LlmProvider.GIGA -> instance<GigaRestChatAPI>()
                     LlmProvider.QWEN -> instance<QwenChatAPI>()
                     LlmProvider.AI_TUNNEL -> instance<AiTunnelChatAPI>()
+                    LlmProvider.ANTHROPIC -> instance<AnthropicChatAPI>()
                 }
             }
             bindSingleton<DesktopInfoRepository>(overrides = true) {
@@ -1153,6 +1173,7 @@ class GraphAgentToolScenariosIntegrationTest {
                 LlmProvider.GIGA -> println("Spent: ${gigaRestChatAPI?.getSessionTokenUsage() ?: "n/a"}")
                 LlmProvider.QWEN -> println("Spent: ${qwenChatAPI?.getSessionTokenUsage() ?: "n/a"}")
                 LlmProvider.AI_TUNNEL -> println("Spent: ${aiTunnelChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+                LlmProvider.ANTHROPIC -> println("Spent: ${anthropicChatAPI?.getSessionTokenUsage() ?: "n/a"}")
             }
             val requestCount = httpRequestCount.get()
             if (requestCount == 0L) {

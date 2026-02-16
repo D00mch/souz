@@ -22,6 +22,12 @@ enum class ApiKeyProvider(
         description = Res.string.provider_qwen_desc,
         details = Res.string.provider_qwen_details,
     ),
+    ANTHROPIC(
+        url = "https://console.anthropic.com/settings/keys",
+        title = Res.string.provider_anthropic_title,
+        description = Res.string.provider_anthropic_desc,
+        details = Res.string.provider_anthropic_details,
+    ),
     SBER(
         title = Res.string.provider_sber_title,
         url = "https://developers.sber.ru/studio/workspaces",
@@ -34,12 +40,14 @@ fun configuredApiKeysCount(
     gigaChatKey: String,
     qwenChatKey: String,
     aiTunnelKey: String,
+    anthropicKey: String,
     saluteSpeechKey: String,
-): Int = listOf(gigaChatKey, qwenChatKey, aiTunnelKey, saluteSpeechKey).count { it.isNotBlank() }
+): Int = listOf(gigaChatKey, qwenChatKey, aiTunnelKey, anthropicKey, saluteSpeechKey).count { it.isNotBlank() }
 
 fun hasAnyConfiguredApiKey(
     gigaChatKey: String,
     qwenChatKey: String,
     aiTunnelKey: String,
+    anthropicKey: String,
     saluteSpeechKey: String,
-): Boolean = configuredApiKeysCount(gigaChatKey, qwenChatKey, aiTunnelKey, saluteSpeechKey) > 0
+): Boolean = configuredApiKeysCount(gigaChatKey, qwenChatKey, aiTunnelKey, anthropicKey, saluteSpeechKey) > 0

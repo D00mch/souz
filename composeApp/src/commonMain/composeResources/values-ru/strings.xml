@@ -59,7 +59,7 @@
 
     <!-- Keys Settings -->
     <string name="keys_configured_count">Настроено ключей: %d / 4</string>
-    <string name="keys_hint_chat">Для чата достаточно одного ключа: GigaChat, Qwen или AI Tunnel.</string>
+    <string name="keys_hint_chat">Для чата достаточно одного ключа: GigaChat, Qwen, Anthropic или AI Tunnel.</string>
     <string name="keys_hint_voice">Для голосовых команд нужен SaluteSpeech ключ из кабинета Sber.</string>
     <string name="label_key_gigachat">GigaChat ключ</string>
     <string name="label_key_qwen">Qwen ключ</string>
@@ -79,6 +79,10 @@
     <string name="provider_sber_title">Sber Studio (GigaChat + Speech)</string>
     <string name="provider_sber_desc">Кабинет для ключей GigaChat и SaluteSpeech.</string>
     <string name="provider_sber_details">Если планируете голосовые команды, здесь же получите ключ для Speech API.</string>
+
+    <string name="provider_anthropic_title">Anthropic Console</string>
+    <string name="provider_anthropic_desc">Кабинет Anthropic для ключей Claude API.</string>
+    <string name="provider_anthropic_details">Получите API-ключ для прямого доступа к моделям Claude.</string>
 
     <!-- Functions Settings -->
     <string name="setting_fewshot_title">Few-Shot Examples</string>

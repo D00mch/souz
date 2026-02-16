@@ -20,7 +20,7 @@ Primary stack:
 
 ### Features
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
-- **Multi-model LLM integrations** for GigaChat (REST/gRPC/voice), Qwen, AiTunnel APIs.
+- **Multi-model LLM integrations** for GigaChat (REST/gRPC/voice), Qwen, AiTunnel, and Anthropic Claude APIs.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop toolset**: files, browser, calendar, mail, notes, desktop automation, analytics, and presentations.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
@@ -46,7 +46,6 @@ Primary stack:
 │       │   │       │   ├── engine/     # Core graph primitives (Node, Graph, runner/runtime)
 │       │   │       │   ├── nodes/      # Graph node implementations (LLM, MCP, classification, etc.)
 │       │   │       │   └── session/    # Graph session models, repository, and service
-│       │   │       ├── anthropic/      # Anthropic API integration (not supported curerntly)
 │       │   │       ├── audio/          # Audio capture/playback utilities
 │       │   │       ├── db/             # Local config/data extraction/vector DB layer
 │       │   │       ├── di/             # Dependency wiring (DI container setup)
@@ -54,7 +53,7 @@ Primary stack:
 │       │   │       ├── image/          # Image utility helpers
 │       │   │       ├── keys/           # Keyboard listeners and key automation
 │       │   │       ├── libs/           # Native library bridge wrappers
-│       │   │       ├── llms/           # Additional LLM provider clients
+│       │   │       ├── llms/           # Additional LLM provider clients (Qwen, AiTunnel, Anthropic)
 │       │   │       ├── mcp/            # MCP sessions, transport, config, OAuth, protocol adapter
 │       │   │       ├── permissions/    # Permission/relaunch helpers
 │       │   │       ├── server/         # Local server endpoints and API models

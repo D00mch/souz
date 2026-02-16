@@ -119,6 +119,7 @@ class SetupViewModelTest {
             giga = "",
             qwen = "",
             aiTunnel = "",
+            anthropic = "",
             speech = "",
             onboardingCompleted = false,
             gigaModel = GigaModel.Max,
@@ -133,11 +134,32 @@ class SetupViewModelTest {
     }
 
     @Test
+    fun `setup picks anthropic default model when first configured key is anthropic`() = runTest(dispatcher) {
+        val settingsProvider = settingsProviderStub(
+            giga = "",
+            qwen = "",
+            aiTunnel = "",
+            anthropic = "",
+            speech = "",
+            onboardingCompleted = false,
+            gigaModel = GigaModel.Max,
+        )
+        val viewModel = createViewModel(settingsProvider)
+
+        advanceUntilIdle()
+        viewModel.send(SetupEvent.InputAnthropicKey("anthropic-token"))
+        advanceUntilIdle()
+
+        assertEquals(GigaModel.AnthropicHaiku45, settingsProvider.gigaModel)
+    }
+
+    @Test
     fun `setup prefers giga model when giga key appears during first setup`() = runTest(dispatcher) {
         val settingsProvider = settingsProviderStub(
             giga = "",
             qwen = "",
             aiTunnel = "",
+            anthropic = "",
             speech = "",
             onboardingCompleted = false,
             gigaModel = GigaModel.Max,
@@ -186,6 +208,7 @@ class SetupViewModelTest {
         giga: String,
         qwen: String,
         aiTunnel: String,
+        anthropic: String = "",
         speech: String,
         onboardingCompleted: Boolean,
         gigaModel: GigaModel = GigaModel.Max,
@@ -195,6 +218,7 @@ class SetupViewModelTest {
         var gigaValue = giga
         var qwenValue = qwen
         var aiTunnelValue = aiTunnel
+        var anthropicValue = anthropic
         var speechValue = speech
         var gigaModelValue = gigaModel
         var onboardingCompletedValue = onboardingCompleted
@@ -208,6 +232,9 @@ class SetupViewModelTest {
 
         every { settingsProvider.aiTunnelKey } answers { aiTunnelValue }
         every { settingsProvider.aiTunnelKey = any() } answers { aiTunnelValue = firstArg() }
+
+        every { settingsProvider.anthropicKey } answers { anthropicValue }
+        every { settingsProvider.anthropicKey = any() } answers { anthropicValue = firstArg() }
 
         every { settingsProvider.saluteSpeechKey } answers { speechValue }
         every { settingsProvider.saluteSpeechKey = any() } answers { speechValue = firstArg() }

@@ -96,6 +96,7 @@ object GigaResponse {
         data class Error(val status: Int, val message: String) : Balance
     }
 
+    @Suppress("EnumEntryName")
     enum class FinishReason { stop, length, function_call, blacklist, error }
 }
 
@@ -110,6 +111,7 @@ enum class LlmProvider {
     GIGA,
     QWEN,
     AI_TUNNEL,
+    ANTHROPIC,
 }
 
 enum class EmbeddingsProvider {
@@ -130,13 +132,16 @@ enum class GigaModel(
     QwenPlus("Qwen Plus", "qwen-plus", LlmProvider.QWEN),
     Qwen3OpenSource("Qwen3 open source", "qwen3-vl-32b-instruct", LlmProvider.QWEN),
     QwenMax("Qwen Max", "qwen-max", LlmProvider.QWEN),
-    AiTunnelGpt4oMini("gpt-4o-mini", "gpt-4o-mini", LlmProvider.AI_TUNNEL),
-    AiTunnelGpt52Codex("gpt-5.2-codex", "gpt-5.2-codex", LlmProvider.AI_TUNNEL),
-    AiTunnelGpt5Nano("gpt-5-nano", "gpt-5-nano", LlmProvider.AI_TUNNEL),
-    AiTunnelGemini3Flash("gemini-3-flash-preview", "gemini-3-flash-preview", LlmProvider.AI_TUNNEL),
-    AiTunnelClaudeOpus("claude-opus-4.6", "claude-opus-4.6", LlmProvider.AI_TUNNEL),
-    AiTunnelClaudeHaiku("claude-haiku-4.5", "claude-haiku-4.5", LlmProvider.AI_TUNNEL),
-    AiTunnelGrok("grok-4.1-fast", "grok-4.1-fast", LlmProvider.AI_TUNNEL),
+    AiTunnelGpt4oMini("AiT.gpt-4o-mini", "gpt-4o-mini", LlmProvider.AI_TUNNEL),
+    AiTunnelGpt52Codex("AiT.gpt-5.2-codex", "gpt-5.2-codex", LlmProvider.AI_TUNNEL),
+    AiTunnelGpt5Nano("AiT.gpt-5-nano", "gpt-5-nano", LlmProvider.AI_TUNNEL),
+    AiTunnelGemini3Flash("AiT.gemini-3-flash-preview", "gemini-3-flash-preview", LlmProvider.AI_TUNNEL),
+    AiTunnelClaudeOpus("AiT.claude-opus-4.6", "claude-opus-4.6", LlmProvider.AI_TUNNEL),
+    AiTunnelClaudeHaiku("AiT.claude-haiku-4.5", "claude-haiku-4.5", LlmProvider.AI_TUNNEL),
+    AiTunnelGrok("AiT.grok-4.1-fast", "grok-4.1-fast", LlmProvider.AI_TUNNEL),
+    AnthropicOpus45("Claude Opus 4.5", "claude-opus-4-6", LlmProvider.ANTHROPIC),
+    AnthropicSonnet45("Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", LlmProvider.ANTHROPIC),
+    AnthropicHaiku45("Claude Haiku 4.5", "claude-haiku-4-5-20251001", LlmProvider.ANTHROPIC),
 }
 
 enum class EmbeddingsModel(
