@@ -20,6 +20,7 @@ import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.calendar.CalendarAppleScriptCommands
 import ru.gigadesk.ui.BaseViewModel
+import ru.gigadesk.ui.common.openProviderLink
 import ru.gigadesk.ui.settings.SettingsEvent.*
 
 class SettingsViewModel(
@@ -60,6 +61,7 @@ class SettingsViewModel(
                 keysProvider.saluteSpeechKey = event.key
                 setState { copy(saluteSpeechKey = event.key) }
             }
+            is OpenProviderLink -> openProviderLink(url = event.provider.url, logger = l)
             is InputMcpServersJson -> {
                 keysProvider.mcpServersJson = event.json
                 setState { copy(mcpServersJson = event.json) }
@@ -344,4 +346,5 @@ class SettingsViewModel(
             }
         }
     }
+
 }

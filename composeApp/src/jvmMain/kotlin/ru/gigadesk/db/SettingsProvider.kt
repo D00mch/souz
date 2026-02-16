@@ -23,6 +23,7 @@ interface SettingsProvider {
     var useStreaming: Boolean
     var safeModeEnabled: Boolean
     var needsOnboarding: Boolean
+    var onboardingCompleted: Boolean
     var requestTimeoutMillis: Long
     var contextSize: Int
     var initialWindowWidthDp: Int
@@ -81,6 +82,10 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         configKey = NEEDS_ONBOARDING,
         envKey = NEEDS_ONBOARDING
     )
+    private var _onboardingCompletedDelegate: String? by keyDelegate(
+        configKey = ONBOARDING_COMPLETED,
+        envKey = ONBOARDING_COMPLETED
+    )
     private var _embeddingsModelDelegate: String? by keyDelegate(
         configKey = EMBEDDINGS_MODEL,
         envKey = EMBEDDINGS_MODEL
@@ -131,6 +136,12 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         get() = _needsOnboardingDelegate?.toBooleanStrictOrNull() ?: false
         set(value) {
             _needsOnboardingDelegate = value.toString()
+        }
+
+    override var onboardingCompleted: Boolean
+        get() = _onboardingCompletedDelegate?.toBooleanStrictOrNull() ?: false
+        set(value) {
+            _onboardingCompletedDelegate = value.toString()
         }
 
     override var requestTimeoutMillis: Long
@@ -225,6 +236,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val DEFAULT_CALENDAR = "DEFAULT_CALENDAR"
         private const val GIGA_MODEL = "GIGA_MODEL"
         private const val NEEDS_ONBOARDING = "NEEDS_ONBOARDING"
+        private const val ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED"
         private const val REQUEST_TIMEOUT_MILLIS = "REQUEST_TIMEOUT_MILLIS"
         private const val CONTEXT_SIZE = "CONTEXT_SIZE"
         private const val INITIAL_WINDOW_WIDTH_DP = "INITIAL_WINDOW_WIDTH_DP"

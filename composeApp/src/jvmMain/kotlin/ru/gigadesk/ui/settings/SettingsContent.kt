@@ -46,6 +46,8 @@ import ru.gigadesk.giga.EmbeddingsModel
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.ui.AppTheme
+import ru.gigadesk.ui.common.ApiKeyProvider
+import ru.gigadesk.ui.common.configuredApiKeysCount
 import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
 
@@ -463,14 +465,49 @@ fun KeysSettingsContent(
     onQwenChatKeyInput: (String) -> Unit,
     onAiTunnelKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
+    onOpenProviderLink: (ApiKeyProvider) -> Unit,
     onClose: () -> Unit
 ) {
+    val configuredKeysCount = configuredApiKeysCount(
+        gigaChatKey = state.gigaChatKey,
+        qwenChatKey = state.qwenChatKey,
+        aiTunnelKey = state.aiTunnelKey,
+        saluteSpeechKey = state.saluteSpeechKey,
+    )
     SettingsSectionScreen(
         title = "Мои ключи",
-        subtitle = "API ключи для доступа к сервисам",
+        subtitle = "Настройка ключей и быстрые ссылки на сервисы",
         onClose = onClose
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = SettingsFieldBackground,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, SettingsDefaultBorder),
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Настроено ключей: $configuredKeysCount / 4",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = SettingsStrongTextColor
+                    )
+                    Text(
+                        text = "Для чата достаточно одного ключа: GigaChat, Qwen или AI Tunnel.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SettingsHintColor
+                    )
+                    Text(
+                        text = "Для голосовых команд нужен SaluteSpeech ключ из кабинета Sber.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SettingsHintColor
+                    )
+                }
+            }
+
             LabeledTextField(
                 label = "GigaChat ключ",
                 value = state.gigaChatKey,
@@ -499,6 +536,68 @@ fun KeysSettingsContent(
             onValueChange = onSaluteSpeechKeyInput,
             modifier = Modifier.fillMaxWidth()
         )
+
+        SettingsGroupDivider()
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = "Где получить ключи",
+                style = MaterialTheme.typography.titleMedium,
+                color = SettingsStrongTextColor
+            )
+            ApiKeyProvider.entries.forEach { provider ->
+                ProviderLinkCard(
+                    provider = provider,
+                    onOpen = { onOpenProviderLink(provider) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderLinkCard(
+    provider: ApiKeyProvider,
+    onOpen: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = SettingsFieldBackground,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, SettingsDefaultBorder),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = provider.title,
+                style = MaterialTheme.typography.titleSmall,
+                color = SettingsStrongTextColor
+            )
+            Text(
+                text = provider.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = SettingsHintColor
+            )
+            Text(
+                text = provider.details,
+                style = MaterialTheme.typography.bodySmall,
+                color = SettingsHintColor
+            )
+            OutlinedButton(
+                onClick = onOpen,
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, SettingsDefaultBorder),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    text = provider.url,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = SettingsStrongTextColor
+                )
+            }
+        }
     }
 }
 
@@ -1406,6 +1505,7 @@ private fun KeysSettingsContentPreview() {
             onQwenChatKeyInput = {},
             onAiTunnelKeyInput = {},
             onSaluteSpeechKeyInput = {},
+            onOpenProviderLink = {},
             onClose = {}
         )
     }
