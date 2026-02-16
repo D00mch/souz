@@ -139,7 +139,8 @@ enum class GigaModel(
     AiTunnelClaudeOpus("AiT.claude-opus-4.6", "claude-opus-4.6", LlmProvider.AI_TUNNEL),
     AiTunnelClaudeHaiku("AiT.claude-haiku-4.5", "claude-haiku-4.5", LlmProvider.AI_TUNNEL),
     AiTunnelGrok("AiT.grok-4.1-fast", "grok-4.1-fast", LlmProvider.AI_TUNNEL),
-    AnthropicOpus45("Claude Opus 4.5", "claude-opus-4-6", LlmProvider.ANTHROPIC),
+    AnthropicOpus45("Claude Opus 4.5", "claude-opus-4-5", LlmProvider.ANTHROPIC),
+    AnthropicOpus46("Claude Opus 4.6", "claude-opus-4-6", LlmProvider.ANTHROPIC),
     AnthropicSonnet45("Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", LlmProvider.ANTHROPIC),
     AnthropicHaiku45("Claude Haiku 4.5", "claude-haiku-4-5-20251001", LlmProvider.ANTHROPIC),
 }

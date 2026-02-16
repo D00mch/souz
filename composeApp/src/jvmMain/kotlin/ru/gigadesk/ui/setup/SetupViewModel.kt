@@ -238,6 +238,6 @@ class SetupViewModel(
         GigaModel.Lite, GigaModel.Pro, GigaModel.QwenFlash, GigaModel.QwenPlus, GigaModel.Qwen3OpenSource,
         GigaModel.AiTunnelGpt52Codex, GigaModel.AiTunnelGpt5Nano, GigaModel.AiTunnelGemini3Flash,
         GigaModel.AiTunnelClaudeOpus, GigaModel.AiTunnelGpt4oMini, GigaModel.AiTunnelGrok,
-        GigaModel.AnthropicSonnet45, GigaModel.AnthropicOpus45 -> false
+        GigaModel.AnthropicSonnet45, GigaModel.AnthropicOpus45, GigaModel.AnthropicOpus46  -> false
     }
 }
