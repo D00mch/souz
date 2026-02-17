@@ -5,7 +5,6 @@ import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.audio.InMemoryAudioRecorder
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
-import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.tool.ToolPermissionBroker
 
 data class MainUseCases(
@@ -18,7 +17,7 @@ data class MainUseCases(
 class MainUseCasesFactory(
     private val graphAgent: GraphBasedAgent,
     private val settingsProvider: SettingsProvider,
-    private val gigaVoiceAPI: GigaVoiceAPI,
+    private val speechRecognitionProvider: SpeechRecognitionProvider,
     private val audioRecorder: InMemoryAudioRecorder,
     private val say: Say,
     private val toolPermissionBroker: ToolPermissionBroker,
@@ -41,7 +40,7 @@ class MainUseCasesFactory(
         )
         val voiceInputUseCase = VoiceInputUseCase(
             audioRecorder = audioRecorder,
-            gigaVoiceAPI = gigaVoiceAPI,
+            speechRecognitionProvider = speechRecognitionProvider,
             settingsProvider = settingsProvider,
             chatUseCase = chatUseCase,
             speechUseCase = speechUseCase,

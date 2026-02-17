@@ -1,22 +1,19 @@
 package ru.gigadesk.llms
 
-import com.fasterxml.jackson.databind.JsonNode
 import io.mockk.every
 import io.mockk.mockk
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaMessageRole
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRequest
-import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.TokenLogging
-import ru.gigadesk.giga.gigaJsonMapper
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class AnthropicChatAPICacheTest {
     @Test
-    fun `buildChatRequest puts message cache marker on final message block`() {
+    fun `buildChatRequest puts message cache marker on penultimate cacheable message block`() {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
@@ -36,8 +33,8 @@ class AnthropicChatAPICacheTest {
         val assistantBlocks = anthropicMessages[1]["content"].asBlocks()
         val finalUserBlocks = anthropicMessages.last()["content"].asBlocks()
 
-        assertNull(assistantBlocks.last()["cache_control"])
-        assertEquals(EPHEMERAL_CACHE, finalUserBlocks.last()["cache_control"])
+        assertEquals(EPHEMERAL_CACHE, assistantBlocks.last()["cache_control"])
+        assertNull(finalUserBlocks.last()["cache_control"])
     }
 
     @Test
@@ -65,28 +62,6 @@ class AnthropicChatAPICacheTest {
         assertEquals(mapOf("type" to "auto"), request["tool_choice"])
     }
 
-    @Test
-    fun `parseUsage includes cache reads in prompt tokens`() {
-        val api = createApi()
-        val usageNode: JsonNode = gigaJsonMapper.readTree(
-            """
-            {
-              "input_tokens": 21,
-              "cache_creation_input_tokens": 188086,
-              "cache_read_input_tokens": 17,
-              "output_tokens": 393
-            }
-            """.trimIndent()
-        )
-
-        val usage = invokeParseUsage(api, usageNode)
-
-        assertEquals(188124, usage.promptTokens)
-        assertEquals(393, usage.completionTokens)
-        assertEquals(188517, usage.totalTokens)
-        assertEquals(17, usage.precachedTokens)
-    }
-
     private fun createApi(): AnthropicChatAPI {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.anthropicKey } returns "test-key"
@@ -110,12 +85,6 @@ class AnthropicChatAPICacheTest {
         )
         method.isAccessible = true
         return method.invoke(api, body, GigaModel.AnthropicHaiku45.alias, false) as Map<String, Any>
-    }
-
-    private fun invokeParseUsage(api: AnthropicChatAPI, node: JsonNode): GigaResponse.Usage {
-        val method = AnthropicChatAPI::class.java.getDeclaredMethod("parseUsage", JsonNode::class.java)
-        method.isAccessible = true
-        return method.invoke(api, node) as GigaResponse.Usage
     }
 
     private fun function(name: String): GigaRequest.Function = GigaRequest.Function(

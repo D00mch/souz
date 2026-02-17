@@ -7,6 +7,7 @@ import ru.gigadesk.ui.VMSideEffect
 import ru.gigadesk.ui.VMState
 import androidx.compose.ui.text.input.TextFieldValue
 import ru.gigadesk.giga.GigaRequest
+import ru.gigadesk.giga.LlmBuildProfile
 
 /**
  * Chat message for the chat mode.
@@ -48,7 +49,7 @@ data class MainState(
     val chatMessages: List<ChatMessage> = emptyList(),
     val chatStartTip: String = "",
     val chatInputText: TextFieldValue = TextFieldValue(""),
-    val selectedModel: String = ru.gigadesk.giga.GigaModel.Max.alias,
+    val selectedModel: String = LlmBuildProfile.defaultModel.alias,
     val selectedContextSize: Int = DEFAULT_MAX_TOKENS,
     val isSpeaking: Boolean = false,
     val showNewChatDialog: Boolean = false,

@@ -4,6 +4,7 @@ import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.giga.EmbeddingsModel
 import ru.gigadesk.giga.DEFAULT_MAX_TOKENS
 import ru.gigadesk.giga.GigaModel
+import ru.gigadesk.giga.LlmBuildProfile
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
@@ -110,9 +111,10 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
             GigaModel.entries.firstOrNull { model ->
                 model.name.equals(value, ignoreCase = true) || model.alias.equals(value, ignoreCase = true)
             }
-        } ?: GigaModel.Max
+        }?.let(LlmBuildProfile::normalizeModel)
+            ?: LlmBuildProfile.defaultModel
         set(value) {
-            _gigaModelDelegate = value.alias
+            _gigaModelDelegate = LlmBuildProfile.normalizeModel(value).alias
         }
 
     override var useFewShotExamples: Boolean

@@ -3,6 +3,8 @@ package ru.gigadesk.di
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import ru.gigadesk.edition.BuildEdition
+import ru.gigadesk.edition.BuildEditionConfig
 import ru.gigadesk.db.SettingsProviderImpl
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
@@ -56,8 +58,11 @@ import ru.gigadesk.tool.mail.*
 import ru.gigadesk.tool.notes.*
 import ru.gigadesk.tool.textReplace.*
 import ru.gigadesk.tool.math.ToolCalculator
+import ru.gigadesk.ui.main.usecases.DisabledSpeechRecognitionProvider
 import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
 import ru.gigadesk.ui.main.usecases.FinderPathExtractor
+import ru.gigadesk.ui.main.usecases.SaluteSpeechRecognitionProvider
+import ru.gigadesk.ui.main.usecases.SpeechRecognitionProvider
 import ru.gigadesk.tool.presentation.ToolPresentationCreate
 import ru.gigadesk.tool.presentation.ToolPresentationRead
 import ru.gigadesk.tool.telegram.ToolTelegramForward
@@ -178,6 +183,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton<GigaChatAPI> { instance<LLMFactory>() }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
+    bindSingleton<SpeechRecognitionProvider> {
+        when (BuildEditionConfig.current) {
+            BuildEdition.RU -> SaluteSpeechRecognitionProvider(instance())
+            BuildEdition.EN -> DisabledSpeechRecognitionProvider
+        }
+    }
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
 

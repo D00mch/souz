@@ -23,7 +23,7 @@ import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
-import ru.gigadesk.giga.GigaModel
+import ru.gigadesk.giga.LlmBuildProfile
 import ru.gigadesk.ui.BaseViewModel
 import ru.gigadesk.ui.main.usecases.ChatUseCase
 import ru.gigadesk.ui.main.usecases.MainUseCaseOutput
@@ -209,7 +209,7 @@ class MainViewModel(
     }
 
     private suspend fun updateChatModel(modelAlias: String) {
-        val model = GigaModel.entries.firstOrNull { it.alias == modelAlias } ?: return
+        val model = LlmBuildProfile.findModelByAlias(modelAlias) ?: return
         settingsProvider.gigaModel = model
         chatUseCase.updateModel(model)
         setState { copy(selectedModel = model.alias) }

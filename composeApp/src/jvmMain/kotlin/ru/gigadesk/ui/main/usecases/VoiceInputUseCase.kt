@@ -18,7 +18,6 @@ import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.gigadesk.audio.InMemoryAudioRecorder
 import ru.gigadesk.audio.rawToOpusOgg
-import ru.gigadesk.giga.GigaVoiceAPI
 import ru.gigadesk.giga.MissingVoiceKeyException
 import ru.gigadesk.keys.HotkeyListener
 import ru.gigadesk.db.SettingsProvider
@@ -30,7 +29,7 @@ import org.jetbrains.compose.resources.getString
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceInputUseCase(
     val audioRecorder: InMemoryAudioRecorder,
-    private val gigaVoiceAPI: GigaVoiceAPI,
+    private val speechRecognitionProvider: SpeechRecognitionProvider,
     private val settingsProvider: SettingsProvider,
     private val chatUseCase: ChatUseCase,
     private val speechUseCase: SpeechUseCase,
@@ -77,9 +76,7 @@ class VoiceInputUseCase(
                 .mapLatest { audioData ->
                     val encodedAudio = rawToOpusOgg(rawData = audioData)
                     l.debug("[Sending audio data: ${encodedAudio.size} bytes]")
-                    val resp = gigaVoiceAPI.recognize(encodedAudio)
-                    l.info("Recognition response: {}", resp)
-                    resp.result.joinToString("\n").trim()
+                    speechRecognitionProvider.recognize(encodedAudio)
                 }
                 .onEach(::onTextRecognizeSideEffects)
                 .filter { it.isNotBlank() }
@@ -89,6 +86,10 @@ class VoiceInputUseCase(
                 if (cause is MissingVoiceKeyException) {
                     emitVoiceKeyMissing()
                     return@retryWhen true
+                }
+                if (cause is VoiceRecognitionUnavailableException) {
+                    emitVoiceRecognitionUnavailable()
+                    return@retryWhen false
                 }
 
                 l.error("Agent flow failed, attempt {}, cause: {}", attempt, cause.message, cause)
@@ -107,7 +108,11 @@ class VoiceInputUseCase(
 
     suspend fun startRecording(scope: CoroutineScope, isListening: Boolean) {
         if (isListening) return
-        if (settingsProvider.saluteSpeechKey.isNullOrBlank()) {
+        if (!speechRecognitionProvider.enabled) {
+            emitVoiceRecognitionUnavailable()
+            return
+        }
+        if (speechRecognitionProvider.requiresVoiceKey && settingsProvider.saluteSpeechKey.isNullOrBlank()) {
             emitVoiceKeyMissing()
             return
         }
@@ -153,6 +158,12 @@ class VoiceInputUseCase(
 
     private suspend fun emitVoiceKeyMissing() {
         val msg = getString(Res.string.voice_error_missing_key)
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitVoiceRecognitionUnavailable() {
+        val msg = getString(Res.string.voice_error_recognition_unavailable)
         speechUseCase.queue(msg)
         emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }

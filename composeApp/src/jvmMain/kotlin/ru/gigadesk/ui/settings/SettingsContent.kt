@@ -45,8 +45,11 @@ import androidx.compose.ui.unit.sp
 import ru.gigadesk.giga.EmbeddingsModel
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
+import ru.gigadesk.giga.LlmBuildProfile
 import ru.gigadesk.ui.AppTheme
+import ru.gigadesk.ui.common.ApiKeyField
 import ru.gigadesk.ui.common.ApiKeyProvider
+import ru.gigadesk.ui.common.ApiKeysBuildProfile
 import ru.gigadesk.ui.common.configuredApiKeysCount
 import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
@@ -480,6 +483,17 @@ fun KeysSettingsContent(
         anthropicKey = state.anthropicKey,
         saluteSpeechKey = state.saluteSpeechKey,
     )
+    val supportsSaluteSpeech = ApiKeysBuildProfile.hasField(ApiKeyField.SALUTE_SPEECH)
+    val keysHintChat = if (ApiKeysBuildProfile.hasField(ApiKeyField.GIGA_CHAT)) {
+        Res.string.keys_hint_chat_ru_build
+    } else {
+        Res.string.keys_hint_chat_en_build
+    }
+    val keysHintVoice = if (supportsSaluteSpeech) {
+        Res.string.keys_hint_voice_required
+    } else {
+        Res.string.keys_hint_voice_unavailable
+    }
     SettingsSectionScreen(
         title = stringResource(Res.string.settings_section_keys),
         subtitle = stringResource(Res.string.settings_keys_subtitle),
@@ -502,12 +516,12 @@ fun KeysSettingsContent(
                         color = SettingsStrongTextColor
                     )
                     Text(
-                        text = stringResource(Res.string.keys_hint_chat),
+                        text = stringResource(keysHintChat),
                         style = MaterialTheme.typography.bodySmall,
                         color = SettingsHintColor
                     )
                     Text(
-                        text = stringResource(Res.string.keys_hint_voice),
+                        text = stringResource(keysHintVoice),
                         style = MaterialTheme.typography.bodySmall,
                         color = SettingsHintColor
                     )
@@ -515,40 +529,53 @@ fun KeysSettingsContent(
             }
 
 
+            if (ApiKeysBuildProfile.hasField(ApiKeyField.GIGA_CHAT)) {
+                LabeledTextField(
+                    label = stringResource(Res.string.label_key_gigachat),
+                    value = state.gigaChatKey,
+                    onValueChange = onGigaChatKeyInput,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (ApiKeysBuildProfile.hasField(ApiKeyField.QWEN_CHAT)) {
+                LabeledTextField(
+                    label = stringResource(Res.string.label_key_qwen),
+                    value = state.qwenChatKey,
+                    onValueChange = onQwenChatKeyInput,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (ApiKeysBuildProfile.hasField(ApiKeyField.AI_TUNNEL)) {
+                LabeledTextField(
+                    label = stringResource(Res.string.label_key_aitunnel),
+                    value = state.aiTunnelKey,
+                    onValueChange = onAiTunnelKeyInput,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (ApiKeysBuildProfile.hasField(ApiKeyField.ANTHROPIC)) {
+                LabeledTextField(
+                    label = stringResource(Res.string.label_key_anthropic),
+                    value = state.anthropicKey,
+                    onValueChange = onAnthropicKeyInput,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        if (supportsSaluteSpeech) {
+            SettingsGroupDivider()
+
             LabeledTextField(
-                label = stringResource(Res.string.label_key_gigachat),
-                value = state.gigaChatKey,
-                onValueChange = onGigaChatKeyInput,
-                modifier = Modifier.fillMaxWidth()
-            )
-            LabeledTextField(
-                label = stringResource(Res.string.label_key_qwen),
-                value = state.qwenChatKey,
-                onValueChange = onQwenChatKeyInput,
-                modifier = Modifier.fillMaxWidth()
-            )
-            LabeledTextField(
-                label = stringResource(Res.string.label_key_aitunnel),
-                value = state.aiTunnelKey,
-                onValueChange = onAiTunnelKeyInput,
-                modifier = Modifier.fillMaxWidth()
-            )
-            LabeledTextField(
-                label = stringResource(Res.string.label_key_anthropic),
-                value = state.anthropicKey,
-                onValueChange = onAnthropicKeyInput,
+                label = stringResource(Res.string.label_key_salutespeech),
+                value = state.saluteSpeechKey,
+                onValueChange = onSaluteSpeechKeyInput,
                 modifier = Modifier.fillMaxWidth()
             )
         }
-
-        SettingsGroupDivider()
-
-        LabeledTextField(
-            label = stringResource(Res.string.label_key_salutespeech),
-            value = state.saluteSpeechKey,
-            onValueChange = onSaluteSpeechKeyInput,
-            modifier = Modifier.fillMaxWidth()
-        )
 
         SettingsGroupDivider()
 
@@ -558,7 +585,7 @@ fun KeysSettingsContent(
                 style = MaterialTheme.typography.titleMedium,
                 color = SettingsStrongTextColor
             )
-            ApiKeyProvider.entries.forEach { provider ->
+            ApiKeysBuildProfile.providers.forEach { provider ->
                 ProviderLinkCard(
                     provider = provider,
                     onOpen = { onOpenProviderLink(provider) }
@@ -1343,6 +1370,7 @@ fun ModelDropdown(
     onModelSelected: (GigaModel) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val availableModels = remember { LlmBuildProfile.availableModels }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
@@ -1393,7 +1421,7 @@ fun ModelDropdown(
                     .background(SettingsFieldBackground, RoundedCornerShape(12.dp))
                     .border(1.dp, SettingsDefaultBorder, RoundedCornerShape(12.dp))
             ) {
-                GigaModel.entries.forEach { model ->
+                availableModels.forEach { model ->
                     DropdownMenuItem(
                         text = {
                             Text(

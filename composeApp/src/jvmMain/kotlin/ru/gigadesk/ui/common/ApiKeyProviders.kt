@@ -1,6 +1,8 @@
 package ru.gigadesk.ui.common
 
 import org.jetbrains.compose.resources.StringResource
+import ru.gigadesk.edition.BuildEdition
+import ru.gigadesk.edition.BuildEditionConfig
 import gigadesk.composeapp.generated.resources.Res
 import gigadesk.composeapp.generated.resources.*
 
@@ -36,13 +38,60 @@ enum class ApiKeyProvider(
     )
 }
 
+enum class ApiKeyField {
+    GIGA_CHAT,
+    QWEN_CHAT,
+    AI_TUNNEL,
+    ANTHROPIC,
+    SALUTE_SPEECH,
+}
+
+object ApiKeysBuildProfile {
+    val availableFields: Set<ApiKeyField> = when (BuildEditionConfig.current) {
+        BuildEdition.RU -> setOf(
+            ApiKeyField.GIGA_CHAT,
+            ApiKeyField.QWEN_CHAT,
+            ApiKeyField.AI_TUNNEL,
+            ApiKeyField.SALUTE_SPEECH,
+        )
+
+        BuildEdition.EN -> setOf(
+            ApiKeyField.QWEN_CHAT,
+            ApiKeyField.ANTHROPIC,
+        )
+    }
+
+    val providers: List<ApiKeyProvider> = when (BuildEditionConfig.current) {
+        BuildEdition.RU -> listOf(
+            ApiKeyProvider.SBER,
+            ApiKeyProvider.QWEN,
+            ApiKeyProvider.AI_TUNNEL,
+        )
+
+        BuildEdition.EN -> listOf(
+            ApiKeyProvider.QWEN,
+            ApiKeyProvider.ANTHROPIC,
+        )
+    }
+
+    fun hasField(field: ApiKeyField): Boolean = field in availableFields
+}
+
 fun configuredApiKeysCount(
     gigaChatKey: String,
     qwenChatKey: String,
     aiTunnelKey: String,
     anthropicKey: String,
     saluteSpeechKey: String,
-): Int = listOf(gigaChatKey, qwenChatKey, aiTunnelKey, anthropicKey, saluteSpeechKey).count { it.isNotBlank() }
+): Int = mapOf(
+    ApiKeyField.GIGA_CHAT to gigaChatKey,
+    ApiKeyField.QWEN_CHAT to qwenChatKey,
+    ApiKeyField.AI_TUNNEL to aiTunnelKey,
+    ApiKeyField.ANTHROPIC to anthropicKey,
+    ApiKeyField.SALUTE_SPEECH to saluteSpeechKey,
+).count { (field, key) ->
+    ApiKeysBuildProfile.hasField(field) && key.isNotBlank()
+}
 
 fun hasAnyConfiguredApiKey(
     gigaChatKey: String,

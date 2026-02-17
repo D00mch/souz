@@ -16,6 +16,7 @@ import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaResponse
+import ru.gigadesk.giga.LlmBuildProfile
 import ru.gigadesk.giga.LlmProvider
 import ru.gigadesk.service.telegram.TelegramAuthStep
 import ru.gigadesk.service.telegram.TelegramService
@@ -121,6 +122,7 @@ class SettingsViewModel(
                 setState { copy(safeModeEnabled = event.enabled) }
             }
             is SelectModel -> {
+                if (!LlmBuildProfile.isModelAvailable(event.model)) return
                 val newPrompt = graphBasedAgent.updateModel(event.model)
                 setState { copy(gigaModel = event.model, systemPrompt = newPrompt) }
                 fetchBalance()

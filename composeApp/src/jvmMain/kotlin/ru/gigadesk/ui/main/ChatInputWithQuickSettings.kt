@@ -84,7 +84,7 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import kotlin.math.max
-import ru.gigadesk.giga.GigaModel
+import ru.gigadesk.giga.LlmBuildProfile
 import gigadesk.composeapp.generated.resources.Res
 import gigadesk.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -164,7 +164,7 @@ internal fun ChatInputWithQuickSettings(
     }
 
     val modelOptions = remember {
-        GigaModel.entries.map { QuickOption(value = it.alias, label = it.displayName) }
+        LlmBuildProfile.availableModels.map { QuickOption(value = it.alias, label = it.displayName) }
     }
     val contextOptions = remember {
         ContextOptions.map { QuickOption(value = it, label = formatWithSpaces(it)) }

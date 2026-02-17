@@ -29,6 +29,13 @@ plugins {
     alias(libs.plugins.composeHotReload)
 }
 
+apply(from = "$projectDir/locality.gradle.kts")
+
+val edition = extra["edition"] as String
+val editionPackageName = extra["editionPackageName"] as String
+val editionBundleId = extra["editionBundleId"] as String
+val editionDockName = extra["editionDockName"] as String
+
 kotlin {
     jvm {
         testRuns.named("test") {
@@ -133,6 +140,7 @@ kotlin {
 compose.desktop {
     application {
         mainClass = "ru.gigadesk.MainKt"
+        jvmArgs("-Dgigadesk.edition=$edition")
 
         buildTypes {
             release {
@@ -144,13 +152,13 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "Союз"
+            packageName = editionPackageName
             packageVersion = "1.0.0"
 
             modules("java.naming") // native build crash without it
 
             macOS {
-                bundleID = "ru.gigadesk"
+                bundleID = editionBundleId
                 iconFile.set(File("src/jvmMain/resources/icon-light.icns"))
 
                 infoPlist {
@@ -166,9 +174,10 @@ compose.desktop {
             }
 
             // macOS dark mode support, works only on the release build, not in debug
+            jvmArgs("-Dgigadesk.edition=$edition")
             jvmArgs("-Dapple.awt.application.appearance=system")
             jvmArgs("-Xdock:icon=src/jvmMain/resources/icon-light.icns")
-            jvmArgs("-Xdock:name=Союз c ИИ")
+            jvmArgs("-Xdock:name=$editionDockName")
         }
     }
 }

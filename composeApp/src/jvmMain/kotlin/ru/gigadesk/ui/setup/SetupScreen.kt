@@ -39,13 +39,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.onEach
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.gigadesk.ui.AppTheme
+import ru.gigadesk.ui.common.ApiKeyField
 import ru.gigadesk.ui.common.ApiKeyProvider
-import ru.gigadesk.ui.common.configuredApiKeysCount
-import ru.gigadesk.ui.common.hasAnyConfiguredApiKey
+import ru.gigadesk.ui.common.ApiKeysBuildProfile
 import ru.gigadesk.ui.components.LabeledTextField
 import ru.gigadesk.ui.glassColors
 import ru.gigadesk.ui.main.RealLiquidGlassCard
@@ -104,6 +103,7 @@ fun SetupScreenContent(
 ) {
     LaunchedEffect(Unit) { onResizeRequest(SetupWindowSize) }
     val hasNoKeys = state.configuredKeysCount == 0
+    val supportsSaluteSpeech = ApiKeysBuildProfile.hasField(ApiKeyField.SALUTE_SPEECH)
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -148,45 +148,59 @@ fun SetupScreenContent(
 
                 Spacer(Modifier.height(4.dp))
 
-                LabeledTextField(
-                    label = stringResource(Res.string.label_key_gigachat),
-                    value = state.gigaChatKey,
-                    onValueChange = onGigaChatKeyInput,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (ApiKeysBuildProfile.hasField(ApiKeyField.GIGA_CHAT)) {
+                    LabeledTextField(
+                        label = stringResource(Res.string.label_key_gigachat),
+                        value = state.gigaChatKey,
+                        onValueChange = onGigaChatKeyInput,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
-                LabeledTextField(
-                    label = stringResource(Res.string.label_key_qwen),
-                    value = state.qwenChatKey,
-                    onValueChange = onQwenChatKeyInput,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (ApiKeysBuildProfile.hasField(ApiKeyField.QWEN_CHAT)) {
+                    LabeledTextField(
+                        label = stringResource(Res.string.label_key_qwen),
+                        value = state.qwenChatKey,
+                        onValueChange = onQwenChatKeyInput,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
-                LabeledTextField(
-                    label = stringResource(Res.string.label_key_aitunnel),
-                    value = state.aiTunnelKey,
-                    onValueChange = onAiTunnelKeyInput,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (ApiKeysBuildProfile.hasField(ApiKeyField.AI_TUNNEL)) {
+                    LabeledTextField(
+                        label = stringResource(Res.string.label_key_aitunnel),
+                        value = state.aiTunnelKey,
+                        onValueChange = onAiTunnelKeyInput,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
-                LabeledTextField(
-                    label = stringResource(Res.string.label_key_anthropic),
-                    value = state.anthropicKey,
-                    onValueChange = onAnthropicKeyInput,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (ApiKeysBuildProfile.hasField(ApiKeyField.ANTHROPIC)) {
+                    LabeledTextField(
+                        label = stringResource(Res.string.label_key_anthropic),
+                        value = state.anthropicKey,
+                        onValueChange = onAnthropicKeyInput,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
-                LabeledTextField(
-                    label = stringResource(Res.string.label_key_salutespeech),
-                    value = state.saluteSpeechKey,
-                    onValueChange = onSaluteSpeechKeyInput,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (supportsSaluteSpeech) {
+                    LabeledTextField(
+                        label = stringResource(Res.string.label_key_salutespeech),
+                        value = state.saluteSpeechKey,
+                        onValueChange = onSaluteSpeechKeyInput,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
                 Spacer(Modifier.height(4.dp))
 
                 Text(
-                    text = stringResource(Res.string.setup_hint_voice_required),
+                    text = if (supportsSaluteSpeech) {
+                        stringResource(Res.string.setup_hint_voice_required)
+                    } else {
+                        stringResource(Res.string.setup_hint_voice_unavailable)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.5f)
                 )
@@ -275,7 +289,7 @@ private fun KeyProvidersSection(
             color = MaterialTheme.glassColors.textPrimary
         )
 
-        ApiKeyProvider.entries.forEach { provider ->
+        ApiKeysBuildProfile.providers.forEach { provider ->
             ProviderLinkCard(
                 provider = provider,
                 onOpen = { onOpenProviderLink(provider) }

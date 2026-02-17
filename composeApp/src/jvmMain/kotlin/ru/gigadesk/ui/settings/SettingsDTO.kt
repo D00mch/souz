@@ -5,6 +5,7 @@ import ru.gigadesk.giga.EmbeddingsModel
 import ru.gigadesk.giga.DEFAULT_MAX_TOKENS
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
+import ru.gigadesk.giga.LlmBuildProfile
 import ru.gigadesk.tool.config.ToolSoundConfig
 import ru.gigadesk.ui.VMEvent
 import ru.gigadesk.ui.VMSideEffect
@@ -51,7 +52,7 @@ data class SettingsState(
     val useFewShotExamples: Boolean = false,
     val useStreaming: Boolean = false,
     val safeModeEnabled: Boolean = false,
-    val gigaModel: GigaModel = GigaModel.Max,
+    val gigaModel: GigaModel = LlmBuildProfile.defaultModel,
     val embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
     val systemPrompt: String = "",
     val requestTimeoutMillis: Long = 10_000L,

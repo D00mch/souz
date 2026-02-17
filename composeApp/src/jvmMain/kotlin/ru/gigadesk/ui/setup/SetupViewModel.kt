@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaModel
+import ru.gigadesk.giga.LlmBuildProfile
 import ru.gigadesk.giga.LlmProvider
 import ru.gigadesk.ui.BaseViewModel
 import ru.gigadesk.ui.common.configuredApiKeysCount
@@ -215,29 +216,20 @@ class SetupViewModel(
     ) {
         if (!startedWithoutAnyApiKeys) return
 
-        val preferredProvider = when {
-            gigaChatKey.isNotBlank() -> LlmProvider.GIGA
-            qwenChatKey.isNotBlank() -> LlmProvider.QWEN
-            anthropicKey.isNotBlank() -> LlmProvider.ANTHROPIC
-            aiTunnelKey.isNotBlank() -> LlmProvider.AI_TUNNEL
-            else -> return
-        }
+        val keysByProvider = mapOf(
+            LlmProvider.GIGA to gigaChatKey,
+            LlmProvider.QWEN to qwenChatKey,
+            LlmProvider.AI_TUNNEL to aiTunnelKey,
+            LlmProvider.ANTHROPIC to anthropicKey,
+        )
+        val preferredProvider = LlmBuildProfile.setupProviderPriority()
+            .firstOrNull { provider -> keysByProvider[provider].orEmpty().isNotBlank() }
+            ?: return
+
         settingsProvider.gigaModel = defaultSetupModelForProvider(preferredProvider)
     }
 
     private fun defaultSetupModelForProvider(provider: LlmProvider): GigaModel =
-        GigaModel.entries.singleOrNull { model ->
-            model.provider == provider && model.isDefaultSetupModel()
-        } ?: error("Default setup model is not configured for provider: $provider")
-
-    private fun GigaModel.isDefaultSetupModel(): Boolean = when (this) {
-        GigaModel.Max -> true
-        GigaModel.QwenMax -> true
-        GigaModel.AiTunnelClaudeHaiku -> true
-        GigaModel.AnthropicHaiku45 -> true
-        GigaModel.Lite, GigaModel.Pro, GigaModel.QwenFlash, GigaModel.QwenPlus, GigaModel.Qwen3OpenSource,
-        GigaModel.AiTunnelGpt52Codex, GigaModel.AiTunnelGpt5Nano, GigaModel.AiTunnelGemini3Flash,
-        GigaModel.AiTunnelClaudeOpus, GigaModel.AiTunnelGpt4oMini, GigaModel.AiTunnelGrok,
-        GigaModel.AnthropicSonnet45, GigaModel.AnthropicOpus45, GigaModel.AnthropicOpus46  -> false
-    }
+        LlmBuildProfile.defaultModelForProvider(provider)
+            ?: error("Default setup model is not configured for provider: $provider")
 }

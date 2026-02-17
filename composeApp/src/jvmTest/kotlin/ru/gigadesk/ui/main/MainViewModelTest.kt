@@ -34,6 +34,7 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import gigadesk.composeapp.generated.resources.Res
 import gigadesk.composeapp.generated.resources.onboarding_display_text
+import gigadesk.composeapp.generated.resources.onboarding_input_permission_request
 import org.jetbrains.compose.resources.getString
 import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.agent.engine.AgentContext
@@ -51,6 +52,8 @@ import ru.gigadesk.tool.ToolPermissionBroker
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.ui.main.usecases.FinderPathExtractor
 import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
+import ru.gigadesk.ui.main.usecases.SaluteSpeechRecognitionProvider
+import ru.gigadesk.ui.main.usecases.SpeechRecognitionProvider
 import ru.gigadesk.ui.main.usecases.VoiceInputUseCase
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
@@ -232,12 +235,13 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
+            val expectedPermissionMessage = getString(Res.string.onboarding_input_permission_request)
 
             val permissionState = awaitState(viewModel) { state ->
-                state.statusMessage.contains("мониторингу ввода")
+                state.statusMessage == expectedPermissionMessage
             }
 
-            assertTrue(permissionState.statusMessage.contains("приложение перезапустится автоматически"))
+            assertEquals(expectedPermissionMessage, permissionState.statusMessage)
         } finally {
             harness.clear()
         }
@@ -355,6 +359,7 @@ class MainViewModelTest {
         val di = DI {
             bindSingleton { graphAgent }
             bindSingleton { gigaVoiceApi }
+            bindSingleton<SpeechRecognitionProvider> { SaluteSpeechRecognitionProvider(instance()) }
             bindSingleton { desktopInfoRepository }
             bindSingleton<SettingsProvider> { settingsProvider }
             bindSingleton { say }

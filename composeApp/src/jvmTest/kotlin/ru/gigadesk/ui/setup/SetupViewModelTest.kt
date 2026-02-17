@@ -16,6 +16,8 @@ import org.kodein.di.bindSingleton
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.giga.GigaModel
+import ru.gigadesk.giga.LlmBuildProfile
+import ru.gigadesk.giga.LlmProvider
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -130,7 +132,12 @@ class SetupViewModelTest {
         viewModel.send(SetupEvent.InputAiTunnelKey("ait-token"))
         advanceUntilIdle()
 
-        assertEquals(GigaModel.AiTunnelClaudeHaiku, settingsProvider.gigaModel)
+        val expectedModel = if (supportsProvider(LlmProvider.AI_TUNNEL)) {
+            GigaModel.AiTunnelClaudeHaiku
+        } else {
+            GigaModel.Max
+        }
+        assertEquals(expectedModel, settingsProvider.gigaModel)
     }
 
     @Test
@@ -150,7 +157,12 @@ class SetupViewModelTest {
         viewModel.send(SetupEvent.InputAnthropicKey("anthropic-token"))
         advanceUntilIdle()
 
-        assertEquals(GigaModel.AnthropicHaiku45, settingsProvider.gigaModel)
+        val expectedModel = if (supportsProvider(LlmProvider.ANTHROPIC)) {
+            GigaModel.AnthropicHaiku45
+        } else {
+            GigaModel.Max
+        }
+        assertEquals(expectedModel, settingsProvider.gigaModel)
     }
 
     @Test
@@ -173,7 +185,12 @@ class SetupViewModelTest {
 
         viewModel.send(SetupEvent.InputGigaChatKey("giga-token"))
         advanceUntilIdle()
-        assertEquals(GigaModel.Max, settingsProvider.gigaModel)
+        val expectedModel = if (supportsProvider(LlmProvider.GIGA)) {
+            GigaModel.Max
+        } else {
+            GigaModel.QwenMax
+        }
+        assertEquals(expectedModel, settingsProvider.gigaModel)
     }
 
     @Test
@@ -203,6 +220,9 @@ class SetupViewModelTest {
         }
         return SetupViewModel(di)
     }
+
+    private fun supportsProvider(provider: LlmProvider): Boolean =
+        LlmBuildProfile.defaultModelForProvider(provider) != null
 
     private fun settingsProviderStub(
         giga: String,
