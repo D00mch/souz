@@ -271,6 +271,10 @@
     <string name="permission_move_file">Перемещаем файл?</string>
     <string name="permission_delete_file">Удаляем файл?</string>
     <string name="permission_delete_note">Удаляем заметку?</string>
+    <string name="permission_create_note">Создаем заметку?</string>
+    <string name="permission_telegram_send">Отправляем сообщение в Telegram?</string>
+    <string name="permission_telegram_forward">Пересылаем сообщение в Telegram?</string>
+    <string name="permission_telegram_set_state">Применяем действие к чату Telegram?</string>
 
     <!-- Telegram Login -->
     <string name="telegram_step_phone">Шаг 1: укажите номер телефона</string>

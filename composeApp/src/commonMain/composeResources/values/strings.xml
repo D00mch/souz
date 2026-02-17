@@ -271,6 +271,10 @@
     <string name="permission_move_file">Move file?</string>
     <string name="permission_delete_file">Delete file?</string>
     <string name="permission_delete_note">Delete note?</string>
+    <string name="permission_create_note">Create note?</string>
+    <string name="permission_telegram_send">Send Telegram message?</string>
+    <string name="permission_telegram_forward">Forward Telegram message?</string>
+    <string name="permission_telegram_set_state">Apply Telegram chat action?</string>
 
     <!-- Telegram Login -->
     <string name="telegram_step_phone">Step 1: enter phone number</string>

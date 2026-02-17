@@ -5,10 +5,18 @@ import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
+import ru.gigadesk.tool.ToolPermissionBroker
+import ru.gigadesk.tool.ToolPermissionResult
 import ru.gigadesk.tool.ToolRunBashCommand
 import ru.gigadesk.tool.ToolSetup
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
-class ToolCreateNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolCreateNote.Input> {
+class ToolCreateNote(
+    private val bash: ToolRunBashCommand,
+    private val permissionBroker: ToolPermissionBroker? = null,
+) : ToolSetup<ToolCreateNote.Input> {
     data class Input(
         @InputParamDescription("Text of note")
         val noteText: String
@@ -26,6 +34,16 @@ class ToolCreateNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolCreat
             "result" to ReturnProperty("string", "Operation status")
         )
     )
+
+    override suspend fun suspendInvoke(input: Input): String {
+        val result = permissionBroker?.requestPermission(
+            getString(Res.string.permission_create_note),
+            linkedMapOf("noteText" to input.noteText)
+        )
+        if (result is ToolPermissionResult.No) return result.msg
+        return invoke(input)
+    }
+
     override fun invoke(input: Input): String {
         if (input.noteText.isBlank()) throw BadInputException("Note text cannot be empty")
         bash.invoke(
