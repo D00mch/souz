@@ -30,6 +30,12 @@ enum class ApiKeyProvider(
         description = Res.string.provider_anthropic_desc,
         details = Res.string.provider_anthropic_details,
     ),
+    OPENAI(
+        url = "https://platform.openai.com/api-keys",
+        title = Res.string.provider_openai_title,
+        description = Res.string.provider_openai_desc,
+        details = Res.string.provider_openai_details,
+    ),
     SBER(
         title = Res.string.provider_sber_title,
         url = "https://developers.sber.ru/studio/workspaces",
@@ -43,6 +49,7 @@ enum class ApiKeyField {
     QWEN_CHAT,
     AI_TUNNEL,
     ANTHROPIC,
+    OPENAI,
     SALUTE_SPEECH,
 }
 
@@ -58,6 +65,7 @@ object ApiKeysBuildProfile {
         BuildEdition.EN -> setOf(
             ApiKeyField.QWEN_CHAT,
             ApiKeyField.ANTHROPIC,
+            ApiKeyField.OPENAI,
         )
     }
 
@@ -69,6 +77,7 @@ object ApiKeysBuildProfile {
         )
 
         BuildEdition.EN -> listOf(
+            ApiKeyProvider.OPENAI,
             ApiKeyProvider.QWEN,
             ApiKeyProvider.ANTHROPIC,
         )
@@ -82,12 +91,14 @@ fun configuredApiKeysCount(
     qwenChatKey: String,
     aiTunnelKey: String,
     anthropicKey: String,
+    openaiKey: String,
     saluteSpeechKey: String,
 ): Int = mapOf(
     ApiKeyField.GIGA_CHAT to gigaChatKey,
     ApiKeyField.QWEN_CHAT to qwenChatKey,
     ApiKeyField.AI_TUNNEL to aiTunnelKey,
     ApiKeyField.ANTHROPIC to anthropicKey,
+    ApiKeyField.OPENAI to openaiKey,
     ApiKeyField.SALUTE_SPEECH to saluteSpeechKey,
 ).count { (field, key) ->
     ApiKeysBuildProfile.hasField(field) && key.isNotBlank()
@@ -98,5 +109,6 @@ fun hasAnyConfiguredApiKey(
     qwenChatKey: String,
     aiTunnelKey: String,
     anthropicKey: String,
+    openaiKey: String,
     saluteSpeechKey: String,
-): Boolean = configuredApiKeysCount(gigaChatKey, qwenChatKey, aiTunnelKey, anthropicKey, saluteSpeechKey) > 0
+): Boolean = configuredApiKeysCount(gigaChatKey, qwenChatKey, aiTunnelKey, anthropicKey, openaiKey, saluteSpeechKey) > 0

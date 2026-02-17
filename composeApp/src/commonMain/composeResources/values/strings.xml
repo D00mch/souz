@@ -61,7 +61,7 @@
     <string name="keys_configured_count">Configured keys: %d</string>
     <string name="keys_hint_chat">One key is enough to chat.</string>
     <string name="keys_hint_chat_ru_build">One key is enough to chat: GigaChat, Qwen, or AI Tunnel.</string>
-    <string name="keys_hint_chat_en_build">One key is enough to chat: Qwen or Anthropic.</string>
+    <string name="keys_hint_chat_en_build">One key is enough to chat: OpenAI, Qwen, or Anthropic.</string>
     <string name="keys_hint_voice">Voice commands depend on build capabilities.</string>
     <string name="keys_hint_voice_required">For voice commands, a SaluteSpeech key from Sber cabinet is required.</string>
     <string name="keys_hint_voice_unavailable">Voice commands are not available in this build yet.</string>
@@ -69,6 +69,7 @@
     <string name="label_key_qwen">Qwen Key</string>
     <string name="label_key_aitunnel">AI Tunnel Key</string>
     <string name="label_key_anthropic">Anthropic Key</string>
+    <string name="label_key_openai">OpenAI Key</string>
     <string name="label_key_salutespeech">SaluteSpeech Key</string>
     <string name="header_where_to_get_keys">Where to get keys</string>
     
@@ -88,6 +89,10 @@
     <string name="provider_anthropic_title">Anthropic Console</string>
     <string name="provider_anthropic_desc">Anthropic dashboard for managing Claude API keys.</string>
     <string name="provider_anthropic_details">Get an API key for direct access to Claude models.</string>
+
+    <string name="provider_openai_title">OpenAI Platform</string>
+    <string name="provider_openai_desc">OpenAI dashboard for managing API keys and usage.</string>
+    <string name="provider_openai_details">Use this key for direct GPT-5 model access.</string>
 
     <!-- Functions Settings -->
     <string name="setting_fewshot_title">Few-Shot Examples</string>
@@ -255,6 +260,7 @@
     <string name="error_balance_unavailable_qwen">Balance unavailable for Qwen</string>
     <string name="error_balance_unavailable_aitunnel">Balance unavailable for AI Tunnel</string>
     <string name="error_balance_unavailable_anthropic">Balance unavailable for Anthropic</string>
+    <string name="error_balance_unavailable_openai">Balance unavailable for OpenAI</string>
     <string name="error_failed_send_logs">Failed to send logs</string>
     <string name="support_email_subject">Gigadesk logs</string>
     <string name="support_email_body">Hello! Attached are the application log files.</string>

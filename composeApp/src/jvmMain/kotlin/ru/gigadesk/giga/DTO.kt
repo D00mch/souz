@@ -112,6 +112,7 @@ enum class LlmProvider {
     QWEN,
     AI_TUNNEL,
     ANTHROPIC,
+    OPENAI,
 }
 
 enum class EmbeddingsProvider {
@@ -139,6 +140,9 @@ enum class GigaModel(
     AiTunnelClaudeOpus("AiT.claude-opus-4.6", "claude-opus-4.6", LlmProvider.AI_TUNNEL),
     AiTunnelClaudeHaiku("AiT.claude-haiku-4.5", "claude-haiku-4.5", LlmProvider.AI_TUNNEL),
     AiTunnelGrok("AiT.grok-4.1-fast", "grok-4.1-fast", LlmProvider.AI_TUNNEL),
+    OpenAIGpt52("OpenAI GPT-5.2", "gpt-5.2", LlmProvider.OPENAI),
+    OpenAIGpt5Mini("OpenAI GPT-5 mini", "gpt-5-mini", LlmProvider.OPENAI),
+    OpenAIGpt5Nano("OpenAI GPT-5 nano", "gpt-5-nano", LlmProvider.OPENAI),
     AnthropicOpus45("Claude Opus 4.5", "claude-opus-4-5", LlmProvider.ANTHROPIC),
     AnthropicOpus46("Claude Opus 4.6", "claude-opus-4-6", LlmProvider.ANTHROPIC),
     AnthropicSonnet45("Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", LlmProvider.ANTHROPIC),

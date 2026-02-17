@@ -6,6 +6,7 @@ import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.llms.AiTunnelChatAPI
 import ru.gigadesk.llms.AnthropicChatAPI
 import ru.gigadesk.giga.TokenLogging
+import ru.gigadesk.llms.OpenAIChatAPI
 import ru.gigadesk.llms.QwenChatAPI
 
 fun GigaRestChatAPI.getHttpClient(): HttpClient {
@@ -55,6 +56,19 @@ fun AnthropicChatAPI.getHttpClient(): HttpClient {
 
 fun AnthropicChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
     val tokenLoggingField = AnthropicChatAPI::class.java.getDeclaredField("tokenLogging")
+    tokenLoggingField.isAccessible = true
+    val tokenLogging = tokenLoggingField.get(this) as? TokenLogging ?: return zeroUsage()
+    return tokenLogging.sessionTokenUsage()
+}
+
+fun OpenAIChatAPI.getHttpClient(): HttpClient {
+    val field = OpenAIChatAPI::class.java.getDeclaredField("client")
+    field.isAccessible = true
+    return field.get(this) as HttpClient
+}
+
+fun OpenAIChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
+    val tokenLoggingField = OpenAIChatAPI::class.java.getDeclaredField("tokenLogging")
     tokenLoggingField.isAccessible = true
     val tokenLogging = tokenLoggingField.get(this) as? TokenLogging ?: return zeroUsage()
     return tokenLogging.sessionTokenUsage()

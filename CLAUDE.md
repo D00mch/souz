@@ -22,7 +22,7 @@ Primary stack:
 
 ### Features
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
-- **Multi-model LLM integrations** for GigaChat (REST/gRPC/voice), Qwen, AiTunnel, and Anthropic Claude APIs.
+- **Multi-model LLM integrations** for GigaChat (REST/gRPC/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Edition-aware builds** (`ru`/`en`) with build-profile based provider/model availability and packaging metadata.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop toolset**: files, browser, calendar, mail, notes, desktop automation, analytics, and presentations.

@@ -28,6 +28,7 @@ class SetupViewModel(
         qwenChatKey = settingsProvider.qwenChatKey.orEmpty(),
         aiTunnelKey = settingsProvider.aiTunnelKey.orEmpty(),
         anthropicKey = settingsProvider.anthropicKey.orEmpty(),
+        openaiKey = settingsProvider.openaiKey.orEmpty(),
         saluteSpeechKey = settingsProvider.saluteSpeechKey.orEmpty(),
     )
 
@@ -37,12 +38,14 @@ class SetupViewModel(
             val qwenChatKey = settingsProvider.qwenChatKey.orEmpty()
             val aiTunnelKey = settingsProvider.aiTunnelKey.orEmpty()
             val anthropicKey = settingsProvider.anthropicKey.orEmpty()
+            val openAiKey = settingsProvider.openaiKey.orEmpty()
             val saluteSpeechKey = settingsProvider.saluteSpeechKey.orEmpty()
             updateKeysState(
                 gigaChatKey = gigaChatKey,
                 qwenChatKey = qwenChatKey,
                 aiTunnelKey = aiTunnelKey,
                 anthropicKey = anthropicKey,
+                openAiKey = openAiKey,
                 saluteSpeechKey = saluteSpeechKey,
             )
             val hasAnyConfiguredKey = hasAnyConfiguredApiKey(
@@ -50,6 +53,7 @@ class SetupViewModel(
                 qwenChatKey = qwenChatKey,
                 aiTunnelKey = aiTunnelKey,
                 anthropicKey = anthropicKey,
+                openaiKey = openAiKey,
                 saluteSpeechKey = saluteSpeechKey,
             )
             setState {
@@ -68,12 +72,14 @@ class SetupViewModel(
                 val qwenChatKey = currentState.qwenChatKey
                 val aiTunnelKey = currentState.aiTunnelKey
                 val anthropicKey = currentState.anthropicKey
+                val openAiKey = currentState.openaiKey
                 val saluteSpeechKey = currentState.saluteSpeechKey
                 updateKeysState(
                     gigaChatKey = event.key,
                     qwenChatKey = qwenChatKey,
                     aiTunnelKey = aiTunnelKey,
                     anthropicKey = anthropicKey,
+                    openAiKey = openAiKey,
                     saluteSpeechKey = saluteSpeechKey,
                 )
                 tryToChooseDefaultMode(
@@ -81,6 +87,7 @@ class SetupViewModel(
                     qwenChatKey = qwenChatKey,
                     aiTunnelKey = aiTunnelKey,
                     anthropicKey = anthropicKey,
+                    openAiKey = openAiKey,
                 )
             }
 
@@ -89,12 +96,14 @@ class SetupViewModel(
                 val gigaChatKey = currentState.gigaChatKey
                 val aiTunnelKey = currentState.aiTunnelKey
                 val anthropicKey = currentState.anthropicKey
+                val openAiKey = currentState.openaiKey
                 val saluteSpeechKey = currentState.saluteSpeechKey
                 updateKeysState(
                     gigaChatKey = gigaChatKey,
                     qwenChatKey = event.key,
                     aiTunnelKey = aiTunnelKey,
                     anthropicKey = anthropicKey,
+                    openAiKey = openAiKey,
                     saluteSpeechKey = saluteSpeechKey,
                 )
                 tryToChooseDefaultMode(
@@ -102,6 +111,7 @@ class SetupViewModel(
                     qwenChatKey = event.key,
                     aiTunnelKey = aiTunnelKey,
                     anthropicKey = anthropicKey,
+                    openAiKey = openAiKey,
                 )
             }
 
@@ -110,12 +120,14 @@ class SetupViewModel(
                 val gigaChatKey = currentState.gigaChatKey
                 val qwenChatKey = currentState.qwenChatKey
                 val anthropicKey = currentState.anthropicKey
+                val openAiKey = currentState.openaiKey
                 val saluteSpeechKey = currentState.saluteSpeechKey
                 updateKeysState(
                     gigaChatKey = gigaChatKey,
                     qwenChatKey = qwenChatKey,
                     aiTunnelKey = event.key,
                     anthropicKey = anthropicKey,
+                    openAiKey = openAiKey,
                     saluteSpeechKey = saluteSpeechKey,
                 )
                 tryToChooseDefaultMode(
@@ -123,6 +135,7 @@ class SetupViewModel(
                     qwenChatKey = qwenChatKey,
                     aiTunnelKey = event.key,
                     anthropicKey = anthropicKey,
+                    openAiKey = openAiKey,
                 )
             }
 
@@ -131,12 +144,14 @@ class SetupViewModel(
                 val gigaChatKey = currentState.gigaChatKey
                 val qwenChatKey = currentState.qwenChatKey
                 val aiTunnelKey = currentState.aiTunnelKey
+                val openAiKey = currentState.openaiKey
                 val saluteSpeechKey = currentState.saluteSpeechKey
                 updateKeysState(
                     gigaChatKey = gigaChatKey,
                     qwenChatKey = qwenChatKey,
                     aiTunnelKey = aiTunnelKey,
                     anthropicKey = event.key,
+                    openAiKey = openAiKey,
                     saluteSpeechKey = saluteSpeechKey,
                 )
                 tryToChooseDefaultMode(
@@ -144,6 +159,31 @@ class SetupViewModel(
                     qwenChatKey = qwenChatKey,
                     aiTunnelKey = aiTunnelKey,
                     anthropicKey = event.key,
+                    openAiKey = openAiKey,
+                )
+            }
+
+            is SetupEvent.InputOpenAiKey -> {
+                settingsProvider.openaiKey = event.key
+                val gigaChatKey = currentState.gigaChatKey
+                val qwenChatKey = currentState.qwenChatKey
+                val aiTunnelKey = currentState.aiTunnelKey
+                val anthropicKey = currentState.anthropicKey
+                val saluteSpeechKey = currentState.saluteSpeechKey
+                updateKeysState(
+                    gigaChatKey = gigaChatKey,
+                    qwenChatKey = qwenChatKey,
+                    aiTunnelKey = aiTunnelKey,
+                    anthropicKey = anthropicKey,
+                    openAiKey = event.key,
+                    saluteSpeechKey = saluteSpeechKey,
+                )
+                tryToChooseDefaultMode(
+                    gigaChatKey = gigaChatKey,
+                    qwenChatKey = qwenChatKey,
+                    aiTunnelKey = aiTunnelKey,
+                    anthropicKey = anthropicKey,
+                    openAiKey = event.key,
                 )
             }
 
@@ -154,6 +194,7 @@ class SetupViewModel(
                     qwenChatKey = currentState.qwenChatKey,
                     aiTunnelKey = currentState.aiTunnelKey,
                     anthropicKey = currentState.anthropicKey,
+                    openAiKey = currentState.openaiKey,
                     saluteSpeechKey = event.key,
                 )
             }
@@ -179,6 +220,7 @@ class SetupViewModel(
         qwenChatKey: String,
         aiTunnelKey: String,
         anthropicKey: String,
+        openAiKey: String,
         saluteSpeechKey: String,
     ) {
         val configuredKeysCount = configuredApiKeysCount(
@@ -186,6 +228,7 @@ class SetupViewModel(
             qwenChatKey = qwenChatKey,
             aiTunnelKey = aiTunnelKey,
             anthropicKey = anthropicKey,
+            openaiKey = openAiKey,
             saluteSpeechKey = saluteSpeechKey,
         )
         setState {
@@ -194,6 +237,7 @@ class SetupViewModel(
                 qwenChatKey = qwenChatKey,
                 aiTunnelKey = aiTunnelKey,
                 anthropicKey = anthropicKey,
+                openaiKey = openAiKey,
                 saluteSpeechKey = saluteSpeechKey,
                 configuredKeysCount = configuredKeysCount,
                 canProceed = configuredKeysCount > 0
@@ -213,6 +257,7 @@ class SetupViewModel(
         qwenChatKey: String,
         aiTunnelKey: String,
         anthropicKey: String,
+        openAiKey: String,
     ) {
         if (!startedWithoutAnyApiKeys) return
 
@@ -221,6 +266,7 @@ class SetupViewModel(
             LlmProvider.QWEN to qwenChatKey,
             LlmProvider.AI_TUNNEL to aiTunnelKey,
             LlmProvider.ANTHROPIC to anthropicKey,
+            LlmProvider.OPENAI to openAiKey,
         )
         val preferredProvider = LlmBuildProfile.setupProviderPriority()
             .firstOrNull { provider -> keysByProvider[provider].orEmpty().isNotBlank() }

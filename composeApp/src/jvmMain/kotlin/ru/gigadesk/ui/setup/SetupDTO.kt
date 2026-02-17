@@ -10,6 +10,7 @@ data class SetupState(
     val qwenChatKey: String = "",
     val aiTunnelKey: String = "",
     val anthropicKey: String = "",
+    val openaiKey: String = "",
     val saluteSpeechKey: String = "",
     val configuredKeysCount: Int = 0,
     val canProceed: Boolean = false,
@@ -21,6 +22,7 @@ sealed interface SetupEvent : VMEvent {
     data class InputQwenChatKey(val key: String) : SetupEvent
     data class InputAiTunnelKey(val key: String) : SetupEvent
     data class InputAnthropicKey(val key: String) : SetupEvent
+    data class InputOpenAiKey(val key: String) : SetupEvent
     data class InputSaluteSpeechKey(val key: String) : SetupEvent
     data class OpenProviderLink(val provider: ApiKeyProvider) : SetupEvent
     object ChooseVoice : SetupEvent
