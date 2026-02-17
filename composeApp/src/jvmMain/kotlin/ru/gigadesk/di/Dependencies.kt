@@ -127,7 +127,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolSoundConfigDiff(ConfigStore) }
     bindSingleton { ToolInstructionStore(ConfigStore, instance()) }
     bindSingleton { ToolOpenNote(ToolRunBashCommand) }
-    bindSingleton { ToolCreateNote(ToolRunBashCommand) }
+    bindSingleton { ToolCreateNote(ToolRunBashCommand, instance()) }
     bindSingleton { ToolDeleteNote(ToolRunBashCommand, instance()) }
     bindSingleton { ToolListNotes(ToolRunBashCommand) }
     bindSingleton { ToolSearchNotes(ToolRunBashCommand) }
@@ -157,9 +157,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolPresentationRead() }
     bindSingleton { ToolTelegramReadInbox(instance()) }
     bindSingleton { ToolTelegramGetHistory(instance()) }
-    bindSingleton { ToolTelegramSetState(instance()) }
-    bindSingleton { ToolTelegramSend(instance()) }
-    bindSingleton { ToolTelegramForward(instance()) }
+    bindSingleton { ToolTelegramSetState(instance(), instance()) }
+    bindSingleton { ToolTelegramSend(instance(), instance()) }
+    bindSingleton { ToolTelegramForward(instance(), instance()) }
     bindSingleton { ToolTelegramSearch(instance()) }
     bindSingleton { ToolTelegramSavedMessages(instance()) }
 

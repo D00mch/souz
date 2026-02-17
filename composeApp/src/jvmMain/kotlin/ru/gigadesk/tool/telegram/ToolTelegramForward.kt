@@ -11,10 +11,16 @@ import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
+import ru.gigadesk.tool.ToolPermissionBroker
+import ru.gigadesk.tool.ToolPermissionResult
 import ru.gigadesk.tool.ToolSetup
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
 class ToolTelegramForward(
     private val telegramService: TelegramService,
+    private val permissionBroker: ToolPermissionBroker? = null,
 ) : ToolSetup<ToolTelegramForward.Input> {
     private val settingsProvider: SettingsProvider by lazy { SettingsProviderImpl(ConfigStore) }
 
@@ -62,6 +68,16 @@ class ToolTelegramForward(
                 "SafeMode enabled: ask user confirmation and repeat call with confirmed=true"
             )
         }
+
+        val result = permissionBroker?.requestPermission(
+            getString(Res.string.permission_telegram_forward),
+            linkedMapOf(
+                "fromChat" to input.fromChat,
+                "toChat" to input.toChat,
+                "messageId" to input.messageId,
+            )
+        )
+        if (result is ToolPermissionResult.No) return result.msg
 
         val forwarded = runCatching {
             telegramService.forwardMessage(input.fromChat, input.toChat, input.messageId)

@@ -8,10 +8,16 @@ import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
+import ru.gigadesk.tool.ToolPermissionBroker
+import ru.gigadesk.tool.ToolPermissionResult
 import ru.gigadesk.tool.ToolSetup
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
 class ToolTelegramSend(
     private val telegramService: TelegramService,
+    private val permissionBroker: ToolPermissionBroker? = null,
 ) : ToolSetup<ToolTelegramSend.Input> {
 
     data class Input(
@@ -47,6 +53,15 @@ class ToolTelegramSend(
         if (input.text.isBlank()) {
             throw BadInputException("text is required")
         }
+
+        val result = permissionBroker?.requestPermission(
+            getString(Res.string.permission_telegram_send),
+            linkedMapOf(
+                "targetName" to input.targetName,
+                "text" to input.text,
+            )
+        )
+        if (result is ToolPermissionResult.No) return result.msg
 
         val sent = runCatching {
             telegramService.sendMessageToTarget(input.targetName, input.text)

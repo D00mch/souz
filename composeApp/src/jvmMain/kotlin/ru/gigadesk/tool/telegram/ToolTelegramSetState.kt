@@ -12,10 +12,16 @@ import ru.gigadesk.tool.FewShotExample
 import ru.gigadesk.tool.InputParamDescription
 import ru.gigadesk.tool.ReturnParameters
 import ru.gigadesk.tool.ReturnProperty
+import ru.gigadesk.tool.ToolPermissionBroker
+import ru.gigadesk.tool.ToolPermissionResult
 import ru.gigadesk.tool.ToolSetup
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
 class ToolTelegramSetState(
     private val telegramService: TelegramService,
+    private val permissionBroker: ToolPermissionBroker? = null,
 ) : ToolSetup<ToolTelegramSetState.Input> {
     private val settingsProvider: SettingsProvider by lazy { SettingsProviderImpl(ConfigStore) }
 
@@ -65,6 +71,15 @@ class ToolTelegramSetState(
                 "SafeMode enabled: ask user confirmation and repeat call with confirmed=true"
             )
         }
+
+        val result = permissionBroker?.requestPermission(
+            getString(Res.string.permission_telegram_set_state),
+            linkedMapOf(
+                "chatName" to input.chatName,
+                "action" to input.action.name,
+            )
+        )
+        if (result is ToolPermissionResult.No) return result.msg
 
         val action = when (input.action) {
             Action.Mute -> TelegramChatAction.Mute
