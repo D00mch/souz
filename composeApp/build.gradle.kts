@@ -140,6 +140,7 @@ kotlin {
             implementation(libs.jackson)
             implementation(libs.logback)
             implementation(libs.slfj)
+            implementation(libs.log4j.to.slf4j)
 
             // ktor client (core + cio + logging + auth + content-negotiation + serialization)
             implementation(libs.bundles.ktorClient)
