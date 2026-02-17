@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.Test
+import org.gradle.process.JavaForkOptions
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 fun tdlightNativeClassifier(): String {
@@ -29,12 +31,58 @@ plugins {
     alias(libs.plugins.composeHotReload)
 }
 
-apply(from = "$projectDir/locality.gradle.kts")
+val explicitEdition = providers.gradleProperty("edition").orNull?.trim()?.lowercase().orEmpty().ifBlank { null }
+if (explicitEdition != null) {
+    require(explicitEdition in setOf("ru", "en")) {
+        "Unsupported edition '$explicitEdition'. Use -Pedition=ru or -Pedition=en."
+    }
+}
 
-val edition = extra["edition"] as String
-val editionPackageName = extra["editionPackageName"] as String
-val editionBundleId = extra["editionBundleId"] as String
-val editionDockName = extra["editionDockName"] as String
+val requestedTasks = gradle.startParameter.taskNames
+val ruTaskRequested = requestedTasks.any { it.endsWith("packageRuReleaseDmg") }
+val enTaskRequested = requestedTasks.any { it.endsWith("packageEnReleaseDmg") }
+
+val inferredEdition = when {
+    ruTaskRequested && enTaskRequested -> {
+        error("Cannot invoke packageRuReleaseDmg and packageEnReleaseDmg in a single Gradle run.")
+    }
+
+    ruTaskRequested -> "ru"
+    enTaskRequested -> "en"
+    else -> null
+}
+
+if (explicitEdition != null && inferredEdition != null && explicitEdition != inferredEdition) {
+    error("Conflicting edition: -Pedition=$explicitEdition but requested task implies $inferredEdition.")
+}
+
+val edition = explicitEdition ?: inferredEdition ?: "ru"
+
+val editionPackageName = if (edition == "ru") "Союз ИИ" else "Souz AI"
+val editionBundleId = if (edition == "ru") "ru.gigadesk" else "en.gigadesk"
+val editionDockName = if (edition == "ru") "Союз c ИИ" else "Souz AI"
+
+tasks.matching { it.name == "jvmRun" }.configureEach {
+    if (this is JavaForkOptions) {
+        systemProperty("gigadesk.edition", edition)
+    }
+}
+
+tasks.withType<Test>().configureEach {
+    systemProperty("gigadesk.edition", edition)
+}
+
+tasks.register("packageRuReleaseDmg") {
+    group = "distribution"
+    description = "Build RU release DMG."
+    dependsOn("packageReleaseDmg")
+}
+
+tasks.register("packageEnReleaseDmg") {
+    group = "distribution"
+    description = "Build EN release DMG."
+    dependsOn("packageReleaseDmg")
+}
 
 kotlin {
     jvm {
