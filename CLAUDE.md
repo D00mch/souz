@@ -1,5 +1,7 @@
 # Gigadesk
 
+Keep this file updated whenever project behavior, architecture, build logic, or provider setup changes.
+
 ## General Info
 Gigadesk is a Kotlin Multiplatform desktop AI assistant built with Compose for Desktop.
 The repository is a multi-module Gradle project:
@@ -21,6 +23,7 @@ Primary stack:
 ### Features
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
 - **Multi-model LLM integrations** for GigaChat (REST/gRPC/voice), Qwen, AiTunnel, and Anthropic Claude APIs.
+- **Edition-aware builds** (`ru`/`en`) with build-profile based provider/model availability and packaging metadata.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop toolset**: files, browser, calendar, mail, notes, desktop automation, analytics, and presentations.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
@@ -49,7 +52,8 @@ Primary stack:
 │       │   │       ├── audio/          # Audio capture/playback utilities
 │       │   │       ├── db/             # Local config/data extraction/vector DB layer
 │       │   │       ├── di/             # Dependency wiring (DI container setup)
-│       │   │       ├── giga/           # GigaChat auth/chat/voice clients and model factory
+│       │   │       ├── edition/        # Runtime build edition parsing/config (RU/EN)
+│       │   │       ├── giga/           # GigaChat auth/chat/voice clients and edition-aware model profile
 │       │   │       ├── image/          # Image utility helpers
 │       │   │       ├── keys/           # Keyboard listeners and key automation
 │       │   │       ├── libs/           # Native library bridge wrappers
