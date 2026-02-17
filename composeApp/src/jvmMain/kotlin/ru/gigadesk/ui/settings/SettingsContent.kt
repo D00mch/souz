@@ -468,6 +468,7 @@ fun KeysSettingsContent(
     onGigaChatKeyInput: (String) -> Unit,
     onQwenChatKeyInput: (String) -> Unit,
     onAiTunnelKeyInput: (String) -> Unit,
+    onAnthropicKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
     onClose: () -> Unit
@@ -476,6 +477,7 @@ fun KeysSettingsContent(
         gigaChatKey = state.gigaChatKey,
         qwenChatKey = state.qwenChatKey,
         aiTunnelKey = state.aiTunnelKey,
+        anthropicKey = state.anthropicKey,
         saluteSpeechKey = state.saluteSpeechKey,
     )
     SettingsSectionScreen(
@@ -529,6 +531,12 @@ fun KeysSettingsContent(
                 label = stringResource(Res.string.label_key_aitunnel),
                 value = state.aiTunnelKey,
                 onValueChange = onAiTunnelKeyInput,
+                modifier = Modifier.fillMaxWidth()
+            )
+            LabeledTextField(
+                label = stringResource(Res.string.label_key_anthropic),
+                value = state.anthropicKey,
+                onValueChange = onAnthropicKeyInput,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -1491,6 +1499,7 @@ private val PreviewSettingsState = SettingsState(
     gigaChatKey = "giga-xxxxxxxx",
     qwenChatKey = "qwen-xxxxxxxx",
     aiTunnelKey = "aitunnel-xxxxxxxx",
+    anthropicKey = "anthropic-xxxxxxxx",
     saluteSpeechKey = "salute-xxxxxxxx",
     mcpServersJson = """
         {
@@ -1580,6 +1589,7 @@ private fun KeysSettingsContentPreview() {
             onGigaChatKeyInput = {},
             onQwenChatKeyInput = {},
             onAiTunnelKeyInput = {},
+            onAnthropicKeyInput = {},
             onSaluteSpeechKeyInput = {},
             onOpenProviderLink = {},
             onClose = {}

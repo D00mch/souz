@@ -1,9 +1,11 @@
 ## Anthropic models
 
+Check the [docs](https://platform.claude.com/docs/ru/about-claude/models/overview)
+
 ```bash
 curl https://api.anthropic.com/v1/models \
      -H "x-api-key: $ANTHROPIC_API_KEY" \
-     -H "anthropic-version: 2023-06-01" | jq
+     -H "anthropic-version: 2026-02-17" | jq
 ```
 
 ```json

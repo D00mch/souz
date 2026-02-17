@@ -80,6 +80,7 @@ fun SetupScreen(
         onGigaChatKeyInput = { key -> viewModel.send(SetupEvent.InputGigaChatKey(key)) },
         onQwenChatKeyInput = { key -> viewModel.send(SetupEvent.InputQwenChatKey(key)) },
         onAiTunnelKeyInput = { key -> viewModel.send(SetupEvent.InputAiTunnelKey(key)) },
+        onAnthropicKeyInput = { key -> viewModel.send(SetupEvent.InputAnthropicKey(key)) },
         onSaluteSpeechKeyInput = { key -> viewModel.send(SetupEvent.InputSaluteSpeechKey(key)) },
         onOpenProviderLink = { provider -> viewModel.send(SetupEvent.OpenProviderLink(provider)) },
         onChooseVoice = { viewModel.send(SetupEvent.ChooseVoice) },
@@ -94,6 +95,7 @@ fun SetupScreenContent(
     onGigaChatKeyInput: (String) -> Unit,
     onQwenChatKeyInput: (String) -> Unit,
     onAiTunnelKeyInput: (String) -> Unit,
+    onAnthropicKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
     onChooseVoice: () -> Unit,
@@ -164,6 +166,13 @@ fun SetupScreenContent(
                     label = stringResource(Res.string.label_key_aitunnel),
                     value = state.aiTunnelKey,
                     onValueChange = onAiTunnelKeyInput,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                LabeledTextField(
+                    label = stringResource(Res.string.label_key_anthropic),
+                    value = state.anthropicKey,
+                    onValueChange = onAnthropicKeyInput,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
@@ -332,6 +341,7 @@ private fun SetupScreenPreview() {
                 gigaChatKey = "",
                 qwenChatKey = "",
                 aiTunnelKey = "",
+                anthropicKey = "",
                 saluteSpeechKey = "",
                 configuredKeysCount = 0,
                 canProceed = false
@@ -339,6 +349,7 @@ private fun SetupScreenPreview() {
             onGigaChatKeyInput = {},
             onQwenChatKeyInput = {},
             onAiTunnelKeyInput = {},
+            onAnthropicKeyInput = {},
             onSaluteSpeechKeyInput = {},
             onOpenProviderLink = {},
             onChooseVoice = {},

@@ -4,6 +4,7 @@ import io.ktor.client.HttpClient
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.GigaRestChatAPI
 import ru.gigadesk.llms.AiTunnelChatAPI
+import ru.gigadesk.llms.AnthropicChatAPI
 import ru.gigadesk.giga.TokenLogging
 import ru.gigadesk.llms.QwenChatAPI
 
@@ -41,6 +42,19 @@ fun AiTunnelChatAPI.getHttpClient(): HttpClient {
 
 fun AiTunnelChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
     val tokenLoggingField = AiTunnelChatAPI::class.java.getDeclaredField("tokenLogging")
+    tokenLoggingField.isAccessible = true
+    val tokenLogging = tokenLoggingField.get(this) as? TokenLogging ?: return zeroUsage()
+    return tokenLogging.sessionTokenUsage()
+}
+
+fun AnthropicChatAPI.getHttpClient(): HttpClient {
+    val field = AnthropicChatAPI::class.java.getDeclaredField("client")
+    field.isAccessible = true
+    return field.get(this) as HttpClient
+}
+
+fun AnthropicChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
+    val tokenLoggingField = AnthropicChatAPI::class.java.getDeclaredField("tokenLogging")
     tokenLoggingField.isAccessible = true
     val tokenLogging = tokenLoggingField.get(this) as? TokenLogging ?: return zeroUsage()
     return tokenLogging.sessionTokenUsage()

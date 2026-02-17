@@ -32,6 +32,9 @@ import org.apache.tika.exception.FileTooLongException
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import gigadesk.composeapp.generated.resources.Res
+import gigadesk.composeapp.generated.resources.onboarding_display_text
+import org.jetbrains.compose.resources.getString
 import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.agent.engine.AgentSettings
@@ -48,7 +51,6 @@ import ru.gigadesk.tool.ToolPermissionBroker
 import ru.gigadesk.tool.files.FilesToolUtil
 import ru.gigadesk.ui.main.usecases.FinderPathExtractor
 import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
-import ru.gigadesk.ui.main.usecases.OnboardingUseCase
 import ru.gigadesk.ui.main.usecases.VoiceInputUseCase
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
@@ -247,14 +249,15 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
+            val expectedOnboardingText = getString(Res.string.onboarding_display_text)
 
             val onboardingState = awaitState(viewModel) { state ->
-                state.chatMessages.any { !it.isUser && it.text.contains("Привет! Я GigaDesk") }
+                state.chatMessages.any { !it.isUser && it.text == expectedOnboardingText }
             }
 
             assertEquals(1, onboardingState.chatMessages.size)
-            assertEquals(OnboardingUseCase.ONBOARDING_DISPLAY_TEXT, onboardingState.chatMessages.single().text)
-            assertTrue(onboardingState.displayedText.contains("Для запуска голосового ввода"))
+            assertEquals(expectedOnboardingText, onboardingState.chatMessages.single().text)
+            assertEquals(expectedOnboardingText, onboardingState.displayedText)
             verify { harness.settingsProvider.needsOnboarding = false }
             verify { harness.settingsProvider.onboardingCompleted = true }
             verify(exactly = 1) { harness.say.queue(any()) }
