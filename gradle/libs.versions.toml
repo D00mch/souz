@@ -20,6 +20,7 @@ ktor = "3.2.2"
 letsPlot-core = "4.0.0"
 letsPlot-kotlin = "4.6.0"
 logback = "1.5.18"
+log4j = "2.24.3"
 lucene = "9.9.2"
 markdown = "0.27.0"
 mockk = "1.13.11"
@@ -71,6 +72,7 @@ letsPlot-common = { module = "org.jetbrains.lets-plot:lets-plot-common", version
 letsPlot-kotlin = { module = "org.jetbrains.lets-plot:lets-plot-kotlin-jvm", version.ref = "letsPlot-kotlin" }
 letsPlot-imageExport = { module = "org.jetbrains.lets-plot:lets-plot-image-export", version.ref = "letsPlot-core" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+log4j-to-slf4j = { module = "org.apache.logging.log4j:log4j-to-slf4j", version.ref = "log4j" }
 lucene-core = { module = "org.apache.lucene:lucene-core", version.ref = "lucene" }
 markdown = { module = "com.mikepenz:multiplatform-markdown-renderer", version.ref = "markdown" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
