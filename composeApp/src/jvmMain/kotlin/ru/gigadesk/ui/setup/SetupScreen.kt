@@ -170,7 +170,7 @@ fun SetupScreenContent(
                 )
 
                 LabeledTextField(
-                    label = "Anthropic ключ",
+                    label = stringResource(Res.string.label_key_anthropic),
                     value = state.anthropicKey,
                     onValueChange = onAnthropicKeyInput,
                     modifier = Modifier.fillMaxWidth(),

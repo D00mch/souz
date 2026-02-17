@@ -58,12 +58,13 @@
     <string name="hint_restart_required">Changes will apply after application restart</string>
 
     <!-- Keys Settings -->
-    <string name="keys_configured_count">Configured keys: %d / 4</string>
+    <string name="keys_configured_count">Configured keys: %d / 5</string>
     <string name="keys_hint_chat">One key is enough to chat: GigaChat, Qwen, Anthropic, or AI Tunnel.</string>
     <string name="keys_hint_voice">For voice commands, a SaluteSpeech key from Sber cabinet is required.</string>
     <string name="label_key_gigachat">GigaChat Key</string>
     <string name="label_key_qwen">Qwen Key</string>
     <string name="label_key_aitunnel">AI Tunnel Key</string>
+    <string name="label_key_anthropic">Anthropic Key</string>
     <string name="label_key_salutespeech">SaluteSpeech Key</string>
     <string name="header_where_to_get_keys">Where to get keys</string>
     
@@ -247,6 +248,7 @@
     <string name="error_gigachat_key_missing">Specify GigaChat key</string>
     <string name="error_balance_unavailable_qwen">Balance unavailable for Qwen</string>
     <string name="error_balance_unavailable_aitunnel">Balance unavailable for AI Tunnel</string>
+    <string name="error_balance_unavailable_anthropic">Balance unavailable for Anthropic</string>
     <string name="error_failed_send_logs">Failed to send logs</string>
     <string name="support_email_subject">Gigadesk logs</string>
     <string name="support_email_body">Hello! Attached are the application log files.</string>

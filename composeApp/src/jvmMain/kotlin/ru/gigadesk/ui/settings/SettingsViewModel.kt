@@ -374,10 +374,11 @@ class SettingsViewModel(
                 return@launch
             }
             LlmProvider.ANTHROPIC -> {
+                val errorMsg = getString(Res.string.error_balance_unavailable_anthropic)
                 setState {
                     copy(
                         balance = emptyList(),
-                        balanceError = "Баланс для Anthropic недоступен",
+                        balanceError = errorMsg,
                         isBalanceLoading = false
                     )
                 }
