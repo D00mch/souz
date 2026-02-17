@@ -147,6 +147,7 @@ class SetupViewModelTest {
             qwen = "",
             aiTunnel = "",
             anthropic = "",
+            openai = "",
             speech = "",
             onboardingCompleted = false,
             gigaModel = GigaModel.Max,
@@ -166,12 +167,39 @@ class SetupViewModelTest {
     }
 
     @Test
+    fun `setup picks openai default model when first configured key is openai`() = runTest(dispatcher) {
+        val settingsProvider = settingsProviderStub(
+            giga = "",
+            qwen = "",
+            aiTunnel = "",
+            anthropic = "",
+            openai = "",
+            speech = "",
+            onboardingCompleted = false,
+            gigaModel = GigaModel.Max,
+        )
+        val viewModel = createViewModel(settingsProvider)
+
+        advanceUntilIdle()
+        viewModel.send(SetupEvent.InputOpenAiKey("openai-token"))
+        advanceUntilIdle()
+
+        val expectedModel = if (supportsProvider(LlmProvider.OPENAI)) {
+            GigaModel.OpenAIGpt5Nano
+        } else {
+            GigaModel.Max
+        }
+        assertEquals(expectedModel, settingsProvider.gigaModel)
+    }
+
+    @Test
     fun `setup prefers giga model when giga key appears during first setup`() = runTest(dispatcher) {
         val settingsProvider = settingsProviderStub(
             giga = "",
             qwen = "",
             aiTunnel = "",
             anthropic = "",
+            openai = "",
             speech = "",
             onboardingCompleted = false,
             gigaModel = GigaModel.Max,
@@ -229,6 +257,7 @@ class SetupViewModelTest {
         qwen: String,
         aiTunnel: String,
         anthropic: String = "",
+        openai: String = "",
         speech: String,
         onboardingCompleted: Boolean,
         gigaModel: GigaModel = GigaModel.Max,
@@ -239,6 +268,7 @@ class SetupViewModelTest {
         var qwenValue = qwen
         var aiTunnelValue = aiTunnel
         var anthropicValue = anthropic
+        var openAiValue = openai
         var speechValue = speech
         var gigaModelValue = gigaModel
         var onboardingCompletedValue = onboardingCompleted
@@ -255,6 +285,9 @@ class SetupViewModelTest {
 
         every { settingsProvider.anthropicKey } answers { anthropicValue }
         every { settingsProvider.anthropicKey = any() } answers { anthropicValue = firstArg() }
+
+        every { settingsProvider.openaiKey } answers { openAiValue }
+        every { settingsProvider.openaiKey = any() } answers { openAiValue = firstArg() }
 
         every { settingsProvider.saluteSpeechKey } answers { speechValue }
         every { settingsProvider.saluteSpeechKey = any() } answers { speechValue = firstArg() }

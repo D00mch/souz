@@ -16,6 +16,7 @@ interface SettingsProvider {
     var qwenChatKey: String?
     var aiTunnelKey: String?
     var anthropicKey: String?
+    var openaiKey: String?
     var saluteSpeechKey: String?
     var supportEmail: String?
     var systemPrompt: String?
@@ -102,6 +103,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     override var qwenChatKey: String? by keyDelegate(configKey = QWEN_CHAT_KEY, envKey = "QWEN_KEY")
     override var aiTunnelKey: String? by keyDelegate(configKey = AI_TUNNEL_KEY, envKey = "AITUNNEL_KEY")
     override var anthropicKey: String? by keyDelegate(configKey = ANTHROPIC_KEY, envKey = "ANTHROPIC_API_KEY")
+    override var openaiKey: String? by keyDelegate(configKey = OPENAI_KEY, envKey = "OPENAI_API_KEY")
     override var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
     override var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
     override var systemPrompt: String? by keyDelegate(configKey = SYSTEM_PROMPT, envKey = SYSTEM_PROMPT)
@@ -235,6 +237,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val QWEN_CHAT_KEY = "QWEN_CHAT_KEY"
         private const val AI_TUNNEL_KEY = "AI_TUNNEL_KEY"
         private const val ANTHROPIC_KEY = "ANTHROPIC_KEY"
+        private const val OPENAI_KEY = "OPENAI_KEY"
         private const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         private const val USE_STREAMING = "USE_STREAMING"

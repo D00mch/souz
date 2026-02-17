@@ -117,6 +117,10 @@ class SettingsViewModel(
                 keysProvider.anthropicKey = event.key
                 setState { copy(anthropicKey = event.key) }
             }
+            is InputOpenAiKey -> {
+                keysProvider.openaiKey = event.key
+                setState { copy(openaiKey = event.key) }
+            }
             is InputSafeModeEnabled -> {
                 keysProvider.safeModeEnabled = event.enabled
                 setState { copy(safeModeEnabled = event.enabled) }
@@ -247,6 +251,7 @@ class SettingsViewModel(
                 qwenChatKey = keysProvider.qwenChatKey ?: "",
                 aiTunnelKey = keysProvider.aiTunnelKey ?: "",
                 anthropicKey = keysProvider.anthropicKey ?: "",
+                openaiKey = keysProvider.openaiKey ?: "",
                 saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                 mcpServersJson = keysProvider.mcpServersJson ?: "",
                 useFewShotExamples = keysProvider.useFewShotExamples,
@@ -377,6 +382,17 @@ class SettingsViewModel(
             }
             LlmProvider.ANTHROPIC -> {
                 val errorMsg = getString(Res.string.error_balance_unavailable_anthropic)
+                setState {
+                    copy(
+                        balance = emptyList(),
+                        balanceError = errorMsg,
+                        isBalanceLoading = false
+                    )
+                }
+                return@launch
+            }
+            LlmProvider.OPENAI -> {
+                val errorMsg = getString(Res.string.error_balance_unavailable_openai)
                 setState {
                     copy(
                         balance = emptyList(),

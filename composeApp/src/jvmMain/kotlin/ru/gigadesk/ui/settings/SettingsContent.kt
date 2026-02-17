@@ -472,6 +472,7 @@ fun KeysSettingsContent(
     onQwenChatKeyInput: (String) -> Unit,
     onAiTunnelKeyInput: (String) -> Unit,
     onAnthropicKeyInput: (String) -> Unit,
+    onOpenAiKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
     onClose: () -> Unit
@@ -481,6 +482,7 @@ fun KeysSettingsContent(
         qwenChatKey = state.qwenChatKey,
         aiTunnelKey = state.aiTunnelKey,
         anthropicKey = state.anthropicKey,
+        openaiKey = state.openaiKey,
         saluteSpeechKey = state.saluteSpeechKey,
     )
     val supportsSaluteSpeech = ApiKeysBuildProfile.hasField(ApiKeyField.SALUTE_SPEECH)
@@ -561,6 +563,15 @@ fun KeysSettingsContent(
                     label = stringResource(Res.string.label_key_anthropic),
                     value = state.anthropicKey,
                     onValueChange = onAnthropicKeyInput,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (ApiKeysBuildProfile.hasField(ApiKeyField.OPENAI)) {
+                LabeledTextField(
+                    label = stringResource(Res.string.label_key_openai),
+                    value = state.openaiKey,
+                    onValueChange = onOpenAiKeyInput,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -1528,6 +1539,7 @@ private val PreviewSettingsState = SettingsState(
     qwenChatKey = "qwen-xxxxxxxx",
     aiTunnelKey = "aitunnel-xxxxxxxx",
     anthropicKey = "anthropic-xxxxxxxx",
+    openaiKey = "openai-xxxxxxxx",
     saluteSpeechKey = "salute-xxxxxxxx",
     mcpServersJson = """
         {
@@ -1618,6 +1630,7 @@ private fun KeysSettingsContentPreview() {
             onQwenChatKeyInput = {},
             onAiTunnelKeyInput = {},
             onAnthropicKeyInput = {},
+            onOpenAiKeyInput = {},
             onSaluteSpeechKeyInput = {},
             onOpenProviderLink = {},
             onClose = {}

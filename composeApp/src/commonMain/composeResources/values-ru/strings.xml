@@ -61,7 +61,7 @@
     <string name="keys_configured_count">Настроено ключей: %d</string>
     <string name="keys_hint_chat">Для чата достаточно одного ключа.</string>
     <string name="keys_hint_chat_ru_build">Для чата достаточно одного ключа: GigaChat, Qwen или AI Tunnel.</string>
-    <string name="keys_hint_chat_en_build">Для чата достаточно одного ключа: Qwen или Anthropic.</string>
+    <string name="keys_hint_chat_en_build">Для чата достаточно одного ключа: OpenAI, Qwen или Anthropic.</string>
     <string name="keys_hint_voice">Голосовые команды зависят от возможностей сборки.</string>
     <string name="keys_hint_voice_required">Для голосовых команд нужен SaluteSpeech ключ из кабинета Sber.</string>
     <string name="keys_hint_voice_unavailable">Голосовые команды в этой сборке пока недоступны.</string>
@@ -69,6 +69,7 @@
     <string name="label_key_qwen">Qwen ключ</string>
     <string name="label_key_aitunnel">AI Tunnel ключ</string>
     <string name="label_key_anthropic">Anthropic ключ</string>
+    <string name="label_key_openai">OpenAI ключ</string>
     <string name="label_key_salutespeech">SaluteSpeech ключ</string>
     <string name="header_where_to_get_keys">Где получить ключи</string>
     
@@ -88,6 +89,10 @@
     <string name="provider_anthropic_title">Anthropic Console</string>
     <string name="provider_anthropic_desc">Кабинет Anthropic для ключей Claude API.</string>
     <string name="provider_anthropic_details">Получите API-ключ для прямого доступа к моделям Claude.</string>
+
+    <string name="provider_openai_title">OpenAI Platform</string>
+    <string name="provider_openai_desc">Кабинет OpenAI для API-ключей и статистики использования.</string>
+    <string name="provider_openai_details">Используйте этот ключ для прямого доступа к моделям GPT-5.</string>
 
     <!-- Functions Settings -->
     <string name="setting_fewshot_title">Few-Shot Examples</string>
@@ -255,6 +260,7 @@
     <string name="error_balance_unavailable_qwen">Баланс для Qwen недоступен</string>
     <string name="error_balance_unavailable_aitunnel">Баланс для AI Tunnel недоступен</string>
     <string name="error_balance_unavailable_anthropic">Баланс для Anthropic недоступен</string>
+    <string name="error_balance_unavailable_openai">Баланс для OpenAI недоступен</string>
     <string name="error_failed_send_logs">Не удалось отправить логи</string>
     <string name="support_email_subject">Логи gigadesk</string>
     <string name="support_email_body">Добрый день! Во вложении файлы логов приложения.</string>

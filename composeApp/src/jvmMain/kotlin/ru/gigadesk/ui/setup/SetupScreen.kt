@@ -80,6 +80,7 @@ fun SetupScreen(
         onQwenChatKeyInput = { key -> viewModel.send(SetupEvent.InputQwenChatKey(key)) },
         onAiTunnelKeyInput = { key -> viewModel.send(SetupEvent.InputAiTunnelKey(key)) },
         onAnthropicKeyInput = { key -> viewModel.send(SetupEvent.InputAnthropicKey(key)) },
+        onOpenAiKeyInput = { key -> viewModel.send(SetupEvent.InputOpenAiKey(key)) },
         onSaluteSpeechKeyInput = { key -> viewModel.send(SetupEvent.InputSaluteSpeechKey(key)) },
         onOpenProviderLink = { provider -> viewModel.send(SetupEvent.OpenProviderLink(provider)) },
         onChooseVoice = { viewModel.send(SetupEvent.ChooseVoice) },
@@ -95,6 +96,7 @@ fun SetupScreenContent(
     onQwenChatKeyInput: (String) -> Unit,
     onAiTunnelKeyInput: (String) -> Unit,
     onAnthropicKeyInput: (String) -> Unit,
+    onOpenAiKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
     onChooseVoice: () -> Unit,
@@ -180,6 +182,15 @@ fun SetupScreenContent(
                         label = stringResource(Res.string.label_key_anthropic),
                         value = state.anthropicKey,
                         onValueChange = onAnthropicKeyInput,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                if (ApiKeysBuildProfile.hasField(ApiKeyField.OPENAI)) {
+                    LabeledTextField(
+                        label = stringResource(Res.string.label_key_openai),
+                        value = state.openaiKey,
+                        onValueChange = onOpenAiKeyInput,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -356,6 +367,7 @@ private fun SetupScreenPreview() {
                 qwenChatKey = "",
                 aiTunnelKey = "",
                 anthropicKey = "",
+                openaiKey = "",
                 saluteSpeechKey = "",
                 configuredKeysCount = 0,
                 canProceed = false
@@ -364,6 +376,7 @@ private fun SetupScreenPreview() {
             onQwenChatKeyInput = {},
             onAiTunnelKeyInput = {},
             onAnthropicKeyInput = {},
+            onOpenAiKeyInput = {},
             onSaluteSpeechKeyInput = {},
             onOpenProviderLink = {},
             onChooseVoice = {},

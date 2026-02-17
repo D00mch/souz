@@ -12,6 +12,7 @@ object LlmBuildProfile {
             LlmProvider.AI_TUNNEL to GigaModel.AiTunnelClaudeHaiku,
         ),
         BuildEdition.EN to mapOf(
+            LlmProvider.OPENAI to GigaModel.OpenAIGpt5Nano,
             LlmProvider.QWEN to GigaModel.QwenMax,
             LlmProvider.ANTHROPIC to GigaModel.AnthropicHaiku45,
         ),
@@ -41,6 +42,6 @@ object LlmBuildProfile {
 
     fun setupProviderPriority(): List<LlmProvider> = when (BuildEditionConfig.current) {
         BuildEdition.RU -> listOf(LlmProvider.AI_TUNNEL, LlmProvider.GIGA, LlmProvider.QWEN)
-        BuildEdition.EN -> listOf(LlmProvider.ANTHROPIC, LlmProvider.QWEN)
+        BuildEdition.EN -> listOf(LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.QWEN)
     }
 }
