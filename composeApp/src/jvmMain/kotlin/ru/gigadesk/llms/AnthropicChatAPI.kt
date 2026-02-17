@@ -77,11 +77,6 @@ class AnthropicChatAPI(
             ?: System.getProperty("ANTHROPIC_MODEL")
             ?: DEFAULT_ANTHROPIC_MODEL
 
-    private val defaultEmbeddingsModel: String
-        get() = System.getenv("ANTHROPIC_EMBEDDINGS_MODEL")
-            ?: System.getProperty("ANTHROPIC_EMBEDDINGS_MODEL")
-            ?: DEFAULT_ANTHROPIC_EMBEDDINGS_MODEL
-
     private val client = HttpClient(CIO) {
         anthropicDefaults(
             apiKey = apiKey,
@@ -239,22 +234,12 @@ class AnthropicChatAPI(
         }
     }
 
-    override suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings = try {
-        val response = client.post(EMBEDDINGS_URL) {
-            setBody(buildEmbeddingsRequest(body))
-        }
-        val text = response.bodyAsText()
-        if (response.status.isSuccess()) {
-            parseEmbeddingsResponse(text)
-        } else {
-            GigaResponse.Embeddings.Error(response.status.value, text)
-        }
-    } catch (e: ClientRequestException) {
-        val text = e.response.bodyAsText()
-        GigaResponse.Embeddings.Error(e.response.status.value, text)
-    } catch (t: Throwable) {
-        l.error("Model: ${body.model}. Error in Anthropic embeddings", t)
-        GigaResponse.Embeddings.Error(-1, "Connection error: ${t.message}")
+    override suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings {
+        l.warn("Model: {}. Anthropic embeddings are not supported by the Anthropic API", body.model)
+        return GigaResponse.Embeddings.Error(
+            status = 501,
+            message = "Anthropic API does not provide embeddings. Choose GigaChat, Qwen, AI-Tunnel, or OpenAI embeddings.",
+        )
     }
 
     override suspend fun uploadFile(file: File): GigaResponse.UploadFile {
@@ -620,40 +605,6 @@ class AnthropicChatAPI(
             }
     }
 
-    private fun buildEmbeddingsRequest(body: GigaRequest.Embeddings): Map<String, Any> = buildMap {
-        put("model", resolveEmbeddingsModel(body.model))
-        if (body.input.size == 1) {
-            put("input", body.input.first())
-        } else {
-            put("input", body.input)
-        }
-    }
-
-    private fun parseEmbeddingsResponse(text: String): GigaResponse.Embeddings {
-        val node = gigaJsonMapper.readTree(text)
-        val embeddings = node["data"]
-            ?.takeIf { it.isArray }
-            ?.mapIndexedNotNull { index, item ->
-                val vector = item["embedding"]
-                    ?.takeIf { it.isArray }
-                    ?.mapNotNull { it.asDouble() }
-                    ?: return@mapIndexedNotNull null
-
-                GigaResponse.Embedding(
-                    embedding = vector,
-                    index = item["index"]?.asInt() ?: index,
-                    objectType = item["object"]?.asText(),
-                )
-            }
-            .orEmpty()
-
-        return GigaResponse.Embeddings.Ok(
-            data = embeddings,
-            model = node["model"]?.asText() ?: defaultEmbeddingsModel,
-            objectType = node["object"]?.asText() ?: "list",
-        )
-    }
-
     private fun resolveChatModel(model: String): String {
         findAnthropicModelAlias(model)?.let { return it }
 
@@ -667,11 +618,6 @@ class AnthropicChatAPI(
         }
 
         return DEFAULT_ANTHROPIC_MODEL
-    }
-
-    private fun resolveEmbeddingsModel(model: String): String {
-        if (model.equals("Embeddings", ignoreCase = true)) return defaultEmbeddingsModel
-        return model
     }
 
     private fun findAnthropicModelAlias(value: String): String? {
@@ -758,9 +704,7 @@ class AnthropicChatAPI(
     companion object {
         private const val MESSAGES_URL = "https://api.anthropic.com/v1/messages"
         private const val FILES_URL = "https://api.anthropic.com/v1/files"
-        private const val EMBEDDINGS_URL = "https://api.anthropic.com/v1/embeddings"
         private const val FILES_API_BETA = "files-api-2025-04-14"
-        private const val DEFAULT_ANTHROPIC_EMBEDDINGS_MODEL = "claude-embedding-v1"
     }
 }
 

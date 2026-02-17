@@ -17,7 +17,6 @@ import ru.gigadesk.db.SettingsProvider
 import ru.gigadesk.db.VectorDB
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaResponse
-import ru.gigadesk.giga.LlmBuildProfile
 import ru.gigadesk.giga.LlmProvider
 import ru.gigadesk.service.telegram.TelegramAuthStep
 import ru.gigadesk.service.telegram.TelegramService
@@ -84,12 +83,12 @@ class SettingsViewModel(
         when(event) {
             is InputGigaChatKey -> {
                 keysProvider.gigaChatKey = event.key
-                setState { copy(gigaChatKey = event.key) }
+                refreshFromProvider()
                 fetchBalance()
             }
             is InputQwenChatKey -> {
                 keysProvider.qwenChatKey = event.key
-                setState { copy(qwenChatKey = event.key) }
+                refreshFromProvider()
                 fetchBalance()
             }
             is InputSaluteSpeechKey -> {
@@ -112,27 +111,28 @@ class SettingsViewModel(
             }
             is InputAiTunnelKey -> {
                 keysProvider.aiTunnelKey = event.key
-                setState { copy(aiTunnelKey = event.key) }
+                refreshFromProvider()
             }
             is InputAnthropicKey -> {
                 keysProvider.anthropicKey = event.key
-                setState { copy(anthropicKey = event.key) }
+                refreshFromProvider()
             }
             is InputOpenAiKey -> {
                 keysProvider.openaiKey = event.key
-                setState { copy(openaiKey = event.key) }
+                refreshFromProvider()
             }
             is InputSafeModeEnabled -> {
                 keysProvider.safeModeEnabled = event.enabled
                 setState { copy(safeModeEnabled = event.enabled) }
             }
             is SelectModel -> {
-                if (!LlmBuildProfile.isModelAvailable(event.model)) return
+                if (event.model !in currentState.availableLlmModels) return
                 val newPrompt = graphBasedAgent.updateModel(event.model)
                 setState { copy(gigaModel = event.model, systemPrompt = newPrompt) }
                 fetchBalance()
             }
             is SelectEmbeddingsModel -> {
+                if (event.model !in currentState.availableEmbeddingsModels) return
                 val currentModel = keysProvider.embeddingsModel
                 keysProvider.embeddingsModel = event.model
                 if (currentModel != event.model) {
@@ -248,22 +248,51 @@ class SettingsViewModel(
 
     private suspend fun refreshFromProvider() {
         val voiceSpeed = ConfigStore.get(ToolSoundConfig.SPEED_KEY, ToolSoundConfig.DEFAULT_SPEED)
-        val currentModel = keysProvider.gigaModel
-        val currentPrompt = keysProvider.getSystemPromptForModel(currentModel) ?: DEFAULT_SYSTEM_PROMPT
+        val gigaChatKey = keysProvider.gigaChatKey.orEmpty()
+        val qwenChatKey = keysProvider.qwenChatKey.orEmpty()
+        val aiTunnelKey = keysProvider.aiTunnelKey.orEmpty()
+        val anthropicKey = keysProvider.anthropicKey.orEmpty()
+        val openAiKey = keysProvider.openaiKey.orEmpty()
+
+        val availableLlmModels = keysProvider.availableLlmModels()
+        val configuredLlmModel = keysProvider.gigaModel
+        val selectedLlmModel = pickConfiguredOrDefault(
+            configured = configuredLlmModel,
+            available = availableLlmModels,
+        ) { keysProvider.defaultLlmModel() }
+        val selectedPrompt = if (selectedLlmModel != configuredLlmModel) {
+            graphBasedAgent.updateModel(selectedLlmModel)
+        } else {
+            keysProvider.getSystemPromptForModel(selectedLlmModel) ?: DEFAULT_SYSTEM_PROMPT
+        }
+
+        val availableEmbeddingsModels = keysProvider.availableEmbeddingsModels()
+        val configuredEmbeddingsModel = keysProvider.embeddingsModel
+        val selectedEmbeddingsModel = pickConfiguredOrDefault(
+            configured = configuredEmbeddingsModel,
+            available = availableEmbeddingsModels,
+        ) { keysProvider.defaultEmbeddingsModel() }
+        if (selectedEmbeddingsModel != configuredEmbeddingsModel) {
+            keysProvider.embeddingsModel = selectedEmbeddingsModel
+            VectorDB.clearAllData()
+        }
+
         setState {
             copy(
-                gigaChatKey = keysProvider.gigaChatKey ?: "",
-                qwenChatKey = keysProvider.qwenChatKey ?: "",
-                aiTunnelKey = keysProvider.aiTunnelKey ?: "",
-                anthropicKey = keysProvider.anthropicKey ?: "",
-                openaiKey = keysProvider.openaiKey ?: "",
+                gigaChatKey = gigaChatKey,
+                qwenChatKey = qwenChatKey,
+                aiTunnelKey = aiTunnelKey,
+                anthropicKey = anthropicKey,
+                openaiKey = openAiKey,
                 saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
                 mcpServersJson = keysProvider.mcpServersJson ?: "",
                 useFewShotExamples = keysProvider.useFewShotExamples,
                 useStreaming = keysProvider.useStreaming,
                 safeModeEnabled = keysProvider.safeModeEnabled,
-                gigaModel = currentModel,
-                embeddingsModel = keysProvider.embeddingsModel,
+                gigaModel = selectedLlmModel,
+                embeddingsModel = selectedEmbeddingsModel,
+                availableLlmModels = availableLlmModels,
+                availableEmbeddingsModels = availableEmbeddingsModels,
                 requestTimeoutMillis = keysProvider.requestTimeoutMillis,
                 requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
                 contextSize = keysProvider.contextSize,
@@ -271,12 +300,22 @@ class SettingsViewModel(
                 temperature = keysProvider.temperature,
                 temperatureInput = keysProvider.temperature.toString(),
                 supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
-                systemPrompt = currentPrompt,
+                systemPrompt = selectedPrompt,
                 defaultCalendar = keysProvider.defaultCalendar,
                 voiceSpeed = voiceSpeed,
                 voiceSpeedInput = voiceSpeed.toString(),
             )
         }
+    }
+
+    private fun <T> pickConfiguredOrDefault(
+        configured: T,
+        available: List<T>,
+        default: () -> T?,
+    ): T = when {
+        available.isEmpty() -> configured
+        configured in available -> configured
+        else -> default() ?: available.first()
     }
 
     private fun fetchCalendars() = viewModelScope.launch(Dispatchers.IO) {

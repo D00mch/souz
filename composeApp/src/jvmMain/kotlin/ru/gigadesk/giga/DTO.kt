@@ -162,7 +162,6 @@ enum class EmbeddingsModel(
     AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", EmbeddingsProvider.AI_TUNNEL),
     AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", EmbeddingsProvider.AI_TUNNEL),
     OpenAITextEmbedding3Small("OpenAI: text-embedding-3-small", "text-embedding-3-small", EmbeddingsProvider.OPENAI),
-    AnthropicEmbeddings("Anthropic: claude-embedding-v1", "claude-embedding-v1", EmbeddingsProvider.ANTHROPIC),
 }
 
 object GigaRequest {

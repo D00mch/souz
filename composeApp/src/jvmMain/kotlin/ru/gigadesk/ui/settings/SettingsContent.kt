@@ -45,7 +45,6 @@ import androidx.compose.ui.unit.sp
 import ru.gigadesk.giga.EmbeddingsModel
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaResponse
-import ru.gigadesk.giga.LlmBuildProfile
 import ru.gigadesk.ui.AppTheme
 import ru.gigadesk.ui.common.ApiKeyField
 import ru.gigadesk.ui.common.ApiKeyProvider
@@ -243,13 +242,17 @@ fun ModelsSettingsContent(
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
             ModelDropdown(
                 selectedModel = state.gigaModel,
+                availableModels = state.availableLlmModels,
                 onModelSelected = onModelChange,
             )
 
-            EmbeddingsModelDropdown(
-                selectedModel = state.embeddingsModel,
-                onModelSelected = onEmbeddingsModelChange,
-            )
+            if (state.availableEmbeddingsModels.isNotEmpty()) {
+                EmbeddingsModelDropdown(
+                    selectedModel = state.embeddingsModel,
+                    availableModels = state.availableEmbeddingsModels,
+                    onModelSelected = onEmbeddingsModelChange,
+                )
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
                 Column(
@@ -1378,10 +1381,10 @@ fun TokensBalanceSection(
 @Composable
 fun ModelDropdown(
     selectedModel: GigaModel,
+    availableModels: List<GigaModel>,
     onModelSelected: (GigaModel) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val availableModels = remember { LlmBuildProfile.availableModels }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
@@ -1396,6 +1399,7 @@ fun ModelDropdown(
         Box {
             OutlinedButton(
                 onClick = { expanded = !expanded },
+                enabled = availableModels.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     containerColor = SettingsFieldBackground,
@@ -1458,6 +1462,7 @@ fun ModelDropdown(
 @Composable
 fun EmbeddingsModelDropdown(
     selectedModel: EmbeddingsModel,
+    availableModels: List<EmbeddingsModel>,
     onModelSelected: (EmbeddingsModel) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -1475,6 +1480,7 @@ fun EmbeddingsModelDropdown(
         Box {
             OutlinedButton(
                 onClick = { expanded = !expanded },
+                enabled = availableModels.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     containerColor = SettingsFieldBackground,
@@ -1511,7 +1517,7 @@ fun EmbeddingsModelDropdown(
                     .background(SettingsFieldBackground, RoundedCornerShape(12.dp))
                     .border(1.dp, SettingsDefaultBorder, RoundedCornerShape(12.dp))
             ) {
-                EmbeddingsModel.entries.forEach { model ->
+                availableModels.forEach { model ->
                     DropdownMenuItem(
                         text = {
                             Text(

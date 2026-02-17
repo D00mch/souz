@@ -1183,7 +1183,7 @@ class GraphAgentToolScenariosIntegrationTest {
                 }
             }
             bindSingleton<DesktopInfoRepository>(overrides = true) {
-                val r = DesktopInfoRepository(instance(), instance(), instance())
+                val r = DesktopInfoRepository(instance(), instance(), instance(), instance())
                 spyk(r) { coEvery { search(any(), any()) } returns emptyList() }
             }
         }

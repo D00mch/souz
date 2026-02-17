@@ -2,9 +2,11 @@ package ru.gigadesk.db
 
 import ru.gigadesk.agent.DEFAULT_SYSTEM_PROMPT
 import ru.gigadesk.giga.EmbeddingsModel
+import ru.gigadesk.giga.EmbeddingsProvider
 import ru.gigadesk.giga.DEFAULT_MAX_TOKENS
 import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.LlmBuildProfile
+import ru.gigadesk.giga.LlmProvider
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
@@ -200,7 +202,12 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
 
     override var embeddingsModel: EmbeddingsModel
         get() = _embeddingsModelDelegate?.let { value ->
-            EmbeddingsModel.entries.firstOrNull { it.name.equals(value, ignoreCase = true) || it.alias.equals(value, ignoreCase = true) }
+            EmbeddingsModel.entries.firstOrNull {
+                it.name.equals(value, ignoreCase = true) || it.alias.equals(
+                    value,
+                    ignoreCase = true
+                )
+            }
         } ?: EmbeddingsModel.GigaEmbeddings
         set(value) {
             _embeddingsModelDelegate = value.name
@@ -260,4 +267,20 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
         private val DEFAULT_FORBIDDEN_FOLDERS = listOf("~/Library/")
     }
+}
+
+fun SettingsProvider.hasKey(provider: LlmProvider): Boolean = when (provider) {
+    LlmProvider.GIGA -> !gigaChatKey.isNullOrBlank()
+    LlmProvider.QWEN -> !qwenChatKey.isNullOrBlank()
+    LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
+    LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
+    LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
+}
+
+fun SettingsProvider.hasKey(provider: EmbeddingsProvider): Boolean = when (provider) {
+    EmbeddingsProvider.GIGA -> !gigaChatKey.isNullOrBlank()
+    EmbeddingsProvider.QWEN -> !qwenChatKey.isNullOrBlank()
+    EmbeddingsProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
+    EmbeddingsProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
+    EmbeddingsProvider.OPENAI -> !openaiKey.isNullOrBlank()
 }
