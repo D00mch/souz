@@ -119,6 +119,8 @@ enum class EmbeddingsProvider {
     GIGA,
     QWEN,
     AI_TUNNEL,
+    ANTHROPIC,
+    OPENAI,
 }
 
 enum class GigaModel(
@@ -155,10 +157,11 @@ enum class EmbeddingsModel(
     val provider: EmbeddingsProvider,
 ) {
     GigaEmbeddings("GigaChat", "Embeddings", EmbeddingsProvider.GIGA),
-    //QwenEmbeddings("Qwen", "text-embedding-v3", EmbeddingsProvider.QWEN),
-    //AiTunnelEmbedding3Small("AI-Tunnel: text-embedding-3-small", "text-embedding-3-small", EmbeddingsProvider.AI_TUNNEL),
-    //AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", EmbeddingsProvider.AI_TUNNEL),
-    //AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", EmbeddingsProvider.AI_TUNNEL),
+    QwenEmbeddings("Qwen", "text-embedding-v3", EmbeddingsProvider.QWEN),
+    AiTunnelEmbedding3Small("AI-Tunnel: text-embedding-3-small", "text-embedding-3-small", EmbeddingsProvider.AI_TUNNEL),
+    AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", EmbeddingsProvider.AI_TUNNEL),
+    AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", EmbeddingsProvider.AI_TUNNEL),
+    OpenAITextEmbedding3Small("OpenAI: text-embedding-3-small", "text-embedding-3-small", EmbeddingsProvider.OPENAI),
 }
 
 object GigaRequest {

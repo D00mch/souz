@@ -99,7 +99,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ConfigStore }
     bindSingleton { VectorDB }
     bindSingleton<SettingsProvider> { SettingsProviderImpl(instance()) }
-    bindSingleton { DesktopInfoRepository(instance(), instance(), instance()) }
+    bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
     bindSingleton { ToolsSettings(instance(), instance()) }
     bindSingleton { FilesToolUtil(instance()) }
     bindSingleton { ToolPermissionBroker(instance()) }

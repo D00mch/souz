@@ -235,7 +235,11 @@ class AnthropicChatAPI(
     }
 
     override suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings {
-        return GigaResponse.Embeddings.Error(-1, "Anthropic embeddings API is not supported")
+        l.warn("Model: {}. Anthropic embeddings are not supported by the Anthropic API", body.model)
+        return GigaResponse.Embeddings.Error(
+            status = 501,
+            message = "Anthropic API does not provide embeddings. Choose GigaChat, Qwen, AI-Tunnel, or OpenAI embeddings.",
+        )
     }
 
     override suspend fun uploadFile(file: File): GigaResponse.UploadFile {

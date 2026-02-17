@@ -55,6 +55,8 @@ data class SettingsState(
     val safeModeEnabled: Boolean = false,
     val gigaModel: GigaModel = LlmBuildProfile.defaultModel,
     val embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
+    val availableLlmModels: List<GigaModel> = emptyList(),
+    val availableEmbeddingsModels: List<EmbeddingsModel> = emptyList(),
     val systemPrompt: String = "",
     val requestTimeoutMillis: Long = 10_000L,
     val requestTimeoutInput: String = "10000",

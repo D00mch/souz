@@ -33,6 +33,8 @@ class LLMFactory(
         return when (settingsProvider.embeddingsModel.provider) {
             EmbeddingsProvider.QWEN -> qwenApi
             EmbeddingsProvider.AI_TUNNEL -> aiTunnelApi
+            EmbeddingsProvider.ANTHROPIC -> anthropicApi
+            EmbeddingsProvider.OPENAI -> openAiApi
             EmbeddingsProvider.GIGA -> restApi
         }
     }
@@ -42,8 +44,7 @@ class LLMFactory(
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = current().messageStream(body)
 
     override suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings {
-        // TODO: Update all the related data on model change if you want to use different models for embeddings
-        return restApi.embeddings(body)
+        return currentEmbeddings().embeddings(body)
     }
 
     override suspend fun uploadFile(file: File): GigaResponse.UploadFile = current().uploadFile(file)

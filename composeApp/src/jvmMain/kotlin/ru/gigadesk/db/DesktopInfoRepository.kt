@@ -18,6 +18,7 @@ class DesktopInfoRepository(
     private val api: GigaChatAPI,
     private val db: VectorDB,
     private val extractor: DesktopDataExtractor,
+    private val settingsProvider: SettingsProvider,
 ) {
     private val l = LoggerFactory.getLogger(DesktopInfoRepository::class.java)
 
@@ -30,6 +31,13 @@ class DesktopInfoRepository(
      */
     suspend fun storeDesktopDataDaily() {
         db.initializeOnce()
+        if (!hasEmbeddingsKeyConfigured()) {
+            l.info(
+                "Skip storeDesktopDataDaily: embeddings provider {} has no configured API key",
+                settingsProvider.embeddingsModel.provider
+            )
+            return
+        }
         val today = LocalDate.now().toString() // returns data like 2023-03-31
         if (ConfigStore.get(LAST_RUN_KEY, "") == today) return
         db.clearAllData()
@@ -65,13 +73,16 @@ class DesktopInfoRepository(
      * Convert the provided query to an embedding and return the most similar
      * stored texts from the database.
      */
-    open suspend fun search(query: String, limit: Int = 5): List<StorredData> {
+    suspend fun search(query: String, limit: Int = 5): List<StorredData> {
+        if (!hasEmbeddingsKeyConfigured()) return emptyList()
         val emb = when (val resp = api.embeddings(GigaRequest.Embeddings(input = listOf(query)))) {
             is GigaResponse.Embeddings.Ok -> resp.data.first().embedding
             is GigaResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
         }
         return db.searchSimilar(emb, limit)
     }
+
+    private fun hasEmbeddingsKeyConfigured(): Boolean = settingsProvider.hasKey(settingsProvider.embeddingsModel.provider)
 }
 
 suspend fun main() {
@@ -80,7 +91,8 @@ suspend fun main() {
     val api: GigaChatAPI by di.instance()
     val vectorDB: VectorDB by di.instance()
     val extractor: DesktopDataExtractor by di.instance()
-    val repo = DesktopInfoRepository(api, vectorDB, extractor)
+    val settingsProvider: SettingsProvider by di.instance()
+    val repo = DesktopInfoRepository(api, vectorDB, extractor, settingsProvider)
     repo.storeDesktopDataDaily()
     println(repo.getDesktopData().size)
 }
