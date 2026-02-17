@@ -44,7 +44,12 @@ class LLMFactory(
     override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = current().messageStream(body)
 
     override suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings {
-        return currentEmbeddings().embeddings(body)
+        val request = if (body.model.equals(EmbeddingsModel.GigaEmbeddings.alias, ignoreCase = true)) {
+            body.copy(model = settingsProvider.embeddingsModel.alias)
+        } else {
+            body
+        }
+        return currentEmbeddings().embeddings(request)
     }
 
     override suspend fun uploadFile(file: File): GigaResponse.UploadFile = current().uploadFile(file)
