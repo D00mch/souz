@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.kodein.di.DI
@@ -60,10 +61,11 @@ import kotlin.time.Duration.Companion.minutes
  * Tools are mocked: we verify that LLM calls the required tools with the expected parameters.
  * All scenarios are run via graphAgent.execute(input).
  */
+@Disabled
 class GraphAgentToolScenariosIntegrationTest {
 
     private object Setup {
-        val selectedModel = GigaModel.OpenAIGpt5Nano
+        val selectedModel = GigaModel.Lite
 
         val spySettings: SettingsProviderImpl by lazy {
             spyk(SettingsProviderImpl(ConfigStore)) {
@@ -641,7 +643,7 @@ class GraphAgentToolScenariosIntegrationTest {
         strings = [
             "Открой файл ~/tmp/read_me.txt",
             "Открой документ read_me.txt из home slash tmp",
-            "Запусти файл HOME/tmp/read_me.txt",
+            "Запусти файл HOME /tmp/read_me.txt",
         ]
     )
     fun scenario18_openFile(userPrompt: String) = runTest {

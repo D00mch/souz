@@ -8,9 +8,11 @@ import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.giga.GigaRequest
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.TokenLogging
+import ru.gigadesk.giga.gigaJsonMapper
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class OpenAIChatAPIRequestTest {
@@ -197,6 +199,85 @@ class OpenAIChatAPIRequestTest {
     }
 
     @Test
+    fun `buildChatRequest keeps later user message when assistant tool call cannot be resolved`() {
+        val api = createApi()
+        val request = invokeBuildChatRequest(
+            api = api,
+            body = GigaRequest.Chat(
+                model = GigaModel.OpenAIGpt5Nano.alias,
+                maxTokens = 256,
+                messages = listOf(
+                    GigaRequest.Message(
+                        role = GigaMessageRole.assistant,
+                        content = """{"name":"get_horoscope","arguments":{"sign":"Taurus"}}""",
+                        functionsStateId = "call_missing",
+                    ),
+                    GigaRequest.Message(
+                        role = GigaMessageRole.user,
+                        content = "continue",
+                    ),
+                ),
+                functions = listOf(function("get_horoscope")),
+            ),
+            stream = false,
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        val messages = request["messages"] as List<Map<String, Any?>>
+        assertEquals(2, messages.size)
+        assertEquals("assistant", messages[0]["role"])
+        assertEquals("""{"name":"get_horoscope","arguments":{"sign":"Taurus"}}""", messages[0]["content"])
+        assertEquals(null, messages[0]["tool_calls"])
+        assertEquals("user", messages[1]["role"])
+        assertEquals("continue", messages[1]["content"])
+    }
+
+    @Test
+    fun `buildChatRequest maps repeated same-name function results to tool calls in order`() {
+        val api = createApi()
+        val request = invokeBuildChatRequest(
+            api = api,
+            body = GigaRequest.Chat(
+                model = GigaModel.OpenAIGpt5Nano.alias,
+                maxTokens = 256,
+                messages = listOf(
+                    GigaRequest.Message(
+                        role = GigaMessageRole.assistant,
+                        content = """{"name":"get_weather","arguments":{"city":"Berlin"}}""",
+                        functionsStateId = "call_a",
+                    ),
+                    GigaRequest.Message(
+                        role = GigaMessageRole.assistant,
+                        content = """{"name":"get_weather","arguments":{"city":"Paris"}}""",
+                        functionsStateId = "call_b",
+                    ),
+                    GigaRequest.Message(
+                        role = GigaMessageRole.function,
+                        content = """{"temp":10}""",
+                        name = "get_weather",
+                    ),
+                    GigaRequest.Message(
+                        role = GigaMessageRole.function,
+                        content = """{"temp":20}""",
+                        name = "get_weather",
+                    ),
+                ),
+                functions = listOf(function("get_weather")),
+            ),
+            stream = false,
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        val messages = request["messages"] as List<Map<String, Any?>>
+        assertEquals(3, messages.size)
+        assertEquals("assistant", messages[0]["role"])
+        assertEquals("tool", messages[1]["role"])
+        assertEquals("call_a", messages[1]["tool_call_id"])
+        assertEquals("tool", messages[2]["role"])
+        assertEquals("call_b", messages[2]["tool_call_id"])
+    }
+
+    @Test
     fun `parseCompletionsResponse ignores null content for tool calls`() {
         val api = createApi()
         val response = invokeParseCompletionsResponse(
@@ -254,6 +335,103 @@ class OpenAIChatAPIRequestTest {
 
         assertEquals("float", request["encoding_format"])
         assertEquals("text-embedding-3-small", request["model"])
+    }
+
+    @Test
+    fun `buildChatRequest includes items schema for array properties`() {
+        val api = createApi()
+        val request = invokeBuildChatRequest(
+            api = api,
+            body = GigaRequest.Chat(
+                model = GigaModel.OpenAIGpt5Nano.alias,
+                maxTokens = 256,
+                messages = listOf(
+                    GigaRequest.Message(role = GigaMessageRole.user, content = "run tool"),
+                ),
+                functions = listOf(
+                    GigaRequest.Function(
+                        name = "PresentationCreate",
+                        description = "Create slides",
+                        parameters = GigaRequest.Parameters(
+                            type = "object",
+                            properties = mapOf(
+                                "slides" to GigaRequest.Property(
+                                    type = "array",
+                                    description = "Array of slide objects",
+                                ),
+                            ),
+                            required = listOf("slides"),
+                        ),
+                    )
+                ),
+            ),
+            stream = false,
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        val tools = request["tools"] as List<Map<String, Any?>>
+        @Suppress("UNCHECKED_CAST")
+        val function = tools.first()["function"] as Map<String, Any?>
+        @Suppress("UNCHECKED_CAST")
+        val parameters = function["parameters"] as Map<String, Any?>
+        @Suppress("UNCHECKED_CAST")
+        val properties = parameters["properties"] as Map<String, Any?>
+        @Suppress("UNCHECKED_CAST")
+        val slides = properties["slides"] as Map<String, Any?>
+        assertEquals("array", slides["type"])
+        assertNotNull(slides["items"])
+    }
+
+    @Test
+    fun `stream accumulator emits distinct indexes for multiple tool calls in one choice`() {
+        val classLoader = OpenAIChatAPI::class.java.classLoader
+        val clazz = Class.forName("ru.gigadesk.llms.OpenAiStreamAccumulator", true, classLoader)
+        val ctor = clazz.getDeclaredConstructor()
+        ctor.isAccessible = true
+        val accumulator = ctor.newInstance()
+        val processChunk = clazz.getDeclaredMethod("processChunk", com.fasterxml.jackson.databind.JsonNode::class.java)
+        processChunk.isAccessible = true
+
+        val node = gigaJsonMapper.readTree(
+            """
+                {
+                  "choices": [
+                    {
+                      "index": 0,
+                      "delta": {
+                        "role": "assistant",
+                        "tool_calls": [
+                          {
+                            "index": 0,
+                            "id": "call_a",
+                            "function": {
+                              "name": "tool_a",
+                              "arguments": "{\"x\":1}"
+                            }
+                          },
+                          {
+                            "index": 1,
+                            "id": "call_b",
+                            "function": {
+                              "name": "tool_b",
+                              "arguments": "{\"y\":2}"
+                            }
+                          }
+                        ]
+                      },
+                      "finish_reason": "tool_calls"
+                    }
+                  ]
+                }
+            """.trimIndent()
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        val choices = processChunk.invoke(accumulator, node) as List<GigaResponse.Choice>
+        val toolChoices = choices.filter { it.message.functionCall != null }
+        assertEquals(2, toolChoices.size)
+        assertNotEquals(toolChoices[0].index, toolChoices[1].index)
+        assertEquals(setOf("call_a", "call_b"), toolChoices.mapNotNull { it.message.functionsStateId }.toSet())
     }
 
     private fun createApi(): OpenAIChatAPI {

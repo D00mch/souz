@@ -225,11 +225,27 @@ class OpenAIChatAPI(
     }
 
     private fun buildMessages(messages: List<GigaRequest.Message>): List<Map<String, Any?>> {
-        val lastToolCallIds = mutableMapOf<String, String>()
+        val pendingToolCallIdsByName = mutableMapOf<String, ArrayDeque<String>>()
+        val remainingToolResultIds = mutableMapOf<String, Int>()
+        val remainingToolResultNames = mutableMapOf<String, Int>()
         val result = mutableListOf<MutableMap<String, Any?>>()
         val delayed = mutableListOf<MutableMap<String, Any?>>()
         val pendingToolCallIds = linkedSetOf<String>()
         var currentToolCallAssistant: MutableMap<String, Any?>? = null
+
+        messages.forEach { msg ->
+            if (msg.role != GigaMessageRole.function) return@forEach
+            when {
+                !msg.functionsStateId.isNullOrBlank() -> {
+                    val id = msg.functionsStateId
+                    remainingToolResultIds[id] = (remainingToolResultIds[id] ?: 0) + 1
+                }
+                !msg.name.isNullOrBlank() -> {
+                    val name = msg.name
+                    remainingToolResultNames[name] = (remainingToolResultNames[name] ?: 0) + 1
+                }
+            }
+        }
 
         fun emit(message: MutableMap<String, Any?>) {
             if (pendingToolCallIds.isEmpty()) {
@@ -252,8 +268,18 @@ class OpenAIChatAPI(
                 val name = contentJson["name"]?.asText()
                 val argumentsNode = contentJson["arguments"]
                 if (name != null && argumentsNode != null) {
+                    val idBudget = remainingToolResultIds[functionsStateId] ?: 0
+                    val nameBudget = remainingToolResultNames[name] ?: 0
+                    if (idBudget <= 0 && nameBudget <= 0) {
+                        return null
+                    }
+                    if (idBudget > 0) {
+                        remainingToolResultIds[functionsStateId] = idBudget - 1
+                    } else {
+                        remainingToolResultNames[name] = nameBudget - 1
+                    }
                     val arguments = gigaJsonMapper.writeValueAsString(argumentsNode)
-                    lastToolCallIds[name] = functionsStateId
+                    pendingToolCallIdsByName.getOrPut(name) { ArrayDeque() }.addLast(functionsStateId)
                     buildMap {
                         put("id", functionsStateId)
                         put("type", "function")
@@ -278,7 +304,9 @@ class OpenAIChatAPI(
         messages.forEach { msg ->
             when (msg.role) {
                 GigaMessageRole.function -> {
-                    val toolCallId = msg.functionsStateId ?: msg.name?.let { lastToolCallIds[it] }
+                    val toolCallId = msg.functionsStateId ?: msg.name?.let { name ->
+                        pendingToolCallIdsByName[name]?.removeFirstOrNull()
+                    }
                     if (toolCallId != null) {
                         result.add(
                             mutableMapOf(
@@ -287,8 +315,8 @@ class OpenAIChatAPI(
                                 "tool_call_id" to toolCallId,
                             )
                         )
-                        pendingToolCallIds.remove(toolCallId)
-                        if (pendingToolCallIds.isEmpty()) {
+                        val resolvedPendingCall = pendingToolCallIds.remove(toolCallId)
+                        if (resolvedPendingCall && pendingToolCallIds.isEmpty()) {
                             currentToolCallAssistant = null
                             flushDelayedIfPossible()
                         }
@@ -347,16 +375,20 @@ class OpenAIChatAPI(
             }
         }
 
-        if (pendingToolCallIds.isEmpty()) {
-            flushDelayedIfPossible()
-        } else {
+        if (pendingToolCallIds.isNotEmpty()) {
             l.warn(
                 "OpenAI payload has unresolved tool calls {}. Delaying {} messages until resolved.",
                 pendingToolCallIds,
                 delayed.size,
             )
+            val normalized = normalizeUnresolvedToolCalls(result, pendingToolCallIds)
+            if (delayed.isNotEmpty()) {
+                normalized.addAll(delayed)
+            }
+            return normalized
         }
 
+        flushDelayedIfPossible()
         return result
     }
 
@@ -367,6 +399,11 @@ class OpenAIChatAPI(
                     put("type", prop.type)
                     prop.description?.let { put("description", it) }
                     prop.enum?.let { put("enum", it) }
+                    if (prop.type == "array") {
+                        // OpenAI tool schemas require `items` for every array type.
+                        // Keep items unconstrained so existing tools can pass arrays of strings, objects, or mixed payloads.
+                        put("items", emptyMap<String, Any>())
+                    }
                 }
             }
             buildMap {
@@ -515,6 +552,78 @@ class OpenAIChatAPI(
             }
     }
 
+    private fun normalizeUnresolvedToolCalls(
+        messages: List<MutableMap<String, Any?>>,
+        unresolvedToolCallIds: Set<String>,
+    ): MutableList<MutableMap<String, Any?>> {
+        if (unresolvedToolCallIds.isEmpty()) return messages.toMutableList()
+
+        val normalized = mutableListOf<MutableMap<String, Any?>>()
+        messages.forEach { message ->
+            val role = message["role"] as? String
+            @Suppress("UNCHECKED_CAST")
+            val toolCalls = message["tool_calls"] as? List<Map<String, Any?>>
+
+            if (role != "assistant" || toolCalls.isNullOrEmpty()) {
+                normalized.add(message)
+                return@forEach
+            }
+
+            val resolvedCalls = mutableListOf<Map<String, Any?>>()
+            val unresolvedCalls = mutableListOf<Map<String, Any?>>()
+            toolCalls.forEach { toolCall ->
+                val id = toolCall["id"]?.toString()
+                if (id != null && id in unresolvedToolCallIds) {
+                    unresolvedCalls.add(toolCall)
+                } else {
+                    resolvedCalls.add(toolCall)
+                }
+            }
+
+            if (resolvedCalls.isNotEmpty()) {
+                val resolvedMessage = message.toMutableMap().apply {
+                    put("tool_calls", resolvedCalls)
+                }
+                normalized.add(resolvedMessage)
+            }
+
+            if (unresolvedCalls.isNotEmpty()) {
+                val fallbackContent = unresolvedCalls.joinToString("\n") { toolCall ->
+                    unresolvedToolCallToAssistantContent(toolCall)
+                }
+                if (fallbackContent.isNotBlank()) {
+                    normalized.add(
+                        mutableMapOf(
+                            "role" to "assistant",
+                            "content" to fallbackContent,
+                        )
+                    )
+                }
+            }
+        }
+
+        return normalized
+    }
+
+    private fun unresolvedToolCallToAssistantContent(toolCall: Map<String, Any?>): String {
+        val function = toolCall["function"] as? Map<*, *> ?: return ""
+        val name = function["name"]?.toString().orEmpty()
+        val rawArguments = function["arguments"]?.toString().orEmpty()
+        val parsedArguments: Any = runCatching {
+            gigaJsonMapper.readTree(rawArguments)
+        }.getOrElse {
+            if (rawArguments.isBlank()) emptyMap<String, Any>() else rawArguments
+        }
+        return runCatching {
+            gigaJsonMapper.writeValueAsString(
+                mapOf(
+                    "name" to name,
+                    "arguments" to parsedArguments,
+                )
+            )
+        }.getOrDefault("")
+    }
+
 
     private fun resolveChatModel(model: String): String {
         findOpenAiModelAlias(model)?.let { return it }
@@ -591,6 +700,8 @@ private fun String?.toOpenAiRole(): GigaMessageRole {
 // Helper class to buffer tool call arguments in streaming
 private class OpenAiStreamAccumulator {
     private val choicesState = ConcurrentHashMap<Int, ChoiceState>()
+    private val toolChoiceIndexByPair = mutableMapOf<Pair<Int, Int>, Int>()
+    private var nextToolChoiceIndex = -1
 
     data class ChoiceState(
         var role: GigaMessageRole? = null,
@@ -660,10 +771,11 @@ private class OpenAiStreamAccumulator {
                 state.finishReason = finishReason
                 // If finish reason implies tool calls, emit them now
                 if (state.toolCalls.isNotEmpty()) {
-                    state.toolCalls.forEach { (_, tcState) ->
+                    state.toolCalls.forEach { (toolCallIndex, tcState) ->
                         val argsMap = parseFunctionArguments(tcState.arguments.toString())
                         // Emit the full tool call
                         if (tcState.name != null) {
+                            val syntheticChoiceIndex = syntheticToolChoiceIndex(index, toolCallIndex)
                             resultChoices.add(
                                 GigaResponse.Choice(
                                     message = GigaResponse.Message(
@@ -675,7 +787,7 @@ private class OpenAiStreamAccumulator {
                                         ),
                                         functionsStateId = tcState.id
                                     ),
-                                    index = index,
+                                    index = syntheticChoiceIndex,
                                     finishReason = finishReason
                                 )
                             )
@@ -709,6 +821,14 @@ private class OpenAiStreamAccumulator {
             .getOrElse {
                 emptyMap()
             }
+    }
+
+    private fun syntheticToolChoiceIndex(choiceIndex: Int, toolCallIndex: Int): Int {
+        val key = choiceIndex to toolCallIndex
+        return toolChoiceIndexByPair.getOrPut(key) {
+            nextToolChoiceIndex--
+            nextToolChoiceIndex + 1
+        }
     }
 }
 
