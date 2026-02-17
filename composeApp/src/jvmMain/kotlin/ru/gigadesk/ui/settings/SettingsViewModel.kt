@@ -14,6 +14,7 @@ import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.audio.Say
 import ru.gigadesk.db.ConfigStore
 import ru.gigadesk.db.SettingsProvider
+import ru.gigadesk.db.VectorDB
 import ru.gigadesk.giga.GigaChatAPI
 import ru.gigadesk.giga.GigaResponse
 import ru.gigadesk.giga.LlmBuildProfile
@@ -132,7 +133,11 @@ class SettingsViewModel(
                 fetchBalance()
             }
             is SelectEmbeddingsModel -> {
+                val currentModel = keysProvider.embeddingsModel
                 keysProvider.embeddingsModel = event.model
+                if (currentModel != event.model) {
+                    VectorDB.clearAllData()
+                }
                 setState { copy(embeddingsModel = event.model) }
             }
             is InputRequestTimeoutMillis -> {
