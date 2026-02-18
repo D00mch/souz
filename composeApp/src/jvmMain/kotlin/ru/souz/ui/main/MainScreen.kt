@@ -97,6 +97,7 @@ private val FinderPathChipTextColor = Color(0xFF12E0B5)
 fun MainScreen(
     onOpenSettings: () -> Unit,
     onCloseWindow: () -> Unit,
+    onHideWindow: () -> Unit,
     onMinimizeWindow: () -> Unit,
     onShowSnack: (String) -> Unit = {},
     isOnline: Boolean = true,
@@ -108,7 +109,7 @@ fun MainScreen(
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
             when (effect) {
-                MainEffect.Hide -> onCloseWindow()
+                MainEffect.Hide -> onHideWindow()
                 is MainEffect.ShowError -> Unit
             }
         }
@@ -123,7 +124,7 @@ fun MainScreen(
         isOnline = isOnline,
         onStartListening = { viewModel.send(MainEvent.StartListening) },
         onStopListening = { viewModel.send(MainEvent.StopListening) },
-        onClear = onCloseWindow,
+        onClose = onCloseWindow,
         onMinimize = onMinimizeWindow,
         onRequestNewConversation = { viewModel.send(MainEvent.RequestNewConversation) },
         onConfirmNewConversation = { viewModel.send(MainEvent.ConfirmNewConversation) },
@@ -153,7 +154,7 @@ fun MainScreenContent(
     onRequestNewConversation: () -> Unit = {},
     onConfirmNewConversation: () -> Unit = {},
     onDismissNewConversationDialog: () -> Unit = {},
-    onClear: () -> Unit = {},
+    onClose: () -> Unit = {},
     onMinimize: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onStopSpeech: () -> Unit = {},
@@ -278,7 +279,7 @@ fun MainScreenContent(
                             Icon(Icons.Rounded.Settings, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                         }
                         Spacer(Modifier.width(8.dp))
-                        MinimalGlassButton(onClick = onMinimize) {
+                        MinimalGlassButton(onClick = onClose) {
                             Icon(Icons.Rounded.Close, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                         }
                     }

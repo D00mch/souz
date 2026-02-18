@@ -7,7 +7,6 @@ import souz.composeapp.generated.resources.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowScope
@@ -17,7 +16,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.roundToInt
-import org.jetbrains.compose.resources.painterResource
+import kotlin.system.exitProcess
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
 import org.kodein.di.instance
@@ -27,6 +26,8 @@ import ru.souz.di.mainDiModule
 import ru.souz.mcp.McpClientManager
 import ru.souz.server.AgentNode
 import ru.souz.server.startLocalServer
+import ru.souz.ui.AppTray
+import ru.souz.ui.rememberTrayWindowController
 
 import androidx.compose.ui.res.painterResource as jvmPainterResource
 
@@ -41,7 +42,7 @@ val LocalWindowScope = staticCompositionLocalOf<WindowScope?> { null }
 fun main() {
     //System.setProperty("apple.awt.UIElement", "true") // - Makes the app tray-only on macOS
 
-    application {
+    application(exitProcessOnExit = false) {
         withDI(mainDiModule) {
             val di = localDI()
             val say: Say by di.instance()
@@ -55,8 +56,10 @@ fun main() {
 
                 onDispose {
                     println("Stopping local server...")
-                    serverEngine.stop(1000, 2000)
-                    mcpClientManager.close()
+                    runCatching { serverEngine.stop(1000, 2000) }
+                        .onFailure { println("Failed to stop local server: ${it.message}") }
+                    runCatching { mcpClientManager.close() }
+                        .onFailure { println("Failed to close MCP manager: ${it.message}") }
                 }
             }
             
@@ -71,25 +74,6 @@ fun main() {
                 println("Failed to set dock icon: ${e.message}")
             }
 
-            var isWindowVisible by remember { mutableStateOf(true) }
-
-            Tray(
-                icon = painterResource(Res.drawable.iconT),
-                tooltip = org.jetbrains.compose.resources.stringResource(Res.string.tray_tooltip),
-                onAction = { isWindowVisible = !isWindowVisible },
-                menu = {
-                    Item(org.jetbrains.compose.resources.stringResource(Res.string.tray_show_hide), onClick = { isWindowVisible = !isWindowVisible })
-                    Separator()
-
-                    Item(org.jetbrains.compose.resources.stringResource(Res.string.tray_mute), onClick = {
-                        say.clearQueue()
-                    })
-                    Separator()
-
-                    Item(org.jetbrains.compose.resources.stringResource(Res.string.tray_exit), onClick = ::exitApplication)
-                }
-            )
-
             val initialWidth = settingsProvider.initialWindowWidthDp.dp
             val initialHeight = settingsProvider.initialWindowHeightDp.dp
 
@@ -99,9 +83,17 @@ fun main() {
                 position = WindowPosition.Aligned(Alignment.BottomEnd)
             )
 
+            val trayController = rememberTrayWindowController(windowState)
+
+            AppTray(
+                controller = trayController,
+                onMute = { say.clearQueue() },
+                onExit = ::exitApplication,
+            )
+
             Window(
-                onCloseRequest = { isWindowVisible = false },
-                visible = isWindowVisible,
+                onCloseRequest = ::exitApplication,
+                visible = trayController.isWindowVisible,
                 title = org.jetbrains.compose.resources.stringResource(Res.string.app_name),
                 icon = jvmPainterResource("icon-light.png"),
                 state = windowState,
@@ -122,11 +114,13 @@ fun main() {
                 // Provide WindowScope to nested composables via CompositionLocal
                 CompositionLocalProvider(LocalWindowScope provides this) {
                     App(
-                        onCloseWindow = { isWindowVisible = false },
+                        onCloseWindow = ::exitApplication,
+                        onHideWindow = trayController::hideToTray,
                         onMinimizeWindow = { windowState.isMinimized = true }
                     )
                 }
             }
         }
     }
+    exitProcess(0)
 }
