@@ -1,4 +1,4 @@
-# souz
+# Souz
 
 Keep this file updated whenever project behavior, architecture, build logic, or provider setup changes.
 
@@ -82,6 +82,7 @@ Primary stack:
 │       │   │           ├── graphlog/   # Graph sessions visualization screens
 │       │   │           ├── main/       # Main chat screen/view-model. Agent interaction happens here
 │       │   │           │   └── usecases/   # Main flow use cases (chat, speech, onboarding)
+|       |   |           |   └── info.md # The same file as this one, with the details on ui/main
 │       │   │           ├── settings/   # Settings screens and view-models
 │       │   │           ├── setup/      # First-run setup flow
 │       │   │           └── tools/      # Tool management/detail screens
