@@ -35,6 +35,7 @@ import java.net.URI
 @Preview
 fun App(
     onCloseWindow: () -> Unit,
+    onHideWindow: () -> Unit,
     onMinimizeWindow: () -> Unit
 ) {
     var currentScreen: Screen by remember { mutableStateOf(Setup) }
@@ -78,6 +79,7 @@ fun App(
                             Main -> MainScreen(
                                 onOpenSettings = { currentScreen = Settings },
                                 onCloseWindow = onCloseWindow,
+                                onHideWindow = onHideWindow,
                                 onMinimizeWindow = onMinimizeWindow,
                                 onShowSnack = { message ->
                                     snackbarScope.launch { snackbarHostState.showSnackbar(message) }
