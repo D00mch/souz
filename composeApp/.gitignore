@@ -1,0 +1,2 @@
+src/jvmMain/resources/darwin-arm64/libtdjni.macos_arm64.dylib
+src/jvmMain/resources/darwin-arm64/libJNativeHook.dylib

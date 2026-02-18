@@ -1,6 +1,6 @@
-import org.gradle.api.tasks.testing.Test
-import org.gradle.process.JavaForkOptions
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import ru.gigadesk.buildlogic.ComposeAppConventionsExtension
+import ru.gigadesk.buildlogic.MacSigningSettings
 
 fun tdlightNativeClassifier(): String {
     val osName = System.getProperty("os.name", "").lowercase()
@@ -29,6 +29,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.composeHotReload)
+    id("ru.gigadesk.compose-app-conventions")
 }
 
 val explicitEdition = providers.gradleProperty("edition").orNull?.trim()?.lowercase().orEmpty().ifBlank { null }
@@ -62,27 +63,8 @@ val editionPackageName = if (edition == "ru") "Союз ИИ" else "Souz AI"
 val editionBundleId = if (edition == "ru") "ru.gigadesk" else "en.gigadesk"
 val editionDockName = if (edition == "ru") "Союз c ИИ" else "Souz AI"
 
-tasks.matching { it.name == "jvmRun" }.configureEach {
-    if (this is JavaForkOptions) {
-        systemProperty("gigadesk.edition", edition)
-    }
-}
-
-tasks.withType<Test>().configureEach {
-    systemProperty("gigadesk.edition", edition)
-}
-
-tasks.register("packageRuReleaseDmg") {
-    group = "distribution"
-    description = "Build RU release DMG."
-    dependsOn("packageReleaseDmg")
-}
-
-tasks.register("packageEnReleaseDmg") {
-    group = "distribution"
-    description = "Build EN release DMG."
-    dependsOn("packageReleaseDmg")
-}
+extensions.getByType<ComposeAppConventionsExtension>().edition.set(edition)
+val macSigning = extensions.getByType<MacSigningSettings>()
 
 kotlin {
     jvm {
@@ -124,6 +106,8 @@ kotlin {
 
         jvmMain.dependencies {
             implementation(files("src/jvmMain/resources/darwin-arm64"))
+            implementation(files("src/jvmMain/resources/macos-x64"))
+            implementation(files("src/jvmMain/resources/macos-arm64"))
 
             implementation(libs.compose.ui.tooling.preview.desktop)
             implementation(compose.desktop.currentOs)
@@ -173,7 +157,7 @@ kotlin {
 
             // Telegram user client (TDLib)
             implementation(libs.tdlight.java)
-            implementation("it.tdlight:tdlight-natives:${libs.versions.tdlight.natives.get()}:${tdlightNativeClassifier()}")
+            runtimeOnly("it.tdlight:tdlight-natives:${libs.versions.tdlight.natives.get()}:${tdlightNativeClassifier()}")
         }
 
         jvmTest.dependencies {
@@ -210,6 +194,19 @@ compose.desktop {
                 bundleID = editionBundleId
                 iconFile.set(File("src/jvmMain/resources/icon-light.icns"))
 
+                signing {
+                    sign.set(macSigning.signingEnabled)
+                    macSigning.signingIdentity?.let { identity.set(it) }
+                }
+
+                notarization {
+                    macSigning.notarizationCredentialsOrNull()?.let { credentials ->
+                        appleID.set(credentials.appleId)
+                        password.set(credentials.password)
+                        teamID.set(credentials.teamId)
+                    }
+                }
+
                 infoPlist {
                     extraKeysRawXml = """
                         <key>NSMicrophoneUsageDescription</key>
@@ -224,6 +221,10 @@ compose.desktop {
 
             // macOS dark mode support, works only on the release build, not in debug
             jvmArgs("-Dgigadesk.edition=$edition")
+            // TDLight loads from java.library.path first; this avoids temp extraction/signing issues.
+            jvmArgs("-Djava.library.path=\$APPDIR/resources/darwin-arm64")
+            // Safety net: never let JNativeHook extract into Contents/app (which breaks code signature).
+            jvmArgs("-Djnativehook.lib.path=/tmp/souz-jnativehook")
             jvmArgs("-Dapple.awt.application.appearance=system")
             jvmArgs("-Xdock:icon=src/jvmMain/resources/icon-light.icns")
             jvmArgs("-Xdock:name=$editionDockName")

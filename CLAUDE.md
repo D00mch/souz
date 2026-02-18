@@ -106,6 +106,7 @@ Primary stack:
 │           └── resources/
 │               └── directory/          # File fixture directory for tests
 ├── dest/                               # Local output/scratch directory (currently empty)
+├── build-logic/                        # Included Gradle build with convention plugins/shared build logic
 ├── gradle/                             # Gradle version catalog and wrapper configuration
 │   └── wrapper/                        # Gradle wrapper JAR/properties
 └── proto/                              # Protobuf/gRPC generation module
@@ -115,3 +116,4 @@ Primary stack:
 Notes:
 - Directories like `.gradle/`, `.idea/`, `.kotlin/`, and `*/build/` are generated/local environment folders.
 - The `:proto` module reads `.proto` files from `composeApp/src/jvmMain/proto`.
+- `build-logic` provides convention plugins for shared Gradle behavior, including mac signing/notarization and compose-app native resource/packaging wiring.
