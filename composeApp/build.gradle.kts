@@ -175,12 +175,9 @@ compose.desktop {
         mainClass = "ru.souz.MainKt"
         jvmArgs("-Dsouz.edition=$edition")
 
-        buildTypes {
-            release {
-                proguard {
-                    isEnabled.set(false)
-                }
-            }
+        buildTypes.release.proguard {
+            isEnabled.set(true)
+            configurationFiles.from(project.file("proguard-rules.pro"))
         }
 
         nativeDistributions {
