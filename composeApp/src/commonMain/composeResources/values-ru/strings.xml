@@ -1,9 +1,9 @@
 <resources>
-    <string name="app_name">Союз с ИИ</string>
+    <string name="app_name">Союз ИИ</string>
     <string name="app_title_short">Союз</string>
 
     <!-- Tray -->
-    <string name="tray_tooltip">Gigadesk AI</string>
+    <string name="tray_tooltip">Союз ИИ</string>
     <string name="tray_show_hide">Показать/Скрыть</string>
     <string name="tray_mute">Выключить звук</string>
     <string name="tray_exit">Выход</string>
@@ -139,7 +139,7 @@
     <string name="setup_hint_keys_found">Найдено ключей: %d. Можно продолжать.</string>
     <string name="setup_hint_voice_required">Голосовые команды используют SaluteSpeech API. Если хотите общаться голосом, обязательно добавьте этот ключ.</string>
     <string name="setup_hint_voice_unavailable">Голосовые команды в этой сборке пока недоступны.</string>
-    <string name="button_open_gigadesk">Открыть GigaDesk</string>
+    <string name="button_open_gigadesk">Открыть Союз ИИ</string>
     <string name="button_add_key_to_proceed">Добавьте хотя бы один ключ</string>
 
     <!-- Common -->
@@ -197,8 +197,8 @@
     <string name="label_context">Контекст</string>
 
     <!-- Onboarding -->
-    <string name="onboarding_speech_text">Привет! Я ГигаДэ́ск! умный помощник на твоем компьютере... Сейчас я попрошу доступы к приложениям, системе и файлам, чтобы работать корректно... Я умею пользоваться браузером, работать с почтой и календарем, работать с файлами на вашем ПК, объяснить и переписать выделенный текст, открывать приложения, создавать заметки, отвечать на вопросы, строить графики, диаграммы на основе данных.</string>
-    <string name="onboarding_display_text">Привет! Я GigaDesk, умный помощник на твоем компьютере.\nСейчас я попрошу доступы к приложениям, системе и файлам, чтобы работать корректно.\nЯ умею:\n- Пользоваться браузером\n- Работать с почтой и календарем\n- Работать с файлами на вашем ПК\n- Объяснить и переписать выделенный текст\n- Открывать приложения, создавать заметки, отвечать на вопросы\n- Строить графики, диаграммы на основе данных\n\n\nДля запуска голосового ввода - зажми правый opt(alt)\nДля очистки контекста беседы - нажми X\nДля скрытия окна - нажми Х два раза</string>
+    <string name="onboarding_speech_text">Привет! Я Союз ИИ! умный помощник на твоем компьютере... Сейчас я попрошу доступы к приложениям, системе и файлам, чтобы работать корректно... Я умею пользоваться браузером, работать с почтой и календарем, работать с файлами на вашем ПК, объяснить и переписать выделенный текст, открывать приложения, создавать заметки, отвечать на вопросы, строить графики, диаграммы на основе данных.</string>
+    <string name="onboarding_display_text">Привет! Я Союз ИИ, умный помощник на твоем компьютере.\nСейчас я попрошу доступы к приложениям, системе и файлам, чтобы работать корректно.\nЯ умею:\n- Пользоваться браузером\n- Работать с почтой и календарем\n- Работать с файлами на вашем ПК\n- Объяснить и переписать выделенный текст\n- Открывать приложения, создавать заметки, отвечать на вопросы\n- Строить графики, диаграммы на основе данных\n\n\nДля запуска голосового ввода - зажми правый opt(alt)\nДля очистки контекста беседы - нажми X\nДля скрытия окна - нажми Х два раза</string>
     <string name="onboarding_input_permission_request">Разрешите доступ к мониторингу ввода в настройках macOS — после подтверждения приложение перезапустится автоматически</string>
 
     <!-- Voice Input -->
@@ -262,7 +262,7 @@
     <string name="error_balance_unavailable_anthropic">Баланс для Anthropic недоступен</string>
     <string name="error_balance_unavailable_openai">Баланс для OpenAI недоступен</string>
     <string name="error_failed_send_logs">Не удалось отправить логи</string>
-    <string name="support_email_subject">Логи gigadesk</string>
+    <string name="support_email_subject">Логи Союз ИИ</string>
     <string name="support_email_body">Добрый день! Во вложении файлы логов приложения.</string>
     <string name="support_email_success_format">Письмо создано. Если вложение не появилось автоматически, приложите файл %s вручную.</string>
 
