@@ -40,7 +40,7 @@ object LlmBuildProfile {
     fun defaultModelForProvider(provider: LlmProvider): GigaModel? = providerDefaultsByEdition
         .getValue(BuildEditionConfig.current)[provider]
 
-    fun setupProviderPriority(): List<LlmProvider> = when (BuildEditionConfig.current) {
+    fun providerPriorities(): List<LlmProvider> = when (BuildEditionConfig.current) {
         BuildEdition.RU -> listOf(LlmProvider.AI_TUNNEL, LlmProvider.GIGA, LlmProvider.QWEN)
         BuildEdition.EN -> listOf(LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.QWEN)
     }

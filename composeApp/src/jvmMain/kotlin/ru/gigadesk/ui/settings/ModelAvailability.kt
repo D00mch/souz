@@ -15,7 +15,7 @@ fun SettingsProvider.defaultLlmModel(): GigaModel? {
     val availableModels = this.availableLlmModels()
     if (availableModels.isEmpty()) return null
 
-    val preferredProvider = LlmBuildProfile.setupProviderPriority()
+    val preferredProvider = LlmBuildProfile.providerPriorities()
         .firstOrNull(this::hasKey)
 
     return preferredProvider
@@ -31,7 +31,7 @@ fun SettingsProvider.defaultEmbeddingsModel(): EmbeddingsModel? {
     val availableModels = this.availableEmbeddingsModels()
     if (availableModels.isEmpty()) return null
 
-    val preferredProvider = LlmBuildProfile.setupProviderPriority()
+    val preferredProvider = LlmBuildProfile.providerPriorities()
         .mapNotNull { it.toEmbeddingsProviderOrNull() }
         .firstOrNull { provider -> availableModels.any { it.provider == provider } }
 

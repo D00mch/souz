@@ -268,7 +268,7 @@ class SetupViewModel(
             LlmProvider.ANTHROPIC to anthropicKey,
             LlmProvider.OPENAI to openAiKey,
         )
-        val preferredProvider = LlmBuildProfile.setupProviderPriority()
+        val preferredProvider = LlmBuildProfile.providerPriorities()
             .firstOrNull { provider -> keysByProvider[provider].orEmpty().isNotBlank() }
             ?: return
 
