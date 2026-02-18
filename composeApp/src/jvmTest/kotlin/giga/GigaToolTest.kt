@@ -1,12 +1,12 @@
 package giga
 
-import ru.gigadesk.giga.*
-import ru.gigadesk.tool.files.ToolListFiles
+import ru.souz.giga.*
+import ru.souz.tool.files.ToolListFiles
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
-import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.SettingsProviderImpl
-import ru.gigadesk.tool.files.FilesToolUtil
+import ru.souz.db.ConfigStore
+import ru.souz.db.SettingsProviderImpl
+import ru.souz.tool.files.FilesToolUtil
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
@@ -16,7 +16,7 @@ class GigaToolTest {
     private val listFiles = ToolListFiles(FilesToolUtil(SettingsProviderImpl(ConfigStore)))
     
     private fun createTempDirectory(): File =
-        Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "gigadesk-giga-test-").toFile()
+        Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "souz-giga-test-").toFile()
 
     private fun createSampleFiles(baseDir: File) {
         val nestedDir = File(baseDir, "directory").apply { mkdirs() }

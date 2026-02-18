@@ -1,8 +1,8 @@
 package giga
 
-import ru.gigadesk.giga.GigaResponse
+import ru.souz.giga.GigaResponse
 import com.fasterxml.jackson.module.kotlin.readValue
-import ru.gigadesk.giga.gigaJsonMapper
+import ru.souz.giga.gigaJsonMapper
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

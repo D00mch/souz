@@ -1,10 +1,10 @@
 package tool
 
-import ru.gigadesk.giga.GigaMessageRole
-import ru.gigadesk.giga.GigaRequest
-import ru.gigadesk.giga.gigaJsonMapper
-import ru.gigadesk.tool.LocalRegexClassifier
-import ru.gigadesk.tool.ToolCategory
+import ru.souz.giga.GigaMessageRole
+import ru.souz.giga.GigaRequest
+import ru.souz.giga.gigaJsonMapper
+import ru.souz.tool.LocalRegexClassifier
+import ru.souz.tool.ToolCategory
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals

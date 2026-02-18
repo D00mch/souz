@@ -1,4 +1,4 @@
-package ru.gigadesk.db
+package ru.souz.db
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

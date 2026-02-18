@@ -1,13 +1,13 @@
 package giga
 
 import io.ktor.client.HttpClient
-import ru.gigadesk.giga.GigaResponse
-import ru.gigadesk.giga.GigaRestChatAPI
-import ru.gigadesk.llms.AiTunnelChatAPI
-import ru.gigadesk.llms.AnthropicChatAPI
-import ru.gigadesk.giga.TokenLogging
-import ru.gigadesk.llms.OpenAIChatAPI
-import ru.gigadesk.llms.QwenChatAPI
+import ru.souz.giga.GigaResponse
+import ru.souz.giga.GigaRestChatAPI
+import ru.souz.llms.AiTunnelChatAPI
+import ru.souz.llms.AnthropicChatAPI
+import ru.souz.giga.TokenLogging
+import ru.souz.llms.OpenAIChatAPI
+import ru.souz.llms.QwenChatAPI
 
 fun GigaRestChatAPI.getHttpClient(): HttpClient {
     val field = GigaRestChatAPI::class.java.getDeclaredField("client")

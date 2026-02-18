@@ -19,38 +19,38 @@ import org.kodein.di.DI
 import org.kodein.di.bindProvider
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
-import ru.gigadesk.agent.GraphBasedAgent
-import ru.gigadesk.db.ConfigStore
-import ru.gigadesk.db.DesktopInfoRepository
-import ru.gigadesk.db.SettingsProvider
-import ru.gigadesk.db.SettingsProviderImpl
-import ru.gigadesk.di.mainDiModule
-import ru.gigadesk.giga.*
-import ru.gigadesk.llms.AiTunnelChatAPI
-import ru.gigadesk.llms.AnthropicChatAPI
-import ru.gigadesk.llms.OpenAIChatAPI
-import ru.gigadesk.llms.QwenChatAPI
-import ru.gigadesk.tool.ToolRunBashCommand
-import ru.gigadesk.tool.application.ToolOpen
-import ru.gigadesk.tool.application.ToolShowApps
-import ru.gigadesk.tool.browser.*
-import ru.gigadesk.tool.calendar.ToolCalendarCreateEvent
-import ru.gigadesk.tool.calendar.ToolCalendarDeleteEvent
-import ru.gigadesk.tool.calendar.ToolCalendarListEvents
-import ru.gigadesk.tool.dataAnalytics.ToolCreatePlotFromCsv
-import ru.gigadesk.tool.dataAnalytics.excel.ExcelRead
-import ru.gigadesk.tool.dataAnalytics.excel.ExcelReport
-import ru.gigadesk.tool.files.*
-import ru.gigadesk.tool.mail.ToolMailListMessages
-import ru.gigadesk.tool.mail.ToolMailReplyMessage
-import ru.gigadesk.tool.mail.ToolMailSearch
-import ru.gigadesk.tool.mail.ToolMailSendNewMessage
-import ru.gigadesk.tool.mail.ToolMailUnreadMessagesCount
-import ru.gigadesk.tool.notes.ToolCreateNote
-import ru.gigadesk.tool.notes.ToolDeleteNote
-import ru.gigadesk.tool.notes.ToolListNotes
-import ru.gigadesk.tool.notes.ToolSearchNotes
-import ru.gigadesk.tool.textReplace.ToolGetClipboard
+import ru.souz.agent.GraphBasedAgent
+import ru.souz.db.ConfigStore
+import ru.souz.db.DesktopInfoRepository
+import ru.souz.db.SettingsProvider
+import ru.souz.db.SettingsProviderImpl
+import ru.souz.di.mainDiModule
+import ru.souz.giga.*
+import ru.souz.llms.AiTunnelChatAPI
+import ru.souz.llms.AnthropicChatAPI
+import ru.souz.llms.OpenAIChatAPI
+import ru.souz.llms.QwenChatAPI
+import ru.souz.tool.ToolRunBashCommand
+import ru.souz.tool.application.ToolOpen
+import ru.souz.tool.application.ToolShowApps
+import ru.souz.tool.browser.*
+import ru.souz.tool.calendar.ToolCalendarCreateEvent
+import ru.souz.tool.calendar.ToolCalendarDeleteEvent
+import ru.souz.tool.calendar.ToolCalendarListEvents
+import ru.souz.tool.dataAnalytics.ToolCreatePlotFromCsv
+import ru.souz.tool.dataAnalytics.excel.ExcelRead
+import ru.souz.tool.dataAnalytics.excel.ExcelReport
+import ru.souz.tool.files.*
+import ru.souz.tool.mail.ToolMailListMessages
+import ru.souz.tool.mail.ToolMailReplyMessage
+import ru.souz.tool.mail.ToolMailSearch
+import ru.souz.tool.mail.ToolMailSendNewMessage
+import ru.souz.tool.mail.ToolMailUnreadMessagesCount
+import ru.souz.tool.notes.ToolCreateNote
+import ru.souz.tool.notes.ToolDeleteNote
+import ru.souz.tool.notes.ToolListNotes
+import ru.souz.tool.notes.ToolSearchNotes
+import ru.souz.tool.textReplace.ToolGetClipboard
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -213,7 +213,7 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario4_findSiteInHistory(userPrompt: String) = runTest {
-        mockkStatic("ru.gigadesk.tool.browser.DefaultBrowserKt")
+        mockkStatic("ru.souz.tool.browser.DefaultBrowserKt")
         every { ToolRunBashCommand.detectDefaultBrowser() } returns BrowserType.CHROME
 
         val toolChromeInfo: ToolChromeInfo = spyk(ToolChromeInfo(ToolRunBashCommand))
@@ -234,7 +234,7 @@ class GraphAgentToolScenariosIntegrationTest {
                 toolChromeInfo.invoke(match { it.type == ToolChromeInfo.InfoType.history })
             }
         } finally {
-            unmockkStatic("ru.gigadesk.tool.browser.DefaultBrowserKt")
+            unmockkStatic("ru.souz.tool.browser.DefaultBrowserKt")
         }
     }
 

@@ -4,10 +4,10 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import ru.gigadesk.giga.gigaJsonMapper
-import ru.gigadesk.tool.ToolRunBashCommand
-import ru.gigadesk.tool.files.ToolFindFolders
-import ru.gigadesk.tool.files.FilesToolUtil
+import ru.souz.giga.gigaJsonMapper
+import ru.souz.tool.ToolRunBashCommand
+import ru.souz.tool.files.ToolFindFolders
+import ru.souz.tool.files.FilesToolUtil
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -20,7 +20,7 @@ class ToolFindFoldersTest {
 
     @Test
     fun `filters forbidden paths and parses output`() {
-        val safePath = "/Users/gigadesk/Documents"
+        val safePath = "/Users/souz/Documents"
         val unsafePath = "/System/Library/Secret"
 
         every { bash.sh(any()) } returns "$safePath\n$unsafePath"
@@ -59,7 +59,7 @@ class ToolFindFoldersTest {
     @Test
     fun `falls back to partial search if exact match is empty`() {
         val folderName = "Projects"
-        val partialMatchPath = "/Users/gigadesk/Old_Projects_Archive"
+        val partialMatchPath = "/Users/souz/Old_Projects_Archive"
 
         every {
             bash.sh(match { it.contains("== \"$folderName\"c") })

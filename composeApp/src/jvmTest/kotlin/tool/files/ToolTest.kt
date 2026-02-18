@@ -6,19 +6,19 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.slf4j.LoggerFactory
-import ru.gigadesk.db.SettingsProvider
-import ru.gigadesk.tool.BadInputException
-import ru.gigadesk.tool.ToolPermissionBroker
-import ru.gigadesk.tool.files.FilesToolUtil
-import ru.gigadesk.tool.files.ToolDeleteFile
-import ru.gigadesk.tool.files.ToolExtractText
-import ru.gigadesk.tool.files.ToolFindInFiles
-import ru.gigadesk.tool.files.ToolFindTextInFiles
-import ru.gigadesk.tool.files.ToolListFiles
-import ru.gigadesk.tool.files.ToolModifyFile
-import ru.gigadesk.tool.files.ToolMoveFile
-import ru.gigadesk.tool.files.ToolNewFile
-import ru.gigadesk.tool.files.ToolReadFile
+import ru.souz.db.SettingsProvider
+import ru.souz.tool.BadInputException
+import ru.souz.tool.ToolPermissionBroker
+import ru.souz.tool.files.FilesToolUtil
+import ru.souz.tool.files.ToolDeleteFile
+import ru.souz.tool.files.ToolExtractText
+import ru.souz.tool.files.ToolFindInFiles
+import ru.souz.tool.files.ToolFindTextInFiles
+import ru.souz.tool.files.ToolListFiles
+import ru.souz.tool.files.ToolModifyFile
+import ru.souz.tool.files.ToolMoveFile
+import ru.souz.tool.files.ToolNewFile
+import ru.souz.tool.files.ToolReadFile
 import java.io.File
 import java.nio.file.Files
 import java.util.UUID
@@ -32,7 +32,7 @@ class ToolTest {
     private val filesToolUtil: FilesToolUtil = mockk()
 
     private fun createTempDirectory(): File =
-        Files.createTempDirectory(File("src/jvmTest/resources").toPath(), "gigadesk-test-").toFile()
+        Files.createTempDirectory(File("src/jvmTest/resources").toPath(), "souz-test-").toFile()
 
     private fun createSampleFiles(baseDir: File) {
         val nestedDir = File(baseDir, "directory").apply { mkdirs() }
@@ -197,7 +197,7 @@ class ToolTest {
 
     @Test
     fun `test ToolDeleteFile deletes folder`() {
-        val tempDir = Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "gigadesk-test-delete-folder-").toFile()
+        val tempDir = Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "souz-test-delete-folder-").toFile()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
             val folderToDelete = File(tempDir, "folder-to-delete").apply { mkdirs() }

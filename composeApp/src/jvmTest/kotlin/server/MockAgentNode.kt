@@ -1,12 +1,12 @@
 package server
 
 import kotlinx.coroutines.delay
-import ru.gigadesk.server.AgentMessage
-import ru.gigadesk.server.AgentNode
-import ru.gigadesk.server.AgentResult
+import ru.souz.server.AgentMessage
+import ru.souz.server.AgentNode
+import ru.souz.server.AgentResult
 
 /**
- * Mock implementation of [ru.gigadesk.server.AgentNode] for testing purposes.
+ * Mock implementation of [ru.souz.server.AgentNode] for testing purposes.
  * Echoes the input with a simulated processing delay and mock history.
  */
 class MockAgentNode : AgentNode {

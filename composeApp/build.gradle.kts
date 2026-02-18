@@ -1,6 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-import ru.gigadesk.buildlogic.ComposeAppConventionsExtension
-import ru.gigadesk.buildlogic.MacSigningSettings
+import ru.souz.buildlogic.ComposeAppConventionsExtension
+import ru.souz.buildlogic.MacSigningSettings
 
 fun tdlightNativeClassifier(): String {
     val osName = System.getProperty("os.name", "").lowercase()
@@ -29,7 +29,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.composeHotReload)
-    id("ru.gigadesk.compose-app-conventions")
+    id("ru.souz.compose-app-conventions")
 }
 
 val explicitEdition = providers.gradleProperty("edition").orNull?.trim()?.lowercase().orEmpty().ifBlank { null }
@@ -60,7 +60,7 @@ if (explicitEdition != null && inferredEdition != null && explicitEdition != inf
 val edition = explicitEdition ?: inferredEdition ?: "ru"
 
 val editionPackageName = if (edition == "ru") "Союз ИИ" else "Souz AI"
-val editionBundleId = if (edition == "ru") "ru.gigadesk" else "en.gigadesk"
+val editionBundleId = if (edition == "ru") "ru.souz" else "en.souz"
 val editionDockName = if (edition == "ru") "Союз c ИИ" else "Souz AI"
 
 extensions.getByType<ComposeAppConventionsExtension>().edition.set(edition)
@@ -172,8 +172,8 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "ru.gigadesk.MainKt"
-        jvmArgs("-Dgigadesk.edition=$edition")
+        mainClass = "ru.souz.MainKt"
+        jvmArgs("-Dsouz.edition=$edition")
 
         buildTypes {
             release {
@@ -220,7 +220,7 @@ compose.desktop {
             }
 
             // macOS dark mode support, works only on the release build, not in debug
-            jvmArgs("-Dgigadesk.edition=$edition")
+            jvmArgs("-Dsouz.edition=$edition")
             // TDLight loads from java.library.path first; this avoids temp extraction/signing issues.
             jvmArgs("-Djava.library.path=\$APPDIR/resources/darwin-arm64")
             // Safety net: never let JNativeHook extract into Contents/app (which breaks code signature).

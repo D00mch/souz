@@ -1,9 +1,9 @@
-# Gigadesk
+# souz
 
 Keep this file updated whenever project behavior, architecture, build logic, or provider setup changes.
 
 ## General Info
-Gigadesk is a Kotlin Multiplatform desktop AI assistant built with Compose for Desktop.
+Souz is a Kotlin Multiplatform desktop AI assistant built with Compose for Desktop.
 The repository is a multi-module Gradle project:
 
 - `:composeApp` - main desktop app (UI, agent runtime, tools, integrations).
@@ -45,7 +45,7 @@ Primary stack:
 │       │   ├── composeResources/       # Compose Multiplatform resources
 │       │   │   └── drawable/           # Application icons and drawable assets
 │       │   ├── kotlin/
-│       │   │   └── ru/gigadesk/        # Application Kotlin code
+│       │   │   └── ru/souz/        # Application Kotlin code
 │       │   │       ├── agent/          # Graph-based agent assembly. The main agent related logic is here
 │       │   │       │   ├── engine/     # Core graph primitives (Node, Graph, runner/runtime)
 │       │   │       │   ├── nodes/      # Graph node implementations (LLM, MCP, classification, etc.)
@@ -98,7 +98,7 @@ Primary stack:
 │           │   ├── classification/     # Classification prompt tests
 │           │   ├── db/                 # Data/vector DB tests
 │           │   ├── giga/               # Giga API/tool tests
-│           │   ├── ru/gigadesk/        # Package-aligned tests
+│           │   ├── ru/souz/        # Package-aligned tests
 │           │   │   ├── tool/           # Tool tests in package namespace
 │           │   │   └── ui/             # UI/view-model tests
 │           │   ├── server/             # Local server tests

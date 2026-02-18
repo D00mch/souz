@@ -11,12 +11,12 @@ repositories {
 gradlePlugin {
     plugins {
         register("macSigningConventions") {
-            id = "ru.gigadesk.mac-signing-conventions"
-            implementationClass = "ru.gigadesk.buildlogic.MacSigningConventionsPlugin"
+            id = "ru.souz.mac-signing-conventions"
+            implementationClass = "ru.souz.buildlogic.MacSigningConventionsPlugin"
         }
         register("composeAppConventions") {
-            id = "ru.gigadesk.compose-app-conventions"
-            implementationClass = "ru.gigadesk.buildlogic.ComposeAppConventionsPlugin"
+            id = "ru.souz.compose-app-conventions"
+            implementationClass = "ru.souz.buildlogic.ComposeAppConventionsPlugin"
         }
     }
 }

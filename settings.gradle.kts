@@ -1,4 +1,4 @@
-rootProject.name = "gigadesk"
+rootProject.name = "souz"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {

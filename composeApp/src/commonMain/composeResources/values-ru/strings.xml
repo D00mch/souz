@@ -139,7 +139,7 @@
     <string name="setup_hint_keys_found">Найдено ключей: %d. Можно продолжать.</string>
     <string name="setup_hint_voice_required">Голосовые команды используют SaluteSpeech API. Если хотите общаться голосом, обязательно добавьте этот ключ.</string>
     <string name="setup_hint_voice_unavailable">Голосовые команды в этой сборке пока недоступны.</string>
-    <string name="button_open_gigadesk">Открыть Союз ИИ</string>
+    <string name="button_open_souz">Открыть Союз ИИ</string>
     <string name="button_add_key_to_proceed">Добавьте хотя бы один ключ</string>
 
     <!-- Common -->

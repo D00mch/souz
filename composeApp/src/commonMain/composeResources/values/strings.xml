@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">Souz AI</string>
-    <string name="app_title_short">Union</string>
+    <string name="app_title_short">Souz AI</string>
 
     <!-- Tray -->
     <string name="tray_tooltip">Souz AI</string>
@@ -139,7 +139,7 @@
     <string name="setup_hint_keys_found">Keys found: %d. You can continue.</string>
     <string name="setup_hint_voice_required">Voice commands use SaluteSpeech API. If you want to use voice, be sure to add this key.</string>
     <string name="setup_hint_voice_unavailable">Voice commands are not available in this build yet.</string>
-    <string name="button_open_gigadesk">Open Souz AI</string>
+    <string name="button_open_souz">Open Souz AI</string>
     <string name="button_add_key_to_proceed">Add at least one key</string>
 
     <!-- Common -->

@@ -1,6 +1,6 @@
 package tool
 
-import ru.gigadesk.tool.ToolRunBashCommand
+import ru.souz.tool.ToolRunBashCommand
 import kotlin.test.Test
 import kotlin.test.assertTrue
 

@@ -1,11 +1,11 @@
-# Gigadesk 
+# souz 
 
 A desktop Agent app to help with routines.
 
 # Documentation
 
-- [Agent engine](composeApp/src/jvmMain/kotlin/ru/gigadesk/agent/engine/README.md)
-- [MCP Integration](composeApp/src/jvmMain/kotlin/ru/gigadesk/mcp/README.md)
+- [Agent engine](composeApp/src/jvmMain/kotlin/ru/souz/agent/engine/README.md)
+- [MCP Integration](composeApp/src/jvmMain/kotlin/ru/souz/mcp/README.md)
 
 # Developers notes
  
@@ -26,14 +26,14 @@ Run tests with:
 ## Build Editions
 - Edition is selected by Gradle property `-Pedition=ru|en` (default: `ru`) in `composeApp/build.gradle.kts`.
 - Dedicated DMG tasks infer edition automatically by task name when `-Pedition` is not provided.
-- Runtime edition is passed via `-Dgigadesk.edition` (or `GIGADESK_EDITION` fallback) and parsed in `composeApp/src/jvmMain/kotlin/ru/gigadesk/edition/BuildEdition.kt`.
+- Runtime edition is passed via `-Dsouz.edition` (or `souz_EDITION` fallback) and parsed in `composeApp/src/jvmMain/kotlin/ru/souz/edition/BuildEdition.kt`.
 - Packaging metadata depends on edition:
-  - `ru`: package name `Союз ИИ`, bundle ID `ru.gigadesk`, Dock name `Союз c ИИ`.
-  - `en`: package name `Souz AI`, bundle ID `en.gigadesk`, Dock name `Souz AI`.
+  - `ru`: package name `Союз ИИ`, bundle ID `ru.souz`, Dock name `Союз c ИИ`.
+  - `en`: package name `Souz AI`, bundle ID `en.souz`, Dock name `Souz AI`.
 - Dedicated DMG tasks:
   - `./gradlew :composeApp:packageRuReleaseDmg`
   - `./gradlew :composeApp:packageEnReleaseDmg`
-- Edition-specific runtime profile (`composeApp/src/jvmMain/kotlin/ru/gigadesk/giga/LlmBuildProfile.kt`):
+- Edition-specific runtime profile (`composeApp/src/jvmMain/kotlin/ru/souz/giga/LlmBuildProfile.kt`):
   - `ru`: `GIGA`, `QWEN`, `AI_TUNNEL`; SaluteSpeech recognition is enabled.
   - `en`: `QWEN`, `ANTHROPIC`; speech recognition is disabled (`DisabledSpeechRecognitionProvider`).
-- Edition-specific key fields/providers are configured in `composeApp/src/jvmMain/kotlin/ru/gigadesk/ui/common/ApiKeyProviders.kt` and drive Setup/Settings key UI.
+- Edition-specific key fields/providers are configured in `composeApp/src/jvmMain/kotlin/ru/souz/ui/common/ApiKeyProviders.kt` and drive Setup/Settings key UI.

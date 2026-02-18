@@ -3,9 +3,9 @@ package tool.files
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.mockk.every
 import io.mockk.mockk
-import ru.gigadesk.giga.gigaJsonMapper
-import ru.gigadesk.tool.files.FilesToolUtil
-import ru.gigadesk.tool.files.ToolFindInFiles
+import ru.souz.giga.gigaJsonMapper
+import ru.souz.tool.files.FilesToolUtil
+import ru.souz.tool.files.ToolFindInFiles
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertFalse

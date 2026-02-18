@@ -1,0 +1,222 @@
+package ru.souz.di
+
+import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import ru.souz.edition.BuildEdition
+import ru.souz.edition.BuildEditionConfig
+import ru.souz.db.SettingsProviderImpl
+import org.kodein.di.DI
+import org.kodein.di.bindSingleton
+import org.kodein.di.instance
+import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.nodes.NodesErrorHandling
+import ru.souz.agent.nodes.NodesCommon
+import ru.souz.agent.nodes.NodesLLM
+import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.nodes.NodesClassification
+import ru.souz.agent.nodes.NodesMCP
+import ru.souz.agent.session.GraphSessionRepository
+import ru.souz.agent.session.GraphSessionService
+import ru.souz.server.AgentNode
+import ru.souz.server.GraphAgentNode
+import ru.souz.audio.ActiveSoundRecorderImpl
+import ru.souz.audio.InMemoryAudioRecorder
+import ru.souz.audio.Say
+import ru.souz.db.ConfigStore
+import ru.souz.db.DesktopDataExtractor
+import ru.souz.db.DesktopInfoRepository
+import ru.souz.db.SettingsProvider
+import ru.souz.db.VectorDB
+import ru.souz.giga.ApiClassifier
+import ru.souz.giga.GigaAuth
+import ru.souz.giga.GigaChatAPI
+import ru.souz.giga.GigaGRPCChatApi
+import ru.souz.giga.LLMFactory
+import ru.souz.giga.GigaRestChatAPI
+import ru.souz.giga.GigaVoiceAPI
+import ru.souz.giga.SessionTokenLogging
+import ru.souz.giga.TokenLogging
+import ru.souz.keys.Keys
+import ru.souz.llms.AiTunnelChatAPI
+import ru.souz.llms.AnthropicChatAPI
+import ru.souz.llms.OpenAIChatAPI
+import ru.souz.llms.QwenChatAPI
+import ru.souz.mcp.McpClientManager
+import ru.souz.mcp.McpConfigProvider
+import ru.souz.service.telegram.TelegramService
+import ru.souz.tool.*
+import ru.souz.tool.application.*
+import ru.souz.tool.browser.*
+import ru.souz.tool.calendar.*
+import ru.souz.tool.config.*
+import ru.souz.tool.dataAnalytics.*
+import ru.souz.tool.dataAnalytics.excel.ExcelReport
+import ru.souz.tool.dataAnalytics.excel.ExcelRead
+import ru.souz.tool.desktop.*
+import ru.souz.tool.files.*
+import ru.souz.tool.mail.*
+import ru.souz.tool.notes.*
+import ru.souz.tool.textReplace.*
+import ru.souz.tool.math.ToolCalculator
+import ru.souz.ui.main.usecases.DisabledSpeechRecognitionProvider
+import ru.souz.ui.main.usecases.MainUseCasesFactory
+import ru.souz.ui.main.usecases.FinderPathExtractor
+import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
+import ru.souz.ui.main.usecases.SpeechRecognitionProvider
+import ru.souz.tool.presentation.ToolPresentationCreate
+import ru.souz.tool.presentation.ToolPresentationRead
+import ru.souz.tool.telegram.ToolTelegramForward
+import ru.souz.tool.telegram.ToolTelegramGetHistory
+import ru.souz.tool.telegram.ToolTelegramReadInbox
+import ru.souz.tool.telegram.ToolTelegramSavedMessages
+import ru.souz.tool.telegram.ToolTelegramSearch
+import ru.souz.tool.telegram.ToolTelegramSend
+import ru.souz.tool.telegram.ToolTelegramSetState
+
+private object DiTags {
+    const val MODULE_MAIN = "main"
+
+    const val TAG_LOG = "log"
+    const val TAG_API = "api"
+    const val TAG_LOCAL = "local"
+}
+
+val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
+    // utils
+    bindSingleton(tag = DiTags.TAG_LOG) {
+        jacksonObjectMapper()
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+            .enable(SerializationFeature.INDENT_OUTPUT)
+    }
+    bindSingleton { Say() }
+    bindSingleton { InMemoryAudioRecorder(ActiveSoundRecorderImpl()) }
+
+    // Native
+    bindSingleton { Keys() }
+
+    // DB
+    bindSingleton { ConfigStore }
+    bindSingleton { VectorDB }
+    bindSingleton<SettingsProvider> { SettingsProviderImpl(instance()) }
+    bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
+    bindSingleton { ToolsSettings(instance(), instance()) }
+    bindSingleton { FilesToolUtil(instance()) }
+    bindSingleton { ToolPermissionBroker(instance()) }
+    bindSingleton { TelegramService() }
+
+    // Tools
+    bindSingleton { ToolGetClipboard() }
+    bindSingleton { ToolListFiles(instance()) }
+    bindSingleton { ToolFindInFiles(instance()) }
+    bindSingleton { ToolNewFile(instance()) }
+    bindSingleton { ToolDeleteFile(instance(), instance()) }
+    bindSingleton { ToolModifyFile(instance(), instance()) }
+    bindSingleton { ToolMoveFile(instance(), instance()) }
+    bindSingleton { ToolExtractText(instance()) }
+    bindSingleton { ToolFindFilesByName(instance()) }
+    bindSingleton { ToolReadPdfPages(instance()) }
+    bindSingleton { ToolOpen(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolCreateNewBrowserTab(ToolRunBashCommand) }
+    bindSingleton { ToolSafariInfo(ToolRunBashCommand) }
+    bindSingleton { ToolBrowserHotkeys(instance()) }
+    bindSingleton { ToolFocusOnTab(ToolRunBashCommand) }
+    bindSingleton { ToolChromeInfo(ToolRunBashCommand) }
+    bindSingleton { ToolOpenDefaultBrowser(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolSoundConfig(ConfigStore) }
+    bindSingleton { ToolSoundConfigDiff(ConfigStore) }
+    bindSingleton { ToolInstructionStore(ConfigStore, instance()) }
+    bindSingleton { ToolOpenNote(ToolRunBashCommand) }
+    bindSingleton { ToolCreateNote(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolDeleteNote(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolListNotes(ToolRunBashCommand) }
+    bindSingleton { ToolSearchNotes(ToolRunBashCommand) }
+    bindSingleton { ToolShowApps(instance(), ToolRunBashCommand) }
+    bindSingleton { ToolCreatePlotFromCsv(instance()) }
+    bindSingleton { ToolCalendarCreateEvent(ToolRunBashCommand) }
+    bindSingleton { ToolCalendarDeleteEvent(ToolRunBashCommand) }
+    bindSingleton { ToolCalendarListCalendars(ToolRunBashCommand) }
+    bindSingleton { ToolCalendarListEvents(ToolRunBashCommand) }
+    bindSingleton { ToolMailUnreadMessagesCount(ToolRunBashCommand) }
+    bindSingleton { ToolMailListMessages(ToolRunBashCommand) }
+    bindSingleton { ToolMailReadMessage(ToolRunBashCommand) }
+    bindSingleton { ToolMailReplyMessage(ToolRunBashCommand) }
+    bindSingleton { ToolMailSendNewMessage(ToolRunBashCommand) }
+    bindSingleton { ToolMailSearch(ToolRunBashCommand) }
+    bindSingleton { ToolTextReplace(ToolRunBashCommand) }
+    bindSingleton { ToolTextUnderSelection(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolFindFolders(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolUploadFile(instance()) }
+    bindSingleton { ToolDownloadFile(instance()) }
+    bindSingleton { ToolTakeScreenshot(ToolRunBashCommand) }
+    bindSingleton { ToolStartScreenRecording(ToolRunBashCommand) }
+    bindSingleton { ToolCalculator() }
+    bindSingleton { ExcelRead(instance()) }
+    bindSingleton { ExcelReport(instance()) }
+    bindSingleton { ToolPresentationCreate(instance()) }
+    bindSingleton { ToolPresentationRead() }
+    bindSingleton { ToolTelegramReadInbox(instance()) }
+    bindSingleton { ToolTelegramGetHistory(instance()) }
+    bindSingleton { ToolTelegramSetState(instance(), instance()) }
+    bindSingleton { ToolTelegramSend(instance(), instance()) }
+    bindSingleton { ToolTelegramForward(instance(), instance()) }
+    bindSingleton { ToolTelegramSearch(instance()) }
+    bindSingleton { ToolTelegramSavedMessages(instance()) }
+
+    bindSingleton { GraphSessionRepository() }
+    bindSingleton { GraphSessionService(instance(), instance(DiTags.TAG_LOG)) }
+    bindSingleton { DesktopDataExtractor(instance(), instance()) }
+
+    // API
+    bindSingleton { GigaAuth(instance()) }
+    bindSingleton<TokenLogging> {
+        SessionTokenLogging(logObjectMapper = instance(DiTags.TAG_LOG))
+    }
+    bindSingleton<GigaGRPCChatApi> {
+        GigaGRPCChatApi(instance(), instance())
+    }
+    bindSingleton<GigaRestChatAPI> {
+        GigaRestChatAPI(instance(), instance(), instance())
+    }
+    bindSingleton<QwenChatAPI> { QwenChatAPI(instance(), instance()) }
+    bindSingleton<AiTunnelChatAPI> { AiTunnelChatAPI(instance(), instance()) }
+    bindSingleton<AnthropicChatAPI> { AnthropicChatAPI(instance(), instance()) }
+    bindSingleton<OpenAIChatAPI> { OpenAIChatAPI(instance(), instance()) }
+    bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton<GigaChatAPI> { instance<LLMFactory>() }
+    bindSingleton { GigaVoiceAPI(instance(), instance()) }
+    bindSingleton<SpeechRecognitionProvider> {
+        when (BuildEditionConfig.current) {
+            BuildEdition.RU -> SaluteSpeechRecognitionProvider(instance())
+            BuildEdition.EN -> DisabledSpeechRecognitionProvider
+        }
+    }
+    bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
+    bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
+
+    // LLM
+    bindSingleton { NodesErrorHandling() }
+    bindSingleton { NodesCommon(instance(), instance()) }
+    bindSingleton { NodesLLM(instance(), instance()) }
+    bindSingleton { NodesMCP(instance()) }
+    bindSingleton { NodesSummarization(instance(), instance()) }
+    bindSingleton {
+        NodesClassification(
+            instance(),
+            instance(DiTags.TAG_LOG),
+            apiClassifier = instance(DiTags.TAG_API),
+            localClassifier = instance(DiTags.TAG_LOCAL),
+            instance(),
+            instance(),
+        )
+    }
+    bindSingleton { ToolsFactory(di) }
+    bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
+    bindSingleton { FinderPathExtractor(instance()) }
+    bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { McpConfigProvider(instance()) }
+    bindSingleton { McpClientManager(instance()) }
+
+    // Server
+    bindSingleton<AgentNode> { GraphAgentNode(instance()) }
+}
