@@ -99,6 +99,10 @@ import java.awt.dnd.DropTargetDragEvent
 import java.awt.dnd.DropTargetDropEvent
 import java.awt.dnd.DropTargetEvent
 import java.awt.dnd.DropTargetListener
+import java.awt.event.ContainerAdapter
+import java.awt.event.ContainerEvent
+import javax.swing.RootPaneContainer
+import javax.swing.TransferHandler
 import org.jetbrains.skia.Image as SkiaImage
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import ru.souz.ui.common.FinderService
@@ -619,49 +623,55 @@ private fun ChatFileDropTarget(
 ) {
     val windowScope = LocalWindowScope.current
     val composeWindow = windowScope?.window
+    val latestOnDropFiles by rememberUpdatedState(onDropFiles)
+    val latestOnDragStateChanged by rememberUpdatedState(onDragStateChanged)
 
-    DisposableEffect(composeWindow, enabled, onDropFiles, onDragStateChanged) {
+    DisposableEffect(composeWindow, enabled) {
         if (!enabled || composeWindow == null) {
-            onDispose { onDragStateChanged(false) }
+            onDispose { latestOnDragStateChanged(false) }
         } else {
             val previousTargets = LinkedHashMap<Component, DropTarget?>()
+            val containerListeners = LinkedHashMap<Container, ContainerAdapter>()
+            val rootPaneContainer = composeWindow as? RootPaneContainer
+            val previousTransferHandler = rootPaneContainer?.rootPane?.transferHandler
+
             val listener = object : DropTargetListener {
                 override fun dragEnter(dtde: DropTargetDragEvent) {
                     if (dtde.isFileDragEvent()) {
                         dtde.acceptDrag(DnDConstants.ACTION_COPY_OR_MOVE)
-                        onDragStateChanged(true)
+                        latestOnDragStateChanged(true)
                     } else {
                         dtde.rejectDrag()
-                        onDragStateChanged(false)
+                        latestOnDragStateChanged(false)
                     }
                 }
 
                 override fun dragOver(dtde: DropTargetDragEvent) {
                     if (dtde.isFileDragEvent()) {
                         dtde.acceptDrag(DnDConstants.ACTION_COPY_OR_MOVE)
-                        onDragStateChanged(true)
+                        latestOnDragStateChanged(true)
                     } else {
                         dtde.rejectDrag()
-                        onDragStateChanged(false)
+                        latestOnDragStateChanged(false)
                     }
                 }
 
                 override fun dropActionChanged(dtde: DropTargetDragEvent) {
                     if (dtde.isFileDragEvent()) {
                         dtde.acceptDrag(DnDConstants.ACTION_COPY_OR_MOVE)
-                        onDragStateChanged(true)
+                        latestOnDragStateChanged(true)
                     } else {
                         dtde.rejectDrag()
-                        onDragStateChanged(false)
+                        latestOnDragStateChanged(false)
                     }
                 }
 
                 override fun dragExit(dte: DropTargetEvent) {
-                    onDragStateChanged(false)
+                    latestOnDragStateChanged(false)
                 }
 
                 override fun drop(dtde: DropTargetDropEvent) {
-                    onDragStateChanged(false)
+                    latestOnDragStateChanged(false)
                     if (!dtde.isFileDropEvent()) {
                         dtde.rejectDrop()
                         return
@@ -675,39 +685,61 @@ private fun ChatFileDropTarget(
                     }
 
                     dtde.acceptDrop(DnDConstants.ACTION_COPY_OR_MOVE)
-                    onDropFiles(paths)
+                    latestOnDropFiles(paths)
                     dtde.dropComplete(true)
                 }
             }
 
-            val targets = collectComponentsRecursively(composeWindow)
-            targets.forEach { target ->
-                previousTargets[target] = target.dropTarget
+            fun attachToComponentTree(component: Component) {
+                if (previousTargets.containsKey(component)) return
+                previousTargets[component] = component.dropTarget
                 runCatching {
-                    target.dropTarget = DropTarget(target, DnDConstants.ACTION_COPY_OR_MOVE, listener, true)
+                    component.dropTarget = DropTarget(component, DnDConstants.ACTION_COPY_OR_MOVE, listener, true)
+                }
+
+                if (component is Container) {
+                    if (!containerListeners.containsKey(component)) {
+                        val containerListener = object : ContainerAdapter() {
+                            override fun componentAdded(e: ContainerEvent) {
+                                e.child?.let(::attachToComponentTree)
+                            }
+                        }
+                        component.addContainerListener(containerListener)
+                        containerListeners[component] = containerListener
+                    }
+                    component.components.forEach(::attachToComponentTree)
+                }
+            }
+            attachToComponentTree(composeWindow)
+
+            rootPaneContainer?.rootPane?.transferHandler = object : TransferHandler() {
+                override fun canImport(support: TransferSupport): Boolean =
+                    support.isDataFlavorSupported(DataFlavor.javaFileListFlavor) ||
+                        support.isDataFlavorSupported(DataFlavor.stringFlavor)
+
+                override fun importData(support: TransferSupport): Boolean {
+                    if (!canImport(support)) return false
+                    val paths = FinderService.extractDroppedFilePaths(support.transferable)
+                    if (paths.isEmpty()) return false
+                    latestOnDropFiles(paths)
+                    return true
                 }
             }
 
             onDispose {
-                onDragStateChanged(false)
+                latestOnDragStateChanged(false)
+                containerListeners.forEach { (container, handler) ->
+                    runCatching { container.removeContainerListener(handler) }
+                }
                 previousTargets.forEach { (target, previousDropTarget) ->
                     runCatching { target.dropTarget = previousDropTarget }
+                }
+                runCatching {
+                    rootPaneContainer?.rootPane?.transferHandler = previousTransferHandler
                 }
             }
         }
     }
-}
-
-private fun collectComponentsRecursively(root: Component): List<Component> {
-    val result = ArrayList<Component>()
-    fun walk(component: Component) {
-        result += component
-        if (component is Container) {
-            component.components.forEach(::walk)
-        }
-    }
-    walk(root)
-    return result
 }
 
 private fun DropTargetDragEvent.isFileDragEvent(): Boolean =
@@ -779,7 +811,10 @@ private fun ChatBubble(
         ) {
             if (message.isUser) {
                 if (message.attachedFiles.isNotEmpty()) {
-                    MessageAttachmentsPreview(files = message.attachedFiles)
+                    MessageAttachmentsPreview(
+                        files = message.attachedFiles,
+                        onOpenPath = onOpenPath,
+                    )
                     if (message.text.isNotBlank()) {
                         Spacer(modifier = Modifier.height(8.dp))
                     }
@@ -816,7 +851,9 @@ private fun ChatBubble(
                     fontSize = baseFontSize * 0.9,
                     color = Color(0xFFE0E0E0)
                 )
+                val attachmentPathKeys = message.attachedFiles.map { it.path.lowercase() }.toSet()
                 val clickablePaths = message.finderPaths
+                    .filterNot { it.path.lowercase() in attachmentPathKeys }
                 
                 val bubbleTypography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.SMALL)
                 val bubbleColors = chatMarkdownColors(baseStyle.color)
@@ -847,7 +884,10 @@ private fun ChatBubble(
 
                 if (message.attachedFiles.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    MessageAttachmentsPreview(files = message.attachedFiles)
+                    MessageAttachmentsPreview(
+                        files = message.attachedFiles,
+                        onOpenPath = onOpenPath,
+                    )
                 }
 
                 if (clickablePaths.isNotEmpty()) {
@@ -891,13 +931,17 @@ private fun ChatBubble(
 @OptIn(ExperimentalLayoutApi::class)
 private fun MessageAttachmentsPreview(
     files: List<ChatAttachedFile>,
+    onOpenPath: (String) -> Unit,
 ) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         files.forEach { file ->
-            MessageAttachmentTile(file = file)
+            MessageAttachmentTile(
+                file = file,
+                onOpenPath = onOpenPath,
+            )
         }
     }
 }
@@ -905,12 +949,16 @@ private fun MessageAttachmentsPreview(
 @Composable
 private fun MessageAttachmentTile(
     file: ChatAttachedFile,
+    onOpenPath: (String) -> Unit,
 ) {
     val previewStyle = messageAttachmentPreviewStyle(file.type)
     val bitmap = remember(file.thumbnailBytes) { decodeAttachmentThumbnail(file.thumbnailBytes) }
 
     Column(
-        modifier = Modifier.width(MessageAttachmentPreviewSize),
+        modifier = Modifier
+            .width(MessageAttachmentPreviewSize)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable { onOpenPath(file.path) },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
