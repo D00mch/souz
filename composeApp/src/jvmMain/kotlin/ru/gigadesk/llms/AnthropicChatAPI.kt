@@ -66,11 +66,10 @@ class AnthropicChatAPI(
 ) : GigaChatAPI {
     private val l = LoggerFactory.getLogger(AnthropicChatAPI::class.java)
 
-    private val apiKey: String
+    private val apiKey: String?
         get() = settingsProvider.anthropicKey
             ?: System.getenv("ANTHROPIC_API_KEY")
             ?: System.getProperty("ANTHROPIC_API_KEY")
-            ?: throw IllegalStateException("ANTHROPIC_API_KEY is not set")
 
     private val defaultChatModel: String
         get() = System.getenv("ANTHROPIC_MODEL")
