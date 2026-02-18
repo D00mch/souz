@@ -1,9 +1,9 @@
 <resources>
-    <string name="app_name">Gigadesk AI</string>
+    <string name="app_name">Souz AI</string>
     <string name="app_title_short">Union</string>
 
     <!-- Tray -->
-    <string name="tray_tooltip">Gigadesk AI</string>
+    <string name="tray_tooltip">Souz AI</string>
     <string name="tray_show_hide">Show/Hide</string>
     <string name="tray_mute">Mute</string>
     <string name="tray_exit">Exit</string>
@@ -139,7 +139,7 @@
     <string name="setup_hint_keys_found">Keys found: %d. You can continue.</string>
     <string name="setup_hint_voice_required">Voice commands use SaluteSpeech API. If you want to use voice, be sure to add this key.</string>
     <string name="setup_hint_voice_unavailable">Voice commands are not available in this build yet.</string>
-    <string name="button_open_gigadesk">Open GigaDesk</string>
+    <string name="button_open_gigadesk">Open Souz AI</string>
     <string name="button_add_key_to_proceed">Add at least one key</string>
 
     <!-- Common -->
@@ -197,8 +197,8 @@
     <string name="label_context">Context</string>
 
     <!-- Onboarding -->
-    <string name="onboarding_speech_text">Hello! I am GigaDesk, your smart assistant on your computer... I will now ask for permissions to access applications, the system, and files to work correctly... I can use the browser, work with mail and calendar, work with files on your PC, explain and rewrite selected text, open applications, create notes, answer questions, and build charts and diagrams based on data.</string>
-    <string name="onboarding_display_text">Hello! I am GigaDesk, a smart assistant on your computer.\nNow I will ask for permissions to access applications, the system, and files to work correctly.\nI can:\n- Use the browser\n- Work with mail and calendar\n- Work with files on your PC\n- Explain and rewrite selected text\n- Open applications, create notes, answer questions\n- Build charts and diagrams based on data\n\n\nTo start voice input - hold right opt(alt)\nTo clear conversation context - press X\nTo hide the window - press X twice</string>
+    <string name="onboarding_speech_text">Hello! I am Souz AI, your smart assistant on your computer... I will now ask for permissions to access applications, the system, and files to work correctly... I can use the browser, work with mail and calendar, work with files on your PC, explain and rewrite selected text, open applications, create notes, answer questions, and build charts and diagrams based on data.</string>
+    <string name="onboarding_display_text">Hello! I am Souz AI, a smart assistant on your computer.\nNow I will ask for permissions to access applications, the system, and files to work correctly.\nI can:\n- Use the browser\n- Work with mail and calendar\n- Work with files on your PC\n- Explain and rewrite selected text\n- Open applications, create notes, answer questions\n- Build charts and diagrams based on data\n\n\nTo start voice input - hold right opt(alt)\nTo clear conversation context - press X\nTo hide the window - press X twice</string>
     <string name="onboarding_input_permission_request">Allow access to input monitoring in macOS settings — the application will restart automatically after confirmation</string>
 
     <!-- Voice Input -->
@@ -262,7 +262,7 @@
     <string name="error_balance_unavailable_anthropic">Balance unavailable for Anthropic</string>
     <string name="error_balance_unavailable_openai">Balance unavailable for OpenAI</string>
     <string name="error_failed_send_logs">Failed to send logs</string>
-    <string name="support_email_subject">Gigadesk logs</string>
+    <string name="support_email_subject">Souz AI logs</string>
     <string name="support_email_body">Hello! Attached are the application log files.</string>
     <string name="support_email_success_format">Email created. If the attachment did not appear automatically, please attach the file %s manually.</string>
 
