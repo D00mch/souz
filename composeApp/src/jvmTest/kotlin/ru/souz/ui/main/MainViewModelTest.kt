@@ -9,9 +9,11 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.mockkConstructor
+import io.mockk.mockkObject
 import io.mockk.mockkStatic
 import io.mockk.runs
 import io.mockk.unmockkAll
+import io.mockk.unmockkObject
 import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +30,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
-import org.apache.tika.exception.FileTooLongException
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -55,6 +56,8 @@ import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import ru.souz.ui.main.usecases.VoiceInputUseCase
+import ru.souz.ui.common.FinderService
+import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.AfterTest
@@ -267,6 +270,107 @@ class MainViewModelTest {
             verify(exactly = 1) { harness.say.queue(any()) }
         } finally {
             harness.clear()
+        }
+    }
+
+    @Test
+    fun `pick attachments adds files to state`() = runTest(mainDispatcher) {
+        val harness = createHarness()
+        val tempFile = File.createTempFile("souz-attachment", ".txt").apply {
+            writeText("sample")
+            deleteOnExit()
+        }
+        val normalizedPath = FinderService.normalizePath(tempFile.absolutePath)!!
+
+        mockkObject(FinderService)
+        every { FinderService.normalizePath(any()) } answers { callOriginal() }
+        every { FinderService.displayName(any()) } answers { callOriginal() }
+        coEvery { FinderService.chooseFilesFromFinder(any()) } returns Result.success(listOf(tempFile.absolutePath))
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.PickChatAttachments)
+
+            val stateWithAttachment = awaitState(viewModel) { state ->
+                state.attachedFiles.map { it.path }.contains(normalizedPath)
+            }
+            assertEquals(1, stateWithAttachment.attachedFiles.size)
+            assertEquals(tempFile.name, stateWithAttachment.attachedFiles.single().displayName)
+        } finally {
+            unmockkObject(FinderService)
+            harness.clear()
+            tempFile.delete()
+        }
+    }
+
+    @Test
+    fun `dropped attachments are deduplicated and removable`() = runTest(mainDispatcher) {
+        val harness = createHarness()
+        val tempFile = File.createTempFile("souz-drop", ".txt").apply {
+            writeText("drop")
+            deleteOnExit()
+        }
+        val normalizedPath = FinderService.normalizePath(tempFile.absolutePath)!!
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(
+                MainEvent.AttachDroppedFiles(
+                    listOf(tempFile.absolutePath, "file://${tempFile.absolutePath}")
+                )
+            )
+
+            val attached = awaitState(viewModel) { state -> state.attachedFiles.size == 1 }
+            assertEquals(listOf(normalizedPath), attached.attachedFiles.map { it.path })
+
+            viewModel.handleEvent(MainEvent.RemoveChatAttachment("file://${tempFile.absolutePath}"))
+            val cleared = awaitState(viewModel) { it.attachedFiles.isEmpty() }
+            assertTrue(cleared.attachedFiles.isEmpty())
+        } finally {
+            harness.clear()
+            tempFile.delete()
+        }
+    }
+
+    @Test
+    fun `sending message with attachments composes payload and clears pending attachments`() = runTest(mainDispatcher) {
+        var executedInput: String? = null
+        val harness = createHarness(executeBehavior = { input ->
+            executedInput = input
+            "assistant reply"
+        })
+        val tempFile = File.createTempFile("souz-send", ".txt").apply {
+            writeText("send")
+            deleteOnExit()
+        }
+        val normalizedPath = FinderService.normalizePath(tempFile.absolutePath)!!
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("Please inspect")))
+            viewModel.handleEvent(MainEvent.AttachDroppedFiles(listOf(tempFile.absolutePath)))
+            awaitState(viewModel) { state -> state.attachedFiles.size == 1 }
+
+            viewModel.handleEvent(MainEvent.SendChatMessage)
+
+            val finalState = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "assistant reply" }
+            }
+
+            assertEquals("Please inspect\n\n$normalizedPath", executedInput)
+            val userMessage = finalState.chatMessages.first { it.isUser }
+            assertEquals("Please inspect", userMessage.text)
+            assertEquals(listOf(normalizedPath), userMessage.attachedFiles.map { it.path })
+            assertTrue(finalState.attachedFiles.isEmpty())
+        } finally {
+            harness.clear()
+            tempFile.delete()
         }
     }
 

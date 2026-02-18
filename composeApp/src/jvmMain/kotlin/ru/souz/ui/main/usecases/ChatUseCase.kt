@@ -17,6 +17,7 @@ import ru.souz.agent.GraphBasedAgent
 import ru.souz.agent.engine.AgentContext
 import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
+import ru.souz.ui.main.ChatAttachedFile
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainState
 import java.util.concurrent.atomic.AtomicBoolean
@@ -29,6 +30,7 @@ class ChatUseCase(
     private val settingsProvider: SettingsProvider,
     private val speechUseCase: SpeechUseCase,
     private val finderPathExtractor: FinderPathExtractor,
+    private val chatAttachmentsUseCase: ChatAttachmentsUseCase,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val l = LoggerFactory.getLogger(ChatUseCase::class.java)
@@ -51,7 +53,13 @@ class ChatUseCase(
         }
     }
 
-    suspend fun sendChatMessage(scope: CoroutineScope, isVoice: Boolean, chatMessage: String) {
+    suspend fun sendChatMessage(
+        scope: CoroutineScope,
+        isVoice: Boolean,
+        chatMessage: String,
+        displayMessage: String = chatMessage,
+        attachedFiles: List<ChatAttachedFile> = emptyList(),
+    ) {
         killTaskSideEffectJobs()
         cancelActiveJob()
 
@@ -60,9 +68,10 @@ class ChatUseCase(
 
         val requestId = activeChatRequestId.incrementAndGet()
         val userMessage = ChatMessage(
-            text = userText,
+            text = displayMessage.trim(),
             isUser = true,
             isVoice = isVoice,
+            attachedFiles = attachedFiles,
         )
 
         emitState {
@@ -91,9 +100,14 @@ class ChatUseCase(
                 activeAgent().execute(userText)
             }
 
+            val extractedFinderPaths = extractFinderPaths(response)
+            val botAttachments = chatAttachmentsUseCase.buildAttachmentsFromPaths(
+                extractedFinderPaths.map { it.path }
+            )
             val botMessage = pendingBotMessage.copy(
                 text = response,
-                finderPaths = extractFinderPaths(response),
+                finderPaths = extractedFinderPaths,
+                attachedFiles = botAttachments,
             )
             if (activeChatRequestId.get() != requestId) {
                 l.info("Skipping stale chat response for request {}", requestId)

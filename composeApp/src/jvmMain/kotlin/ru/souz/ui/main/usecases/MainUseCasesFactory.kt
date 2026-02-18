@@ -12,6 +12,7 @@ data class MainUseCases(
     val voiceInput: VoiceInputUseCase,
     val speech: SpeechUseCase,
     val permissions: OnboardingUseCase,
+    val attachments: ChatAttachmentsUseCase,
 )
 
 class MainUseCasesFactory(
@@ -26,11 +27,13 @@ class MainUseCasesFactory(
 
     fun create(ioDispatcher: CoroutineDispatcher): MainUseCases {
         val speechUseCase = SpeechUseCase(say)
+        val attachmentsUseCase = ChatAttachmentsUseCase(ioDispatcher)
         val chatUseCase = ChatUseCase(
             graphAgent = graphAgent,
             settingsProvider = settingsProvider,
             speechUseCase = speechUseCase,
             finderPathExtractor = finderPathExtractor,
+            chatAttachmentsUseCase = attachmentsUseCase,
             ioDispatcher = ioDispatcher,
         )
         val permissionsUseCase = OnboardingUseCase(
@@ -52,6 +55,7 @@ class MainUseCasesFactory(
             voiceInput = voiceInputUseCase,
             speech = speechUseCase,
             permissions = permissionsUseCase,
+            attachments = attachmentsUseCase,
         )
     }
 }

@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalFoundationApi::class)
+@file:OptIn(ExperimentalFoundationApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 
 package ru.souz.ui.main
 
@@ -9,9 +9,12 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -54,9 +57,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,8 +79,18 @@ import ru.souz.ui.common.parseMarkdownContent
 import ru.souz.ui.common.CodeBlockWithCopy
 import ru.souz.ui.common.MarkdownPart
 import ru.souz.ui.glassColors
+import ru.souz.LocalWindowScope
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.key.*
+import java.awt.datatransfer.Transferable
+import java.awt.dnd.DnDConstants
+import java.awt.dnd.DropTarget
+import java.awt.dnd.DropTargetAdapter
+import java.awt.dnd.DropTargetDragEvent
+import java.awt.dnd.DropTargetDropEvent
+import java.awt.dnd.DropTargetEvent
+import java.util.Locale
+
 
 private val TopButtonSize = 24.dp
 private val TopIconSize = 14.dp
@@ -91,6 +106,8 @@ private val ChatAssistantTimestampColor = Color(0x7FFFFFFF)
 private val FinderPathChipBackground = Color(0x2625CAB0)
 private val FinderPathChipBorder = Color(0x8812E0B5)
 private val FinderPathChipTextColor = Color(0xFF12E0B5)
+private val MessageAttachmentPreviewSize = 64.dp
+private val MessageAttachmentNameColor = Color(0x99FFFFFF)
 
 
 @Composable
@@ -136,6 +153,9 @@ fun MainScreen(
         onUpdateChatInput = { viewModel.send(MainEvent.UpdateChatInput(it)) },
         onChatModelChange = { viewModel.send(MainEvent.UpdateChatModel(it)) },
         onChatContextSizeChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
+        onPickChatAttachments = { viewModel.send(MainEvent.PickChatAttachments) },
+        onAttachDroppedTransferable = { viewModel.onAttachDroppedTransferable(it) },
+        onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
         onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage) },
         onClearContext = { viewModel.send(MainEvent.StopAgentJob) },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
@@ -163,6 +183,9 @@ fun MainScreenContent(
     onUpdateChatInput: (TextFieldValue) -> Unit = {},
     onChatModelChange: (String) -> Unit = {},
     onChatContextSizeChange: (Int) -> Unit = {},
+    onPickChatAttachments: () -> Unit = {},
+    onAttachDroppedTransferable: (Transferable) -> Unit = {},
+    onRemoveChatAttachment: (String) -> Unit = {},
     onSendChatMessage: () -> Unit = {},
     onClearContext: () -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
@@ -292,6 +315,7 @@ fun MainScreenContent(
                     selectedModel = state.selectedModel,
                     availableModelAliases = state.availableModelAliases,
                     selectedContextSize = state.selectedContextSize,
+                    attachedFiles = state.attachedFiles,
                     isProcessing = state.isProcessing,
                     isListening = state.isListening,
                     isOnline = isOnline,
@@ -299,6 +323,9 @@ fun MainScreenContent(
                     onInputChange = onUpdateChatInput,
                     onModelChange = onChatModelChange,
                     onContextChange = onChatContextSizeChange,
+                    onPickAttachments = onPickChatAttachments,
+                    onDropTransferable = onAttachDroppedTransferable,
+                    onRemoveAttachment = onRemoveChatAttachment,
                     onSendMessage = onSendChatMessage,
                     onCancelProcessing = onClearContext,
                     onStartListening = onStartListening,
@@ -422,6 +449,7 @@ fun ChatModeContent(
     selectedModel: String,
     availableModelAliases: List<String>,
     selectedContextSize: Int,
+    attachedFiles: List<ChatAttachedFile>,
     isProcessing: Boolean,
     isListening: Boolean,
     isOnline: Boolean,
@@ -429,6 +457,9 @@ fun ChatModeContent(
     onInputChange: (TextFieldValue) -> Unit,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
+    onPickAttachments: () -> Unit,
+    onDropTransferable: (Transferable) -> Unit,
+    onRemoveAttachment: (String) -> Unit,
     onSendMessage: () -> Unit,
     onCancelProcessing: () -> Unit = {},
     onStartListening: () -> Unit,
@@ -443,6 +474,7 @@ fun ChatModeContent(
     val textColor = MaterialTheme.glassColors.textPrimary
     val speakingAssistantMessageId = remember(messages) { messages.lastOrNull { !it.isUser }?.id }
     val stringProcessing = stringResource(Res.string.status_processing)
+    var isFileDragActive by remember { mutableStateOf(false) }
 
     val windowInfo = LocalWindowInfo.current
     val isWindowFocused = windowInfo.isWindowFocused
@@ -458,7 +490,15 @@ fun ChatModeContent(
             listState.animateScrollToItem(messages.size - 1)
         }
     }
+
+
     
+    ChatFileDropTarget(
+        enabled = true,
+        onDropTransferable = onDropTransferable,
+        onDragStateChanged = { isActive -> isFileDragActive = isActive }
+    )
+
     Column(
         modifier = modifier.onPreviewKeyEvent { event ->
             if (event.type == KeyEventType.KeyDown &&
@@ -538,6 +578,10 @@ fun ChatModeContent(
             onValueChange = onInputChange,
             onSend = onSendMessage,
             onCancel = onCancelProcessing,
+            attachedFiles = attachedFiles,
+            onAttachClick = onPickAttachments,
+            onRemoveAttachment = onRemoveAttachment,
+            isFileDragActive = isFileDragActive,
             isProcessing = isProcessing,
             isListening = isListening,
             onStartListening = onStartListening,
@@ -558,6 +602,53 @@ fun ChatModeContent(
     }
 }
 
+
+
+
+@Composable
+private fun ChatFileDropTarget(
+    enabled: Boolean,
+    onDropTransferable: (Transferable) -> Unit,
+    onDragStateChanged: (Boolean) -> Unit,
+) {
+    val windowScope = LocalWindowScope.current
+    val window = windowScope?.window
+    val currentOnDropTransferable by rememberUpdatedState(onDropTransferable)
+    val currentOnDragState by rememberUpdatedState(onDragStateChanged)
+
+    DisposableEffect(window, enabled) {
+        if (window == null || !enabled) return@DisposableEffect onDispose {}
+
+        val listener = object : DropTargetAdapter() {
+            override fun dragEnter(dtde: DropTargetDragEvent) {
+                currentOnDragState(true)
+            }
+
+            override fun dragExit(dte: DropTargetEvent) {
+                currentOnDragState(false)
+            }
+
+            override fun drop(dtde: DropTargetDropEvent) {
+                currentOnDragState(false)
+                try {
+                    dtde.acceptDrop(DnDConstants.ACTION_COPY)
+                    currentOnDropTransferable(dtde.transferable)
+                    dtde.dropComplete(true)
+                } catch (e: Exception) {
+                    dtde.dropComplete(false)
+                }
+            }
+        }
+
+        val target = DropTarget(window, DnDConstants.ACTION_COPY, listener)
+        
+        onDispose {
+            if (window.dropTarget == target) {
+                window.dropTarget = null
+            }
+        }
+    }
+}
 
 @Composable
 private fun ChatBubble(
@@ -620,20 +711,32 @@ private fun ChatBubble(
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             if (message.isUser) {
+                if (message.attachedFiles.isNotEmpty()) {
+                    MessageAttachmentsPreview(
+                        files = message.attachedFiles,
+                        onOpenPath = onOpenPath,
+                    )
+                    if (message.text.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+
                 val customSelectionColors = TextSelectionColors(
                     handleColor = Color(0xFFFFFFFF),
                     backgroundColor = Color(0x66FFFFFF)
                 )
 
-                CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
-                    SelectionContainer {
-                        Text(
-                            text = message.text,
-                            color = ChatUserTextColor,
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            modifier = Modifier.padding(bottom = 3.dp)
-                        )
+                if (message.text.isNotBlank()) {
+                    CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
+                        SelectionContainer {
+                            Text(
+                                text = message.text,
+                                color = ChatUserTextColor,
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                modifier = Modifier.padding(bottom = 3.dp)
+                            )
+                        }
                     }
                 }
             } else {
@@ -649,7 +752,11 @@ private fun ChatBubble(
                     fontSize = baseFontSize * 0.9,
                     color = Color(0xFFE0E0E0)
                 )
+                val attachmentPathKeys = remember(message.attachedFiles) {
+                    message.attachedFiles.map { it.path.lowercase(Locale.ROOT) }.toSet()
+                }
                 val clickablePaths = message.finderPaths
+                    .filterNot { it.path.lowercase(Locale.ROOT) in attachmentPathKeys }
                 
                 val bubbleTypography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.SMALL)
                 val bubbleColors = chatMarkdownColors(baseStyle.color)
@@ -676,6 +783,14 @@ private fun ChatBubble(
                             }
                         }
                     }
+                }
+
+                if (message.attachedFiles.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    MessageAttachmentsPreview(
+                        files = message.attachedFiles,
+                        onOpenPath = onOpenPath,
+                    )
                 }
 
                 if (clickablePaths.isNotEmpty()) {
@@ -712,6 +827,78 @@ private fun ChatBubble(
                 }
             }
         }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun MessageAttachmentsPreview(
+    files: List<ChatAttachedFile>,
+    onOpenPath: (String) -> Unit,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        files.forEach { file ->
+            MessageAttachmentTile(
+                file = file,
+                onOpenPath = onOpenPath,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MessageAttachmentTile(
+    file: ChatAttachedFile,
+    onOpenPath: (String) -> Unit,
+) {
+    val previewStyle = chatAttachmentUiStyle(file.type)
+    val bitmap = remember(file.thumbnailBytes) { decodeAttachmentThumbnail(file.thumbnailBytes) }
+
+    Column(
+        modifier = Modifier
+            .width(MessageAttachmentPreviewSize)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable { onOpenPath(file.path) },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(MessageAttachmentPreviewSize)
+                .clip(RoundedCornerShape(8.dp))
+                .background(previewStyle.background)
+                .border(1.dp, previewStyle.border, RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (file.type == ChatAttachmentType.IMAGE && bitmap != null) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = file.displayName,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    imageVector = previewStyle.icon,
+                    contentDescription = null,
+                    tint = previewStyle.iconTint,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Text(
+            text = file.displayName,
+            color = MessageAttachmentNameColor,
+            fontSize = 10.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 12.sp
+        )
     }
 }
 
