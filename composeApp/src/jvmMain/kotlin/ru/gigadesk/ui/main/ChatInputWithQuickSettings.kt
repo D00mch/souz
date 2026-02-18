@@ -143,6 +143,7 @@ internal fun ChatInputWithQuickSettings(
     enabled: Boolean,
     focusRequester: FocusRequester,
     selectedModel: String,
+    availableModelAliases: List<String>,
     selectedContextSize: Int,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
@@ -163,8 +164,12 @@ internal fun ChatInputWithQuickSettings(
         isContextDropdownOpen = false
     }
 
-    val modelOptions = remember {
-        LlmBuildProfile.availableModels.map { QuickOption(value = it.alias, label = it.displayName) }
+    val modelOptions = remember(availableModelAliases) {
+        availableModelAliases.mapNotNull { alias ->
+            LlmBuildProfile.findModelByAlias(alias)?.let { model ->
+                QuickOption(value = model.alias, label = model.displayName)
+            }
+        }
     }
     val contextOptions = remember {
         ContextOptions.map { QuickOption(value = it, label = formatWithSpaces(it)) }

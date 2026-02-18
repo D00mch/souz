@@ -50,6 +50,7 @@ data class MainState(
     val chatStartTip: String = "",
     val chatInputText: TextFieldValue = TextFieldValue(""),
     val selectedModel: String = LlmBuildProfile.defaultModel.alias,
+    val availableModelAliases: List<String> = LlmBuildProfile.availableModels.map { it.alias },
     val selectedContextSize: Int = DEFAULT_MAX_TOKENS,
     val isSpeaking: Boolean = false,
     val showNewChatDialog: Boolean = false,

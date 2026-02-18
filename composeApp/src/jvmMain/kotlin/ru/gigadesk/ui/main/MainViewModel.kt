@@ -23,7 +23,7 @@ import ru.gigadesk.agent.GraphBasedAgent
 import ru.gigadesk.agent.engine.AgentContext
 import ru.gigadesk.db.DesktopInfoRepository
 import ru.gigadesk.db.SettingsProvider
-import ru.gigadesk.giga.LlmBuildProfile
+import ru.gigadesk.giga.GigaModel
 import ru.gigadesk.ui.BaseViewModel
 import ru.gigadesk.ui.main.usecases.ChatUseCase
 import ru.gigadesk.ui.main.usecases.MainUseCaseOutput
@@ -32,9 +32,10 @@ import ru.gigadesk.ui.main.usecases.MainUseCasesFactory
 import ru.gigadesk.ui.main.usecases.OnboardingUseCase
 import ru.gigadesk.ui.main.usecases.SpeechUseCase
 import ru.gigadesk.ui.main.usecases.VoiceInputUseCase
+import ru.gigadesk.ui.settings.availableLlmModels
+import ru.gigadesk.ui.settings.defaultLlmModel
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.minutes
-
 import gigadesk.composeapp.generated.resources.Res
 import gigadesk.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
@@ -69,9 +70,14 @@ class MainViewModel(
         viewModelScope.launch {
             startTips = getStringArray(Res.array.start_tips)
             val randomTip = startTips.randomOrNull() ?: ""
+            val availableModels = settingsProvider.availableLlmModels()
+            val selectedModel = pickConfiguredOrDefaultModel(availableModels)
+            applySelectedModel(selectedModel)
+
             setState {
                 copy(
-                    selectedModel = settingsProvider.gigaModel.alias,
+                    selectedModel = selectedModel.alias,
+                    availableModelAliases = availableModels.map { it.alias },
                     selectedContextSize = settingsProvider.contextSize,
                     displayedText = randomTip,
                     chatStartTip = randomTip
@@ -209,7 +215,8 @@ class MainViewModel(
     }
 
     private suspend fun updateChatModel(modelAlias: String) {
-        val model = LlmBuildProfile.findModelByAlias(modelAlias) ?: return
+        val availableModels = settingsProvider.availableLlmModels()
+        val model = availableModels.firstOrNull { it.alias == modelAlias } ?: return
         settingsProvider.gigaModel = model
         chatUseCase.updateModel(model)
         setState { copy(selectedModel = model.alias) }
@@ -223,11 +230,29 @@ class MainViewModel(
     }
 
     private suspend fun refreshSettings() {
+        val availableModels = settingsProvider.availableLlmModels()
+        val selectedModel = pickConfiguredOrDefaultModel(availableModels)
+        applySelectedModel(selectedModel)
+
         setState {
             copy(
-                selectedModel = settingsProvider.gigaModel.alias,
+                selectedModel = selectedModel.alias,
+                availableModelAliases = availableModels.map { it.alias },
                 selectedContextSize = settingsProvider.contextSize,
             )
+        }
+    }
+
+    private fun pickConfiguredOrDefaultModel(availableModels: List<GigaModel>) = when {
+        availableModels.isEmpty() -> settingsProvider.gigaModel
+        settingsProvider.gigaModel in availableModels -> settingsProvider.gigaModel
+        else -> settingsProvider.defaultLlmModel() ?: availableModels.first()
+    }
+
+    private fun applySelectedModel(model: GigaModel) {
+        if (settingsProvider.gigaModel != model) {
+            settingsProvider.gigaModel = model
+            chatUseCase.updateModel(model)
         }
     }
 
