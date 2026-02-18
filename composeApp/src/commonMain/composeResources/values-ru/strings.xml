@@ -19,7 +19,6 @@
     <string name="dialog_new_chat_text">Текущая история сообщений будет утеряна</string>
     <string name="dialog_new_chat_confirm">Начать</string>
     <string name="dialog_permission_title">Подтверждение действия</string>
-    Show only available models on main screen
     <string name="dialog_permission_allow">Разрешить</string>
     <string name="dialog_permission_deny">Запретить</string>
 
