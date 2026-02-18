@@ -7,15 +7,20 @@ import ru.souz.ui.common.FinderService
 import ru.souz.ui.main.ChatAttachedFile
 import ru.souz.ui.main.ChatAttachmentType
 import java.awt.RenderingHints
+import java.awt.datatransfer.Transferable
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.Locale
 import javax.imageio.ImageIO
 
 class ChatAttachmentsUseCase(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     suspend fun pickFilesFromFinder(): Result<List<String>> = FinderService.chooseFilesFromFinder()
+
+    fun extractDroppedFilePathsNow(transferable: Transferable): List<String> =
+        FinderService.extractDroppedFilePaths(transferable).takeLast(MAX_ATTACHMENTS)
 
     suspend fun addFiles(
         existing: List<ChatAttachedFile>,
@@ -25,7 +30,7 @@ class ChatAttachmentsUseCase(
 
         val existingByPath = LinkedHashMap<String, ChatAttachedFile>(existing.size + rawPaths.size)
         existing.forEach { file ->
-            existingByPath[file.path.lowercase()] = file
+            existingByPath[pathKey(file.path)] = file
         }
 
         rawPaths.forEach { rawPath ->
@@ -40,10 +45,12 @@ class ChatAttachmentsUseCase(
                 type = detectType(file),
                 thumbnailBytes = if (isImage(file)) createImageThumbnail(file) else null,
             )
-            existingByPath[normalized.lowercase()] = attachment
+            val key = pathKey(normalized)
+            existingByPath.remove(key)
+            existingByPath[key] = attachment
         }
 
-        existingByPath.values.toList()
+        existingByPath.values.toList().takeLast(MAX_ATTACHMENTS)
     }
 
     suspend fun buildAttachmentsFromPaths(paths: List<String>): List<ChatAttachedFile> =
@@ -62,9 +69,10 @@ class ChatAttachmentsUseCase(
         attachedFiles: List<ChatAttachedFile>,
     ): String {
         val text = input.trim()
-        if (attachedFiles.isEmpty()) return text
+        val limitedAttachments = attachedFiles.takeLast(MAX_ATTACHMENTS)
+        if (limitedAttachments.isEmpty()) return text
 
-        val pathsBlock = attachedFiles.joinToString(separator = "\n") { it.path }
+        val pathsBlock = limitedAttachments.joinToString(separator = "\n") { it.path }
         return when {
             text.isBlank() -> pathsBlock
             else -> "$text\n\n$pathsBlock"
@@ -102,7 +110,7 @@ class ChatAttachmentsUseCase(
     }
 
     private fun detectType(file: File): ChatAttachmentType {
-        val ext = file.extension.lowercase()
+        val ext = file.extension.lowercase(Locale.ROOT)
         return when {
             ext in documentExtensions -> ChatAttachmentType.DOCUMENT
             ext in imageExtensions -> ChatAttachmentType.IMAGE
@@ -115,9 +123,12 @@ class ChatAttachmentsUseCase(
         }
     }
 
-    private fun isImage(file: File): Boolean = file.extension.lowercase() in imageExtensions
+    private fun isImage(file: File): Boolean = file.extension.lowercase(Locale.ROOT) in imageExtensions
+
+    private fun pathKey(path: String): String = path.lowercase(Locale.ROOT)
 
     private companion object {
+        const val MAX_ATTACHMENTS = 50
         val documentExtensions = setOf("doc", "docx", "txt", "rtf", "md")
         val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "svg")
         val spreadsheetExtensions = setOf("xls", "xlsx", "csv")

@@ -36,19 +36,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AttachFile
-import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Description
-import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Mic
-import androidx.compose.material.icons.rounded.Movie
-import androidx.compose.material.icons.rounded.PictureAsPdf
-import androidx.compose.material.icons.rounded.TableChart
-import androidx.compose.material.icons.rounded.Image as ImageIcon
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -66,14 +58,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -82,7 +72,6 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
-import androidx.compose.ui.input.pointer.pointerMoveFilter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -104,8 +93,6 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.delay
 import kotlin.math.max
-import org.jetbrains.skia.Image as SkiaImage
-import androidx.compose.ui.graphics.toComposeImageBitmap
 import ru.souz.giga.LlmBuildProfile
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
@@ -532,7 +519,7 @@ private fun FileAttachmentItem(
     file: ChatAttachedFile,
     onRemove: (String) -> Unit,
 ) {
-    val style = attachmentVisualStyle(file.type)
+    val style = chatAttachmentUiStyle(file.type)
     val shape = RoundedCornerShape(8.dp)
 
     Row(
@@ -549,7 +536,7 @@ private fun FileAttachmentItem(
             modifier = Modifier
                 .size(32.dp)
                 .clip(RoundedCornerShape(6.dp))
-                .background(style.iconContainerColor),
+                .background(style.background),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -573,7 +560,7 @@ private fun FileAttachmentItem(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = formatFileSize(file.sizeBytes),
+                text = formatAttachmentFileSize(file.sizeBytes),
                 fontSize = 10.sp,
                 color = Color(0x66FFFFFF),
                 maxLines = 1
@@ -600,7 +587,8 @@ private fun ImageAttachmentItem(
         targetValue = if (isHovered) 1f else 0f,
         animationSpec = tween(200)
     )
-    val bitmap = remember(file.thumbnailBytes) { decodeThumbnail(file.thumbnailBytes) }
+    val bitmap = remember(file.thumbnailBytes) { decodeAttachmentThumbnail(file.thumbnailBytes) }
+    val imageStyle = chatAttachmentUiStyle(ChatAttachmentType.IMAGE)
 
     Box(
         modifier = Modifier
@@ -620,13 +608,13 @@ private fun ImageAttachmentItem(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0x268B5CF6)),
+                    .background(imageStyle.background),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.ImageIcon,
+                    imageVector = imageStyle.icon,
                     contentDescription = null,
-                    tint = Color(0xFF8B5CF6),
+                    tint = imageStyle.iconTint,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -708,75 +696,6 @@ private fun AttachmentRemoveButton(
     }
 }
 
-private data class AttachmentVisualStyle(
-    val icon: ImageVector,
-    val iconContainerColor: Color,
-    val iconTint: Color,
-)
-
-private fun attachmentVisualStyle(type: ChatAttachmentType): AttachmentVisualStyle = when (type) {
-    ChatAttachmentType.DOCUMENT -> AttachmentVisualStyle(
-        icon = Icons.Rounded.Description,
-        iconContainerColor = Color(0x263B82F6),
-        iconTint = Color(0xFF3B82F6)
-    )
-    ChatAttachmentType.IMAGE -> AttachmentVisualStyle(
-        icon = Icons.Rounded.ImageIcon,
-        iconContainerColor = Color(0x268B5CF6),
-        iconTint = Color(0xFF8B5CF6)
-    )
-    ChatAttachmentType.PDF -> AttachmentVisualStyle(
-        icon = Icons.Rounded.PictureAsPdf,
-        iconContainerColor = Color(0x26EF4444),
-        iconTint = Color(0xFFEF4444)
-    )
-    ChatAttachmentType.SPREADSHEET -> AttachmentVisualStyle(
-        icon = Icons.Rounded.TableChart,
-        iconContainerColor = Color(0x2622C55E),
-        iconTint = Color(0xFF22C55E)
-    )
-    ChatAttachmentType.VIDEO -> AttachmentVisualStyle(
-        icon = Icons.Rounded.Movie,
-        iconContainerColor = Color(0x26F59E0B),
-        iconTint = Color(0xFFF59E0B)
-    )
-    ChatAttachmentType.AUDIO -> AttachmentVisualStyle(
-        icon = Icons.Rounded.Audiotrack,
-        iconContainerColor = Color(0x26EC4899),
-        iconTint = Color(0xFFEC4899)
-    )
-    ChatAttachmentType.ARCHIVE -> AttachmentVisualStyle(
-        icon = Icons.Rounded.Archive,
-        iconContainerColor = Color(0x26F59E0B),
-        iconTint = Color(0xFFF59E0B)
-    )
-    ChatAttachmentType.OTHER -> AttachmentVisualStyle(
-        icon = Icons.Rounded.InsertDriveFile,
-        iconContainerColor = Color(0x14FFFFFF),
-        iconTint = Color(0x99FFFFFF)
-    )
-}
-
-private fun formatFileSize(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-    val kb = 1024.0
-    val mb = kb * 1024.0
-    val gb = mb * 1024.0
-    return when {
-        bytes >= gb -> String.format("%.1f GB", bytes / gb)
-        bytes >= mb -> String.format("%.1f MB", bytes / mb)
-        bytes >= kb -> String.format("%.1f KB", bytes / kb)
-        else -> "$bytes B"
-    }
-}
-
-private fun decodeThumbnail(bytes: ByteArray?): ImageBitmap? {
-    if (bytes == null || bytes.isEmpty()) return null
-    return runCatching {
-        SkiaImage.makeFromEncoded(bytes).toComposeImageBitmap()
-    }.getOrNull()
-}
-
 @Composable
 @OptIn(ExperimentalComposeUiApi::class)
 private fun VoiceToggleButton(
@@ -788,7 +707,6 @@ private fun VoiceToggleButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
     var isPressing by remember { mutableStateOf(false) }
-    var showTooltip by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = when {
             isPressing -> 0.95f
@@ -802,21 +720,8 @@ private fun VoiceToggleButton(
     val background = if (isListening) Color(0x3312E0B5) else Color.Transparent
     val hoverBorderColor = if (isHovered) Color(0x669CA3AF) else Color.Transparent
 
-    Box(
-        modifier = Modifier
-            .size(ControlButtonSize)
-            .pointerMoveFilter(
-                onEnter = {
-                    showTooltip = true
-                    false
-                },
-                onExit = {
-                    showTooltip = false
-                    false
-                }
-            )
-    ) {
-        ControlTooltip(visible = showTooltip, text = stringResource(Res.string.tooltip_hold_option))
+    Box(modifier = Modifier.size(ControlButtonSize)) {
+        ControlTooltip(visible = isHovered, text = stringResource(Res.string.tooltip_hold_option))
 
         Box(
             modifier = Modifier

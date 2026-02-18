@@ -40,6 +40,7 @@ import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
+import java.awt.datatransfer.Transferable
 
 class MainViewModel(
     override val di: DI,
@@ -161,6 +162,12 @@ class MainViewModel(
             MainEvent.RejectToolPermission ->
                 permissionsUseCase.resolveToolPermission(currentState.toolPermissionDialog?.requestId, approved = false)
         }
+    }
+
+    fun onAttachDroppedTransferable(transferable: Transferable) {
+        val droppedPaths = attachmentsUseCase.extractDroppedFilePathsNow(transferable)
+        if (droppedPaths.isEmpty()) return
+        send(MainEvent.AttachDroppedFiles(droppedPaths))
     }
 
     override suspend fun handleSideEffect(effect: MainEffect) {
