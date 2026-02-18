@@ -17,6 +17,7 @@ import ru.gigadesk.ui.main.ChatMessage
 import ru.gigadesk.ui.main.MainState
 import ru.gigadesk.ui.main.ToolPermissionDialogData
 import kotlin.math.max
+import kotlin.math.min
 import gigadesk.composeapp.generated.resources.Res
 import gigadesk.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
@@ -106,12 +107,16 @@ class OnboardingUseCase(
                 )
             }
 
+            var retryDelayMs = ONBOARDING_PERMISSION_RETRY_INITIAL_DELAY_MS
             while (isActive) {
-                delay(4_000)
                 if (canRegisterNativeHookNow()) {
                     l.info("Input monitoring permission granted, relaunching application")
                     relaunchApp()
+                    return@launch
                 }
+
+                delay(retryDelayMs)
+                retryDelayMs = min(retryDelayMs * 2, ONBOARDING_PERMISSION_RETRY_MAX_DELAY_MS)
             }
         }
     }
@@ -136,5 +141,7 @@ class OnboardingUseCase(
 
     companion object {
         private const val ONBOARDING_PERMISSION_DELAY_MS = 100000
+        private const val ONBOARDING_PERMISSION_RETRY_INITIAL_DELAY_MS = 4_000L
+        private const val ONBOARDING_PERMISSION_RETRY_MAX_DELAY_MS = 64_000L
     }
 }
