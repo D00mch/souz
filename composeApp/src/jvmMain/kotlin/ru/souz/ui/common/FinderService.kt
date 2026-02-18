@@ -5,7 +5,11 @@ import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import java.awt.Desktop
+import java.awt.datatransfer.DataFlavor
+import java.awt.datatransfer.Transferable
 import java.io.File
+import java.net.URI
+import javax.swing.JFileChooser
 
 object FinderService {
 
@@ -64,6 +68,62 @@ object FinderService {
 
         val openTarget = if (target.isDirectory) target else target.parentFile ?: target
         desktop.open(openTarget)
+    }
+
+    suspend fun chooseFilesFromFinder(allowMultiple: Boolean = true): Result<List<String>> = runCatching {
+        val title = getString(Res.string.title_select_files)
+        val chooser = JFileChooser().apply {
+            dialogTitle = title
+            fileSelectionMode = JFileChooser.FILES_ONLY
+            isMultiSelectionEnabled = allowMultiple
+            isAcceptAllFileFilterUsed = true
+        }
+
+        val result = chooser.showOpenDialog(null)
+        if (result != JFileChooser.APPROVE_OPTION) return@runCatching emptyList()
+
+        val selectedFiles = if (allowMultiple) {
+            chooser.selectedFiles.toList()
+        } else {
+            listOfNotNull(chooser.selectedFile)
+        }
+
+        selectedFiles
+            .mapNotNull { file ->
+                val rawPath = runCatching { file.canonicalPath }.getOrElse { file.absolutePath }
+                normalizePath(rawPath)
+            }
+    }
+
+    fun extractDroppedFilePaths(transferable: Transferable): List<String> {
+        val fileListPaths = runCatching {
+            @Suppress("UNCHECKED_CAST")
+            (transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<File>)
+                .orEmpty()
+                .mapNotNull { file ->
+                    val rawPath = runCatching { file.canonicalPath }.getOrElse { file.absolutePath }
+                    normalizePath(rawPath)
+                }
+        }.getOrDefault(emptyList())
+        if (fileListPaths.isNotEmpty()) return fileListPaths
+
+        val uriListPaths = runCatching {
+            val data = transferable.getTransferData(DataFlavor.stringFlavor) as? String ?: return@runCatching emptyList()
+            data
+                .lineSequence()
+                .map(String::trim)
+                .filter { it.isNotBlank() && !it.startsWith("#") }
+                .mapNotNull { line ->
+                    val uri = runCatching { URI(line) }.getOrNull() ?: return@mapNotNull null
+                    if (!uri.scheme.equals("file", ignoreCase = true)) return@mapNotNull null
+                    val path = runCatching { File(uri).canonicalPath }.getOrElse { File(uri).absolutePath }
+                    normalizePath(path)
+                }
+                .toList()
+        }.getOrDefault(emptyList())
+        if (uriListPaths.isNotEmpty()) return uriListPaths
+
+        return emptyList()
     }
 
     private fun expandHomeAliases(path: String): String {

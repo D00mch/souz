@@ -59,6 +59,7 @@ class MainViewModel(
     private val voiceInputUseCase: VoiceInputUseCase = useCases.voiceInput
     private val speechUseCase: SpeechUseCase = useCases.speech
     private val permissionsUseCase: OnboardingUseCase = useCases.permissions
+    private val attachmentsUseCase = useCases.attachments
     private var startTips: List<String> = emptyList()
 
     init {
@@ -125,6 +126,9 @@ class MainViewModel(
             is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
             is MainEvent.UpdateChatModel -> updateChatModel(event.model)
             is MainEvent.UpdateChatContextSize -> updateChatContextSize(event.size)
+            MainEvent.PickChatAttachments -> pickChatAttachments()
+            is MainEvent.AttachDroppedFiles -> addAttachedFiles(event.paths)
+            is MainEvent.RemoveChatAttachment -> removeAttachedFile(event.path)
             is MainEvent.OpenPath -> {
                 ru.souz.ui.common.FinderService.openInFinder(event.path)
                     .onFailure { error ->
@@ -132,10 +136,21 @@ class MainViewModel(
                     }
             }
             MainEvent.SendChatMessage -> vmLaunch {
+                val inputText = currentState.chatInputText.text
+                val attachments = currentState.attachedFiles
+                val composedMessage = attachmentsUseCase.buildChatMessageWithAttachedPaths(
+                    input = inputText,
+                    attachedFiles = attachments,
+                )
+                if (composedMessage.isBlank()) return@vmLaunch
+
+                setState { copy(attachedFiles = emptyList()) }
                 chatUseCase.sendChatMessage(
                     scope = viewModelScope,
                     isVoice = false,
-                    chatMessage = currentState.chatInputText.text,
+                    chatMessage = composedMessage,
+                    displayMessage = inputText,
+                    attachedFiles = attachments,
                 )
             }
 
@@ -209,9 +224,36 @@ class MainViewModel(
                 chatMessages = emptyList(),
                 chatStartTip = startTips.randomOrNull() ?: "",
                 chatInputText = TextFieldValue(""),
+                attachedFiles = emptyList(),
                 showNewChatDialog = false,
             )
         }
+    }
+
+    private suspend fun pickChatAttachments() {
+        val selectedPaths = attachmentsUseCase.pickFilesFromFinder()
+            .getOrElse { error ->
+                send(MainEffect.ShowError(error.message ?: getString(Res.string.error_failed_to_pick_files)))
+                return
+            }
+        addAttachedFiles(selectedPaths)
+    }
+
+    private suspend fun addAttachedFiles(paths: List<String>) {
+        if (paths.isEmpty()) return
+        val updated = attachmentsUseCase.addFiles(
+            existing = currentState.attachedFiles,
+            rawPaths = paths,
+        )
+        setState { copy(attachedFiles = updated) }
+    }
+
+    private suspend fun removeAttachedFile(path: String) {
+        val updated = attachmentsUseCase.removeFile(
+            existing = currentState.attachedFiles,
+            rawPath = path,
+        )
+        setState { copy(attachedFiles = updated) }
     }
 
     private suspend fun updateChatModel(modelAlias: String) {
@@ -287,6 +329,7 @@ class MainViewModel(
                         userExpectCloseOnX = true,
                         chatMessages = emptyList(),
                         chatStartTip = startTips.randomOrNull() ?: "",
+                        attachedFiles = emptyList(),
                         showNewChatDialog = false,
                     )
                 }
@@ -300,6 +343,7 @@ class MainViewModel(
                         userExpectCloseOnX = false,
                         chatMessages = emptyList(),
                         chatStartTip = startTips.randomOrNull() ?: "",
+                        attachedFiles = emptyList(),
                         showNewChatDialog = false,
                     )
                 }

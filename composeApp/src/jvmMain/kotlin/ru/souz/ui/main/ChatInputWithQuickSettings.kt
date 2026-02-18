@@ -12,10 +12,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,14 +29,26 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Audiotrack
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.material.icons.rounded.Image as ImageIcon
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,16 +60,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -72,6 +90,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -83,7 +102,10 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
 import kotlin.math.max
+import org.jetbrains.skia.Image as SkiaImage
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import ru.souz.giga.LlmBuildProfile
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
@@ -107,9 +129,9 @@ private val HoverBackground = Color(0x0DFFFFFF)
 private val ActiveBackground = Color(0x1A12E0B5)
 private val ControlTextMuted = Color(0x59FFFFFF)
 private val ControlTextHover = Color(0x99FFFFFF)
-private val ControlButtonSize = 36.dp
-private val ControlIconSize = 18.dp
-private val StopIconSize = 11.2.dp
+private val ControlButtonSize = 32.dp
+private val ControlIconSize = 16.dp
+private val StopIconSize = 10.dp
 private val SendButtonInactiveBackground = Color(0x14FFFFFF)
 private val SendButtonInactiveBorder = Color(0x1AFFFFFF)
 private val SendButtonInactiveIcon = Color(0x66FFFFFF)
@@ -121,6 +143,7 @@ private val StopButtonPulseRing = Color(0x33FFFFFF)
 private val ControlTooltipBackground = Color(0xE6000000)
 private val ControlTooltipBorder = Color(0x33FFFFFF)
 private val EaseInOut = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
+private val BounceEasing = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
 private val SendButtonActiveGradient = Brush.linearGradient(
     colors = listOf(
         Color(0x4D12E0B5),
@@ -136,6 +159,10 @@ internal fun ChatInputWithQuickSettings(
     onValueChange: (TextFieldValue) -> Unit,
     onSend: () -> Unit,
     onCancel: () -> Unit,
+    attachedFiles: List<ChatAttachedFile>,
+    onAttachClick: () -> Unit,
+    onRemoveAttachment: (String) -> Unit,
+    isFileDragActive: Boolean,
     isProcessing: Boolean,
     isListening: Boolean,
     onStartListening: () -> Unit,
@@ -151,8 +178,10 @@ internal fun ChatInputWithQuickSettings(
     placeholder: String = stringResource(Res.string.chat_input_placeholder),
     modifier: Modifier = Modifier,
 ) {
-    val hasText = value.text.isNotBlank() && enabled
-    val canSendOrCancel = hasText || isProcessing
+    val hasText = value.text.isNotBlank()
+    val hasAttachments = attachedFiles.isNotEmpty()
+    val hasSendPayload = (hasText || hasAttachments) && enabled
+    val canSendOrCancel = hasSendPayload || isProcessing
     val canToggleMic = enabled || isListening
     val containerShape = RoundedCornerShape(24.dp)
     var isModelDropdownOpen by remember { mutableStateOf(false) }
@@ -178,7 +207,7 @@ internal fun ChatInputWithQuickSettings(
     Box(
         modifier = modifier
             .clip(containerShape)
-            .border(1.dp, GlassBorder, containerShape)
+            .border(1.dp, if (isFileDragActive) Color(0x6612E0B5) else GlassBorder, containerShape)
     ) {
         Box(
             modifier = Modifier
@@ -225,15 +254,23 @@ internal fun ChatInputWithQuickSettings(
                     .background(GlassDivider)
             )
 
+            AttachedFilesPreview(
+                files = attachedFiles,
+                onRemove = onRemoveAttachment,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
                     .heightIn(min = 44.dp, max = 120.dp)
                     .onPreviewKeyEvent { event ->
                         when {
                             event.type == KeyEventType.KeyDown && event.key == Key.Enter && !event.isShiftPressed -> {
-                                if (hasText) onSend()
+                                if (hasSendPayload) onSend()
                                 true
                             }
 
@@ -249,6 +286,15 @@ internal fun ChatInputWithQuickSettings(
                     },
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                AttachFilesButton(
+                    enabled = enabled,
+                    filesCount = attachedFiles.size,
+                    isDragActive = isFileDragActive,
+                    onClick = onAttachClick
+                )
+
+                Spacer(Modifier.width(8.dp))
+
                 Box(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.CenterStart
@@ -305,6 +351,430 @@ internal fun ChatInputWithQuickSettings(
             }
         }
     }
+}
+
+@Composable
+private fun AttachFilesButton(
+    enabled: Boolean,
+    filesCount: Int,
+    isDragActive: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val hasFiles = filesCount > 0 || isDragActive
+    val scale by animateFloatAsState(
+        targetValue = when {
+            !enabled -> 1f
+            isPressed -> 0.95f
+            isHovered -> 1.05f
+            else -> 1f
+        },
+        animationSpec = tween(200, easing = EaseInOut)
+    )
+
+    val backgroundColor = when {
+        !enabled -> Color(0x0AFFFFFF)
+        hasFiles && isPressed -> Color(0x3312E0B5)
+        hasFiles && isHovered -> Color(0x2E12E0B5)
+        hasFiles -> Color(0x2612E0B5)
+        isPressed -> Color(0x26FFFFFF)
+        isHovered -> Color(0x1FFFFFFF)
+        else -> Color(0x14FFFFFF)
+    }
+    val borderColor = when {
+        !enabled -> Color(0x1AFFFFFF)
+        hasFiles && isPressed -> Color(0x6612E0B5)
+        hasFiles && isHovered -> Color(0x5912E0B5)
+        hasFiles -> Color(0x4D12E0B5)
+        isPressed -> Color(0x40FFFFFF)
+        isHovered -> Color(0x33FFFFFF)
+        else -> Color(0x26FFFFFF)
+    }
+    val iconColor = when {
+        !enabled -> Color(0x40FFFFFF)
+        hasFiles -> AccentTurquoise
+        isPressed -> Color(0xF2FFFFFF)
+        isHovered -> Color(0xCCFFFFFF)
+        else -> Color(0x99FFFFFF)
+    }
+
+    Box(
+        modifier = Modifier.size(ControlButtonSize)
+    ) {
+        ControlTooltip(visible = isHovered, text = stringResource(Res.string.tooltip_attach_file))
+
+        Box(
+            modifier = Modifier
+                .size(ControlButtonSize)
+                .scale(scale)
+                .clip(CircleShape)
+                .background(backgroundColor)
+                .border(1.dp, borderColor, CircleShape)
+                .hoverable(interactionSource = interactionSource)
+                .pointerHoverIcon(if (enabled) PointerIcon.Hand else PointerIcon.Default)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    enabled = enabled,
+                    onClick = onClick
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.AttachFile,
+                contentDescription = stringResource(Res.string.content_desc_attach_file),
+                tint = iconColor,
+                modifier = Modifier
+                    .size(16.dp)
+                    .graphicsLayer(rotationZ = -45f)
+            )
+        }
+
+        AnimatedVisibility(
+            visible = filesCount > 0,
+            enter = fadeIn(animationSpec = tween(200)) + scaleIn(
+                animationSpec = tween(200, easing = BounceEasing),
+                initialScale = 0f
+            ),
+            exit = fadeOut(animationSpec = tween(150)) + scaleOut(
+                animationSpec = tween(150),
+                targetScale = 0f
+            ),
+            modifier = Modifier.align(Alignment.TopEnd)
+        ) {
+            Box(
+                modifier = Modifier
+                    .offset(x = 4.dp, y = (-4).dp)
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(AccentTurquoise)
+                    .border(2.dp, Color(0xFF141820), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                val badgeText = if (filesCount > 9) "9+" else filesCount.toString()
+                Text(
+                    text = badgeText,
+                    color = Color(0xFF141820),
+                    fontSize = 9.sp,
+                    lineHeight = 12.sp,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun AttachedFilesPreview(
+    files: List<ChatAttachedFile>,
+    onRemove: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (files.isEmpty()) return
+
+    val shape = RoundedCornerShape(8.dp)
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(Color(0x14141820))
+            .border(1.dp, Color(0x1AFFFFFF), shape)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            files.forEachIndexed { index, file ->
+                AnimatedAttachmentItem(index = index, key = file.path) {
+                    if (file.type == ChatAttachmentType.IMAGE && file.thumbnailBytes != null) {
+                        ImageAttachmentItem(file = file, onRemove = onRemove)
+                    } else {
+                        FileAttachmentItem(file = file, onRemove = onRemove)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnimatedAttachmentItem(
+    index: Int,
+    key: String,
+    content: @Composable () -> Unit,
+) {
+    var visible by remember(key) { mutableStateOf(false) }
+    LaunchedEffect(key) {
+        delay(index * 50L)
+        visible = true
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(250)) + slideInVertically(
+            animationSpec = tween(250),
+            initialOffsetY = { -8 }
+        ),
+        exit = fadeOut(animationSpec = tween(200)) + slideOutHorizontally(
+            animationSpec = tween(200),
+            targetOffsetX = { 20 }
+        ) + scaleOut(animationSpec = tween(200), targetScale = 0.8f)
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun FileAttachmentItem(
+    file: ChatAttachedFile,
+    onRemove: (String) -> Unit,
+) {
+    val style = attachmentVisualStyle(file.type)
+    val shape = RoundedCornerShape(8.dp)
+
+    Row(
+        modifier = Modifier
+            .widthIn(max = 280.dp)
+            .clip(shape)
+            .background(Color(0x0AFFFFFF))
+            .border(1.dp, Color(0x1AFFFFFF), shape)
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(style.iconContainerColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = style.icon,
+                contentDescription = null,
+                tint = style.iconTint,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .widthIn(min = 0.dp)
+        ) {
+            Text(
+                text = file.displayName,
+                fontSize = 12.sp,
+                color = Color(0xCCFFFFFF),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = formatFileSize(file.sizeBytes),
+                fontSize = 10.sp,
+                color = Color(0x66FFFFFF),
+                maxLines = 1
+            )
+        }
+
+        AttachmentRemoveButton(
+            size = 20.dp,
+            corner = RoundedCornerShape(4.dp),
+            iconSize = 12.dp,
+            onClick = { onRemove(file.path) }
+        )
+    }
+}
+
+@Composable
+private fun ImageAttachmentItem(
+    file: ChatAttachedFile,
+    onRemove: (String) -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val overlayAlpha by animateFloatAsState(
+        targetValue = if (isHovered) 1f else 0f,
+        animationSpec = tween(200)
+    )
+    val bitmap = remember(file.thumbnailBytes) { decodeThumbnail(file.thumbnailBytes) }
+
+    Box(
+        modifier = Modifier
+            .size(64.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0x0AFFFFFF))
+            .hoverable(interactionSource = interactionSource)
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = file.displayName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0x268B5CF6)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.ImageIcon,
+                    contentDescription = null,
+                    tint = Color(0xFF8B5CF6),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(Color.Black.copy(alpha = 0.4f * overlayAlpha))
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(4.dp)
+                .alpha(overlayAlpha)
+        ) {
+            AttachmentRemoveButton(
+                size = 20.dp,
+                corner = CircleShape,
+                iconSize = 10.dp,
+                hoveredBackground = Color(0xFFFF4444),
+                defaultBackground = Color(0xCC000000),
+                defaultBorder = Color(0x26FFFFFF),
+                hoveredIconColor = Color.White,
+                defaultIconColor = Color.White,
+                onClick = { onRemove(file.path) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun AttachmentRemoveButton(
+    size: Dp,
+    corner: Shape,
+    iconSize: Dp,
+    hoveredBackground: Color = Color(0x33FF4444),
+    defaultBackground: Color = Color.Transparent,
+    defaultBorder: Color = Color.Transparent,
+    hoveredIconColor: Color = Color(0xFFFF4444),
+    defaultIconColor: Color = Color(0x66FFFFFF),
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = when {
+            isPressed -> 0.9f
+            isHovered -> 1.1f
+            else -> 1f
+        },
+        animationSpec = tween(200)
+    )
+
+    Box(
+        modifier = Modifier
+            .size(size)
+            .scale(scale)
+            .clip(corner)
+            .background(if (isHovered) hoveredBackground else defaultBackground)
+            .border(1.dp, defaultBorder, corner)
+            .hoverable(interactionSource = interactionSource)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Close,
+            contentDescription = stringResource(Res.string.content_desc_remove_attachment),
+            tint = if (isHovered) hoveredIconColor else defaultIconColor,
+            modifier = Modifier.size(iconSize)
+        )
+    }
+}
+
+private data class AttachmentVisualStyle(
+    val icon: ImageVector,
+    val iconContainerColor: Color,
+    val iconTint: Color,
+)
+
+private fun attachmentVisualStyle(type: ChatAttachmentType): AttachmentVisualStyle = when (type) {
+    ChatAttachmentType.DOCUMENT -> AttachmentVisualStyle(
+        icon = Icons.Rounded.Description,
+        iconContainerColor = Color(0x263B82F6),
+        iconTint = Color(0xFF3B82F6)
+    )
+    ChatAttachmentType.IMAGE -> AttachmentVisualStyle(
+        icon = Icons.Rounded.ImageIcon,
+        iconContainerColor = Color(0x268B5CF6),
+        iconTint = Color(0xFF8B5CF6)
+    )
+    ChatAttachmentType.PDF -> AttachmentVisualStyle(
+        icon = Icons.Rounded.PictureAsPdf,
+        iconContainerColor = Color(0x26EF4444),
+        iconTint = Color(0xFFEF4444)
+    )
+    ChatAttachmentType.SPREADSHEET -> AttachmentVisualStyle(
+        icon = Icons.Rounded.TableChart,
+        iconContainerColor = Color(0x2622C55E),
+        iconTint = Color(0xFF22C55E)
+    )
+    ChatAttachmentType.VIDEO -> AttachmentVisualStyle(
+        icon = Icons.Rounded.Movie,
+        iconContainerColor = Color(0x26F59E0B),
+        iconTint = Color(0xFFF59E0B)
+    )
+    ChatAttachmentType.AUDIO -> AttachmentVisualStyle(
+        icon = Icons.Rounded.Audiotrack,
+        iconContainerColor = Color(0x26EC4899),
+        iconTint = Color(0xFFEC4899)
+    )
+    ChatAttachmentType.ARCHIVE -> AttachmentVisualStyle(
+        icon = Icons.Rounded.Archive,
+        iconContainerColor = Color(0x26F59E0B),
+        iconTint = Color(0xFFF59E0B)
+    )
+    ChatAttachmentType.OTHER -> AttachmentVisualStyle(
+        icon = Icons.Rounded.InsertDriveFile,
+        iconContainerColor = Color(0x14FFFFFF),
+        iconTint = Color(0x99FFFFFF)
+    )
+}
+
+private fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val kb = 1024.0
+    val mb = kb * 1024.0
+    val gb = mb * 1024.0
+    return when {
+        bytes >= gb -> String.format("%.1f GB", bytes / gb)
+        bytes >= mb -> String.format("%.1f MB", bytes / mb)
+        bytes >= kb -> String.format("%.1f KB", bytes / kb)
+        else -> "$bytes B"
+    }
+}
+
+private fun decodeThumbnail(bytes: ByteArray?): ImageBitmap? {
+    if (bytes == null || bytes.isEmpty()) return null
+    return runCatching {
+        SkiaImage.makeFromEncoded(bytes).toComposeImageBitmap()
+    }.getOrNull()
 }
 
 @Composable

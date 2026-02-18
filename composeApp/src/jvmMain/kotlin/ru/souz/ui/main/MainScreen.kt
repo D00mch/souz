@@ -9,9 +9,12 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,13 +23,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Archive
+import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.material.icons.rounded.Image as ImageIcon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +55,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -54,9 +65,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,8 +87,21 @@ import ru.souz.ui.common.parseMarkdownContent
 import ru.souz.ui.common.CodeBlockWithCopy
 import ru.souz.ui.common.MarkdownPart
 import ru.souz.ui.glassColors
+import ru.souz.LocalWindowScope
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.key.*
+import java.awt.Component
+import java.awt.Container
+import java.awt.datatransfer.DataFlavor
+import java.awt.dnd.DnDConstants
+import java.awt.dnd.DropTarget
+import java.awt.dnd.DropTargetDragEvent
+import java.awt.dnd.DropTargetDropEvent
+import java.awt.dnd.DropTargetEvent
+import java.awt.dnd.DropTargetListener
+import org.jetbrains.skia.Image as SkiaImage
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import ru.souz.ui.common.FinderService
 
 private val TopButtonSize = 24.dp
 private val TopIconSize = 14.dp
@@ -91,6 +117,8 @@ private val ChatAssistantTimestampColor = Color(0x7FFFFFFF)
 private val FinderPathChipBackground = Color(0x2625CAB0)
 private val FinderPathChipBorder = Color(0x8812E0B5)
 private val FinderPathChipTextColor = Color(0xFF12E0B5)
+private val MessageAttachmentPreviewSize = 64.dp
+private val MessageAttachmentNameColor = Color(0x99FFFFFF)
 
 
 @Composable
@@ -136,6 +164,9 @@ fun MainScreen(
         onUpdateChatInput = { viewModel.send(MainEvent.UpdateChatInput(it)) },
         onChatModelChange = { viewModel.send(MainEvent.UpdateChatModel(it)) },
         onChatContextSizeChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
+        onPickChatAttachments = { viewModel.send(MainEvent.PickChatAttachments) },
+        onAttachDroppedFiles = { viewModel.send(MainEvent.AttachDroppedFiles(it)) },
+        onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
         onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage) },
         onClearContext = { viewModel.send(MainEvent.StopAgentJob) },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
@@ -163,6 +194,9 @@ fun MainScreenContent(
     onUpdateChatInput: (TextFieldValue) -> Unit = {},
     onChatModelChange: (String) -> Unit = {},
     onChatContextSizeChange: (Int) -> Unit = {},
+    onPickChatAttachments: () -> Unit = {},
+    onAttachDroppedFiles: (List<String>) -> Unit = {},
+    onRemoveChatAttachment: (String) -> Unit = {},
     onSendChatMessage: () -> Unit = {},
     onClearContext: () -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
@@ -292,6 +326,7 @@ fun MainScreenContent(
                     selectedModel = state.selectedModel,
                     availableModelAliases = state.availableModelAliases,
                     selectedContextSize = state.selectedContextSize,
+                    attachedFiles = state.attachedFiles,
                     isProcessing = state.isProcessing,
                     isListening = state.isListening,
                     isOnline = isOnline,
@@ -299,6 +334,9 @@ fun MainScreenContent(
                     onInputChange = onUpdateChatInput,
                     onModelChange = onChatModelChange,
                     onContextChange = onChatContextSizeChange,
+                    onPickAttachments = onPickChatAttachments,
+                    onDropFiles = onAttachDroppedFiles,
+                    onRemoveAttachment = onRemoveChatAttachment,
                     onSendMessage = onSendChatMessage,
                     onCancelProcessing = onClearContext,
                     onStartListening = onStartListening,
@@ -422,6 +460,7 @@ fun ChatModeContent(
     selectedModel: String,
     availableModelAliases: List<String>,
     selectedContextSize: Int,
+    attachedFiles: List<ChatAttachedFile>,
     isProcessing: Boolean,
     isListening: Boolean,
     isOnline: Boolean,
@@ -429,6 +468,9 @@ fun ChatModeContent(
     onInputChange: (TextFieldValue) -> Unit,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
+    onPickAttachments: () -> Unit,
+    onDropFiles: (List<String>) -> Unit,
+    onRemoveAttachment: (String) -> Unit,
     onSendMessage: () -> Unit,
     onCancelProcessing: () -> Unit = {},
     onStartListening: () -> Unit,
@@ -443,6 +485,7 @@ fun ChatModeContent(
     val textColor = MaterialTheme.glassColors.textPrimary
     val speakingAssistantMessageId = remember(messages) { messages.lastOrNull { !it.isUser }?.id }
     val stringProcessing = stringResource(Res.string.status_processing)
+    var isFileDragActive by remember { mutableStateOf(false) }
 
     val windowInfo = LocalWindowInfo.current
     val isWindowFocused = windowInfo.isWindowFocused
@@ -458,6 +501,12 @@ fun ChatModeContent(
             listState.animateScrollToItem(messages.size - 1)
         }
     }
+
+    ChatFileDropTarget(
+        enabled = true,
+        onDropFiles = onDropFiles,
+        onDragStateChanged = { isActive -> isFileDragActive = isActive }
+    )
     
     Column(
         modifier = modifier.onPreviewKeyEvent { event ->
@@ -538,6 +587,10 @@ fun ChatModeContent(
             onValueChange = onInputChange,
             onSend = onSendMessage,
             onCancel = onCancelProcessing,
+            attachedFiles = attachedFiles,
+            onAttachClick = onPickAttachments,
+            onRemoveAttachment = onRemoveAttachment,
+            isFileDragActive = isFileDragActive,
             isProcessing = isProcessing,
             isListening = isListening,
             onStartListening = onStartListening,
@@ -557,6 +610,111 @@ fun ChatModeContent(
         )
     }
 }
+
+@Composable
+private fun ChatFileDropTarget(
+    enabled: Boolean,
+    onDropFiles: (List<String>) -> Unit,
+    onDragStateChanged: (Boolean) -> Unit,
+) {
+    val windowScope = LocalWindowScope.current
+    val composeWindow = windowScope?.window
+
+    DisposableEffect(composeWindow, enabled, onDropFiles, onDragStateChanged) {
+        if (!enabled || composeWindow == null) {
+            onDispose { onDragStateChanged(false) }
+        } else {
+            val previousTargets = LinkedHashMap<Component, DropTarget?>()
+            val listener = object : DropTargetListener {
+                override fun dragEnter(dtde: DropTargetDragEvent) {
+                    if (dtde.isFileDragEvent()) {
+                        dtde.acceptDrag(DnDConstants.ACTION_COPY_OR_MOVE)
+                        onDragStateChanged(true)
+                    } else {
+                        dtde.rejectDrag()
+                        onDragStateChanged(false)
+                    }
+                }
+
+                override fun dragOver(dtde: DropTargetDragEvent) {
+                    if (dtde.isFileDragEvent()) {
+                        dtde.acceptDrag(DnDConstants.ACTION_COPY_OR_MOVE)
+                        onDragStateChanged(true)
+                    } else {
+                        dtde.rejectDrag()
+                        onDragStateChanged(false)
+                    }
+                }
+
+                override fun dropActionChanged(dtde: DropTargetDragEvent) {
+                    if (dtde.isFileDragEvent()) {
+                        dtde.acceptDrag(DnDConstants.ACTION_COPY_OR_MOVE)
+                        onDragStateChanged(true)
+                    } else {
+                        dtde.rejectDrag()
+                        onDragStateChanged(false)
+                    }
+                }
+
+                override fun dragExit(dte: DropTargetEvent) {
+                    onDragStateChanged(false)
+                }
+
+                override fun drop(dtde: DropTargetDropEvent) {
+                    onDragStateChanged(false)
+                    if (!dtde.isFileDropEvent()) {
+                        dtde.rejectDrop()
+                        return
+                    }
+
+                    val paths = FinderService.extractDroppedFilePaths(dtde.transferable)
+
+                    if (paths.isEmpty()) {
+                        dtde.rejectDrop()
+                        return
+                    }
+
+                    dtde.acceptDrop(DnDConstants.ACTION_COPY_OR_MOVE)
+                    onDropFiles(paths)
+                    dtde.dropComplete(true)
+                }
+            }
+
+            val targets = collectComponentsRecursively(composeWindow)
+            targets.forEach { target ->
+                previousTargets[target] = target.dropTarget
+                runCatching {
+                    target.dropTarget = DropTarget(target, DnDConstants.ACTION_COPY_OR_MOVE, listener, true)
+                }
+            }
+
+            onDispose {
+                onDragStateChanged(false)
+                previousTargets.forEach { (target, previousDropTarget) ->
+                    runCatching { target.dropTarget = previousDropTarget }
+                }
+            }
+        }
+    }
+}
+
+private fun collectComponentsRecursively(root: Component): List<Component> {
+    val result = ArrayList<Component>()
+    fun walk(component: Component) {
+        result += component
+        if (component is Container) {
+            component.components.forEach(::walk)
+        }
+    }
+    walk(root)
+    return result
+}
+
+private fun DropTargetDragEvent.isFileDragEvent(): Boolean =
+    isDataFlavorSupported(DataFlavor.javaFileListFlavor) || isDataFlavorSupported(DataFlavor.stringFlavor)
+
+private fun DropTargetDropEvent.isFileDropEvent(): Boolean =
+    isDataFlavorSupported(DataFlavor.javaFileListFlavor) || isDataFlavorSupported(DataFlavor.stringFlavor)
 
 
 @Composable
@@ -620,20 +778,29 @@ private fun ChatBubble(
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             if (message.isUser) {
+                if (message.attachedFiles.isNotEmpty()) {
+                    MessageAttachmentsPreview(files = message.attachedFiles)
+                    if (message.text.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+
                 val customSelectionColors = TextSelectionColors(
                     handleColor = Color(0xFFFFFFFF),
                     backgroundColor = Color(0x66FFFFFF)
                 )
 
-                CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
-                    SelectionContainer {
-                        Text(
-                            text = message.text,
-                            color = ChatUserTextColor,
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            modifier = Modifier.padding(bottom = 3.dp)
-                        )
+                if (message.text.isNotBlank()) {
+                    CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
+                        SelectionContainer {
+                            Text(
+                                text = message.text,
+                                color = ChatUserTextColor,
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                modifier = Modifier.padding(bottom = 3.dp)
+                            )
+                        }
                     }
                 }
             } else {
@@ -678,6 +845,11 @@ private fun ChatBubble(
                     }
                 }
 
+                if (message.attachedFiles.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    MessageAttachmentsPreview(files = message.attachedFiles)
+                }
+
                 if (clickablePaths.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -713,6 +885,135 @@ private fun ChatBubble(
             }
         }
     }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun MessageAttachmentsPreview(
+    files: List<ChatAttachedFile>,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        files.forEach { file ->
+            MessageAttachmentTile(file = file)
+        }
+    }
+}
+
+@Composable
+private fun MessageAttachmentTile(
+    file: ChatAttachedFile,
+) {
+    val previewStyle = messageAttachmentPreviewStyle(file.type)
+    val bitmap = remember(file.thumbnailBytes) { decodeAttachmentThumbnail(file.thumbnailBytes) }
+
+    Column(
+        modifier = Modifier.width(MessageAttachmentPreviewSize),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(MessageAttachmentPreviewSize)
+                .clip(RoundedCornerShape(8.dp))
+                .background(previewStyle.background)
+                .border(1.dp, previewStyle.border, RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (file.type == ChatAttachmentType.IMAGE && bitmap != null) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = file.displayName,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    imageVector = previewStyle.icon,
+                    contentDescription = null,
+                    tint = previewStyle.iconTint,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Text(
+            text = file.displayName,
+            color = MessageAttachmentNameColor,
+            fontSize = 10.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 12.sp
+        )
+    }
+}
+
+private data class MessageAttachmentPreviewStyle(
+    val icon: ImageVector,
+    val background: Color,
+    val border: Color,
+    val iconTint: Color,
+)
+
+private fun messageAttachmentPreviewStyle(type: ChatAttachmentType): MessageAttachmentPreviewStyle = when (type) {
+    ChatAttachmentType.DOCUMENT -> MessageAttachmentPreviewStyle(
+        icon = Icons.Rounded.Description,
+        background = Color(0x263B82F6),
+        border = Color(0x403B82F6),
+        iconTint = Color(0xFF3B82F6)
+    )
+    ChatAttachmentType.IMAGE -> MessageAttachmentPreviewStyle(
+        icon = Icons.Rounded.ImageIcon,
+        background = Color(0x268B5CF6),
+        border = Color(0x408B5CF6),
+        iconTint = Color(0xFF8B5CF6)
+    )
+    ChatAttachmentType.PDF -> MessageAttachmentPreviewStyle(
+        icon = Icons.Rounded.PictureAsPdf,
+        background = Color(0x26EF4444),
+        border = Color(0x40EF4444),
+        iconTint = Color(0xFFEF4444)
+    )
+    ChatAttachmentType.SPREADSHEET -> MessageAttachmentPreviewStyle(
+        icon = Icons.Rounded.TableChart,
+        background = Color(0x2622C55E),
+        border = Color(0x4022C55E),
+        iconTint = Color(0xFF22C55E)
+    )
+    ChatAttachmentType.VIDEO -> MessageAttachmentPreviewStyle(
+        icon = Icons.Rounded.Movie,
+        background = Color(0x26F59E0B),
+        border = Color(0x40F59E0B),
+        iconTint = Color(0xFFF59E0B)
+    )
+    ChatAttachmentType.AUDIO -> MessageAttachmentPreviewStyle(
+        icon = Icons.Rounded.Audiotrack,
+        background = Color(0x26EC4899),
+        border = Color(0x40EC4899),
+        iconTint = Color(0xFFEC4899)
+    )
+    ChatAttachmentType.ARCHIVE -> MessageAttachmentPreviewStyle(
+        icon = Icons.Rounded.Archive,
+        background = Color(0x26F59E0B),
+        border = Color(0x40F59E0B),
+        iconTint = Color(0xFFF59E0B)
+    )
+    ChatAttachmentType.OTHER -> MessageAttachmentPreviewStyle(
+        icon = Icons.Rounded.InsertDriveFile,
+        background = Color(0x14FFFFFF),
+        border = Color(0x26FFFFFF),
+        iconTint = Color(0xB3FFFFFF)
+    )
+}
+
+private fun decodeAttachmentThumbnail(bytes: ByteArray?): ImageBitmap? {
+    if (bytes == null || bytes.isEmpty()) return null
+    return runCatching {
+        SkiaImage.makeFromEncoded(bytes).toComposeImageBitmap()
+    }.getOrNull()
 }
 
 @Composable

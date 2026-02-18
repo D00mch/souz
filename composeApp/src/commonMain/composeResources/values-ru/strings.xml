@@ -189,7 +189,10 @@
     <!-- Chat Input -->
     <string name="chat_input_placeholder">Введите сообщение...</string>
     <string name="tooltip_hold_option">Зажать правый Option</string>
+    <string name="tooltip_attach_file">Прикрепить файл</string>
     <string name="content_desc_voice_input">Голосовой ввод</string>
+    <string name="content_desc_attach_file">Прикрепить файл</string>
+    <string name="content_desc_remove_attachment">Удалить вложение</string>
     <string name="tooltip_stop_request">Остановить запрос</string>
     <string name="tooltip_send_enter">Отправить (Enter)</string>
     <string name="content_desc_send">Отправить</string>
@@ -215,6 +218,7 @@
     <string name="status_context_cleared_hint">%s. Нажмите еще раз, чтобы скрыть.</string>
     <string name="status_context_cleared_default">Контекст очищен</string>
     <string name="error_failed_to_open_path">Не удалось открыть путь</string>
+    <string name="error_failed_to_pick_files">Не удалось выбрать файлы</string>
 
     <string-array name="start_tips">
         <item>Хочешь узнаю погоду в Москве?</item>
@@ -244,6 +248,7 @@
 
     <!-- Settings & Misc -->
     <string name="title_select_folder">Выберите папку</string>
+    <string name="title_select_files">Выберите файлы</string>
     <string name="snack_saved_system_prompt">Сохранено. Применится после первой суммаризации</string>
     <string name="error_session_not_found">Сессия не найдена</string>
     <string name="button_back">Назад</string>

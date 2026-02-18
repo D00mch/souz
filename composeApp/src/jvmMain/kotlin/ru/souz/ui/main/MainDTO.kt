@@ -18,10 +18,30 @@ data class FinderPathItem(
     val isDirectory: Boolean,
 )
 
+enum class ChatAttachmentType {
+    DOCUMENT,
+    IMAGE,
+    PDF,
+    SPREADSHEET,
+    VIDEO,
+    AUDIO,
+    ARCHIVE,
+    OTHER,
+}
+
+data class ChatAttachedFile(
+    val path: String,
+    val displayName: String,
+    val sizeBytes: Long,
+    val type: ChatAttachmentType,
+    val thumbnailBytes: ByteArray? = null,
+)
+
 data class ChatMessage(
     val text: String,
     val isUser: Boolean,
     val isVoice: Boolean = false,
+    val attachedFiles: List<ChatAttachedFile> = emptyList(),
     val finderPaths: List<FinderPathItem> = emptyList(),
     val timestamp: Long = System.currentTimeMillis(),
     val id: String = java.util.UUID.randomUUID().toString()
@@ -55,6 +75,7 @@ data class MainState(
     val isSpeaking: Boolean = false,
     val showNewChatDialog: Boolean = false,
     val toolPermissionDialog: ToolPermissionDialogData? = null,
+    val attachedFiles: List<ChatAttachedFile> = emptyList(),
 ) : VMState {
 
     companion object {
@@ -76,6 +97,9 @@ sealed interface MainEvent : VMEvent {
     data class UpdateChatInput(val text: TextFieldValue) : MainEvent
     data class UpdateChatModel(val model: String) : MainEvent
     data class UpdateChatContextSize(val size: Int) : MainEvent
+    data object PickChatAttachments : MainEvent
+    data class AttachDroppedFiles(val paths: List<String>) : MainEvent
+    data class RemoveChatAttachment(val path: String) : MainEvent
     data object SendChatMessage : MainEvent
     data class OpenPath(val path: String) : MainEvent
     data object RefreshSettings : MainEvent
