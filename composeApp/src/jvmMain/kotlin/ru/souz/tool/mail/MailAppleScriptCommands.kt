@@ -68,35 +68,45 @@ EOF
 EOF
     """.trimIndent()
 
-    fun replyMessageCommand(id: Int, content: String): String = """
+    fun replyMessageCommand(id: Int, content: String): String {
+        // Подготавливаем текст:
+        // 1. Экранируем слеши и кавычки, чтобы не сломать синтаксис AppleScript.
+        // 2. Заменяем переносы строк на склейку со специальным символом return в AppleScript.
+        val safeContent = content
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\" & return & \"")
+
+        return """
         osascript <<'EOF'
         set targetId to $id
-
+        
         tell application "Mail"
-            activate
-
             try
+                -- Находим оригинальное письмо
                 set targetMessage to (first message of inbox whose id is targetId)
-                set newReply to reply targetMessage with opening window
-
-            on error
-                display dialog "Письмо с ID $id не найдено во Входящих." buttons {"OK"}
-                return
+                
+                -- Создаем ответ, но пока не показываем его
+                set newReply to reply targetMessage opening window false
+                
+                tell newReply
+                    -- Аккуратно добавляем наш текст новым абзацем в начало письма
+                    make new paragraph at beginning of content with data ("$safeContent" & return & return)
+                    
+                    -- Показываем готовое письмо пользователю для проверки
+                    set visible to true
+                end tell
+                
+                -- Переводим фокус на Mail
+                activate
+                
+            on error errorMsg
+                display dialog "Ошибка при создании ответа.\nДетали: " & errorMsg buttons {"OK"}
             end try
         end tell
-
-        delay 1
-
-        tell application "System Events"
-            tell process "Mail"
-                keystroke "$content"
-
-                keystroke return
-                keystroke return
-            end tell
-        end tell
-EOF
+        EOF
     """.trimIndent()
+    }
 
     fun sendNewMessageCommand(name: String, address: String, subject: String, content: String): String = """
         osascript <<'EOF'

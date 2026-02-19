@@ -39,3 +39,8 @@ class ToolMailReplyMessage(private val bash: ToolRunBashCommand) : ToolSetup<Too
         return bash.sh(MailAppleScriptCommands.replyMessageCommand(input.messageId, replyContent))
     }
 }
+
+fun main() {
+    val result = ToolMailReplyMessage(ToolRunBashCommand).invoke(ToolMailReplyMessage.Input(1382, "Test"))
+    println(result)
+}

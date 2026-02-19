@@ -33,3 +33,8 @@ class ToolMailListMessages(private val bash: ToolRunBashCommand) : ToolSetup<Too
         return bash.sh(MailAppleScriptCommands.listMessagesCommand(input.count ?: 10))
     }
 }
+
+fun main() {
+    val result = ToolMailListMessages(ToolRunBashCommand).invoke(ToolMailListMessages.Input(10))
+    println(result)
+}

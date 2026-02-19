@@ -159,7 +159,8 @@ EOF
         val hasRecurrences: Boolean,
         val recurrenceFrequency: Int,
         val recurrenceInterval: Int,
-        val recurrenceSpecifier: String?
+        val recurrenceSpecifier: String?,
+        val recurrenceEndDate: ZonedDateTime?
     )
 
     fun listEventsCommand(calendarName: String, dateStr: String? = null): List<CalendarEvent> {
@@ -198,23 +199,24 @@ EOF
         val url = "jdbc:sqlite:${dbFile.toURI()}?mode=ro"
 
         val query = """
-        SELECT DISTINCT
-            Calendar.title AS calendar,
-            CalendarItem.summary AS title,
-            CAST(CalendarItem.start_date AS INT) AS start_date,
-            CAST(CalendarItem.end_date AS INT) AS end_date,
-            CalendarItem.all_day,
-            CalendarItem.has_recurrences,
-            Recurrence.frequency,
-            Recurrence.interval,
-            Recurrence.specifier
-        FROM Store
-        JOIN Calendar ON Calendar.store_id = Store.rowid
-        JOIN CalendarItem ON CalendarItem.calendar_id = Calendar.rowid
-        LEFT OUTER JOIN Recurrence ON Recurrence.owner_id = CalendarItem.rowid
-        WHERE Store.disabled IS NOT 1 
-        AND Calendar.title = ?
-    """.trimIndent()
+            SELECT DISTINCT
+                Calendar.title AS calendar,
+                CalendarItem.summary AS title,
+                CAST(CalendarItem.start_date AS INT) AS start_date,
+                CAST(CalendarItem.end_date AS INT) AS end_date,
+                CalendarItem.all_day,
+                CalendarItem.has_recurrences,
+                Recurrence.frequency,
+                Recurrence.interval,
+                Recurrence.specifier,
+                CAST(Recurrence.end_date AS INT) AS rend_date
+            FROM Store
+            JOIN Calendar ON Calendar.store_id = Store.rowid
+            JOIN CalendarItem ON CalendarItem.calendar_id = Calendar.rowid
+            LEFT OUTER JOIN Recurrence ON Recurrence.owner_id = CalendarItem.rowid
+            WHERE Store.disabled IS NOT 1 
+            AND Calendar.title = ?
+        """.trimIndent()
 
         var connection: Connection? = null
         try {
@@ -229,12 +231,19 @@ EOF
                 val startZoned = convertAppleDateToZoned(resultSet.getLong("start_date"))
                 val endZoned = convertAppleDateToZoned(resultSet.getLong("end_date"))
 
-                // Обработка интервала (если null, считаем как 1)
                 var interval = resultSet.getInt("interval")
                 if (resultSet.wasNull() || interval == 0) interval = 1
 
+                // Parse the recurrence end date, if it exists
+                val rawRendDate = resultSet.getLong("rend_date")
+                val recurrenceEndZoned = if (resultSet.wasNull() || rawRendDate == 0L) {
+                    null
+                } else {
+                    convertAppleDateToZoned(rawRendDate)
+                }
+
                 val event = CalendarEvent(
-                    title = resultSet.getString("title") ?: "Calendar",
+                    title = resultSet.getString("title") ?: "Untitled",
                     calendarName = resultSet.getString("calendar"),
                     startDate = startZoned,
                     endDate = endZoned,
@@ -242,7 +251,8 @@ EOF
                     hasRecurrences = resultSet.getInt("has_recurrences") == 1,
                     recurrenceFrequency = resultSet.getInt("frequency"),
                     recurrenceInterval = interval,
-                    recurrenceSpecifier = resultSet.getString("specifier")
+                    recurrenceSpecifier = resultSet.getString("specifier"),
+                    recurrenceEndDate = recurrenceEndZoned // Pass the new value here
                 )
 
                 if (doesEventHappenOnDate(event, targetDate)) {
@@ -262,14 +272,26 @@ EOF
         val startDate = event.startDate.toLocalDate()
         val endDate = event.endDate.toLocalDate()
 
+        // Non-recurring events check
         if (!event.hasRecurrences) {
             return !targetDate.isBefore(startDate) && !targetDate.isAfter(endDate)
         }
 
+        // A recurring event cannot happen before its initial start date
         if (targetDate.isBefore(startDate)) return false
+
+        // NEW: Check if the recurring event has officially ended
+        if (event.recurrenceEndDate != null) {
+            val recEndDate = event.recurrenceEndDate.toLocalDate()
+            // If our target date is after the rule's end date, it does not happen
+            if (targetDate.isAfter(recEndDate)) {
+                return false
+            }
+        }
 
         val interval = event.recurrenceInterval
 
+        // Base recurrence math (1=Daily, 2=Weekly, 3=Monthly, 4=Yearly)
         return when (event.recurrenceFrequency) {
             1 -> {
                 val daysBetween = ChronoUnit.DAYS.between(startDate, targetDate)
