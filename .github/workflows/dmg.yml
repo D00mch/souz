@@ -9,10 +9,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
-            arch: arm64
-          - runner: macos-13
-            arch: x64
+          - name: macos-latest
+            architecture: x86-64
+            host: macos-latest
+
+          - name: macos-latest
+            architecture: arm64
+            host: macos-latest
 
     runs-on: ${{ matrix.runner }}
 
