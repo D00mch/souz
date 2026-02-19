@@ -4,7 +4,6 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import ru.souz.keys.Keys
 import ru.souz.tool.*
 import ru.souz.tool.desktop.ToolHotkeyMac
-import ru.souz.tool.desktop.ToolMediaControl
 import ru.souz.tool.desktop.ToolMouseClickMac
 import kotlin.reflect.KCallable
 import kotlin.reflect.KClass
@@ -124,6 +123,5 @@ fun Exception.toGigaToolMessage(name: String?): GigaRequest.Message {
 
 fun main() {
     ToolHotkeyMac(Keys()).toGiga()
-    ToolMediaControl(ToolRunBashCommand).toGiga()
     ToolMouseClickMac().toGiga()
 }
