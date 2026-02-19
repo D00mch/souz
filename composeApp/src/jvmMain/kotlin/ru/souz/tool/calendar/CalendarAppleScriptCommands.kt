@@ -160,7 +160,8 @@ EOF
         val recurrenceFrequency: Int,
         val recurrenceInterval: Int,
         val recurrenceSpecifier: String?,
-        val recurrenceEndDate: ZonedDateTime?
+        val recurrenceEndDate: ZonedDateTime?,
+        val recurrenceCount: Int
     )
 
     fun listEventsCommand(calendarName: String, dateStr: String? = null): List<CalendarEvent> {
@@ -209,12 +210,14 @@ EOF
                 Recurrence.frequency,
                 Recurrence.interval,
                 Recurrence.specifier,
-                CAST(Recurrence.end_date AS INT) AS rend_date
+                CAST(Recurrence.end_date AS INT) AS rend_date,
+                Recurrence.count
             FROM Store
             JOIN Calendar ON Calendar.store_id = Store.rowid
             JOIN CalendarItem ON CalendarItem.calendar_id = Calendar.rowid
             LEFT OUTER JOIN Recurrence ON Recurrence.owner_id = CalendarItem.rowid
             WHERE Store.disabled IS NOT 1 
+            AND (CalendarItem.status IS NULL OR CalendarItem.status != 3) 
             AND Calendar.title = ?
         """.trimIndent()
 
@@ -234,13 +237,15 @@ EOF
                 var interval = resultSet.getInt("interval")
                 if (resultSet.wasNull() || interval == 0) interval = 1
 
-                // Parse the recurrence end date, if it exists
                 val rawRendDate = resultSet.getLong("rend_date")
                 val recurrenceEndZoned = if (resultSet.wasNull() || rawRendDate == 0L) {
                     null
                 } else {
                     convertAppleDateToZoned(rawRendDate)
                 }
+
+                // NEW: Get the max occurrence count. If it's null, getInt returns 0.
+                val count = resultSet.getInt("count")
 
                 val event = CalendarEvent(
                     title = resultSet.getString("title") ?: "Untitled",
@@ -252,7 +257,8 @@ EOF
                     recurrenceFrequency = resultSet.getInt("frequency"),
                     recurrenceInterval = interval,
                     recurrenceSpecifier = resultSet.getString("specifier"),
-                    recurrenceEndDate = recurrenceEndZoned // Pass the new value here
+                    recurrenceEndDate = recurrenceEndZoned,
+                    recurrenceCount = count // Pass the count here
                 )
 
                 if (doesEventHappenOnDate(event, targetDate)) {
@@ -280,34 +286,48 @@ EOF
         // A recurring event cannot happen before its initial start date
         if (targetDate.isBefore(startDate)) return false
 
-        // NEW: Check if the recurring event has officially ended
+        // Check if the recurring event has officially ended by DATE
         if (event.recurrenceEndDate != null) {
             val recEndDate = event.recurrenceEndDate.toLocalDate()
-            // If our target date is after the rule's end date, it does not happen
-            if (targetDate.isAfter(recEndDate)) {
-                return false
-            }
+            if (targetDate.isAfter(recEndDate)) return false
         }
 
         val interval = event.recurrenceInterval
+        val maxCount = event.recurrenceCount
 
-        // Base recurrence math (1=Daily, 2=Weekly, 3=Monthly, 4=Yearly)
+        // Base recurrence math with occurrence COUNT limit check
         return when (event.recurrenceFrequency) {
-            1 -> {
+            1 -> { // Daily
                 val daysBetween = ChronoUnit.DAYS.between(startDate, targetDate)
-                daysBetween % interval == 0L
+                if (daysBetween % interval != 0L) false
+                else {
+                    val occurrenceNumber = (daysBetween / interval) + 1
+                    maxCount == 0 || occurrenceNumber <= maxCount
+                }
             }
-            2 -> {
+            2 -> { // Weekly
                 val daysBetween = ChronoUnit.DAYS.between(startDate, targetDate)
-                daysBetween % (interval * 7) == 0L
+                if (daysBetween % (interval * 7) != 0L) false
+                else {
+                    val occurrenceNumber = (daysBetween / (interval * 7)) + 1
+                    maxCount == 0 || occurrenceNumber <= maxCount
+                }
             }
-            3 -> {
+            3 -> { // Monthly
                 val monthsBetween = ChronoUnit.MONTHS.between(startDate, targetDate)
-                monthsBetween % interval == 0L && startDate.dayOfMonth == targetDate.dayOfMonth
+                if (monthsBetween % interval != 0L || startDate.dayOfMonth != targetDate.dayOfMonth) false
+                else {
+                    val occurrenceNumber = (monthsBetween / interval) + 1
+                    maxCount == 0 || occurrenceNumber <= maxCount
+                }
             }
-            4 -> {
+            4 -> { // Yearly
                 val yearsBetween = ChronoUnit.YEARS.between(startDate, targetDate)
-                yearsBetween % interval == 0L && startDate.dayOfMonth == targetDate.dayOfMonth && startDate.month == targetDate.month
+                if (yearsBetween % interval != 0L || startDate.dayOfMonth != targetDate.dayOfMonth || startDate.month != targetDate.month) false
+                else {
+                    val occurrenceNumber = (yearsBetween / interval) + 1
+                    maxCount == 0 || occurrenceNumber <= maxCount
+                }
             }
             else -> false
         }
