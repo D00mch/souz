@@ -178,7 +178,7 @@ compose.desktop {
         val nativeResourceDir = if (isArm64) "darwin-arm64" else "darwin-x64"
 
         buildTypes.release.proguard {
-            isEnabled.set(true)
+            isEnabled.set(false)
             configurationFiles.from(project.file("proguard-rules.pro"))
         }
 
