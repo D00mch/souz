@@ -4,10 +4,11 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
-import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
+import ru.souz.tool.calendar.CalendarAppleScriptCommands.listEventsCommand
+import java.time.format.DateTimeFormatter
 
-class ToolCalendarListEvents(private val bash: ToolRunBashCommand) : ToolSetup<ToolCalendarListEvents.Input> {
+class ToolCalendarListEvents : ToolSetup<ToolCalendarListEvents.Input> {
 
     data class Input(
         @InputParamDescription("Name of the calendar (e.g. 'Home', 'Work'). Leave empty to try finding default.")
@@ -32,7 +33,7 @@ class ToolCalendarListEvents(private val bash: ToolRunBashCommand) : ToolSetup<T
             request = "Что у меня запланировано на 20 декабря 2025 года в рабочем календаре?",
             params = mapOf(
                 "calendarName" to "Work",
-                "date" to "2025-10-05"
+                "date" to "2025-12-20"
             )
         ),
     )
@@ -44,15 +45,35 @@ class ToolCalendarListEvents(private val bash: ToolRunBashCommand) : ToolSetup<T
     )
 
     override fun invoke(input: Input): String {
-        val calName = if (input.calendarName.isBlank()) "Calendar" else input.calendarName
+        val calName = input.calendarName.ifBlank { "Calendar" }
 
-        val targetDate = if (input.date.isBlank()) null else input.date
+        val targetDateStr = input.date.ifBlank { null }
 
-        return bash.sh(CalendarAppleScriptCommands.listEventsCommand(calName, targetDate))
+        val events = listEventsCommand(calName, targetDateStr)
+
+        if (events.isEmpty()) {
+            return "No events found for this date in calendar '$calName'."
+        }
+
+        val displayDate = targetDateStr ?: "today"
+        val outputBuilder = StringBuilder("Events for $displayDate in calendar '$calName':\n")
+
+        val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+        for (event in events) {
+            val timeStr = if (event.isAllDay) {
+                "[All Day]"
+            } else {
+                event.startDate.format(timeFormatter)
+            }
+            outputBuilder.append("- $timeStr: ${event.title}\n")
+        }
+
+        return outputBuilder.toString()
     }
 }
 
 fun main() {
-    val tool = ToolCalendarListEvents(ToolRunBashCommand)
-    println(tool.invoke(ToolCalendarListEvents.Input("qwerty@gmail.com", "2025-12-20")))
+    val tool = ToolCalendarListEvents()
+    println(tool.invoke(ToolCalendarListEvents.Input("Calendar", "2026-02-20")))
 }

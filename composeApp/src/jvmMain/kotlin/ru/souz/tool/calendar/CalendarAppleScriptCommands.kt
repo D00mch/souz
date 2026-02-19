@@ -1,5 +1,15 @@
 package ru.souz.tool.calendar
 
+import java.sql.Connection
+import java.sql.DriverManager
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+
+const val APPLE_EPOCH_OFFSET_SECONDS = 978307200L
 internal object CalendarAppleScriptCommands {
     fun listTodayEventsCommand(calendarName: String): String = """
         osascript <<'EOF'
@@ -140,77 +150,150 @@ EOF
         """.trimIndent()
     }
 
-    fun listEventsCommand(calendarName: String, dateStr: String? = null): String {
-        // Если дата не передана, скрипт будет использовать текущую
-        val targetDateLogic = if (dateStr.isNullOrBlank()) {
-            "set targetDate to current date"
-        } else {
-            try {
-                val parts = dateStr.split("-")
-                val y = parts[0].toInt()
-                val m = parts[1].toInt()
-                val d = parts[2].toInt()
-                """
-                set targetDate to current date
-                set year of targetDate to $y
-                set month of targetDate to $m
-                set day of targetDate to $d
-                """.trimIndent()
-            } catch (e: Exception) {
-                "set targetDate to current date"
+    data class CalendarEvent(
+        val title: String,
+        val calendarName: String,
+        val startDate: ZonedDateTime,
+        val endDate: ZonedDateTime,
+        val isAllDay: Boolean,
+        val hasRecurrences: Boolean,
+        val recurrenceFrequency: Int,
+        val recurrenceInterval: Int,
+        val recurrenceSpecifier: String?
+    )
+
+    fun listEventsCommand(calendarName: String, dateStr: String? = null): List<CalendarEvent> {
+        val targetDate = try {
+            if (dateStr.isNullOrBlank()) {
+                LocalDate.now()
+            } else {
+                LocalDate.parse(dateStr, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+            }
+        } catch (e: Exception) {
+            LocalDate.now()
+        }
+
+        val events = mutableListOf<CalendarEvent>()
+        val userHome = System.getProperty("user.home")
+        val possiblePaths = listOf(
+            "$userHome/Library/Group Containers/group.com.apple.calendar/Calendar.sqlitedb",
+            "$userHome/Library/Calendars/Calendar.sqlitedb",
+            "$userHome/Library/Calendars/Calendar Cache"
+        )
+
+        var dbFile: java.io.File? = null
+        for (path in possiblePaths) {
+            val file = java.io.File(path)
+            if (file.exists() && file.length() > 0L) {
+                dbFile = file
+                break
             }
         }
 
-        return """
-        osascript <<'EOF'
-        set calName to "$calendarName"
-        
-        $targetDateLogic
-        
-        set time of targetDate to 0
-        set dayStart to targetDate
-        set dayEnd to dayStart + (24 * hours)
-        
-        set dateString to (year of dayStart as string) & "-" & (month of dayStart as integer) & "-" & (day of dayStart as integer)
-        set output to "Events for " & dateString & " in calendar '" & calName & "':" & return
-        
-        tell application "Calendar"
-            try
-                set targetCals to (calendars whose name is calName)
-                if (count of targetCals) is 0 then
-                    return "Error: Calendar '" & calName & "' not found."
-                end if
-                set targetCal to first item of targetCals
-        
-                tell targetCal
-                    set foundEvents to (every event whose start date is greater than or equal to dayStart and start date is less than dayEnd)
-                    
-                    if (count of foundEvents) is 0 then
-                        return "No events found for this date."
-                    end if
-                    
-                    repeat with anEvent in foundEvents
-                        set isAllDay to allday event of anEvent
-                        set evtTitle to summary of anEvent
-                        
-                        if isAllDay then
-                            set timeStr to "[All Day]"
-                        else
-                            set sDate to start date of anEvent
-                            set timeStr to time string of sDate
-                        end if
-                        
-                        set output to output & "- " & timeStr & ": " & evtTitle & return
-                    end repeat
-                end tell
-                
-                return output
-                
-            on error errMsg
-                return "System Error: " & errMsg
-            end try
-        end tell
-EOF
-        """.trimIndent()
+        if (dbFile == null) {
+            println("Error: Could not find a valid Apple Calendar database on this Mac.")
+            return emptyList()
+        }
+
+        val url = "jdbc:sqlite:${dbFile.toURI()}?mode=ro"
+
+        val query = """
+        SELECT DISTINCT
+            Calendar.title AS calendar,
+            CalendarItem.summary AS title,
+            CAST(CalendarItem.start_date AS INT) AS start_date,
+            CAST(CalendarItem.end_date AS INT) AS end_date,
+            CalendarItem.all_day,
+            CalendarItem.has_recurrences,
+            Recurrence.frequency,
+            Recurrence.interval,
+            Recurrence.specifier
+        FROM Store
+        JOIN Calendar ON Calendar.store_id = Store.rowid
+        JOIN CalendarItem ON CalendarItem.calendar_id = Calendar.rowid
+        LEFT OUTER JOIN Recurrence ON Recurrence.owner_id = CalendarItem.rowid
+        WHERE Store.disabled IS NOT 1 
+        AND Calendar.title = ?
+    """.trimIndent()
+
+        var connection: Connection? = null
+        try {
+            Class.forName("org.sqlite.JDBC")
+            connection = DriverManager.getConnection(url)
+            val statement = connection.prepareStatement(query)
+            statement.setString(1, calendarName)
+
+            val resultSet = statement.executeQuery()
+
+            while (resultSet.next()) {
+                val startZoned = convertAppleDateToZoned(resultSet.getLong("start_date"))
+                val endZoned = convertAppleDateToZoned(resultSet.getLong("end_date"))
+
+                // Обработка интервала (если null, считаем как 1)
+                var interval = resultSet.getInt("interval")
+                if (resultSet.wasNull() || interval == 0) interval = 1
+
+                val event = CalendarEvent(
+                    title = resultSet.getString("title") ?: "Calendar",
+                    calendarName = resultSet.getString("calendar"),
+                    startDate = startZoned,
+                    endDate = endZoned,
+                    isAllDay = resultSet.getInt("all_day") == 1,
+                    hasRecurrences = resultSet.getInt("has_recurrences") == 1,
+                    recurrenceFrequency = resultSet.getInt("frequency"),
+                    recurrenceInterval = interval,
+                    recurrenceSpecifier = resultSet.getString("specifier")
+                )
+
+                if (doesEventHappenOnDate(event, targetDate)) {
+                    events.add(event)
+                }
+            }
+        } catch (e: Exception) {
+            println("DB Error: ${e.message}")
+        } finally {
+            connection?.close()
+        }
+
+        return events
+    }
+
+    fun doesEventHappenOnDate(event: CalendarEvent, targetDate: LocalDate): Boolean {
+        val startDate = event.startDate.toLocalDate()
+        val endDate = event.endDate.toLocalDate()
+
+        if (!event.hasRecurrences) {
+            return !targetDate.isBefore(startDate) && !targetDate.isAfter(endDate)
+        }
+
+        if (targetDate.isBefore(startDate)) return false
+
+        val interval = event.recurrenceInterval
+
+        return when (event.recurrenceFrequency) {
+            1 -> {
+                val daysBetween = ChronoUnit.DAYS.between(startDate, targetDate)
+                daysBetween % interval == 0L
+            }
+            2 -> {
+                val daysBetween = ChronoUnit.DAYS.between(startDate, targetDate)
+                daysBetween % (interval * 7) == 0L
+            }
+            3 -> {
+                val monthsBetween = ChronoUnit.MONTHS.between(startDate, targetDate)
+                monthsBetween % interval == 0L && startDate.dayOfMonth == targetDate.dayOfMonth
+            }
+            4 -> {
+                val yearsBetween = ChronoUnit.YEARS.between(startDate, targetDate)
+                yearsBetween % interval == 0L && startDate.dayOfMonth == targetDate.dayOfMonth && startDate.month == targetDate.month
+            }
+            else -> false
+        }
+    }
+
+    fun convertAppleDateToZoned(appleSeconds: Long): ZonedDateTime {
+        val unixSeconds = appleSeconds + APPLE_EPOCH_OFFSET_SECONDS
+        val instant = Instant.ofEpochSecond(unixSeconds)
+        return ZonedDateTime.ofInstant(instant, ZoneId.systemDefault())
     }
 }
