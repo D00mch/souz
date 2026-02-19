@@ -116,7 +116,7 @@ class OnboardingUseCase(
                 }
 
                 delay(retryDelayMs)
-                retryDelayMs = min(retryDelayMs * 2, ONBOARDING_PERMISSION_RETRY_MAX_DELAY_MS)
+                retryDelayMs = min(retryDelayMs * 4, ONBOARDING_PERMISSION_RETRY_MAX_DELAY_MS)
             }
         }
     }
