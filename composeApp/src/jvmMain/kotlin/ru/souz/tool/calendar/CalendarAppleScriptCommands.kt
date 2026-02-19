@@ -1,9 +1,11 @@
 package ru.souz.tool.calendar
 
+import java.io.File
 import java.sql.Connection
 import java.sql.DriverManager
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -164,7 +166,11 @@ EOF
         val recurrenceCount: Int
     )
 
+    /**
+     * Fetches events for a specific calendar and date directly from the macOS SQLite database.
+     */
     fun listEventsCommand(calendarName: String, dateStr: String? = null): List<CalendarEvent> {
+        // 1. Determine the target date
         val targetDate = try {
             if (dateStr.isNullOrBlank()) {
                 LocalDate.now()
@@ -172,20 +178,29 @@ EOF
                 LocalDate.parse(dateStr, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
             }
         } catch (e: Exception) {
+            println("Date parsing error, defaulting to today.")
             LocalDate.now()
         }
 
-        val events = mutableListOf<CalendarEvent>()
+        // 2. Convert target day boundaries to Unix epoch seconds
+        val targetStartUnix = targetDate.atStartOfDay(ZoneId.systemDefault()).toEpochSecond()
+        val targetEndUnix = targetDate.atTime(LocalTime.MAX).atZone(ZoneId.systemDefault()).toEpochSecond()
+
+        // 3. Convert Unix seconds to Apple Core Data seconds (required for SQL comparison)
+        val appleTargetStart = targetStartUnix - APPLE_EPOCH_OFFSET_SECONDS
+        val appleTargetEnd = targetEndUnix - APPLE_EPOCH_OFFSET_SECONDS
+
+        // 4. Locate the SQLite database file
         val userHome = System.getProperty("user.home")
         val possiblePaths = listOf(
-            "$userHome/Library/Group Containers/group.com.apple.calendar/Calendar.sqlitedb",
-            "$userHome/Library/Calendars/Calendar.sqlitedb",
-            "$userHome/Library/Calendars/Calendar Cache"
+            "$userHome/Library/Group Containers/group.com.apple.calendar/Calendar.sqlitedb", // macOS 15+
+            "$userHome/Library/Calendars/Calendar.sqlitedb",                                 // macOS 13-14
+            "$userHome/Library/Calendars/Calendar Cache"                                     // Older macOS
         )
 
-        var dbFile: java.io.File? = null
+        var dbFile: File? = null
         for (path in possiblePaths) {
-            val file = java.io.File(path)
+            val file = File(path)
             if (file.exists() && file.length() > 0L) {
                 dbFile = file
                 break
@@ -197,36 +212,53 @@ EOF
             return emptyList()
         }
 
+        val events = mutableListOf<CalendarEvent>()
         val url = "jdbc:sqlite:${dbFile.toURI()}?mode=ro"
 
+        // 5. Optimized SQL query using date boundaries to filter events early
         val query = """
-            SELECT DISTINCT
-                Calendar.title AS calendar,
-                CalendarItem.summary AS title,
-                CAST(CalendarItem.start_date AS INT) AS start_date,
-                CAST(CalendarItem.end_date AS INT) AS end_date,
-                CalendarItem.all_day,
-                CalendarItem.has_recurrences,
-                Recurrence.frequency,
-                Recurrence.interval,
-                Recurrence.specifier,
-                CAST(Recurrence.end_date AS INT) AS rend_date,
-                Recurrence.count
-            FROM Store
-            JOIN Calendar ON Calendar.store_id = Store.rowid
-            JOIN CalendarItem ON CalendarItem.calendar_id = Calendar.rowid
-            LEFT OUTER JOIN Recurrence ON Recurrence.owner_id = CalendarItem.rowid
-            WHERE Store.disabled IS NOT 1 
-            AND (CalendarItem.status IS NULL OR CalendarItem.status != 3) 
-            AND Calendar.title = ?
-        """.trimIndent()
+        SELECT DISTINCT
+            Calendar.title AS calendar,
+            CalendarItem.summary AS title,
+            CAST(CalendarItem.start_date AS INT) AS start_date,
+            CAST(CalendarItem.end_date AS INT) AS end_date,
+            CalendarItem.all_day,
+            CalendarItem.has_recurrences,
+            Recurrence.frequency,
+            Recurrence.interval,
+            Recurrence.specifier,
+            CAST(Recurrence.end_date AS INT) AS rend_date,
+            Recurrence.count
+        FROM Store
+        JOIN Calendar ON Calendar.store_id = Store.rowid
+        JOIN CalendarItem ON CalendarItem.calendar_id = Calendar.rowid
+        LEFT OUTER JOIN Recurrence ON Recurrence.owner_id = CalendarItem.rowid
+        WHERE Store.disabled IS NOT 1 
+        AND (CalendarItem.status IS NULL OR CalendarItem.status != 3) 
+        AND Calendar.title = ?
+        AND (
+            (CalendarItem.has_recurrences = 0 AND CalendarItem.start_date <= ? AND CalendarItem.end_date >= ?)
+            OR 
+            (CalendarItem.has_recurrences = 1 AND CalendarItem.start_date <= ? AND (Recurrence.end_date IS NULL OR Recurrence.end_date >= ?))
+        )
+    """.trimIndent()
 
         var connection: Connection? = null
         try {
             Class.forName("org.sqlite.JDBC")
             connection = DriverManager.getConnection(url)
             val statement = connection.prepareStatement(query)
+
+            // Bind parameters safely
             statement.setString(1, calendarName)
+
+            // Boundaries for non-recurring events
+            statement.setLong(2, appleTargetEnd)
+            statement.setLong(3, appleTargetStart)
+
+            // Boundaries for recurring events
+            statement.setLong(4, appleTargetEnd)
+            statement.setLong(5, appleTargetStart)
 
             val resultSet = statement.executeQuery()
 
@@ -244,8 +276,7 @@ EOF
                     convertAppleDateToZoned(rawRendDate)
                 }
 
-                // NEW: Get the max occurrence count. If it's null, getInt returns 0.
-                val count = resultSet.getInt("count")
+                val count = resultSet.getInt("count") // Returns 0 if null
 
                 val event = CalendarEvent(
                     title = resultSet.getString("title") ?: "Untitled",
@@ -258,15 +289,16 @@ EOF
                     recurrenceInterval = interval,
                     recurrenceSpecifier = resultSet.getString("specifier"),
                     recurrenceEndDate = recurrenceEndZoned,
-                    recurrenceCount = count // Pass the count here
+                    recurrenceCount = count
                 )
 
+                // 6. Final Kotlin-side verification for recurring rules
                 if (doesEventHappenOnDate(event, targetDate)) {
                     events.add(event)
                 }
             }
         } catch (e: Exception) {
-            println("DB Error: ${e.message}")
+            println("Database Error: ${e.message}")
         } finally {
             connection?.close()
         }
@@ -274,19 +306,18 @@ EOF
         return events
     }
 
+    /**
+     * Validates if the given event exactly matches the target date,
+     * primarily resolving mathematical rules for recurring events.
+     */
     fun doesEventHappenOnDate(event: CalendarEvent, targetDate: LocalDate): Boolean {
         val startDate = event.startDate.toLocalDate()
-        val endDate = event.endDate.toLocalDate()
 
-        // Non-recurring events check
+        // Non-recurring events were already perfectly filtered by SQL
         if (!event.hasRecurrences) {
-            return !targetDate.isBefore(startDate) && !targetDate.isAfter(endDate)
+            return true
         }
-
-        // A recurring event cannot happen before its initial start date
         if (targetDate.isBefore(startDate)) return false
-
-        // Check if the recurring event has officially ended by DATE
         if (event.recurrenceEndDate != null) {
             val recEndDate = event.recurrenceEndDate.toLocalDate()
             if (targetDate.isAfter(recEndDate)) return false
@@ -294,8 +325,6 @@ EOF
 
         val interval = event.recurrenceInterval
         val maxCount = event.recurrenceCount
-
-        // Base recurrence math with occurrence COUNT limit check
         return when (event.recurrenceFrequency) {
             1 -> { // Daily
                 val daysBetween = ChronoUnit.DAYS.between(startDate, targetDate)
@@ -305,7 +334,7 @@ EOF
                     maxCount == 0 || occurrenceNumber <= maxCount
                 }
             }
-            2 -> { // Weekly
+            2 -> {
                 val daysBetween = ChronoUnit.DAYS.between(startDate, targetDate)
                 if (daysBetween % (interval * 7) != 0L) false
                 else {
@@ -313,7 +342,7 @@ EOF
                     maxCount == 0 || occurrenceNumber <= maxCount
                 }
             }
-            3 -> { // Monthly
+            3 -> {
                 val monthsBetween = ChronoUnit.MONTHS.between(startDate, targetDate)
                 if (monthsBetween % interval != 0L || startDate.dayOfMonth != targetDate.dayOfMonth) false
                 else {
@@ -321,7 +350,7 @@ EOF
                     maxCount == 0 || occurrenceNumber <= maxCount
                 }
             }
-            4 -> { // Yearly
+            4 -> {
                 val yearsBetween = ChronoUnit.YEARS.between(startDate, targetDate)
                 if (yearsBetween % interval != 0L || startDate.dayOfMonth != targetDate.dayOfMonth || startDate.month != targetDate.month) false
                 else {
@@ -333,6 +362,9 @@ EOF
         }
     }
 
+    /**
+     * Helper to convert Apple's specific timestamp format to ZonedDateTime.
+     */
     fun convertAppleDateToZoned(appleSeconds: Long): ZonedDateTime {
         val unixSeconds = appleSeconds + APPLE_EPOCH_OFFSET_SECONDS
         val instant = Instant.ofEpochSecond(unixSeconds)
