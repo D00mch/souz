@@ -1,6 +1,7 @@
 # Souz
 
 Keep this file updated whenever project behavior, architecture, build logic, or provider setup changes.
+If you are not sure about something, left a note for other developers to review. 
 
 ## General Info
 Souz is a Kotlin Multiplatform desktop AI assistant built with Compose for Desktop.
