@@ -11,8 +11,20 @@ jobs:
         include:
           - runner: macos-latest
             arch: arm64
+            edition: ru
+            package_task: packageRuReleaseDmg
+          - runner: macos-latest
+            arch: arm64
+            edition: en
+            package_task: packageEnReleaseDmg
           - runner: macos-latest
             arch: x64
+            edition: ru
+            package_task: packageRuReleaseDmg
+          - runner: macos-latest
+            arch: x64
+            edition: en
+            package_task: packageEnReleaseDmg
 
     runs-on: ${{ matrix.runner }}
 
@@ -27,12 +39,12 @@ jobs:
           java-version: 21
           cache: gradle
 
-      - name: Build release DMGs (RU/EN)
-        run: ./gradlew :composeApp:clean packageRuReleaseDmg packageEnReleaseDmg
+      - name: Build ${{ matrix.edition }} release DMG
+        run: ./gradlew :composeApp:clean ${{ matrix.package_task }}
 
-      - name: Upload DMGs
+      - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: dmgs-${{ matrix.arch }}
+          name: dmg-${{ matrix.arch }}-${{ matrix.edition }}
           path: |
             composeApp/build/compose/binaries/**/*.dmg
