@@ -106,8 +106,7 @@ kotlin {
 
         jvmMain.dependencies {
             implementation(files("src/jvmMain/resources/darwin-arm64"))
-            implementation(files("src/jvmMain/resources/macos-x64"))
-            implementation(files("src/jvmMain/resources/macos-arm64"))
+            implementation(files("src/jvmMain/resources/darwin-x64"))
 
             implementation(libs.compose.ui.tooling.preview.desktop)
             implementation(compose.desktop.currentOs)
@@ -175,8 +174,11 @@ compose.desktop {
         mainClass = "ru.souz.MainKt"
         jvmArgs("-Dsouz.edition=$edition")
 
+        val isArm64 = System.getProperty("os.arch").lowercase().let { it.contains("aarch64") || it.contains("arm64") }
+        val nativeResourceDir = if (isArm64) "darwin-arm64" else "darwin-x64"
+
         buildTypes.release.proguard {
-            isEnabled.set(true)
+            isEnabled.set(false)
             configurationFiles.from(project.file("proguard-rules.pro"))
         }
 
@@ -219,7 +221,7 @@ compose.desktop {
             // macOS dark mode support, works only on the release build, not in debug
             jvmArgs("-Dsouz.edition=$edition")
             // TDLight loads from java.library.path first; this avoids temp extraction/signing issues.
-            jvmArgs("-Djava.library.path=\$APPDIR/resources/darwin-arm64")
+            jvmArgs("-Djava.library.path=\$APPDIR/resources/$nativeResourceDir")
             // Safety net: never let JNativeHook extract into Contents/app (which breaks code signature).
             jvmArgs("-Djnativehook.lib.path=/tmp/souz-jnativehook")
             jvmArgs("-Dapple.awt.application.appearance=system")

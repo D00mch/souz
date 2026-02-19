@@ -42,6 +42,15 @@ private fun configureNativeExtraction(project: Project) {
         description = "TDLight macOS arm64 native jar used to extract local JNI binary"
     }
 
+    val tdlightMacosX64NativeFileName = "libtdjni.macos_amd64.dylib"
+    val tdlightMacosX64NativeTargetDir = project.layout.projectDirectory.dir("src/jvmMain/resources/darwin-x64")
+    val tdlightMacosX64NativeConfiguration = project.configurations.create("tdlightMacosX64Native") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+        isTransitive = false
+        description = "TDLight macOS x64 native jar used to extract local JNI binary"
+    }
+
     val jnativehookMacosArm64NativeFileName = "libJNativeHook.dylib"
     val jnativehookMacosArm64NativeTargetDir = project.layout.projectDirectory.dir("src/jvmMain/resources/darwin-arm64")
     val jnativehookMacosArm64NativeConfiguration = project.configurations.create("jnativehookMacosArm64Native") {
@@ -49,6 +58,15 @@ private fun configureNativeExtraction(project: Project) {
         isCanBeResolved = true
         isTransitive = false
         description = "JNativeHook jar used to extract macOS arm64 JNI binary"
+    }
+
+    val jnativehookMacosX64NativeFileName = "libJNativeHook.dylib"
+    val jnativehookMacosX64NativeTargetDir = project.layout.projectDirectory.dir("src/jvmMain/resources/darwin-x64")
+    val jnativehookMacosX64NativeConfiguration = project.configurations.create("jnativehookMacosX64Native") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+        isTransitive = false
+        description = "JNativeHook jar used to extract macOS x64 JNI binary"
     }
 
     val libs = project.extensions.getByType(VersionCatalogsExtension::class.java).named("libs")
@@ -67,6 +85,14 @@ private fun configureNativeExtraction(project: Project) {
         jnativehookMacosArm64NativeConfiguration.name,
         "com.github.kwhat:jnativehook:$jnativehookVersion@jar",
     )
+    project.dependencies.add(
+        tdlightMacosX64NativeConfiguration.name,
+        "it.tdlight:tdlight-natives:$tdlightNativesVersion:macos_amd64@jar",
+    )
+    project.dependencies.add(
+        jnativehookMacosX64NativeConfiguration.name,
+        "com.github.kwhat:jnativehook:$jnativehookVersion@jar",
+    )
 
     val syncTdlightNativeMacosArm64 = project.tasks.register("syncTdlightNativeMacosArm64", Copy::class.java) {
         group = "tdlight"
@@ -80,6 +106,20 @@ private fun configureNativeExtraction(project: Project) {
             },
         )
         into(tdlightMacosArm64NativeTargetDir)
+    }
+
+    val syncTdlightNativeMacosX64 = project.tasks.register("syncTdlightNativeMacosX64", Copy::class.java) {
+        group = "tdlight"
+        description = "Extract TDLight macOS x64 JNI binary into src/jvmMain/resources/darwin-x64"
+        from(
+            { tdlightMacosX64NativeConfiguration.files.map { project.zipTree(it) } },
+            Action {
+                include("META-INF/tdlightjni/$tdlightMacosX64NativeFileName")
+                eachFile { path = tdlightMacosX64NativeFileName }
+                includeEmptyDirs = false
+            },
+        )
+        into(tdlightMacosX64NativeTargetDir)
     }
 
     val syncJnativehookNativeMacosArm64 = project.tasks.register("syncJnativehookNativeMacosArm64", Copy::class.java) {
@@ -96,10 +136,26 @@ private fun configureNativeExtraction(project: Project) {
         into(jnativehookMacosArm64NativeTargetDir)
     }
 
+    val syncJnativehookNativeMacosX64 = project.tasks.register("syncJnativehookNativeMacosX64", Copy::class.java) {
+        group = "native"
+        description = "Extract JNativeHook macOS x64 JNI binary into src/jvmMain/resources/darwin-x64"
+        from(
+            { jnativehookMacosX64NativeConfiguration.files.map { project.zipTree(it) } },
+            Action {
+                include("com/github/kwhat/jnativehook/lib/darwin/x86_64/$jnativehookMacosX64NativeFileName")
+                eachFile { path = jnativehookMacosX64NativeFileName }
+                includeEmptyDirs = false
+            },
+        )
+        into(jnativehookMacosX64NativeTargetDir)
+    }
+
     project.tasks.configureEach {
         if (name == "jvmProcessResources" || name == "processJvmMainResources") {
             dependsOn(syncTdlightNativeMacosArm64)
             dependsOn(syncJnativehookNativeMacosArm64)
+            dependsOn(syncTdlightNativeMacosX64)
+            dependsOn(syncJnativehookNativeMacosX64)
         }
     }
 
@@ -107,6 +163,8 @@ private fun configureNativeExtraction(project: Project) {
         if (name == "prepareAppResources" && this is Sync) {
             dependsOn(syncTdlightNativeMacosArm64)
             dependsOn(syncJnativehookNativeMacosArm64)
+            dependsOn(syncTdlightNativeMacosX64)
+            dependsOn(syncJnativehookNativeMacosX64)
             from(tdlightMacosArm64NativeTargetDir) {
                 include(tdlightMacosArm64NativeFileName)
                 into("darwin-arm64")
@@ -114,6 +172,14 @@ private fun configureNativeExtraction(project: Project) {
             from(jnativehookMacosArm64NativeTargetDir) {
                 include(jnativehookMacosArm64NativeFileName)
                 into("darwin-arm64")
+            }
+            from(tdlightMacosX64NativeTargetDir) {
+                include(tdlightMacosX64NativeFileName)
+                into("darwin-x64")
+            }
+            from(jnativehookMacosX64NativeTargetDir) {
+                include(jnativehookMacosX64NativeFileName)
+                into("darwin-x64")
             }
         }
     }
