@@ -28,6 +28,10 @@ jobs:
 
     runs-on: ${{ matrix.runner }}
 
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
