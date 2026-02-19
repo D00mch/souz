@@ -1,12 +1,12 @@
-name: CI
+name: CI-Tests
 
 on:
   pull_request:
-    branches: ["**"]
-  workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
-  build:
+  tests:
     runs-on: macos-latest
 
     steps:
@@ -25,37 +25,3 @@ jobs:
 
       - name: Run JVM tests
         run: ./gradlew :composeApp:cleanJvmTest :composeApp:jvmTest
-
-  package-dmg:
-    if: github.event_name == 'workflow_dispatch'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-14
-            arch: arm64
-          - runner: macos-13
-            arch: x64
-
-    runs-on: ${{ matrix.runner }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: zulu
-          java-version: 21
-          cache: gradle
-
-      - name: Build release DMGs (RU/EN)
-        run: ./gradlew :composeApp:clean packageRuReleaseDmg packageEnReleaseDmg
-
-      - name: Upload DMGs
-        uses: actions/upload-artifact@v4
-        with:
-          name: dmgs-${{ matrix.arch }}
-          path: |
-            composeApp/build/compose/binaries/**/*.dmg
