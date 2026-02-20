@@ -48,6 +48,7 @@ fun SettingsScreen(
             when (effect) {
                 SettingsEffect.CloseScreen -> onClose()
                 SettingsEffect.NotifyOnSystemPrompt -> onShowSnack(getString(Res.string.snack_saved_system_prompt))
+                is SettingsEffect.ShowSnackbar -> onShowSnack(effect.message)
             }
         }
     }

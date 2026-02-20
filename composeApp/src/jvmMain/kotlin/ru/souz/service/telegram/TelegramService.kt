@@ -36,6 +36,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.delay
 
 private const val TELEGRAM_MAX_CONTACTS_CACHE = 5_000
 private const val TELEGRAM_MAX_CHATS_CACHE = 100
@@ -312,6 +313,123 @@ class TelegramService(
 
         updateChatFromMessage(sentMessage)
         return messageToView(sentMessage)
+    }
+
+    suspend fun createControlBot() {
+        val client = requireClient()
+        val me = meUserIdRef.get()?.let { usersById[it] } ?: throw IllegalStateException("User not resolved")
+        val chat = runCatching {
+            client.send(TdApi.SearchPublicChat("botfather")).awaitResult()
+        }.getOrElse {
+            throw IllegalStateException("Failed to resolve @BotFather. Please make sure you have internet access. $it")
+        }
+
+        client.send(
+            TdApi.SendMessage(
+                chat.id, 0L, null, null, null,
+                TdApi.InputMessageText(TdApi.FormattedText("/newbot", null), null, false)
+            )
+        ).awaitResult()
+        
+        delay(1500)
+
+        val botName = "Souz PC Control"
+        client.send(
+            TdApi.SendMessage(
+                chat.id, 0L, null, null, null,
+                TdApi.InputMessageText(TdApi.FormattedText(botName, null), null, false)
+            )
+        ).awaitResult()
+
+        delay(1500)
+
+        val botUsername = "souz_control_${me.id}_${System.currentTimeMillis() % 10000}_bot"
+        client.send(
+            TdApi.SendMessage(
+                chat.id, 0L, null, null, null,
+                TdApi.InputMessageText(TdApi.FormattedText(botUsername, null), null, false)
+            )
+        ).awaitResult()
+
+        var token: String? = null
+        for (i in 1..10) {
+            delay(1000)
+            val history = client.send(TdApi.GetChatHistory(chat.id, 0L, 0, 5, false)).awaitResult()
+            val replies = history.messages.orEmpty().filter { !it.isOutgoing }
+            
+            for (msg in replies) {
+                val text = extractMessageText(msg) ?: continue
+                val match = Regex("""\d{8,10}:[a-zA-Z0-9_-]{35,}""").find(text)
+                if (match != null) {
+                    token = match.value
+                    break
+                }
+            }
+            if (token != null) break
+        }
+
+        if (token != null) {
+            ConfigStore.put(ConfigStore.TG_BOT_TOKEN, token)
+            ConfigStore.put(ConfigStore.TG_BOT_OWNER_ID, me.id)
+            l.info("Bot created. Token saved. Owner ID: ${me.id}")
+
+            try {
+                delay(2000)
+                val newBotChat = client.send(TdApi.SearchPublicChat(botUsername)).awaitResult()
+                client.send(
+                    TdApi.SendMessage(
+                        newBotChat.id, 0L, null, null, null,
+                        TdApi.InputMessageText(TdApi.FormattedText("/start", null), null, false)
+                    )
+                ).awaitResult()
+                l.info("Sent /start to newly created bot @$botUsername")
+            } catch (e: Exception) {
+                l.error("Failed to send /start to newly created bot @$botUsername", e)
+            }
+
+            try {
+                delay(1500)
+                client.send(
+                    TdApi.SendMessage(
+                        chat.id, 0L, null, null, null,
+                        TdApi.InputMessageText(TdApi.FormattedText("/setuserpic", null), null, false)
+                    )
+                ).awaitResult()
+                delay(1500)
+
+                client.send(
+                    TdApi.SendMessage(
+                        chat.id, 0L, null, null, null,
+                        TdApi.InputMessageText(TdApi.FormattedText("@$botUsername", null), null, false)
+                    )
+                ).awaitResult()
+                delay(1500)
+
+                val avatarStream = TelegramService::class.java.getResourceAsStream("/bot_avatar.png")
+                if (avatarStream != null) {
+                    val tempFile = java.io.File.createTempFile("bot_avatar", ".png")
+                    tempFile.deleteOnExit()
+                    avatarStream.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+
+                    client.send(
+                        TdApi.SendMessage(
+                            chat.id, 0L, null, null, null,
+                            TdApi.InputMessagePhoto(
+                                TdApi.InputFileLocal(tempFile.absolutePath),
+                                null, null, 0, 0, null, false, null, false
+                            )
+                        )
+                    ).awaitResult()
+                    l.info("Set avatar for bot @$botUsername")
+                } else {
+                    l.warn("Bot avatar resource not found at /bot_avatar.png")
+                }
+            } catch (e: Exception) {
+                l.error("Failed to set bot avatar via BotFather", e)
+            }
+        } else {
+            throw IllegalStateException("Failed to extract Bot Token from BotFather replies")
+        }
     }
 
     suspend fun forwardMessage(fromChat: String, toChat: String, messageId: String): TelegramMessageView {

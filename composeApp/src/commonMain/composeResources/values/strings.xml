@@ -303,6 +303,10 @@
     <string name="telegram_hint_code_sent">Code sent to: %1$s</string>
     <string name="telegram_hint_password">Password hint: %1$s</string>
     <string name="telegram_info_code_requested_again">Requested a new code. Check Telegram.</string>
+    <string name="bot_created_success_message">Telegram PC Control created successfully!</string>
+    <string name="error_failed_to_create_bot">Failed to create Telegram PC Control </string>
+    <string name="telegram_btn_create_control">Create Telegram PC Control</string>
+    <string name="telegram_btn_delete_control">Delete Telegram PC Control</string>
 
     <!-- Setup -->
     <string name="setup_btn_choose_voice">Choose voice</string>

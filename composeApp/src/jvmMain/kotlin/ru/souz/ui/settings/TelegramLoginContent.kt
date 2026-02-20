@@ -47,6 +47,7 @@ fun TelegramLoginContent(
 ) {
     val di = localDI()
     val telegramService: TelegramService by di.instance()
+    val viewModel = androidx.lifecycle.viewmodel.compose.viewModel { SettingsViewModel(di) }
     val scope = rememberCoroutineScope()
 
     var phoneValue by remember { mutableStateOf(state.telegramPhoneInput) }
@@ -383,6 +384,39 @@ fun TelegramLoginContent(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
+                if (state.isTelegramBotActive) {
+                    Button(
+                        onClick = { viewModel.send(SettingsEvent.DisconnectTelegramBot) },
+                        enabled = !state.telegramAuthBusy,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ),
+                        border = BorderStroke(1.dp, Color(0x26FFFFFF)),
+                    ) {
+                        Text(stringResource(Res.string.telegram_btn_delete_control))
+                    }
+                } else {
+                    Button(
+                        onClick = { viewModel.send(SettingsEvent.CreateControlBot) },
+                        enabled = !state.telegramAuthBusy,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0x4D00AA00),
+                            contentColor = Color(0xF2FFFFFF),
+                        ),
+                        border = BorderStroke(1.dp, Color(0x26FFFFFF)),
+                    ) {
+                        Text(stringResource(Res.string.telegram_btn_create_control))
+                    }
+                }
                 Button(
                     onClick = onStartWork,
                     enabled = !state.telegramAuthBusy,

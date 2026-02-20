@@ -303,6 +303,10 @@
     <string name="telegram_hint_code_sent">Код отправлен на: %1$s</string>
     <string name="telegram_hint_password">Подсказка пароля: %1$s</string>
     <string name="telegram_info_code_requested_again">Запросили новый код. Проверьте Telegram.</string>
+    <string name="bot_created_success_message">Telegram PC Control успешно создан!</string>
+    <string name="error_failed_to_create_bot">Не удалось создать Telegram PC Control</string>
+    <string name="telegram_btn_create_control">Создать Telegram PC Control</string>
+    <string name="telegram_btn_delete_control">Удалить Telegram PC Control</string>
 
     <!-- Setup -->
     <string name="setup_btn_choose_voice">Выбрать голос</string>

@@ -49,6 +49,8 @@ fun main() {
             val settingsProvider: SettingsProvider by di.instance()
             val agentNode: AgentNode by di.instance()
             val mcpClientManager: McpClientManager by di.instance()
+            val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
+            telegramBotController.toString() // Force initialization of lazy delegate
 
             DisposableEffect(Unit) {
                 println("Starting local server...")

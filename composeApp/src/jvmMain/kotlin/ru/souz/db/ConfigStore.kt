@@ -5,6 +5,9 @@ import ru.souz.giga.gigaJsonMapper
 import java.util.prefs.Preferences
 
 object ConfigStore {
+    const val TG_BOT_TOKEN = "TG_BOT_TOKEN"
+    const val TG_BOT_OWNER_ID = "TG_BOT_OWNER_ID"
+
     @PublishedApi // to use prefs inside the reified (inlined) `get`
     internal val prefs: Preferences = Preferences.userNodeForPackage(ConfigStore::class.java)
 
