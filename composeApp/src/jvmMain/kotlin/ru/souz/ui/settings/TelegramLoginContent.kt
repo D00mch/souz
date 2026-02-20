@@ -44,10 +44,11 @@ import org.jetbrains.compose.resources.stringResource
 fun TelegramLoginContent(
     state: SettingsState,
     onStartWork: () -> Unit,
+    onCreateControlBot: () -> Unit,
+    onDisconnectControlBot: () -> Unit,
 ) {
     val di = localDI()
     val telegramService: TelegramService by di.instance()
-    val viewModel = androidx.lifecycle.viewmodel.compose.viewModel { SettingsViewModel(di) }
     val scope = rememberCoroutineScope()
 
     var phoneValue by remember { mutableStateOf(state.telegramPhoneInput) }
@@ -386,7 +387,7 @@ fun TelegramLoginContent(
                 )
                 if (state.isTelegramBotActive) {
                     Button(
-                        onClick = { viewModel.send(SettingsEvent.DisconnectTelegramBot) },
+                        onClick = onDisconnectControlBot,
                         enabled = !state.telegramAuthBusy,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -402,7 +403,7 @@ fun TelegramLoginContent(
                     }
                 } else {
                     Button(
-                        onClick = { viewModel.send(SettingsEvent.CreateControlBot) },
+                        onClick = onCreateControlBot,
                         enabled = !state.telegramAuthBusy,
                         modifier = Modifier
                             .fillMaxWidth()

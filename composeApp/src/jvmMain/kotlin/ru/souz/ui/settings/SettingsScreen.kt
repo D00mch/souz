@@ -107,6 +107,8 @@ fun SettingsScreen(
                 state = state,
                 onClose = { viewModel.send(SettingsEvent.BackToSettings) },
                 onStartWork = onClose,
+                onCreateControlBot = { viewModel.send(SettingsEvent.CreateControlBot) },
+                onDisconnectControlBot = { viewModel.send(SettingsEvent.DisconnectTelegramBot) },
             )
         }
     }

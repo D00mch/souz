@@ -50,9 +50,9 @@ fun main() {
             val agentNode: AgentNode by di.instance()
             val mcpClientManager: McpClientManager by di.instance()
             val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
-            telegramBotController.toString() // Force initialization of lazy delegate
 
             DisposableEffect(Unit) {
+                telegramBotController.start()
                 println("Starting local server...")
                 val serverEngine = startLocalServer(agentNode)
 
@@ -62,6 +62,8 @@ fun main() {
                         .onFailure { println("Failed to stop local server: ${it.message}") }
                     runCatching { mcpClientManager.close() }
                         .onFailure { println("Failed to close MCP manager: ${it.message}") }
+                    runCatching { telegramBotController.close() }
+                        .onFailure { println("Failed to close Telegram bot controller: ${it.message}") }
                 }
             }
             

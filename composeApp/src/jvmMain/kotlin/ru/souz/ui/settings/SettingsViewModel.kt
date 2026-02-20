@@ -252,7 +252,7 @@ class SettingsViewModel(
         }.onSuccess {
             setState { copy(telegramAuthBusy = false, isTelegramBotActive = true) }
             telegramBotController.restartPolling()
-            send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_created_success_message))) // need to add this resource
+            send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_created_success_message)))
         }.onFailure { error ->
             val errorMsg = error.message ?: getString(Res.string.error_failed_to_create_bot)
             setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
@@ -260,11 +260,17 @@ class SettingsViewModel(
     }
 
     private fun disconnectBot() = viewModelScope.launch(Dispatchers.IO) {
-        ConfigStore.rm(ConfigStore.TG_BOT_TOKEN)
-        ConfigStore.rm(ConfigStore.TG_BOT_OWNER_ID)
-        telegramBotController.stopPolling()
-        setState { copy(isTelegramBotActive = false) }
-        send(SettingsEffect.ShowSnackbar("PC Control Bot disabled and credentials cleared"))
+        runCatching {
+            setState { copy(telegramAuthBusy = true, telegramAuthError = null) }
+            telegramService.deleteControlBot()
+        }.onSuccess {
+            telegramBotController.stopPolling()
+            setState { copy(isTelegramBotActive = false, telegramAuthBusy = false) }
+            send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_deleted_success_message)))
+        }.onFailure { error ->
+            val errorMsg = error.message ?: getString(Res.string.error_failed_to_delete_bot)
+            setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
+        }
     }
 
     override suspend fun handleSideEffect(effect: SettingsEffect) = when (effect) {

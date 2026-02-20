@@ -30,7 +30,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import ru.souz.db.ConfigStore
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
@@ -44,6 +50,10 @@ private const val TELEGRAM_DEFAULT_API_ID = 34456605
 private const val TELEGRAM_DEFAULT_API_HASH = "04779e90346d857b3f0f313ff8d2aa39"
 private const val TELEGRAM_CFG_DEBUG_LOGS = "TELEGRAM_DEBUG_LOGS"
 private const val TELEGRAM_ENV_DEBUG_LOGS = "SOUZ_TG_DEBUG_LOGS"
+private const val BOT_FATHER_STEP_DELAY_MS = 1_500L
+private const val BOT_FATHER_POLL_DELAY_MS = 1_000L
+private const val BOT_FATHER_POLL_ATTEMPTS = 10
+private const val BOT_LOOKUP_TIMEOUT_MS = 5_000L
 
 enum class TelegramAuthStep {
     INITIALIZING,
@@ -104,11 +114,84 @@ enum class TelegramChatAction {
     Delete,
 }
 
+internal data class BotFatherMessageSnapshot(
+    val id: Long,
+    val text: String?,
+    val isOutgoing: Boolean,
+)
+
+internal object BotFatherReplyParser {
+    private val tokenRegex = Regex("""\d{8,10}:[a-zA-Z0-9_-]{35,}""")
+    private val botUsernameRegex = Regex("""@([a-z0-9_]{5,}bot)\b""")
+
+    private fun freshIncomingTexts(messages: List<BotFatherMessageSnapshot>, minMessageIdExclusive: Long): Sequence<String> {
+        return messages.asSequence()
+            .filter { !it.isOutgoing && it.id > minMessageIdExclusive }
+            .mapNotNull { it.text?.lowercase() }
+    }
+
+    fun extractToken(messages: List<BotFatherMessageSnapshot>, minMessageIdExclusive: Long): String? {
+        return messages.asSequence()
+            .filter { !it.isOutgoing && it.id > minMessageIdExclusive }
+            .mapNotNull { tokenRegex.find(it.text.orEmpty())?.value }
+            .firstOrNull()
+    }
+
+    fun isDeleteConfirmed(
+        messages: List<BotFatherMessageSnapshot>,
+        minMessageIdExclusive: Long,
+        username: String,
+    ): Boolean {
+        val normalizedUsername = username.trim().removePrefix("@").lowercase()
+        return freshIncomingTexts(messages, minMessageIdExclusive)
+            .any { text ->
+                val mentionsBot = normalizedUsername.isBlank() || text.contains(normalizedUsername)
+                val looksLikeSuccess =
+                    text.contains("deleted") ||
+                        text.contains("deactivated") ||
+                        text.contains("done")
+                val genericSuccess = text.contains("bot is gone")
+                (mentionsBot && looksLikeSuccess) || genericSuccess
+            }
+    }
+
+    fun requiresDeleteConfirmationText(
+        messages: List<BotFatherMessageSnapshot>,
+        minMessageIdExclusive: Long,
+    ): Boolean {
+        return freshIncomingTexts(messages, minMessageIdExclusive)
+            .any { it.contains("yes, i am totally sure.") }
+    }
+
+    fun hasNoBots(
+        messages: List<BotFatherMessageSnapshot>,
+        minMessageIdExclusive: Long,
+    ): Boolean {
+        return freshIncomingTexts(messages, minMessageIdExclusive).any { text ->
+            text.contains("don't have any bots yet") ||
+                text.contains("you don't have any bots") ||
+                text.contains("not among your bots")
+        }
+    }
+
+    fun listedBotUsernames(
+        messages: List<BotFatherMessageSnapshot>,
+        minMessageIdExclusive: Long,
+    ): Set<String> {
+        return freshIncomingTexts(messages, minMessageIdExclusive)
+            .flatMap { text -> botUsernameRegex.findAll(text).map { it.groupValues[1] } }
+            .toSet()
+    }
+}
+
 class TelegramService(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
 
     private val l = LoggerFactory.getLogger(TelegramService::class.java)
+    private val botLookupHttpClient: HttpClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofMillis(BOT_LOOKUP_TIMEOUT_MS))
+        .build()
 
     private val authStateFlow = MutableStateFlow(TelegramAuthState())
     val authState: StateFlow<TelegramAuthState> = authStateFlow.asStateFlow()
@@ -316,120 +399,308 @@ class TelegramService(
     }
 
     suspend fun createControlBot() {
-        val client = requireClient()
-        val me = meUserIdRef.get()?.let { usersById[it] } ?: throw IllegalStateException("User not resolved")
-        val chat = runCatching {
-            client.send(TdApi.SearchPublicChat("botfather")).awaitResult()
-        }.getOrElse {
-            throw IllegalStateException("Failed to resolve @BotFather. Please make sure you have internet access. $it")
-        }
+        val tdClient = requireClient()
+        val me = resolveCurrentUser(tdClient)
+        val botFatherChat = resolveBotFatherChat(tdClient)
+        val baselineMessageId = latestMessageId(tdClient, botFatherChat.id)
 
-        client.send(
-            TdApi.SendMessage(
-                chat.id, 0L, null, null, null,
-                TdApi.InputMessageText(TdApi.FormattedText("/newbot", null), null, false)
-            )
-        ).awaitResult()
-        
-        delay(1500)
+        sendTextMessage(tdClient, botFatherChat.id, "/newbot")
+        delay(BOT_FATHER_STEP_DELAY_MS)
 
         val botName = "Souz PC Control"
-        client.send(
-            TdApi.SendMessage(
-                chat.id, 0L, null, null, null,
-                TdApi.InputMessageText(TdApi.FormattedText(botName, null), null, false)
-            )
-        ).awaitResult()
-
-        delay(1500)
+        sendTextMessage(tdClient, botFatherChat.id, botName)
+        delay(BOT_FATHER_STEP_DELAY_MS)
 
         val botUsername = "souz_control_${me.id}_${System.currentTimeMillis() % 10000}_bot"
-        client.send(
+        sendTextMessage(tdClient, botFatherChat.id, botUsername)
+
+        val token = waitForNewBotToken(tdClient, botFatherChat.id, baselineMessageId)
+            ?: throw IllegalStateException("Failed to extract bot token from BotFather replies")
+
+        ConfigStore.put(ConfigStore.TG_BOT_TOKEN, token)
+        ConfigStore.put(ConfigStore.TG_BOT_OWNER_ID, me.id)
+        ConfigStore.put(ConfigStore.TG_BOT_USERNAME, botUsername)
+        l.info("Control bot created for ownerId={}", me.id)
+
+        runCatching {
+            delay(BOT_FATHER_STEP_DELAY_MS)
+            val newBotChat = tdClient.send(TdApi.SearchPublicChat(botUsername)).awaitResult()
+            sendTextMessage(tdClient, newBotChat.id, "/start")
+        }.onFailure {
+            l.warn("Failed to send /start to newly created bot @{}", botUsername)
+        }
+
+        runCatching {
+            delay(BOT_FATHER_STEP_DELAY_MS)
+            sendTextMessage(tdClient, botFatherChat.id, "/setuserpic")
+            delay(BOT_FATHER_STEP_DELAY_MS)
+            sendTextMessage(tdClient, botFatherChat.id, "@$botUsername")
+            delay(BOT_FATHER_STEP_DELAY_MS)
+            uploadBotAvatar(tdClient, botFatherChat.id)
+        }.onFailure {
+            l.warn("Failed to set bot avatar via BotFather")
+        }
+    }
+
+    suspend fun deleteControlBot() {
+        val tdClient = requireClient()
+        val botUsername = resolveControlBotUsername()
+        if (botUsername == null) {
+            clearControlBotCredentials()
+            l.info("Control bot username is unknown, stale credentials were cleared")
+            return
+        }
+
+        val botFatherChat = resolveBotFatherChat(tdClient)
+        val baselineMessageId = latestMessageId(tdClient, botFatherChat.id)
+
+        sendTextMessage(tdClient, botFatherChat.id, "/deletebot")
+
+        if (waitForNoBotsState(tdClient, botFatherChat.id, baselineMessageId)) {
+            clearControlBotCredentials()
+            l.info("Control bot credentials cleared because BotFather has no bots for current account")
+            return
+        }
+
+        delay(BOT_FATHER_STEP_DELAY_MS)
+        sendTextMessage(tdClient, botFatherChat.id, "@$botUsername")
+
+        val deleted = runDeleteConversation(tdClient, botFatherChat.id, baselineMessageId, botUsername) ||
+            isBotMissingInMyBotsList(tdClient, botFatherChat.id, botUsername)
+        if (!deleted) {
+            throw IllegalStateException("BotFather did not confirm deletion for @$botUsername")
+        }
+
+        clearControlBotCredentials()
+        l.info("Control bot @{} deleted and local credentials cleared", botUsername)
+    }
+
+    private suspend fun resolveCurrentUser(tdClient: SimpleTelegramClient): TdApi.User {
+        val cachedMeId = meUserIdRef.get()
+        val cached = cachedMeId?.let(usersById::get)
+        if (cached != null) {
+            return cached
+        }
+
+        val me = tdClient.send(TdApi.GetMe()).awaitResult()
+        meUserIdRef.set(me.id)
+        cacheUser(me)
+        return me
+    }
+
+    private suspend fun resolveBotFatherChat(tdClient: SimpleTelegramClient): TdApi.Chat {
+        return runCatching {
+            tdClient.send(TdApi.SearchPublicChat("botfather")).awaitResult()
+        }.getOrElse {
+            throw IllegalStateException("Failed to resolve @BotFather. Please check internet connection.")
+        }
+    }
+
+    private suspend fun latestMessageId(tdClient: SimpleTelegramClient, chatId: Long): Long {
+        val history = tdClient.send(TdApi.GetChatHistory(chatId, 0L, 0, 1, false)).awaitResult()
+        return history.messages.orEmpty().firstOrNull()?.id ?: 0L
+    }
+
+    private suspend fun sendTextMessage(tdClient: SimpleTelegramClient, chatId: Long, text: String) {
+        tdClient.send(
             TdApi.SendMessage(
-                chat.id, 0L, null, null, null,
-                TdApi.InputMessageText(TdApi.FormattedText(botUsername, null), null, false)
-            )
+                chatId,
+                0L,
+                null,
+                null,
+                null,
+                TdApi.InputMessageText(
+                    TdApi.FormattedText(text, null),
+                    null,
+                    false,
+                ),
+            ),
         ).awaitResult()
+    }
 
-        var token: String? = null
-        for (i in 1..10) {
-            delay(1000)
-            val history = client.send(TdApi.GetChatHistory(chat.id, 0L, 0, 5, false)).awaitResult()
-            val replies = history.messages.orEmpty().filter { !it.isOutgoing }
-            
-            for (msg in replies) {
-                val text = extractMessageText(msg) ?: continue
-                val match = Regex("""\d{8,10}:[a-zA-Z0-9_-]{35,}""").find(text)
-                if (match != null) {
-                    token = match.value
-                    break
-                }
+    private suspend fun waitForNewBotToken(
+        tdClient: SimpleTelegramClient,
+        chatId: Long,
+        minMessageIdExclusive: Long,
+    ): String? {
+        repeat(BOT_FATHER_POLL_ATTEMPTS) {
+            delay(BOT_FATHER_POLL_DELAY_MS)
+            val snapshots = loadBotFatherSnapshots(tdClient, chatId)
+            val token = BotFatherReplyParser.extractToken(snapshots, minMessageIdExclusive)
+            if (!token.isNullOrBlank()) {
+                return token
             }
-            if (token != null) break
+        }
+        return null
+    }
+
+    private suspend fun waitForNoBotsState(
+        tdClient: SimpleTelegramClient,
+        chatId: Long,
+        minMessageIdExclusive: Long,
+    ): Boolean {
+        repeat(BOT_FATHER_POLL_ATTEMPTS) {
+            delay(BOT_FATHER_POLL_DELAY_MS)
+            val snapshots = loadBotFatherSnapshots(tdClient, chatId)
+            if (BotFatherReplyParser.hasNoBots(snapshots, minMessageIdExclusive)) {
+                return true
+            }
+            if (snapshots.any { !it.isOutgoing && it.id > minMessageIdExclusive }) {
+                return false
+            }
+        }
+        return false
+    }
+
+    private suspend fun runDeleteConversation(
+        tdClient: SimpleTelegramClient,
+        chatId: Long,
+        minMessageIdExclusive: Long,
+        username: String,
+    ): Boolean {
+        var confirmationSent = false
+
+        repeat(BOT_FATHER_POLL_ATTEMPTS) {
+            delay(BOT_FATHER_POLL_DELAY_MS)
+            val snapshots = loadBotFatherSnapshots(tdClient, chatId)
+            if (BotFatherReplyParser.isDeleteConfirmed(snapshots, minMessageIdExclusive, username)) {
+                return true
+            }
+            if (BotFatherReplyParser.hasNoBots(snapshots, minMessageIdExclusive)) {
+                return true
+            }
+            if (!confirmationSent && BotFatherReplyParser.requiresDeleteConfirmationText(snapshots, minMessageIdExclusive)) {
+                sendTextMessage(tdClient, chatId, "Yes, I am totally sure.")
+                confirmationSent = true
+            }
         }
 
-        if (token != null) {
-            ConfigStore.put(ConfigStore.TG_BOT_TOKEN, token)
-            ConfigStore.put(ConfigStore.TG_BOT_OWNER_ID, me.id)
-            l.info("Bot created. Token saved. Owner ID: ${me.id}")
+        return false
+    }
 
-            try {
-                delay(2000)
-                val newBotChat = client.send(TdApi.SearchPublicChat(botUsername)).awaitResult()
-                client.send(
-                    TdApi.SendMessage(
-                        newBotChat.id, 0L, null, null, null,
-                        TdApi.InputMessageText(TdApi.FormattedText("/start", null), null, false)
-                    )
-                ).awaitResult()
-                l.info("Sent /start to newly created bot @$botUsername")
-            } catch (e: Exception) {
-                l.error("Failed to send /start to newly created bot @$botUsername", e)
+    private suspend fun isBotMissingInMyBotsList(
+        tdClient: SimpleTelegramClient,
+        chatId: Long,
+        username: String,
+    ): Boolean {
+        val normalizedUsername = normalizeBotUsername(username) ?: return false
+        val baselineMessageId = latestMessageId(tdClient, chatId)
+        sendTextMessage(tdClient, chatId, "/mybots")
+
+        repeat(BOT_FATHER_POLL_ATTEMPTS) {
+            delay(BOT_FATHER_POLL_DELAY_MS)
+            val snapshots = loadBotFatherSnapshots(tdClient, chatId)
+            if (BotFatherReplyParser.hasNoBots(snapshots, baselineMessageId)) {
+                return true
             }
-
-            try {
-                delay(1500)
-                client.send(
-                    TdApi.SendMessage(
-                        chat.id, 0L, null, null, null,
-                        TdApi.InputMessageText(TdApi.FormattedText("/setuserpic", null), null, false)
-                    )
-                ).awaitResult()
-                delay(1500)
-
-                client.send(
-                    TdApi.SendMessage(
-                        chat.id, 0L, null, null, null,
-                        TdApi.InputMessageText(TdApi.FormattedText("@$botUsername", null), null, false)
-                    )
-                ).awaitResult()
-                delay(1500)
-
-                val avatarStream = TelegramService::class.java.getResourceAsStream("/bot_avatar.png")
-                if (avatarStream != null) {
-                    val tempFile = java.io.File.createTempFile("bot_avatar", ".png")
-                    tempFile.deleteOnExit()
-                    avatarStream.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
-
-                    client.send(
-                        TdApi.SendMessage(
-                            chat.id, 0L, null, null, null,
-                            TdApi.InputMessagePhoto(
-                                TdApi.InputFileLocal(tempFile.absolutePath),
-                                null, null, 0, 0, null, false, null, false
-                            )
-                        )
-                    ).awaitResult()
-                    l.info("Set avatar for bot @$botUsername")
-                } else {
-                    l.warn("Bot avatar resource not found at /bot_avatar.png")
-                }
-            } catch (e: Exception) {
-                l.error("Failed to set bot avatar via BotFather", e)
+            val listedBots = BotFatherReplyParser.listedBotUsernames(snapshots, baselineMessageId)
+            if (listedBots.isNotEmpty()) {
+                return normalizedUsername !in listedBots
             }
-        } else {
-            throw IllegalStateException("Failed to extract Bot Token from BotFather replies")
         }
+
+        return false
+    }
+
+    private suspend fun loadBotFatherSnapshots(
+        tdClient: SimpleTelegramClient,
+        chatId: Long,
+        limit: Int = 20,
+    ): List<BotFatherMessageSnapshot> {
+        val history = tdClient.send(TdApi.GetChatHistory(chatId, 0L, 0, limit, false)).awaitResult()
+        return history.messages.orEmpty().map { message ->
+            BotFatherMessageSnapshot(
+                id = message.id,
+                text = extractMessageText(message),
+                isOutgoing = message.isOutgoing,
+            )
+        }
+    }
+
+    private suspend fun uploadBotAvatar(tdClient: SimpleTelegramClient, chatId: Long) {
+        val avatarFilePath = copyBotAvatarToTempFile() ?: run {
+            l.warn("Bot avatar resource not found at /bot_avatar.png")
+            return
+        }
+
+        try {
+            tdClient.send(
+                TdApi.SendMessage(
+                    chatId,
+                    0L,
+                    null,
+                    null,
+                    null,
+                    TdApi.InputMessagePhoto(
+                        TdApi.InputFileLocal(avatarFilePath.toAbsolutePath().toString()),
+                        null,
+                        null,
+                        0,
+                        0,
+                        null,
+                        false,
+                        null,
+                        false,
+                    ),
+                ),
+            ).awaitResult()
+        } finally {
+            runCatching { Files.deleteIfExists(avatarFilePath) }
+        }
+    }
+
+    private fun copyBotAvatarToTempFile(): Path? {
+        val avatarStream = TelegramService::class.java.getResourceAsStream("/bot_avatar.png") ?: return null
+        val file = Files.createTempFile("bot_avatar", ".png")
+        avatarStream.use { input ->
+            Files.newOutputStream(file).use { output ->
+                input.copyTo(output)
+            }
+        }
+        return file
+    }
+
+    private fun resolveControlBotUsername(): String? {
+        val configured = normalizeBotUsername(ConfigStore.get(ConfigStore.TG_BOT_USERNAME))
+        if (configured != null) {
+            return configured
+        }
+
+        val token = ConfigStore.get<String>(ConfigStore.TG_BOT_TOKEN) ?: return null
+        val resolvedFromApi = normalizeBotUsername(resolveBotUsernameByToken(token))
+
+        if (resolvedFromApi != null) {
+            ConfigStore.put(ConfigStore.TG_BOT_USERNAME, resolvedFromApi)
+        }
+
+        return resolvedFromApi
+    }
+
+    private fun resolveBotUsernameByToken(token: String): String? {
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create("https://api.telegram.org/bot$token/getMe"))
+            .timeout(Duration.ofMillis(BOT_LOOKUP_TIMEOUT_MS))
+            .GET()
+            .build()
+
+        val body = runCatching {
+            botLookupHttpClient.send(request, HttpResponse.BodyHandlers.ofString()).body()
+        }.getOrNull() ?: return null
+
+        val json = runCatching { ru.souz.giga.gigaJsonMapper.readTree(body) }.getOrNull() ?: return null
+        if (!json.path("ok").asBoolean(false)) {
+            return null
+        }
+        return json.path("result").path("username").asText(null)
+    }
+
+    private fun normalizeBotUsername(value: String?): String? =
+        value?.trim()?.removePrefix("@")?.takeIf { it.isNotBlank() }
+
+    private fun clearControlBotCredentials() {
+        ConfigStore.rm(ConfigStore.TG_BOT_TOKEN)
+        ConfigStore.rm(ConfigStore.TG_BOT_OWNER_ID)
+        ConfigStore.rm(ConfigStore.TG_BOT_USERNAME)
     }
 
     suspend fun forwardMessage(fromChat: String, toChat: String, messageId: String): TelegramMessageView {

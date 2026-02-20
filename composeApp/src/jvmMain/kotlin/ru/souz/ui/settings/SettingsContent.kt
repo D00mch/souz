@@ -831,6 +831,8 @@ fun TelegramSettingsScreen(
     state: SettingsState,
     onClose: () -> Unit,
     onStartWork: () -> Unit,
+    onCreateControlBot: () -> Unit,
+    onDisconnectControlBot: () -> Unit,
 ) {
     SettingsSectionScreen(
         title = "Telegram",
@@ -840,6 +842,8 @@ fun TelegramSettingsScreen(
         TelegramLoginContent(
             state = state,
             onStartWork = onStartWork,
+            onCreateControlBot = onCreateControlBot,
+            onDisconnectControlBot = onDisconnectControlBot,
         )
     }
 }
@@ -1679,6 +1683,8 @@ private fun TelegramSettingsScreenPreview() {
             state = PreviewSettingsState.copy(telegramAuthStep = TelegramAuthStepUi.PHONE),
             onClose = {},
             onStartWork = {},
+            onCreateControlBot = {},
+            onDisconnectControlBot = {},
         )
     }
 }
