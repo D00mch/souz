@@ -66,6 +66,16 @@ enum class TelegramAuthStep {
     ERROR,
 }
 
+enum class BotTaskType { NONE, CREATE, DELETE }
+
+enum class BotCreationStep {
+    NONE, INIT, NAME, USERNAME, WAIT_TOKEN, START, AVATAR_CMD, AVATAR_MOCK, AVATAR_PIC, FINISHED
+}
+
+enum class BotDeletionStep {
+    NONE, INIT, WAIT_NO_BOTS, USERNAME, CONFIRM, FINISHED
+}
+
 data class TelegramAuthState(
     val step: TelegramAuthStep = TelegramAuthStep.INITIALIZING,
     val activePhoneMasked: String? = null,
@@ -114,75 +124,6 @@ enum class TelegramChatAction {
     Delete,
 }
 
-internal data class BotFatherMessageSnapshot(
-    val id: Long,
-    val text: String?,
-    val isOutgoing: Boolean,
-)
-
-internal object BotFatherReplyParser {
-    private val tokenRegex = Regex("""\d{8,10}:[a-zA-Z0-9_-]{35,}""")
-    private val botUsernameRegex = Regex("""@([a-z0-9_]{5,}bot)\b""")
-
-    private fun freshIncomingTexts(messages: List<BotFatherMessageSnapshot>, minMessageIdExclusive: Long): Sequence<String> {
-        return messages.asSequence()
-            .filter { !it.isOutgoing && it.id > minMessageIdExclusive }
-            .mapNotNull { it.text?.lowercase() }
-    }
-
-    fun extractToken(messages: List<BotFatherMessageSnapshot>, minMessageIdExclusive: Long): String? {
-        return messages.asSequence()
-            .filter { !it.isOutgoing && it.id > minMessageIdExclusive }
-            .mapNotNull { tokenRegex.find(it.text.orEmpty())?.value }
-            .firstOrNull()
-    }
-
-    fun isDeleteConfirmed(
-        messages: List<BotFatherMessageSnapshot>,
-        minMessageIdExclusive: Long,
-        username: String,
-    ): Boolean {
-        val normalizedUsername = username.trim().removePrefix("@").lowercase()
-        return freshIncomingTexts(messages, minMessageIdExclusive)
-            .any { text ->
-                val mentionsBot = normalizedUsername.isBlank() || text.contains(normalizedUsername)
-                val looksLikeSuccess =
-                    text.contains("deleted") ||
-                        text.contains("deactivated") ||
-                        text.contains("done")
-                val genericSuccess = text.contains("bot is gone")
-                (mentionsBot && looksLikeSuccess) || genericSuccess
-            }
-    }
-
-    fun requiresDeleteConfirmationText(
-        messages: List<BotFatherMessageSnapshot>,
-        minMessageIdExclusive: Long,
-    ): Boolean {
-        return freshIncomingTexts(messages, minMessageIdExclusive)
-            .any { it.contains("yes, i am totally sure.") }
-    }
-
-    fun hasNoBots(
-        messages: List<BotFatherMessageSnapshot>,
-        minMessageIdExclusive: Long,
-    ): Boolean {
-        return freshIncomingTexts(messages, minMessageIdExclusive).any { text ->
-            text.contains("don't have any bots yet") ||
-                text.contains("you don't have any bots") ||
-                text.contains("not among your bots")
-        }
-    }
-
-    fun listedBotUsernames(
-        messages: List<BotFatherMessageSnapshot>,
-        minMessageIdExclusive: Long,
-    ): Set<String> {
-        return freshIncomingTexts(messages, minMessageIdExclusive)
-            .flatMap { text -> botUsernameRegex.findAll(text).map { it.groupValues[1] } }
-            .toSet()
-    }
-}
 
 class TelegramService(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
@@ -214,6 +155,26 @@ class TelegramService(
         applyTdlightLogLevel(isTelegramDebugLogsEnabled())
         scope.launch {
             startClientIfNeeded()
+            resumePendingBotTasks()
+        }
+    }
+
+    private suspend fun resumePendingBotTasks() {
+        val taskTypeStr = ConfigStore.get(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.NONE.name)
+        val taskType = runCatching { BotTaskType.valueOf(taskTypeStr) }.getOrDefault(BotTaskType.NONE)
+
+        when (taskType) {
+            BotTaskType.CREATE -> {
+                l.info("Resuming pending createControlBot task")
+                createControlBot()
+            }
+            BotTaskType.DELETE -> {
+                l.info("Resuming pending deleteControlBot task")
+                deleteControlBot()
+            }
+            BotTaskType.NONE -> {
+                // No pending tasks
+            }
         }
     }
 
@@ -398,81 +359,189 @@ class TelegramService(
         return messageToView(sentMessage)
     }
 
-    suspend fun createControlBot() {
+    suspend fun createControlBot(step: BotCreationStep = BotCreationStep.NONE) {
+        val isNewTask = step == BotCreationStep.NONE && ConfigStore.get(ConfigStore.TG_BOT_TASK_TYPE, "") != BotTaskType.CREATE.name
+        val currentStep = if (step == BotCreationStep.NONE) {
+            val savedStepStr = ConfigStore.get(ConfigStore.TG_BOT_TASK_STEP, BotCreationStep.INIT.name)
+            runCatching { BotCreationStep.valueOf(savedStepStr) }.getOrDefault(BotCreationStep.INIT)
+        } else step
+
+        ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.CREATE.name)
+        ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, currentStep.name)
+
         val tdClient = requireClient()
         val me = resolveCurrentUser(tdClient)
         val botFatherChat = resolveBotFatherChat(tdClient)
-        val baselineMessageId = latestMessageId(tdClient, botFatherChat.id)
-
-        sendTextMessage(tdClient, botFatherChat.id, "/newbot")
-        delay(BOT_FATHER_STEP_DELAY_MS)
-
-        val botName = "Souz PC Control"
-        sendTextMessage(tdClient, botFatherChat.id, botName)
-        delay(BOT_FATHER_STEP_DELAY_MS)
+        
+        if (isNewTask) {
+            val startMsgId = latestMessageId(tdClient, botFatherChat.id)
+            ConfigStore.put(ConfigStore.TG_BOT_TASK_START_MSG_ID, startMsgId)
+        }
+        val baselineMessageId = ConfigStore.get(ConfigStore.TG_BOT_TASK_START_MSG_ID, 0L)
 
         val botUsername = "souz_control_${me.id}_${System.currentTimeMillis() % 10000}_bot"
-        sendTextMessage(tdClient, botFatherChat.id, botUsername)
 
-        val token = waitForNewBotToken(tdClient, botFatherChat.id, baselineMessageId)
-            ?: throw IllegalStateException("Failed to extract bot token from BotFather replies")
+        when (currentStep) {
+            BotCreationStep.NONE -> { /* Should not be reached */ }
 
-        ConfigStore.put(ConfigStore.TG_BOT_TOKEN, token)
-        ConfigStore.put(ConfigStore.TG_BOT_OWNER_ID, me.id)
-        ConfigStore.put(ConfigStore.TG_BOT_USERNAME, botUsername)
-        l.info("Control bot created for ownerId={}", me.id)
+            BotCreationStep.INIT -> {
+                val snapshots = loadBotFatherSnapshots(tdClient, botFatherChat.id)
+                if (!BotFatherReplyParser.isWaitingForName(snapshots, baselineMessageId)) {
+                    sendTextMessage(tdClient, botFatherChat.id, "/newbot")
+                    delay(BOT_FATHER_STEP_DELAY_MS)
+                }
+                createControlBot(BotCreationStep.NAME)
+            }
 
-        runCatching {
-            delay(BOT_FATHER_STEP_DELAY_MS)
-            val newBotChat = tdClient.send(TdApi.SearchPublicChat(botUsername)).awaitResult()
-            sendTextMessage(tdClient, newBotChat.id, "/start")
-        }.onFailure {
-            l.warn("Failed to send /start to newly created bot @{}", botUsername)
-        }
+            BotCreationStep.NAME -> {
+                val snapshots = loadBotFatherSnapshots(tdClient, botFatherChat.id)
+                if (!BotFatherReplyParser.isWaitingForUsername(snapshots, baselineMessageId)) {
+                    val botName = "Souz PC Control"
+                    sendTextMessage(tdClient, botFatherChat.id, botName)
+                    delay(BOT_FATHER_STEP_DELAY_MS)
+                }
+                createControlBot(BotCreationStep.USERNAME)
+            }
 
-        runCatching {
-            delay(BOT_FATHER_STEP_DELAY_MS)
-            sendTextMessage(tdClient, botFatherChat.id, "/setuserpic")
-            delay(BOT_FATHER_STEP_DELAY_MS)
-            sendTextMessage(tdClient, botFatherChat.id, "@$botUsername")
-            delay(BOT_FATHER_STEP_DELAY_MS)
-            uploadBotAvatar(tdClient, botFatherChat.id)
-        }.onFailure {
-            l.warn("Failed to set bot avatar via BotFather")
+            BotCreationStep.USERNAME -> {
+                val tokenExtracted = BotFatherReplyParser.extractToken(
+                    loadBotFatherSnapshots(tdClient, botFatherChat.id), 
+                    baselineMessageId
+                ) != null
+                
+                if (!tokenExtracted) {
+                    sendTextMessage(tdClient, botFatherChat.id, botUsername)
+                }
+                createControlBot(BotCreationStep.WAIT_TOKEN)
+            }
+
+            BotCreationStep.WAIT_TOKEN -> {
+                val token = waitForNewBotToken(tdClient, botFatherChat.id, baselineMessageId)
+                    ?: throw IllegalStateException("Failed to extract bot token from BotFather replies")
+
+                ConfigStore.put(ConfigStore.TG_BOT_TOKEN, token)
+                ConfigStore.put(ConfigStore.TG_BOT_OWNER_ID, me.id)
+                ConfigStore.put(ConfigStore.TG_BOT_USERNAME, botUsername)
+                l.info("Control bot created for ownerId={}", me.id)
+
+                createControlBot(BotCreationStep.START)
+            }
+
+            BotCreationStep.START -> {
+                runCatching {
+                    delay(BOT_FATHER_STEP_DELAY_MS)
+                    val newBotChat = tdClient.send(TdApi.SearchPublicChat(botUsername)).awaitResult()
+                    sendTextMessage(tdClient, newBotChat.id, "/start")
+                }.onFailure {
+                    l.warn("Failed to send /start to newly created bot @{}", botUsername)
+                }
+                createControlBot(BotCreationStep.AVATAR_CMD)
+            }
+
+            BotCreationStep.AVATAR_CMD -> {
+                runCatching {
+                    delay(BOT_FATHER_STEP_DELAY_MS)
+                    sendTextMessage(tdClient, botFatherChat.id, "/setuserpic")
+                }.onFailure { l.warn("Failed to set /setuserpic via BotFather: ${it.message}") }
+                createControlBot(BotCreationStep.AVATAR_MOCK)
+            }
+
+            BotCreationStep.AVATAR_MOCK -> {
+                runCatching {
+                    delay(BOT_FATHER_STEP_DELAY_MS)
+                    sendTextMessage(tdClient, botFatherChat.id, "@$botUsername")
+                }.onFailure { l.warn("Failed to set bot username for avatar via BotFather: ${it.message}") }
+                createControlBot(BotCreationStep.AVATAR_PIC)
+            }
+
+            BotCreationStep.AVATAR_PIC -> {
+                runCatching {
+                    delay(BOT_FATHER_STEP_DELAY_MS)
+                    uploadBotAvatar(tdClient, botFatherChat.id)
+                }.onFailure { l.warn("Failed to set bot avatar via BotFather: ${it.message}") }
+                createControlBot(BotCreationStep.FINISHED)
+            }
+
+            BotCreationStep.FINISHED -> {
+                ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.NONE.name)
+                ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, BotCreationStep.NONE.name)
+                ConfigStore.rm(ConfigStore.TG_BOT_TASK_START_MSG_ID)
+            }
         }
     }
 
-    suspend fun deleteControlBot() {
+    suspend fun deleteControlBot(step: BotDeletionStep = BotDeletionStep.NONE) {
+        val isNewTask = step == BotDeletionStep.NONE && ConfigStore.get(ConfigStore.TG_BOT_TASK_TYPE, "") != BotTaskType.DELETE.name
+        val currentStep = if (step == BotDeletionStep.NONE) {
+            val savedStepStr = ConfigStore.get(ConfigStore.TG_BOT_TASK_STEP, BotDeletionStep.INIT.name)
+            runCatching { BotDeletionStep.valueOf(savedStepStr) }.getOrDefault(BotDeletionStep.INIT)
+        } else step
+
+        ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.DELETE.name)
+        ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, currentStep.name)
+
         val tdClient = requireClient()
         val botUsername = resolveControlBotUsername()
+
         if (botUsername == null) {
             clearControlBotCredentials()
             l.info("Control bot username is unknown, stale credentials were cleared")
+            ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.NONE.name)
+            ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, BotDeletionStep.NONE.name)
+            ConfigStore.rm(ConfigStore.TG_BOT_TASK_START_MSG_ID)
             return
         }
 
         val botFatherChat = resolveBotFatherChat(tdClient)
-        val baselineMessageId = latestMessageId(tdClient, botFatherChat.id)
-
-        sendTextMessage(tdClient, botFatherChat.id, "/deletebot")
-
-        if (waitForNoBotsState(tdClient, botFatherChat.id, baselineMessageId)) {
-            clearControlBotCredentials()
-            l.info("Control bot credentials cleared because BotFather has no bots for current account")
-            return
+        
+        if (isNewTask) {
+            val startMsgId = latestMessageId(tdClient, botFatherChat.id)
+            ConfigStore.put(ConfigStore.TG_BOT_TASK_START_MSG_ID, startMsgId)
         }
+        val baselineMessageId = ConfigStore.get(ConfigStore.TG_BOT_TASK_START_MSG_ID, 0L)
 
-        delay(BOT_FATHER_STEP_DELAY_MS)
-        sendTextMessage(tdClient, botFatherChat.id, "@$botUsername")
+        when (currentStep) {
+            BotDeletionStep.NONE -> { /* Should not be reached */ }
 
-        val deleted = runDeleteConversation(tdClient, botFatherChat.id, baselineMessageId, botUsername) ||
-            isBotMissingInMyBotsList(tdClient, botFatherChat.id, botUsername)
-        if (!deleted) {
-            throw IllegalStateException("BotFather did not confirm deletion for @$botUsername")
+            BotDeletionStep.INIT -> {
+                sendTextMessage(tdClient, botFatherChat.id, "/deletebot")
+                deleteControlBot(BotDeletionStep.WAIT_NO_BOTS)
+            }
+
+            BotDeletionStep.WAIT_NO_BOTS -> {
+                if (waitForNoBotsState(tdClient, botFatherChat.id, baselineMessageId)) {
+                    clearControlBotCredentials()
+                    l.info("Control bot credentials cleared because BotFather has no bots for current account")
+                    deleteControlBot(BotDeletionStep.FINISHED)
+                } else {
+                    deleteControlBot(BotDeletionStep.USERNAME)
+                }
+            }
+
+            BotDeletionStep.USERNAME -> {
+                delay(BOT_FATHER_STEP_DELAY_MS)
+                sendTextMessage(tdClient, botFatherChat.id, "@$botUsername")
+                deleteControlBot(BotDeletionStep.CONFIRM)
+            }
+
+            BotDeletionStep.CONFIRM -> {
+                val deleted = runDeleteConversation(tdClient, botFatherChat.id, baselineMessageId, botUsername) ||
+                    isBotMissingInMyBotsList(tdClient, botFatherChat.id, botUsername)
+                if (!deleted) {
+                    throw IllegalStateException("BotFather did not confirm deletion for @$botUsername")
+                }
+
+                clearControlBotCredentials()
+                l.info("Control bot @{} deleted and local credentials cleared", botUsername)
+                deleteControlBot(BotDeletionStep.FINISHED)
+            }
+
+            BotDeletionStep.FINISHED -> {
+                ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.NONE.name)
+                ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, BotDeletionStep.NONE.name)
+                ConfigStore.rm(ConfigStore.TG_BOT_TASK_START_MSG_ID)
+            }
         }
-
-        clearControlBotCredentials()
-        l.info("Control bot @{} deleted and local credentials cleared", botUsername)
     }
 
     private suspend fun resolveCurrentUser(tdClient: SimpleTelegramClient): TdApi.User {
