@@ -87,6 +87,7 @@ data class SettingsState(
     val telegramPasswordHint: String? = null,
     val telegramAuthBusy: Boolean = false,
     val telegramAuthError: String? = null,
+    val isTelegramBotActive: Boolean = false,
     
     // Graph Logs
     val currentScreen: SettingsSubScreen = SettingsSubScreen.MAIN,
@@ -138,6 +139,8 @@ sealed interface SettingsEvent : VMEvent {
     object BackToSessions : SettingsEvent
     object OpenFoldersManagement : SettingsEvent
     object OpenTelegramSettings : SettingsEvent
+    object CreateControlBot : SettingsEvent
+    object DisconnectTelegramBot : SettingsEvent
     
     data class SelectSettingsSection(val section: SettingsSection): SettingsEvent
 }
@@ -145,6 +148,7 @@ sealed interface SettingsEvent : VMEvent {
 sealed interface SettingsEffect : VMSideEffect {
     object CloseScreen: SettingsEffect
     object NotifyOnSystemPrompt: SettingsEffect
+    data class ShowSnackbar(val message: String): SettingsEffect
 }
 
 const val DEFAULT_SUPPORT_EMAIL = "arturdumchev@yandex.ru"

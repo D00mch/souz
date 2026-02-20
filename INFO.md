@@ -30,6 +30,7 @@ Primary stack:
 - **Rich desktop toolset**: files, browser, calendar, mail, notes, desktop automation, analytics, and presentations.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
 - **Local server mode** to expose agent endpoints for local integrations/companion clients.
+- **Telegram PC Control bot**: automated bot creation via `@BotFather`, long-polling command listener, and agent-driven responses — all managed from the Telegram settings screen. Bot credentials (`TG_BOT_TOKEN`, `TG_BOT_OWNER_ID`, `TG_BOT_USERNAME`) are stored in `ConfigStore`. The bot can be created/deleted from the UI; on creation it automatically sends `/start` and sets a profile avatar.
 
 ## Project Structure
 ```text
@@ -63,6 +64,10 @@ Primary stack:
 │       │   │       ├── mcp/            # MCP sessions, transport, config, OAuth, protocol adapter
 │       │   │       ├── permissions/    # Permission/relaunch helpers
 │       │   │       ├── server/         # Local server endpoints and API models
+│       │   │       ├── service/       # Service-layer integrations
+│       │   │       │   └── telegram/  # Telegram client (TdLib) + Bot polling controller
+│       │   │       │       ├── TelegramService.kt       # TdLib wrapper: auth, messaging, bot creation via BotFather
+│       │   │       │       └── TelegramBotController.kt  # Long-polling listener for the PC Control bot
 │       │   │       ├── tool/           # Tool framework and concrete tool implementations
 │       │   │       │   ├── application/    # App launch/list tools
 │       │   │       │   ├── browser/        # Browser operations/hotkeys/tab control
@@ -90,6 +95,7 @@ Primary stack:
 │       │   ├── proto/                  # Proto source files used for gRPC generation
 │       │   │   └── gigachat/v1/        # GigaChat API protobuf schema
 │       │   ├── resources/              # Runtime resources
+│       │   │   ├── bot_avatar.png      # Default avatar image for the Telegram PC Control bot
 │       │   │   ├── certs/              # Trusted certificate bundles
 │       │   │   ├── darwin-arm64/       # macOS arm64 JNI/native binaries
 │       │   │   └── scripts/            # Helper scripts and native build helpers

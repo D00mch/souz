@@ -44,6 +44,8 @@ import org.jetbrains.compose.resources.stringResource
 fun TelegramLoginContent(
     state: SettingsState,
     onStartWork: () -> Unit,
+    onCreateControlBot: () -> Unit,
+    onDisconnectControlBot: () -> Unit,
 ) {
     val di = localDI()
     val telegramService: TelegramService by di.instance()
@@ -383,6 +385,39 @@ fun TelegramLoginContent(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
+                if (state.isTelegramBotActive) {
+                    Button(
+                        onClick = onDisconnectControlBot,
+                        enabled = !state.telegramAuthBusy,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ),
+                        border = BorderStroke(1.dp, Color(0x26FFFFFF)),
+                    ) {
+                        Text(stringResource(Res.string.telegram_btn_delete_control))
+                    }
+                } else {
+                    Button(
+                        onClick = onCreateControlBot,
+                        enabled = !state.telegramAuthBusy,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0x4D00AA00),
+                            contentColor = Color(0xF2FFFFFF),
+                        ),
+                        border = BorderStroke(1.dp, Color(0x26FFFFFF)),
+                    ) {
+                        Text(stringResource(Res.string.telegram_btn_create_control))
+                    }
+                }
                 Button(
                     onClick = onStartWork,
                     enabled = !state.telegramAuthBusy,

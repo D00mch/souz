@@ -39,6 +39,7 @@ class SettingsViewModel(
     private val chatApi: GigaChatAPI by di.instance()
     private val graphBasedAgent: GraphBasedAgent by di.instance()
     private val telegramService: TelegramService by di.instance()
+    private val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
     private val supportLogSender = SupportLogSender()
     private val say: Say by di.instance()
 
@@ -76,7 +77,9 @@ class SettingsViewModel(
         }
     }
 
-    override fun initialState(): SettingsState = SettingsState()
+    override fun initialState(): SettingsState = SettingsState(
+        isTelegramBotActive = ConfigStore.get<String>(ConfigStore.TG_BOT_TOKEN) != null
+    )
 
     override suspend fun handleEvent(event: SettingsEvent) {
         l.debug { "handleEvent: $event" }
@@ -236,14 +239,44 @@ class SettingsViewModel(
             BackToSessions -> setState { copy(currentScreen = SettingsSubScreen.SESSIONS, selectedSessionId = null) }
             OpenFoldersManagement -> setState { copy(currentScreen = SettingsSubScreen.FOLDERS) }
             OpenTelegramSettings -> setState { copy(currentScreen = SettingsSubScreen.TELEGRAM) }
-
+            CreateControlBot -> createTelegramBot()
+            DisconnectTelegramBot -> disconnectBot()
             is SelectSettingsSection -> setState { copy(activeSection = event.section) }
+        }
+    }
+
+    private fun createTelegramBot() = viewModelScope.launch(Dispatchers.IO) {
+        runCatching {
+            setState { copy(telegramAuthBusy = true, telegramAuthError = null) }
+            telegramService.createControlBot()
+        }.onSuccess {
+            setState { copy(telegramAuthBusy = false, isTelegramBotActive = true) }
+            telegramBotController.restartPolling()
+            send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_created_success_message)))
+        }.onFailure { error ->
+            val errorMsg = error.message ?: getString(Res.string.error_failed_to_create_bot)
+            setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
+        }
+    }
+
+    private fun disconnectBot() = viewModelScope.launch(Dispatchers.IO) {
+        runCatching {
+            setState { copy(telegramAuthBusy = true, telegramAuthError = null) }
+            telegramService.deleteControlBot()
+        }.onSuccess {
+            telegramBotController.stopPolling()
+            setState { copy(isTelegramBotActive = false, telegramAuthBusy = false) }
+            send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_deleted_success_message)))
+        }.onFailure { error ->
+            val errorMsg = error.message ?: getString(Res.string.error_failed_to_delete_bot)
+            setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
         }
     }
 
     override suspend fun handleSideEffect(effect: SettingsEffect) = when (effect) {
         SettingsEffect.CloseScreen,
-        SettingsEffect.NotifyOnSystemPrompt -> l.debug { "ignore effect: $effect" }
+        SettingsEffect.NotifyOnSystemPrompt,
+        is SettingsEffect.ShowSnackbar -> l.debug { "ignore effect: $effect" }
     }
 
     private suspend fun refreshFromProvider() {

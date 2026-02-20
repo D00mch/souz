@@ -45,6 +45,7 @@ import ru.souz.llms.QwenChatAPI
 import ru.souz.mcp.McpClientManager
 import ru.souz.mcp.McpConfigProvider
 import ru.souz.service.telegram.TelegramService
+import ru.souz.service.telegram.TelegramBotController
 import ru.souz.tool.*
 import ru.souz.tool.application.*
 import ru.souz.tool.browser.*
@@ -212,6 +213,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { ToolsFactory(di) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
+    bindSingleton { TelegramBotController(instance(), instance()) }
     bindSingleton { FinderPathExtractor(instance()) }
     bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { McpConfigProvider(instance()) }
