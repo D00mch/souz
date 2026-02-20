@@ -64,6 +64,32 @@ extract_gradle_value() {
     grep "$pattern" "$BUILD_GRADLE" | head -1 | sed 's/.*"\([^"]*\)".*/\1/'
 }
 
+resolve_jdk_home() {
+    local arch="$1"
+    local env_hint="$2"
+    local jdk_home
+
+    if [ ! -x "/usr/libexec/java_home" ]; then
+        log_error "/usr/libexec/java_home is not available."
+        log_info "This script must run on macOS with a valid JDK installation."
+        exit 1
+    fi
+
+    if ! jdk_home="$(/usr/libexec/java_home -v 21 -a "$arch" 2>/dev/null)"; then
+        log_error "JDK 21 for architecture '$arch' was not found."
+        log_info "Install JDK 21 for '$arch' or export $env_hint=/path/to/jdk."
+        exit 1
+    fi
+
+    if [ ! -x "$jdk_home/bin/java" ]; then
+        log_error "Resolved JDK home for '$arch' is invalid: $jdk_home"
+        log_info "Set $env_hint explicitly to a valid JDK 21 home."
+        exit 1
+    fi
+
+    echo "$jdk_home"
+}
+
 cleanup() {
     log_info "Cleaning up..."
     # Keep the universal build directory for inspection
@@ -80,18 +106,31 @@ log_step "Loading configuration"
 # Build number (passed as argument or default to 1)
 BUILD_NUMBER="${1:-1}"
 
-# JDK paths - from environment or defaults
-JDK_ARM64="$(/usr/libexec/java_home -v 21 -a arm64)"
-JDK_X64="$(/usr/libexec/java_home -v 21 -a x86_64)"
+# Release edition (ru/en)
+EDITION="${EDITION:-ru}"
+if [ "$EDITION" != "ru" ] && [ "$EDITION" != "en" ]; then
+    log_error "Unsupported edition '$EDITION'. Use EDITION=ru or EDITION=en."
+    exit 1
+fi
+
+# JDK paths - environment/local.properties first, then fail-fast discovery
+JDK_ARM64="${JDK_ARM64:-$(read_property 'macos.jdk.arm64' "$LOCAL_PROPERTIES")}"
+JDK_X64="${JDK_X64:-$(read_property 'macos.jdk.x64' "$LOCAL_PROPERTIES")}"
+
+if [ -z "$JDK_ARM64" ]; then
+    JDK_ARM64="$(resolve_jdk_home arm64 JDK_ARM64)"
+fi
+if [ -z "$JDK_X64" ]; then
+    JDK_X64="$(resolve_jdk_home x86_64 JDK_X64)"
+fi
 
 # Signing identities - from environment or local.properties
 # These are the sertificates names (Common Name)
 APP_SIGNING_IDENTITY="${MACOS_APP_SIGNING_IDENTITY:-$(read_property 'macos.signing.app.identity' "$LOCAL_PROPERTIES")}"
 INSTALLER_SIGNING_IDENTITY="${MACOS_INSTALLER_SIGNING_IDENTITY:-$(read_property 'macos.signing.installer.identity' "$LOCAL_PROPERTIES")}"
 
-# Extract app name and version from build.gradle.kts
-APP_NAME="${MACOS_APP_NAME:-$(extract_gradle_value 'packageName')}"
-APP_NAME="${APP_NAME:-PassKeep}"
+# App name can be provided explicitly; otherwise detect from built .app
+APP_NAME="${MACOS_APP_NAME:-}"
 
 VERSION="${MACOS_APP_VERSION:-$(extract_gradle_value 'packageVersion')}"
 VERSION="${VERSION:-1.0.0}"
@@ -102,12 +141,13 @@ RUNTIME_ENTITLEMENTS="$RESOURCES_DIR/runtime-entitlements.plist"
 APP_PROFILE="$RESOURCES_DIR/embedded.provisionprofile"
 RUNTIME_PROFILE="$RESOURCES_DIR/runtime.provisionprofile"
 
-# Output
-OUTPUT_PKG="$PROJECT_DIR/composeApp/build/${APP_NAME}-${VERSION}-universal.pkg"
+# Output (resolved after APP_NAME is known for sure)
+OUTPUT_PKG=""
 
 # Display configuration
 log_info "Configuration:"
-log_info "  App Name: $APP_NAME"
+log_info "  Edition: $EDITION"
+log_info "  App Name: ${APP_NAME:-(auto-detect from built app bundle)}"
 log_info "  Version: $VERSION"
 log_info "  Build Number: $BUILD_NUMBER"
 log_info "  JDK ARM64: $JDK_ARM64"
@@ -203,36 +243,37 @@ log_success "Clean complete"
 mkdir -p "$UNIVERSAL_BUILD_DIR"
 
 # =============================================================================
-# Build native bridge for both architectures
+# Prepare native JNI resources (ComposeApp conventions)
 # =============================================================================
 
-log_step "Building native bridge library"
+log_step "Preparing native JNI resources"
 
 cd "$PROJECT_DIR"
 
-# Build native bridge for arm64
-log_info "Building native bridge for arm64..."
-./gradlew :macos-native-bridge:linkReleaseSharedMacosArm64 --quiet
+# The compose app conventions plugin defines these tasks and wires them into
+# resource/packaging tasks. Running them here makes failures explicit early.
+log_info "Syncing TDLight/JNativeHook macOS JNI binaries..."
+./gradlew \
+    :composeApp:syncTdlightNativeMacosArm64 \
+    :composeApp:syncTdlightNativeMacosX64 \
+    :composeApp:syncJnativehookNativeMacosArm64 \
+    :composeApp:syncJnativehookNativeMacosX64 \
+    --quiet
 
-# Build native bridge for x86_64
-log_info "Building native bridge for x86_64..."
-./gradlew :macos-native-bridge:linkReleaseSharedMacosX64 --quiet
+# Verify expected files exist (as configured in ComposeAppConventionsPlugin)
+TDLIGHT_ARM64="$RESOURCES_DIR/darwin-arm64/libtdjni.macos_arm64.dylib"
+TDLIGHT_X64="$RESOURCES_DIR/darwin-x64/libtdjni.macos_amd64.dylib"
+JNATIVEHOOK_ARM64="$RESOURCES_DIR/darwin-arm64/libJNativeHook.dylib"
+JNATIVEHOOK_X64="$RESOURCES_DIR/darwin-x64/libJNativeHook.dylib"
 
-# Verify both builds exist
-NATIVE_BRIDGE_ARM64="$PROJECT_DIR/macos-native-bridge/build/bin/macosArm64/releaseShared/libpasskeep_bridge.dylib"
-NATIVE_BRIDGE_X64="$PROJECT_DIR/macos-native-bridge/build/bin/macosX64/releaseShared/libpasskeep_bridge.dylib"
+for file in "$TDLIGHT_ARM64" "$TDLIGHT_X64" "$JNATIVEHOOK_ARM64" "$JNATIVEHOOK_X64"; do
+    if [ ! -f "$file" ]; then
+        log_error "Required native JNI resource not found: $file"
+        exit 1
+    fi
+done
 
-if [ ! -f "$NATIVE_BRIDGE_ARM64" ]; then
-    log_error "Native bridge arm64 not found at: $NATIVE_BRIDGE_ARM64"
-    exit 1
-fi
-
-if [ ! -f "$NATIVE_BRIDGE_X64" ]; then
-    log_error "Native bridge x86_64 not found at: $NATIVE_BRIDGE_X64"
-    exit 1
-fi
-
-log_success "Native bridge built for both architectures"
+log_success "Native JNI resources are prepared"
 
 # =============================================================================
 # Build x86_64 version
@@ -251,17 +292,44 @@ rm -rf "$BUILD_DIR"
 # Build with x86_64 JDK
 log_info "Running Gradle build with x86_64 JDK..."
 ./gradlew :composeApp:createReleaseDistributable \
-    -Pedition=ru \
+    -Pedition="$EDITION" \
     -PmacOsAppStoreRelease=true \
     -PbuildNumber="$BUILD_NUMBER" \
     -Dorg.gradle.java.home="$JDK_X64"
 
-# Verify architecture
-X64_APP="$BUILD_DIR/main-release/app/${APP_NAME}.app"
+# Resolve built app path/name
+X64_APP_DIR="$BUILD_DIR/main-release/app"
+if [ ! -d "$X64_APP_DIR" ]; then
+    log_error "x86_64 app directory not found at: $X64_APP_DIR"
+    exit 1
+fi
+
+if [ -n "$APP_NAME" ]; then
+    X64_APP="$X64_APP_DIR/${APP_NAME}.app"
+else
+    APP_BUNDLE_COUNT="$(find "$X64_APP_DIR" -maxdepth 1 -type d -name '*.app' | wc -l | tr -d ' ')"
+    if [ "$APP_BUNDLE_COUNT" != "1" ]; then
+        log_error "Cannot auto-detect app bundle name (found $APP_BUNDLE_COUNT bundles in $X64_APP_DIR)."
+        log_info "Set MACOS_APP_NAME explicitly to the exact app bundle name."
+        exit 1
+    fi
+    X64_APP="$(find "$X64_APP_DIR" -maxdepth 1 -type d -name '*.app' -print -quit)"
+fi
+
 if [ ! -d "$X64_APP" ]; then
     log_error "x86_64 app not found at: $X64_APP"
     exit 1
 fi
+
+DETECTED_APP_NAME="$(basename "$X64_APP" .app)"
+if [ -n "$APP_NAME" ] && [ "$APP_NAME" != "$DETECTED_APP_NAME" ]; then
+    log_error "Configured MACOS_APP_NAME ('$APP_NAME') does not match built app ('$DETECTED_APP_NAME')."
+    exit 1
+fi
+
+APP_NAME="$DETECTED_APP_NAME"
+OUTPUT_PKG="$PROJECT_DIR/composeApp/build/${APP_NAME}-${VERSION}-universal.pkg"
+log_info "Resolved app bundle name: $APP_NAME"
 
 if ! file "$X64_APP/Contents/MacOS/${APP_NAME}" | grep -q "x86_64"; then
     log_error "x86_64 build verification failed"
@@ -290,7 +358,7 @@ rm -rf "$BUILD_DIR"
 # Build with arm64 JDK
 log_info "Running Gradle build with arm64 JDK..."
 ./gradlew :composeApp:createReleaseDistributable \
-    -Pedition=ru \
+    -Pedition="$EDITION" \
     -PmacOsAppStoreRelease=true \
     -PbuildNumber="$BUILD_NUMBER" \
     -Dorg.gradle.java.home="$JDK_ARM64"
@@ -352,30 +420,6 @@ fi
 # The libjnidispatch.jnilib universal binary is in composeApp/resources/macos/
 # and is automatically included and signed by the Compose Desktop plugin.
 log_info "JNA native library: using pre-bundled universal binary from resources"
-
-# =============================================================================
-# Embed native bridge library (Keychain, Touch ID, iCloud)
-# =============================================================================
-
-log_info "Creating universal native bridge library..."
-NATIVE_BRIDGE_UNIVERSAL="$UNIVERSAL_APP/Contents/MacOS/libpasskeep_bridge.dylib"
-
-if [ -f "$NATIVE_BRIDGE_ARM64" ] && [ -f "$NATIVE_BRIDGE_X64" ]; then
-    # Create universal native bridge library
-    lipo -create "$NATIVE_BRIDGE_ARM64" "$NATIVE_BRIDGE_X64" -output "$NATIVE_BRIDGE_UNIVERSAL"
-    log_info "  Created universal native bridge: libpasskeep_bridge.dylib"
-
-    # Verify it's universal
-    if file "$NATIVE_BRIDGE_UNIVERSAL" | grep -q "universal"; then
-        log_success "  Native bridge universal binary verified"
-    else
-        log_error "  Failed to create universal native bridge binary"
-        exit 1
-    fi
-else
-    log_error "Native bridge libraries not found - cannot continue"
-    exit 1
-fi
 
 # Verify main executable is universal
 if ! file "$UNIVERSAL_APP/Contents/MacOS/${APP_NAME}" | grep -q "universal"; then
@@ -442,17 +486,6 @@ if [ -f "$JNA_LIB" ]; then
 else
     log_error "JNA native library not found at: $JNA_LIB"
     exit 1
-fi
-
-# Sign native bridge library (Keychain, Touch ID, iCloud)
-log_info "Signing native bridge library..."
-NATIVE_BRIDGE_LIB="$UNIVERSAL_APP/Contents/MacOS/libpasskeep_bridge.dylib"
-if [ -f "$NATIVE_BRIDGE_LIB" ]; then
-    codesign --force --options runtime --timestamp \
-        --entitlements "$RUNTIME_ENTITLEMENTS" \
-        --sign "$APP_SIGNING_IDENTITY" \
-        "$NATIVE_BRIDGE_LIB"
-    log_info "  Signed: libpasskeep_bridge.dylib"
 fi
 
 # Sign runtime bundle
