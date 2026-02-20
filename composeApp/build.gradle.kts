@@ -170,6 +170,9 @@ kotlin {
     }
 }
 
+val isAppStoreRelease: Boolean = (project.findProperty("macOsAppStoreRelease") as String?)?.toBoolean() ?: false
+val macBuildNumber: String = (project.findProperty("buildNumber") as String?) ?: "1"
+
 compose.desktop {
     application {
         mainClass = "ru.souz.MainKt"
@@ -184,7 +187,7 @@ compose.desktop {
         }
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Pkg)
             packageName = editionPackageName
             packageVersion = "1.0.0"
 
@@ -192,6 +195,10 @@ compose.desktop {
 
             macOS {
                 bundleID = editionBundleId
+                appCategory = "public.app-category.productivity"
+                minimumSystemVersion = "12.0"
+                appStore = isAppStoreRelease
+
                 iconFile.set(File("src/jvmMain/resources/icon-light.icns"))
 
                 signing {
@@ -208,7 +215,9 @@ compose.desktop {
                 }
 
                 infoPlist {
+                    packageBuildVersion = macBuildNumber
                     extraKeysRawXml = """
+                        <key>ITSAppUsesNonExemptEncryption</key><false/>
                         <key>NSMicrophoneUsageDescription</key>
                         <string>Needed for voice capture.</string>
                         <key>NSSystemAdministrationUsageDescription</key>
@@ -217,6 +226,11 @@ compose.desktop {
                         <string>Needed to control Chrome for browser automation.</string>
                     """.trimIndent()
                 }
+
+                entitlementsFile.set(project.file("src/jvmMain/resources/entitlements.plist"))
+                runtimeEntitlementsFile.set(project.file("src/jvmMain/resources/runtime-entitlements.plist"))
+                provisioningProfile.set(project.file("src/jvmMain/resources/embedded.provisionprofile"))
+                runtimeProvisioningProfile.set(project.file("src/jvmMain/resources/runtime.provisionprofile"))
             }
 
             // macOS dark mode support, works only on the release build, not in debug
