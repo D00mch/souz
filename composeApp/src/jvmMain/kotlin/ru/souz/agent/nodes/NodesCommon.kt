@@ -127,13 +127,13 @@ class NodesCommon(
 
         val defaultCalendar = settingsProvider.defaultCalendar
         if (!defaultCalendar.isNullOrBlank()) {
-            additionalData.add(StorredData(defaultCalendar, StorredType.GENERAL_FACT))
+            additionalData.add(StorredData("Календарь по умолчанию: $defaultCalendar", StorredType.GENERAL_FACT))
         }
 
         val currentDateTime = LocalDateTime.now().format(
             DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss")
         )
-        additionalData.add(StorredData(currentDateTime, StorredType.GENERAL_FACT))
+        additionalData.add(StorredData("Текущие дата и время: $currentDateTime", StorredType.GENERAL_FACT))
 
         if (additionalData.isEmpty()) return null
 

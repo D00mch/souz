@@ -156,6 +156,7 @@ kotlin {
 
             // Telegram user client (TDLib)
             implementation(libs.tdlight.java)
+            implementation("org.xerial:sqlite-jdbc:3.45.1.0")
             runtimeOnly("it.tdlight:tdlight-natives:${libs.versions.tdlight.natives.get()}:${tdlightNativeClassifier()}")
         }
 

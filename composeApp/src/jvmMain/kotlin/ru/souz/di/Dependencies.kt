@@ -136,7 +136,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolCalendarCreateEvent(ToolRunBashCommand) }
     bindSingleton { ToolCalendarDeleteEvent(ToolRunBashCommand) }
     bindSingleton { ToolCalendarListCalendars(ToolRunBashCommand) }
-    bindSingleton { ToolCalendarListEvents(ToolRunBashCommand) }
+    bindSingleton { ToolCalendarListEvents() }
     bindSingleton { ToolMailUnreadMessagesCount(ToolRunBashCommand) }
     bindSingleton { ToolMailListMessages(ToolRunBashCommand) }
     bindSingleton { ToolMailReadMessage(ToolRunBashCommand) }
