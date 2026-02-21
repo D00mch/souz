@@ -209,7 +209,7 @@
     <string name="voice_status_recording_started">Запись запущена</string>
     <string name="voice_status_processing_input">Обработка входа</string>
     <string name="voice_status_speech_not_recognized">Речь не распознана</string>
-    <string name="voice_error_missing_key">Добавьте ключ распознавания речи (OpenAI или SaluteSpeech) в Настройки > Мои ключи, чтобы использовать голосовые команды</string>
+    <string name="voice_error_missing_key">Добавьте ключ распознавания речи (SaluteSpeech) в Настройки > Мои ключи, чтобы использовать голосовые команды</string>
     <string name="voice_error_recognition_unavailable">Распознавание голоса в этой сборке пока недоступно.</string>
 
     <!-- Main ViewModel & status -->

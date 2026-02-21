@@ -209,7 +209,7 @@
     <string name="voice_status_recording_started">Recording started</string>
     <string name="voice_status_processing_input">Processing input</string>
     <string name="voice_status_speech_not_recognized">Speech not recognized</string>
-    <string name="voice_error_missing_key">Add a speech API key (OpenAI or SaluteSpeech) in Settings > My Keys to use voice commands</string>
+    <string name="voice_error_missing_key">Add a speech API key (OpenAI for now) in Settings > My Keys to use voice commands</string>
     <string name="voice_error_recognition_unavailable">Voice recognition is not available in this build yet.</string>
 
     <!-- Main ViewModel & status -->
