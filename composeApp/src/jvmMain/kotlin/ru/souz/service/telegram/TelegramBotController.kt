@@ -108,6 +108,9 @@ class TelegramBotController(
     private val _incomingMessages = MutableSharedFlow<IncomingMessage>(extraBufferCapacity = 64)
     val incomingMessages = _incomingMessages.asSharedFlow()
 
+    private val _cleanCommands = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val cleanCommands = _cleanCommands.asSharedFlow()
+
     fun start() {
         if (authWatcherJob?.isActive == true) return
 
@@ -218,8 +221,15 @@ class TelegramBotController(
         }
     }
 
-    private suspend fun handleCommand(token: String, chatId: Long, text: String) {
+    internal suspend fun handleCommand(token: String, chatId: Long, text: String) {
         try {
+            if (text.equals("/clean", ignoreCase = true)) {
+                logger.info("Received /clean command (chatId={})", chatId)
+                _cleanCommands.emit(Unit)
+                botApi.sendMessage(token, chatId, "Context cleared")
+                return
+            }
+
             logger.info("Received control command (chatId={}, textLength={})", chatId, text.length)
             botApi.sendMessage(token, chatId, "Processing: $text")
 
