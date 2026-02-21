@@ -21,6 +21,7 @@ set -e  # Exit on error
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 RESOURCES_DIR="$PROJECT_DIR/composeApp/src/jvmMain/resources"
+GENERATED_NATIVE_RESOURCES_DIR="$PROJECT_DIR/composeApp/build/generated/native-resources"
 BUILD_DIR="$PROJECT_DIR/composeApp/build/compose/binaries"
 UNIVERSAL_BUILD_DIR="$PROJECT_DIR/composeApp/build/universal-build"
 LOCAL_PROPERTIES="$PROJECT_DIR/local.properties"
@@ -261,10 +262,10 @@ log_info "Syncing TDLight/JNativeHook macOS JNI binaries..."
     --quiet
 
 # Verify expected files exist (as configured in ComposeAppConventionsPlugin)
-TDLIGHT_ARM64="$RESOURCES_DIR/darwin-arm64/libtdjni.macos_arm64.dylib"
-TDLIGHT_X64="$RESOURCES_DIR/darwin-x64/libtdjni.macos_amd64.dylib"
-JNATIVEHOOK_ARM64="$RESOURCES_DIR/darwin-arm64/libJNativeHook.dylib"
-JNATIVEHOOK_X64="$RESOURCES_DIR/darwin-x64/libJNativeHook.dylib"
+TDLIGHT_ARM64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-arm64/libtdjni.macos_arm64.dylib"
+TDLIGHT_X64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-x64/libtdjni.macos_amd64.dylib"
+JNATIVEHOOK_ARM64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-arm64/libJNativeHook.dylib"
+JNATIVEHOOK_X64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-x64/libJNativeHook.dylib"
 
 for file in "$TDLIGHT_ARM64" "$TDLIGHT_X64" "$JNATIVEHOOK_ARM64" "$JNATIVEHOOK_X64"; do
     if [ ! -f "$file" ]; then
@@ -293,6 +294,7 @@ rm -rf "$BUILD_DIR"
 log_info "Running Gradle build with x86_64 JDK..."
 ./gradlew :composeApp:createReleaseDistributable \
     -Pedition="$EDITION" \
+    -Pmac.includeAllNativeResources=true \
     -PmacOsAppStoreRelease=true \
     -PbuildNumber="$BUILD_NUMBER" \
     -Dorg.gradle.java.home="$JDK_X64"
@@ -359,6 +361,7 @@ rm -rf "$BUILD_DIR"
 log_info "Running Gradle build with arm64 JDK..."
 ./gradlew :composeApp:createReleaseDistributable \
     -Pedition="$EDITION" \
+    -Pmac.includeAllNativeResources=true \
     -PmacOsAppStoreRelease=true \
     -PbuildNumber="$BUILD_NUMBER" \
     -Dorg.gradle.java.home="$JDK_ARM64"

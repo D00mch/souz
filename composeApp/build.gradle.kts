@@ -165,6 +165,8 @@ kotlin {
 
 val isAppStoreRelease: Boolean = (project.findProperty("macOsAppStoreRelease") as String?)?.toBoolean() ?: false
 val macBuildNumber: String = (project.findProperty("buildNumber") as String?) ?: "1"
+val includeAllMacNativeResources: Boolean =
+    (project.findProperty("mac.includeAllNativeResources") as String?)?.toBoolean() ?: false
 
 compose.desktop {
     application {
@@ -173,6 +175,11 @@ compose.desktop {
 
         val isArm64 = System.getProperty("os.arch").lowercase().let { it.contains("aarch64") || it.contains("arm64") }
         val nativeResourceDir = if (isArm64) "darwin-arm64" else "darwin-x64"
+        val nativeLibraryPath = if (includeAllMacNativeResources) {
+            "\$APPDIR/resources/darwin-arm64:\$APPDIR/resources/darwin-x64"
+        } else {
+            "\$APPDIR/resources/$nativeResourceDir"
+        }
 
         buildTypes.release.proguard {
             isEnabled.set(false)
@@ -233,8 +240,8 @@ compose.desktop {
 
             // macOS dark mode support, works only on the release build, not in debug
             jvmArgs("-Dsouz.edition=$edition")
-            // TDLight loads from java.library.path first; this avoids temp extraction/signing issues.
-            jvmArgs("-Djava.library.path=\$APPDIR/resources/$nativeResourceDir")
+            // Include both architectures so universal bundles are not pinned to build-host arch.
+            jvmArgs("-Djava.library.path=$nativeLibraryPath")
             // Safety net: never let JNativeHook extract into Contents/app (which breaks code signature).
             jvmArgs("-Djnativehook.lib.path=/tmp/souz-jnativehook")
             jvmArgs("-Dapple.awt.application.appearance=system")
