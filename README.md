@@ -42,3 +42,4 @@ Run tests with:
 
 - Take a look at the [KMP release documentation](https://github.com/JetBrains/compose-multiplatform/blob/master/tutorials/Signing_and_notarization_on_macOS/README.md).
 - Use [kmp-build-macos-universal.sh](build-logic/kmp-build-macos-universal.sh) script to prepare app bundles.
+- Use [kmp-build-macos-dev.sh](build-logic/kmp-build-macos-dev.sh) script for publishing outside the App Store.
