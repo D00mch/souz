@@ -187,7 +187,7 @@ compose.desktop {
             packageName = editionPackageName
             packageVersion = "1.0.0"
 
-            modules("java.naming") // native build crash without it
+            modules("java.naming", "java.net.http") // include HTTP client used by Telegram bootstrap
 
             macOS {
                 bundleID = editionBundleId

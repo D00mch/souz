@@ -11,6 +11,7 @@ import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.testing.Test
 import org.gradle.process.JavaForkOptions
+import java.io.File
 import javax.inject.Inject
 
 abstract class ComposeAppConventionsExtension @Inject constructor(
@@ -189,6 +190,8 @@ private fun configureEditionAwareTasks(
     project: Project,
     extension: ComposeAppConventionsExtension,
 ) {
+    val macSigning = project.extensions.getByType(MacSigningSettings::class.java)
+
     project.tasks.matching { it.name == "jvmRun" }.configureEach {
         if (this is JavaForkOptions) {
             val javaForkTask = this
@@ -214,5 +217,102 @@ private fun configureEditionAwareTasks(
         group = "distribution"
         description = "Build EN release DMG."
         dependsOn("packageReleaseDmg")
+    }
+
+    val patchReleaseAppForNotarization = project.tasks.register("patchReleaseAppForNotarization") {
+        group = "distribution"
+        description = "Re-sign release app bundle before packaging/notarization."
+        dependsOn("createReleaseDistributable")
+        outputs.upToDateWhen { false }
+
+        doLast {
+            if (!System.getProperty("os.name", "").lowercase().contains("mac")) {
+                logger.info("Skipping release app re-sign: current OS is not macOS.")
+                return@doLast
+            }
+            if (!macSigning.signingEnabled.get()) {
+                logger.info("Skipping release app re-sign: mac.signing.enabled=false.")
+                return@doLast
+            }
+
+            val signingIdentity = macSigning.signingIdentity
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: throw GradleException("mac.signing.identity is required for release app re-sign.")
+
+            val releaseAppDir = project.layout.buildDirectory.dir("compose/binaries/main-release/app").get().asFile
+            val appBundles = releaseAppDir.listFiles { file -> file.isDirectory && file.name.endsWith(".app") }?.toList().orEmpty()
+            if (appBundles.isEmpty()) {
+                logger.warn("No .app bundles found in {}", releaseAppDir.absolutePath)
+                return@doLast
+            }
+
+            appBundles.forEach { appBundle ->
+                resignAppBundleAndVerify(project, appBundle, signingIdentity)
+            }
+        }
+    }
+
+    project.tasks.configureEach {
+        if (name == "packageReleaseDmg" || name == "notarizeReleaseDmg" || name == "packageReleasePkg" || name == "notarizeReleasePkg") {
+            dependsOn(patchReleaseAppForNotarization)
+        }
+    }
+}
+
+private fun resignAppBundleAndVerify(
+    project: Project,
+    appBundle: File,
+    signingIdentity: String,
+) {
+    runCommand(
+        project = project,
+        command = listOf(
+            "/usr/bin/codesign",
+            "--force",
+            "--deep",
+            "--options",
+            "runtime",
+            "--timestamp",
+            "--preserve-metadata=entitlements,requirements,flags",
+            "--sign",
+            signingIdentity,
+            appBundle.absolutePath,
+        ),
+        context = "Re-signing app bundle: ${appBundle.name}",
+    )
+
+    runCommand(
+        project = project,
+        command = listOf(
+            "/usr/bin/codesign",
+            "--verify",
+            "--deep",
+            "--strict",
+            "--verbose=2",
+            appBundle.absolutePath,
+        ),
+        context = "Verifying re-signed app bundle: ${appBundle.name}",
+    )
+}
+
+private fun runCommand(
+    project: Project,
+    command: List<String>,
+    context: String,
+) {
+    val process = ProcessBuilder(command)
+        .directory(project.projectDir)
+        .redirectErrorStream(true)
+        .start()
+
+    val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+    val exitCode = process.waitFor()
+    if (exitCode != 0) {
+        val details = if (output.isBlank()) "<no output>" else output
+        throw GradleException("$context failed (exit $exitCode): ${command.joinToString(" ")}\n$details")
+    }
+    if (output.isNotBlank()) {
+        project.logger.info(output)
     }
 }

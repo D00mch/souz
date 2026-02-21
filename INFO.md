@@ -125,5 +125,7 @@ Notes:
 - Directories like `.gradle/`, `.idea/`, `.kotlin/`, and `*/build/` are generated/local environment folders.
 - The `:proto` module reads `.proto` files from `composeApp/src/jvmMain/proto`.
 - `build-logic` provides convention plugins for shared Gradle behavior, including mac signing/notarization and compose-app native resource/packaging wiring.
+- `ComposeAppConventionsPlugin` runs `:composeApp:patchReleaseAppForNotarization` before DMG/PKG packaging/notarization to deep re-sign and verify the final `.app` bundle after release app assembly.
 - macOS signing config is now split by build mode: App Store builds (`-PmacOsAppStoreRelease=true`) use provisioning profiles + sandbox entitlements, while Developer ID DMG builds use non-App-Store entitlements and do not embed provisioning profiles.
+- macOS runtime image explicitly includes `java.net.http` so release app bundles contain `java.net.http.HttpClient` used by Telegram service startup.
 - Voice recognition audio upload now sends raw PCM (`audio/x-pcm;bit=16;rate=16000`) directly to Salute Speech, so the app no longer depends on JAVE/embedded FFmpeg binaries for microphone transcription.
