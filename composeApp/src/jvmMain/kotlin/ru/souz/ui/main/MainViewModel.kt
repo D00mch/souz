@@ -123,6 +123,12 @@ class MainViewModel(
                 )
             }
         }
+
+        viewModelScope.launch {
+            telegramBotController.cleanCommands.collect {
+                startNewConversation()
+            }
+        }
     }
 
     override fun initialState(): MainState = MainState()

@@ -70,7 +70,7 @@ enum class TelegramAuthStep {
 enum class BotTaskType { NONE, CREATE, DELETE }
 
 enum class BotCreationStep {
-    NONE, INIT, NAME, USERNAME, WAIT_TOKEN, START, AVATAR_CMD, AVATAR_MOCK, AVATAR_PIC, FINISHED
+    NONE, INIT, NAME, USERNAME, WAIT_TOKEN, START, AVATAR_CMD, AVATAR_MOCK, AVATAR_PIC, SETCMDS_CMD, SETCMDS_BOT, SETCMDS_LIST, FINISHED
 }
 
 enum class BotDeletionStep {
@@ -489,6 +489,30 @@ class TelegramService(
                     delay(BOT_FATHER_STEP_DELAY_MS)
                     uploadBotAvatar(tdClient, botFatherChat.id)
                 }.onFailure { l.warn("Failed to set bot avatar via BotFather: ${it.message}") }
+                createControlBot(BotCreationStep.SETCMDS_CMD)
+            }
+
+            BotCreationStep.SETCMDS_CMD -> {
+                runCatching {
+                    delay(BOT_FATHER_STEP_DELAY_MS)
+                    sendTextMessage(tdClient, botFatherChat.id, "/setcommands")
+                }.onFailure { l.warn("Failed to send /setcommands via BotFather: ${it.message}") }
+                createControlBot(BotCreationStep.SETCMDS_BOT)
+            }
+
+            BotCreationStep.SETCMDS_BOT -> {
+                runCatching {
+                    delay(BOT_FATHER_STEP_DELAY_MS)
+                    sendTextMessage(tdClient, botFatherChat.id, "@$botUsername")
+                }.onFailure { l.warn("Failed to select bot for /setcommands: ${it.message}") }
+                createControlBot(BotCreationStep.SETCMDS_LIST)
+            }
+
+            BotCreationStep.SETCMDS_LIST -> {
+                runCatching {
+                    delay(BOT_FATHER_STEP_DELAY_MS)
+                    sendTextMessage(tdClient, botFatherChat.id, "clean - Clear context")
+                }.onFailure { l.warn("Failed to send commands list to BotFather: ${it.message}") }
                 createControlBot(BotCreationStep.FINISHED)
             }
 

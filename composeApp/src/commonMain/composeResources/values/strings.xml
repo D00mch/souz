@@ -21,6 +21,10 @@
     <string name="dialog_permission_title">Action confirmation</string>
     <string name="dialog_permission_allow">Allow</string>
     <string name="dialog_permission_deny">Deny</string>
+    <string name="telegram_dialog_delete_title">Delete bot</string>
+    <string name="telegram_dialog_delete_text">Are you sure you want to permanently delete the bot @%s?</string>
+    <string name="telegram_dialog_delete_confirm">Delete</string>
+    <string name="telegram_dialog_delete_cancel">Cancel</string>
 
     <!-- Settings Sidebar -->
     <string name="settings_title">Settings</string>
