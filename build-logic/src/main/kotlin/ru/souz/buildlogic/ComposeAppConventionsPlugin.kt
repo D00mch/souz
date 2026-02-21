@@ -11,6 +11,7 @@ import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.testing.Test
 import org.gradle.process.JavaForkOptions
+import java.io.File
 import javax.inject.Inject
 
 abstract class ComposeAppConventionsExtension @Inject constructor(
@@ -33,8 +34,17 @@ class ComposeAppConventionsPlugin : Plugin<Project> {
 }
 
 private fun configureNativeExtraction(project: Project) {
+    val includeAllMacNativeResources = project.providers
+        .gradleProperty("mac.includeAllNativeResources")
+        .orElse("false")
+        .map(String::toBoolean)
+        .get()
+    val isArm64Build = System.getProperty("os.arch", "")
+        .lowercase()
+        .let { it.contains("aarch64") || it.contains("arm64") }
+    val generatedNativeResourcesRoot = project.layout.buildDirectory.dir("generated/native-resources")
     val tdlightMacosArm64NativeFileName = "libtdjni.macos_arm64.dylib"
-    val tdlightMacosArm64NativeTargetDir = project.layout.projectDirectory.dir("src/jvmMain/resources/darwin-arm64")
+    val tdlightMacosArm64NativeTargetDir = generatedNativeResourcesRoot.map { it.dir("darwin-arm64") }
     val tdlightMacosArm64NativeConfiguration = project.configurations.create("tdlightMacosArm64Native") {
         isCanBeConsumed = false
         isCanBeResolved = true
@@ -43,7 +53,7 @@ private fun configureNativeExtraction(project: Project) {
     }
 
     val tdlightMacosX64NativeFileName = "libtdjni.macos_amd64.dylib"
-    val tdlightMacosX64NativeTargetDir = project.layout.projectDirectory.dir("src/jvmMain/resources/darwin-x64")
+    val tdlightMacosX64NativeTargetDir = generatedNativeResourcesRoot.map { it.dir("darwin-x64") }
     val tdlightMacosX64NativeConfiguration = project.configurations.create("tdlightMacosX64Native") {
         isCanBeConsumed = false
         isCanBeResolved = true
@@ -52,7 +62,7 @@ private fun configureNativeExtraction(project: Project) {
     }
 
     val jnativehookMacosArm64NativeFileName = "libJNativeHook.dylib"
-    val jnativehookMacosArm64NativeTargetDir = project.layout.projectDirectory.dir("src/jvmMain/resources/darwin-arm64")
+    val jnativehookMacosArm64NativeTargetDir = generatedNativeResourcesRoot.map { it.dir("darwin-arm64") }
     val jnativehookMacosArm64NativeConfiguration = project.configurations.create("jnativehookMacosArm64Native") {
         isCanBeConsumed = false
         isCanBeResolved = true
@@ -61,7 +71,7 @@ private fun configureNativeExtraction(project: Project) {
     }
 
     val jnativehookMacosX64NativeFileName = "libJNativeHook.dylib"
-    val jnativehookMacosX64NativeTargetDir = project.layout.projectDirectory.dir("src/jvmMain/resources/darwin-x64")
+    val jnativehookMacosX64NativeTargetDir = generatedNativeResourcesRoot.map { it.dir("darwin-x64") }
     val jnativehookMacosX64NativeConfiguration = project.configurations.create("jnativehookMacosX64Native") {
         isCanBeConsumed = false
         isCanBeResolved = true
@@ -96,7 +106,7 @@ private fun configureNativeExtraction(project: Project) {
 
     val syncTdlightNativeMacosArm64 = project.tasks.register("syncTdlightNativeMacosArm64", Copy::class.java) {
         group = "tdlight"
-        description = "Extract TDLight macOS arm64 JNI binary into src/jvmMain/resources/darwin-arm64"
+        description = "Extract TDLight macOS arm64 JNI binary into build/generated/native-resources/darwin-arm64"
         from(
             { tdlightMacosArm64NativeConfiguration.files.map { project.zipTree(it) } },
             Action {
@@ -110,7 +120,7 @@ private fun configureNativeExtraction(project: Project) {
 
     val syncTdlightNativeMacosX64 = project.tasks.register("syncTdlightNativeMacosX64", Copy::class.java) {
         group = "tdlight"
-        description = "Extract TDLight macOS x64 JNI binary into src/jvmMain/resources/darwin-x64"
+        description = "Extract TDLight macOS x64 JNI binary into build/generated/native-resources/darwin-x64"
         from(
             { tdlightMacosX64NativeConfiguration.files.map { project.zipTree(it) } },
             Action {
@@ -124,7 +134,7 @@ private fun configureNativeExtraction(project: Project) {
 
     val syncJnativehookNativeMacosArm64 = project.tasks.register("syncJnativehookNativeMacosArm64", Copy::class.java) {
         group = "native"
-        description = "Extract JNativeHook macOS arm64 JNI binary into src/jvmMain/resources/darwin-arm64"
+        description = "Extract JNativeHook macOS arm64 JNI binary into build/generated/native-resources/darwin-arm64"
         from(
             { jnativehookMacosArm64NativeConfiguration.files.map { project.zipTree(it) } },
             Action {
@@ -138,7 +148,7 @@ private fun configureNativeExtraction(project: Project) {
 
     val syncJnativehookNativeMacosX64 = project.tasks.register("syncJnativehookNativeMacosX64", Copy::class.java) {
         group = "native"
-        description = "Extract JNativeHook macOS x64 JNI binary into src/jvmMain/resources/darwin-x64"
+        description = "Extract JNativeHook macOS x64 JNI binary into build/generated/native-resources/darwin-x64"
         from(
             { jnativehookMacosX64NativeConfiguration.files.map { project.zipTree(it) } },
             Action {
@@ -150,36 +160,45 @@ private fun configureNativeExtraction(project: Project) {
         into(jnativehookMacosX64NativeTargetDir)
     }
 
+    val selectedSyncTasks = buildList {
+        if (includeAllMacNativeResources || isArm64Build) {
+            add(syncTdlightNativeMacosArm64)
+            add(syncJnativehookNativeMacosArm64)
+        }
+        if (includeAllMacNativeResources || !isArm64Build) {
+            add(syncTdlightNativeMacosX64)
+            add(syncJnativehookNativeMacosX64)
+        }
+    }
+
     project.tasks.configureEach {
         if (name == "jvmProcessResources" || name == "processJvmMainResources") {
-            dependsOn(syncTdlightNativeMacosArm64)
-            dependsOn(syncJnativehookNativeMacosArm64)
-            dependsOn(syncTdlightNativeMacosX64)
-            dependsOn(syncJnativehookNativeMacosX64)
+            selectedSyncTasks.forEach(::dependsOn)
         }
     }
 
     project.tasks.configureEach {
         if (name == "prepareAppResources" && this is Sync) {
-            dependsOn(syncTdlightNativeMacosArm64)
-            dependsOn(syncJnativehookNativeMacosArm64)
-            dependsOn(syncTdlightNativeMacosX64)
-            dependsOn(syncJnativehookNativeMacosX64)
-            from(tdlightMacosArm64NativeTargetDir) {
-                include(tdlightMacosArm64NativeFileName)
-                into("darwin-arm64")
+            selectedSyncTasks.forEach(::dependsOn)
+            if (includeAllMacNativeResources || isArm64Build) {
+                from(tdlightMacosArm64NativeTargetDir) {
+                    include(tdlightMacosArm64NativeFileName)
+                    into("darwin-arm64")
+                }
+                from(jnativehookMacosArm64NativeTargetDir) {
+                    include(jnativehookMacosArm64NativeFileName)
+                    into("darwin-arm64")
+                }
             }
-            from(jnativehookMacosArm64NativeTargetDir) {
-                include(jnativehookMacosArm64NativeFileName)
-                into("darwin-arm64")
-            }
-            from(tdlightMacosX64NativeTargetDir) {
-                include(tdlightMacosX64NativeFileName)
-                into("darwin-x64")
-            }
-            from(jnativehookMacosX64NativeTargetDir) {
-                include(jnativehookMacosX64NativeFileName)
-                into("darwin-x64")
+            if (includeAllMacNativeResources || !isArm64Build) {
+                from(tdlightMacosX64NativeTargetDir) {
+                    include(tdlightMacosX64NativeFileName)
+                    into("darwin-x64")
+                }
+                from(jnativehookMacosX64NativeTargetDir) {
+                    include(jnativehookMacosX64NativeFileName)
+                    into("darwin-x64")
+                }
             }
         }
     }
@@ -189,6 +208,8 @@ private fun configureEditionAwareTasks(
     project: Project,
     extension: ComposeAppConventionsExtension,
 ) {
+    val macSigning = project.extensions.getByType(MacSigningSettings::class.java)
+
     project.tasks.matching { it.name == "jvmRun" }.configureEach {
         if (this is JavaForkOptions) {
             val javaForkTask = this
@@ -214,5 +235,102 @@ private fun configureEditionAwareTasks(
         group = "distribution"
         description = "Build EN release DMG."
         dependsOn("packageReleaseDmg")
+    }
+
+    val patchReleaseAppForNotarization = project.tasks.register("patchReleaseAppForNotarization") {
+        group = "distribution"
+        description = "Re-sign release app bundle before packaging/notarization."
+        dependsOn("createReleaseDistributable")
+        outputs.upToDateWhen { false }
+
+        doLast {
+            if (!System.getProperty("os.name", "").lowercase().contains("mac")) {
+                logger.info("Skipping release app re-sign: current OS is not macOS.")
+                return@doLast
+            }
+            if (!macSigning.signingEnabled.get()) {
+                logger.info("Skipping release app re-sign: mac.signing.enabled=false.")
+                return@doLast
+            }
+
+            val signingIdentity = macSigning.signingIdentity
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: throw GradleException("mac.signing.identity is required for release app re-sign.")
+
+            val releaseAppDir = project.layout.buildDirectory.dir("compose/binaries/main-release/app").get().asFile
+            val appBundles = releaseAppDir.listFiles { file -> file.isDirectory && file.name.endsWith(".app") }?.toList().orEmpty()
+            if (appBundles.isEmpty()) {
+                logger.warn("No .app bundles found in {}", releaseAppDir.absolutePath)
+                return@doLast
+            }
+
+            appBundles.forEach { appBundle ->
+                resignAppBundleAndVerify(project, appBundle, signingIdentity)
+            }
+        }
+    }
+
+    project.tasks.configureEach {
+        if (name == "packageReleaseDmg" || name == "notarizeReleaseDmg" || name == "packageReleasePkg" || name == "notarizeReleasePkg") {
+            dependsOn(patchReleaseAppForNotarization)
+        }
+    }
+}
+
+private fun resignAppBundleAndVerify(
+    project: Project,
+    appBundle: File,
+    signingIdentity: String,
+) {
+    runCommand(
+        project = project,
+        command = listOf(
+            "/usr/bin/codesign",
+            "--force",
+            "--deep",
+            "--options",
+            "runtime",
+            "--timestamp",
+            "--preserve-metadata=entitlements,requirements,flags",
+            "--sign",
+            signingIdentity,
+            appBundle.absolutePath,
+        ),
+        context = "Re-signing app bundle: ${appBundle.name}",
+    )
+
+    runCommand(
+        project = project,
+        command = listOf(
+            "/usr/bin/codesign",
+            "--verify",
+            "--deep",
+            "--strict",
+            "--verbose=2",
+            appBundle.absolutePath,
+        ),
+        context = "Verifying re-signed app bundle: ${appBundle.name}",
+    )
+}
+
+private fun runCommand(
+    project: Project,
+    command: List<String>,
+    context: String,
+) {
+    val process = ProcessBuilder(command)
+        .directory(project.projectDir)
+        .redirectErrorStream(true)
+        .start()
+
+    val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+    val exitCode = process.waitFor()
+    if (exitCode != 0) {
+        val details = if (output.isBlank()) "<no output>" else output
+        throw GradleException("$context failed (exit $exitCode): ${command.joinToString(" ")}\n$details")
+    }
+    if (output.isNotBlank()) {
+        project.logger.info(output)
     }
 }

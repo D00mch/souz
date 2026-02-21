@@ -43,7 +43,6 @@ import ru.souz.agent.engine.AgentSettings
 import ru.souz.audio.ActiveSoundRecorderImpl
 import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.audio.Say
-import ru.souz.audio.rawToOpusOgg
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
@@ -87,12 +86,6 @@ class MainViewModelTest {
         every { GlobalScreen.addNativeKeyListener(any()) } just runs
         every { GlobalScreen.unregisterNativeHook() } just runs
 
-        mockkStatic("ru.souz.audio.ActiveSoundRecorderKt")
-        every {
-            rawToOpusOgg(
-                rawData = any(), sampleRate = any(), sampleSizeInBits = any(), channels = any(), bitRate = any()
-            )
-        } returns byteArrayOf(1, 2, 3)
     }
 
     @AfterTest

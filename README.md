@@ -37,3 +37,9 @@ Run tests with:
   - `ru`: `GIGA`, `QWEN`, `AI_TUNNEL`; SaluteSpeech recognition is enabled.
   - `en`: `QWEN`, `ANTHROPIC`; speech recognition is disabled (`DisabledSpeechRecognitionProvider`).
 - Edition-specific key fields/providers are configured in `composeApp/src/jvmMain/kotlin/ru/souz/ui/common/ApiKeyProviders.kt` and drive Setup/Settings key UI.
+
+## Release builds
+
+- Take a look at the [KMP release documentation](https://github.com/JetBrains/compose-multiplatform/blob/master/tutorials/Signing_and_notarization_on_macOS/README.md).
+- Use [kmp-build-macos-universal.sh](build-logic/kmp-build-macos-universal.sh) script to prepare app bundles.
+- Use [kmp-build-macos-dev.sh](build-logic/kmp-build-macos-dev.sh) script for publishing outside the App Store.

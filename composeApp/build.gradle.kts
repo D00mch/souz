@@ -105,9 +105,6 @@ kotlin {
         }
 
         jvmMain.dependencies {
-            implementation(files("src/jvmMain/resources/darwin-arm64"))
-            implementation(files("src/jvmMain/resources/darwin-x64"))
-
             implementation(libs.compose.ui.tooling.preview.desktop)
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
@@ -133,10 +130,6 @@ kotlin {
             implementation(libs.jnativehook)
             implementation(libs.jna)
             implementation(libs.jna.platform)
-
-            // audio
-            implementation(libs.jave.core)
-            implementation(libs.jave.nativebinOsxm1)
 
             // search index
             implementation(libs.lucene.core)
@@ -170,6 +163,11 @@ kotlin {
     }
 }
 
+val isAppStoreRelease: Boolean = (project.findProperty("macOsAppStoreRelease") as String?)?.toBoolean() ?: false
+val macBuildNumber: String = (project.findProperty("buildNumber") as String?) ?: "1"
+val includeAllMacNativeResources: Boolean =
+    (project.findProperty("mac.includeAllNativeResources") as String?)?.toBoolean() ?: false
+
 compose.desktop {
     application {
         mainClass = "ru.souz.MainKt"
@@ -177,6 +175,11 @@ compose.desktop {
 
         val isArm64 = System.getProperty("os.arch").lowercase().let { it.contains("aarch64") || it.contains("arm64") }
         val nativeResourceDir = if (isArm64) "darwin-arm64" else "darwin-x64"
+        val nativeLibraryPath = if (includeAllMacNativeResources) {
+            "\$APPDIR/resources/darwin-arm64:\$APPDIR/resources/darwin-x64"
+        } else {
+            "\$APPDIR/resources/$nativeResourceDir"
+        }
 
         buildTypes.release.proguard {
             isEnabled.set(false)
@@ -184,19 +187,23 @@ compose.desktop {
         }
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Pkg)
             packageName = editionPackageName
             packageVersion = "1.0.0"
 
-            modules("java.naming") // native build crash without it
+            modules("java.naming", "java.net.http") // include HTTP client used by Telegram bootstrap
 
             macOS {
                 bundleID = editionBundleId
+                appCategory = "public.app-category.productivity"
+                minimumSystemVersion = "12.0"
+                appStore = isAppStoreRelease
+
                 iconFile.set(File("src/jvmMain/resources/icon-light.icns"))
 
                 signing {
                     sign.set(macSigning.signingEnabled)
-                    macSigning.signingIdentity?.let { identity.set(it) }
+                    macSigning.signingIdentity?.let { identity.set(it) } ?: identity.set("Souz AI")
                 }
 
                 notarization {
@@ -208,7 +215,9 @@ compose.desktop {
                 }
 
                 infoPlist {
+                    packageBuildVersion = macBuildNumber
                     extraKeysRawXml = """
+                        <key>ITSAppUsesNonExemptEncryption</key><false/>
                         <key>NSMicrophoneUsageDescription</key>
                         <string>Needed for voice capture.</string>
                         <key>NSSystemAdministrationUsageDescription</key>
@@ -217,12 +226,22 @@ compose.desktop {
                         <string>Needed to control Chrome for browser automation.</string>
                     """.trimIndent()
                 }
+
+                if (isAppStoreRelease) {
+                    entitlementsFile.set(project.file("src/jvmMain/resources/entitlements.plist"))
+                    runtimeEntitlementsFile.set(project.file("src/jvmMain/resources/runtime-entitlements.plist"))
+                    provisioningProfile.set(project.file("src/jvmMain/resources/embedded.provisionprofile"))
+                    runtimeProvisioningProfile.set(project.file("src/jvmMain/resources/runtime.provisionprofile"))
+                } else {
+                    entitlementsFile.set(project.file("src/jvmMain/resources/entitlements-dev.plist"))
+                    runtimeEntitlementsFile.set(project.file("src/jvmMain/resources/runtime-entitlements-dev.plist"))
+                }
             }
 
             // macOS dark mode support, works only on the release build, not in debug
             jvmArgs("-Dsouz.edition=$edition")
-            // TDLight loads from java.library.path first; this avoids temp extraction/signing issues.
-            jvmArgs("-Djava.library.path=\$APPDIR/resources/$nativeResourceDir")
+            // Include both architectures so universal bundles are not pinned to build-host arch.
+            jvmArgs("-Djava.library.path=$nativeLibraryPath")
             // Safety net: never let JNativeHook extract into Contents/app (which breaks code signature).
             jvmArgs("-Djnativehook.lib.path=/tmp/souz-jnativehook")
             jvmArgs("-Dapple.awt.application.appearance=system")

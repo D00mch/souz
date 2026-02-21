@@ -4,7 +4,6 @@ commonsCsv = "1.10.0"
 composeHotReload = "1.0.0-rc04"
 composeMultiplatform = "1.9.3"
 jackson = "2.17.0"
-jave = "3.5.0"
 jnativehook = "2.2.2"
 jna = "5.14.0"
 junit = "4.13.2"
@@ -38,8 +37,6 @@ androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecyc
 androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
 commons-csv = { module = "org.apache.commons:commons-csv", version.ref = "commonsCsv" }
 jackson = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jackson" }
-jave-core = { module = "ws.schild:jave-core", version.ref = "jave" }
-jave-nativebinOsxm1 = { module = "ws.schild:jave-nativebin-osxm1", version.ref = "jave" }
 jnativehook = { module = "com.github.kwhat:jnativehook", version.ref = "jnativehook" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
