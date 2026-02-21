@@ -10,15 +10,19 @@ internal object BotFatherReplyParser {
     private val tokenRegex = Regex("""\d{8,10}:[a-zA-Z0-9_-]{35,}""")
     private val botUsernameRegex = Regex("""@([a-z0-9_]{5,}bot)\b""")
 
-    private fun latestIncomingText(messages: List<BotFatherMessageSnapshot>): String? {
+    private fun latestIncomingTextRaw(messages: List<BotFatherMessageSnapshot>): String? {
         return messages.asSequence()
             .filter { !it.isOutgoing }
-            .mapNotNull { it.text?.lowercase() }
+            .mapNotNull { it.text }
             .firstOrNull() // TDLib returns newest messages first
     }
 
+    private fun latestIncomingText(messages: List<BotFatherMessageSnapshot>): String? {
+        return latestIncomingTextRaw(messages)?.lowercase()
+    }
+
     fun extractToken(messages: List<BotFatherMessageSnapshot>): String? {
-        val text = latestIncomingText(messages) ?: return null
+        val text = latestIncomingTextRaw(messages) ?: return null
         return tokenRegex.find(text)?.value
     }
 
