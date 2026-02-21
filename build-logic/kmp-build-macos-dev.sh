@@ -80,6 +80,17 @@ if [[ ! -x "$JDK_HOME/bin/java" ]]; then
   exit 1
 fi
 
+if ! command -v security >/dev/null 2>&1; then
+  echo "Missing 'security' tool. This script must run on macOS." >&2
+  exit 1
+fi
+
+if ! security find-identity -v | grep -Fq "$APPLE_SIGNING_ID"; then
+  echo "Signing identity not found in keychain: $APPLE_SIGNING_ID" >&2
+  exit 1
+fi
+
+
 # =============================================================================
 # The real script
 # =============================================================================
