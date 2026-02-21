@@ -83,6 +83,9 @@ object ApiKeysBuildProfile {
         )
     }
 
+    val supportsSpeechRecognition: Boolean =
+        hasField(ApiKeyField.SALUTE_SPEECH) || hasField(ApiKeyField.OPENAI)
+
     fun hasField(field: ApiKeyField): Boolean = field in availableFields
 }
 

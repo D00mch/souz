@@ -489,12 +489,13 @@ fun KeysSettingsContent(
         saluteSpeechKey = state.saluteSpeechKey,
     )
     val supportsSaluteSpeech = ApiKeysBuildProfile.hasField(ApiKeyField.SALUTE_SPEECH)
+    val supportsVoiceRecognition = ApiKeysBuildProfile.supportsSpeechRecognition
     val keysHintChat = if (ApiKeysBuildProfile.hasField(ApiKeyField.GIGA_CHAT)) {
         Res.string.keys_hint_chat_ru_build
     } else {
         Res.string.keys_hint_chat_en_build
     }
-    val keysHintVoice = if (supportsSaluteSpeech) {
+    val keysHintVoice = if (supportsVoiceRecognition) {
         Res.string.keys_hint_voice_required
     } else {
         Res.string.keys_hint_voice_unavailable

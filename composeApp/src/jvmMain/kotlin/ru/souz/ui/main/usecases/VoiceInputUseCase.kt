@@ -20,7 +20,7 @@ import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.audio.rawToOpusOgg
 import ru.souz.giga.MissingVoiceKeyException
 import ru.souz.keys.HotkeyListener
-import ru.souz.db.SettingsProvider
+import ru.souz.llms.MissingOpenAiVoiceKeyException
 import ru.souz.ui.main.MainState
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
@@ -30,7 +30,6 @@ import org.jetbrains.compose.resources.getString
 class VoiceInputUseCase(
     val audioRecorder: InMemoryAudioRecorder,
     private val speechRecognitionProvider: SpeechRecognitionProvider,
-    private val settingsProvider: SettingsProvider,
     private val chatUseCase: ChatUseCase,
     private val speechUseCase: SpeechUseCase,
     private val permissionsUseCase: OnboardingUseCase,
@@ -83,7 +82,7 @@ class VoiceInputUseCase(
 
             userInputFlow.retryWhen { cause, attempt ->
                 if (cause is CancellationException) return@retryWhen false
-                if (cause is MissingVoiceKeyException) {
+                if (cause is MissingVoiceKeyException || cause is MissingOpenAiVoiceKeyException) {
                     emitVoiceKeyMissing()
                     return@retryWhen true
                 }
@@ -112,7 +111,7 @@ class VoiceInputUseCase(
             emitVoiceRecognitionUnavailable()
             return
         }
-        if (speechRecognitionProvider.requiresVoiceKey && settingsProvider.saluteSpeechKey.isNullOrBlank()) {
+        if (!speechRecognitionProvider.hasRequiredKey) {
             emitVoiceKeyMissing()
             return
         }

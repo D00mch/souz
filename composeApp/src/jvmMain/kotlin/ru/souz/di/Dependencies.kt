@@ -3,8 +3,6 @@ package ru.souz.di
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import ru.souz.edition.BuildEdition
-import ru.souz.edition.BuildEditionConfig
 import ru.souz.db.SettingsProviderImpl
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
@@ -41,6 +39,7 @@ import ru.souz.keys.Keys
 import ru.souz.llms.AiTunnelChatAPI
 import ru.souz.llms.AnthropicChatAPI
 import ru.souz.llms.OpenAIChatAPI
+import ru.souz.llms.OpenAIVoiceAPI
 import ru.souz.llms.QwenChatAPI
 import ru.souz.mcp.McpClientManager
 import ru.souz.mcp.McpConfigProvider
@@ -60,9 +59,10 @@ import ru.souz.tool.mail.*
 import ru.souz.tool.notes.*
 import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
-import ru.souz.ui.main.usecases.DisabledSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.ui.main.usecases.FinderPathExtractor
+import ru.souz.ui.main.usecases.ModelAwareSpeechRecognitionProvider
+import ru.souz.ui.main.usecases.OpenAISpeechRecognitionProvider
 import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import ru.souz.tool.presentation.ToolPresentationCreate
@@ -186,11 +186,11 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton<GigaChatAPI> { instance<LLMFactory>() }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
+    bindSingleton { OpenAIVoiceAPI(instance()) }
+    bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
+    bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
     bindSingleton<SpeechRecognitionProvider> {
-        when (BuildEditionConfig.current) {
-            BuildEdition.RU -> SaluteSpeechRecognitionProvider(instance())
-            BuildEdition.EN -> DisabledSpeechRecognitionProvider
-        }
+        ModelAwareSpeechRecognitionProvider(instance(), instance(), instance())
     }
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
