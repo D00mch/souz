@@ -109,6 +109,8 @@ fun SettingsScreen(
                 onStartWork = onClose,
                 onCreateControlBot = { viewModel.send(SettingsEvent.CreateControlBot) },
                 onDisconnectControlBot = { viewModel.send(SettingsEvent.DisconnectTelegramBot) },
+                onConfirmDisconnectControlBot = { viewModel.send(SettingsEvent.ConfirmDisconnectTelegramBot) },
+                onCancelDisconnectControlBot = { viewModel.send(SettingsEvent.CancelDisconnectTelegramBot) },
             )
         }
     }

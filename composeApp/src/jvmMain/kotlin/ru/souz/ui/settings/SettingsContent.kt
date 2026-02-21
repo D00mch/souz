@@ -833,6 +833,8 @@ fun TelegramSettingsScreen(
     onStartWork: () -> Unit,
     onCreateControlBot: () -> Unit,
     onDisconnectControlBot: () -> Unit,
+    onConfirmDisconnectControlBot: () -> Unit,
+    onCancelDisconnectControlBot: () -> Unit,
 ) {
     SettingsSectionScreen(
         title = "Telegram",
@@ -844,6 +846,18 @@ fun TelegramSettingsScreen(
             onStartWork = onStartWork,
             onCreateControlBot = onCreateControlBot,
             onDisconnectControlBot = onDisconnectControlBot,
+        )
+    }
+
+    if (state.showBotDeleteConfirmation && state.botNameToDelete != null) {
+        ru.souz.ui.common.ConfirmDialog(
+            type = ru.souz.ui.common.ConfirmDialogType.WARNING,
+            title = stringResource(Res.string.telegram_dialog_delete_title),
+            message = stringResource(Res.string.telegram_dialog_delete_text).format(state.botNameToDelete),
+            confirmText = stringResource(Res.string.telegram_dialog_delete_confirm),
+            cancelText = stringResource(Res.string.telegram_dialog_delete_cancel),
+            onConfirm = onConfirmDisconnectControlBot,
+            onDismiss = onCancelDisconnectControlBot
         )
     }
 }
@@ -1685,6 +1699,8 @@ private fun TelegramSettingsScreenPreview() {
             onStartWork = {},
             onCreateControlBot = {},
             onDisconnectControlBot = {},
+            onConfirmDisconnectControlBot = {},
+            onCancelDisconnectControlBot = {},
         )
     }
 }

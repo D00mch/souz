@@ -240,7 +240,9 @@ class SettingsViewModel(
             OpenFoldersManagement -> setState { copy(currentScreen = SettingsSubScreen.FOLDERS) }
             OpenTelegramSettings -> setState { copy(currentScreen = SettingsSubScreen.TELEGRAM) }
             CreateControlBot -> createTelegramBot()
-            DisconnectTelegramBot -> disconnectBot()
+            DisconnectTelegramBot -> checkBotBeforeDisconnect()
+            ConfirmDisconnectTelegramBot -> disconnectBot()
+            CancelDisconnectTelegramBot -> setState { copy(showBotDeleteConfirmation = false) }
             is SelectSettingsSection -> setState { copy(activeSection = event.section) }
         }
     }
@@ -248,7 +250,7 @@ class SettingsViewModel(
     private fun createTelegramBot() = viewModelScope.launch(Dispatchers.IO) {
         runCatching {
             setState { copy(telegramAuthBusy = true, telegramAuthError = null) }
-            telegramService.createControlBot()
+            telegramService.createControlBot(forceNew = true)
         }.onSuccess {
             setState { copy(telegramAuthBusy = false, isTelegramBotActive = true) }
             telegramBotController.restartPolling()
@@ -259,10 +261,32 @@ class SettingsViewModel(
         }
     }
 
-    private fun disconnectBot() = viewModelScope.launch(Dispatchers.IO) {
+    private fun checkBotBeforeDisconnect() = viewModelScope.launch(Dispatchers.IO) {
         runCatching {
             setState { copy(telegramAuthBusy = true, telegramAuthError = null) }
-            telegramService.deleteControlBot()
+            telegramService.fetchActiveBotUsernameFromBotFather()
+        }.onSuccess { activeUsername ->
+            if (activeUsername != null) {
+                setState { 
+                    copy(
+                        telegramAuthBusy = false,
+                        showBotDeleteConfirmation = true,
+                        botNameToDelete = activeUsername
+                    )
+                }
+            } else {
+                disconnectBot()
+            }
+        }.onFailure { error ->
+            val errorMsg = error.message ?: getString(Res.string.error_failed_to_delete_bot)
+            setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
+        }
+    }
+
+    private fun disconnectBot() = viewModelScope.launch(Dispatchers.IO) {
+        runCatching {
+            setState { copy(telegramAuthBusy = true, telegramAuthError = null, showBotDeleteConfirmation = false) }
+            telegramService.deleteControlBot(forceNew = true)
         }.onSuccess {
             telegramBotController.stopPolling()
             setState { copy(isTelegramBotActive = false, telegramAuthBusy = false) }

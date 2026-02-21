@@ -54,6 +54,7 @@ class MainViewModel(
     private val mainUseCasesFactory: MainUseCasesFactory by di.instance()
 
     private val agentRef = AtomicReference<GraphBasedAgent?>(null)
+    private val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
 
     private val useCases: MainUseCases = mainUseCasesFactory.create(ioDispatchers)
     private val chatUseCase: ChatUseCase = useCases.chat
@@ -108,6 +109,20 @@ class MainViewModel(
             )
         }
         viewModelScope.launchDbSetup(desktopInfoRepository)
+
+        viewModelScope.launch {
+            telegramBotController.incomingMessages.collect { msg ->
+                chatUseCase.sendChatMessage(
+                    scope = this,
+                    isVoice = false,
+                    chatMessage = msg.text,
+                    onResult = { result ->
+                        result.onSuccess { msg.responseDeferred.complete(it) }
+                        result.onFailure { msg.responseDeferred.complete("Error: ${it.message}") }
+                    }
+                )
+            }
+        }
     }
 
     override fun initialState(): MainState = MainState()

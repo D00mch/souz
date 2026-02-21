@@ -15,12 +15,16 @@ import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
 import io.ktor.serialization.jackson.jackson
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -95,6 +99,14 @@ class TelegramBotController(
 
     private var authWatcherJob: Job? = null
     private var pollingJob: Job? = null
+
+    data class IncomingMessage(
+        val text: String,
+        val responseDeferred: CompletableDeferred<String>
+    )
+
+    private val _incomingMessages = MutableSharedFlow<IncomingMessage>(extraBufferCapacity = 64)
+    val incomingMessages = _incomingMessages.asSharedFlow()
 
     fun start() {
         if (authWatcherJob?.isActive == true) return
@@ -211,7 +223,13 @@ class TelegramBotController(
             logger.info("Received control command (chatId={}, textLength={})", chatId, text.length)
             botApi.sendMessage(token, chatId, "Processing: $text")
 
-            val response = agent.execute(text)
+            val response = if (_incomingMessages.subscriptionCount.value > 0) {
+                val deferred = CompletableDeferred<String>()
+                _incomingMessages.emit(IncomingMessage(text, deferred))
+                deferred.await()
+            } else {
+                agent.execute(text)
+            }
             botApi.sendMessage(token, chatId, response)
         } catch (e: Exception) {
             logger.error("Error processing control command ({})", e::class.simpleName)

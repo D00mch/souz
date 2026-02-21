@@ -59,12 +59,16 @@ class ChatUseCase(
         chatMessage: String,
         displayMessage: String = chatMessage,
         attachedFiles: List<ChatAttachedFile> = emptyList(),
+        onResult: ((Result<String>) -> Unit)? = null,
     ) {
         killTaskSideEffectJobs()
         cancelActiveJob()
 
         val userText = chatMessage.trim()
-        if (userText.isEmpty()) return
+        if (userText.isEmpty()) {
+            onResult?.invoke(Result.failure(IllegalArgumentException("Empty message")))
+            return
+        }
 
         val requestId = activeChatRequestId.incrementAndGet()
         val userMessage = ChatMessage(
@@ -111,6 +115,7 @@ class ChatUseCase(
             )
             if (activeChatRequestId.get() != requestId) {
                 l.info("Skipping stale chat response for request {}", requestId)
+                onResult?.invoke(Result.failure(CancellationException("Stale request")))
                 return
             }
 
@@ -128,6 +133,7 @@ class ChatUseCase(
             if (isVoice && !settingsProvider.useStreaming) {
                 speechUseCase.queuePrepared(botMessage.text)
             }
+            onResult?.invoke(Result.success(botMessage.text))
         } catch (e: CancellationException) {
             l.info("Chat message cancelled: {}", e.message)
             val isCurrentRequest = activeChatRequestId.get() == requestId
@@ -140,9 +146,11 @@ class ChatUseCase(
                     )
                 }
             }
+            onResult?.invoke(Result.failure(e))
         } catch (e: Exception) {
             if (activeChatRequestId.get() != requestId) {
                 l.info("Ignoring stale chat failure for request {}: {}", requestId, e.message)
+                onResult?.invoke(Result.failure(e))
                 return
             }
 
@@ -159,6 +167,7 @@ class ChatUseCase(
                     isProcessing = false,
                 )
             }
+            onResult?.invoke(Result.failure(e))
         } finally {
             sideEffectsJob?.cancel()
             sideEffectsJob?.let { taskSideEffectJobs.remove(it) }

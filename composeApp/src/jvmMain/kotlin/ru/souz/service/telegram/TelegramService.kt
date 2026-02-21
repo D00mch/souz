@@ -23,6 +23,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -73,7 +74,7 @@ enum class BotCreationStep {
 }
 
 enum class BotDeletionStep {
-    NONE, INIT, WAIT_NO_BOTS, USERNAME, CONFIRM, FINISHED
+    NONE, INIT, WAIT_NO_BOTS, USERNAME, WAIT_DELETION, FINISHED
 }
 
 data class TelegramAuthState(
@@ -163,6 +164,11 @@ class TelegramService(
         val taskTypeStr = ConfigStore.get(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.NONE.name)
         val taskType = runCatching { BotTaskType.valueOf(taskTypeStr) }.getOrDefault(BotTaskType.NONE)
 
+        if (taskType == BotTaskType.NONE) return
+
+        l.info("Pending bot task found ({}). Waiting for Telegram to be READY...", taskType)
+        authStateFlow.first { it.step == TelegramAuthStep.READY }
+
         when (taskType) {
             BotTaskType.CREATE -> {
                 l.info("Resuming pending createControlBot task")
@@ -173,7 +179,7 @@ class TelegramService(
                 deleteControlBot()
             }
             BotTaskType.NONE -> {
-                // No pending tasks
+                /* Should not happen due to check above */
             }
         }
     }
@@ -359,11 +365,21 @@ class TelegramService(
         return messageToView(sentMessage)
     }
 
-    suspend fun createControlBot(step: BotCreationStep = BotCreationStep.NONE) {
-        val isNewTask = step == BotCreationStep.NONE && ConfigStore.get(ConfigStore.TG_BOT_TASK_TYPE, "") != BotTaskType.CREATE.name
+    suspend fun createControlBot(step: BotCreationStep = BotCreationStep.NONE, forceNew: Boolean = false) {
+        if (forceNew) {
+            ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.CREATE.name)
+            ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, BotCreationStep.INIT.name)
+            ConfigStore.rm(ConfigStore.TG_BOT_TASK_START_MSG_ID)
+            ConfigStore.rm(ConfigStore.TG_BOT_USERNAME)
+        }
+
+        val isNewTask = forceNew || (step == BotCreationStep.NONE && ConfigStore.get(ConfigStore.TG_BOT_TASK_TYPE, "") != BotTaskType.CREATE.name)
         val currentStep = if (step == BotCreationStep.NONE) {
-            val savedStepStr = ConfigStore.get(ConfigStore.TG_BOT_TASK_STEP, BotCreationStep.INIT.name)
-            runCatching { BotCreationStep.valueOf(savedStepStr) }.getOrDefault(BotCreationStep.INIT)
+            if (forceNew) BotCreationStep.INIT
+            else {
+                val savedStepStr = ConfigStore.get(ConfigStore.TG_BOT_TASK_STEP, BotCreationStep.INIT.name)
+                runCatching { BotCreationStep.valueOf(savedStepStr) }.getOrDefault(BotCreationStep.INIT)
+            }
         } else step
 
         ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.CREATE.name)
@@ -379,14 +395,20 @@ class TelegramService(
         }
         val baselineMessageId = ConfigStore.get(ConfigStore.TG_BOT_TASK_START_MSG_ID, 0L)
 
-        val botUsername = "souz_control_${me.id}_${System.currentTimeMillis() % 10000}_bot"
+        val cachedUsername = ConfigStore.get<String>(ConfigStore.TG_BOT_USERNAME)
+        val botUsername = cachedUsername ?: "souz_control_${me.id}_${System.currentTimeMillis() % 10000}_bot"
 
         when (currentStep) {
             BotCreationStep.NONE -> { /* Should not be reached */ }
 
             BotCreationStep.INIT -> {
+                l.info("BotCreationStep.INIT")
                 val snapshots = loadBotFatherSnapshots(tdClient, botFatherChat.id)
-                if (!BotFatherReplyParser.isWaitingForName(snapshots, baselineMessageId)) {
+                val waitingForName = BotFatherReplyParser.isWaitingForName(snapshots)
+                l.info("BotCreationStep.INIT: isWaitingForName={}", waitingForName)
+                
+                if (!waitingForName) {
+                    l.info("BotCreationStep.INIT: Sending /newbot")
                     sendTextMessage(tdClient, botFatherChat.id, "/newbot")
                     delay(BOT_FATHER_STEP_DELAY_MS)
                 }
@@ -394,9 +416,14 @@ class TelegramService(
             }
 
             BotCreationStep.NAME -> {
+                l.info("BotCreationStep.NAME")
                 val snapshots = loadBotFatherSnapshots(tdClient, botFatherChat.id)
-                if (!BotFatherReplyParser.isWaitingForUsername(snapshots, baselineMessageId)) {
-                    val botName = "Souz PC Control"
+                val waitingForUsername = BotFatherReplyParser.isWaitingForUsername(snapshots)
+                l.info("BotCreationStep.NAME: isWaitingForUsername={}", waitingForUsername)
+                
+                if (!waitingForUsername) {
+                    val botName = "Souz AI"
+                    l.info("BotCreationStep.NAME: Sending bot name: {}", botName)
                     sendTextMessage(tdClient, botFatherChat.id, botName)
                     delay(BOT_FATHER_STEP_DELAY_MS)
                 }
@@ -404,9 +431,12 @@ class TelegramService(
             }
 
             BotCreationStep.USERNAME -> {
+                if (cachedUsername == null) {
+                    ConfigStore.put(ConfigStore.TG_BOT_USERNAME, botUsername)
+                }
+                
                 val tokenExtracted = BotFatherReplyParser.extractToken(
-                    loadBotFatherSnapshots(tdClient, botFatherChat.id), 
-                    baselineMessageId
+                    loadBotFatherSnapshots(tdClient, botFatherChat.id)
                 ) != null
                 
                 if (!tokenExtracted) {
@@ -416,12 +446,12 @@ class TelegramService(
             }
 
             BotCreationStep.WAIT_TOKEN -> {
-                val token = waitForNewBotToken(tdClient, botFatherChat.id, baselineMessageId)
+                val token = waitForNewBotToken(tdClient, botFatherChat.id)
                     ?: throw IllegalStateException("Failed to extract bot token from BotFather replies")
 
                 ConfigStore.put(ConfigStore.TG_BOT_TOKEN, token)
                 ConfigStore.put(ConfigStore.TG_BOT_OWNER_ID, me.id)
-                ConfigStore.put(ConfigStore.TG_BOT_USERNAME, botUsername)
+                // TG_BOT_USERNAME is already saved in BotCreationStep.USERNAME
                 l.info("Control bot created for ownerId={}", me.id)
 
                 createControlBot(BotCreationStep.START)
@@ -470,11 +500,20 @@ class TelegramService(
         }
     }
 
-    suspend fun deleteControlBot(step: BotDeletionStep = BotDeletionStep.NONE) {
-        val isNewTask = step == BotDeletionStep.NONE && ConfigStore.get(ConfigStore.TG_BOT_TASK_TYPE, "") != BotTaskType.DELETE.name
+    suspend fun deleteControlBot(step: BotDeletionStep = BotDeletionStep.NONE, forceNew: Boolean = false) {
+        if (forceNew) {
+            ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.DELETE.name)
+            ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, BotDeletionStep.INIT.name)
+            ConfigStore.rm(ConfigStore.TG_BOT_TASK_START_MSG_ID)
+        }
+
+        val isNewTask = forceNew || (step == BotDeletionStep.NONE && ConfigStore.get(ConfigStore.TG_BOT_TASK_TYPE, "") != BotTaskType.DELETE.name)
         val currentStep = if (step == BotDeletionStep.NONE) {
-            val savedStepStr = ConfigStore.get(ConfigStore.TG_BOT_TASK_STEP, BotDeletionStep.INIT.name)
-            runCatching { BotDeletionStep.valueOf(savedStepStr) }.getOrDefault(BotDeletionStep.INIT)
+            if (forceNew) BotDeletionStep.INIT
+            else {
+                val savedStepStr = ConfigStore.get(ConfigStore.TG_BOT_TASK_STEP, BotDeletionStep.INIT.name)
+                runCatching { BotDeletionStep.valueOf(savedStepStr) }.getOrDefault(BotDeletionStep.INIT)
+            }
         } else step
 
         ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.DELETE.name)
@@ -509,7 +548,7 @@ class TelegramService(
             }
 
             BotDeletionStep.WAIT_NO_BOTS -> {
-                if (waitForNoBotsState(tdClient, botFatherChat.id, baselineMessageId)) {
+                if (waitForNoBotsState(tdClient, botFatherChat.id)) {
                     clearControlBotCredentials()
                     l.info("Control bot credentials cleared because BotFather has no bots for current account")
                     deleteControlBot(BotDeletionStep.FINISHED)
@@ -521,11 +560,11 @@ class TelegramService(
             BotDeletionStep.USERNAME -> {
                 delay(BOT_FATHER_STEP_DELAY_MS)
                 sendTextMessage(tdClient, botFatherChat.id, "@$botUsername")
-                deleteControlBot(BotDeletionStep.CONFIRM)
+                deleteControlBot(BotDeletionStep.WAIT_DELETION)
             }
 
-            BotDeletionStep.CONFIRM -> {
-                val deleted = runDeleteConversation(tdClient, botFatherChat.id, baselineMessageId, botUsername) ||
+            BotDeletionStep.WAIT_DELETION -> {
+                val deleted = waitForBotDeletionConfirmation(tdClient, botFatherChat.id, botUsername) ||
                     isBotMissingInMyBotsList(tdClient, botFatherChat.id, botUsername)
                 if (!deleted) {
                     throw IllegalStateException("BotFather did not confirm deletion for @$botUsername")
@@ -542,6 +581,35 @@ class TelegramService(
                 ConfigStore.rm(ConfigStore.TG_BOT_TASK_START_MSG_ID)
             }
         }
+    }
+
+    suspend fun fetchActiveBotUsernameFromBotFather(): String? {
+        val tdClient = requireClient()
+        val botFatherChat = resolveBotFatherChat(tdClient)
+        val localUsername = resolveControlBotUsername() ?: return null
+
+        val sentMsg = sendTextMessage(tdClient, botFatherChat.id, "/mybots")
+        val baselineId = sentMsg.id
+        
+        repeat(BOT_FATHER_POLL_ATTEMPTS) {
+            delay(BOT_FATHER_POLL_DELAY_MS)
+            val snapshots = loadBotFatherSnapshots(tdClient, botFatherChat.id).filter { it.id > baselineId }
+            if (snapshots.isEmpty()) return@repeat
+
+            if (BotFatherReplyParser.hasNoBots(snapshots)) {
+                return null
+            }
+            val listedUsernames = BotFatherReplyParser.listedBotUsernames(snapshots)
+            if (listedUsernames.isNotEmpty()) {
+                val normalized = localUsername.removePrefix("@").lowercase()
+                return if (listedUsernames.contains(normalized)) {
+                    localUsername
+                } else {
+                    null
+                }
+            }
+        }
+        return null
     }
 
     private suspend fun resolveCurrentUser(tdClient: SimpleTelegramClient): TdApi.User {
@@ -570,8 +638,8 @@ class TelegramService(
         return history.messages.orEmpty().firstOrNull()?.id ?: 0L
     }
 
-    private suspend fun sendTextMessage(tdClient: SimpleTelegramClient, chatId: Long, text: String) {
-        tdClient.send(
+    private suspend fun sendTextMessage(tdClient: SimpleTelegramClient, chatId: Long, text: String): TdApi.Message {
+        return tdClient.send(
             TdApi.SendMessage(
                 chatId,
                 0L,
@@ -590,12 +658,11 @@ class TelegramService(
     private suspend fun waitForNewBotToken(
         tdClient: SimpleTelegramClient,
         chatId: Long,
-        minMessageIdExclusive: Long,
     ): String? {
         repeat(BOT_FATHER_POLL_ATTEMPTS) {
             delay(BOT_FATHER_POLL_DELAY_MS)
             val snapshots = loadBotFatherSnapshots(tdClient, chatId)
-            val token = BotFatherReplyParser.extractToken(snapshots, minMessageIdExclusive)
+            val token = BotFatherReplyParser.extractToken(snapshots)
             if (!token.isNullOrBlank()) {
                 return token
             }
@@ -606,39 +673,34 @@ class TelegramService(
     private suspend fun waitForNoBotsState(
         tdClient: SimpleTelegramClient,
         chatId: Long,
-        minMessageIdExclusive: Long,
     ): Boolean {
         repeat(BOT_FATHER_POLL_ATTEMPTS) {
             delay(BOT_FATHER_POLL_DELAY_MS)
             val snapshots = loadBotFatherSnapshots(tdClient, chatId)
-            if (BotFatherReplyParser.hasNoBots(snapshots, minMessageIdExclusive)) {
+            if (BotFatherReplyParser.hasNoBots(snapshots)) {
                 return true
             }
-            if (snapshots.any { !it.isOutgoing && it.id > minMessageIdExclusive }) {
+            if (snapshots.any { !it.isOutgoing }) {
                 return false
             }
         }
         return false
     }
 
-    private suspend fun runDeleteConversation(
+    private suspend fun waitForBotDeletionConfirmation(
         tdClient: SimpleTelegramClient,
         chatId: Long,
-        minMessageIdExclusive: Long,
-        username: String,
+        botUsername: String,
     ): Boolean {
         var confirmationSent = false
 
         repeat(BOT_FATHER_POLL_ATTEMPTS) {
             delay(BOT_FATHER_POLL_DELAY_MS)
             val snapshots = loadBotFatherSnapshots(tdClient, chatId)
-            if (BotFatherReplyParser.isDeleteConfirmed(snapshots, minMessageIdExclusive, username)) {
+            if (BotFatherReplyParser.isDeleteConfirmed(snapshots, botUsername)) {
                 return true
             }
-            if (BotFatherReplyParser.hasNoBots(snapshots, minMessageIdExclusive)) {
-                return true
-            }
-            if (!confirmationSent && BotFatherReplyParser.requiresDeleteConfirmationText(snapshots, minMessageIdExclusive)) {
+            if (!confirmationSent && BotFatherReplyParser.requiresDeleteConfirmationText(snapshots)) {
                 sendTextMessage(tdClient, chatId, "Yes, I am totally sure.")
                 confirmationSent = true
             }
@@ -659,10 +721,10 @@ class TelegramService(
         repeat(BOT_FATHER_POLL_ATTEMPTS) {
             delay(BOT_FATHER_POLL_DELAY_MS)
             val snapshots = loadBotFatherSnapshots(tdClient, chatId)
-            if (BotFatherReplyParser.hasNoBots(snapshots, baselineMessageId)) {
+            if (BotFatherReplyParser.hasNoBots(snapshots)) {
                 return true
             }
-            val listedBots = BotFatherReplyParser.listedBotUsernames(snapshots, baselineMessageId)
+            val listedBots = BotFatherReplyParser.listedBotUsernames(snapshots)
             if (listedBots.isNotEmpty()) {
                 return normalizedUsername !in listedBots
             }
@@ -1275,7 +1337,7 @@ class TelegramService(
 
     private fun extractMessageText(message: TdApi.Message): String? {
         val content = message.content ?: return null
-        return when (content) {
+        val baseText = when (content) {
             is TdApi.MessageText -> content.text?.text
             is TdApi.MessagePhoto -> content.caption?.text
             is TdApi.MessageVideo -> content.caption?.text
@@ -1284,6 +1346,22 @@ class TelegramService(
             is TdApi.MessageVoiceNote -> content.caption?.text
             is TdApi.MessageAnimation -> content.caption?.text
             else -> null
+        }
+
+        val markupText = when (val markup = message.replyMarkup) {
+            is TdApi.ReplyMarkupInlineKeyboard -> {
+                markup.rows.flatMap { row -> row.map { it.text } }.joinToString("\n")
+            }
+            is TdApi.ReplyMarkupShowKeyboard -> {
+                markup.rows.flatMap { row -> row.map { it.text } }.joinToString("\n")
+            }
+            else -> null
+        }
+
+        return if (!markupText.isNullOrBlank()) {
+            if (baseText.isNullOrBlank()) markupText else "$baseText\n$markupText"
+        } else {
+            baseText
         }
     }
 

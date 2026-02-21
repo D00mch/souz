@@ -285,7 +285,7 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario6_todayCalendarEvents(userPrompt: String) = runTest {
-        val realTool = ToolCalendarListEvents(ToolRunBashCommand)
+        val realTool = ToolCalendarListEvents()
         val toolCalendarListEvents: ToolCalendarListEvents = spyk(realTool)
 
         coEvery { toolCalendarListEvents.invoke(any()) } returns "[]"
@@ -327,7 +327,7 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario8_deleteCalendarEvent(userPrompt: String) = runTest {
-        val realToolList = ToolCalendarListEvents(ToolRunBashCommand)
+        val realToolList = ToolCalendarListEvents()
         val toolCalendarListEvents: ToolCalendarListEvents = spyk(realToolList)
 
         val realToolCreate = ToolCalendarCreateEvent(ToolRunBashCommand)
@@ -364,7 +364,7 @@ class GraphAgentToolScenariosIntegrationTest {
         ]
     )
     fun scenario9_findCalendarEvent(userPrompt: String) = runTest {
-        val toolCalendarListEvents: ToolCalendarListEvents = spyk(ToolCalendarListEvents(ToolRunBashCommand))
+        val toolCalendarListEvents: ToolCalendarListEvents = spyk(ToolCalendarListEvents())
         val toolCalendarCreateEvent: ToolCalendarCreateEvent = spyk(ToolCalendarCreateEvent(ToolRunBashCommand))
         val toolCalendarDeleteEvent: ToolCalendarDeleteEvent = spyk(ToolCalendarDeleteEvent(ToolRunBashCommand))
 
