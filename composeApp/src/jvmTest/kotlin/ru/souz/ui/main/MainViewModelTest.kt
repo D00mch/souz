@@ -461,7 +461,7 @@ class MainViewModelTest {
         val di = DI {
             bindSingleton { graphAgent }
             bindSingleton { gigaVoiceApi }
-            bindSingleton<SpeechRecognitionProvider> { SaluteSpeechRecognitionProvider(instance()) }
+            bindSingleton<SpeechRecognitionProvider> { SaluteSpeechRecognitionProvider(instance(), instance()) }
             bindSingleton { desktopInfoRepository }
             bindSingleton<SettingsProvider> { settingsProvider }
             bindSingleton { say }

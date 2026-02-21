@@ -44,7 +44,6 @@ class MainUseCasesFactory(
         val voiceInputUseCase = VoiceInputUseCase(
             audioRecorder = audioRecorder,
             speechRecognitionProvider = speechRecognitionProvider,
-            settingsProvider = settingsProvider,
             chatUseCase = chatUseCase,
             speechUseCase = speechUseCase,
             permissionsUseCase = permissionsUseCase,

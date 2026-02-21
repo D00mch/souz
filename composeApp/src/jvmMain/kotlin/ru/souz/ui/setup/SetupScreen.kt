@@ -106,6 +106,7 @@ fun SetupScreenContent(
     LaunchedEffect(Unit) { onResizeRequest(SetupWindowSize) }
     val hasNoKeys = state.configuredKeysCount == 0
     val supportsSaluteSpeech = ApiKeysBuildProfile.hasField(ApiKeyField.SALUTE_SPEECH)
+    val supportsVoiceRecognition = ApiKeysBuildProfile.supportsSpeechRecognition
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -207,7 +208,7 @@ fun SetupScreenContent(
                 Spacer(Modifier.height(4.dp))
 
                 Text(
-                    text = if (supportsSaluteSpeech) {
+                    text = if (supportsVoiceRecognition) {
                         stringResource(Res.string.setup_hint_voice_required)
                     } else {
                         stringResource(Res.string.setup_hint_voice_unavailable)
