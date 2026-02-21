@@ -63,7 +63,7 @@
     <string name="keys_hint_chat_ru_build">Для чата достаточно одного ключа: GigaChat, Qwen или AI Tunnel.</string>
     <string name="keys_hint_chat_en_build">Для чата достаточно одного ключа: OpenAI, Qwen или Anthropic.</string>
     <string name="keys_hint_voice">Голосовые команды зависят от возможностей сборки.</string>
-    <string name="keys_hint_voice_required">Для голосовых команд нужен хотя бы один ключ распознавания речи (OpenAI или SaluteSpeech).</string>
+    <string name="keys_hint_voice_required">Для голосовых команд нужен хотя бы один ключ распознавания речи (пока доступен только SaluteSpeech).</string>
     <string name="keys_hint_voice_unavailable">Голосовые команды в этой сборке пока недоступны.</string>
     <string name="label_key_gigachat">GigaChat ключ</string>
     <string name="label_key_qwen">Qwen ключ</string>
@@ -137,7 +137,7 @@
     <string name="setup_title">Подключите API-ключи</string>
     <string name="setup_hint_add_key">Для старта добавьте хотя бы один ключ. Остальные можно подключить позже в настройках.</string>
     <string name="setup_hint_keys_found">Найдено ключей: %d. Можно продолжать.</string>
-    <string name="setup_hint_voice_required">Для голосовых команд нужен хотя бы один ключ распознавания речи (OpenAI или SaluteSpeech).</string>
+    <string name="setup_hint_voice_required">Для голосовых команд нужен хотя бы один ключ распознавания речи (пока доступен только SaluteSpeech).</string>
     <string name="setup_hint_voice_unavailable">Голосовые команды в этой сборке пока недоступны.</string>
     <string name="button_open_souz">Открыть Союз ИИ</string>
     <string name="button_add_key_to_proceed">Добавьте хотя бы один ключ</string>

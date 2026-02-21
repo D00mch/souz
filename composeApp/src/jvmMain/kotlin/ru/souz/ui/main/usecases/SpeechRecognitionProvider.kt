@@ -51,17 +51,12 @@ class ModelAwareSpeechRecognitionProvider(
         val preferred = when (settingsProvider.gigaModel.provider) {
             LlmProvider.GIGA -> listOf(saluteSpeechProvider, openAiSpeechProvider)
             LlmProvider.OPENAI -> listOf(openAiSpeechProvider, saluteSpeechProvider)
-            LlmProvider.QWEN, LlmProvider.AI_TUNNEL, LlmProvider.ANTHROPIC -> listOf(openAiSpeechProvider, saluteSpeechProvider)
+            LlmProvider.QWEN, LlmProvider.AI_TUNNEL, LlmProvider.ANTHROPIC -> listOf(
+                openAiSpeechProvider, saluteSpeechProvider
+            )
         }
         return preferred.firstOrNull { it.hasRequiredKey } ?: preferred.first()
     }
 }
 
 class VoiceRecognitionUnavailableException : IllegalStateException("Voice recognition is not configured for this build")
-
-object DisabledSpeechRecognitionProvider : SpeechRecognitionProvider {
-    override val enabled: Boolean = false
-    override val hasRequiredKey: Boolean = false
-
-    override suspend fun recognize(audio: ByteArray): String = throw VoiceRecognitionUnavailableException()
-}
