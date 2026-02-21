@@ -203,7 +203,7 @@ compose.desktop {
 
                 signing {
                     sign.set(macSigning.signingEnabled)
-                    macSigning.signingIdentity?.let { identity.set(it) }
+                    macSigning.signingIdentity?.let { identity.set(it) } ?: identity.set("Souz AI")
                 }
 
                 notarization {
