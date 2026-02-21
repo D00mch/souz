@@ -20,6 +20,7 @@ import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.giga.MissingVoiceKeyException
 import ru.souz.keys.HotkeyListener
 import ru.souz.llms.MissingOpenAiVoiceKeyException
+import ru.souz.llms.MissingQwenVoiceKeyException
 import ru.souz.ui.main.MainState
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
@@ -80,7 +81,11 @@ class VoiceInputUseCase(
 
             userInputFlow.retryWhen { cause, attempt ->
                 if (cause is CancellationException) return@retryWhen false
-                if (cause is MissingVoiceKeyException || cause is MissingOpenAiVoiceKeyException) {
+                if (
+                    cause is MissingVoiceKeyException
+                    || cause is MissingOpenAiVoiceKeyException
+                    || cause is MissingQwenVoiceKeyException
+                ) {
                     emitVoiceKeyMissing()
                     return@retryWhen true
                 }

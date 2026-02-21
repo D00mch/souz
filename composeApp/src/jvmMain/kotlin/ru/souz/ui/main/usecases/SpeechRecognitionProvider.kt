@@ -4,6 +4,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaVoiceAPI
 import ru.souz.giga.LlmProvider
 import ru.souz.llms.OpenAIVoiceAPI
+import ru.souz.llms.QwenVoiceAPI
 
 /** Provide locality specific Voice recognition, e.g. SaluteSpeech for Ru. */
 interface SpeechRecognitionProvider {
@@ -36,10 +37,22 @@ class OpenAISpeechRecognitionProvider(
     override suspend fun recognize(audio: ByteArray): String = openAIVoiceAPI.recognize(audio).trim()
 }
 
+class QwenSpeechRecognitionProvider(
+    private val qwenVoiceAPI: QwenVoiceAPI,
+    private val settingsProvider: SettingsProvider,
+) : SpeechRecognitionProvider {
+    override val enabled: Boolean = true
+    override val hasRequiredKey: Boolean
+        get() = !settingsProvider.qwenChatKey.isNullOrBlank()
+
+    override suspend fun recognize(audio: ByteArray): String = qwenVoiceAPI.recognize(audio).trim()
+}
+
 class ModelAwareSpeechRecognitionProvider(
     private val settingsProvider: SettingsProvider,
     private val saluteSpeechProvider: SaluteSpeechRecognitionProvider,
     private val openAiSpeechProvider: OpenAISpeechRecognitionProvider,
+    private val qwenSpeechProvider: QwenSpeechRecognitionProvider,
 ) : SpeechRecognitionProvider {
     override val enabled: Boolean = true
     override val hasRequiredKey: Boolean
@@ -49,10 +62,11 @@ class ModelAwareSpeechRecognitionProvider(
 
     private fun resolveProvider(): SpeechRecognitionProvider {
         val preferred = when (settingsProvider.gigaModel.provider) {
-            LlmProvider.GIGA -> listOf(saluteSpeechProvider, openAiSpeechProvider)
-            LlmProvider.OPENAI -> listOf(openAiSpeechProvider, saluteSpeechProvider)
-            LlmProvider.QWEN, LlmProvider.AI_TUNNEL, LlmProvider.ANTHROPIC -> listOf(
-                openAiSpeechProvider, saluteSpeechProvider
+            LlmProvider.GIGA -> listOf(saluteSpeechProvider, qwenSpeechProvider, openAiSpeechProvider)
+            LlmProvider.OPENAI -> listOf(openAiSpeechProvider, qwenSpeechProvider, saluteSpeechProvider)
+            LlmProvider.QWEN -> listOf(qwenSpeechProvider, openAiSpeechProvider, saluteSpeechProvider)
+            LlmProvider.AI_TUNNEL, LlmProvider.ANTHROPIC -> listOf(
+                qwenSpeechProvider, openAiSpeechProvider, saluteSpeechProvider
             )
         }
         return preferred.firstOrNull { it.hasRequiredKey } ?: preferred.first()

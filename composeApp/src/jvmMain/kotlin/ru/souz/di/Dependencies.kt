@@ -41,6 +41,7 @@ import ru.souz.llms.AnthropicChatAPI
 import ru.souz.llms.OpenAIChatAPI
 import ru.souz.llms.OpenAIVoiceAPI
 import ru.souz.llms.QwenChatAPI
+import ru.souz.llms.QwenVoiceAPI
 import ru.souz.mcp.McpClientManager
 import ru.souz.mcp.McpConfigProvider
 import ru.souz.service.telegram.TelegramService
@@ -63,6 +64,7 @@ import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.main.usecases.ModelAwareSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.OpenAISpeechRecognitionProvider
+import ru.souz.ui.main.usecases.QwenSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import ru.souz.tool.presentation.ToolPresentationCreate
@@ -187,10 +189,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<GigaChatAPI> { instance<LLMFactory>() }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton { OpenAIVoiceAPI(instance()) }
+    bindSingleton { QwenVoiceAPI(instance()) }
     bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
+    bindSingleton { QwenSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton<SpeechRecognitionProvider> {
-        ModelAwareSpeechRecognitionProvider(instance(), instance(), instance())
+        ModelAwareSpeechRecognitionProvider(instance(), instance(), instance(), instance())
     }
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
