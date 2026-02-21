@@ -105,9 +105,6 @@ kotlin {
         }
 
         jvmMain.dependencies {
-            implementation(files("src/jvmMain/resources/darwin-arm64"))
-            implementation(files("src/jvmMain/resources/darwin-x64"))
-
             implementation(libs.compose.ui.tooling.preview.desktop)
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
