@@ -22,9 +22,6 @@
         </rollingPolicy>
     </appender>
 
-    <!-- Mute verbose ffmpeg output parsed by JAVE -->
-    <logger name="ws.schild.jave" level="OFF" additivity="false"/>
-
     <root level="ALL">
         <appender-ref ref="STDOUT"/>
         <appender-ref ref="FILE"/>

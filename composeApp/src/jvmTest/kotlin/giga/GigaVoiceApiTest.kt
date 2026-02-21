@@ -6,7 +6,6 @@ import org.kodein.di.instance
 import ru.souz.giga.GigaVoiceAPI
 import java.io.File
 import kotlin.test.assertTrue
-import ru.souz.audio.InMemoryOpusRecorder
 import ru.souz.di.mainDiModule
 import kotlin.test.Ignore
 
@@ -42,9 +41,8 @@ class GigaVoiceApiTest {
         }
 
         try {
-            val wavBytes = File("Generated.wav").readBytes()
-            val oggBytes = InMemoryOpusRecorder.wavToOpusOgg(wavBytes)
-            val text = api.recognize(oggBytes).result.joinToString("\n")
+            val pcmBytes = File("capture2.pcm").readBytes()
+            val text = api.recognize(pcmBytes).result.joinToString("\n")
             assertTrue(text.contains("hello", ignoreCase = true))
         } finally {
             api.clear()

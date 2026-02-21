@@ -5,17 +5,12 @@ import com.github.kwhat.jnativehook.GlobalScreen
 import com.github.kwhat.jnativehook.NativeHookException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import ws.schild.jave.Encoder
-import ws.schild.jave.MultimediaObject
-import ws.schild.jave.encode.AudioAttributes
-import ws.schild.jave.encode.EncodingAttributes
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
@@ -138,40 +133,6 @@ interface ActiveSoundRecorder {
     suspend fun stopRecording(): ByteArray
 }
 
-fun rawToOpusOgg(
-    rawData: ByteArray,
-    sampleRate: Float = 16_000f,
-    sampleSizeInBits: Int = 16,
-    channels: Int = 1,
-    bitRate: Int = 64_000
-): ByteArray {
-    // First convert raw data to WAV format
-    val wavBytes = rawToWav(rawData, sampleRate, sampleSizeInBits, channels)
-
-    // Then convert WAV to Opus/Ogg
-    val inFile = Files.createTempFile("jave-input", ".wav").toFile()
-    val outFile = Files.createTempFile("jave-output", ".ogg").toFile()
-    inFile.writeBytes(wavBytes)
-
-    val audioAttr = AudioAttributes().apply {
-        setCodec("libopus")
-        setBitRate(bitRate)
-        setSamplingRate(sampleRate.toInt())
-        setChannels(channels)
-    }
-
-    val encAttr = EncodingAttributes().apply {
-        setOutputFormat("ogg")
-        setAudioAttributes(audioAttr)
-    }
-
-    Encoder().encode(MultimediaObject(inFile), outFile, encAttr)
-
-    val encoded = outFile.readBytes()
-    inFile.delete(); outFile.delete()
-    return encoded
-}
-
 private fun rawToWav(
     rawData: ByteArray,
     sampleRate: Float,
@@ -240,14 +201,9 @@ suspend fun main() {
         audioRecorder.audioFlow.collect { audioData: ByteArray ->
             println("Recorded audio: ${audioData.size} bytes")
             val outputFile = File("recording${i++}.wav")
-            val oggBytes = rawToOpusOgg(
-                rawData = audioData,
-                sampleRate = 16_000f,
-                channels = 1,
-                sampleSizeInBits = 16
-            )
+            val wavBytes = rawToWav(audioData, sampleRate = 16_000f, sampleSizeInBits = 16, channels = 1)
             FileOutputStream(outputFile).use {
-                it.write(oggBytes)
+                it.write(wavBytes)
             }
         }
     } catch (e: NativeHookException) {

@@ -134,10 +134,6 @@ kotlin {
             implementation(libs.jna)
             implementation(libs.jna.platform)
 
-            // audio
-            implementation(libs.jave.core)
-            implementation(libs.jave.nativebinOsxm1)
-
             // search index
             implementation(libs.lucene.core)
             implementation(libs.tika.core)

@@ -50,7 +50,7 @@ class GigaVoiceAPI(
 
     suspend fun recognize(audio: ByteArray): GigaResponse.RecognizeResponse {
         val response = client.post("https://smartspeech.sber.ru/rest/v1/speech:recognize") {
-            header(HttpHeaders.ContentType, "audio/ogg;codecs=opus")
+            header(HttpHeaders.ContentType, "audio/x-pcm;bit=16;rate=16000")
             header(HttpHeaders.Accept, "application/json")
             setBody(audio)
         }
@@ -69,6 +69,6 @@ class GigaVoiceAPI(
 suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val api: GigaVoiceAPI by di.instance()
-    val result = api.recognize(File("capture2.ogg").readBytes())
+    val result = api.recognize(File("capture2.pcm").readBytes())
     l.info("$result")
 }

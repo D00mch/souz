@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.audio.InMemoryAudioRecorder
-import ru.souz.audio.rawToOpusOgg
 import ru.souz.giga.MissingVoiceKeyException
 import ru.souz.keys.HotkeyListener
 import ru.souz.db.SettingsProvider
@@ -74,9 +73,8 @@ class VoiceInputUseCase(
                 .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
                 .catch { l.error("Error in audio flow: ${it.message}") }
                 .mapLatest { audioData ->
-                    val encodedAudio = rawToOpusOgg(rawData = audioData)
-                    l.debug("[Sending audio data: ${encodedAudio.size} bytes]")
-                    speechRecognitionProvider.recognize(encodedAudio)
+                    l.debug("[Sending PCM audio data: ${audioData.size} bytes]")
+                    speechRecognitionProvider.recognize(audioData)
                 }
                 .onEach(::onTextRecognizeSideEffects)
                 .filter { it.isNotBlank() }

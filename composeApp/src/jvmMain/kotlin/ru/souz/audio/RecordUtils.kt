@@ -1,20 +1,16 @@
 package ru.souz.audio
 
 import java.io.*
-import java.nio.file.Files
 import javax.sound.sampled.*
 import kotlin.system.exitProcess
 import kotlinx.coroutines.*
-import ws.schild.jave.*
-import ws.schild.jave.encode.AudioAttributes
-import ws.schild.jave.encode.EncodingAttributes
 import org.slf4j.LoggerFactory
 
 /**
- * Simple utility that records the microphone, encodes to Ogg/Opus and returns the result as ByteArray.
+ * Simple utility that records the microphone and returns WAV bytes.
  */
-object InMemoryOpusRecorder {
-    private val l = LoggerFactory.getLogger(InMemoryOpusRecorder::class.java)
+object InMemoryWavRecorder {
+    private val l = LoggerFactory.getLogger(InMemoryWavRecorder::class.java)
     private var line: TargetDataLine? = null
     private var format: AudioFormat? = null
     private var rawOut: ByteArrayOutputStream? = null
@@ -101,36 +97,6 @@ object InMemoryOpusRecorder {
         return data
     }
 
-    /** Encode the given WAV bytes to Ogg/Opus and return the compressed bytes. */
-    fun wavToOpusOgg(wavBytes: ByteArray,
-                     bitRate: Int = 64_000,
-                     sampleRate: Int = 48_000,
-                     channels: Int = 2): ByteArray {
-
-        /* JAVE2 works on java.io.File – we therefore use tmp files but keep all
-           data in RAM visible to the caller. */
-        val inFile  = Files.createTempFile("jave-input",  ".wav").toFile()
-        val outFile = Files.createTempFile("jave-output", ".ogg").toFile()
-        inFile.writeBytes(wavBytes)
-
-        val audioAttr = AudioAttributes().apply {
-            setCodec("libopus")                // Opus encoder in FFmpeg
-            setBitRate(bitRate)
-            setSamplingRate(sampleRate)
-            setChannels(channels)
-        }
-
-        val encAttr = EncodingAttributes().apply {
-            setOutputFormat("ogg")                   // container
-            setAudioAttributes(audioAttr)
-        }
-
-        Encoder().encode(MultimediaObject(inFile), outFile, encAttr)   // synchronous
-
-        val encoded = outFile.readBytes()
-        inFile.delete(); outFile.delete()
-        return encoded
-    }
 }
 
 fun main() = runBlocking {
@@ -140,13 +106,11 @@ fun main() = runBlocking {
 
     try {
         l.info("Will record for 5 seconds. Speak into your microphone...")
-        // Record audio
-        val wav = InMemoryOpusRecorder.recordPcm(seconds = 5)
-        l.info("Converting to Opus format...")
-        val oggOpus = InMemoryOpusRecorder.wavToOpusOgg(wav)
-        val opusFile = File("capture.ogg")
-        opusFile.writeBytes(oggOpus)
-        l.info("Successfully saved ${oggOpus.size} bytes of Opus audio to ${opusFile.absolutePath}")
+        // Record audio as WAV bytes
+        val wav = InMemoryWavRecorder.recordPcm(seconds = 5)
+        val wavFile = File("capture.wav")
+        wavFile.writeBytes(wav)
+        l.info("Successfully saved ${wav.size} bytes of WAV audio to ${wavFile.absolutePath}")
     } catch (e: Exception) {
         l.error("\nERROR: ${e.message}")
         exitProcess(1)
