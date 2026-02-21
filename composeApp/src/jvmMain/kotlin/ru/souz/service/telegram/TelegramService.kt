@@ -422,7 +422,7 @@ class TelegramService(
                 l.info("BotCreationStep.NAME: isWaitingForUsername={}", waitingForUsername)
                 
                 if (!waitingForUsername) {
-                    val botName = "Souz PC Control"
+                    val botName = "Souz AI"
                     l.info("BotCreationStep.NAME: Sending bot name: {}", botName)
                     sendTextMessage(tdClient, botFatherChat.id, botName)
                     delay(BOT_FATHER_STEP_DELAY_MS)
