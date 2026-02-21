@@ -54,7 +54,8 @@ internal object BotFatherReplyParser {
         val text = latestIncomingText(messages) ?: return false
         return text.contains("don't have any bots yet") ||
             text.contains("you don't have any bots") ||
-            text.contains("not among your bots")
+            text.contains("not among your bots") ||
+            text.contains("you have currently no bots")
     }
 
     fun listedBotUsernames(

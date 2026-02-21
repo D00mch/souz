@@ -88,6 +88,8 @@ data class SettingsState(
     val telegramAuthBusy: Boolean = false,
     val telegramAuthError: String? = null,
     val isTelegramBotActive: Boolean = false,
+    val showBotDeleteConfirmation: Boolean = false,
+    val botNameToDelete: String? = null,
     
     // Graph Logs
     val currentScreen: SettingsSubScreen = SettingsSubScreen.MAIN,
@@ -141,6 +143,8 @@ sealed interface SettingsEvent : VMEvent {
     object OpenTelegramSettings : SettingsEvent
     object CreateControlBot : SettingsEvent
     object DisconnectTelegramBot : SettingsEvent
+    object ConfirmDisconnectTelegramBot : SettingsEvent
+    object CancelDisconnectTelegramBot : SettingsEvent
     
     data class SelectSettingsSection(val section: SettingsSection): SettingsEvent
 }

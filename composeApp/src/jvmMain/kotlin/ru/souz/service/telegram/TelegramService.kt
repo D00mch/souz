@@ -583,6 +583,35 @@ class TelegramService(
         }
     }
 
+    suspend fun fetchActiveBotUsernameFromBotFather(): String? {
+        val tdClient = requireClient()
+        val botFatherChat = resolveBotFatherChat(tdClient)
+        val localUsername = resolveControlBotUsername() ?: return null
+
+        val sentMsg = sendTextMessage(tdClient, botFatherChat.id, "/mybots")
+        val baselineId = sentMsg.id
+        
+        repeat(BOT_FATHER_POLL_ATTEMPTS) {
+            delay(BOT_FATHER_POLL_DELAY_MS)
+            val snapshots = loadBotFatherSnapshots(tdClient, botFatherChat.id).filter { it.id > baselineId }
+            if (snapshots.isEmpty()) return@repeat
+
+            if (BotFatherReplyParser.hasNoBots(snapshots)) {
+                return null
+            }
+            val listedUsernames = BotFatherReplyParser.listedBotUsernames(snapshots)
+            if (listedUsernames.isNotEmpty()) {
+                val normalized = localUsername.removePrefix("@").lowercase()
+                return if (listedUsernames.contains(normalized)) {
+                    localUsername
+                } else {
+                    null
+                }
+            }
+        }
+        return null
+    }
+
     private suspend fun resolveCurrentUser(tdClient: SimpleTelegramClient): TdApi.User {
         val cachedMeId = meUserIdRef.get()
         val cached = cachedMeId?.let(usersById::get)
@@ -609,8 +638,8 @@ class TelegramService(
         return history.messages.orEmpty().firstOrNull()?.id ?: 0L
     }
 
-    private suspend fun sendTextMessage(tdClient: SimpleTelegramClient, chatId: Long, text: String) {
-        tdClient.send(
+    private suspend fun sendTextMessage(tdClient: SimpleTelegramClient, chatId: Long, text: String): TdApi.Message {
+        return tdClient.send(
             TdApi.SendMessage(
                 chatId,
                 0L,
@@ -668,6 +697,9 @@ class TelegramService(
         repeat(BOT_FATHER_POLL_ATTEMPTS) {
             delay(BOT_FATHER_POLL_DELAY_MS)
             val snapshots = loadBotFatherSnapshots(tdClient, chatId)
+            if (BotFatherReplyParser.isDeleteConfirmed(snapshots, botUsername)) {
+                return true
+            }
             if (!confirmationSent && BotFatherReplyParser.requiresDeleteConfirmationText(snapshots)) {
                 sendTextMessage(tdClient, chatId, "Yes, I am totally sure.")
                 confirmationSent = true
@@ -1305,7 +1337,7 @@ class TelegramService(
 
     private fun extractMessageText(message: TdApi.Message): String? {
         val content = message.content ?: return null
-        return when (content) {
+        val baseText = when (content) {
             is TdApi.MessageText -> content.text?.text
             is TdApi.MessagePhoto -> content.caption?.text
             is TdApi.MessageVideo -> content.caption?.text
@@ -1314,6 +1346,22 @@ class TelegramService(
             is TdApi.MessageVoiceNote -> content.caption?.text
             is TdApi.MessageAnimation -> content.caption?.text
             else -> null
+        }
+
+        val markupText = when (val markup = message.replyMarkup) {
+            is TdApi.ReplyMarkupInlineKeyboard -> {
+                markup.rows.flatMap { row -> row.map { it.text } }.joinToString("\n")
+            }
+            is TdApi.ReplyMarkupShowKeyboard -> {
+                markup.rows.flatMap { row -> row.map { it.text } }.joinToString("\n")
+            }
+            else -> null
+        }
+
+        return if (!markupText.isNullOrBlank()) {
+            if (baseText.isNullOrBlank()) markupText else "$baseText\n$markupText"
+        } else {
+            baseText
         }
     }
 

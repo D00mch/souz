@@ -340,4 +340,10 @@
     <string name="tools_expand">Развернуть</string>
     <string name="tools_collapse">Свернуть</string>
 
+    <!-- Dialogs -->
+    <string name="telegram_dialog_delete_title">Удаление бота</string>
+    <string name="telegram_dialog_delete_text">Вы действительно хотите безвозвратно удалить бота @%s?</string>
+    <string name="telegram_dialog_delete_confirm">Удалить</string>
+    <string name="telegram_dialog_delete_cancel">Отмена</string>
+
 </resources>
