@@ -125,4 +125,5 @@ Notes:
 - Directories like `.gradle/`, `.idea/`, `.kotlin/`, and `*/build/` are generated/local environment folders.
 - The `:proto` module reads `.proto` files from `composeApp/src/jvmMain/proto`.
 - `build-logic` provides convention plugins for shared Gradle behavior, including mac signing/notarization and compose-app native resource/packaging wiring.
+- macOS signing config is now split by build mode: App Store builds (`-PmacOsAppStoreRelease=true`) use provisioning profiles + sandbox entitlements, while Developer ID DMG builds use non-App-Store entitlements and do not embed provisioning profiles.
 - Voice recognition audio upload now sends raw PCM (`audio/x-pcm;bit=16;rate=16000`) directly to Salute Speech, so the app no longer depends on JAVE/embedded FFmpeg binaries for microphone transcription.

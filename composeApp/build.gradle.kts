@@ -223,10 +223,15 @@ compose.desktop {
                     """.trimIndent()
                 }
 
-                entitlementsFile.set(project.file("src/jvmMain/resources/entitlements.plist"))
-                runtimeEntitlementsFile.set(project.file("src/jvmMain/resources/runtime-entitlements.plist"))
-                provisioningProfile.set(project.file("src/jvmMain/resources/embedded.provisionprofile"))
-                runtimeProvisioningProfile.set(project.file("src/jvmMain/resources/runtime.provisionprofile"))
+                if (isAppStoreRelease) {
+                    entitlementsFile.set(project.file("src/jvmMain/resources/entitlements.plist"))
+                    runtimeEntitlementsFile.set(project.file("src/jvmMain/resources/runtime-entitlements.plist"))
+                    provisioningProfile.set(project.file("src/jvmMain/resources/embedded.provisionprofile"))
+                    runtimeProvisioningProfile.set(project.file("src/jvmMain/resources/runtime.provisionprofile"))
+                } else {
+                    entitlementsFile.set(project.file("src/jvmMain/resources/entitlements-dev.plist"))
+                    runtimeEntitlementsFile.set(project.file("src/jvmMain/resources/runtime-entitlements-dev.plist"))
+                }
             }
 
             // macOS dark mode support, works only on the release build, not in debug
