@@ -49,6 +49,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.GigaVoiceAPI
+import ru.souz.service.telegram.TelegramBotController
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.ui.main.usecases.FinderPathExtractor
@@ -460,6 +461,10 @@ class MainViewModelTest {
 
         val toolPermissionBroker = ToolPermissionBroker(settingsProvider)
 
+        val telegramBotController = mockk<TelegramBotController>(relaxed = true)
+        val incomingMessages = MutableSharedFlow<TelegramBotController.IncomingMessage>()
+        every { telegramBotController.incomingMessages } returns incomingMessages
+
         val di = DI {
             bindSingleton { graphAgent }
             bindSingleton { gigaVoiceApi }
@@ -468,6 +473,7 @@ class MainViewModelTest {
             bindSingleton<SettingsProvider> { settingsProvider }
             bindSingleton { say }
             bindSingleton { toolPermissionBroker }
+            bindSingleton { telegramBotController }
             bindSingleton { InMemoryAudioRecorder() }
             bindSingleton { FilesToolUtil(instance()) }
             bindSingleton { FinderPathExtractor(instance()) }
@@ -487,6 +493,7 @@ class MainViewModelTest {
             isSpeakingFlow = speakingFlow,
             settingsProvider = settingsProvider,
             say = say,
+            incomingMessages = incomingMessages
         )
     }
 
@@ -501,6 +508,7 @@ class MainViewModelTest {
         val isSpeakingFlow: MutableStateFlow<Boolean>,
         val settingsProvider: SettingsProvider,
         val say: Say,
+        val incomingMessages: MutableSharedFlow<TelegramBotController.IncomingMessage>,
     ) {
         fun clear() {
             val onCleared = MainViewModel::class.java.getDeclaredMethod("onCleared")
