@@ -248,7 +248,7 @@ class SettingsViewModel(
     private fun createTelegramBot() = viewModelScope.launch(Dispatchers.IO) {
         runCatching {
             setState { copy(telegramAuthBusy = true, telegramAuthError = null) }
-            telegramService.createControlBot()
+            telegramService.createControlBot(forceNew = true)
         }.onSuccess {
             setState { copy(telegramAuthBusy = false, isTelegramBotActive = true) }
             telegramBotController.restartPolling()
@@ -262,7 +262,7 @@ class SettingsViewModel(
     private fun disconnectBot() = viewModelScope.launch(Dispatchers.IO) {
         runCatching {
             setState { copy(telegramAuthBusy = true, telegramAuthError = null) }
-            telegramService.deleteControlBot()
+            telegramService.deleteControlBot(forceNew = true)
         }.onSuccess {
             telegramBotController.stopPolling()
             setState { copy(isTelegramBotActive = false, telegramAuthBusy = false) }
