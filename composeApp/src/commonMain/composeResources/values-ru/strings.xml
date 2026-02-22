@@ -50,6 +50,8 @@
     <!-- General Settings -->
     <string name="setting_streaming_title">Streaming-режим</string>
     <string name="setting_streaming_desc">Ответы появляются постепенно, по мере генерации</string>
+    <string name="setting_notification_sound_title">Звук уведомления</string>
+    <string name="setting_notification_sound_desc">Проигрывать короткий звук, когда ответ ассистента готов</string>
     <string name="label_voice_speed">Скорость речи</string>
     <string name="hint_voice_speed">Текущее значение: %d. Чем больше, тем быстрее речь.</string>
     <string name="label_voice_selection">Выбор голоса</string>

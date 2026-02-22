@@ -54,6 +54,8 @@
     <!-- General Settings -->
     <string name="setting_streaming_title">Streaming mode</string>
     <string name="setting_streaming_desc">Responses appear gradually as they are generated</string>
+    <string name="setting_notification_sound_title">Notification sound</string>
+    <string name="setting_notification_sound_desc">Play a short sound when the assistant response is ready</string>
     <string name="label_voice_speed">Voice speed</string>
     <string name="hint_voice_speed">Current value: %d. Higher is faster.</string>
     <string name="label_voice_selection">Voice selection</string>

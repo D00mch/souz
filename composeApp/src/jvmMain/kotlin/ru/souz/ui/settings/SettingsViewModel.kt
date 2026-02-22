@@ -115,6 +115,10 @@ class SettingsViewModel(
                 setState { copy(useStreaming = event.enabled) }
                 fetchBalance()
             }
+            is InputNotificationSoundEnabled -> {
+                keysProvider.notificationSoundEnabled = event.enabled
+                setState { copy(notificationSoundEnabled = event.enabled) }
+            }
             is InputAiTunnelKey -> {
                 keysProvider.aiTunnelKey = event.key
                 refreshFromProvider()
@@ -348,6 +352,7 @@ class SettingsViewModel(
                 mcpServersJson = keysProvider.mcpServersJson ?: "",
                 useFewShotExamples = keysProvider.useFewShotExamples,
                 useStreaming = keysProvider.useStreaming,
+                notificationSoundEnabled = keysProvider.notificationSoundEnabled,
                 safeModeEnabled = keysProvider.safeModeEnabled,
                 gigaModel = selectedLlmModel,
                 embeddingsModel = selectedEmbeddingsModel,

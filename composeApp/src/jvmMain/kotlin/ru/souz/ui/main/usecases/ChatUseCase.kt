@@ -119,7 +119,9 @@ class ChatUseCase(
                 return
             }
 
-            speechUseCase.playMacPingMsgSafely(scope)
+            if (settingsProvider.notificationSoundEnabled) {
+                speechUseCase.playMacPingMsgSafely(scope)
+            }
 
             emitState {
                 copy(
