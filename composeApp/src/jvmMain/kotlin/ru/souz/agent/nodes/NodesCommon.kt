@@ -13,7 +13,10 @@ import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.browser.detectDefaultBrowser
 import ru.souz.tool.browser.prettyName
 import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
  * Nodes related to local data manipulation.
@@ -130,6 +133,10 @@ class NodesCommon(
             additionalData.add(StorredData("Календарь по умолчанию: $defaultCalendar", StorredType.GENERAL_FACT))
         }
 
+        buildUserGeoLocationFact()?.let { geoFact ->
+            additionalData.add(StorredData(geoFact, StorredType.GENERAL_FACT))
+        }
+
         val currentDateTime = LocalDateTime.now().format(
             DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss")
         )
@@ -153,6 +160,45 @@ class NodesCommon(
             role = GigaMessageRole.user,
             content = content
         )
+    }
+
+    private fun buildUserGeoLocationFact(): String? = try {
+        val locale = Locale.getDefault()
+        val zoneId = ZoneId.systemDefault()
+
+        val parts = mutableListOf<String>()
+
+        val localeTag = locale.toLanguageTag().takeIf { it.isNotBlank() && it != "und" }
+        if (localeTag != null) {
+            parts += "locale=$localeTag"
+        }
+
+        val countryCode = locale.country.takeIf { it.isNotBlank() }
+        if (countryCode != null) {
+            val countryName = runCatching { locale.getDisplayCountry(locale) }.getOrNull()
+                ?.takeIf { it.isNotBlank() }
+            val countryValue = if (countryName != null && !countryName.equals(countryCode, ignoreCase = true)) {
+                "$countryName ($countryCode)"
+            } else {
+                countryCode
+            }
+            parts += "country/region=$countryValue"
+        }
+
+        val zoneIdText = zoneId.id.takeIf { it.isNotBlank() }
+        if (zoneIdText != null) {
+            parts += "timezone=$zoneIdText"
+            val cityHint = zoneIdText.substringAfterLast('/', "").replace('_', ' ').trim()
+            if (cityHint.isNotBlank() && !cityHint.equals(zoneIdText, ignoreCase = true)) {
+                parts += "city_hint=$cityHint"
+            }
+            parts += "utc_offset=${ZonedDateTime.now(zoneId).offset.id}"
+        }
+
+        if (parts.isEmpty()) null else "Геоданные пользователя (приблизительно, по системным настройкам): ${parts.joinToString("; ")}"
+    } catch (e: Exception) {
+        l.warn("Error collecting geo location hints: {}", e.message)
+        null
     }
 
     private suspend fun fnCallMessages(ctx: AgentContext<GigaResponse.Chat.Ok>): List<GigaRequest.Message> {
