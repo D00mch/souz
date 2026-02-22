@@ -7,7 +7,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -102,6 +104,7 @@ fun ConfirmDialog(
 ) {
     var appeared by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { appeared = true }
+    val contentScrollState = rememberScrollState()
 
     val overlayOpacity by animateFloatAsState(
         targetValue = if (appeared) 1f else 0f,
@@ -117,7 +120,7 @@ fun ConfirmDialog(
         animationSpec = tween(200, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f))
     )
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(100f), // Ensure it's on top
@@ -140,9 +143,10 @@ fun ConfirmDialog(
         // Dialog Container
         Box(
             modifier = Modifier
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = 24.dp, vertical = 24.dp)
                 .widthIn(max = 320.dp)
                 .fillMaxWidth()
+                .heightIn(max = maxHeight * 0.9f)
                 .scale(dialogScale)
                 .alpha(dialogOpacity)
                 .clip(RoundedCornerShape(12.dp))
@@ -166,6 +170,7 @@ fun ConfirmDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(12.dp))
+                    .verticalScroll(contentScrollState)
                     .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
