@@ -119,6 +119,8 @@ class ChatUseCase(
                 return
             }
 
+            ProcessBuilder("afplay", "/System/Library/Sounds/Morse.aiff").start()
+
             emitState {
                 copy(
                     chatMessages = if (chatMessages.lastOrNull()?.id == botMessage.id) {
