@@ -319,7 +319,10 @@
 
     <!-- Setup -->
     <string name="setup_btn_choose_voice">Choose voice</string>
-        <string name="setup_title_keys">Where to get keys</string>
+    <string name="setup_title_keys">Where to get keys</string>
+    <string name="setup_voice_reminder_title">Choose a voice before continuing</string>
+    <string name="setup_voice_reminder_message">Pick a macOS voice that matches the language you plan to use with the agent.</string>
+    <string name="setup_voice_reminder_details">For example, select an English voice for English conversations or a Russian voice for Russian conversations. You can change it later in Settings.</string>
 
     <!-- Tool Details -->
     <string name="tool_details_title">Tool details</string>

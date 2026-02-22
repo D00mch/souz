@@ -15,6 +15,9 @@ data class SetupState(
     val configuredKeysCount: Int = 0,
     val canProceed: Boolean = false,
     val shouldProceed: Boolean = false,
+    val hasOpenedVoiceSelection: Boolean = false,
+    val hasShownVoiceReminderOnProceed: Boolean = false,
+    val showVoiceReminderDialog: Boolean = false,
 ) : VMState
 
 sealed interface SetupEvent : VMEvent {
@@ -26,6 +29,7 @@ sealed interface SetupEvent : VMEvent {
     data class InputSaluteSpeechKey(val key: String) : SetupEvent
     data class OpenProviderLink(val provider: ApiKeyProvider) : SetupEvent
     object ChooseVoice : SetupEvent
+    object DismissVoiceReminderDialog : SetupEvent
     object Proceed : SetupEvent
 }
 
