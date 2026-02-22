@@ -199,13 +199,34 @@ class SetupViewModel(
                 )
             }
 
-            SetupEvent.ChooseVoice -> runCatching { say.chooseVoice() }
-                .onFailure { l.warn("Failed to open voice settings", it) }
+            SetupEvent.ChooseVoice -> {
+                setState {
+                    copy(
+                        hasOpenedVoiceSelection = true,
+                        showVoiceReminderDialog = false,
+                    )
+                }
+                runCatching { say.chooseVoice() }
+                    .onFailure { l.warn("Failed to open voice settings", it) }
+            }
+
+            SetupEvent.DismissVoiceReminderDialog -> setState {
+                copy(showVoiceReminderDialog = false)
+            }
 
             is SetupEvent.OpenProviderLink -> openProviderLink(url = event.provider.url, logger = l)
 
             SetupEvent.Proceed -> {
                 if (currentState.canProceed) {
+                    if (!currentState.hasOpenedVoiceSelection && !currentState.hasShownVoiceReminderOnProceed) {
+                        setState {
+                            copy(
+                                hasShownVoiceReminderOnProceed = true,
+                                showVoiceReminderDialog = true,
+                            )
+                        }
+                        return
+                    }
                     markOnboardingIfNeeded(hasAnyConfiguredKey = true)
                     send(SetupEffect.OpenMain)
                 }

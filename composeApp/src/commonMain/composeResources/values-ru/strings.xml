@@ -316,6 +316,9 @@
     <!-- Setup -->
     <string name="setup_btn_choose_voice">Выбрать голос</string>
     <string name="setup_title_keys">Где получить ключи</string>
+    <string name="setup_voice_reminder_title">Вас точно устроит дефолтная озвучка?</string>
+    <string name="setup_voice_reminder_message">Выберите голос macOS под язык, на котором вы будете общаться с агентом.</string>
+    <string name="setup_voice_reminder_details">Например, русский язык и голос Siri 2. Позже это можно изменить в настройках.</string>
 
     <!-- Tool Details -->
     <string name="tool_details_title">Tool details</string>
