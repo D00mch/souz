@@ -1,6 +1,6 @@
 package ru.souz.tool.files
 
-import org.apache.pdfbox.pdmodel.PDDocument
+import org.apache.pdfbox.Loader
 import org.apache.pdfbox.text.PDFTextStripper
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -51,7 +51,7 @@ class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<Too
         if (file.extension.lowercase() != "pdf") return "Error: Expecting .pdf file"
 
         return try {
-            PDDocument.load(file).use { document ->
+            Loader.loadPDF(file).use { document ->
 
                 // 1. Проверка на шифрование (частая причина "пустоты")
                 if (document.isEncrypted) {
