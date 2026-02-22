@@ -3,8 +3,12 @@ package ru.souz.ui.settings
 import androidx.lifecycle.viewModelScope
 import io.ktor.util.logging.debug
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
@@ -44,6 +48,10 @@ class SettingsViewModel(
     private val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
     private val supportLogSender = SupportLogSender()
     private val say: Say by di.instance()
+    private val pendingKeyDrafts = mutableMapOf<DeferredSettingsKey, String>()
+    private val pendingKeySaveJobs = mutableMapOf<DeferredSettingsKey, Job>()
+    private val pendingTextSettingDrafts = mutableMapOf<DeferredTextSetting, String>()
+    private val pendingTextSettingSaveJobs = mutableMapOf<DeferredTextSetting, Job>()
 
     init {
         viewModelScope.launch {
@@ -88,23 +96,17 @@ class SettingsViewModel(
         l.debug { "handleEvent: $event" }
         when(event) {
             is InputGigaChatKey -> {
-                keysProvider.gigaChatKey = event.key
-                refreshFromProvider()
-                fetchBalance()
+                handleDeferredKeyInput(DeferredSettingsKey.GIGA_CHAT, event.key)
             }
             is InputQwenChatKey -> {
-                keysProvider.qwenChatKey = event.key
-                refreshFromProvider()
-                fetchBalance()
+                handleDeferredKeyInput(DeferredSettingsKey.QWEN_CHAT, event.key)
             }
             is InputSaluteSpeechKey -> {
-                keysProvider.saluteSpeechKey = event.key
-                setState { copy(saluteSpeechKey = event.key) }
+                handleDeferredKeyInput(DeferredSettingsKey.SALUTE_SPEECH, event.key)
             }
             is OpenProviderLink -> openProviderLink(url = event.provider.url, logger = l)
             is InputMcpServersJson -> {
-                keysProvider.mcpServersJson = event.json
-                setState { copy(mcpServersJson = event.json) }
+                handleDeferredTextSettingInput(DeferredTextSetting.MCP_SERVERS_JSON, event.json)
             }
             is InputUseFewShotExamples -> {
                 keysProvider.useFewShotExamples = event.enabled
@@ -120,16 +122,13 @@ class SettingsViewModel(
                 setState { copy(notificationSoundEnabled = event.enabled) }
             }
             is InputAiTunnelKey -> {
-                keysProvider.aiTunnelKey = event.key
-                refreshFromProvider()
+                handleDeferredKeyInput(DeferredSettingsKey.AI_TUNNEL, event.key)
             }
             is InputAnthropicKey -> {
-                keysProvider.anthropicKey = event.key
-                refreshFromProvider()
+                handleDeferredKeyInput(DeferredSettingsKey.ANTHROPIC, event.key)
             }
             is InputOpenAiKey -> {
-                keysProvider.openaiKey = event.key
-                refreshFromProvider()
+                handleDeferredKeyInput(DeferredSettingsKey.OPENAI, event.key)
             }
             is InputSafeModeEnabled -> {
                 keysProvider.safeModeEnabled = event.enabled
@@ -137,6 +136,7 @@ class SettingsViewModel(
             }
             is SelectModel -> {
                 if (event.model !in currentState.availableLlmModels) return
+                flushPendingSystemPromptSave()
                 val newPrompt = graphBasedAgent.updateModel(event.model)
                 setState { copy(gigaModel = event.model, systemPrompt = newPrompt) }
                 fetchBalance()
@@ -193,13 +193,10 @@ class SettingsViewModel(
                 }
             }
             is InputSupportEmail -> {
-                keysProvider.supportEmail = event.email
-                setState { copy(supportEmail = event.email, sendLogsMessage = null, sendLogsPath = null) }
+                handleDeferredTextSettingInput(DeferredTextSetting.SUPPORT_EMAIL, event.email)
             }
             is InputSystemPrompt -> {
-                graphBasedAgent.updateSystemPrompt(event.prompt)
-                setState { copy(systemPrompt = event.prompt) }
-                send(SettingsEffect.NotifyOnSystemPrompt)
+                handleDeferredTextSettingInput(DeferredTextSetting.SYSTEM_PROMPT, event.prompt)
             }
             is InputVoiceSpeed -> {
                 val normalized = event.speed.filter { it.isDigit() }
@@ -216,12 +213,17 @@ class SettingsViewModel(
             SubmitTelegramCode -> submitTelegramCode()
             SubmitTelegramPassword -> submitTelegramPassword()
             TelegramLogout -> telegramLogout()
-            RefreshFromProvider -> refreshFromProvider()
+            RefreshFromProvider -> {
+                flushPendingTextSettingSaves()
+                flushPendingKeySaves()
+                refreshFromProvider()
+            }
             ChooseVoice -> {
                 runCatching { say.chooseVoice() }
                     .onFailure { l.warn("Failed to open voice settings", it) }
             }
             ResetSystemPrompt -> {
+                cancelPendingSystemPromptSave()
                 graphBasedAgent.resetSystemPrompt()
                 send(SettingsEffect.NotifyOnSystemPrompt)
                 setState { copy(systemPrompt = DEFAULT_SYSTEM_PROMPT) }
@@ -229,6 +231,8 @@ class SettingsViewModel(
             is SendLogsToSupport -> sendLogs()
             RefreshBalance -> fetchBalance()
             GoToMain -> {
+                flushPendingTextSettingSaves()
+                flushPendingKeySaves()
                 send(SettingsEffect.CloseScreen)
             }
             is SelectDefaultCalendar -> {
@@ -312,11 +316,14 @@ class SettingsViewModel(
 
     private suspend fun refreshFromProvider() {
         val voiceSpeed = ConfigStore.get(ToolSoundConfig.SPEED_KEY, ToolSoundConfig.DEFAULT_SPEED)
-        val gigaChatKey = keysProvider.gigaChatKey.orEmpty()
-        val qwenChatKey = keysProvider.qwenChatKey.orEmpty()
-        val aiTunnelKey = keysProvider.aiTunnelKey.orEmpty()
-        val anthropicKey = keysProvider.anthropicKey.orEmpty()
-        val openAiKey = keysProvider.openaiKey.orEmpty()
+        val gigaChatKey = pendingKeyDrafts[DeferredSettingsKey.GIGA_CHAT] ?: keysProvider.gigaChatKey.orEmpty()
+        val qwenChatKey = pendingKeyDrafts[DeferredSettingsKey.QWEN_CHAT] ?: keysProvider.qwenChatKey.orEmpty()
+        val aiTunnelKey = pendingKeyDrafts[DeferredSettingsKey.AI_TUNNEL] ?: keysProvider.aiTunnelKey.orEmpty()
+        val anthropicKey = pendingKeyDrafts[DeferredSettingsKey.ANTHROPIC] ?: keysProvider.anthropicKey.orEmpty()
+        val openAiKey = pendingKeyDrafts[DeferredSettingsKey.OPENAI] ?: keysProvider.openaiKey.orEmpty()
+        val mcpServersJson = pendingTextSettingDrafts[DeferredTextSetting.MCP_SERVERS_JSON] ?: (keysProvider.mcpServersJson ?: "")
+        val supportEmail = pendingTextSettingDrafts[DeferredTextSetting.SUPPORT_EMAIL]
+            ?: (keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL)
 
         val availableLlmModels = keysProvider.availableLlmModels()
         val configuredLlmModel = keysProvider.gigaModel
@@ -348,8 +355,8 @@ class SettingsViewModel(
                 aiTunnelKey = aiTunnelKey,
                 anthropicKey = anthropicKey,
                 openaiKey = openAiKey,
-                saluteSpeechKey = keysProvider.saluteSpeechKey ?: "",
-                mcpServersJson = keysProvider.mcpServersJson ?: "",
+                saluteSpeechKey = pendingKeyDrafts[DeferredSettingsKey.SALUTE_SPEECH] ?: (keysProvider.saluteSpeechKey ?: ""),
+                mcpServersJson = mcpServersJson,
                 useFewShotExamples = keysProvider.useFewShotExamples,
                 useStreaming = keysProvider.useStreaming,
                 notificationSoundEnabled = keysProvider.notificationSoundEnabled,
@@ -364,12 +371,158 @@ class SettingsViewModel(
                 contextSizeInput = keysProvider.contextSize.toString(),
                 temperature = keysProvider.temperature,
                 temperatureInput = keysProvider.temperature.toString(),
-                supportEmail = keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL,
-                systemPrompt = selectedPrompt,
+                supportEmail = supportEmail,
+                systemPrompt = pendingTextSettingDrafts[DeferredTextSetting.SYSTEM_PROMPT] ?: selectedPrompt,
                 defaultCalendar = keysProvider.defaultCalendar,
                 voiceSpeed = voiceSpeed,
                 voiceSpeedInput = voiceSpeed.toString(),
             )
+        }
+    }
+
+    private suspend fun handleDeferredKeyInput(field: DeferredSettingsKey, value: String) {
+        pendingKeyDrafts[field] = value
+        setDeferredKeyState(field, value)
+        pendingKeySaveJobs.remove(field)?.cancel()
+        pendingKeySaveJobs[field] = viewModelScope.launch {
+            delay(KEY_INPUT_SAVE_DEBOUNCE_MS)
+            pendingKeySaveJobs.remove(field)
+            persistDeferredKeySave(field)
+        }
+    }
+
+    private suspend fun setDeferredKeyState(field: DeferredSettingsKey, value: String) {
+        when (field) {
+            DeferredSettingsKey.GIGA_CHAT -> setState { copy(gigaChatKey = value) }
+            DeferredSettingsKey.QWEN_CHAT -> setState { copy(qwenChatKey = value) }
+            DeferredSettingsKey.AI_TUNNEL -> setState { copy(aiTunnelKey = value) }
+            DeferredSettingsKey.ANTHROPIC -> setState { copy(anthropicKey = value) }
+            DeferredSettingsKey.OPENAI -> setState { copy(openaiKey = value) }
+            DeferredSettingsKey.SALUTE_SPEECH -> setState { copy(saluteSpeechKey = value) }
+        }
+    }
+
+    private suspend fun persistDeferredKeySave(field: DeferredSettingsKey) {
+        val value = pendingKeyDrafts[field] ?: return
+        withContext(Dispatchers.IO) {
+            applyDeferredKeyToProvider(field, value)
+        }
+        if (pendingKeyDrafts[field] == value) {
+            pendingKeyDrafts.remove(field)
+        }
+        if (field.requiresRefreshAfterSave) {
+            flushPendingSystemPromptSave()
+            refreshFromProvider()
+        }
+        if (field.requiresBalanceRefreshAfterSave) {
+            fetchBalance()
+        }
+    }
+
+    private suspend fun flushPendingKeySaves() {
+        if (pendingKeyDrafts.isEmpty() && pendingKeySaveJobs.isEmpty()) return
+
+        val jobs = pendingKeySaveJobs.values.toList()
+        pendingKeySaveJobs.clear()
+        jobs.forEach { it.cancelAndJoin() }
+
+        val draftsToPersist = pendingKeyDrafts.toMap()
+        if (draftsToPersist.isEmpty()) return
+
+        withContext(Dispatchers.IO) {
+            draftsToPersist.forEach { (field, value) ->
+                applyDeferredKeyToProvider(field, value)
+            }
+        }
+
+        draftsToPersist.forEach { (field, value) ->
+            if (pendingKeyDrafts[field] == value) {
+                pendingKeyDrafts.remove(field)
+            }
+        }
+
+        if (draftsToPersist.keys.any { it.requiresRefreshAfterSave }) {
+            flushPendingSystemPromptSave()
+            refreshFromProvider()
+        }
+        if (draftsToPersist.keys.any { it.requiresBalanceRefreshAfterSave }) {
+            fetchBalance()
+        }
+    }
+
+    private suspend fun handleDeferredTextSettingInput(field: DeferredTextSetting, value: String) {
+        pendingTextSettingDrafts[field] = value
+        setDeferredTextSettingState(field, value)
+        pendingTextSettingSaveJobs.remove(field)?.cancel()
+        pendingTextSettingSaveJobs[field] = viewModelScope.launch {
+            delay(TEXT_INPUT_SAVE_DEBOUNCE_MS)
+            pendingTextSettingSaveJobs.remove(field)
+            persistDeferredTextSettingSave(field)
+        }
+    }
+
+    private suspend fun setDeferredTextSettingState(field: DeferredTextSetting, value: String) {
+        when (field) {
+            DeferredTextSetting.MCP_SERVERS_JSON -> setState { copy(mcpServersJson = value) }
+            DeferredTextSetting.SUPPORT_EMAIL -> setState {
+                copy(supportEmail = value, sendLogsMessage = null, sendLogsPath = null)
+            }
+            DeferredTextSetting.SYSTEM_PROMPT -> setState { copy(systemPrompt = value) }
+        }
+    }
+
+    private suspend fun persistDeferredTextSettingSave(field: DeferredTextSetting) {
+        val value = pendingTextSettingDrafts[field] ?: return
+        when (field) {
+            DeferredTextSetting.MCP_SERVERS_JSON -> withContext(Dispatchers.IO) {
+                keysProvider.mcpServersJson = value
+            }
+            DeferredTextSetting.SUPPORT_EMAIL -> withContext(Dispatchers.IO) {
+                keysProvider.supportEmail = value
+            }
+            DeferredTextSetting.SYSTEM_PROMPT -> {
+                graphBasedAgent.updateSystemPrompt(value)
+                send(SettingsEffect.NotifyOnSystemPrompt)
+            }
+        }
+        if (pendingTextSettingDrafts[field] == value) {
+            pendingTextSettingDrafts.remove(field)
+        }
+    }
+
+    private suspend fun flushPendingTextSettingSaves() {
+        if (pendingTextSettingDrafts.isEmpty() && pendingTextSettingSaveJobs.isEmpty()) return
+
+        val jobs = pendingTextSettingSaveJobs.values.toList()
+        pendingTextSettingSaveJobs.clear()
+        jobs.forEach { it.cancelAndJoin() }
+
+        val fieldsToPersist = pendingTextSettingDrafts.keys.toList()
+        fieldsToPersist.forEach { field -> persistDeferredTextSettingSave(field) }
+    }
+
+    private suspend fun flushPendingSystemPromptSave() {
+        if (DeferredTextSetting.SYSTEM_PROMPT !in pendingTextSettingDrafts &&
+            DeferredTextSetting.SYSTEM_PROMPT !in pendingTextSettingSaveJobs
+        ) return
+
+        pendingTextSettingSaveJobs.remove(DeferredTextSetting.SYSTEM_PROMPT)?.cancelAndJoin()
+        persistDeferredTextSettingSave(DeferredTextSetting.SYSTEM_PROMPT)
+    }
+
+    private suspend fun cancelPendingSystemPromptSave() {
+        pendingTextSettingSaveJobs.remove(DeferredTextSetting.SYSTEM_PROMPT)?.cancelAndJoin()
+        pendingTextSettingDrafts.remove(DeferredTextSetting.SYSTEM_PROMPT)
+    }
+
+    private fun applyDeferredKeyToProvider(field: DeferredSettingsKey, value: String) {
+        when (field) {
+            DeferredSettingsKey.GIGA_CHAT -> keysProvider.gigaChatKey = value
+            DeferredSettingsKey.QWEN_CHAT -> keysProvider.qwenChatKey = value
+            DeferredSettingsKey.AI_TUNNEL -> keysProvider.aiTunnelKey = value
+            DeferredSettingsKey.ANTHROPIC -> keysProvider.anthropicKey = value
+            DeferredSettingsKey.OPENAI -> keysProvider.openaiKey = value
+            DeferredSettingsKey.SALUTE_SPEECH -> keysProvider.saluteSpeechKey = value
         }
     }
 
@@ -586,5 +739,31 @@ class SettingsViewModel(
                 val errorMsg = error.message ?: getString(Res.string.error_failed_logout)
                 setState { copy(telegramAuthError = errorMsg) }
             }
+    }
+
+    private enum class DeferredSettingsKey {
+        GIGA_CHAT,
+        QWEN_CHAT,
+        AI_TUNNEL,
+        ANTHROPIC,
+        OPENAI,
+        SALUTE_SPEECH;
+
+        val requiresRefreshAfterSave: Boolean
+            get() = this != SALUTE_SPEECH
+
+        val requiresBalanceRefreshAfterSave: Boolean
+            get() = this == GIGA_CHAT || this == QWEN_CHAT
+    }
+
+    private enum class DeferredTextSetting {
+        MCP_SERVERS_JSON,
+        SUPPORT_EMAIL,
+        SYSTEM_PROMPT,
+    }
+
+    companion object {
+        private const val KEY_INPUT_SAVE_DEBOUNCE_MS = 400L
+        private const val TEXT_INPUT_SAVE_DEBOUNCE_MS = 400L
     }
 }
