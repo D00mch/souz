@@ -23,6 +23,7 @@ import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
 object ConfigStore {
+    // TODO: move into SettingsProviderImpl
     const val TG_BOT_TOKEN = "TG_BOT_TOKEN"
     const val TG_BOT_OWNER_ID = "TG_BOT_OWNER_ID"
     const val TG_BOT_USERNAME = "TG_BOT_USERNAME"
