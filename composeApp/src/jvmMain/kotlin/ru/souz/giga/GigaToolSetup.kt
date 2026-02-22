@@ -1,6 +1,7 @@
 package ru.souz.giga
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import kotlinx.coroutines.CancellationException
 import ru.souz.keys.Keys
 import ru.souz.tool.*
 import ru.souz.tool.desktop.ToolHotkeyMac
@@ -80,7 +81,11 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
                     content = gigaResult,
                     name = functionCall.name,
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                e.toGigaToolMessage(functionCall.name)
+            } catch (e: LinkageError) {
                 e.toGigaToolMessage(functionCall.name)
             }
         }
@@ -102,14 +107,18 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): GigaT
                     attachments = toolSetup.attachments,
                     name = functionCall.name
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                e.toGigaToolMessage(functionCall.name)
+            } catch (e: LinkageError) {
                 e.toGigaToolMessage(functionCall.name)
             }
         }
     }
 }
 
-fun Exception.toGigaToolMessage(name: String?): GigaRequest.Message {
+fun Throwable.toGigaToolMessage(name: String?): GigaRequest.Message {
     val msg = when (this) {
         is ShellException -> "The function was executed with shell, the exit code: $exitCode, output: $message"
         else -> "Can:t invoke function: ${message ?: toString()}"

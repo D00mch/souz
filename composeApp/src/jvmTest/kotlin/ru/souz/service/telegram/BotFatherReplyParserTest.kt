@@ -9,16 +9,16 @@ import kotlin.test.assertTrue
 class BotFatherReplyParserTest {
 
     @Test
-    fun `extractToken uses only messages after baseline`() {
+    fun `extractToken reads newest incoming token from TDLib ordered messages`() {
         val oldToken = "12345678:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         val newToken = "87654321:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
         val messages = listOf(
-            BotFatherMessageSnapshot(id = 10, text = "Old token: $oldToken", isOutgoing = false),
-            BotFatherMessageSnapshot(id = 11, text = "some text", isOutgoing = false),
             BotFatherMessageSnapshot(id = 20, text = "Use this token: $newToken", isOutgoing = false),
+            BotFatherMessageSnapshot(id = 11, text = "some text", isOutgoing = false),
+            BotFatherMessageSnapshot(id = 10, text = "Old token: $oldToken", isOutgoing = false),
         )
 
-        val extracted = BotFatherReplyParser.extractToken(messages, minMessageIdExclusive = 15)
+        val extracted = BotFatherReplyParser.extractToken(messages)
 
         assertEquals(newToken, extracted)
     }
@@ -30,21 +30,30 @@ class BotFatherReplyParserTest {
             BotFatherMessageSnapshot(id = 20, text = "Use this token: $token", isOutgoing = true),
         )
 
-        val extracted = BotFatherReplyParser.extractToken(messages, minMessageIdExclusive = 15)
+        val extracted = BotFatherReplyParser.extractToken(messages)
 
         assertNull(extracted)
     }
 
     @Test
-    fun `isDeleteConfirmed matches only new success responses`() {
+    fun `isDeleteConfirmed checks only latest incoming response`() {
         val messages = listOf(
+            BotFatherMessageSnapshot(id = 25, text = "Done! @souz_bot deleted", isOutgoing = false),
             BotFatherMessageSnapshot(id = 8, text = "Done! @souz_bot deleted", isOutgoing = false),
+        )
+
+        assertTrue(BotFatherReplyParser.isDeleteConfirmed(messages, username = "souz_bot"))
+        assertFalse(BotFatherReplyParser.isDeleteConfirmed(messages, username = "other_bot"))
+    }
+
+    @Test
+    fun `isDeleteConfirmed ignores older success when latest message is unrelated`() {
+        val messages = listOf(
+            BotFatherMessageSnapshot(id = 30, text = "Choose a bot to delete.", isOutgoing = false),
             BotFatherMessageSnapshot(id = 25, text = "Done! @souz_bot deleted", isOutgoing = false),
         )
 
-        assertTrue(BotFatherReplyParser.isDeleteConfirmed(messages, minMessageIdExclusive = 20, username = "souz_bot"))
-        assertFalse(BotFatherReplyParser.isDeleteConfirmed(messages, minMessageIdExclusive = 25, username = "souz_bot"))
-        assertFalse(BotFatherReplyParser.isDeleteConfirmed(messages, minMessageIdExclusive = 20, username = "other_bot"))
+        assertFalse(BotFatherReplyParser.isDeleteConfirmed(messages, username = "souz_bot"))
     }
 
     @Test
@@ -53,7 +62,7 @@ class BotFatherReplyParserTest {
             BotFatherMessageSnapshot(id = 30, text = "Done! The bot is gone. /help", isOutgoing = false),
         )
 
-        assertTrue(BotFatherReplyParser.isDeleteConfirmed(messages, minMessageIdExclusive = 20, username = "other_bot"))
+        assertTrue(BotFatherReplyParser.isDeleteConfirmed(messages, username = "other_bot"))
     }
 
     @Test
@@ -65,7 +74,6 @@ class BotFatherReplyParserTest {
         assertTrue(
             BotFatherReplyParser.requiresDeleteConfirmationText(
                 messages = messages,
-                minMessageIdExclusive = 20,
             )
         )
     }
@@ -76,8 +84,17 @@ class BotFatherReplyParserTest {
             BotFatherMessageSnapshot(id = 35, text = "You don't have any bots yet. Use the /newbot command to create a new one.", isOutgoing = false),
         )
 
-        assertTrue(BotFatherReplyParser.hasNoBots(messages, minMessageIdExclusive = 20))
-        assertFalse(BotFatherReplyParser.hasNoBots(messages, minMessageIdExclusive = 40))
+        assertTrue(BotFatherReplyParser.hasNoBots(messages))
+    }
+
+    @Test
+    fun `hasNoBots checks only latest incoming response`() {
+        val messages = listOf(
+            BotFatherMessageSnapshot(id = 40, text = "Choose a bot from the list below.", isOutgoing = false),
+            BotFatherMessageSnapshot(id = 35, text = "You don't have any bots yet. Use the /newbot command to create a new one.", isOutgoing = false),
+        )
+
+        assertFalse(BotFatherReplyParser.hasNoBots(messages))
     }
 
     @Test
@@ -90,7 +107,7 @@ class BotFatherReplyParserTest {
             ),
         )
 
-        val listed = BotFatherReplyParser.listedBotUsernames(messages, minMessageIdExclusive = 20)
+        val listed = BotFatherReplyParser.listedBotUsernames(messages)
 
         assertEquals(setOf("souz_control_191296537_8011_bot", "another_demo_bot"), listed)
     }

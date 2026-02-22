@@ -47,6 +47,13 @@ class SpeechUseCase(
         }
     }
 
+    fun playMacPingMsgSafely(scope: CoroutineScope) {
+        scope.launch(Dispatchers.IO) {
+            runCatching { say.playMacPingMsg() }
+                .onFailure { l.warn("Failed to play mac ping msg: {}", it.message) }
+        }
+    }
+
     fun playInputConfirmation() {
         say.playTextRand(speed = 120, "ok", "okey", "окей", "ок")
     }

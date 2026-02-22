@@ -1,5 +1,9 @@
 package ru.souz.tool.files
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withTimeout
 import org.apache.tika.metadata.Metadata
 import org.apache.tika.parser.AutoDetectParser
 import org.apache.tika.sax.BodyContentHandler
@@ -40,6 +44,16 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         )
     )
 
+    override suspend fun suspendInvoke(input: Input): String {
+        return try {
+            withTimeout(EXTRACTION_TIMEOUT_MS) {
+                runInterruptible(Dispatchers.IO) { invoke(input) }
+            }
+        } catch (_: TimeoutCancellationException) {
+            "Error extracting text: timed out after ${EXTRACTION_TIMEOUT_MS / 1000} seconds. Try a smaller file/range (for PDFs use ReadPdfPages)."
+        }
+    }
+
     override fun invoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.filePath)
         val file = File(fixedPath)
@@ -52,15 +66,17 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
             return "Warning: .key format is proprietary. I cannot read slide content directly without opening Keynote. I can only try to read basic metadata.\n" + extractWithTika(file)
         }
 
+        if (isPlainTextPreview(file)) {
+            return extractPlainText(file)
+        }
+
         return extractWithTika(file)
     }
 
     private fun extractWithTika(file: File): String {
-        val charLimit = 50000
-
         return try {
             val parser = AutoDetectParser()
-            val handler = BodyContentHandler(charLimit)
+            val handler = BodyContentHandler(TEXT_CHAR_LIMIT)
             val metadata = Metadata()
 
             FileInputStream(file).use { stream ->
@@ -69,20 +85,17 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
 
             val metaInfo = metadata.names().joinToString("\n") { name ->
                 "$name: ${metadata.get(name)}"
-            }
+            }.ifBlank { "(none)" }
 
-            """
-            |=== METADATA ===
-            |Filename: ${file.name}
-            |$metaInfo
-            |
-            |=== CONTENT ===
-            |${handler.toString().trim()}
-            """.trimIndent().trimMargin()
+            formatExtractionResult(
+                file = file,
+                metaInfo = metaInfo,
+                content = handler.toString().trim()
+            )
 
         } catch (_: SAXException) {
             """
-            |Error: The file is too large for full extraction (limit 25000 chars).
+            |Error: The file is too large for full extraction (limit $TEXT_CHAR_LIMIT chars).
             |
             |ACTION REQUIRED:
             |You MUST use the tool 'ReadPdfPages' instead. 
@@ -90,8 +103,81 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
             |2. Find the start/end pages of the chapter you need.
             |3. Call 'ReadPdfPages' with those specific page numbers.
             """.trimIndent().trimMargin()
+        } catch (e: LinkageError) {
+            "Error extracting text: ${e.message ?: e::class.simpleName ?: "LinkageError"}. " +
+                    "Release runtime may be missing a required Java module (e.g. java.sql for Apache Tika)."
         } catch (e: Exception) {
             "Error extracting text: ${e.message}"
         }
+    }
+
+    private fun extractPlainText(file: File): String {
+        return try {
+            val preview = readUtf8Preview(file, TEXT_CHAR_LIMIT)
+            val metaLines = buildList {
+                add("Content-Type: text/plain (direct)")
+                add("Charset: UTF-8")
+                if (preview.truncated) add("Truncated: true (preview limited to $TEXT_CHAR_LIMIT chars)")
+            }.joinToString("\n")
+            formatExtractionResult(
+                file = file,
+                metaInfo = metaLines,
+                content = preview.text.trim()
+            )
+        } catch (_: Exception) {
+            extractWithTika(file)
+        }
+    }
+
+    private fun readUtf8Preview(file: File, charLimit: Int): TextPreview {
+        val builder = StringBuilder(minOf(charLimit, 4096))
+        FileInputStream(file).buffered().reader(Charsets.UTF_8).use { reader ->
+            val buffer = CharArray(4096)
+            while (builder.length < charLimit) {
+                val remaining = minOf(buffer.size, charLimit - builder.length)
+                val read = reader.read(buffer, 0, remaining)
+                if (read <= 0) break
+                builder.append(buffer, 0, read)
+            }
+            val truncated = reader.read() != -1
+            return TextPreview(builder.toString(), truncated)
+        }
+    }
+
+    private fun formatExtractionResult(file: File, metaInfo: String, content: String): String {
+        return """
+            |=== METADATA ===
+            |Filename: ${file.name}
+            |$metaInfo
+            |
+            |=== CONTENT ===
+            |$content
+            """.trimIndent().trimMargin()
+    }
+
+    private fun isPlainTextPreview(file: File): Boolean =
+        file.extension.lowercase() in PLAIN_TEXT_EXTENSIONS
+
+    private data class TextPreview(val text: String, val truncated: Boolean)
+
+    companion object {
+        private const val TEXT_CHAR_LIMIT = 50000
+        private const val EXTRACTION_TIMEOUT_MS = 30_000L
+
+        private val PLAIN_TEXT_EXTENSIONS = setOf(
+            "txt",
+            "md",
+            "markdown",
+            "csv",
+            "tsv",
+            "json",
+            "xml",
+            "yaml",
+            "yml",
+            "log",
+            "properties",
+            "ini",
+            "conf"
+        )
     }
 }

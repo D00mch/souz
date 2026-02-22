@@ -45,6 +45,52 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) {
             .replace("HOME", homeStr)
     }
 
+    /**
+     * Validates that a unified diff patch (`---` / `+++` headers) touches exactly one file and that,
+     * after applying the same `strip` logic as `patch -pN`, the resulting target path matches
+     * [expectedFileName].
+     *
+     * This is a guardrail for tools that apply patches inside a directory and want to ensure the patch
+     * cannot unexpectedly target another file. It supports common diff header formats including:
+     * - `a/file.txt` / `b/file.txt`
+     * - bare paths (`file.txt`)
+     * - quoted paths (for names with spaces)
+     * - optional tab-separated timestamps after the path
+     *
+     * `/dev/null` headers are ignored to tolerate create/delete style patches while still validating
+     * the non-null target path.
+     *
+     * Throws [BadInputException] when:
+     * - no file headers are found
+     * - more than one file is targeted
+     * - the patch path is incompatible with [strip]
+     * - the normalized target does not match [expectedFileName]
+     */
+    fun validateUnifiedDiffTargetsSingleFile(
+        patch: String,
+        expectedFileName: String,
+        strip: Int,
+    ) {
+        val touched = mutableSetOf<String>()
+
+        patch.lineSequence().forEach { line ->
+            val rawPath = extractUnifiedDiffHeaderPath(line) ?: return@forEach
+
+            if (rawPath == "/dev/null") return@forEach
+
+            val stripped = stripPathComponents(rawPath, strip)
+                ?: throw BadInputException("Patch path '$rawPath' is incompatible with strip=$strip")
+            val normalized = stripped.removePrefix("./")
+            touched.add(normalized)
+        }
+
+        if (touched.isEmpty()) throw BadInputException("Patch has no file headers (---/+++).")
+        if (touched.size != 1) throw BadInputException("Patch must target exactly one file; got: $touched")
+        if (touched.first() != expectedFileName) {
+            throw BadInputException("Patch targets '${touched.first()}', but tool path is '$expectedFileName'")
+        }
+    }
+
 
     /**
      * Moves file from [sourcePath] to [destinationPath].
@@ -73,6 +119,52 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) {
             if (!resolved.startsWith(homeDirectory)) return@mapNotNull null
             resolved
         }.distinct()
+    }
+
+    private fun extractUnifiedDiffHeaderPath(line: String): String? {
+        val raw = when {
+            line.startsWith("--- ") -> line.removePrefix("--- ")
+            line.startsWith("+++ ") -> line.removePrefix("+++ ")
+            else -> return null
+        }.trimStart()
+
+        if (raw.isEmpty()) return null
+
+        return if (raw.startsWith("\"")) {
+            parseQuotedPatchPath(raw) ?: raw.substringBefore('\t').trim()
+        } else {
+            raw.substringBefore('\t').trim()
+        }
+    }
+
+    private fun parseQuotedPatchPath(raw: String): String? {
+        val out = StringBuilder()
+        var escaped = false
+
+        for (i in 1 until raw.length) {
+            val ch = raw[i]
+            if (escaped) {
+                out.append(ch)
+                escaped = false
+                continue
+            }
+            when (ch) {
+                '\\' -> escaped = true
+                '"' -> return out.toString()
+                else -> out.append(ch)
+            }
+        }
+        return null
+    }
+
+    private fun stripPathComponents(path: String, strip: Int): String? {
+        var normalized = path
+        while (normalized.startsWith("./")) normalized = normalized.removePrefix("./")
+        if (strip == 0) return normalized
+
+        val parts = normalized.split('/').filter { it.isNotEmpty() }
+        if (parts.size <= strip) return null
+        return parts.drop(strip).joinToString("/")
     }
 
     companion object {

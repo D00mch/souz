@@ -26,6 +26,7 @@ interface SettingsProvider {
     var gigaModel: GigaModel
     var useFewShotExamples: Boolean
     var useStreaming: Boolean
+    var notificationSoundEnabled: Boolean
     var safeModeEnabled: Boolean
     var needsOnboarding: Boolean
     var onboardingCompleted: Boolean
@@ -45,6 +46,10 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
     private var _useStreamingDelegate: String? by keyDelegate(configKey = USE_STREAMING, envKey = USE_STREAMING)
+    private var _notificationSoundEnabledDelegate: String? by keyDelegate(
+        configKey = NOTIFICATION_SOUND_ENABLED,
+        envKey = NOTIFICATION_SOUND_ENABLED
+    )
     private var _safeModeDelegate: String? by keyDelegate(configKey = SAFE_MODE_ENABLED, envKey = SAFE_MODE_ENABLED)
     private var _requestTimeoutDelegate: String? by keyDelegate(
         configKey = REQUEST_TIMEOUT_MILLIS,
@@ -85,6 +90,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
 
     init {
         // apply defaults
+        if (_notificationSoundEnabledDelegate.isNullOrBlank()) _notificationSoundEnabledDelegate = "true"
         if (_safeModeDelegate.isNullOrBlank()) _safeModeDelegate = "true"
     }
 
@@ -139,6 +145,12 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
             _useStreamingDelegate = value.toString()
         }
 
+    override var notificationSoundEnabled: Boolean
+        get() = _notificationSoundEnabledDelegate?.toBooleanStrictOrNull() ?: true
+        set(value) {
+            _notificationSoundEnabledDelegate = value.toString()
+        }
+
     override var safeModeEnabled: Boolean
         get() = _safeModeDelegate?.lowercase() == "true"
         set(value) {
@@ -158,7 +170,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         }
 
     override var requestTimeoutMillis: Long
-        get() = _requestTimeoutDelegate?.toLongOrNull() ?: 20_000L
+        get() = _requestTimeoutDelegate?.toLongOrNull() ?: 40_000L
         set(value) {
             _requestTimeoutDelegate = value.toString()
         }
@@ -248,6 +260,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         private const val USE_STREAMING = "USE_STREAMING"
+        private const val NOTIFICATION_SOUND_ENABLED = "NOTIFICATION_SOUND_ENABLED"
         private const val SAFE_MODE_ENABLED = "SAFE_MODE_ENABLED"
         private const val USE_GRPC_LEGACY = "USE_GRPC"
         private const val SUPPORT_EMAIL = "SUPPORT_EMAIL"

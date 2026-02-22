@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.roundToInt
 import kotlin.system.exitProcess
+import org.slf4j.LoggerFactory
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
 import org.kodein.di.instance
@@ -30,6 +31,7 @@ import ru.souz.ui.rememberTrayWindowController
 import androidx.compose.ui.res.painterResource as jvmPainterResource
 
 val LocalWindowScope = staticCompositionLocalOf<WindowScope?> { null }
+private val startupLog = LoggerFactory.getLogger("AppStartup")
 
 /**
  * for EN build, pass VM options
@@ -39,6 +41,7 @@ val LocalWindowScope = staticCompositionLocalOf<WindowScope?> { null }
  */
 fun main() {
     //System.setProperty("apple.awt.UIElement", "true") // - Makes the app tray-only on macOS
+    logStartupPlatformInfo()
 
     application(exitProcessOnExit = false) {
         withDI(mainDiModule) {
@@ -120,4 +123,15 @@ fun main() {
         }
     }
     exitProcess(0)
+}
+
+private fun logStartupPlatformInfo() {
+    startupLog.info(
+        "Startup platform: os.name='{}', os.version='{}', os.arch='{}', java.version='{}', java.runtime.version='{}'",
+        System.getProperty("os.name").orEmpty(),
+        System.getProperty("os.version").orEmpty(),
+        System.getProperty("os.arch").orEmpty(),
+        System.getProperty("java.version").orEmpty(),
+        System.getProperty("java.runtime.version").orEmpty(),
+    )
 }

@@ -119,6 +119,10 @@ class ChatUseCase(
                 return
             }
 
+            if (settingsProvider.notificationSoundEnabled) {
+                speechUseCase.playMacPingMsgSafely(scope)
+            }
+
             emitState {
                 copy(
                     chatMessages = if (chatMessages.lastOrNull()?.id == botMessage.id) {

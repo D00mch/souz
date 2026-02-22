@@ -87,7 +87,7 @@ Primary stack:
 │       │   │           ├── graphlog/   # Graph sessions visualization screens
 │       │   │           ├── main/       # Main chat screen/view-model. Agent interaction happens here
 │       │   │           │   └── usecases/   # Main flow use cases (chat, speech, onboarding)
-|       |   |           |   └── info.md # The same file as this one, with the details on ui/main
+|       |   |           |   └── INFO.md # The same file as this one, with the details on ui/main
 │       │   │           ├── settings/   # Settings screens and view-models
 │       │   │           ├── setup/      # First-run setup flow
 │       │   │           └── tools/      # Tool management/detail screens
@@ -127,4 +127,5 @@ Notes:
 - macOS signing config is now split by build mode: App Store builds (`-PmacOsAppStoreRelease=true`) use provisioning profiles + sandbox entitlements, while Developer ID DMG builds use non-App-Store entitlements and do not embed provisioning profiles.
 - macOS runtime image explicitly includes `java.net.http` so release app bundles contain `java.net.http.HttpClient` used by Telegram service startup.
 - Voice recognition audio upload now sends raw PCM (`audio/x-pcm;bit=16;rate=16000`) directly to Salute Speech, so the app no longer depends on JAVE/embedded FFmpeg binaries for microphone transcription.
+- OpenAI voice transcription wraps recorded raw PCM (16kHz mono 16-bit) into a WAV container before multipart upload (`capture.wav`, `audio/wav`) because OpenAI transcriptions do not accept the recorder's raw PCM stream directly.
 - `ConfigStore` now encrypts sensitive values (LLM API keys, Telegram bot token, MCP OAuth state, `MCP_SERVERS_JSON`) before writing to Java Preferences using AES-GCM + PBKDF2. `SOUZ_MASTER_KEY` (env var or JVM system property) can be used as an override; otherwise the app auto-generates and stores a local master key file in the user profile (platform-specific app config directory). Legacy plaintext values are read and transparently migrated to encrypted storage.

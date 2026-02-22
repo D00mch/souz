@@ -52,6 +52,7 @@ data class SettingsState(
     val mcpServersJson: String = "",
     val useFewShotExamples: Boolean = false,
     val useStreaming: Boolean = false,
+    val notificationSoundEnabled: Boolean = true,
     val safeModeEnabled: Boolean = false,
     val gigaModel: GigaModel = LlmBuildProfile.defaultModel,
     val embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
@@ -112,6 +113,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputMcpServersJson(val json: String): SettingsEvent
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
     data class InputUseStreaming(val enabled: Boolean): SettingsEvent
+    data class InputNotificationSoundEnabled(val enabled: Boolean): SettingsEvent
     data class InputSafeModeEnabled(val enabled: Boolean): SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
     data class SelectEmbeddingsModel(val model: EmbeddingsModel): SettingsEvent

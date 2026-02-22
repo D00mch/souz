@@ -187,7 +187,8 @@ compose.desktop {
             packageName = editionPackageName
             packageVersion = "1.0.0"
 
-            modules("java.naming", "java.net.http") // include HTTP client used by Telegram bootstrap
+            // include HTTP client and java.sql needed by Apache Tika parser discovery
+            modules("java.naming", "java.net.http", "java.sql")
 
             macOS {
                 bundleID = editionBundleId

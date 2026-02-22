@@ -362,6 +362,7 @@ fun GeneralSettingsContent(
     state: SettingsState,
     onDefaultCalendarChange: (String?) -> Unit,
     onUseStreamingChange: (Boolean) -> Unit,
+    onNotificationSoundEnabledChange: (Boolean) -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
     onChooseVoice: () -> Unit,
     onMcpServersJsonInput: (String) -> Unit,
@@ -389,6 +390,17 @@ fun GeneralSettingsContent(
                     SettingsCheckbox(
                         checked = state.useStreaming,
                         onCheckedChange = onUseStreamingChange
+                    )
+                }
+            )
+
+            SettingsRow(
+                title = stringResource(Res.string.setting_notification_sound_title),
+                description = stringResource(Res.string.setting_notification_sound_desc),
+                content = {
+                    SettingsCheckbox(
+                        checked = state.notificationSoundEnabled,
+                        onCheckedChange = onNotificationSoundEnabledChange
                     )
                 }
             )
@@ -1682,6 +1694,7 @@ private fun GeneralSettingsContentPreview() {
             state = PreviewSettingsState,
             onDefaultCalendarChange = {},
             onUseStreamingChange = {},
+            onNotificationSoundEnabledChange = {},
             onVoiceSpeedInput = {},
             onChooseVoice = {},
             onMcpServersJsonInput = {},
