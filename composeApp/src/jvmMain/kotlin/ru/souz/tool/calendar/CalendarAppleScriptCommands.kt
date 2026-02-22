@@ -72,8 +72,16 @@ internal object CalendarAppleScriptCommands {
         minute: Int,
         durationMin: Int,
         loc: String,
-        desc: String
-    ): String = """
+        desc: String,
+        reminderMinutes: Int? = null
+    ): String {
+        val alarmBlock = if (reminderMinutes != null && reminderMinutes > 0) {
+            """
+            make new display alarm at end of display alarms of newEvent with properties {trigger interval:-$reminderMinutes}
+            """.trimIndent()
+        } else ""
+
+        return """
 osascript <<'EOF'
 tell application "Calendar"
     try
@@ -94,7 +102,8 @@ tell application "Calendar"
         set endDate to startDate + ($durationMin * minutes)
         
         tell targetCal
-            make new event with properties {summary:"$title", start date:startDate, end date:endDate, location:"$loc", description:"$desc"}
+            set newEvent to make new event with properties {summary:"$title", start date:startDate, end date:endDate, location:"$loc", description:"$desc"}
+            $alarmBlock
         end tell
         
         return "Event '$title' created successfully at " & (startDate as string)
@@ -104,6 +113,7 @@ tell application "Calendar"
 end tell
 EOF
     """.trimIndent()
+    }
 
     fun deleteEventCommand(calName: String, titlePart: String): String = """
         osascript <<'EOF'

@@ -29,6 +29,9 @@ class ToolCalendarCreateEvent(private val bash: ToolRunBashCommand) : ToolSetup<
 
         @InputParamDescription("Description/Notes for the event")
         val description: String? = null,
+
+        @InputParamDescription("Minutes before the event to show a reminder (e.g. 5, 10, 15, 30, 60). Null means no reminder.")
+        val reminderMinutes: Int? = null,
     )
 
     override val name: String = "CalendarCreateEvent"
@@ -79,6 +82,7 @@ class ToolCalendarCreateEvent(private val bash: ToolRunBashCommand) : ToolSetup<
                 input.durationMinutes,
                 safeLoc,
                 safeDesc,
+                input.reminderMinutes,
             )
         )
 
