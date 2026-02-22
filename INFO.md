@@ -127,3 +127,4 @@ Notes:
 - macOS signing config is now split by build mode: App Store builds (`-PmacOsAppStoreRelease=true`) use provisioning profiles + sandbox entitlements, while Developer ID DMG builds use non-App-Store entitlements and do not embed provisioning profiles.
 - macOS runtime image explicitly includes `java.net.http` so release app bundles contain `java.net.http.HttpClient` used by Telegram service startup.
 - Voice recognition audio upload now sends raw PCM (`audio/x-pcm;bit=16;rate=16000`) directly to Salute Speech, so the app no longer depends on JAVE/embedded FFmpeg binaries for microphone transcription.
+- OpenAI voice transcription wraps recorded raw PCM (16kHz mono 16-bit) into a WAV container before multipart upload (`capture.wav`, `audio/wav`) because OpenAI transcriptions do not accept the recorder's raw PCM stream directly.
