@@ -67,9 +67,10 @@ class OnboardingUseCase(
         val displayText = getString(Res.string.onboarding_display_text)
         emitState {
             copy(
-                displayedText = displayText,
+                isSpeaking = true,
                 chatStartTip = "",
                 chatMessages = chatMessages + ChatMessage(
+                    isVoice = true,
                     text = displayText,
                     isUser = false,
                 ),
