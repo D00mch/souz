@@ -16,8 +16,6 @@ import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.session.GraphSessionService
-import ru.souz.server.AgentNode
-import ru.souz.server.GraphAgentNode
 import ru.souz.audio.ActiveSoundRecorderImpl
 import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.audio.Say
@@ -221,6 +219,4 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { McpConfigProvider(instance()) }
     bindSingleton { McpClientManager(instance()) }
 
-    // Server
-    bindSingleton<AgentNode> { GraphAgentNode(instance()) }
 }

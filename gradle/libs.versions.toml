@@ -60,11 +60,6 @@ ktor-clientContentNegotiation = { module = "io.ktor:ktor-client-content-negotiat
 ktor-clientLogging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
 ktor-serializationKotlinxJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
 ktor-serializationJackson = { module = "io.ktor:ktor-serialization-jackson", version.ref = "ktor" }
-ktor-serverCore = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
-ktor-serverNetty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
-ktor-serverContentNegotiation = { module = "io.ktor:ktor-server-content-negotiation", version.ref = "ktor" }
-ktor-serverStatusPages = { module = "io.ktor:ktor-server-status-pages", version.ref = "ktor" }
-ktor-serverTestHost = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 letsPlot-common = { module = "org.jetbrains.lets-plot:lets-plot-common", version.ref = "letsPlot-core" }
 letsPlot-kotlin = { module = "org.jetbrains.lets-plot:lets-plot-kotlin-jvm", version.ref = "letsPlot-kotlin" }
 letsPlot-imageExport = { module = "org.jetbrains.lets-plot:lets-plot-image-export", version.ref = "letsPlot-core" }
@@ -104,13 +99,6 @@ letsPlot = [
     "letsPlot-kotlin",
     "letsPlot-imageExport"
 ]
-ktorServer = [
-    "ktor-serverCore",
-    "ktor-serverNetty",
-    "ktor-serverContentNegotiation",
-    "ktor-serverStatusPages"
-]
-
 [plugins]
 composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "composeHotReload" }
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }

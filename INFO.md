@@ -12,7 +12,7 @@ The repository is a multi-module Gradle project:
 
 Primary stack:
 - Kotlin + Compose Multiplatform
-- Ktor (client and local server)
+- Ktor (client)
 - gRPC/Protobuf
 - JUnit 5 + MockK for testing
 
@@ -29,7 +29,6 @@ Primary stack:
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop toolset**: files, browser, calendar, mail, notes, desktop automation, analytics, and presentations.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
-- **Local server mode** to expose agent endpoints for local integrations/companion clients.
 - **Telegram PC Control bot**: automated bot creation via `@BotFather`, long-polling command listener, and agent-driven responses — all managed from the Telegram settings screen. Bot credentials (`TG_BOT_TOKEN`, `TG_BOT_OWNER_ID`, `TG_BOT_USERNAME`) are stored in `ConfigStore`. The bot can be created/deleted from the UI; on creation it automatically sends `/start` and sets a profile avatar. Telegram integration is runtime-gated on macOS and disabled on versions below macOS 15 (with UI/tool warnings instead of app crash). Telegram tool category is also disabled while Telegram auth state is not `READY`.
 - **Model-aware speech recognition routing**: voice input recognition can use SaluteSpeech or OpenAI transcription (`/v1/audio/transcriptions`) and selects provider based on active model provider and configured keys.
 
@@ -64,7 +63,6 @@ Primary stack:
 │       │   │       ├── llms/           # Additional LLM provider clients (Qwen, AiTunnel, Anthropic)
 │       │   │       ├── mcp/            # MCP sessions, transport, config, OAuth, protocol adapter
 │       │   │       ├── permissions/    # Permission/relaunch helpers
-│       │   │       ├── server/         # Local server endpoints and API models
 │       │   │       ├── service/       # Service-layer integrations
 │       │   │       │   └── telegram/  # Telegram client (TdLib) + Bot polling controller
 │       │   │       │       ├── TelegramService.kt       # TdLib wrapper: auth, messaging, bot creation via BotFather
@@ -110,7 +108,6 @@ Primary stack:
 │           │   ├── ru/souz/        # Package-aligned tests
 │           │   │   ├── tool/           # Tool tests in package namespace
 │           │   │   └── ui/             # UI/view-model tests
-│           │   ├── server/             # Local server tests
 │           │   └── tool/files/         # File-tool focused tests
 │           └── resources/
 │               └── directory/          # File fixture directory for tests
