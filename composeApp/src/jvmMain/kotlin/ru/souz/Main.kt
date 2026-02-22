@@ -24,8 +24,6 @@ import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
 import ru.souz.mcp.McpClientManager
-import ru.souz.server.AgentNode
-import ru.souz.server.startLocalServer
 import ru.souz.ui.AppTray
 import ru.souz.ui.rememberTrayWindowController
 
@@ -47,19 +45,14 @@ fun main() {
             val di = localDI()
             val say: Say by di.instance()
             val settingsProvider: SettingsProvider by di.instance()
-            val agentNode: AgentNode by di.instance()
             val mcpClientManager: McpClientManager by di.instance()
             val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
 
             DisposableEffect(Unit) {
                 telegramBotController.start()
-                println("Starting local server...")
-                val serverEngine = startLocalServer(agentNode)
 
                 onDispose {
-                    println("Stopping local server...")
-                    runCatching { serverEngine.stop(1000, 2000) }
-                        .onFailure { println("Failed to stop local server: ${it.message}") }
+                    println("Shutting down services...")
                     runCatching { mcpClientManager.close() }
                         .onFailure { println("Failed to close MCP manager: ${it.message}") }
                     runCatching { telegramBotController.close() }

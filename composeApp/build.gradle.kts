@@ -140,9 +140,6 @@ kotlin {
             implementation(libs.markdown)
             implementation(libs.java.diffUtils)
 
-            // ktor server (local API for mobile companion)
-            implementation(libs.bundles.ktorServer)
-
             // Excel support
             implementation(libs.poi)
             implementation(libs.poi.ooxml)
@@ -157,7 +154,6 @@ kotlin {
             implementation(libs.kotlin.testJunit5)
             implementation(libs.junit.jupiterParams)
             implementation(libs.mockk)
-            implementation(libs.ktor.serverTestHost)
             implementation(libs.kotlinx.coroutinesTest)
         }
     }
