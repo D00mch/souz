@@ -127,6 +127,7 @@ enum class TelegramChatAction {
 
 
 class TelegramService(
+    telegramPlatformSupport: TelegramPlatformSupport = TelegramPlatformSupport,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
 
@@ -137,6 +138,7 @@ class TelegramService(
 
     private val authStateFlow = MutableStateFlow(TelegramAuthState())
     val authState: StateFlow<TelegramAuthState> = authStateFlow.asStateFlow()
+    private val unsupportedReason: String? = telegramPlatformSupport.unsupportedReason()
 
     private val contactsByUserId = ConcurrentHashMap<Long, TelegramCachedContact>()
     private val usersById = ConcurrentHashMap<Long, TdApi.User>()
@@ -146,7 +148,8 @@ class TelegramService(
     private val meUserIdRef = AtomicReference<Long?>(null)
 
     private val authBridge = InteractiveAuthBridge()
-    private val clientFactory = SimpleTelegramClientFactory()
+    @Volatile
+    private var clientFactory: SimpleTelegramClientFactory? = null
     private val clientMutex = Mutex()
 
     @Volatile
@@ -154,9 +157,21 @@ class TelegramService(
 
     init {
         applyTdlightLogLevel(isTelegramDebugLogsEnabled())
-        scope.launch {
-            startClientIfNeeded()
-            resumePendingBotTasks()
+        val reason = unsupportedReason
+        if (reason != null) {
+            l.info("Telegram integration disabled: {}", reason)
+            authStateFlow.value = TelegramAuthState(
+                step = TelegramAuthStep.ERROR,
+                isBusy = false,
+                errorMessage = reason,
+            )
+        } else {
+            scope.launch {
+                runCatching {
+                    startClientIfNeeded()
+                    resumePendingBotTasks()
+                }.onFailure(::onUnhandledError)
+            }
         }
     }
 
@@ -185,6 +200,7 @@ class TelegramService(
     }
 
     suspend fun submitPhoneNumber(phoneNumber: String) {
+        ensureSupported()
         val normalized = normalizePhone(phoneNumber)
         if (normalized.isBlank()) {
             throw IllegalArgumentException("Phone number is required")
@@ -201,6 +217,7 @@ class TelegramService(
     }
 
     fun submitLoginCode(code: String) {
+        ensureSupported()
         val normalized = code.trim()
         if (normalized.isBlank()) {
             throw IllegalArgumentException("Login code is required")
@@ -215,6 +232,7 @@ class TelegramService(
     }
 
     fun submitTwoFaPassword(password: String) {
+        ensureSupported()
         if (password.isBlank()) {
             throw IllegalArgumentException("2FA password is required")
         }
@@ -228,6 +246,7 @@ class TelegramService(
     }
 
     suspend fun logout() {
+        ensureSupported()
         val currentClient = client ?: return
         authStateFlow.update {
             it.copy(
@@ -244,10 +263,12 @@ class TelegramService(
     }
 
     suspend fun cancelAuth() {
+        ensureSupported()
         restartClient()
     }
 
     suspend fun requestCodeAgain(phoneNumber: String) {
+        ensureSupported()
         val normalized = normalizePhone(phoneNumber)
         if (normalized.isBlank()) {
             throw IllegalArgumentException("Phone number is required")
@@ -971,7 +992,20 @@ class TelegramService(
         requireClient().send(TdApi.SendChatAction(chatId, 0L, null, action)).awaitResult()
     }
 
+    private fun ensureSupported() {
+        val reason = unsupportedReason ?: return
+        authStateFlow.update {
+            it.copy(
+                step = TelegramAuthStep.ERROR,
+                isBusy = false,
+                errorMessage = reason,
+            )
+        }
+        throw IllegalStateException(reason)
+    }
+
     private fun requireReady() {
+        ensureSupported()
         if (authState.value.step != TelegramAuthStep.READY) {
             throw IllegalStateException("Telegram is not connected. Open Settings -> Functions and complete login")
         }
@@ -984,13 +1018,17 @@ class TelegramService(
     }
 
     private suspend fun startClientIfNeeded() {
+        ensureSupported()
         clientMutex.withLock {
+            ensureSupported()
             if (client != null) {
                 return
             }
 
             val settings = buildTdLibSettings()
-            val builder = clientFactory.builder(settings)
+            val builder = runCatching {
+                resolveClientFactory().builder(settings)
+            }.onFailure(::onUnhandledError).getOrElse { throw it }
 
             builder.setClientInteraction(authBridge)
             builder.addUpdateHandler(TdApi.UpdateAuthorizationState::class.java, ::onAuthorizationStateUpdate)
@@ -1030,7 +1068,9 @@ class TelegramService(
                 onUnhandledError(throwable)
             }
 
-            client = builder.build(authBridge)
+            client = runCatching {
+                builder.build(authBridge)
+            }.onFailure(::onUnhandledError).getOrElse { throw it }
 
             authStateFlow.update {
                 it.copy(
@@ -1043,6 +1083,7 @@ class TelegramService(
     }
 
     private suspend fun restartClient() {
+        ensureSupported()
         clientMutex.withLock {
             val oldClient = client
             client = null
@@ -1057,6 +1098,13 @@ class TelegramService(
         }
 
         startClientIfNeeded()
+    }
+
+    private fun resolveClientFactory(): SimpleTelegramClientFactory {
+        clientFactory?.let { return it }
+        return SimpleTelegramClientFactory().also { created ->
+            clientFactory = created
+        }
     }
 
     private fun clearCaches() {
@@ -1519,6 +1567,12 @@ class TelegramService(
     private fun formatUserError(message: String?): String {
         val normalized = message.orEmpty()
         return when {
+            unsupportedReason != null -> unsupportedReason
+
+            normalized.contains("newer than running OS", ignoreCase = true) &&
+                normalized.contains("macOS", ignoreCase = true) ->
+                TelegramPlatformSupport.UNSUPPORTED_MACOS_MESSAGE
+
             normalized.contains("API_ID_PUBLISHED_FLOOD", ignoreCase = true) ->
                 "Telegram отклонил встроенные API credentials (API_ID_PUBLISHED_FLOOD). " +
                     "Обратитесь в поддержку и опишите проблему."

@@ -104,6 +104,7 @@
     <string name="telegram_status_logging_out">Отключение...</string>
     <string name="telegram_status_initializing">Инициализация...</string>
     <string name="telegram_status_not_connected">Не подключено</string>
+    <string name="telegram_error_macos_15_required">Telegram недоступен в этой версии macOS. Минимальная поддерживаемая версия — macOS 15.</string>
 
     <!-- Security Settings -->
     <string name="setting_safemode_title">Безопасный режим</string>

@@ -19,6 +19,7 @@ import ru.souz.giga.GigaChatAPI
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.LlmProvider
 import ru.souz.service.telegram.TelegramAuthStep
+import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.service.telegram.TelegramService
 import ru.souz.tool.config.ToolSoundConfig
 import ru.souz.tool.ToolRunBashCommand
@@ -38,6 +39,7 @@ class SettingsViewModel(
     private val keysProvider: SettingsProvider by di.instance()
     private val chatApi: GigaChatAPI by di.instance()
     private val graphBasedAgent: GraphBasedAgent by di.instance()
+    private val telegramPlatformSupport: TelegramPlatformSupport by di.instance()
     private val telegramService: TelegramService by di.instance()
     private val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
     private val supportLogSender = SupportLogSender()
@@ -45,6 +47,7 @@ class SettingsViewModel(
 
     init {
         viewModelScope.launch {
+            setState { copy(isTelegramSupported = telegramPlatformSupport.isSupported()) }
             refreshFromProvider()
             fetchBalance()
             fetchCalendars()
