@@ -179,6 +179,7 @@ class ToolsFactory(di: DI) {
         )
 
         ToolCategory.CHAT -> listOf()
+        ToolCategory.HELP -> listOf()
 
         ToolCategory.TELEGRAM -> listOf(
             toolTelegramReadInbox.toGiga(),

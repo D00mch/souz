@@ -110,4 +110,25 @@ class LocalRegexClassifierTest {
             assertEquals(expected, categories.first(), text)
         }
     }
+
+    @Test
+    fun `classifies help what can you do`() = runBlocking {
+        val classifier = LocalRegexClassifier
+        val categories = classifier.classify(body("Что ты умеешь?")).categories
+        assertEquals(ToolCategory.HELP, categories.first())
+    }
+
+    @Test
+    fun `classifies help capabilities`() = runBlocking {
+        val classifier = LocalRegexClassifier
+        val categories = classifier.classify(body("Какие у тебя есть возможности?")).categories
+        assertEquals(ToolCategory.HELP, categories.first())
+    }
+
+    @Test
+    fun `classifies help command`() = runBlocking {
+        val classifier = LocalRegexClassifier
+        val categories = classifier.classify(body("помощь")).categories
+        assertEquals(ToolCategory.HELP, categories.first())
+    }
 }

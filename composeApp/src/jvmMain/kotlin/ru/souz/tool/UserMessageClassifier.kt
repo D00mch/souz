@@ -30,6 +30,7 @@ enum class ToolCategory {
     TELEGRAM,
     DESKTOP,
     PRESENTATION,
+    HELP,
 }
 
 object LocalRegexClassifier : UserMessageClassifier {
@@ -149,6 +150,13 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("презентац|слайд|pptx|powerpoint|keynote|выступлени|доклад|presentation|slide"), 1.5),
             WeightedRegex(Regex("создай презентац|сделай слайд|напиши презентац|слайды"), 2.0),
             WeightedRegex(Regex("прочитай презентац|анализ слайд|что в презентац"), 1.7),
+        )
+
+        ToolCategory.HELP -> listOf(
+            WeightedRegex(Regex("что (ты )?(умеешь|можешь|знаешь делать)|что ты делаешь|какие .* функци|какие .* возможност"), 2.0),
+            WeightedRegex(Regex("помощь|помоги|\\bhelp\\b|на что .* способ|что .* умеет|расскажи о себе"), 2.0),
+            WeightedRegex(Regex("как (тебя |тобой )?пользоваться|что ты за приложение|чем .* помочь"), 2.0),
+            WeightedRegex(Regex("список команд|список функций|список возможностей|что доступно"), 2.0),
         )
     }
 

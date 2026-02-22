@@ -35,7 +35,7 @@ class NodesClassification(
             toolsSettings.applyFilter(toolsFactory.toolsByCategory)
         val categories: List<ToolCategory> = classify(ctx.input, ctx.history, categoryStates)
 
-        val categoriesToChoseFrom = if (categories.isEmpty()) {
+        val categoriesToChoseFrom = if (categories.isEmpty() || categories.contains(ToolCategory.HELP)) {
             categoryStates
         } else {
             categoryStates.filter { categories.contains(it.key) }
@@ -140,6 +140,7 @@ TELEGRAM 95"""
         TELEGRAM -> "действия в Telegram: чтение входящих, отправка сообщений, поиск по истории, изменение состояния чатов"
         DESKTOP -> "работа с экраном, скриншотами и записью видео с экрана"
         PRESENTATION -> "создание презентаций ppxt, чтение слайдов, работа с powerpoint"
+        HELP -> "вопрос о возможностях приложения, что оно умеет, какие есть функции, помощь"
     }.trimMargin().trimIndent()
 
     private fun ToolCategory.examples(): List<String> = when (this) {
@@ -240,6 +241,12 @@ TELEGRAM 95"""
             "создай презентацию про ИИ",
             "прочитай слайды из файла presentation.pptx",
             "добавь слайд с заголовком",
+        )
+        HELP -> listOf(
+            "что ты умеешь",
+            "какие у тебя функции",
+            "помощь",
+            "что ты можешь делать",
         )
     }
 }
