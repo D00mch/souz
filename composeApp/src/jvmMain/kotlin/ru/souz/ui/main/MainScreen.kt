@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Folder
@@ -291,6 +292,17 @@ fun MainScreenContent(
                             MinimalGlassButton(onClick = onShowLastText) {
                                 Icon(
                                     Icons.Rounded.SkipPrevious,
+                                    null,
+                                    tint = iconTint,
+                                    modifier = Modifier.size(TopIconSize)
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        if (state.isSpeaking) {
+                            MinimalGlassButton(onClick = onStopSpeech) {
+                                Icon(
+                                    Icons.AutoMirrored.Rounded.VolumeOff,
                                     null,
                                     tint = iconTint,
                                     modifier = Modifier.size(TopIconSize)
