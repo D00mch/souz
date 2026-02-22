@@ -30,7 +30,7 @@ import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.Executors
 
-private const val OAUTH_STORE_PREFIX = "MCP_OAUTH_STATE_"
+const val OAUTH_STORE_PREFIX = "MCP_OAUTH_STATE_"
 
 class McpOAuthManager(
     private val config: McpServerConfig,

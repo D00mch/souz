@@ -2,7 +2,14 @@ package ru.souz.db
 
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
+import ru.souz.db.SettingsProviderImpl.Companion.AI_TUNNEL_KEY
+import ru.souz.db.SettingsProviderImpl.Companion.ANTHROPIC_KEY
+import ru.souz.db.SettingsProviderImpl.Companion.GIGA_CHAT_KEY
+import ru.souz.db.SettingsProviderImpl.Companion.OPENAI_KEY
+import ru.souz.db.SettingsProviderImpl.Companion.QWEN_CHAT_KEY
+import ru.souz.db.SettingsProviderImpl.Companion.SALUTE_SPEECH_KEY
 import ru.souz.giga.gigaJsonMapper
+import ru.souz.mcp.OAUTH_STORE_PREFIX
 import java.security.SecureRandom
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
@@ -80,13 +87,12 @@ internal object SecretPrefsCodec {
 
     private val exactSensitiveKeys = setOf(
         ConfigStore.TG_BOT_TOKEN,
-        "GIGA_CHAT_KEY",
-        "QWEN_CHAT_KEY",
-        "AI_TUNNEL_KEY",
-        "ANTHROPIC_KEY",
-        "OPENAI_KEY",
-        "SALUTE_SPEECH_KEY",
-        "MCP_SERVERS_JSON",
+        GIGA_CHAT_KEY,
+        QWEN_CHAT_KEY,
+        AI_TUNNEL_KEY,
+        ANTHROPIC_KEY,
+        OPENAI_KEY,
+        SALUTE_SPEECH_KEY,
     )
 
     fun encodeForStorage(key: String, value: String): String {
@@ -131,7 +137,7 @@ internal object SecretPrefsCodec {
     }
 
     private fun isSensitiveKey(key: String): Boolean =
-        key in exactSensitiveKeys || key.startsWith("MCP_OAUTH_STATE_")
+        key in exactSensitiveKeys || key.startsWith(OAUTH_STORE_PREFIX)
 
     private fun encrypt(plainText: String): String {
         val masterSecret = masterSecret()

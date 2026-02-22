@@ -252,12 +252,12 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         }
 
     companion object {
-        private const val GIGA_CHAT_KEY = "GIGA_CHAT_KEY"
-        private const val QWEN_CHAT_KEY = "QWEN_CHAT_KEY"
-        private const val AI_TUNNEL_KEY = "AI_TUNNEL_KEY"
-        private const val ANTHROPIC_KEY = "ANTHROPIC_KEY"
-        private const val OPENAI_KEY = "OPENAI_KEY"
-        private const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
+        const val GIGA_CHAT_KEY = "GIGA_CHAT_KEY"
+        const val QWEN_CHAT_KEY = "QWEN_CHAT_KEY"
+        const val AI_TUNNEL_KEY = "AI_TUNNEL_KEY"
+        const val ANTHROPIC_KEY = "ANTHROPIC_KEY"
+        const val OPENAI_KEY = "OPENAI_KEY"
+        const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         private const val USE_STREAMING = "USE_STREAMING"
         private const val NOTIFICATION_SOUND_ENABLED = "NOTIFICATION_SOUND_ENABLED"
