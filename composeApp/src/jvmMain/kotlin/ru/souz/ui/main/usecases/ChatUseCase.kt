@@ -119,7 +119,7 @@ class ChatUseCase(
                 return
             }
 
-            ProcessBuilder("afplay", "/System/Library/Sounds/Morse.aiff").start()
+            speechUseCase.playMacPingSafely(scope)
 
             emitState {
                 copy(

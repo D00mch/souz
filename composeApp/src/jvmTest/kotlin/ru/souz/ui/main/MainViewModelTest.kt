@@ -434,10 +434,10 @@ class MainViewModelTest {
         every { settingsProvider.useStreaming } returns false
         var needsOnboardingState = needsOnboarding
         every { settingsProvider.needsOnboarding } answers { needsOnboardingState }
-        every { settingsProvider.needsOnboarding = any() } answers { needsOnboardingState = firstArg() }
+        every { settingsProvider.needsOnboarding = any() } answers { needsOnboardingState = firstArg<Boolean>() }
         var onboardingCompletedState = false
         every { settingsProvider.onboardingCompleted } answers { onboardingCompletedState }
-        every { settingsProvider.onboardingCompleted = any() } answers { onboardingCompletedState = firstArg() }
+        every { settingsProvider.onboardingCompleted = any() } answers { onboardingCompletedState = firstArg<Boolean>() }
         every { settingsProvider.safeModeEnabled } returns false
 
         val say = mockk<Say>(relaxed = true)
@@ -456,7 +456,9 @@ class MainViewModelTest {
 
         val telegramBotController = mockk<TelegramBotController>(relaxed = true)
         val incomingMessages = MutableSharedFlow<TelegramBotController.IncomingMessage>()
+        val cleanCommands = MutableSharedFlow<Unit>()
         every { telegramBotController.incomingMessages } returns incomingMessages
+        every { telegramBotController.cleanCommands } returns cleanCommands
 
         val di = DI {
             bindSingleton { graphAgent }
