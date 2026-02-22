@@ -5,7 +5,9 @@ package ru.souz.tool
 import ru.souz.db.ConfigStore
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaToolSetup
+import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.service.telegram.TelegramPlatformSupport
+import ru.souz.service.telegram.TelegramService
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
@@ -27,7 +29,10 @@ data class ToolsSettingsState(
 )
 
 class ToolsSettings(
-    private val store: ConfigStore, private val toolsFactory: ToolsFactory
+    private val store: ConfigStore,
+    private val toolsFactory: ToolsFactory,
+    private val telegramService: TelegramService,
+    private val telegramPlatformSupport: TelegramPlatformSupport,
 ) {
     private val localState: AtomicReference<ToolsSettingsState?> = AtomicReference(null)
 
@@ -116,7 +121,7 @@ class ToolsSettings(
     }
 
     private fun enforcePlatformRestrictions(state: ToolsSettingsState): ToolsSettingsState {
-        if (TelegramPlatformSupport.isSupported()) return state
+        if (telegramPlatformSupport.isSupported()) return state
 
         val telegramSettings = state.categories[ToolCategory.TELEGRAM]
         val disabledTelegramSettings =
@@ -131,7 +136,14 @@ class ToolsSettings(
     }
 
     private fun isCategoryForceDisabled(category: ToolCategory): Boolean =
-        category == ToolCategory.TELEGRAM && !TelegramPlatformSupport.isSupported()
+        when (category) {
+            ToolCategory.TELEGRAM -> {
+                !telegramPlatformSupport.isSupported() ||
+                    telegramService.authState.value.step != TelegramAuthStep.READY
+            }
+
+            else -> false
+        }
 
     private fun applyOverrides(
         setup: GigaToolSetup,

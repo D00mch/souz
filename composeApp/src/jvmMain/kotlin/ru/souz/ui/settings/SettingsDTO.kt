@@ -87,6 +87,7 @@ data class SettingsState(
     val telegramPasswordHint: String? = null,
     val telegramAuthBusy: Boolean = false,
     val telegramAuthError: String? = null,
+    val isTelegramSupported: Boolean = true,
     val isTelegramBotActive: Boolean = false,
     val showBotDeleteConfirmation: Boolean = false,
     val botNameToDelete: String? = null,

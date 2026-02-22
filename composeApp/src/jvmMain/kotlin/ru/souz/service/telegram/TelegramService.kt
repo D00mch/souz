@@ -127,6 +127,7 @@ enum class TelegramChatAction {
 
 
 class TelegramService(
+    telegramPlatformSupport: TelegramPlatformSupport = TelegramPlatformSupport,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
 
@@ -137,7 +138,7 @@ class TelegramService(
 
     private val authStateFlow = MutableStateFlow(TelegramAuthState())
     val authState: StateFlow<TelegramAuthState> = authStateFlow.asStateFlow()
-    private val unsupportedReason: String? = TelegramPlatformSupport.unsupportedReason()
+    private val unsupportedReason: String? = telegramPlatformSupport.unsupportedReason()
 
     private val contactsByUserId = ConcurrentHashMap<Long, TelegramCachedContact>()
     private val usersById = ConcurrentHashMap<Long, TdApi.User>()

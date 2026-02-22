@@ -45,7 +45,6 @@ import androidx.compose.ui.unit.sp
 import ru.souz.giga.EmbeddingsModel
 import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
-import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
@@ -705,7 +704,7 @@ fun FunctionsSettingsContent(
                 )
             }
 
-            if (TelegramPlatformSupport.isSupported()) {
+            if (state.isTelegramSupported) {
                 val telegramStatus = when (state.telegramAuthStep) {
                     TelegramAuthStepUi.CONNECTED -> stringResource(Res.string.telegram_status_connected_format).format(state.telegramActiveSessionPhone ?: stringResource(Res.string.telegram_session_default))
                     TelegramAuthStepUi.LOGGING_OUT -> stringResource(Res.string.telegram_status_logging_out)
@@ -880,7 +879,7 @@ fun TelegramSettingsScreen(
         subtitle = "",
         onClose = onClose
     ) {
-        if (!TelegramPlatformSupport.isSupported()) {
+        if (!state.isTelegramSupported) {
             Text(
                 text = stringResource(Res.string.telegram_error_macos_15_required),
                 style = MaterialTheme.typography.bodyMedium,
@@ -896,7 +895,7 @@ fun TelegramSettingsScreen(
         }
     }
 
-    if (TelegramPlatformSupport.isSupported() && state.showBotDeleteConfirmation && state.botNameToDelete != null) {
+    if (state.isTelegramSupported && state.showBotDeleteConfirmation && state.botNameToDelete != null) {
         ru.souz.ui.common.ConfirmDialog(
             type = ru.souz.ui.common.ConfirmDialogType.WARNING,
             title = stringResource(Res.string.telegram_dialog_delete_title),

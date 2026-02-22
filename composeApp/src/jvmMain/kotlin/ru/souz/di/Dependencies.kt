@@ -45,6 +45,7 @@ import ru.souz.mcp.McpClientManager
 import ru.souz.mcp.McpConfigProvider
 import ru.souz.service.telegram.TelegramService
 import ru.souz.service.telegram.TelegramBotController
+import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.tool.*
 import ru.souz.tool.application.*
 import ru.souz.tool.browser.*
@@ -99,12 +100,13 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     // DB
     bindSingleton { ConfigStore }
     bindSingleton { VectorDB }
+    bindSingleton { TelegramPlatformSupport }
     bindSingleton<SettingsProvider> { SettingsProviderImpl(instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
-    bindSingleton { ToolsSettings(instance(), instance()) }
+    bindSingleton { ToolsSettings(instance(), instance(), instance(), instance()) }
     bindSingleton { FilesToolUtil(instance()) }
     bindSingleton { ToolPermissionBroker(instance()) }
-    bindSingleton { TelegramService() }
+    bindSingleton { TelegramService(instance()) }
 
     // Tools
     bindSingleton { ToolGetClipboard() }
