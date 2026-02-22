@@ -42,7 +42,8 @@ tell application "Mail"
                 set msgId to id of msg
                 set msgSubject to subject of msg
                 set msgSender to extract name from sender of msg
-                set output to output & "ID: " & msgId & " | From: " & msgSender & " | Subject: " & msgSubject & linefeed
+                set msgDate to date received of msg
+                set output to output & "ID: " & msgId & " | Date: " & (msgDate as string) & " | From: " & msgSender & " | Subject: " & msgSubject & linefeed
             on error
             end try
         end repeat
