@@ -236,7 +236,7 @@ class ToolTest {
 
     @Test
     fun `test ToolNewFile, ToolModifyFile, ToolMoveFile, ToolDeleteFile lifecycle`() {
-        val content = "Test"
+        val content = "Test\n"
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
@@ -251,8 +251,15 @@ class ToolTest {
             assertEquals(content, fileContent)
 
             // modify new
-            val newContent = "New"
-            ToolModifyFile(filesToolUtil).invoke(ToolModifyFile.Input(path, oldText = content, newText = newContent))
+            val newContent = "New\n"
+            val patch = """
+                --- a/$newFileName
+                +++ b/$newFileName
+                @@ -1 +1 @@
+                -${content.trimEnd('\n')}
+                +${newContent.trimEnd('\n')}
+            """.trimIndent() + "\n"
+            ToolModifyFile(filesToolUtil).invoke(ToolModifyFile.Input(path = path, patch = patch, strip = 1))
 
             // move
             ToolMoveFile(filesToolUtil).invoke(ToolMoveFile.Input(path, movedPath))
@@ -261,7 +268,7 @@ class ToolTest {
 
             // find
             val findResult = ToolFindTextInFiles(filesToolUtil)
-                .invoke(ToolFindTextInFiles.Input(path = resources, newContent))
+                .invoke(ToolFindTextInFiles.Input(path = resources, "New"))
             assertEquals("[moved-$newFileName]", findResult)
 
             // delete
@@ -269,6 +276,36 @@ class ToolTest {
             assertFailsWith<BadInputException> {
                 ToolReadFile(filesToolUtil).invoke(ToolReadFile.Input(movedPath))
             }
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile applies patch for filename with spaces`() {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val fileName = "my note.txt"
+            val path = "${tempDir.absolutePath}/$fileName"
+            File(path).writeText("Hello\n")
+            val ts = "\t1970-01-01 00:00:00 +0000"
+
+            val patch = listOf(
+                "--- a/$fileName$ts",
+                "+++ b/$fileName$ts",
+                "@@ -1 +1,2 @@",
+                " Hello",
+                "+World",
+                ""
+            ).joinToString("\n")
+
+            val result = ToolModifyFile(filesToolUtil).invoke(
+                ToolModifyFile.Input(path = path, patch = patch, strip = 1)
+            )
+
+            assertEquals("OK", result)
+            assertEquals("Hello\nWorld\n", File(path).readText())
         } finally {
             tempDir.deleteRecursively()
         }
