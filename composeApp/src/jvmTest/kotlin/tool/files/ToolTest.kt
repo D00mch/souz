@@ -19,20 +19,33 @@ import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolReadFile
+import ru.souz.tool.files.ToolReadPdfPages
 import java.io.File
 import java.nio.file.Files
 import java.util.UUID
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertFalse
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class ToolTest {
     private val filesToolUtil: FilesToolUtil = mockk()
 
     private fun createTempDirectory(): File =
         Files.createTempDirectory(File("src/jvmTest/resources").toPath(), "souz-test-").toFile()
+
+    private fun fixtureDirectory(): File = File("src/jvmTest/resources/directory")
+
+    private fun fixturePath(name: String): String = File(fixtureDirectory(), name).path
+
+    private fun firstFixturePdfPath(): String =
+        fixtureDirectory().listFiles()
+            ?.firstOrNull { it.isFile && it.extension.equals("pdf", ignoreCase = true) }
+            ?.path
+            ?: error("PDF fixture not found in ${fixtureDirectory().path}")
 
     private fun createSampleFiles(baseDir: File) {
         val nestedDir = File(baseDir, "directory").apply { mkdirs() }
@@ -92,6 +105,100 @@ class ToolTest {
         assertContains(extracted, "Filename: test.txt")
         assertContains(extracted, "=== CONTENT ===")
         assertContains(extracted, "Test content")
+    }
+
+    @Test
+    fun `test ToolReadPdfPages reads fixture pdf`() {
+        val filesToolUtil = createFilesToolUtil(forbiddenFolders = listOf("~/Library/"))
+
+        val result = ToolReadPdfPages(filesToolUtil)
+            .invoke(ToolReadPdfPages.Input(filePath = firstFixturePdfPath(), startPage = 1))
+
+        assertFalse(result.startsWith("Error:"))
+        assertFalse(result.startsWith("IO Error"))
+        assertFalse(result.startsWith("Unexpected error"))
+        assertTrue(result.contains("=== PDF CONTENT (Pages 1-1 of"))
+    }
+
+    @Test
+    fun `test ToolReadPdfPages validates non-pdf and missing files`() {
+        val filesToolUtil = createFilesToolUtil(forbiddenFolders = listOf("~/Library/"))
+        val tool = ToolReadPdfPages(filesToolUtil)
+
+        val nonPdfResult = tool.invoke(ToolReadPdfPages.Input(filePath = fixturePath("file.txt")))
+        assertEquals("Error: Expecting .pdf file", nonPdfResult)
+
+        val missingPath = fixturePath("missing.pdf")
+        val missingResult = tool.invoke(ToolReadPdfPages.Input(filePath = missingPath))
+        assertEquals("Error: File not found at $missingPath", missingResult)
+    }
+
+    @Test
+    fun `test ToolReadPdfPages reports out-of-range page`() {
+        val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+
+        val result = ToolReadPdfPages(filesToolUtil)
+            .invoke(ToolReadPdfPages.Input(filePath = firstFixturePdfPath(), startPage = 10000))
+
+        assertContains(result, "Error: Requested page 10000 but document only has")
+    }
+
+    @Test
+    fun `test ToolExtractText supports plain text previews for multiple extensions`() {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(forbiddenFolders = listOf("~/Library/"))
+            val tool = ToolExtractText(filesToolUtil)
+
+            val markdownFile = File(tempDir, "notes.md").apply {
+                writeText("# Notes\n\n- Alpha\n- Beta\n")
+            }
+            val jsonFile = File(tempDir, "payload.json").apply {
+                writeText("""{"name":"Souz","enabled":true}""")
+            }
+            val yamlFile = File(tempDir, "config.yaml").apply {
+                writeText("name: Souz\nenabled: true\n")
+            }
+
+            val cases = listOf(
+                fixturePath("file.txt") to "Содержимое file.txt",
+                markdownFile.path to "# Notes",
+                jsonFile.path to "\"name\":\"Souz\"",
+                yamlFile.path to "enabled: true"
+            )
+
+            cases.forEach { (path, expectedText) ->
+                val extracted = tool.invoke(ToolExtractText.Input(path))
+                assertContains(extracted, "=== METADATA ===")
+                assertContains(extracted, "Filename: ${File(path).name}")
+                assertContains(extracted, "Content-Type: text/plain (direct)")
+                assertContains(extracted, "Charset: UTF-8")
+                assertContains(extracted, "=== CONTENT ===")
+                assertContains(extracted, expectedText)
+            }
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolExtractText reads provided xlsx fixtures`() {
+        val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+        val tool = ToolExtractText(filesToolUtil)
+        val expectedMarkersByFile = mapOf(
+            "clients.xlsx" to "Client A",
+            "orders.xlsx" to "OrderID",
+            "price.xlsx" to "Laptop",
+            "sales.xlsx" to "Ivanov"
+        )
+
+        expectedMarkersByFile.forEach { (fileName, expectedMarker) ->
+            val extracted = tool.invoke(ToolExtractText.Input(fixturePath(fileName)))
+            assertContains(extracted, "=== METADATA ===")
+            assertContains(extracted, "Filename: $fileName")
+            assertContains(extracted, "=== CONTENT ===")
+            assertContains(extracted, expectedMarker)
+        }
     }
 
     @Test
