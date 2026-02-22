@@ -679,7 +679,7 @@ private fun ChatBubble(
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 600.dp)
+                .widthIn(max = 800.dp)
                 .clip(bubbleShape)
                 .background(
                     brush = if (message.isUser) {
