@@ -195,7 +195,7 @@ class NodesCommon(
             parts += "utc_offset=${ZonedDateTime.now(zoneId).offset.id}"
         }
 
-        if (parts.isEmpty()) null else "Геоданные пользователя (приблизительно, по системным настройкам): ${parts.joinToString("; ")}"
+        if (parts.isEmpty()) null else "User geo: ${parts.joinToString("; ")}"
     } catch (e: Exception) {
         l.warn("Error collecting geo location hints: {}", e.message)
         null
