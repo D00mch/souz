@@ -149,10 +149,6 @@ fun SetupScreenContent(
                     color = if (hasNoKeys) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onBackground
                 )
 
-                if (hasNoKeys) {
-                    KeyProvidersSection(onOpenProviderLink = onOpenProviderLink)
-                }
-
                 Spacer(Modifier.height(4.dp))
 
                 if (ApiKeysBuildProfile.hasField(ApiKeyField.GIGA_CHAT)) {
@@ -198,6 +194,10 @@ fun SetupScreenContent(
                         onValueChange = onOpenAiKeyInput,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                }
+
+                if (hasNoKeys) {
+                    KeyProvidersSection(onOpenProviderLink = onOpenProviderLink)
                 }
 
                 if (supportsSaluteSpeech) {
