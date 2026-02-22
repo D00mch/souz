@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import ru.souz.giga.EmbeddingsModel
 import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
+import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
@@ -704,54 +705,91 @@ fun FunctionsSettingsContent(
                 )
             }
 
-            val telegramStatus = when (state.telegramAuthStep) {
-                TelegramAuthStepUi.CONNECTED -> stringResource(Res.string.telegram_status_connected_format).format(state.telegramActiveSessionPhone ?: stringResource(Res.string.telegram_session_default))
-                TelegramAuthStepUi.LOGGING_OUT -> stringResource(Res.string.telegram_status_logging_out)
-                TelegramAuthStepUi.INITIALIZING -> stringResource(Res.string.telegram_status_initializing)
-                TelegramAuthStepUi.PHONE,
-                TelegramAuthStepUi.CODE,
-                TelegramAuthStepUi.PASSWORD,
-                TelegramAuthStepUi.ERROR -> stringResource(Res.string.telegram_status_not_connected)
-            }
+            if (TelegramPlatformSupport.isSupported()) {
+                val telegramStatus = when (state.telegramAuthStep) {
+                    TelegramAuthStepUi.CONNECTED -> stringResource(Res.string.telegram_status_connected_format).format(state.telegramActiveSessionPhone ?: stringResource(Res.string.telegram_session_default))
+                    TelegramAuthStepUi.LOGGING_OUT -> stringResource(Res.string.telegram_status_logging_out)
+                    TelegramAuthStepUi.INITIALIZING -> stringResource(Res.string.telegram_status_initializing)
+                    TelegramAuthStepUi.PHONE,
+                    TelegramAuthStepUi.CODE,
+                    TelegramAuthStepUi.PASSWORD,
+                    TelegramAuthStepUi.ERROR -> stringResource(Res.string.telegram_status_not_connected)
+                }
 
-            Button(
-                onClick = onOpenTelegramSettings,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = SettingsButtonBackground,
-                    contentColor = SettingsStrongTextColor
-                ),
-                border = BorderStroke(1.dp, SettingsDefaultBorder),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                Button(
+                    onClick = onOpenTelegramSettings,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = SettingsButtonBackground,
+                        contentColor = SettingsStrongTextColor
+                    ),
+                    border = BorderStroke(1.dp, SettingsDefaultBorder),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(
-                        text = stringResource(Res.string.button_configure_telegram),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontSize = 15.sp,
-                            lineHeight = 20.sp,
-                            fontWeight = FontWeight.Medium
-                        ),
-                        color = SettingsStrongTextColor,
-                    )
-                    Text(
-                        text = telegramStatus,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            fontWeight = FontWeight.Normal
-                        ),
-                        color = if (state.telegramAuthStep == TelegramAuthStepUi.CONNECTED) {
-                            SettingsAccent
-                        } else {
-                            SettingsHintColor
-                        }
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = stringResource(Res.string.button_configure_telegram),
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontSize = 15.sp,
+                                lineHeight = 20.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            color = SettingsStrongTextColor,
+                        )
+                        Text(
+                            text = telegramStatus,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                fontWeight = FontWeight.Normal
+                            ),
+                            color = if (state.telegramAuthStep == TelegramAuthStepUi.CONNECTED) {
+                                SettingsAccent
+                            } else {
+                                SettingsHintColor
+                            }
+                        )
+                    }
+                }
+            } else {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    color = SettingsButtonBackground,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, SettingsDefaultBorder),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text = stringResource(Res.string.button_configure_telegram),
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontSize = 15.sp,
+                                lineHeight = 20.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            color = SettingsStrongTextColor,
+                        )
+                        Text(
+                            text = stringResource(Res.string.telegram_error_macos_15_required),
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                fontWeight = FontWeight.Normal
+                            ),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
         }
@@ -842,15 +880,23 @@ fun TelegramSettingsScreen(
         subtitle = "",
         onClose = onClose
     ) {
-        TelegramLoginContent(
-            state = state,
-            onStartWork = onStartWork,
-            onCreateControlBot = onCreateControlBot,
-            onDisconnectControlBot = onDisconnectControlBot,
-        )
+        if (!TelegramPlatformSupport.isSupported()) {
+            Text(
+                text = stringResource(Res.string.telegram_error_macos_15_required),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        } else {
+            TelegramLoginContent(
+                state = state,
+                onStartWork = onStartWork,
+                onCreateControlBot = onCreateControlBot,
+                onDisconnectControlBot = onDisconnectControlBot,
+            )
+        }
     }
 
-    if (state.showBotDeleteConfirmation && state.botNameToDelete != null) {
+    if (TelegramPlatformSupport.isSupported() && state.showBotDeleteConfirmation && state.botNameToDelete != null) {
         ru.souz.ui.common.ConfirmDialog(
             type = ru.souz.ui.common.ConfirmDialogType.WARNING,
             title = stringResource(Res.string.telegram_dialog_delete_title),

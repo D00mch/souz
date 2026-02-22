@@ -5,6 +5,7 @@ package ru.souz.tool
 import ru.souz.db.ConfigStore
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaToolSetup
+import ru.souz.service.telegram.TelegramPlatformSupport
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
@@ -26,8 +27,7 @@ data class ToolsSettingsState(
 )
 
 class ToolsSettings(
-    private val store: ConfigStore,
-    private val toolsFactory: ToolsFactory
+    private val store: ConfigStore, private val toolsFactory: ToolsFactory
 ) {
     private val localState: AtomicReference<ToolsSettingsState?> = AtomicReference(null)
 
@@ -36,17 +36,19 @@ class ToolsSettings(
     ): ToolsSettingsState {
         val storedState: ToolsSettingsState? = localState.load() ?: store.get(TOOLS_SETTINGS_KEY)
         val defaultState = defaultState(toolsByCategory)
-        return merge(defaultState, storedState)
+        return enforcePlatformRestrictions(merge(defaultState, storedState))
     }
 
     fun isCategoryAllowed(category: ToolCategory): Boolean {
+        if (isCategoryForceDisabled(category)) return false
         val storedState: ToolsSettingsState = localState.load() ?: store.get(TOOLS_SETTINGS_KEY) ?: return true
         return storedState.categories[category]?.enabled ?: true
     }
 
     fun save(state: ToolsSettingsState) {
-        localState.store(state)
-        store.put(TOOLS_SETTINGS_KEY, state)
+        val normalizedState = enforcePlatformRestrictions(state)
+        localState.store(normalizedState)
+        store.put(TOOLS_SETTINGS_KEY, normalizedState)
     }
 
     fun applyFilter(
@@ -55,6 +57,7 @@ class ToolsSettings(
         val savedSettings = load(toolsByCategory)
         val result = HashMap<ToolCategory, Map<String, GigaToolSetup>>(toolsByCategory.size)
         for ((category, tools) in toolsByCategory) {
+            if (isCategoryForceDisabled(category)) continue
             val categorySavedSettings = savedSettings.categories[category]
             if (categorySavedSettings?.enabled == false) continue
 
@@ -92,24 +95,43 @@ class ToolsSettings(
     ): ToolsSettingsState {
         if (stored == null) return defaults
 
-        val mergedCategories: Map<ToolCategory, ToolCategorySettings> = defaults.categories.mapValues { (category, defaultCat) ->
-            val savedCategory = stored.categories[category]
-            val mergedTools = defaultCat.settings.mapValues { (toolName, defaultValue) ->
-                val savedTool = savedCategory?.settings?.get(toolName)
-                ToolSettingsEntry(
-                    enabled = savedTool?.enabled ?: defaultValue.enabled,
-                    description = savedTool?.description ?: defaultValue.description,
-                    examples = savedTool?.examples ?: defaultValue.examples,
+        val mergedCategories: Map<ToolCategory, ToolCategorySettings> =
+            defaults.categories.mapValues { (category, defaultCat) ->
+                val savedCategory = stored.categories[category]
+                val mergedTools = defaultCat.settings.mapValues { (toolName, defaultValue) ->
+                    val savedTool = savedCategory?.settings?.get(toolName)
+                    ToolSettingsEntry(
+                        enabled = savedTool?.enabled ?: defaultValue.enabled,
+                        description = savedTool?.description ?: defaultValue.description,
+                        examples = savedTool?.examples ?: defaultValue.examples,
+                    )
+                }
+                ToolCategorySettings(
+                    enabled = savedCategory?.enabled ?: defaultCat.enabled,
+                    settings = mergedTools,
                 )
             }
-            ToolCategorySettings(
-                enabled = savedCategory?.enabled ?: defaultCat.enabled,
-                settings = mergedTools,
-            )
-        }
 
         return ToolsSettingsState(categories = mergedCategories)
     }
+
+    private fun enforcePlatformRestrictions(state: ToolsSettingsState): ToolsSettingsState {
+        if (TelegramPlatformSupport.isSupported()) return state
+
+        val telegramSettings = state.categories[ToolCategory.TELEGRAM]
+        val disabledTelegramSettings =
+            telegramSettings?.settings?.mapValues { (_, tool) -> tool.copy(enabled = false) } ?: emptyMap()
+
+        return state.copy(
+            categories = state.categories + (ToolCategory.TELEGRAM to ToolCategorySettings(
+                enabled = false,
+                settings = disabledTelegramSettings,
+            ))
+        )
+    }
+
+    private fun isCategoryForceDisabled(category: ToolCategory): Boolean =
+        category == ToolCategory.TELEGRAM && !TelegramPlatformSupport.isSupported()
 
     private fun applyOverrides(
         setup: GigaToolSetup,
@@ -122,9 +144,8 @@ class ToolsSettings(
             return setup
         }
 
-        val examples: List<GigaRequest.FewShotExample> = savedToolSettings.examples
-            ?.map { GigaRequest.FewShotExample(it.request, it.params) }
-            ?: emptyList()
+        val examples: List<GigaRequest.FewShotExample> =
+            savedToolSettings.examples?.map { GigaRequest.FewShotExample(it.request, it.params) } ?: emptyList()
 
         return object : GigaToolSetup by setup {
             override val fn = setup.fn.copy(

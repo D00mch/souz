@@ -108,6 +108,7 @@
     <string name="telegram_status_logging_out">Logging out...</string>
     <string name="telegram_status_initializing">Initializing...</string>
     <string name="telegram_status_not_connected">Not connected</string>
+    <string name="telegram_error_macos_15_required">Telegram is unavailable on this macOS version. Minimum supported version is macOS 15.</string>
 
     <!-- Security Settings -->
     <string name="setting_safemode_title">Safe Mode</string>
