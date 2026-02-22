@@ -7,6 +7,7 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -79,6 +80,14 @@ class Say {
 
     fun playMacPing() {
         val audio = AudioSystem.getAudioInputStream(File("/System/Library/Sounds/Tink.aiff"))
+        val clip = AudioSystem.getClip()
+        clip.addLineListener { if (it.type == LineEvent.Type.STOP) clip.close() }
+        clip.open(audio)
+        clip.start()
+    }
+
+    fun playMacPingMsg() {
+        val audio = AudioSystem.getAudioInputStream(File("/System/Library/Sounds/Glass.aiff"))
         val clip = AudioSystem.getClip()
         clip.addLineListener { if (it.type == LineEvent.Type.STOP) clip.close() }
         clip.open(audio)

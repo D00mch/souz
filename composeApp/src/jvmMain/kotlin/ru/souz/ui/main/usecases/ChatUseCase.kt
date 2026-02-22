@@ -119,7 +119,7 @@ class ChatUseCase(
                 return
             }
 
-            speechUseCase.playMacPingSafely(scope)
+            speechUseCase.playMacPingMsgSafely(scope)
 
             emitState {
                 copy(
