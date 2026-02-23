@@ -131,4 +131,11 @@ class LocalRegexClassifierTest {
         val categories = classifier.classify(body("помощь")).categories
         assertEquals(ToolCategory.HELP, categories.first())
     }
+
+    @Test
+    fun `classifies help english what can you do`() = runBlocking {
+        val classifier = LocalRegexClassifier
+        val categories = classifier.classify(body("What can you do?")).categories
+        assertEquals(ToolCategory.HELP, categories.first())
+    }
 }

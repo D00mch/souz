@@ -154,9 +154,11 @@ object LocalRegexClassifier : UserMessageClassifier {
 
         ToolCategory.HELP -> listOf(
             WeightedRegex(Regex("что (ты )?(умеешь|можешь|знаешь делать)|что ты делаешь|какие .* функци|какие .* возможност"), 2.0),
-            WeightedRegex(Regex("помощь|помоги|\\bhelp\\b|на что .* способ|что .* умеет|расскажи о себе"), 2.0),
-            WeightedRegex(Regex("как (тебя |тобой )?пользоваться|что ты за приложение|чем .* помочь"), 2.0),
-            WeightedRegex(Regex("список команд|список функций|список возможностей|что доступно"), 2.0),
+            WeightedRegex(Regex("как (тебя |тобой )?пользоваться|что ты за приложение|чем .* помочь"), 1.5),
+            WeightedRegex(Regex("список команд|список функций|список возможностей|что доступно"), 1.0),
+            WeightedRegex(Regex("what can you do|what are you capable|what are your (features|capabilities|functions)"), 2.0),
+            WeightedRegex(Regex("how to use|how do i use|tell me about yourself|\\bhelp\\b|what is this app"), 1.5),
+            WeightedRegex(Regex("list of commands|list of features|available commands|available features"), 1.0),
         )
     }
 
