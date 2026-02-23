@@ -119,6 +119,9 @@
     <string name="label_support_email">Email поддержки</string>
     <string name="button_send_logs">Отправить логи</string>
     <string name="button_view_sessions">Просмотр графа сессий</string>
+    <string name="label_privacy_policy">Политика конфиденциальности</string>
+    <string name="hint_privacy_policy">Открыть встроенную политику конфиденциальности в браузере по умолчанию.</string>
+    <string name="button_open_privacy_policy">Открыть политику</string>
 
     <!-- Tools Screen -->
     <string name="tools_title">Tools</string>
@@ -154,6 +157,7 @@
     <string name="settings_support_subtitle">Связь с разработчиками и отладка</string>
     <string name="button_sending_logs">Отправка логов...</string>
     <string name="snack_logs_path_copied">Путь к логам скопирован</string>
+    <string name="error_failed_open_privacy_policy">Не удалось открыть политику конфиденциальности</string>
     
     <!-- Calendars -->
     <string name="label_default_calendar">Календарь по умолчанию</string>

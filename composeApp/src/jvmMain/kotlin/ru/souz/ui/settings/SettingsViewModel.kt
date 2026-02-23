@@ -34,6 +34,10 @@ import ru.souz.ui.settings.SettingsEvent.*
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import java.awt.Desktop
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 
 class SettingsViewModel(
     override val di: DI,
@@ -229,6 +233,7 @@ class SettingsViewModel(
                 setState { copy(systemPrompt = DEFAULT_SYSTEM_PROMPT) }
             }
             is SendLogsToSupport -> sendLogs()
+            OpenPrivacyPolicy -> openPrivacyPolicy()
             RefreshBalance -> fetchBalance()
             GoToMain -> {
                 flushPendingTextSettingSaves()
@@ -601,6 +606,32 @@ class SettingsViewModel(
                     )
                 }
             }
+    }
+
+    private fun openPrivacyPolicy() = viewModelScope.launch(Dispatchers.IO) {
+        runCatching {
+            val targetPath = extractClasspathResourceToTemp("support/privacy-policy.html")
+            if (!Desktop.isDesktopSupported()) error("Desktop browsing is not supported")
+            val desktop = Desktop.getDesktop()
+            if (!desktop.isSupported(Desktop.Action.BROWSE)) error("Desktop browsing action is not supported")
+            desktop.browse(targetPath.toUri())
+        }.onFailure { error ->
+            l.warn("Failed to open privacy policy", error)
+            val fallbackMessage = getString(Res.string.error_failed_open_privacy_policy)
+            send(SettingsEffect.ShowSnackbar(error.message ?: fallbackMessage))
+        }
+    }
+
+    private fun extractClasspathResourceToTemp(resourcePath: String): Path {
+        val input = javaClass.classLoader.getResourceAsStream(resourcePath)
+            ?: error("Resource not found: $resourcePath")
+        val tempDir = Path.of(System.getProperty("java.io.tmpdir"), "souz-support")
+        Files.createDirectories(tempDir)
+        val target = tempDir.resolve(resourcePath.substringAfterLast('/'))
+        input.use { stream ->
+            Files.copy(stream, target, StandardCopyOption.REPLACE_EXISTING)
+        }
+        return target
     }
 
     private fun fetchBalance() = viewModelScope.launch(Dispatchers.IO) {

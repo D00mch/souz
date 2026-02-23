@@ -223,6 +223,7 @@ fun SettingsScreenMain(
                             state = state,
                             onSupportEmailInput = { viewModel.send(SettingsEvent.InputSupportEmail(it)) },
                             onSendLogs = { viewModel.send(SettingsEvent.SendLogsToSupport) },
+                            onOpenPrivacyPolicy = { viewModel.send(SettingsEvent.OpenPrivacyPolicy) },
                             clipboardManager = clipboardManager,
                             onShowSnack = onShowSnack,
                             onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) },

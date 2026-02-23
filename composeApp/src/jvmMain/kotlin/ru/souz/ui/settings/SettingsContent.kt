@@ -925,6 +925,7 @@ fun SupportSettingsContent(
     state: SettingsState,
     onSupportEmailInput: (String) -> Unit,
     onSendLogs: () -> Unit,
+    onOpenPrivacyPolicy: () -> Unit,
     clipboardManager: ClipboardManager,
     onShowSnack: (String) -> Unit,
     onOpenGraphSessions: () -> Unit,
@@ -936,6 +937,51 @@ fun SupportSettingsContent(
         onClose = onClose
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
+            Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
+                Text(
+                    text = stringResource(Res.string.label_privacy_policy),
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = SettingsStrongTextColor
+                )
+                Text(
+                    text = stringResource(Res.string.hint_privacy_policy),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        fontWeight = FontWeight.Normal
+                    ),
+                    color = SettingsHintColor
+                )
+                OutlinedButton(
+                    onClick = onOpenPrivacyPolicy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = SettingsButtonBackground,
+                        contentColor = SettingsStrongTextColor
+                    ),
+                    border = BorderStroke(1.dp, SettingsDefaultBorder),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = stringResource(Res.string.button_open_privacy_policy),
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontSize = 15.sp,
+                            lineHeight = 22.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = SettingsStrongTextColor,
+                    )
+                }
+            }
+
+            SettingsGroupDivider()
+
             Button(
                 onClick = onOpenGraphSessions,
                 modifier = Modifier
@@ -1772,6 +1818,7 @@ private fun SupportSettingsContentPreview() {
             state = PreviewSettingsState,
             onSupportEmailInput = {},
             onSendLogs = {},
+            onOpenPrivacyPolicy = {},
             clipboardManager = LocalClipboardManager.current,
             onShowSnack = {},
             onOpenGraphSessions = {},

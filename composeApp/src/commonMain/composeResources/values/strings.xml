@@ -123,6 +123,9 @@
     <string name="label_support_email">Support Email</string>
     <string name="button_send_logs">Send logs</string>
     <string name="button_view_sessions">View graph sessions</string>
+    <string name="label_privacy_policy">Privacy Policy</string>
+    <string name="hint_privacy_policy">Open the bundled privacy policy in your default browser.</string>
+    <string name="button_open_privacy_policy">Open privacy policy</string>
 
     <!-- Tools Screen -->
     <string name="tools_title">Tools</string>
@@ -158,6 +161,7 @@
     <string name="settings_support_subtitle">Contact developers and debugging</string>
     <string name="button_sending_logs">Sending logs...</string>
     <string name="snack_logs_path_copied">Path to logs copied</string>
+    <string name="error_failed_open_privacy_policy">Failed to open privacy policy</string>
     
     <!-- Calendars -->
     <string name="label_default_calendar">Default calendar</string>

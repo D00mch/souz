@@ -133,6 +133,7 @@ sealed interface SettingsEvent : VMEvent {
     object ChooseVoice : SettingsEvent
     object ResetSystemPrompt: SettingsEvent
     object SendLogsToSupport: SettingsEvent
+    object OpenPrivacyPolicy: SettingsEvent
     object RefreshBalance: SettingsEvent
     data class SelectDefaultCalendar(val name: String?) : SettingsEvent
     object FetchCalendars : SettingsEvent
