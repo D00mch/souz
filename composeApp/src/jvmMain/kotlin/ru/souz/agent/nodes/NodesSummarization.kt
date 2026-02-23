@@ -11,6 +11,7 @@ import ru.souz.giga.GigaException
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.GigaChatAPI
+import ru.souz.giga.GigaResponse.FinishReason
 import ru.souz.giga.toMessage
 import ru.souz.giga.toSystemPromptMessage
 import kotlin.math.ceil
@@ -33,7 +34,7 @@ class NodesSummarization(
     ): Node<GigaResponse.Chat.Ok, String> = buildGraph(name) {
         // nodes
         val summarize: Node<GigaResponse.Chat.Ok, GigaResponse.Chat.Ok> = nodeSummarize()
-        val summaryToHistory = summaryToHistory<GigaResponse.Chat.Ok>()
+        val summaryToHistory: Node<GigaResponse.Chat.Ok, GigaResponse.Chat.Ok> = summaryToHistory()
         val respToString: Node<GigaResponse.Chat.Ok, String> = nodesCommon.responseToString()
 
         // graph
@@ -65,13 +66,31 @@ class NodesSummarization(
             }
         }
 
-    private inline fun <reified T> summaryToHistory(name: String = "summary->history"): Node<GigaResponse.Chat.Ok, T> =
+    private fun summaryToHistory(name: String = "summary->history"): Node<GigaResponse.Chat.Ok, GigaResponse.Chat.Ok> =
         Node(name) { ctx ->
             val msg: GigaRequest.Message = ctx.input.choices.mapNotNull { it.toMessage() }.last()
             val msgPlus = msg.copy(content = "$SUMMARIZATION_PREFIX:\n${msg.content}")
-            val newHistory = listOf(ctx.systemPrompt.toSystemPromptMessage(), msgPlus)
+            val newHistory = listOf(ctx.systemPrompt.toSystemPromptMessage(), msgPlus, ctx.history.last())
             l.info("Summarization\n\n${msgPlus.content}")
-            ctx.map(history = newHistory)
+            ctx.map(history = newHistory) {
+                ctx.input
+                GigaResponse.Chat.Ok(
+                    choices = listOf(
+                        GigaResponse.Choice(
+                            message = GigaResponse.Message(
+                                content = ctx.history.lastOrNull()?.content ?: msgPlus.content,
+                                role = GigaMessageRole.assistant,
+                                functionsStateId = null,
+                            ),
+                            index = ctx.input.choices.firstOrNull()?.index ?: 0,
+                            finishReason = ctx.input.choices.firstOrNull()?.finishReason ?: FinishReason.stop
+                        )
+                    ),
+                    created = ctx.input.created,
+                    model = ctx.input.model,
+                    usage = ctx.input.usage,
+                )
+            }
         }
 }
 
