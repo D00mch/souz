@@ -19,6 +19,8 @@ import ru.souz.audio.Say
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
+import ru.souz.edition.BuildEdition
+import ru.souz.edition.BuildEditionConfig
 import ru.souz.giga.GigaChatAPI
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.LlmProvider
@@ -610,7 +612,11 @@ class SettingsViewModel(
 
     private fun openPrivacyPolicy() = viewModelScope.launch(Dispatchers.IO) {
         runCatching {
-            val targetPath = extractClasspathResourceToTemp("support/privacy-policy.html")
+            val resourcePath = when (BuildEditionConfig.current) {
+                BuildEdition.RU -> "support/privacy-policy-ru.html"
+                BuildEdition.EN -> "support/privacy-policy.html"
+            }
+            val targetPath = extractClasspathResourceToTemp(resourcePath)
             if (!Desktop.isDesktopSupported()) error("Desktop browsing is not supported")
             val desktop = Desktop.getDesktop()
             if (!desktop.isSupported(Desktop.Action.BROWSE)) error("Desktop browsing action is not supported")
