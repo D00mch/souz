@@ -214,6 +214,8 @@
 
     <!-- Voice Input -->
     <string name="error_prefix">Error: %s</string>
+    <string name="error_agent_timeout">The agent wasn't able to solve the problem in time. Try increasing the timeout in Settings.</string>
+    <string name="error_agent_context_reset">There is too much information, and I got confused. Let's start over and go step by step.</string>
     <string name="voice_status_recording_started">Recording started</string>
     <string name="voice_status_processing_input">Processing input</string>
     <string name="voice_status_speech_not_recognized">Speech not recognized</string>

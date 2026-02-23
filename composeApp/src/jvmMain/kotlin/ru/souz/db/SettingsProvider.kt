@@ -297,3 +297,9 @@ fun SettingsProvider.hasKey(provider: EmbeddingsProvider): Boolean = when (provi
     EmbeddingsProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
     EmbeddingsProvider.OPENAI -> !openaiKey.isNullOrBlank()
 }
+
+fun main() {
+    val s: SettingsProviderImpl = SettingsProviderImpl(ConfigStore)
+    s.needsOnboarding = false
+    s.onboardingCompleted = false
+}
