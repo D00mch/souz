@@ -123,7 +123,7 @@ suspend fun main() {
     val llmToolUseNode = Node("llmToolUse") { callToolMock(it) }
     val userOutputNode = Node<String, String>("userOutput") { it }
 
-    val settings = AgentSettings("gpt5", 0.7f, emptyMap())
+    val settings = AgentSettings("gpt5", 0.3f, emptyMap())
     val seed = AgentContext(input = "What is the weather today?", settings, emptyList(), emptyList(), "")
 
     val graph = buildGraph {
