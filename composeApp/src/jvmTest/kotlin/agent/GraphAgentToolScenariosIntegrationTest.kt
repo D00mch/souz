@@ -421,8 +421,8 @@ class GraphAgentToolScenariosIntegrationTest {
     fun scenario12_findFileByName(userPrompt: String) = runTest {
         val toolFindFilesByName: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolFindFilesByName.invoke(any()) } returns "/path/to/test.txt"
-        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "/path/to/test.txt"
+        coEvery { toolFindFilesByName.invoke(any()) } returns "~/path/to/test.txt"
+        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "~/path/to/test.txt"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
