@@ -38,6 +38,9 @@ class OnboardingUseCase(
     fun start(scope: CoroutineScope) {
         scope.launch {
             toolPermissionBroker.requests.collect { request ->
+                if (settingsProvider.notificationSoundEnabled) {
+                    speechUseCase.playMacPingMsgSafely(scope)
+                }
                 emitState {
                     copy(
                         toolPermissionDialog = ToolPermissionDialogData(
