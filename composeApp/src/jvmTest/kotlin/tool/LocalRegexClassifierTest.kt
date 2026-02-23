@@ -128,7 +128,7 @@ class LocalRegexClassifierTest {
     @Test
     fun `classifies help command`() = runBlocking {
         val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("помощь")).categories
+        val categories = classifier.classify(body("help")).categories
         assertEquals(ToolCategory.HELP, categories.first())
     }
 

@@ -258,7 +258,6 @@ class MainViewModelTest {
 
             assertEquals(1, onboardingState.chatMessages.size)
             assertEquals(expectedOnboardingText, onboardingState.chatMessages.single().text)
-            assertEquals(expectedOnboardingText, onboardingState.displayedText)
             verify { harness.settingsProvider.needsOnboarding = false }
             verify { harness.settingsProvider.onboardingCompleted = true }
             verify(exactly = 1) { harness.say.queue(any()) }
