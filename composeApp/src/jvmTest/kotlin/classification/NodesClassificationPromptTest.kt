@@ -3,28 +3,18 @@ package classification
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkObject
 import io.mockk.unmockkAll
-import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
 import ru.souz.agent.nodes.NodesClassification
-import ru.souz.db.ConfigStore
-import ru.souz.db.SettingsProviderImpl
+import ru.souz.db.SettingsProvider
+import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaMessageRole
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.GigaToolSetup
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.ToolCategorySettings
-import ru.souz.tool.ToolSettingsEntry
 import ru.souz.tool.ToolsFactory
 import ru.souz.tool.ToolsSettings
-import ru.souz.tool.ToolsSettingsState
-import ru.souz.service.telegram.TelegramAuthState
-import ru.souz.service.telegram.TelegramAuthStep
-import ru.souz.service.telegram.TelegramPlatformSupport
-import ru.souz.service.telegram.TelegramService
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -35,15 +25,6 @@ class NodesClassificationPromptTest {
         ToolCategory.BROWSER to mapOf("Open" to dummySetup("Open")),
     )
 
-    @BeforeEach
-    fun setUp() {
-        mockkObject(ConfigStore)
-        mockkObject(TelegramPlatformSupport)
-        every { ConfigStore.get<ToolsSettingsState>(any()) } returns null
-        every { ConfigStore.put(any(), any()) } returns Unit
-        every { TelegramPlatformSupport.isSupported() } returns true
-    }
-
     @AfterEach
     fun tearDown() {
         unmockkAll()
@@ -51,57 +32,39 @@ class NodesClassificationPromptTest {
 
     @Test
     fun `buildPrompt lists all categories when nothing is disabled`() {
-        val toolsFactory = mockk<ToolsFactory> { every { toolsByCategory } returns defaultTools }
-        val toolsSettings = toolsSettings(toolsFactory)
-        val prompt = buildPromptWith(toolsSettings, toolsFactory)
+        val prompt = buildPromptWith(defaultTools)
 
-        assertTrue(prompt.contains("FILES"))
-        assertTrue(prompt.contains("BROWSER"))
+        assertTrue(prompt.contains("- FILES:"))
+        assertTrue(prompt.contains("- BROWSER:"))
     }
 
     @Test
     fun `buildPrompt ignores disabled categories`() {
-        val toolsFactory = mockk<ToolsFactory> { every { toolsByCategory } returns defaultTools }
-        val toolsSettings = toolsSettings(toolsFactory)
-        toolsSettings.save(
-            ToolsSettingsState(
-                categories = mapOf(
-                    ToolCategory.FILES to ToolCategorySettings(enabled = true, settings = mapOf("Read" to ToolSettingsEntry(true))),
-                    ToolCategory.BROWSER to ToolCategorySettings(enabled = false, settings = mapOf("Read" to ToolSettingsEntry(true))),
-                )
-            )
+        val prompt = buildPromptWith(
+            defaultTools - ToolCategory.BROWSER
         )
 
-        val prompt = buildPromptWith(toolsSettings, toolsFactory)
-
-        assertTrue(prompt.contains("FILES"))
-        assertFalse(prompt.contains("TEXT_REPLACE"))
+        assertTrue(prompt.contains("- FILES:"))
+        assertFalse(prompt.contains("- BROWSER:"))
+        assertFalse(prompt.contains("\nBROWSER: "))
     }
 
     @Test
     fun `buildPrompt skips categories without allowed tools`() {
-        val toolsFactory = mockk<ToolsFactory> { every { toolsByCategory } returns defaultTools }
-        val toolsSettings = toolsSettings(toolsFactory)
-        toolsSettings.save(
-            ToolsSettingsState(
-                categories = mapOf(
-                    ToolCategory.FILES to ToolCategorySettings(enabled = true, settings = mapOf("Read" to ToolSettingsEntry(true))),
-                    ToolCategory.BROWSER to ToolCategorySettings(enabled = false, settings = mapOf("Read" to ToolSettingsEntry(false))),
-                )
-            )
+        val prompt = buildPromptWith(
+            mapOf(ToolCategory.FILES to defaultTools.getValue(ToolCategory.FILES))
         )
 
-        val prompt = buildPromptWith(toolsSettings, toolsFactory)
-
-        assertTrue(prompt.contains("FILES"))
-        assertFalse(prompt.contains("TEXT_REPLACE"))
+        assertTrue(prompt.contains("- FILES:"))
+        assertFalse(prompt.contains("- BROWSER:"))
+        assertFalse(prompt.contains("\nBROWSER: "))
     }
 
     @Test
     fun `applyFilter disables telegram tools when telegram is not connected`() {
         val toolsWithTelegram = defaultTools + (ToolCategory.TELEGRAM to mapOf("TgRead" to dummySetup("TgRead")))
         val toolsFactory = mockk<ToolsFactory> { every { toolsByCategory } returns toolsWithTelegram }
-        val toolsSettings = toolsSettings(toolsFactory, telegramStep = TelegramAuthStep.WAIT_PHONE)
+        val toolsSettings = mockTelegramFilteredToolsSettings(telegramConnected = false)
 
         val filtered = toolsSettings.applyFilter(toolsFactory.toolsByCategory)
 
@@ -112,33 +75,35 @@ class NodesClassificationPromptTest {
     fun `applyFilter keeps telegram tools when telegram is connected`() {
         val toolsWithTelegram = defaultTools + (ToolCategory.TELEGRAM to mapOf("TgRead" to dummySetup("TgRead")))
         val toolsFactory = mockk<ToolsFactory> { every { toolsByCategory } returns toolsWithTelegram }
-        val toolsSettings = toolsSettings(toolsFactory, telegramStep = TelegramAuthStep.READY)
+        val toolsSettings = mockTelegramFilteredToolsSettings(telegramConnected = true)
 
         val filtered = toolsSettings.applyFilter(toolsFactory.toolsByCategory)
 
         assertTrue(filtered.containsKey(ToolCategory.TELEGRAM))
     }
 
-    private fun toolsSettings(
-        toolsFactory: ToolsFactory,
-        telegramStep: TelegramAuthStep = TelegramAuthStep.READY,
-    ): ToolsSettings {
-        val telegramService = mockk<TelegramService>()
-        every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = telegramStep))
-        return ToolsSettings(ConfigStore, toolsFactory, telegramService, TelegramPlatformSupport)
+    private fun mockTelegramFilteredToolsSettings(telegramConnected: Boolean): ToolsSettings {
+        return mockk<ToolsSettings>().also { toolsSettings ->
+            every { toolsSettings.applyFilter(any()) } answers {
+                val input = firstArg<Map<ToolCategory, Map<String, GigaToolSetup>>>()
+                if (telegramConnected) input else input - ToolCategory.TELEGRAM
+            }
+        }
     }
 
-    private fun buildPromptWith(toolsSettings: ToolsSettings, toolsFactory: ToolsFactory): String {
+    private fun buildPromptWith(filteredTools: Map<ToolCategory, Map<String, GigaToolSetup>>): String {
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.gigaModel } returns GigaModel.Max
+
         val classification = NodesClassification(
+            settingsProvider = settingsProvider,
             logObjectMapper = ObjectMapper(),
             apiClassifier = mockk(relaxed = true),
             localClassifier = mockk(relaxed = true),
-            toolsFactory = toolsFactory,
-            toolsSettings = toolsSettings,
-            settingsProvider = SettingsProviderImpl(ConfigStore)
+            toolsFactory = mockk(relaxed = true),
+            toolsSettings = mockk(relaxed = true),
         )
 
-        val filteredTools = toolsSettings.applyFilter(toolsFactory.toolsByCategory)
         return classification.buildPrompt(filteredTools)
     }
 
