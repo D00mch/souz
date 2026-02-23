@@ -11,7 +11,6 @@ import java.io.File
 class LLMFactory(
     private val settingsProvider: SettingsProvider,
     private val restApi: GigaRestChatAPI,
-    private val grpcApi: GigaGRPCChatApi,
     private val qwenApi: QwenChatAPI,
     private val aiTunnelApi: AiTunnelChatAPI,
     private val anthropicApi: AnthropicChatAPI,
@@ -25,7 +24,7 @@ class LLMFactory(
             LlmProvider.AI_TUNNEL -> aiTunnelApi
             LlmProvider.ANTHROPIC -> anthropicApi
             LlmProvider.OPENAI -> openAiApi
-            LlmProvider.GIGA -> if (settingsProvider.useStreaming) grpcApi else restApi
+            LlmProvider.GIGA -> restApi
         }
     }
 

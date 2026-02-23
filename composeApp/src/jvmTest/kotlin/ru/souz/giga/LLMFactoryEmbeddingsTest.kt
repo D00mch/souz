@@ -21,7 +21,6 @@ class LLMFactoryEmbeddingsTest {
         every { settingsProvider.embeddingsModel } returns EmbeddingsModel.AiTunnelEmbeddingAda
 
         val restApi = mockk<GigaRestChatAPI>()
-        val grpcApi = mockk<GigaGRPCChatApi>()
         val qwenApi = mockk<QwenChatAPI>()
         val aiTunnelApi = mockk<AiTunnelChatAPI>()
         val anthropicApi = mockk<AnthropicChatAPI>()
@@ -37,7 +36,6 @@ class LLMFactoryEmbeddingsTest {
         val factory = LLMFactory(
             settingsProvider = settingsProvider,
             restApi = restApi,
-            grpcApi = grpcApi,
             qwenApi = qwenApi,
             aiTunnelApi = aiTunnelApi,
             anthropicApi = anthropicApi,
@@ -59,7 +57,6 @@ class LLMFactoryEmbeddingsTest {
         every { settingsProvider.embeddingsModel } returns EmbeddingsModel.AiTunnelEmbeddingAda
 
         val restApi = mockk<GigaRestChatAPI>()
-        val grpcApi = mockk<GigaGRPCChatApi>()
         val qwenApi = mockk<QwenChatAPI>()
         val aiTunnelApi = mockk<AiTunnelChatAPI>()
         val anthropicApi = mockk<AnthropicChatAPI>()
@@ -75,7 +72,6 @@ class LLMFactoryEmbeddingsTest {
         val factory = LLMFactory(
             settingsProvider = settingsProvider,
             restApi = restApi,
-            grpcApi = grpcApi,
             qwenApi = qwenApi,
             aiTunnelApi = aiTunnelApi,
             anthropicApi = anthropicApi,

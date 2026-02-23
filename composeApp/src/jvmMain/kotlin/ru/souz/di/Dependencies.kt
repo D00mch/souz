@@ -27,7 +27,6 @@ import ru.souz.db.VectorDB
 import ru.souz.giga.ApiClassifier
 import ru.souz.giga.GigaAuth
 import ru.souz.giga.GigaChatAPI
-import ru.souz.giga.GigaGRPCChatApi
 import ru.souz.giga.LLMFactory
 import ru.souz.giga.GigaRestChatAPI
 import ru.souz.giga.GigaVoiceAPI
@@ -173,9 +172,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<TokenLogging> {
         SessionTokenLogging(logObjectMapper = instance(DiTags.TAG_LOG))
     }
-    bindSingleton<GigaGRPCChatApi> {
-        GigaGRPCChatApi(instance(), instance(), instance())
-    }
     bindSingleton<GigaRestChatAPI> {
         GigaRestChatAPI(instance(), instance(), instance())
     }
@@ -183,7 +179,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<AiTunnelChatAPI> { AiTunnelChatAPI(instance(), instance()) }
     bindSingleton<AnthropicChatAPI> { AnthropicChatAPI(instance(), instance()) }
     bindSingleton<OpenAIChatAPI> { OpenAIChatAPI(instance(), instance()) }
-    bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton<GigaChatAPI> { instance<LLMFactory>() }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton { OpenAIVoiceAPI(instance()) }
