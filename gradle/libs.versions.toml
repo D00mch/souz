@@ -8,9 +8,7 @@ jnativehook = "2.2.2"
 jna = "5.14.0"
 junit = "4.13.2"
 junitJupiter = "6.0.2"
-grpc = "1.65.0"
 javaDiffUtils = "4.15"
-grpcKotlin = "1.4.1"
 kdroidfilter-platformtools = "0.6.1"
 kodeinDi = "7.26.1"
 kotlin = "2.2.20"
@@ -23,8 +21,6 @@ log4j = "2.24.3"
 lucene = "9.9.2"
 markdown = "0.27.0"
 mockk = "1.13.11"
-protobuf = "3.25.3"
-protobufGradlePlugin = "0.9.4"
 slfj = "2.0.17"
 tika = "3.2.3"
 poi = "5.2.5"
@@ -41,10 +37,6 @@ jnativehook = { module = "com.github.kwhat:jnativehook", version.ref = "jnativeh
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 junit = { module = "junit:junit", version.ref = "junit" }
-grpc-kotlinStub = { module = "io.grpc:grpc-kotlin-stub", version.ref = "grpcKotlin" }
-grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
-grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
-grpc-nettyShaded = { module = "io.grpc:grpc-netty-shaded", version.ref = "grpc" }
 java-diffUtils = { module = "io.github.java-diff-utils:java-diff-utils", version.ref = "javaDiffUtils" }
 kodein-di-framework-compose = { module = "org.kodein.di:kodein-di-framework-compose", version.ref = "kodeinDi" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -69,7 +61,6 @@ lucene-core = { module = "org.apache.lucene:lucene-core", version.ref = "lucene"
 markdown = { module = "com.mikepenz:multiplatform-markdown-renderer", version.ref = "markdown" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 platformtools-darkmodedetector = { module = "io.github.kdroidfilter:platformtools.darkmodedetector", version.ref = "kdroidfilter-platformtools" }
-protobuf-kotlin = { module = "com.google.protobuf:protobuf-kotlin", version.ref = "protobuf" }
 slfj = { module = "org.slf4j:jul-to-slf4j", version.ref = "slfj" }
 tika-core = { module = "org.apache.tika:tika-core", version.ref = "tika" }
 tika-parsersStandardPackage = { module = "org.apache.tika:tika-parsers-standard-package", version.ref = "tika" }
@@ -87,13 +78,6 @@ ktorClient = [
     "ktor-clientLogging",
     "ktor-serializationKotlinxJson"
 ]
-grpc = [
-    "grpc-kotlinStub",
-    "grpc-nettyShaded",
-    "grpc-protobuf",
-    "grpc-stub",
-    "protobuf-kotlin"
-]
 letsPlot = [
     "letsPlot-common",
     "letsPlot-kotlin",
@@ -105,4 +89,3 @@ composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMul
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
-protobuf = { id = "com.google.protobuf", version.ref = "protobufGradlePlugin" }

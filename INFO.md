@@ -5,15 +5,13 @@ If you are not sure about something, left a note for other developers to review.
 
 ## General Info
 Souz is a Kotlin Multiplatform desktop AI assistant built with Compose for Desktop.
-The repository is a multi-module Gradle project:
+The repository is a Gradle project centered around:
 
 - `:composeApp` - main desktop app (UI, agent runtime, tools, integrations).
-- `:proto` - protobuf/gRPC generation module consumed by the app.
 
 Primary stack:
 - Kotlin + Compose Multiplatform
 - Ktor (client)
-- gRPC/Protobuf
 - JUnit 5 + MockK for testing
 
 ### UI architecture principles
@@ -23,7 +21,7 @@ Primary stack:
 
 ### Features
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
-- **Multi-model LLM integrations** for GigaChat (REST/gRPC/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
+- **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Edition-aware builds** (`ru`/`en`) with build-profile based provider/model availability and packaging metadata.
 - **Key-aware model selection in Settings**: chat and embeddings model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
@@ -92,8 +90,6 @@ Primary stack:
 │       │   │           ├── settings/   # Settings screens and view-models
 │       │   │           ├── setup/      # First-run setup flow
 │       │   │           └── tools/      # Tool management/detail screens
-│       │   ├── proto/                  # Proto source files used for gRPC generation
-│       │   │   └── gigachat/v1/        # GigaChat API protobuf schema
 │       │   ├── resources/              # Runtime resources
 │       │   │   ├── bot_avatar.png      # Default avatar image for the Telegram PC Control bot
 │       │   │   ├── certs/              # Trusted certificate bundles
@@ -116,13 +112,10 @@ Primary stack:
 ├── build-logic/                        # Included Gradle build with convention plugins/shared build logic
 ├── gradle/                             # Gradle version catalog and wrapper configuration
 │   └── wrapper/                        # Gradle wrapper JAR/properties
-└── proto/                              # Protobuf/gRPC generation module
-    └── build/                          # Generated classes/stubs/artifacts (generated)
 ```
 
 Notes:
 - Directories like `.gradle/`, `.idea/`, `.kotlin/`, and `*/build/` are generated/local environment folders.
-- The `:proto` module reads `.proto` files from `composeApp/src/jvmMain/proto`.
 - `build-logic` provides convention plugins for shared Gradle behavior, including mac signing/notarization and compose-app native resource/packaging wiring.
 - `ComposeAppConventionsPlugin` runs `:composeApp:patchReleaseAppForNotarization` before DMG/PKG packaging/notarization to deep re-sign and verify the final `.app` bundle after release app assembly.
 - macOS signing config is now split by build mode: App Store builds (`-PmacOsAppStoreRelease=true`) use provisioning profiles + sandbox entitlements, while Developer ID DMG builds use non-App-Store entitlements and do not embed provisioning profiles.
