@@ -174,7 +174,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         SessionTokenLogging(logObjectMapper = instance(DiTags.TAG_LOG))
     }
     bindSingleton<GigaGRPCChatApi> {
-        GigaGRPCChatApi(instance(), instance())
+        GigaGRPCChatApi(instance(), instance(), instance())
     }
     bindSingleton<GigaRestChatAPI> {
         GigaRestChatAPI(instance(), instance(), instance())

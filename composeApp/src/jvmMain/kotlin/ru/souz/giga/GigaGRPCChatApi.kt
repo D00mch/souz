@@ -17,6 +17,7 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import org.slf4j.bridge.SLF4JBridgeHandler
+import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
 import ru.souz.tool.files.ToolListFiles
 import ru.souz.tool.files.FilesToolUtil
@@ -29,9 +30,13 @@ import kotlin.time.measureTime
  */
 class GigaGRPCChatApi(
     private val auth: GigaAuth,
+    private val keysProvider: SettingsProvider,
     private val gigaChatAPI: GigaRestChatAPI,
 ) : GigaChatAPI by gigaChatAPI {
     private val l by lazy { LoggerFactory.getLogger(GigaGRPCChatApi::class.java) }
+
+    private val apiKey: String
+        get() = keysProvider.gigaChatKey ?: throw IllegalStateException("GIGA_KEY is not set")
 
     private val maxInboundMessageSizeBytes by lazy {
         val envValue = System.getenv("GIGA_GRPC_MAX_INBOUND_MB")
@@ -252,8 +257,6 @@ class GigaGRPCChatApi(
     }
 
     private suspend fun refreshAccessToken(): String {
-        val apiKey = System.getenv("GIGA_KEY") ?: System.getProperty("GIGA_KEY")
-        ?: throw IllegalStateException("GIGA_KEY is not set")
         val newToken = auth.requestToken(apiKey, "GIGACHAT_API_PERS")
         System.setProperty("GIGA_ACCESS_TOKEN", newToken)
         return newToken
