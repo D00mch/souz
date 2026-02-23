@@ -20,7 +20,7 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
         @InputParamDescription("URL of the page to get text from")
         val url: String? = null,
         @InputParamDescription("Number of lines to return if provided")
-        val count: Int? = 50
+        val count: Int? = 100
     )
     override val name: String = "SafariInfo"
     override val description: String = "Returns Safari history, bookmarks, open tabs and URL of current tab"
