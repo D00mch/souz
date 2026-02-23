@@ -26,7 +26,7 @@ class OnboardingUseCase(
     private val settingsProvider: SettingsProvider,
     private val toolPermissionBroker: ToolPermissionBroker,
     private val speechUseCase: SpeechUseCase,
-    private val relaunchApp: () -> Unit = { AppRelauncher.relaunch() },
+    private val relaunchApp: () -> Boolean = { AppRelauncher.relaunch() },
 ) {
     private val l = LoggerFactory.getLogger(OnboardingUseCase::class.java)
     private var onboardingSpeechStartedAt: Long? = null
@@ -112,7 +112,11 @@ class OnboardingUseCase(
             while (isActive) {
                 if (canRegisterNativeHookNow()) {
                     l.info("Input monitoring permission granted, relaunching application")
-                    relaunchApp()
+                    if (!relaunchApp()) {
+                        l.error("Automatic relaunch failed after input monitoring permission was granted")
+                        val restartFailedMsg = getString(Res.string.onboarding_input_permission_restart_failed)
+                        emitState { copy(statusMessage = restartFailedMsg) }
+                    }
                     return@launch
                 }
 

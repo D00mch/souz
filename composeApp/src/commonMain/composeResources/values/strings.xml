@@ -209,7 +209,8 @@
     <!-- Onboarding -->
     <string name="onboarding_speech_text">Hello! I am Souz AI, your smart assistant on your computer... I will now ask for permissions to access applications, the system, and files to work correctly... I can use the browser, work with mail and calendar, work with files on your PC, explain and rewrite selected text, open applications, create notes, answer questions, and build charts and diagrams based on data.</string>
     <string name="onboarding_display_text">Hello! I am Souz AI, a smart assistant on your computer.\nNow I will ask for permissions to access applications, the system, and files to work correctly.\nI can:\n- Use the browser\n- Work with mail and calendar\n- Work with files on your PC\n- Explain and rewrite selected text\n- Open applications, create notes, answer questions\n- Build charts and diagrams based on data\n\n\nTo start voice input - hold right opt(alt)\nTo clear conversation context - use top left button\n</string>
-    <string name="onboarding_input_permission_request">Allow access to input monitoring in macOS settings — the application will restart automatically after confirmation</string>
+    <string name="onboarding_input_permission_request">Allow access to input monitoring in macOS settings — the application will try to restart automatically after confirmation</string>
+    <string name="onboarding_input_permission_restart_failed">Input Monitoring permission is granted, but automatic restart failed. Please restart the application manually.</string>
 
     <!-- Voice Input -->
     <string name="error_prefix">Error: %s</string>

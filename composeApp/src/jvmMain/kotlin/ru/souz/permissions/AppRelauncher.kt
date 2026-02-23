@@ -17,7 +17,7 @@ object AppRelauncher {
     private const val MAC_APP_EXTENSION = "app"
     private val l = LoggerFactory.getLogger(AppRelauncher::class.java)
 
-    fun relaunch() {
+    fun relaunch(): Boolean {
         // Prefer the launcher path provided by jpackage (used by Compose Desktop).
         val packagedAppPath = System.getProperty("jpackage.app-path")
         l.debug { "packagedAppPath: $packagedAppPath" }
@@ -47,13 +47,13 @@ object AppRelauncher {
             }
         }
 
-        try {
+        return try {
             builder.start()
-        } catch (e: Exception) {
-            l.error("", e)
-        } finally {
+            l.info("Relaunch process started, exiting current process")
             exitProcess(0)
+        } catch (e: Exception) {
+            l.error("Failed to relaunch application", e)
+            false
         }
     }
 }
-
