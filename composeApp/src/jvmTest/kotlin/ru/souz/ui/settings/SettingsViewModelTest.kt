@@ -1,0 +1,131 @@
+@file:OptIn(ExperimentalCoroutinesApi::class)
+
+package ru.souz.ui.settings
+
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.runs
+import io.mockk.unmockkAll
+import io.mockk.verify
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.kodein.di.DI
+import org.kodein.di.bindSingleton
+import ru.souz.agent.GraphBasedAgent
+import ru.souz.audio.Say
+import ru.souz.db.SettingsProvider
+import ru.souz.db.VectorDB
+import ru.souz.giga.DEFAULT_MAX_TOKENS
+import ru.souz.giga.EmbeddingsModel
+import ru.souz.giga.EmbeddingsProvider
+import ru.souz.giga.GigaChatAPI
+import ru.souz.giga.GigaModel
+import ru.souz.giga.LlmBuildProfile
+import ru.souz.giga.LlmProvider
+import ru.souz.service.telegram.TelegramAuthState
+import ru.souz.service.telegram.TelegramAuthStep
+import ru.souz.service.telegram.TelegramBotController
+import ru.souz.service.telegram.TelegramPlatformSupport
+import ru.souz.service.telegram.TelegramService
+import ru.souz.tool.ToolRunBashCommand
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+
+class SettingsViewModelTest {
+
+    private val dispatcher = StandardTestDispatcher()
+
+    @BeforeTest
+    fun setUp() {
+        Dispatchers.setMain(dispatcher)
+    }
+
+    @AfterTest
+    fun tearDown() {
+        Dispatchers.resetMain()
+        unmockkAll()
+    }
+
+    @Test
+    fun `init normalizes unavailable llm and embeddings models to available providers`() = runTest(dispatcher) {
+        mockkObject(VectorDB)
+        every { VectorDB.clearAllData() } just runs
+
+        mockkObject(ToolRunBashCommand)
+        every { ToolRunBashCommand.sh(any()) } returns ""
+
+        val expectedLlmModel = LlmBuildProfile.defaultModelForProvider(LlmProvider.QWEN)
+        assertNotNull(expectedLlmModel, "Qwen default model must exist in the active build profile")
+        val expectedEmbeddingsModel = EmbeddingsModel.entries.first { it.provider == EmbeddingsProvider.QWEN }
+
+        val configuredModel = LlmBuildProfile.availableModels.first { it.provider != LlmProvider.QWEN }
+
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        var embeddingsModelValue = EmbeddingsModel.GigaEmbeddings
+
+        every { settingsProvider.gigaChatKey } returns ""
+        every { settingsProvider.qwenChatKey } returns "qwen-key"
+        every { settingsProvider.aiTunnelKey } returns ""
+        every { settingsProvider.anthropicKey } returns ""
+        every { settingsProvider.openaiKey } returns ""
+        every { settingsProvider.saluteSpeechKey } returns null
+        every { settingsProvider.gigaModel } returns configuredModel
+        every { settingsProvider.embeddingsModel } answers { embeddingsModelValue }
+        every { settingsProvider.embeddingsModel = any() } answers { embeddingsModelValue = firstArg() }
+
+        every { settingsProvider.getSystemPromptForModel(any()) } returns null
+        every { settingsProvider.supportEmail } returns null
+        every { settingsProvider.mcpServersJson } returns null
+        every { settingsProvider.defaultCalendar } returns null
+        every { settingsProvider.useFewShotExamples } returns false
+        every { settingsProvider.useStreaming } returns false
+        every { settingsProvider.notificationSoundEnabled } returns true
+        every { settingsProvider.safeModeEnabled } returns true
+        every { settingsProvider.requestTimeoutMillis } returns 40_000L
+        every { settingsProvider.contextSize } returns DEFAULT_MAX_TOKENS
+        every { settingsProvider.temperature } returns 0.7f
+
+        val graphBasedAgent = mockk<GraphBasedAgent>()
+        every { graphBasedAgent.updateModel(any()) } answers {
+            val model = firstArg<GigaModel>()
+            "prompt-for-${model.alias}"
+        }
+
+        val chatApi = mockk<GigaChatAPI>(relaxed = true)
+        val telegramService = mockk<TelegramService>(relaxed = true)
+        every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
+
+        val di = DI {
+            bindSingleton<SettingsProvider> { settingsProvider }
+            bindSingleton<GigaChatAPI> { chatApi }
+            bindSingleton<GraphBasedAgent> { graphBasedAgent }
+            bindSingleton<TelegramPlatformSupport> { TelegramPlatformSupport }
+            bindSingleton<TelegramService> { telegramService }
+            bindSingleton<TelegramBotController> { mockk(relaxed = true) }
+            bindSingleton<Say> { mockk(relaxed = true) }
+        }
+
+        val viewModel = SettingsViewModel(di)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(expectedLlmModel, state.gigaModel)
+        assertEquals(expectedEmbeddingsModel, state.embeddingsModel)
+        assertEquals(expectedEmbeddingsModel, embeddingsModelValue)
+        assertEquals("prompt-for-${expectedLlmModel.alias}", state.systemPrompt)
+
+        verify(exactly = 1) { graphBasedAgent.updateModel(expectedLlmModel) }
+        verify(exactly = 1) { VectorDB.clearAllData() }
+    }
+}
