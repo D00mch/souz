@@ -75,6 +75,8 @@ class VoiceInputUseCase(
                     l.debug("[Sending PCM audio data: ${audioData.size} bytes]")
                     speechRecognitionProvider.recognize(audioData)
                 }
+
+                .catch { l.error("Error in recognition: ${it.message}") }
                 .onEach(::onTextRecognizeSideEffects)
                 .filter { it.isNotBlank() }
 
