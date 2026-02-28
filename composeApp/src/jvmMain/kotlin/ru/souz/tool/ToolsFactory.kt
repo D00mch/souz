@@ -125,6 +125,7 @@ class ToolsFactory(di: DI) {
             toolFocusOnTab.toGiga(),
             toolChromeInfo.toGiga(),
             toolOpenDefaultBrowser.toGiga(),
+            toolWebResearch.toGiga(),
         )
 
         ToolCategory.CONFIG -> listOf(
@@ -144,6 +145,7 @@ class ToolsFactory(di: DI) {
         ToolCategory.APPLICATIONS -> listOf(
             toolShowApps.toGiga(),
             toolOpen.toGiga(),
+            toolWebResearch.toGiga(),
         )
 
         ToolCategory.DATAANALYTICS -> listOf(
