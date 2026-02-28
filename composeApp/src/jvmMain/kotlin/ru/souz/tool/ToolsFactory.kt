@@ -21,6 +21,7 @@ import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
+import ru.souz.tool.presentation.ToolWebResearch
 import ru.souz.tool.telegram.ToolTelegramForward
 import ru.souz.tool.telegram.ToolTelegramGetHistory
 import ru.souz.tool.telegram.ToolTelegramReadInbox
@@ -92,6 +93,7 @@ class ToolsFactory(di: DI) {
     private val excelReport: ExcelReport by di.instance()
 
     // Presentation tools
+    private val toolWebResearch: ToolWebResearch by di.instance()
     private val toolPresentationCreate: ToolPresentationCreate by di.instance()
     private val toolPresentationRead: ToolPresentationRead by di.instance()
 
@@ -197,6 +199,7 @@ class ToolsFactory(di: DI) {
         )
 
         ToolCategory.PRESENTATION -> listOf(
+            toolWebResearch.toGiga(),
             toolPresentationCreate.toGiga(),
             toolPresentationRead.toGiga(),
             toolListFiles.toGiga(),

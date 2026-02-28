@@ -52,9 +52,11 @@ enum class PresentationTheme(
     ),
     CONSULTING(
         backgroundColor = Color.WHITE,
-        titleColor = Color(0, 100, 0), // Dark Green
-        contentColor = Color.BLACK,
-        titleFont = "Verdana"
+        titleColor = Color(24, 34, 54),
+        contentColor = Color(58, 68, 84),
+        accentColor = Color(13, 92, 155),
+        titleFont = "Arial",
+        bodyFont = "Arial"
     ),
     PROFESSIONAL_TEAL(
         backgroundColor = Color.WHITE,
