@@ -99,7 +99,7 @@ class LocalRegexClassifierTest {
             "Расскажи кратко о чем рассказано на текущей странице" to ToolCategory.BROWSER,
             "Открой папку семья" to ToolCategory.FILES,
             "Открой папку отчеты" to ToolCategory.FILES,
-            "Построй график дохода по клиенту из файла сейлз репорт" to ToolCategory.DATAANALYTICS,
+            "Построй график дохода по клиенту из файла сейлз репорт" to ToolCategory.DATA_ANALYTICS,
             "Добавь заметку - купить пивка" to ToolCategory.NOTES,
             "Открой заметку демо" to ToolCategory.NOTES,
         )

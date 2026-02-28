@@ -156,7 +156,7 @@ class ToolsFactory(di: DI) {
             toolWebPageText.toGiga(),
         )
 
-        ToolCategory.DATAANALYTICS -> listOf(
+        ToolCategory.DATA_ANALYTICS -> listOf(
             toolCreatePlotFromCsv.toGiga(),
             toolUploadFile.toGiga(),
             toolDownloadFile.toGiga(),

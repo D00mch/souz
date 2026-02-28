@@ -6,8 +6,7 @@ enum class ToolCategory {
     CONFIG,
     NOTES,
     APPLICATIONS,
-    @Suppress("SpellCheckingInspection")
-    DATAANALYTICS,
+    DATA_ANALYTICS,
     CALENDAR,
     MAIL,
     TEXT_REPLACE,
