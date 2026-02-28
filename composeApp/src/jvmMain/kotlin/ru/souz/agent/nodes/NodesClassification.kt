@@ -76,9 +76,7 @@ class NodesClassification(
         history: List<GigaRequest.Message>,
         categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>>
     ): GigaRequest.Chat {
-        val smallHistory = history
-            .takeLast(if (history.size > 3) 2 else 0)
-            .joinToString("\n") { it.content }
+        val smallHistory = history.takeLast(if (history.size > 3) 2 else 0).joinToString("\n") { it.content }
         val messages = listOf(
             GigaRequest.Message(GigaMessageRole.system, buildPrompt(categoryStates)),
             GigaRequest.Message(GigaMessageRole.user, "History:\n$smallHistory\n"),
@@ -94,14 +92,12 @@ class NodesClassification(
     fun buildPrompt(toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>): String {
         val allowedCategories: Set<ToolCategory> = toolsByCategory.keys
         val categoriesInfoSection = allowedCategories.joinToString(
-            prefix = "Категории:\n",
-            separator = ";\n"
+            prefix = "Категории:\n", separator = ";\n"
         ) { category: ToolCategory ->
             "- ${category.name}: ${category.description()}"
         }
         val examplesSection: String = allowedCategories.joinToString(
-            prefix = "Примеры:\n",
-            separator = ";\n"
+            prefix = "Примеры:\n", separator = ";\n"
         ) { category: ToolCategory ->
             val examples = category.examples().joinToString(separator = "; ") { it }
             "${category.name}: $examples"
@@ -121,12 +117,15 @@ CHAT 100
 TELEGRAM 95"""
     }
 
-    private fun ToolCategory.description(): String = when(this) {
+    private fun ToolCategory.description(): String = when (this) {
         FILES -> """|навигация по файловой системе, чтение и поиск текста в файлах, 
                     |создание, удаление или изменение файлов и папок"""
 
         BROWSER -> """|веб-страницы, вкладки, или браузерные горячие клавиши, 
-                      |или когда надо получить общую информацию о новостях или погоде"""
+                      |а также открытие сайтов в браузере"""
+
+        WEB_SEARCH -> """|поиск информации, фактов, новостей и источников в интернете, 
+                         |извлечение текста с сайтов, скачивание картинок"""
 
         CONFIG -> "изменение или сохранение настроек, вроде скорости речи, запоминание и исполнение инструкций"
         DATA_ANALYTICS -> "работа с Excel, таблицами, xlsx файлами, анализ данных, сводные таблицы, графики, поиск значений в таблицах"
@@ -156,9 +155,16 @@ TELEGRAM 95"""
         BROWSER -> listOf(
             "открой сайт сбербанка",
             "найди в закладках обзор фондового рынка",
-            "посмотри погоду в браузере",
-            "нагугли популярные статьи по X или найди что-то похожее в истории",
-            "какие последние новости"
+            "переключи вкладку на YouTube",
+            "открой новую вкладку",
+            "поищи в истории браузера"
+        )
+
+        WEB_SEARCH -> listOf(
+            "найди последние новости про ИИ",
+            "собери источники по кибербезопасности",
+            "найди изображения для презентации",
+            "извлеки текст со страницы отчета"
         )
 
         CONFIG -> listOf(
@@ -237,11 +243,13 @@ TELEGRAM 95"""
             "сфоткай экран",
             "включи запись экрана",
         )
+
         PRESENTATION -> listOf(
             "создай презентацию про ИИ",
             "прочитай слайды из файла presentation.pptx",
             "добавь слайд с заголовком",
         )
+
         HELP -> listOf(
             "что ты умеешь",
             "какие у тебя функции",

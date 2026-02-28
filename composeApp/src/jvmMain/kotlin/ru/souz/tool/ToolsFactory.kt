@@ -129,6 +129,9 @@ class ToolsFactory(di: DI) {
             toolFocusOnTab.toGiga(),
             toolChromeInfo.toGiga(),
             toolOpenDefaultBrowser.toGiga(),
+        )
+
+        ToolCategory.WEB_SEARCH -> listOf(
             toolWebSearch.toGiga(),
             toolWebImageSearch.toGiga(),
             toolWebPageText.toGiga(),
@@ -151,9 +154,6 @@ class ToolsFactory(di: DI) {
         ToolCategory.APPLICATIONS -> listOf(
             toolShowApps.toGiga(),
             toolOpen.toGiga(),
-            toolWebSearch.toGiga(),
-            toolWebImageSearch.toGiga(),
-            toolWebPageText.toGiga(),
         )
 
         ToolCategory.DATA_ANALYTICS -> listOf(
@@ -209,9 +209,6 @@ class ToolsFactory(di: DI) {
         )
 
         ToolCategory.PRESENTATION -> listOf(
-            toolWebSearch.toGiga(),
-            toolWebImageSearch.toGiga(),
-            toolWebPageText.toGiga(),
             toolPresentationCreate.toGiga(),
             toolPresentationRead.toGiga(),
             toolListFiles.toGiga(),

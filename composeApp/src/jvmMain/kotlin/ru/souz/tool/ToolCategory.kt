@@ -3,6 +3,7 @@ package ru.souz.tool
 enum class ToolCategory {
     FILES,
     BROWSER,
+    WEB_SEARCH,
     CONFIG,
     NOTES,
     APPLICATIONS,
