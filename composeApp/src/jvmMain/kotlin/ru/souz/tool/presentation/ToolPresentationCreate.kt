@@ -18,12 +18,7 @@ import ru.souz.tool.files.FilesToolUtil
 import java.io.File
 import java.io.FileOutputStream
 import java.io.StringReader
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -176,17 +171,14 @@ data class PresentationCreateInput(
 )
 
 class ToolPresentationCreate(
-    private val filesToolUtil: FilesToolUtil
+    private val filesToolUtil: FilesToolUtil,
+    private val webImageDownloader: WebImageDownloader,
 ) : ToolSetupWithAttachments<PresentationCreateInput> {
     private val playfulKeywords = setOf(
         "шут", "шуточ", "юмор", "смеш", "мем", "прикол", "пук", "перд", "funny", "joke", "humor", "playful", "lighthearted", "lol", "fart"
     )
     private val mapper = jacksonObjectMapper()
         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-    private val httpClient: HttpClient = HttpClient.newBuilder()
-        .followRedirects(HttpClient.Redirect.ALWAYS)
-        .build()
-
     override val name: String = "PresentationCreate"
     override val description: String = "Create a PowerPoint presentation (.pptx) from text content. " +
             "Supports creating slides with bullet points, speaker notes, and images. " +
@@ -195,7 +187,7 @@ class ToolPresentationCreate(
             "Chart blocks currently render a clear placeholder with source data summary (not a native PPT chart). " +
             "For real charts, use the 'CreatePlot' tool and insert the image via `imagePath`.\n" +
             "Supports 30+ built-in visual themes (e.g. CONSULTING, STARTUP, CYBERPUNK) AND Custom Themes via 'themeBackgroundColor', 'themeAccentColor' etc. " +
-            "If you need external facts or images, call 'WebResearch' before this tool.\n" +
+            "If you need external facts, call 'WebSearch'. For visuals, call 'WebImageSearch' before this tool.\n" +
             "\n\nBEST PRACTICES (Pyramid Principle & Barbara Minto):" +
             "\n- **SCQA Structure**: Situation (Context) -> Complication (Problem) -> Question (What to do?) -> Answer (Solution)." +
             "\n- **Top-Down Logic**: Start with the main conclusion/recommendation, then support it with arguments." +
@@ -790,31 +782,10 @@ class ToolPresentationCreate(
         val expanded = filesToolUtil.applyDefaultEnvs(normalized)
         return when {
             expanded.startsWith("http://", ignoreCase = true) || expanded.startsWith("https://", ignoreCase = true) ->
-                downloadImageToTemp(expanded)
+                webImageDownloader.downloadToTemp(expanded)
 
             else -> expanded
         }
-    }
-
-    private fun downloadImageToTemp(url: String): String? {
-        return runCatching {
-            val uri = URI.create(url.replace(" ", "%20"))
-            val temp = Files.createTempFile("souz_presentation_", ".bin").toFile()
-            val request = HttpRequest.newBuilder(uri)
-                .GET()
-                .header("User-Agent", "Mozilla/5.0 (Souz PresentationCreate)")
-                .build()
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofFile(temp.toPath()))
-            if (response.statusCode() >= 400) {
-                temp.delete()
-                return null
-            }
-            if (prepareImageData(temp.absolutePath) == null) {
-                temp.delete()
-                return null
-            }
-            temp.absolutePath
-        }.getOrNull()
     }
 
     private fun renderHtmlFirstSlide(

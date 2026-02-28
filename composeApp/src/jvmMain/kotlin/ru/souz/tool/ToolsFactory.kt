@@ -21,7 +21,9 @@ import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
-import ru.souz.tool.presentation.ToolWebResearch
+import ru.souz.tool.presentation.ToolWebImageSearch
+import ru.souz.tool.presentation.ToolWebPageText
+import ru.souz.tool.presentation.ToolWebSearch
 import ru.souz.tool.telegram.ToolTelegramForward
 import ru.souz.tool.telegram.ToolTelegramGetHistory
 import ru.souz.tool.telegram.ToolTelegramReadInbox
@@ -93,7 +95,9 @@ class ToolsFactory(di: DI) {
     private val excelReport: ExcelReport by di.instance()
 
     // Presentation tools
-    private val toolWebResearch: ToolWebResearch by di.instance()
+    private val toolWebSearch: ToolWebSearch by di.instance()
+    private val toolWebImageSearch: ToolWebImageSearch by di.instance()
+    private val toolWebPageText: ToolWebPageText by di.instance()
     private val toolPresentationCreate: ToolPresentationCreate by di.instance()
     private val toolPresentationRead: ToolPresentationRead by di.instance()
 
@@ -125,7 +129,9 @@ class ToolsFactory(di: DI) {
             toolFocusOnTab.toGiga(),
             toolChromeInfo.toGiga(),
             toolOpenDefaultBrowser.toGiga(),
-            toolWebResearch.toGiga(),
+            toolWebSearch.toGiga(),
+            toolWebImageSearch.toGiga(),
+            toolWebPageText.toGiga(),
         )
 
         ToolCategory.CONFIG -> listOf(
@@ -145,7 +151,9 @@ class ToolsFactory(di: DI) {
         ToolCategory.APPLICATIONS -> listOf(
             toolShowApps.toGiga(),
             toolOpen.toGiga(),
-            toolWebResearch.toGiga(),
+            toolWebSearch.toGiga(),
+            toolWebImageSearch.toGiga(),
+            toolWebPageText.toGiga(),
         )
 
         ToolCategory.DATAANALYTICS -> listOf(
@@ -201,7 +209,9 @@ class ToolsFactory(di: DI) {
         )
 
         ToolCategory.PRESENTATION -> listOf(
-            toolWebResearch.toGiga(),
+            toolWebSearch.toGiga(),
+            toolWebImageSearch.toGiga(),
+            toolWebPageText.toGiga(),
             toolPresentationCreate.toGiga(),
             toolPresentationRead.toGiga(),
             toolListFiles.toGiga(),

@@ -65,7 +65,11 @@ import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
-import ru.souz.tool.presentation.ToolWebResearch
+import ru.souz.tool.presentation.ToolWebImageSearch
+import ru.souz.tool.presentation.ToolWebPageText
+import ru.souz.tool.presentation.ToolWebSearch
+import ru.souz.tool.presentation.WebImageDownloader
+import ru.souz.tool.presentation.WebResearchClient
 import ru.souz.tool.telegram.ToolTelegramForward
 import ru.souz.tool.telegram.ToolTelegramGetHistory
 import ru.souz.tool.telegram.ToolTelegramReadInbox
@@ -154,8 +158,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolCalculator() }
     bindSingleton { ExcelRead(instance()) }
     bindSingleton { ExcelReport(instance()) }
-    bindSingleton { ToolWebResearch(instance()) }
-    bindSingleton { ToolPresentationCreate(instance()) }
+    bindSingleton { WebResearchClient() }
+    bindSingleton { WebImageDownloader(instance()) }
+    bindSingleton { ToolWebSearch(instance()) }
+    bindSingleton { ToolWebImageSearch(instance(), instance()) }
+    bindSingleton { ToolWebPageText(instance()) }
+    bindSingleton { ToolPresentationCreate(instance(), instance()) }
     bindSingleton { ToolPresentationRead() }
     bindSingleton { ToolTelegramReadInbox(instance()) }
     bindSingleton { ToolTelegramGetHistory(instance()) }
