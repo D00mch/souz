@@ -10,33 +10,27 @@ import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
 
 /**
- * Contract for generic web search.
+ * Generic web search by query.
  *
- * This tool is intentionally mode-free:
- * - `query` is always required
- * - output always contains only web results
- *
- * It replaces the WEB branch of the removed `WebResearch` multi-mode contract.
- */
-data class WebSearchInput(
-    @InputParamDescription("Search query")
-    val query: String,
-    @InputParamDescription("Maximum number of results to return (1..20). For presentation work prefer 6-10.")
-    val limit: Int = 8,
-)
-
-data class WebSearchOutput(
-    val query: String,
-    val results: List<WebSearchResult>,
-)
-
-/**
  * Tool wrapper over [WebResearchClient.searchWeb].
+ * Output always contains only web search results.
  */
 class ToolWebSearch(
     private val webResearchClient: WebResearchClient,
     private val mapper: ObjectMapper = gigaJsonMapper,
-) : ToolSetup<WebSearchInput> {
+) : ToolSetup<ToolWebSearch.Input> {
+    data class WebSearchOutput(
+        val query: String,
+        val results: List<WebSearchResult>,
+    )
+
+    data class Input(
+        @InputParamDescription("Search query")
+        val query: String,
+        @InputParamDescription("Maximum number of results to return (1..20). For presentation work prefer 6-10.")
+        val limit: Int = 8,
+    )
+
     override val name: String = "WebSearch"
     override val description: String =
         "Searches the web for facts and sources. Returns title, URL, and snippet."
@@ -59,7 +53,7 @@ class ToolWebSearch(
         )
     )
 
-    override fun invoke(input: WebSearchInput): String {
+    override fun invoke(input: Input): String {
         val query = input.query.trim()
         if (query.isBlank()) throw BadInputException("`query` is required")
         val output = WebSearchOutput(
