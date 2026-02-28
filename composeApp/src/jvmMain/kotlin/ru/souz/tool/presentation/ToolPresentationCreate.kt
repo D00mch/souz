@@ -1,5 +1,6 @@
 package ru.souz.tool.presentation
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
@@ -22,6 +23,7 @@ import java.nio.charset.StandardCharsets
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class SlideContent(
     @InputParamDescription("Title of the slide")
     val title: String,
@@ -55,6 +57,7 @@ data class SlideContent(
     val backgroundShapes: List<PresentationShape>? = null
 )
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class PresentationChart(
     @InputParamDescription("Chart title")
     val title: String,
@@ -66,13 +69,15 @@ data class PresentationChart(
     val series: List<PresentationChartSeries>? = null
 )
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class PresentationChartSeries(
     val name: String,
     val values: List<Double>
 )
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class PresentationShape(
-    @InputParamDescription("Shape type. Options: RECT/RECTANGLE, OVAL/ELLIPSE, TRIANGLE, ARROW_RIGHT, STAR_5")
+    @InputParamDescription("Shape type. Options: RECT/RECTANGLE, OVAL/ELLIPSE/CIRCLE, TRIANGLE, ARROW_RIGHT, STAR_5, LINE")
     val type: String,
     @InputParamDescription("Text to display inside the shape")
     val text: String? = null,
@@ -85,9 +90,12 @@ data class PresentationShape(
     @InputParamDescription("Height in points")
     val height: Int,
     @InputParamDescription("Fill color (HEX code or theme color name)")
-    val color: String? = null
+    val color: String? = null,
+    @InputParamDescription("Optional opacity for fill color (0.0 to 1.0)")
+    val opacity: Double? = null
 )
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class PresentationTable(
     @InputParamDescription("CSV string representing the table data. Cells separated by comma, rows by newline.")
     val csvData: String,
@@ -95,6 +103,7 @@ data class PresentationTable(
     val hasHeader: Boolean = true
 )
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class CustomThemeParam(
     @InputParamDescription("Background color (HEX)")
     val backgroundColor: String? = null,
@@ -115,6 +124,7 @@ enum class PresentationRenderMode {
     CLASSIC
 }
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class PresentationCreateInput(
     @InputParamDescription("Title of the presentation")
     val title: String,
@@ -370,23 +380,7 @@ class ToolPresentationCreate(
                 PresentationDesignSystem.applyDesign(slide, effectiveDesignId, resolvedThemeObj)
             }
 
-            // Add Speaker Notes
-            if (slideData.notes != null) {
-                 val notesSlide = ppt.getNotesSlide(slide) ?: try {
-                     val method = XMLSlideShow::class.java.getDeclaredMethod("createNotesSlide", org.apache.poi.xslf.usermodel.XSLFSlide::class.java)
-                     method.isAccessible = true
-                     method.invoke(ppt, slide) as org.apache.poi.xslf.usermodel.XSLFNotes
-                 } catch (e: Exception) {
-                     null
-                 }
-
-                 if (notesSlide != null) {
-                     val notesPlaceholder = notesSlide.getPlaceholder(0) as? org.apache.poi.xslf.usermodel.XSLFTextShape
-                     if (notesPlaceholder != null) {
-                         notesPlaceholder.text = slideData.notes
-                     }
-                 }
-            }
+            addSpeakerNotes(ppt, slide, slideData.notes)
 
             if (slideData.backgroundShapes != null) {
                 slideData.backgroundShapes.forEach { shape ->
@@ -2055,7 +2049,16 @@ class ToolPresentationCreate(
         notes: String?,
     ) {
         if (notes.isNullOrBlank()) return
-        val notesSlide = ppt.getNotesSlide(slide) ?: try {
+        val notesSlide = getOrCreateNotesSlide(ppt, slide)
+        val notesPlaceholder = notesSlide?.let { resolveNotesTextPlaceholder(it) }
+        notesPlaceholder?.text = notes
+    }
+
+    private fun getOrCreateNotesSlide(
+        ppt: XMLSlideShow,
+        slide: org.apache.poi.xslf.usermodel.XSLFSlide,
+    ): org.apache.poi.xslf.usermodel.XSLFNotes? {
+        return ppt.getNotesSlide(slide) ?: try {
             val method = XMLSlideShow::class.java.getDeclaredMethod(
                 "createNotesSlide",
                 org.apache.poi.xslf.usermodel.XSLFSlide::class.java
@@ -2065,8 +2068,20 @@ class ToolPresentationCreate(
         } catch (_: Exception) {
             null
         }
-        val notesPlaceholder = notesSlide?.getPlaceholder(0) as? org.apache.poi.xslf.usermodel.XSLFTextShape
-        notesPlaceholder?.text = notes
+    }
+
+    private fun resolveNotesTextPlaceholder(
+        notesSlide: org.apache.poi.xslf.usermodel.XSLFNotes,
+    ): org.apache.poi.xslf.usermodel.XSLFTextShape? {
+        val bodyPlaceholder = notesSlide.shapes
+            .filterIsInstance<org.apache.poi.xslf.usermodel.XSLFTextShape>()
+            .firstOrNull { shape ->
+                val placeholder = runCatching { shape.placeholderDetails.placeholder }.getOrNull()
+                placeholder == org.apache.poi.sl.usermodel.Placeholder.BODY
+            }
+        if (bodyPlaceholder != null) return bodyPlaceholder
+        return (notesSlide.getPlaceholder(1) as? org.apache.poi.xslf.usermodel.XSLFTextShape)
+            ?: (notesSlide.getPlaceholder(0) as? org.apache.poi.xslf.usermodel.XSLFTextShape)
     }
 
     private fun addImageToSlide(
@@ -2568,7 +2583,7 @@ class ToolPresentationCreate(
     ) {
         val shapeType = when (shapeData.type.uppercase()) {
             "RECT", "RECTANGLE" -> org.apache.poi.sl.usermodel.ShapeType.RECT
-            "OVAL", "ELLIPSE" -> org.apache.poi.sl.usermodel.ShapeType.ELLIPSE
+            "OVAL", "ELLIPSE", "CIRCLE" -> org.apache.poi.sl.usermodel.ShapeType.ELLIPSE
             "TRIANGLE" -> org.apache.poi.sl.usermodel.ShapeType.TRIANGLE
             "ARROW_RIGHT", "ARROW" -> org.apache.poi.sl.usermodel.ShapeType.RIGHT_ARROW
             "STAR_5", "STAR" -> org.apache.poi.sl.usermodel.ShapeType.STAR_5
@@ -2596,7 +2611,12 @@ class ToolPresentationCreate(
              else theme?.accentColor ?: java.awt.Color.BLUE
         }
 
-        shape.fillColor = fillColor
+        val fillColorWithOpacity = shapeData.opacity?.let { opacity ->
+            val alpha = (opacity.coerceIn(0.0, 1.0) * 255).roundToInt()
+            java.awt.Color(fillColor.red, fillColor.green, fillColor.blue, alpha)
+        } ?: fillColor
+
+        shape.fillColor = fillColorWithOpacity
         shape.setLineColor(java.awt.Color.DARK_GRAY)
 
         if (shapeData.text != null) {
