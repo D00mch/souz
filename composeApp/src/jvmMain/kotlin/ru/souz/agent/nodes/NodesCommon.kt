@@ -243,7 +243,7 @@ class NodesCommon(
                 toolCategory = toolCategory,
                 durationMs = System.currentTimeMillis() - startedAtMs,
                 success = false,
-                errorMessage = e.message,
+                errorMessage = e::class.simpleName ?: "UnknownError",
             )
             throw e
         }

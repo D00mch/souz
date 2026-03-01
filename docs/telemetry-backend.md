@@ -262,7 +262,7 @@ The client currently emits:
 - `toolCallCount`
 - `requestTokenUsage`
 - `sessionTokenUsage`
-- `errorMessage`
+- `errorMessage` (sanitized error identifier, for example an exception simple name)
 
 `tool_executed`
 
@@ -270,7 +270,7 @@ The client currently emits:
 - `toolCategory`
 - `durationMs`
 - `success`
-- `errorMessage`
+- `errorMessage` (sanitized error identifier, for example an exception simple name)
 - `argumentKeys`
 - `argumentCount`
 
@@ -307,6 +307,6 @@ The current client implementation sends:
 - token usage and request/session totals
 - model/provider names
 - request/response character counts
-- short error messages when present
+- sanitized error identifiers when present
 
 The current client does not send full tool arguments or raw prompt text as telemetry payload fields.

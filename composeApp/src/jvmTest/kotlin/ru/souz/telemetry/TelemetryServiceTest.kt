@@ -3,6 +3,7 @@ package ru.souz.telemetry
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import ru.souz.db.ConfigStore
 import ru.souz.giga.GigaResponse
 import ru.souz.tool.ToolCategory
@@ -103,14 +104,16 @@ class TelemetryServiceTest {
                 inputLengthChars = 24,
                 attachedFilesCount = 1,
             )
-            service.recordToolExecution(
-                functionName = "tool.open_file",
-                functionArguments = mapOf("path" to "/tmp/demo.txt"),
-                toolCategory = ToolCategory.FILES,
-                durationMs = 17,
-                success = true,
-                errorMessage = null,
-            )
+            withContext(service.requestContextElement(requestContext)) {
+                service.recordToolExecution(
+                    functionName = "tool.open_file",
+                    functionArguments = mapOf("path" to "/tmp/demo.txt"),
+                    toolCategory = ToolCategory.FILES,
+                    durationMs = 17,
+                    success = true,
+                    errorMessage = null,
+                )
+            }
             service.finishRequest(
                 context = requestContext,
                 status = TelemetryRequestStatus.SUCCESS,
@@ -156,6 +159,107 @@ class TelemetryServiceTest {
         } finally {
             resetTelemetryConfigStore()
             server.stop(0)
+        }
+    }
+
+    @Test
+    fun `overlapping requests keep tool counts isolated and sanitize errors`() = runTest {
+        resetTelemetryConfigStore()
+
+        try {
+            val repo = TelemetryOutboxRepository(
+                databasePath = Files.createTempDirectory("telemetry-overlap-test").resolve("telemetry.db"),
+                objectMapper = objectMapper,
+            )
+            val service = TelemetryService(
+                outboxRepository = repo,
+                runtimeConfig = TelemetryRuntimeConfig(baseUrl = ""),
+            )
+
+            val conversationId = service.startConversation(TelemetryConversationStartReason.CHAT_UI)
+            val requestA = service.beginRequest(
+                conversationId = conversationId,
+                source = TelemetryRequestSource.CHAT_UI,
+                model = "gpt-a",
+                provider = "OPENAI",
+                inputLengthChars = 10,
+                attachedFilesCount = 0,
+            )
+            val requestB = service.beginRequest(
+                conversationId = conversationId,
+                source = TelemetryRequestSource.CHAT_UI,
+                model = "gpt-b",
+                provider = "OPENAI",
+                inputLengthChars = 20,
+                attachedFilesCount = 0,
+            )
+
+            withContext(service.requestContextElement(requestA)) {
+                service.recordToolExecution(
+                    functionName = "tool.read_file",
+                    functionArguments = mapOf("path" to "/Users/duxx/secret.txt"),
+                    toolCategory = ToolCategory.FILES,
+                    durationMs = 10,
+                    success = false,
+                    errorMessage = "java.io.FileNotFoundException: /Users/duxx/secret.txt",
+                )
+            }
+            withContext(service.requestContextElement(requestB)) {
+                service.recordToolExecution(
+                    functionName = "tool.list_files",
+                    functionArguments = mapOf("path" to "/tmp"),
+                    toolCategory = ToolCategory.FILES,
+                    durationMs = 5,
+                    success = true,
+                    errorMessage = null,
+                )
+            }
+
+            service.finishRequest(
+                context = requestB,
+                status = TelemetryRequestStatus.SUCCESS,
+                responseLengthChars = 42,
+                errorMessage = null,
+                requestTokenUsage = GigaResponse.Usage(1, 2, 3, 0),
+                sessionTokenUsage = GigaResponse.Usage(7, 8, 15, 0),
+            )
+            service.finishRequest(
+                context = requestA,
+                status = TelemetryRequestStatus.ERROR,
+                responseLengthChars = null,
+                errorMessage = "java.io.FileNotFoundException: /Users/duxx/secret.txt",
+                requestTokenUsage = GigaResponse.Usage(4, 5, 9, 0),
+                sessionTokenUsage = GigaResponse.Usage(7, 8, 15, 0),
+            )
+            service.finishConversation(conversationId, TelemetryConversationEndReason.CLEAR_CONTEXT)
+
+            val events = repo.loadReadyBatch(limit = 10, nowMs = Long.MAX_VALUE).map { it.event }
+            val requestEventsById = events
+                .filter { it.type == TelemetryEventType.REQUEST_FINISHED.wireName }
+                .associateBy { it.requestId }
+
+            val requestAPayload = assertNotNull(requestEventsById[requestA.requestId]).payload
+            val requestBPayload = assertNotNull(requestEventsById[requestB.requestId]).payload
+            assertEquals(1, requestAPayload["toolCallCount"])
+            assertEquals(1, requestBPayload["toolCallCount"])
+            assertEquals("java.io.FileNotFoundException", requestAPayload["errorMessage"])
+
+            val toolErrorPayload = events
+                .first { it.type == TelemetryEventType.TOOL_EXECUTED.wireName && it.requestId == requestA.requestId }
+                .payload
+            assertEquals("java.io.FileNotFoundException", toolErrorPayload["errorMessage"])
+
+            val conversationFinished = events.last { it.type == TelemetryEventType.CONVERSATION_FINISHED.wireName }
+            assertEquals(2, conversationFinished.payload["requestCount"])
+            assertEquals(2, conversationFinished.payload["toolCallCount"])
+            assertEquals(
+                mapOf("promptTokens" to 5, "completionTokens" to 7, "totalTokens" to 12, "precachedTokens" to 0),
+                conversationFinished.payload["tokenUsage"],
+            )
+
+            service.close()
+        } finally {
+            resetTelemetryConfigStore()
         }
     }
 

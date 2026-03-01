@@ -1,37 +1,45 @@
-@file:OptIn(ExperimentalAtomicApi::class)
-
 package ru.souz.giga
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import kotlin.concurrent.atomics.AtomicReference
-import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlinx.coroutines.asContextElement
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 interface TokenLogging {
     fun startRequest(requestId: String) = Unit
     fun finishRequest(requestId: String) = Unit
+    fun requestContextElement(requestId: String): CoroutineContext = EmptyCoroutineContext
     fun logTokenUsage(result: GigaResponse.Chat.Ok, body: GigaRequest.Chat)
 
-    fun currentRequestTokenUsage(): GigaResponse.Usage = GigaResponse.Usage(0, 0, 0, 0)
+    fun currentRequestTokenUsage(requestId: String): GigaResponse.Usage = GigaResponse.Usage(0, 0, 0, 0)
     fun sessionTokenUsage(): GigaResponse.Usage = GigaResponse.Usage(0, 0, 0, 0)
 }
 
 class SessionTokenLogging(
     private val logObjectMapper: ObjectMapper,
 ) : TokenLogging {
-    private val currentSessionTokensUsage = AtomicReference(GigaResponse.Usage(0, 0, 0, 0))
-    private val currentRequestId = AtomicReference<String?>(null)
-    private val currentRequestTokensUsage = AtomicReference(GigaResponse.Usage(0, 0, 0, 0))
+    private val stateLock = Any()
+    private val activeRequestId = ThreadLocal<String?>()
+    private var currentSessionTokensUsage: GigaResponse.Usage = ZERO_USAGE
+    private val requestTokenUsage = LinkedHashMap<String, GigaResponse.Usage>()
 
     override fun startRequest(requestId: String) {
-        currentRequestId.store(requestId)
-        currentRequestTokensUsage.store(GigaResponse.Usage(0, 0, 0, 0))
+        synchronized(stateLock) {
+            requestTokenUsage[requestId] = ZERO_USAGE
+        }
     }
 
+    override fun requestContextElement(requestId: String): CoroutineContext =
+        activeRequestId.asContextElement(requestId)
+
     override fun logTokenUsage(result: GigaResponse.Chat.Ok, body: GigaRequest.Chat) {
-        val newCurrentTokensUsage = currentSessionTokensUsage.load() + result.usage
-        currentSessionTokensUsage.store(newCurrentTokensUsage)
-        currentRequestId.load()?.let {
-            currentRequestTokensUsage.store(currentRequestTokensUsage.load() + result.usage)
+        val requestId = activeRequestId.get()
+        val newCurrentTokensUsage = synchronized(stateLock) {
+            currentSessionTokensUsage += result.usage
+            requestId?.let {
+                requestTokenUsage[it] = (requestTokenUsage[it] ?: ZERO_USAGE) + result.usage
+            }
+            currentSessionTokensUsage
         }
 
         val (_, _, spent, cached) = result.usage
@@ -47,13 +55,20 @@ class SessionTokenLogging(
     }
 
     override fun finishRequest(requestId: String) {
-        if (currentRequestId.load() == requestId) {
-            currentRequestId.store(null)
-            currentRequestTokensUsage.store(GigaResponse.Usage(0, 0, 0, 0))
+        synchronized(stateLock) {
+            requestTokenUsage.remove(requestId)
         }
     }
 
-    override fun currentRequestTokenUsage(): GigaResponse.Usage = currentRequestTokensUsage.load()
+    override fun currentRequestTokenUsage(requestId: String): GigaResponse.Usage =
+        synchronized(stateLock) {
+            requestTokenUsage[requestId] ?: ZERO_USAGE
+        }
 
-    override fun sessionTokenUsage(): GigaResponse.Usage = currentSessionTokensUsage.load()
+    override fun sessionTokenUsage(): GigaResponse.Usage =
+        synchronized(stateLock) { currentSessionTokensUsage }
+
+    private companion object {
+        val ZERO_USAGE = GigaResponse.Usage(0, 0, 0, 0)
+    }
 }

@@ -16,6 +16,7 @@ import io.ktor.serialization.jackson.jackson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -34,6 +35,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.CoroutineContext
 
 class TelemetryService(
     private val outboxRepository: TelemetryOutboxRepository,
@@ -65,7 +67,8 @@ class TelemetryService(
         }
     }
 
-    private var activeRequest: ActiveTelemetryRequest? = null
+    private val currentRequestContext = ThreadLocal<TelemetryRequestContext?>()
+    private val activeRequests = LinkedHashMap<String, ActiveTelemetryRequest>()
     private val conversations = LinkedHashMap<String, ConversationMetrics>()
 
     fun start() {
@@ -125,6 +128,9 @@ class TelemetryService(
         )
     }
 
+    fun requestContextElement(context: TelemetryRequestContext): CoroutineContext =
+        currentRequestContext.asContextElement(context)
+
     fun beginRequest(
         conversationId: String,
         source: TelemetryRequestSource,
@@ -144,7 +150,7 @@ class TelemetryService(
             startedAtMs = System.currentTimeMillis(),
         )
         synchronized(stateLock) {
-            activeRequest = ActiveTelemetryRequest(context = context)
+            activeRequests[context.requestId] = ActiveTelemetryRequest(context = context)
         }
         return context
     }
@@ -159,11 +165,8 @@ class TelemetryService(
     ) {
         val durationMs = System.currentTimeMillis() - context.startedAtMs
         val toolCallCount = synchronized(stateLock) {
-            val current = activeRequest
-            if (current?.context?.requestId == context.requestId) {
-                activeRequest = null
-            }
-            val resolvedToolCallCount = current?.takeIf { it.context.requestId == context.requestId }?.toolCallCount ?: 0
+            val current = activeRequests.remove(context.requestId)
+            val resolvedToolCallCount = current?.toolCallCount ?: 0
             conversations[context.conversationId]?.let { metrics ->
                 conversations[context.conversationId] = metrics.copy(
                     requestCount = metrics.requestCount + 1,
@@ -190,7 +193,7 @@ class TelemetryService(
                 "toolCallCount" to toolCallCount,
                 "requestTokenUsage" to usagePayload(requestTokenUsage),
                 "sessionTokenUsage" to usagePayload(sessionTokenUsage),
-                "errorMessage" to errorMessage,
+                "errorMessage" to sanitizeErrorMessage(errorMessage),
             ),
         )
     }
@@ -203,21 +206,22 @@ class TelemetryService(
         success: Boolean,
         errorMessage: String?,
     ) {
-        val currentRequestContext = synchronized(stateLock) {
-            val current = activeRequest ?: return
-            activeRequest = current.copy(toolCallCount = current.toolCallCount + 1)
+        val requestContext = synchronized(stateLock) {
+            val currentContext = currentRequestContext.get() ?: return
+            val current = activeRequests[currentContext.requestId] ?: return
+            activeRequests[currentContext.requestId] = current.copy(toolCallCount = current.toolCallCount + 1)
             current.context
         }
         enqueueEvent(
             eventType = TelemetryEventType.TOOL_EXECUTED,
-            conversationId = currentRequestContext.conversationId,
-            requestId = currentRequestContext.requestId,
+            conversationId = requestContext.conversationId,
+            requestId = requestContext.requestId,
             payload = mapOf(
                 "toolName" to functionName,
                 "toolCategory" to toolCategory?.name,
                 "durationMs" to durationMs,
                 "success" to success,
-                "errorMessage" to errorMessage,
+                "errorMessage" to sanitizeErrorMessage(errorMessage),
                 "argumentKeys" to functionArguments.keys.sorted(),
                 "argumentCount" to functionArguments.size,
             ),
@@ -618,6 +622,20 @@ class TelemetryService(
         return runtimeConfig.baseRetryDelayMs * (1L shl (boundedAttempt - 1))
     }
 
+    private fun sanitizeErrorMessage(errorMessage: String?): String? =
+        errorMessage
+            ?.trim()
+            ?.lineSequence()
+            ?.firstOrNull()
+            ?.substringBefore(':')
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.split(Regex("\\s+"))
+            ?.joinToString("_")
+            ?.filter { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' }
+            ?.takeIf { it.isNotEmpty() }
+            ?.take(MAX_ERROR_MESSAGE_CHARS)
+
     private fun usagePayload(usage: GigaResponse.Usage): Map<String, Int> = mapOf(
         "promptTokens" to usage.promptTokens,
         "completionTokens" to usage.completionTokens,
@@ -648,6 +666,7 @@ class TelemetryService(
         private const val MAX_ERROR_BODY_CHARS = 256
         private const val REGISTRATION_FAILED_MESSAGE = "Telemetry installation registration failed"
         private val REGISTRATION_RESET_STATUSES = setOf(401, 403, 404, 409)
+        private const val MAX_ERROR_MESSAGE_CHARS = 80
 
         const val FLUSH_MESSAGE_NOT_CONFIGURED = "Telemetry transport is not configured"
         const val FLUSH_MESSAGE_EMPTY = "No pending telemetry events"
