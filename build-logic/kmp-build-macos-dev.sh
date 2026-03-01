@@ -10,6 +10,8 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 MAIN_RELEASE_DIR="$PROJECT_DIR/composeApp/build/compose/binaries/main-release"
 APP_OUTPUT_DIR="$MAIN_RELEASE_DIR/app"
 DMG_OUTPUT_DIR="$MAIN_RELEASE_DIR/dmg"
+COMPOSE_RUNTIME_CACHE_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/main/runtime"
+COMPOSE_CHECK_RUNTIME_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/checkRuntime"
 
 # =============================================================================
 # Validation
@@ -118,6 +120,8 @@ echo "Stopping Gradle daemons to avoid cross-architecture daemon reuse..."
 
 echo "Cleaning previous distributable output: $MAIN_RELEASE_DIR"
 rm -rf "$MAIN_RELEASE_DIR"
+echo "Cleaning cached Compose runtime image: $COMPOSE_RUNTIME_CACHE_DIR"
+rm -rf "$COMPOSE_RUNTIME_CACHE_DIR" "$COMPOSE_CHECK_RUNTIME_DIR"
 
 "$PROJECT_DIR/gradlew" :composeApp:notarizeReleaseDmg \
   -Pedition="$BUILD_EDITION" \

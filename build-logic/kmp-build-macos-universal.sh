@@ -23,6 +23,8 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 RESOURCES_DIR="$PROJECT_DIR/composeApp/src/jvmMain/resources"
 GENERATED_NATIVE_RESOURCES_DIR="$PROJECT_DIR/composeApp/build/generated/native-resources"
 BUILD_DIR="$PROJECT_DIR/composeApp/build/compose/binaries"
+COMPOSE_RUNTIME_CACHE_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/main/runtime"
+COMPOSE_CHECK_RUNTIME_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/checkRuntime"
 UNIVERSAL_BUILD_DIR="$PROJECT_DIR/composeApp/build/universal-build"
 LOCAL_PROPERTIES="$PROJECT_DIR/local.properties"
 BUILD_GRADLE="$PROJECT_DIR/composeApp/build.gradle.kts"
@@ -89,6 +91,10 @@ resolve_jdk_home() {
     fi
 
     echo "$jdk_home"
+}
+
+reset_compose_runtime_cache() {
+    rm -rf "$COMPOSE_RUNTIME_CACHE_DIR" "$COMPOSE_CHECK_RUNTIME_DIR"
 }
 
 cleanup() {
@@ -289,6 +295,8 @@ cd "$PROJECT_DIR"
 
 # Clean previous builds
 rm -rf "$BUILD_DIR"
+log_info "Clearing cached Compose runtime image..."
+reset_compose_runtime_cache
 
 # Build with x86_64 JDK
 log_info "Running Gradle build with x86_64 JDK..."
@@ -337,6 +345,10 @@ if ! file "$X64_APP/Contents/MacOS/${APP_NAME}" | grep -q "x86_64"; then
     log_error "x86_64 build verification failed"
     exit 1
 fi
+if ! file "$X64_APP/Contents/runtime/Contents/Home/lib/libjli.dylib" | grep -q "x86_64"; then
+    log_error "x86_64 runtime verification failed (libjli is not x86_64)"
+    exit 1
+fi
 
 # Save x86_64 build
 log_info "Saving x86_64 build..."
@@ -356,6 +368,8 @@ log_step "Building arm64 version"
 
 # Clean binaries directory
 rm -rf "$BUILD_DIR"
+log_info "Clearing cached Compose runtime image..."
+reset_compose_runtime_cache
 
 # Build with arm64 JDK
 log_info "Running Gradle build with arm64 JDK..."
@@ -375,6 +389,10 @@ fi
 
 if ! file "$ARM64_APP/Contents/MacOS/${APP_NAME}" | grep -q "arm64"; then
     log_error "arm64 build verification failed"
+    exit 1
+fi
+if ! file "$ARM64_APP/Contents/runtime/Contents/Home/lib/libjli.dylib" | grep -q "arm64"; then
+    log_error "arm64 runtime verification failed (libjli is not arm64)"
     exit 1
 fi
 
