@@ -45,10 +45,14 @@ import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.audio.Say
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
+import ru.souz.giga.TokenLogging
 import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.GigaVoiceAPI
 import ru.souz.service.telegram.TelegramBotController
+import ru.souz.telemetry.TelemetryRequestContext
+import ru.souz.telemetry.TelemetryRequestSource
+import ru.souz.telemetry.TelemetryService
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.ui.main.usecases.FinderPathExtractor
@@ -60,6 +64,7 @@ import ru.souz.ui.common.FinderService
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -510,6 +515,29 @@ class MainViewModelTest {
         val cleanCommands = MutableSharedFlow<Unit>()
         every { telegramBotController.incomingMessages } returns incomingMessages
         every { telegramBotController.cleanCommands } returns cleanCommands
+        val tokenLogging = mockk<TokenLogging>(relaxed = true)
+        val telemetryService = mockk<TelemetryService>(relaxed = true)
+        var telemetryRequestCounter = 0
+        var telemetryConversationCounter = 0
+        every { tokenLogging.requestContextElement(any()) } returns EmptyCoroutineContext
+        every { tokenLogging.currentRequestTokenUsage(any()) } returns GigaResponse.Usage(0, 0, 0, 0)
+        every { tokenLogging.sessionTokenUsage() } returns GigaResponse.Usage(0, 0, 0, 0)
+        every { telemetryService.startConversation(any()) } answers {
+            "conversation-${++telemetryConversationCounter}"
+        }
+        every { telemetryService.beginRequest(any(), any(), any(), any(), any(), any()) } answers {
+            TelemetryRequestContext(
+                requestId = "request-${++telemetryRequestCounter}",
+                conversationId = firstArg(),
+                source = secondArg<TelemetryRequestSource>(),
+                model = thirdArg(),
+                provider = arg(3),
+                inputLengthChars = arg(4),
+                attachedFilesCount = arg(5),
+                startedAtMs = 0L,
+            )
+        }
+        every { telemetryService.requestContextElement(any()) } returns EmptyCoroutineContext
 
         val di = DI {
             bindSingleton { graphAgent }
@@ -523,8 +551,10 @@ class MainViewModelTest {
             bindSingleton { InMemoryAudioRecorder() }
             bindSingleton { FilesToolUtil(instance()) }
             bindSingleton { FinderPathExtractor(instance()) }
+            bindSingleton<TokenLogging> { tokenLogging }
+            bindSingleton { telemetryService }
             bindSingleton {
-                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance())
+                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance())
             }
         }
 

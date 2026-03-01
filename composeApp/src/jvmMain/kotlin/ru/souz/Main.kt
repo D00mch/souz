@@ -25,6 +25,7 @@ import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
 import ru.souz.mcp.McpClientManager
+import ru.souz.telemetry.TelemetryService
 import ru.souz.ui.AppTray
 import ru.souz.ui.rememberTrayWindowController
 
@@ -50,9 +51,11 @@ fun main() {
             val settingsProvider: SettingsProvider by di.instance()
             val mcpClientManager: McpClientManager by di.instance()
             val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
+            val telemetryService: TelemetryService by di.instance()
 
             DisposableEffect(Unit) {
                 telegramBotController.start()
+                telemetryService.start()
 
                 onDispose {
                     println("Shutting down services...")
@@ -60,6 +63,8 @@ fun main() {
                         .onFailure { println("Failed to close MCP manager: ${it.message}") }
                     runCatching { telegramBotController.close() }
                         .onFailure { println("Failed to close Telegram bot controller: ${it.message}") }
+                    runCatching { telemetryService.close() }
+                        .onFailure { println("Failed to close telemetry service: ${it.message}") }
                 }
             }
             

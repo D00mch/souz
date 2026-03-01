@@ -31,6 +31,8 @@ import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.ui.main.usecases.PermissionsUseCase
 import ru.souz.ui.main.usecases.SpeechUseCase
 import ru.souz.ui.main.usecases.VoiceInputUseCase
+import ru.souz.telemetry.TelemetryConversationEndReason
+import ru.souz.telemetry.TelemetryRequestSource
 import ru.souz.ui.settings.availableLlmModels
 import ru.souz.ui.settings.defaultLlmModel
 import java.util.concurrent.atomic.AtomicReference
@@ -102,6 +104,7 @@ class MainViewModel(
                             scope = viewModelScope,
                             isVoice = true,
                             chatMessage = recognizedText,
+                            requestSource = TelemetryRequestSource.VOICE_INPUT,
                         )
                     }
                 },
@@ -115,6 +118,7 @@ class MainViewModel(
                     scope = this,
                     isVoice = false,
                     chatMessage = msg.text,
+                    requestSource = TelemetryRequestSource.TELEGRAM_BOT,
                     onResult = { result ->
                         result.onSuccess { msg.responseDeferred.complete(it) }
                         result.onFailure { msg.responseDeferred.complete("Error: ${it.message}") }
@@ -171,6 +175,7 @@ class MainViewModel(
                     chatMessage = composedMessage,
                     displayMessage = inputText,
                     attachedFiles = attachments,
+                    requestSource = TelemetryRequestSource.CHAT_UI,
                 )
             }
 
@@ -237,6 +242,7 @@ class MainViewModel(
 
     private suspend fun startNewConversation() {
         chatUseCase.stopSpeechAndSideEffects()
+        chatUseCase.finishCurrentConversation(TelemetryConversationEndReason.NEW_CONVERSATION)
         chatUseCase.clearContext()
 
         setState {
@@ -335,6 +341,7 @@ class MainViewModel(
 
     private suspend fun clearContext() {
         val lastKnownAgentContext: AgentContext<String>? = chatUseCase.snapshotContext()
+        chatUseCase.finishCurrentConversation(TelemetryConversationEndReason.CLEAR_CONTEXT)
         chatUseCase.clearContext()
         chatUseCase.stopSpeechAndSideEffects()
 
