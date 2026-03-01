@@ -21,6 +21,9 @@ import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
+import ru.souz.tool.presentation.ToolWebImageSearch
+import ru.souz.tool.presentation.ToolWebPageText
+import ru.souz.tool.presentation.ToolWebSearch
 import ru.souz.tool.telegram.ToolTelegramForward
 import ru.souz.tool.telegram.ToolTelegramGetHistory
 import ru.souz.tool.telegram.ToolTelegramReadInbox
@@ -92,6 +95,9 @@ class ToolsFactory(di: DI) {
     private val excelReport: ExcelReport by di.instance()
 
     // Presentation tools
+    private val toolWebSearch: ToolWebSearch by di.instance()
+    private val toolWebImageSearch: ToolWebImageSearch by di.instance()
+    private val toolWebPageText: ToolWebPageText by di.instance()
     private val toolPresentationCreate: ToolPresentationCreate by di.instance()
     private val toolPresentationRead: ToolPresentationRead by di.instance()
 
@@ -125,6 +131,12 @@ class ToolsFactory(di: DI) {
             toolOpenDefaultBrowser.toGiga(),
         )
 
+        ToolCategory.WEB_SEARCH -> listOf(
+            toolWebSearch.toGiga(),
+            toolWebImageSearch.toGiga(),
+            toolWebPageText.toGiga(),
+        )
+
         ToolCategory.CONFIG -> listOf(
             toolSoundConfig.toGiga(),
             toolSoundConfigDiff.toGiga(),
@@ -144,7 +156,7 @@ class ToolsFactory(di: DI) {
             toolOpen.toGiga(),
         )
 
-        ToolCategory.DATAANALYTICS -> listOf(
+        ToolCategory.DATA_ANALYTICS -> listOf(
             toolCreatePlotFromCsv.toGiga(),
             toolUploadFile.toGiga(),
             toolDownloadFile.toGiga(),

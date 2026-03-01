@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import ru.souz.audio.Say
@@ -30,6 +31,7 @@ class SetupViewModelTest {
 
     @BeforeTest
     fun setUp() {
+        assumeTrue(hasOpenGlRuntime(), "Skipping SetupViewModelTest: libGL is unavailable")
         Dispatchers.setMain(dispatcher)
     }
 
@@ -238,6 +240,17 @@ class SetupViewModelTest {
         advanceUntilIdle()
 
         assertEquals(GigaModel.Pro, settingsProvider.gigaModel)
+    }
+
+    private fun hasOpenGlRuntime(): Boolean {
+        val mapped = System.mapLibraryName("GL")
+        val candidates = listOf(
+            java.io.File("/usr/lib/x86_64-linux-gnu/$mapped"),
+            java.io.File("/lib/x86_64-linux-gnu/$mapped"),
+            java.io.File("/usr/lib64/$mapped"),
+            java.io.File("/usr/lib/$mapped"),
+        )
+        return candidates.any { it.exists() }
     }
 
     private fun createViewModel(settingsProvider: SettingsProvider): SetupViewModel {

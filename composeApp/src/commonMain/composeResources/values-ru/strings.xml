@@ -65,7 +65,7 @@
     <string name="keys_hint_chat_ru_build">Для чата достаточно одного ключа: GigaChat, Qwen или AI Tunnel.</string>
     <string name="keys_hint_chat_en_build">Для чата достаточно одного ключа: OpenAI, Qwen или Anthropic.</string>
     <string name="keys_hint_voice">Голосовые команды зависят от возможностей сборки.</string>
-    <string name="keys_hint_voice_required">Для голосовых команд нужен хотя бы один ключ распознавания речи (пока доступен только SaluteSpeech).</string>
+    <string name="keys_hint_voice_required">Для голосовых команд нужен хотя бы один ключ распознавания речи.</string>
     <string name="keys_hint_voice_unavailable">Голосовые команды в этой сборке пока недоступны.</string>
     <string name="label_key_gigachat">GigaChat ключ</string>
     <string name="label_key_qwen">Qwen ключ</string>
@@ -143,7 +143,7 @@
     <string name="setup_title">Подключите API-ключи</string>
     <string name="setup_hint_add_key">Для старта добавьте хотя бы один ключ. Остальные можно подключить позже в настройках.</string>
     <string name="setup_hint_keys_found">Найдено ключей: %d. Можно продолжать.</string>
-    <string name="setup_hint_voice_required">Для голосовых команд нужен хотя бы один ключ распознавания речи (пока доступен только SaluteSpeech).</string>
+    <string name="setup_hint_voice_required">Для голосовых команд нужен хотя бы один ключ распознавания речи.</string>
     <string name="setup_hint_voice_unavailable">Голосовые команды в этой сборке пока недоступны.</string>
     <string name="button_open_souz">Открыть Союз ИИ</string>
     <string name="button_add_key_to_proceed">Добавьте хотя бы один ключ</string>
@@ -176,6 +176,7 @@
     <!-- Dropdowns -->
     <string name="label_model">Модель</string>
     <string name="label_embeddings_model">Модель эмбеддингов</string>
+    <string name="label_voice_recognition_model">Модель распознавания речи</string>
 
     <!-- Finder Service -->
     <string name="error_empty_path">Пустой путь</string>
@@ -216,10 +217,11 @@
     <string name="error_prefix">Ошибка: %s</string>
     <string name="error_agent_timeout">Агент не успел решить задачу за отведенное время. Попробуйте увеличить таймаут в настройках.</string>
     <string name="error_agent_context_reset">Слишком много информации. Я запутался, давай начнем заново и по чуть-чуть.</string>
+    <string name="error_agent_no_money">Не хватает токенов</string>
     <string name="voice_status_recording_started">Запись запущена</string>
     <string name="voice_status_processing_input">Обработка входа</string>
     <string name="voice_status_speech_not_recognized">Речь не распознана</string>
-    <string name="voice_error_missing_key">Добавьте ключ распознавания речи (SaluteSpeech) в Настройки > Мои ключи, чтобы использовать голосовые команды</string>
+    <string name="voice_error_missing_key">Добавьте ключ API для выбранной модели распознавания речи в Настройки > Мои ключи, чтобы использовать голосовые команды</string>
     <string name="voice_error_recognition_unavailable">Распознавание голоса в этой сборке пока недоступно.</string>
 
     <!-- Main ViewModel & status -->

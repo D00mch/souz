@@ -2,7 +2,6 @@
 
 package ru.souz.ui.main
 
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -29,7 +28,7 @@ import ru.souz.ui.main.usecases.ChatUseCase
 import ru.souz.ui.main.usecases.MainUseCaseOutput
 import ru.souz.ui.main.usecases.MainUseCases
 import ru.souz.ui.main.usecases.MainUseCasesFactory
-import ru.souz.ui.main.usecases.OnboardingUseCase
+import ru.souz.ui.main.usecases.PermissionsUseCase
 import ru.souz.ui.main.usecases.SpeechUseCase
 import ru.souz.ui.main.usecases.VoiceInputUseCase
 import ru.souz.telemetry.TelemetryConversationEndReason
@@ -62,7 +61,7 @@ class MainViewModel(
     private val chatUseCase: ChatUseCase = useCases.chat
     private val voiceInputUseCase: VoiceInputUseCase = useCases.voiceInput
     private val speechUseCase: SpeechUseCase = useCases.speech
-    private val permissionsUseCase: OnboardingUseCase = useCases.permissions
+    private val permissionsUseCase: PermissionsUseCase = useCases.permissions
     private val attachmentsUseCase = useCases.attachments
     private var startTips: List<String> = emptyList()
 
@@ -146,10 +145,9 @@ class MainViewModel(
             MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()
             MainEvent.ClearContext -> clearContext()
             MainEvent.StopSpeech -> chatUseCase.stopSpeechAndSideEffects()
-            MainEvent.StopAgentJob -> chatUseCase.cancelActiveJob()
+            MainEvent.UserPressStop -> chatUseCase.stopCurrentExecution()
             MainEvent.ShowLastText -> setPreviousText()
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
-            is MainEvent.UpdateChatInput -> setState { copy(chatInputText = event.text) }
             is MainEvent.UpdateChatModel -> updateChatModel(event.model)
             is MainEvent.UpdateChatContextSize -> updateChatContextSize(event.size)
             MainEvent.PickChatAttachments -> pickChatAttachments()
@@ -161,8 +159,8 @@ class MainViewModel(
                         send(MainEffect.ShowError(error.message ?: getString(Res.string.error_failed_to_open_path)))
                     }
             }
-            MainEvent.SendChatMessage -> vmLaunch {
-                val inputText = currentState.chatInputText.text
+            is MainEvent.SendChatMessage -> vmLaunch {
+                val inputText = event.text
                 val attachments = currentState.attachedFiles
                 val composedMessage = attachmentsUseCase.buildChatMessageWithAttachedPaths(
                     input = inputText,
@@ -257,7 +255,7 @@ class MainViewModel(
                 isProcessing = false,
                 chatMessages = emptyList(),
                 chatStartTip = startTips.randomOrNull() ?: "",
-                chatInputText = TextFieldValue(""),
+                chatSessionId = chatSessionId + 1,
                 attachedFiles = emptyList(),
                 showNewChatDialog = false,
             )

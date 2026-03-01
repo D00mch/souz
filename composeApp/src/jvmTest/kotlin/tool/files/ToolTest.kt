@@ -32,20 +32,58 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class ToolTest {
+    companion object {
+        private const val PDF_FIXTURE_NAME = "Android_ исследование IPC Android и хукинг нативных библиотек — «Хакер».pdf"
+    }
+
     private val filesToolUtil: FilesToolUtil = mockk()
 
     private fun createTempDirectory(): File =
-        Files.createTempDirectory(File("src/jvmTest/resources").toPath(), "souz-test-").toFile()
+        Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "souz-test-").toFile()
 
-    private fun fixtureDirectory(): File = File("src/jvmTest/resources/directory")
+    private fun fixtureRoot(): File {
+        val starts = generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
+        for (base in starts) {
+            val candidates = listOf(
+                File(base, "composeApp/src/jvmTest/resources"),
+                File(base, "src/jvmTest/resources"),
+            )
+            val found = candidates.firstOrNull { it.exists() }
+            if (found != null) return found
+        }
+        error("Fixture resources directory not found")
+    }
+
+    private fun fixtureDirectory(): File = File(fixtureRoot(), "directory")
 
     private fun fixturePath(name: String): String = File(fixtureDirectory(), name).path
 
-    private fun firstFixturePdfPath(): String =
-        fixtureDirectory().listFiles()
-            ?.firstOrNull { it.isFile && it.extension.equals("pdf", ignoreCase = true) }
-            ?.path
-            ?: error("PDF fixture not found in ${fixtureDirectory().path}")
+    private fun fixtureInHome(name: String): File {
+        val stream = sequenceOf(name, "directory/$name")
+            .mapNotNull { path -> javaClass.classLoader.getResourceAsStream(path) }
+            .firstOrNull()
+            ?: run {
+                val source = listOf(
+                    File(fixtureRoot(), name),
+                    File(fixtureDirectory(), name),
+                ).firstOrNull { it.exists() }
+                if (source != null) {
+                    val dir = createTempDirectory()
+                    val target = File(dir, name)
+                    source.copyTo(target, overwrite = true)
+                    return target
+                }
+                error("Fixture $name not found")
+            }
+
+        val dir = createTempDirectory()
+        val target = File(dir, name)
+        stream.use { input -> target.outputStream().use { output -> input.copyTo(output) } }
+        return target
+    }
+
+    private fun firstFixturePdfPath(): String = fixtureInHome(PDF_FIXTURE_NAME).absolutePath
+
 
     private fun createSampleFiles(baseDir: File) {
         val nestedDir = File(baseDir, "directory").apply { mkdirs() }
@@ -91,56 +129,66 @@ class ToolTest {
 
     @Test
     fun `test ToolReadFile`() {
-        val l = LoggerFactory.getLogger(ToolTest::class.java)
-        l.info(File("src/jvmTest/resources/test.txt").readText())
         val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+        val fixture = fixtureInHome("test.txt")
 
         val result = ToolReadFile(filesToolUtil)
-            .invoke(ToolReadFile.Input("src/jvmTest/resources/test.txt"))
+            .invoke(ToolReadFile.Input(fixture.absolutePath))
         assertEquals("Test content\n", result)
 
         val extracted = ToolExtractText(filesToolUtil)
-            .invoke(ToolExtractText.Input("src/jvmTest/resources/test.txt"))
+            .invoke(ToolExtractText.Input(fixture.absolutePath))
         assertContains(extracted, "=== METADATA ===")
         assertContains(extracted, "Filename: test.txt")
         assertContains(extracted, "=== CONTENT ===")
         assertContains(extracted, "Test content")
+
+        fixture.parentFile?.deleteRecursively()
     }
 
     @Test
     fun `test ToolReadPdfPages reads fixture pdf`() {
         val filesToolUtil = createFilesToolUtil(forbiddenFolders = listOf("~/Library/"))
+        val fixturePdf = fixtureInHome(firstFixturePdfPath().let(::File).name)
 
         val result = ToolReadPdfPages(filesToolUtil)
-            .invoke(ToolReadPdfPages.Input(filePath = firstFixturePdfPath(), startPage = 1))
+            .invoke(ToolReadPdfPages.Input(filePath = fixturePdf.absolutePath, startPage = 1))
 
         assertFalse(result.startsWith("Error:"))
         assertFalse(result.startsWith("IO Error"))
         assertFalse(result.startsWith("Unexpected error"))
         assertTrue(result.contains("=== PDF CONTENT (Pages 1-1 of"))
+
+        fixturePdf.parentFile?.deleteRecursively()
     }
 
     @Test
     fun `test ToolReadPdfPages validates non-pdf and missing files`() {
         val filesToolUtil = createFilesToolUtil(forbiddenFolders = listOf("~/Library/"))
         val tool = ToolReadPdfPages(filesToolUtil)
+        val nonPdfFile = fixtureInHome("file.txt")
 
-        val nonPdfResult = tool.invoke(ToolReadPdfPages.Input(filePath = fixturePath("file.txt")))
+        val nonPdfResult = tool.invoke(ToolReadPdfPages.Input(filePath = nonPdfFile.absolutePath))
         assertEquals("Error: Expecting .pdf file", nonPdfResult)
 
-        val missingPath = fixturePath("missing.pdf")
+        val missingPath = File(nonPdfFile.parentFile, "missing.pdf").absolutePath
         val missingResult = tool.invoke(ToolReadPdfPages.Input(filePath = missingPath))
         assertEquals("Error: File not found at $missingPath", missingResult)
+
+        nonPdfFile.parentFile?.deleteRecursively()
     }
 
     @Test
     fun `test ToolReadPdfPages reports out-of-range page`() {
         val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+        val fixturePdf = fixtureInHome(firstFixturePdfPath().let(::File).name)
 
         val result = ToolReadPdfPages(filesToolUtil)
-            .invoke(ToolReadPdfPages.Input(filePath = firstFixturePdfPath(), startPage = 10000))
+            .invoke(ToolReadPdfPages.Input(filePath = fixturePdf.absolutePath, startPage = 10000))
 
         assertContains(result, "Error: Requested page 10000 but document only has")
+
+        fixturePdf.parentFile?.deleteRecursively()
     }
 
     @Test
@@ -149,6 +197,7 @@ class ToolTest {
         try {
             val filesToolUtil = createFilesToolUtil(forbiddenFolders = listOf("~/Library/"))
             val tool = ToolExtractText(filesToolUtil)
+            val fixtureText = fixtureInHome("file.txt")
 
             val markdownFile = File(tempDir, "notes.md").apply {
                 writeText("# Notes\n\n- Alpha\n- Beta\n")
@@ -161,7 +210,7 @@ class ToolTest {
             }
 
             val cases = listOf(
-                fixturePath("file.txt") to "Содержимое file.txt",
+                fixtureText.path to "Содержимое file.txt",
                 markdownFile.path to "# Notes",
                 jsonFile.path to "\"name\":\"Souz\"",
                 yamlFile.path to "enabled: true"
@@ -176,6 +225,7 @@ class ToolTest {
                 assertContains(extracted, "=== CONTENT ===")
                 assertContains(extracted, expectedText)
             }
+            fixtureText.parentFile?.deleteRecursively()
         } finally {
             tempDir.deleteRecursively()
         }
@@ -193,11 +243,13 @@ class ToolTest {
         )
 
         expectedMarkersByFile.forEach { (fileName, expectedMarker) ->
-            val extracted = tool.invoke(ToolExtractText.Input(fixturePath(fileName)))
+            val fixture = fixtureInHome(fileName)
+            val extracted = tool.invoke(ToolExtractText.Input(fixture.absolutePath))
             assertContains(extracted, "=== METADATA ===")
             assertContains(extracted, "Filename: $fileName")
             assertContains(extracted, "=== CONTENT ===")
             assertContains(extracted, expectedMarker)
+            fixture.parentFile?.deleteRecursively()
         }
     }
 
@@ -311,8 +363,20 @@ class ToolTest {
         }
     }
 
+    private fun hasOpenGlRuntime(): Boolean {
+        val mapped = System.mapLibraryName("GL")
+        val candidates = listOf(
+            File("/usr/lib/x86_64-linux-gnu/$mapped"),
+            File("/lib/x86_64-linux-gnu/$mapped"),
+            File("/usr/lib64/$mapped"),
+            File("/usr/lib/$mapped"),
+        )
+        return candidates.any { it.exists() }
+    }
+
     @Test
     fun `test ToolDeleteFile returns disapproved when user rejects action`() = runTest {
+        if (!hasOpenGlRuntime()) return@runTest
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))

@@ -15,7 +15,7 @@ ui/main/
 │   ├── FinderPathExtractor.kt         # Extracts/normalizes filesystem paths from model responses
 │   ├── VoiceInputUseCase.kt           # Hotkey recording + speech recognition pipeline
 │   ├── SpeechUseCase.kt               # Speech queue and `isSpeaking` state synchronization
-│   ├── OnboardingUseCase.kt           # Onboarding flow and runtime tool-permission dialog handling
+│   ├── PermissionsUseCase.kt          # Onboarding flow and runtime tool-permission dialog handling
 │   └── SpeechRecognitionProvider.kt   # Speech recognition interface + enabled/disabled providers
 └── INFO.md                            # This file
 ```

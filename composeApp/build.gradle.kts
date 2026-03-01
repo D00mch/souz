@@ -134,6 +134,7 @@ kotlin {
             implementation(libs.commons.csv)
             implementation(libs.bundles.letsPlot)
             implementation(libs.markdown)
+            implementation(libs.jsoup)
             implementation(libs.java.diffUtils)
 
             // Excel support

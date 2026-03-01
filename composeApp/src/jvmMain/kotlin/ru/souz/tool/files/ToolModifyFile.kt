@@ -59,7 +59,11 @@ class ToolModifyFile(
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         val result = permissionBroker?.requestPermission(
             getString(Res.string.permission_modify_file),
-            linkedMapOf("path" to fixedPath)
+            linkedMapOf(
+                "path" to fixedPath,
+                "strip" to input.strip.toString(),
+                "patch" to input.patch,
+            )
         )
         if (result is ToolPermissionResult.No) return result.msg
         return invoke(input)
@@ -82,41 +86,41 @@ class ToolModifyFile(
         )
 
         val workDir = file.parentFile ?: throw BadInputException("File has no parent directory")
-        val patchFile = kotlin.io.path.createTempFile(prefix = "llm_patch_", suffix = ".patch").toFile()
-        patchFile.writeText(input.patch)
-
-        try {
-            // Dry run first
-            val dry = runPatch(
-                workDir = workDir,
-                strip = input.strip,
-                patchPath = patchFile.absolutePath,
-                dryRun = true
+        // Dry run first
+        val dry = runPatch(
+            workDir = workDir,
+            strip = input.strip,
+            patchText = input.patch,
+            dryRun = true
+        )
+        if (dry.exitCode != 0) {
+            throw BadInputException(
+                "Patch dry-run failed:\n${dry.output}\n" +
+                        "Hint: generate an exact unified diff for current file content. " +
+                        "Do not delete and recreate the file; use EditFile to update it."
             )
-            if (dry.exitCode != 0) {
-                throw BadInputException("Patch dry-run failed:\n${dry.output}")
-            }
-
-            // Apply for real
-            val applied = runPatch(
-                workDir = workDir,
-                strip = input.strip,
-                patchPath = patchFile.absolutePath,
-                dryRun = false
-            )
-            if (applied.exitCode != 0) {
-                throw BadInputException("Patch apply failed:\n${applied.output}")
-            }
-
-            return "OK"
-        } finally {
-            patchFile.delete()
         }
+
+        // Apply for real
+        val applied = runPatch(
+            workDir = workDir,
+            strip = input.strip,
+            patchText = input.patch,
+            dryRun = false
+        )
+        if (applied.exitCode != 0) {
+            throw BadInputException(
+                "Patch apply failed:\n${applied.output}\n" +
+                        "Do not delete and recreate the file; use EditFile with a valid patch."
+            )
+        }
+
+        return "OK"
     }
 
     private data class CmdResult(val exitCode: Int, val output: String)
 
-    private fun runPatch(workDir: File, strip: Int, patchPath: String, dryRun: Boolean): CmdResult {
+    private fun runPatch(workDir: File, strip: Int, patchText: String, dryRun: Boolean): CmdResult {
         // --batch: never prompt
         // --forward: ignore already-applied hunks instead of reversing
         val args = buildList {
@@ -125,8 +129,6 @@ class ToolModifyFile(
             add("--forward")
             if (dryRun) add("--dry-run")
             add("-p$strip")
-            add("-i")
-            add(patchPath)
         }
 
         val pb = ProcessBuilder(args)
@@ -134,6 +136,10 @@ class ToolModifyFile(
             .redirectErrorStream(true)
 
         val p = pb.start()
+        p.outputStream.bufferedWriter().use { writer ->
+            writer.write(patchText)
+            if (!patchText.endsWith("\n")) writer.newLine()
+        }
         val out = p.inputStream.bufferedReader().use { it.readText() }
         val code = p.waitFor()
         return CmdResult(code, out.trim())

@@ -123,6 +123,12 @@ enum class EmbeddingsProvider {
     OPENAI,
 }
 
+enum class VoiceRecognitionProvider {
+    SALUTE_SPEECH,
+    AI_TUNNEL,
+    OPENAI,
+}
+
 enum class GigaModel(
     val displayName: String,
     val alias: String,
@@ -162,6 +168,18 @@ enum class EmbeddingsModel(
     AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", EmbeddingsProvider.AI_TUNNEL),
     AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", EmbeddingsProvider.AI_TUNNEL),
     OpenAITextEmbedding3Small("OpenAI: text-embedding-3-small", "text-embedding-3-small", EmbeddingsProvider.OPENAI),
+}
+
+enum class VoiceRecognitionModel(
+    val displayName: String,
+    val alias: String,
+    val provider: VoiceRecognitionProvider,
+) {
+    SaluteSpeech("Salute Speech", "salute-speech", VoiceRecognitionProvider.SALUTE_SPEECH),
+    AiTunnelGpt4oTranscribe("AI-Tunnel: gpt-4o-transcribe", "gpt-4o-transcribe", VoiceRecognitionProvider.AI_TUNNEL),
+    AiTunnelGpt4oMiniTranscribe("AI-Tunnel: gpt-4o-mini-transcribe", "gpt-4o-mini-transcribe", VoiceRecognitionProvider.AI_TUNNEL),
+    OpenAIGpt4oTranscribe("OpenAI: gpt-4o-transcribe", "gpt-4o-transcribe", VoiceRecognitionProvider.OPENAI),
+    OpenAIGpt4oMiniTranscribe("OpenAI: gpt-4o-mini-transcribe", "gpt-4o-mini-transcribe", VoiceRecognitionProvider.OPENAI),
 }
 
 object GigaRequest {

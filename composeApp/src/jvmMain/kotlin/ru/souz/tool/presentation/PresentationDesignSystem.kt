@@ -16,6 +16,7 @@ object PresentationDesignSystem {
         CORPORATE_BLUE,
         CORPORATE_ELEGANT,
         EXECUTIVE,
+        CONSULTING,
 
         CREATIVE_CHAOS,
         CREATIVE_SPLASH,
@@ -260,6 +261,23 @@ object PresentationDesignSystem {
                     lineColor = accentColor,
                     lineWidth = 4.0,
                     rotation = 45.0
+                )
+            )
+        ),
+
+        DesignStyle.CONSULTING to spec(
+            staticShapes = listOf(
+                rect(
+                    anchor = { w, h -> Rectangle(w / 14, h / 16, w / 6, 3) },
+                    fillColor = accentColor
+                ),
+                rect(
+                    anchor = { w, h -> Rectangle(w / 14, h - h / 10, w / 3, 2) },
+                    fillColor = alpha(secondaryColor, 70)
+                ),
+                rect(
+                    anchor = { w, h -> Rectangle(w - w / 10, h / 14, w / 50, w / 50) },
+                    fillColor = accentColor
                 )
             )
         ),
@@ -812,6 +830,7 @@ object PresentationDesignSystem {
             "CORPORATE_BLUE" to "Профессиональный синий стиль",
             "CORPORATE_ELEGANT" to "Элегантный корпоративный дизайн",
             "EXECUTIVE" to "Стиль для руководителей",
+            "CONSULTING" to "Сдержанный консалтинговый стиль",
 
             "CREATIVE_CHAOS" to "Креативный хаос ярких цветов",
             "CREATIVE_SPLASH" to "Взрыв креативности",

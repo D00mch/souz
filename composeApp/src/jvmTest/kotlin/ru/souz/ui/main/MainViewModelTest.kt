@@ -2,7 +2,6 @@
 
 package ru.souz.ui.main
 
-import androidx.compose.ui.text.input.TextFieldValue
 import com.github.kwhat.jnativehook.GlobalScreen
 import io.mockk.coEvery
 import io.mockk.every
@@ -30,6 +29,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -117,19 +117,17 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("first request")))
-            viewModel.handleEvent(MainEvent.SendChatMessage)
+            viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
 
             val firstInProgress = awaitState(viewModel) { it.isProcessing }
             assertTrue(firstInProgress.chatMessages.any { it.isUser && it.text == "first request" })
 
-            viewModel.handleEvent(MainEvent.StopAgentJob)
+            viewModel.handleEvent(MainEvent.UserPressStop)
 
             val afterStop = awaitState(viewModel) { !it.isProcessing }
             assertFalse(afterStop.chatMessages.any { it.text == "first request" })
 
-            viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("second request")))
-            viewModel.handleEvent(MainEvent.SendChatMessage)
+            viewModel.handleEvent(MainEvent.SendChatMessage("second request"))
 
             awaitState(viewModel) { state ->
                 state.isProcessing && state.chatMessages.any { it.isUser && it.text == "second request" }
@@ -142,6 +140,62 @@ class MainViewModelTest {
             }
             assertEquals(listOf("second request", "second answer"), finalState.chatMessages.map { it.text })
         } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `stop exits processing when agent cancel is non-cooperative`() = runTest(mainDispatcher) {
+        val firstResponse = CompletableDeferred<String>()
+        val secondResponse = CompletableDeferred<String>()
+        val harness = createHarness(
+            executeBehavior = { input ->
+                when (input) {
+                    "first request" -> firstResponse.await()
+                    "second request" -> secondResponse.await()
+                    else -> error("Unexpected input: $input")
+                }
+            },
+            onCancelActiveJob = { /* Simulate hung execution that ignores cancel */ },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
+
+            awaitState(viewModel) { state ->
+                state.isProcessing && state.chatMessages.any { it.isUser && it.text == "first request" }
+            }
+
+            viewModel.handleEvent(MainEvent.UserPressStop)
+
+            val afterStop = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.none { it.text == "first request" }
+            }
+            assertFalse(afterStop.isProcessing)
+            assertFalse(afterStop.chatMessages.any { it.text == "first request" })
+
+            firstResponse.complete("late answer")
+            advanceUntilIdle()
+            val afterLateCompletion = viewModel.uiState.value
+            assertFalse(afterLateCompletion.chatMessages.any { it.text == "late answer" })
+            assertFalse(afterLateCompletion.isProcessing)
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("second request"))
+            awaitState(viewModel) { state ->
+                state.isProcessing && state.chatMessages.any { it.isUser && it.text == "second request" }
+            }
+
+            secondResponse.complete("second answer")
+            val finalState = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "second answer" }
+            }
+            assertEquals(listOf("second request", "second answer"), finalState.chatMessages.map { it.text })
+        } finally {
+            firstResponse.completeExceptionally(CancellationException("cleanup"))
+            secondResponse.completeExceptionally(CancellationException("cleanup"))
             harness.clear()
         }
     }
@@ -170,8 +224,7 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("first request")))
-            viewModel.handleEvent(MainEvent.SendChatMessage)
+            viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
 
             awaitState(viewModel) { state ->
                 state.isProcessing && state.chatMessages.any { it.isUser && it.text == "first request" }
@@ -351,11 +404,10 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("Please inspect")))
             viewModel.handleEvent(MainEvent.AttachDroppedFiles(listOf(tempFile.absolutePath)))
             awaitState(viewModel) { state -> state.attachedFiles.size == 1 }
 
-            viewModel.handleEvent(MainEvent.SendChatMessage)
+            viewModel.handleEvent(MainEvent.SendChatMessage("Please inspect"))
 
             val finalState = awaitState(viewModel) { state ->
                 !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "assistant reply" }
@@ -519,6 +571,17 @@ class MainViewModelTest {
             say = say,
             incomingMessages = incomingMessages
         )
+    }
+
+    private fun isJNativeHookRuntimeAvailable(): Boolean {
+        val mapped = System.mapLibraryName("Xtst")
+        val candidates = listOf(
+            File("/usr/lib/x86_64-linux-gnu/$mapped"),
+            File("/lib/x86_64-linux-gnu/$mapped"),
+            File("/usr/lib64/$mapped"),
+            File("/usr/lib/$mapped"),
+        )
+        return candidates.any { it.exists() }
     }
 
     private fun emptyAgentContext() = AgentContext(

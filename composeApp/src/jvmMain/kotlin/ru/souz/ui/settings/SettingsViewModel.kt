@@ -156,6 +156,11 @@ class SettingsViewModel(
                 }
                 setState { copy(embeddingsModel = event.model) }
             }
+            is SelectVoiceRecognitionModel -> {
+                if (event.model !in currentState.availableVoiceRecognitionModels) return
+                keysProvider.voiceRecognitionModel = event.model
+                setState { copy(voiceRecognitionModel = event.model) }
+            }
             is InputRequestTimeoutMillis -> {
                 val normalized = event.millis.filter { it.isDigit() }
                 val newTimeout = normalized.toLongOrNull()
@@ -355,6 +360,16 @@ class SettingsViewModel(
             VectorDB.clearAllData()
         }
 
+        val availableVoiceRecognitionModels = keysProvider.availableVoiceRecognitionModels()
+        val configuredVoiceRecognitionModel = keysProvider.voiceRecognitionModel
+        val selectedVoiceRecognitionModel = pickConfiguredOrDefault(
+            configured = configuredVoiceRecognitionModel,
+            available = availableVoiceRecognitionModels,
+        ) { keysProvider.defaultVoiceRecognitionModel() }
+        if (selectedVoiceRecognitionModel != configuredVoiceRecognitionModel) {
+            keysProvider.voiceRecognitionModel = selectedVoiceRecognitionModel
+        }
+
         setState {
             copy(
                 gigaChatKey = gigaChatKey,
@@ -370,8 +385,10 @@ class SettingsViewModel(
                 safeModeEnabled = keysProvider.safeModeEnabled,
                 gigaModel = selectedLlmModel,
                 embeddingsModel = selectedEmbeddingsModel,
+                voiceRecognitionModel = selectedVoiceRecognitionModel,
                 availableLlmModels = availableLlmModels,
                 availableEmbeddingsModels = availableEmbeddingsModels,
+                availableVoiceRecognitionModels = availableVoiceRecognitionModels,
                 requestTimeoutMillis = keysProvider.requestTimeoutMillis,
                 requestTimeoutInput = keysProvider.requestTimeoutMillis.toString(),
                 contextSize = keysProvider.contextSize,

@@ -6,6 +6,7 @@ import ru.souz.giga.DEFAULT_MAX_TOKENS
 import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.LlmBuildProfile
+import ru.souz.giga.VoiceRecognitionModel
 import ru.souz.tool.config.ToolSoundConfig
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
@@ -56,8 +57,10 @@ data class SettingsState(
     val safeModeEnabled: Boolean = false,
     val gigaModel: GigaModel = LlmBuildProfile.defaultModel,
     val embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
+    val voiceRecognitionModel: VoiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech,
     val availableLlmModels: List<GigaModel> = emptyList(),
     val availableEmbeddingsModels: List<EmbeddingsModel> = emptyList(),
+    val availableVoiceRecognitionModels: List<VoiceRecognitionModel> = emptyList(),
     val systemPrompt: String = "",
     val requestTimeoutMillis: Long = 10_000L,
     val requestTimeoutInput: String = "10000",
@@ -117,6 +120,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputSafeModeEnabled(val enabled: Boolean): SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
     data class SelectEmbeddingsModel(val model: EmbeddingsModel): SettingsEvent
+    data class SelectVoiceRecognitionModel(val model: VoiceRecognitionModel): SettingsEvent
     data class InputRequestTimeoutMillis(val millis: String) : SettingsEvent
     data class InputContextSize(val size: String) : SettingsEvent
     data class InputTemperature(val temperature: String) : SettingsEvent

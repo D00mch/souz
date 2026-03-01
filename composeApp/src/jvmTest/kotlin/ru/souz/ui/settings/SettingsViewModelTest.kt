@@ -25,11 +25,11 @@ import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
 import ru.souz.giga.DEFAULT_MAX_TOKENS
 import ru.souz.giga.EmbeddingsModel
-import ru.souz.giga.EmbeddingsProvider
 import ru.souz.giga.GigaChatAPI
 import ru.souz.giga.GigaModel
 import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.LlmProvider
+import ru.souz.giga.VoiceRecognitionModel
 import ru.souz.service.telegram.TelegramAuthState
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.service.telegram.TelegramBotController
@@ -58,31 +58,41 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `init normalizes unavailable llm and embeddings models to available providers`() = runTest(dispatcher) {
+    fun `init normalizes unavailable llm, embeddings, and voice models to available providers`() = runTest(dispatcher) {
         mockkObject(VectorDB)
         every { VectorDB.clearAllData() } just runs
 
         mockkObject(ToolRunBashCommand)
         every { ToolRunBashCommand.sh(any()) } returns ""
 
-        val expectedLlmModel = LlmBuildProfile.defaultModelForProvider(LlmProvider.QWEN)
-        assertNotNull(expectedLlmModel, "Qwen default model must exist in the active build profile")
-        val expectedEmbeddingsModel = EmbeddingsModel.entries.first { it.provider == EmbeddingsProvider.QWEN }
+        val supportsSalute = LlmBuildProfile.supportsSaluteSpeechRecognition
+        val configuredVoiceRecognitionModel = if (supportsSalute) {
+            VoiceRecognitionModel.OpenAIGpt4oTranscribe
+        } else {
+            VoiceRecognitionModel.SaluteSpeech
+        }
 
-        val configuredModel = LlmBuildProfile.availableModels.first { it.provider != LlmProvider.QWEN }
+        val configuredModel = LlmBuildProfile.availableModels.first {
+            it.provider != LlmProvider.QWEN && it.provider != LlmProvider.OPENAI
+        }
 
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         var embeddingsModelValue = EmbeddingsModel.GigaEmbeddings
+        var voiceRecognitionModelValue = configuredVoiceRecognitionModel
 
         every { settingsProvider.gigaChatKey } returns ""
         every { settingsProvider.qwenChatKey } returns "qwen-key"
         every { settingsProvider.aiTunnelKey } returns ""
         every { settingsProvider.anthropicKey } returns ""
-        every { settingsProvider.openaiKey } returns ""
-        every { settingsProvider.saluteSpeechKey } returns null
+        every { settingsProvider.openaiKey } returns if (supportsSalute) "" else "openai-key"
+        every { settingsProvider.saluteSpeechKey } returns if (supportsSalute) "salute-key" else ""
         every { settingsProvider.gigaModel } returns configuredModel
         every { settingsProvider.embeddingsModel } answers { embeddingsModelValue }
         every { settingsProvider.embeddingsModel = any() } answers { embeddingsModelValue = firstArg() }
+        every { settingsProvider.voiceRecognitionModel } answers { voiceRecognitionModelValue }
+        every {
+            settingsProvider.voiceRecognitionModel = any()
+        } answers { voiceRecognitionModelValue = firstArg() }
 
         every { settingsProvider.getSystemPromptForModel(any()) } returns null
         every { settingsProvider.supportEmail } returns null
@@ -119,10 +129,19 @@ class SettingsViewModelTest {
         val viewModel = SettingsViewModel(di)
         advanceUntilIdle()
 
+        val expectedLlmModel = settingsProvider.defaultLlmModel()
+        assertNotNull(expectedLlmModel, "Expected at least one available llm model")
+        val expectedEmbeddingsModel = settingsProvider.defaultEmbeddingsModel()
+        assertNotNull(expectedEmbeddingsModel, "Expected at least one available embeddings model")
+        val expectedVoiceRecognitionModel = settingsProvider.defaultVoiceRecognitionModel()
+        assertNotNull(expectedVoiceRecognitionModel, "Expected at least one available voice recognition model")
+
         val state = viewModel.uiState.value
         assertEquals(expectedLlmModel, state.gigaModel)
         assertEquals(expectedEmbeddingsModel, state.embeddingsModel)
         assertEquals(expectedEmbeddingsModel, embeddingsModelValue)
+        assertEquals(expectedVoiceRecognitionModel, state.voiceRecognitionModel)
+        assertEquals(expectedVoiceRecognitionModel, voiceRecognitionModelValue)
         assertEquals("prompt-for-${expectedLlmModel.alias}", state.systemPrompt)
 
         verify(exactly = 1) { graphBasedAgent.updateModel(expectedLlmModel) }

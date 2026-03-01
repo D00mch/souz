@@ -34,6 +34,7 @@ import ru.souz.giga.SessionTokenLogging
 import ru.souz.giga.TokenLogging
 import ru.souz.keys.Keys
 import ru.souz.llms.AiTunnelChatAPI
+import ru.souz.llms.AiTunnelVoiceAPI
 import ru.souz.llms.AnthropicChatAPI
 import ru.souz.llms.OpenAIChatAPI
 import ru.souz.llms.OpenAIVoiceAPI
@@ -61,6 +62,7 @@ import ru.souz.tool.notes.*
 import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
 import ru.souz.ui.main.usecases.MainUseCasesFactory
+import ru.souz.ui.main.usecases.AiTunnelSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.main.usecases.ModelAwareSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.OpenAISpeechRecognitionProvider
@@ -68,6 +70,11 @@ import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
+import ru.souz.tool.presentation.ToolWebImageSearch
+import ru.souz.tool.presentation.ToolWebPageText
+import ru.souz.tool.presentation.ToolWebSearch
+import ru.souz.tool.presentation.WebImageDownloader
+import ru.souz.tool.presentation.WebResearchClient
 import ru.souz.tool.telegram.ToolTelegramForward
 import ru.souz.tool.telegram.ToolTelegramGetHistory
 import ru.souz.tool.telegram.ToolTelegramReadInbox
@@ -157,7 +164,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolCalculator() }
     bindSingleton { ExcelRead(instance()) }
     bindSingleton { ExcelReport(instance()) }
-    bindSingleton { ToolPresentationCreate(instance()) }
+    bindSingleton { WebResearchClient() }
+    bindSingleton { WebImageDownloader(instance()) }
+    bindSingleton { ToolWebSearch(instance()) }
+    bindSingleton { ToolWebImageSearch(instance(), instance()) }
+    bindSingleton { ToolWebPageText(instance()) }
+    bindSingleton { ToolPresentationCreate(instance(), instance()) }
     bindSingleton { ToolPresentationRead() }
     bindSingleton { ToolTelegramReadInbox(instance()) }
     bindSingleton { ToolTelegramGetHistory(instance()) }
@@ -195,10 +207,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<GigaChatAPI> { instance<LLMFactory>() }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton { OpenAIVoiceAPI(instance()) }
+    bindSingleton { AiTunnelVoiceAPI(instance()) }
     bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
+    bindSingleton { AiTunnelSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton<SpeechRecognitionProvider> {
-        ModelAwareSpeechRecognitionProvider(instance(), instance(), instance())
+        ModelAwareSpeechRecognitionProvider(instance(), instance(), instance(), instance())
     }
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }

@@ -1,10 +1,12 @@
 package ru.souz.agent.nodes
 
+import com.fasterxml.jackson.module.kotlin.readValue
 import org.jetbrains.compose.resources.getString
 import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Node
 import ru.souz.giga.GigaResponse
+import ru.souz.giga.gigaJsonMapper
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 
@@ -25,6 +27,8 @@ class NodesErrorHandling {
             if (error.status == PAYLOAD_TOO_LARGE_STATUS) {
                 l.info("Resetting history due to a large object in it")
                 ctx.map(history = emptyList()) { getString(Res.string.error_agent_context_reset) }
+            } else if (error.status == PAYMENT_REQUIRED) {
+                showPaymentError(error, ctx)
             } else if (error.message.isKtorRequestTimeoutMessage()) {
                 l.info("LLM request timed out. Returning friendly timeout message")
                 ctx.map { getString(Res.string.error_agent_timeout) }
@@ -33,6 +37,32 @@ class NodesErrorHandling {
                 ctx.map { error.message }
             }
         }
+
+    private suspend fun showPaymentError(
+        error: GigaResponse.Chat.Error,
+        ctx: AgentContext<GigaResponse.Chat>
+    ): AgentContext<String> {
+        l.info("No money left, ${error.message}")
+        val isMessageJson: Boolean = try {
+            gigaJsonMapper.readValue<Map<String, Any>>(error.message)
+            true
+        } catch (_: Exception) {
+            false
+        }
+        return ctx.map(history = emptyList()) {
+            if (isMessageJson) {
+                buildString {
+                    appendLine(getString(Res.string.error_agent_no_money))
+                    appendLine()
+                    appendLine("```json")
+                    appendLine(error.message)
+                    append("```")
+                }
+            } else {
+                getString(Res.string.error_agent_no_money) + ":\n ${error.message}"
+            }
+        }
+    }
 }
 
 private fun String.isKtorRequestTimeoutMessage(): Boolean {
@@ -41,3 +71,4 @@ private fun String.isKtorRequestTimeoutMessage(): Boolean {
 }
 
 private const val PAYLOAD_TOO_LARGE_STATUS = 413
+private const val PAYMENT_REQUIRED = 402

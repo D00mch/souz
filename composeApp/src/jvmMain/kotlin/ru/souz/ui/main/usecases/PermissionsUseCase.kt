@@ -22,13 +22,13 @@ import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 
-class OnboardingUseCase(
+class PermissionsUseCase(
     private val settingsProvider: SettingsProvider,
     private val toolPermissionBroker: ToolPermissionBroker,
     private val speechUseCase: SpeechUseCase,
     private val relaunchApp: () -> Boolean = { AppRelauncher.relaunch() },
 ) {
-    private val l = LoggerFactory.getLogger(OnboardingUseCase::class.java)
+    private val l = LoggerFactory.getLogger(PermissionsUseCase::class.java)
     private var onboardingSpeechStartedAt: Long? = null
     private var permissionWatcherJob: Job? = null
 

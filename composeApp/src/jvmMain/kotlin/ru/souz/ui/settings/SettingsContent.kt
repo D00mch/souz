@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import ru.souz.giga.EmbeddingsModel
 import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
+import ru.souz.giga.VoiceRecognitionModel
 import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
@@ -226,6 +227,7 @@ fun ModelsSettingsContent(
     state: SettingsState,
     onModelChange: (GigaModel) -> Unit,
     onEmbeddingsModelChange: (EmbeddingsModel) -> Unit,
+    onVoiceRecognitionModelChange: (VoiceRecognitionModel) -> Unit,
     onTemperatureInput: (String) -> Unit,
     onRequestTimeoutMillisChange: (String) -> Unit,
     onContextSizeInput: (String) -> Unit,
@@ -251,6 +253,14 @@ fun ModelsSettingsContent(
                     selectedModel = state.embeddingsModel,
                     availableModels = state.availableEmbeddingsModels,
                     onModelSelected = onEmbeddingsModelChange,
+                )
+            }
+
+            if (state.availableVoiceRecognitionModels.isNotEmpty()) {
+                VoiceRecognitionModelDropdown(
+                    selectedModel = state.voiceRecognitionModel,
+                    availableModels = state.availableVoiceRecognitionModels,
+                    onModelSelected = onVoiceRecognitionModelChange,
                 )
             }
 
@@ -1664,6 +1674,87 @@ fun EmbeddingsModelDropdown(
     }
 }
 
+@Composable
+fun VoiceRecognitionModelDropdown(
+    selectedModel: VoiceRecognitionModel,
+    availableModels: List<VoiceRecognitionModel>,
+    onModelSelected: (VoiceRecognitionModel) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(Res.string.label_voice_recognition_model),
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.Medium
+            ),
+            color = SettingsLabelColor,
+        )
+        Box {
+            OutlinedButton(
+                onClick = { expanded = !expanded },
+                enabled = availableModels.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = SettingsFieldBackground,
+                    contentColor = SettingsStrongTextColor
+                ),
+                border = BorderStroke(1.dp, SettingsDefaultBorder),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = selectedModel.displayName,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 15.sp,
+                            lineHeight = 22.sp
+                        ),
+                        color = SettingsStrongTextColor
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Select voice recognition model",
+                        tint = SettingsStrongTextColor
+                    )
+                }
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier
+                    .fillMaxWidth(0.6f)
+                    .background(SettingsFieldBackground, RoundedCornerShape(12.dp))
+                    .border(1.dp, SettingsDefaultBorder, RoundedCornerShape(12.dp))
+            ) {
+                availableModels.forEach { model ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = model.displayName,
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontSize = 15.sp,
+                                    lineHeight = 22.sp
+                                ),
+                                color = SettingsStrongTextColor
+                            )
+                        },
+                        onClick = {
+                            onModelSelected(model)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
 private val PreviewSettingsState = SettingsState(
     gigaChatKey = "giga-xxxxxxxx",
     qwenChatKey = "qwen-xxxxxxxx",
@@ -1683,6 +1774,10 @@ private val PreviewSettingsState = SettingsState(
     safeModeEnabled = true,
     gigaModel = GigaModel.Max,
     embeddingsModel = EmbeddingsModel.GigaEmbeddings,
+    voiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech,
+    availableLlmModels = GigaModel.entries.take(3),
+    availableEmbeddingsModels = EmbeddingsModel.entries.take(2),
+    availableVoiceRecognitionModels = VoiceRecognitionModel.entries.take(3),
     systemPrompt = "Ты полезный ассистент. Отвечай кратко и по делу.",
     requestTimeoutMillis = 15000,
     requestTimeoutInput = "15000",
@@ -1723,6 +1818,7 @@ private fun ModelsSettingsContentPreview() {
             state = PreviewSettingsState,
             onModelChange = {},
             onEmbeddingsModelChange = {},
+            onVoiceRecognitionModelChange = {},
             onTemperatureInput = {},
             onRequestTimeoutMillisChange = {},
             onContextSizeInput = {},

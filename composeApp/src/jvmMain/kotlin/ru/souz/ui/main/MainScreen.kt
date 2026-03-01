@@ -87,6 +87,12 @@ private val FinderPathChipBorder = Color(0x8812E0B5)
 private val FinderPathChipTextColor = Color(0xFF12E0B5)
 private val MessageAttachmentPreviewSize = 64.dp
 private val MessageAttachmentNameColor = Color(0x99FFFFFF)
+private val ToolPermissionDialogMaxWidth = 920.dp
+private const val ToolPermissionDialogMaxHeightFraction = 1f
+private val ToolModifyPatchPreviewMinHeight = 220.dp
+private val ToolModifyPatchPreviewMaxHeight = 620.dp
+private const val ToolModifyPatchParam = "patch"
+private const val ToolModifyPatchPreviewMaxLines = 350
 
 
 @Composable
@@ -130,14 +136,13 @@ fun MainScreen(
         onShowLastText = { viewModel.send(MainEvent.ShowLastText) },
         onToggleThinkingPanel = { viewModel.send(MainEvent.ToggleThinkingPanel) },
         onShowSnack = onShowSnack,
-        onUpdateChatInput = { viewModel.send(MainEvent.UpdateChatInput(it)) },
         onChatModelChange = { viewModel.send(MainEvent.UpdateChatModel(it)) },
         onChatContextSizeChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
         onPickChatAttachments = { viewModel.send(MainEvent.PickChatAttachments) },
         onAttachDroppedTransferable = { viewModel.onAttachDroppedTransferable(it) },
         onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
-        onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage) },
-        onClearContext = { viewModel.send(MainEvent.StopAgentJob) },
+        onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage(it)) },
+        onClearContext = { viewModel.send(MainEvent.UserPressStop) },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
         onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
@@ -160,13 +165,12 @@ fun MainScreenContent(
     onShowLastText: () -> Unit = {},
     onToggleThinkingPanel: () -> Unit = {},
     onShowSnack: (String) -> Unit = {},
-    onUpdateChatInput: (TextFieldValue) -> Unit = {},
     onChatModelChange: (String) -> Unit = {},
     onChatContextSizeChange: (Int) -> Unit = {},
     onPickChatAttachments: () -> Unit = {},
     onAttachDroppedTransferable: (Transferable) -> Unit = {},
     onRemoveChatAttachment: (String) -> Unit = {},
-    onSendChatMessage: () -> Unit = {},
+    onSendChatMessage: (String) -> Unit = {},
     onClearContext: () -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
@@ -183,6 +187,7 @@ fun MainScreenContent(
     val stringPermissionTitle = stringResource(Res.string.dialog_permission_title)
     val stringPermissionAllow = stringResource(Res.string.dialog_permission_allow)
     val stringPermissionDeny = stringResource(Res.string.dialog_permission_deny)
+    val stringPermissionModifyFile = stringResource(Res.string.permission_modify_file)
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -302,7 +307,7 @@ fun MainScreenContent(
                 ChatModeContent(
                     messages = state.chatMessages,
                     chatPlaceholder = state.chatStartTip,
-                    inputText = state.chatInputText,
+                    chatSessionId = state.chatSessionId,
                     selectedModel = state.selectedModel,
                     availableModelAliases = state.availableModelAliases,
                     selectedContextSize = state.selectedContextSize,
@@ -311,7 +316,6 @@ fun MainScreenContent(
                     isListening = state.isListening,
                     isOnline = isOnline,
                     isSpeaking = state.isSpeaking,
-                    onInputChange = onUpdateChatInput,
                     onModelChange = onChatModelChange,
                     onContextChange = onChatContextSizeChange,
                     onPickAttachments = onPickChatAttachments,
@@ -358,8 +362,11 @@ fun MainScreenContent(
             }
 
             state.toolPermissionDialog?.let { dialog ->
-                val paramsString = if (dialog.params.isNotEmpty()) {
-                    dialog.params.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+                val patchText = dialog.params[ToolModifyPatchParam]?.takeIf { it.isNotBlank() }
+                val isToolModifyPermission = dialog.description == stringPermissionModifyFile && patchText != null
+                val visibleParams = dialog.params.filterKeys { it != ToolModifyPatchParam }
+                val paramsString = if (visibleParams.isNotEmpty()) {
+                    visibleParams.entries.joinToString("\n") { "${it.key}: ${it.value}" }
                 } else null
 
                 ConfirmDialog(
@@ -367,6 +374,25 @@ fun MainScreenContent(
                     title = stringPermissionTitle,
                     message = dialog.description,
                     details = paramsString,
+                    dialogMaxWidth = ToolPermissionDialogMaxWidth,
+                    dialogMaxHeightFraction = ToolPermissionDialogMaxHeightFraction,
+                    detailsContent = if (isToolModifyPermission) {
+                        {
+                            if (!paramsString.isNullOrBlank()) {
+                                Text(
+                                    text = paramsString,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0x80FFFFFF),
+                                    lineHeight = 18.sp,
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                            ToolModifyPatchPreview(patch = patchText.orEmpty())
+                        }
+                    } else {
+                        null
+                    },
                     confirmText = stringPermissionAllow,
                     cancelText = stringPermissionDeny,
                     onConfirm = onApproveToolPermission,
@@ -385,6 +411,86 @@ private fun chatMarkdownColors(textColor: Color) = DefaultMarkdownColors(
     inlineCodeBackground = Color(0x1AFFFFFF),
     dividerColor = textColor.copy(alpha = 0.2f),
     linkText = Color(0xFF82B1FF)
+)
+
+@Composable
+private fun ToolModifyPatchPreview(patch: String) {
+    val (lines, isTruncated) = remember(patch) {
+        buildPatchPreviewLines(patch, ToolModifyPatchPreviewMaxLines)
+    }
+    val verticalScroll = rememberScrollState()
+    val horizontalScroll = rememberScrollState()
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(
+                min = ToolModifyPatchPreviewMinHeight,
+                max = ToolModifyPatchPreviewMaxHeight
+            )
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0x33000000))
+            .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(6.dp))
+            .padding(8.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(verticalScroll)
+                .horizontalScroll(horizontalScroll),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            lines.forEach { line ->
+                Text(
+                    text = line.text,
+                    color = line.color,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                )
+            }
+            if (isTruncated) {
+                Text(
+                    text = "... (preview truncated)",
+                    color = Color(0x99FFFFFF),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+    }
+}
+
+private fun buildPatchPreviewLines(
+    patch: String,
+    maxLines: Int,
+): Pair<List<PatchPreviewLine>, Boolean> {
+    if (patch.isBlank()) {
+        return listOf(PatchPreviewLine("(empty patch)", Color(0x99FFFFFF))) to false
+    }
+
+    val allLines = patch.lines()
+    val preview = allLines
+        .take(maxLines)
+        .map { line ->
+            val color = when {
+                line.startsWith("+++") || line.startsWith("---") -> Color(0xFF90CAF9)
+                line.startsWith("@@") -> Color(0xFFFFCC80)
+                line.startsWith("+") -> Color(0xFFB9F6CA)
+                line.startsWith("-") -> Color(0xFFFF8A80)
+                line.startsWith("diff ") || line.startsWith("index ") -> Color(0xFFB0BEC5)
+                else -> Color(0xCCFFFFFF)
+            }
+            PatchPreviewLine(text = line, color = color)
+        }
+
+    return preview to (allLines.size > maxLines)
+}
+
+private data class PatchPreviewLine(
+    val text: String,
+    val color: Color,
 )
 
 @Composable
@@ -436,7 +542,7 @@ private enum class HeadingScale { LARGE, SMALL }
 fun ChatModeContent(
     messages: List<ChatMessage>,
     chatPlaceholder: String,
-    inputText: TextFieldValue,
+    chatSessionId: Long,
     selectedModel: String,
     availableModelAliases: List<String>,
     selectedContextSize: Int,
@@ -445,13 +551,12 @@ fun ChatModeContent(
     isListening: Boolean,
     isOnline: Boolean,
     isSpeaking: Boolean,
-    onInputChange: (TextFieldValue) -> Unit,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
     onPickAttachments: () -> Unit,
     onDropTransferable: (Transferable) -> Unit,
     onRemoveAttachment: (String) -> Unit,
-    onSendMessage: () -> Unit,
+    onSendMessage: (String) -> Unit,
     onCancelProcessing: () -> Unit = {},
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
@@ -465,6 +570,7 @@ fun ChatModeContent(
     val textColor = MaterialTheme.glassColors.textPrimary
     val speakingAssistantMessageId = remember(messages) { messages.lastOrNull { !it.isUser }?.id }
     val stringProcessing = stringResource(Res.string.status_processing)
+    var inputText by remember(chatSessionId) { mutableStateOf(TextFieldValue("")) }
     var isFileDragActive by remember { mutableStateOf(false) }
 
     val windowInfo = LocalWindowInfo.current
@@ -483,7 +589,6 @@ fun ChatModeContent(
     }
 
 
-    
     ChatFileDropTarget(
         enabled = true,
         onDropTransferable = onDropTransferable,
@@ -566,8 +671,12 @@ fun ChatModeContent(
 
         ChatInputWithQuickSettings(
             value = inputText,
-            onValueChange = onInputChange,
-            onSend = onSendMessage,
+            onValueChange = { inputText = it },
+            onSend = {
+                val currentText = inputText.text
+                onSendMessage(currentText)
+                inputText = TextFieldValue("")
+            },
             onCancel = onCancelProcessing,
             attachedFiles = attachedFiles,
             onAttachClick = onPickAttachments,
@@ -1191,7 +1300,6 @@ fun PreviewChatMode() {
                         ChatMessage("Привет! Все отлично, спасибо за вопрос. Чем могу помочь?", isUser = false, timestamp = System.currentTimeMillis() - 30000),
                         ChatMessage("Покажи погоду в Москве", isUser = true, timestamp = System.currentTimeMillis())
                     ),
-                    chatInputText = TextFieldValue(""),
                     displayedText = "",
                     statusMessage = "Чат режим",
                     isListening = false
@@ -1210,7 +1318,6 @@ fun PreviewChatModeEmpty() {
             MainScreenContent(
                 state = MainState(
                     chatMessages = emptyList(),
-                    chatInputText = TextFieldValue(""),
                     displayedText = "",
                     statusMessage = "Чат режим",
                     isListening = false

@@ -14,25 +14,6 @@ fun interface UserMessageClassifier {
     )
 }
 
-enum class ToolCategory {
-    FILES,
-    BROWSER,
-    CONFIG,
-    NOTES,
-    APPLICATIONS,
-    @Suppress("SpellCheckingInspection")
-    DATAANALYTICS,
-    CALENDAR,
-    MAIL,
-    TEXT_REPLACE,
-    CALCULATOR,
-    CHAT,
-    TELEGRAM,
-    DESKTOP,
-    PRESENTATION,
-    HELP,
-}
-
 object LocalRegexClassifier : UserMessageClassifier {
     private val defaultUnknown = UserMessageClassifier.Reply(emptyList(), 0.0)
 
@@ -80,6 +61,14 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("tab|страниц|истори"), 1.0),
         )
 
+        ToolCategory.WEB_SEARCH -> listOf(
+            WeightedRegex(Regex("найди в интернете|поищи в интернете|search web|web search|google|загугли"), 2.0),
+            WeightedRegex(Regex("найди (новост|факт|источник|источники|статьи|материал)"), 1.8),
+            WeightedRegex(Regex("посмотри погоду|какие последние новости|свежие новости|тренды"), 1.6),
+            WeightedRegex(Regex("найди изображени|подбери изображени|картинки по теме"), 1.8),
+            WeightedRegex(Regex("извлеки текст со страницы|прочитай страницу|extract page text"), 1.8),
+        )
+
         ToolCategory.CONFIG -> listOf(
             WeightedRegex(Regex("настрой|config|запомни инструкцию|сохрани инструкцию"), 2.0),
             WeightedRegex(Regex("громк|volume|скорост|speed|instruction|ускорь речь|замедли речь|скорость речь"), 1.0),
@@ -97,7 +86,7 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("открой"), 1.0),
         )
 
-        ToolCategory.DATAANALYTICS -> listOf(
+        ToolCategory.DATA_ANALYTICS -> listOf(
             WeightedRegex(Regex("построй|созда|сделай|проанализ|колонк|столбец|строка|ячейк"), 1.5),
             WeightedRegex(Regex("скольк|корреляц|консолид|отчёт|отчет|причин"), 1.0),
             WeightedRegex(Regex("excel|таблиц|spreadsheet|xlsx|эксель"), 2.0)
