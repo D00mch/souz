@@ -14,7 +14,7 @@ data class TelemetryRuntimeConfig(
 ) {
     companion object {
         const val DEFAULT_APP_NAME = "souz-desktop"
-        const val DEFAULT_BASE_URL = "http://127.0.0.1:8080"
+        const val DEFAULT_BASE_URL = "https://souz.app"
         const val DEFAULT_REGISTRATION_PATH = "/v1/installations/register"
         const val DEFAULT_BATCH_PATH = "/v1/metrics/batch"
         const val DEFAULT_KEY_ALGORITHM = "Ed25519"
