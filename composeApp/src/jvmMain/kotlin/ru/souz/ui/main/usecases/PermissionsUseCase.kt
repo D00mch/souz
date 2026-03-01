@@ -1,6 +1,4 @@
 package ru.souz.ui.main.usecases
-
-import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -27,6 +25,7 @@ class PermissionsUseCase(
     private val toolPermissionBroker: ToolPermissionBroker,
     private val speechUseCase: SpeechUseCase,
     private val relaunchApp: () -> Boolean = { AppRelauncher.relaunch() },
+    private val nativeHookGateway: NativeHookGateway = JNativeHookGateway,
 ) {
     private val l = LoggerFactory.getLogger(PermissionsUseCase::class.java)
     private var onboardingSpeechStartedAt: Long? = null
@@ -85,7 +84,7 @@ class PermissionsUseCase(
     }
 
     fun registerNativeHook(): Boolean = runCatching {
-        GlobalScreen.registerNativeHook()
+        nativeHookGateway.registerNativeHook()
         true
     }.getOrElse { e ->
         l.error("Failed to initialize hotkey listener: {}", e.message)
@@ -138,8 +137,8 @@ class PermissionsUseCase(
     }
 
     private fun canRegisterNativeHookNow(): Boolean = runCatching {
-        GlobalScreen.registerNativeHook()
-        GlobalScreen.unregisterNativeHook()
+        nativeHookGateway.registerNativeHook()
+        nativeHookGateway.unregisterNativeHook()
         true
     }.getOrElse { false }
 

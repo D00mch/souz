@@ -23,6 +23,7 @@ class MainUseCasesFactory(
     private val say: Say,
     private val toolPermissionBroker: ToolPermissionBroker,
     private val finderPathExtractor: FinderPathExtractor,
+    private val nativeHookGateway: NativeHookGateway = JNativeHookGateway,
 ) {
 
     fun create(ioDispatcher: CoroutineDispatcher): MainUseCases {
@@ -40,6 +41,7 @@ class MainUseCasesFactory(
             settingsProvider = settingsProvider,
             toolPermissionBroker = toolPermissionBroker,
             speechUseCase = speechUseCase,
+            nativeHookGateway = nativeHookGateway,
         )
         val voiceInputUseCase = VoiceInputUseCase(
             audioRecorder = audioRecorder,
@@ -47,6 +49,7 @@ class MainUseCasesFactory(
             chatUseCase = chatUseCase,
             speechUseCase = speechUseCase,
             permissionsUseCase = permissionsUseCase,
+            nativeHookGateway = nativeHookGateway,
         )
 
         return MainUseCases(

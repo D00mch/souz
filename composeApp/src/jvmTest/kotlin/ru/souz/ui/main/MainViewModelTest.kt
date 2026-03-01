@@ -2,14 +2,13 @@
 
 package ru.souz.ui.main
 
-import com.github.kwhat.jnativehook.GlobalScreen
+import com.github.kwhat.jnativehook.keyboard.NativeKeyListener
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.mockkConstructor
 import io.mockk.mockkObject
-import io.mockk.mockkStatic
 import io.mockk.runs
 import io.mockk.unmockkAll
 import io.mockk.unmockkObject
@@ -29,7 +28,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -53,6 +51,7 @@ import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.main.usecases.MainUseCasesFactory
+import ru.souz.ui.main.usecases.NativeHookGateway
 import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import ru.souz.ui.main.usecases.VoiceInputUseCase
@@ -80,12 +79,6 @@ class MainViewModelTest {
         every { anyConstructed<ActiveSoundRecorderImpl>().prepare() } just runs
         every { anyConstructed<ActiveSoundRecorderImpl>().startRecording() } just runs
         coEvery { anyConstructed<ActiveSoundRecorderImpl>().stopRecording() } returns ByteArray(0)
-
-        mockkStatic(GlobalScreen::class)
-        every { GlobalScreen.registerNativeHook() } just runs
-        every { GlobalScreen.addNativeKeyListener(any()) } just runs
-        every { GlobalScreen.unregisterNativeHook() } just runs
-
     }
 
     @AfterTest
@@ -280,8 +273,7 @@ class MainViewModelTest {
 
     @Test
     fun `missing input monitoring permission updates status message`() = runTest(mainDispatcher) {
-        every { GlobalScreen.registerNativeHook() } throws RuntimeException("Input monitoring denied")
-        val harness = createHarness()
+        val harness = createHarness(nativeHookRegisterError = RuntimeException("Input monitoring denied"))
 
         try {
             val viewModel = harness.viewModel
@@ -469,6 +461,7 @@ class MainViewModelTest {
         recognizeBehavior: suspend (ByteArray) -> GigaResponse.RecognizeResponse = {
             GigaResponse.RecognizeResponse()
         },
+        nativeHookRegisterError: Throwable? = null,
     ): TestHarness {
         val graphAgent = mockk<GraphBasedAgent>(relaxed = true)
         val sideEffects = MutableSharedFlow<String>()
@@ -511,6 +504,16 @@ class MainViewModelTest {
         every { telegramBotController.incomingMessages } returns incomingMessages
         every { telegramBotController.cleanCommands } returns cleanCommands
 
+        val nativeHookGateway = object : NativeHookGateway {
+            override fun registerNativeHook() {
+                nativeHookRegisterError?.let { throw it }
+            }
+
+            override fun addNativeKeyListener(listener: NativeKeyListener) = Unit
+
+            override fun unregisterNativeHook() = Unit
+        }
+
         val di = DI {
             bindSingleton { graphAgent }
             bindSingleton { gigaVoiceApi }
@@ -524,7 +527,16 @@ class MainViewModelTest {
             bindSingleton { FilesToolUtil(instance()) }
             bindSingleton { FinderPathExtractor(instance()) }
             bindSingleton {
-                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance())
+                MainUseCasesFactory(
+                    instance(),
+                    instance(),
+                    instance(),
+                    instance(),
+                    instance(),
+                    instance(),
+                    instance(),
+                    nativeHookGateway
+                )
             }
         }
 
@@ -541,17 +553,6 @@ class MainViewModelTest {
             say = say,
             incomingMessages = incomingMessages
         )
-    }
-
-    private fun isJNativeHookRuntimeAvailable(): Boolean {
-        val mapped = System.mapLibraryName("Xtst")
-        val candidates = listOf(
-            File("/usr/lib/x86_64-linux-gnu/$mapped"),
-            File("/lib/x86_64-linux-gnu/$mapped"),
-            File("/usr/lib64/$mapped"),
-            File("/usr/lib/$mapped"),
-        )
-        return candidates.any { it.exists() }
     }
 
     private fun emptyAgentContext() = AgentContext(

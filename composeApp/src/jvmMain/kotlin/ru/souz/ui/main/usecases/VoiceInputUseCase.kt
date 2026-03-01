@@ -1,6 +1,5 @@
 package ru.souz.ui.main.usecases
 
-import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -33,6 +32,7 @@ class VoiceInputUseCase(
     private val chatUseCase: ChatUseCase,
     private val speechUseCase: SpeechUseCase,
     private val permissionsUseCase: PermissionsUseCase,
+    private val nativeHookGateway: NativeHookGateway = JNativeHookGateway,
 ) {
     private val l = LoggerFactory.getLogger(VoiceInputUseCase::class.java)
     private var lastRecognizedText: String? = null
@@ -67,7 +67,7 @@ class VoiceInputUseCase(
         }
 
         try {
-            GlobalScreen.addNativeKeyListener(hotkeyListener)
+            nativeHookGateway.addNativeKeyListener(hotkeyListener)
 
             val userInputFlow = audioRecorder.audioFlow
                 .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
@@ -106,7 +106,7 @@ class VoiceInputUseCase(
                 onRecognizedText(userInput)
             }
         } finally {
-            GlobalScreen.unregisterNativeHook()
+            nativeHookGateway.unregisterNativeHook()
         }
     }
 
