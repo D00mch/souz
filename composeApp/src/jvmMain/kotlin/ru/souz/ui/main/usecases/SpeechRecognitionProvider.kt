@@ -1,8 +1,11 @@
 package ru.souz.ui.main.usecases
 
 import ru.souz.db.SettingsProvider
+import ru.souz.edition.BuildEdition
+import ru.souz.edition.BuildEditionConfig
 import ru.souz.giga.GigaVoiceAPI
 import ru.souz.giga.LlmProvider
+import ru.souz.llms.AiTunnelVoiceAPI
 import ru.souz.llms.OpenAIVoiceAPI
 
 /** Provide locality specific Voice recognition, e.g. SaluteSpeech for Ru. */
@@ -36,26 +39,56 @@ class OpenAISpeechRecognitionProvider(
     override suspend fun recognize(audio: ByteArray): String = openAIVoiceAPI.recognize(audio).trim()
 }
 
+class AiTunnelSpeechRecognitionProvider(
+    private val aiTunnelVoiceAPI: AiTunnelVoiceAPI,
+    private val settingsProvider: SettingsProvider,
+    private val isRuEdition: Boolean = BuildEditionConfig.current == BuildEdition.RU,
+) : SpeechRecognitionProvider {
+    override val enabled: Boolean
+        get() = isRuEdition
+
+    override val hasRequiredKey: Boolean
+        get() = enabled && !settingsProvider.aiTunnelKey.isNullOrBlank()
+
+    override suspend fun recognize(audio: ByteArray): String {
+        if (!enabled) throw VoiceRecognitionUnavailableException()
+        return aiTunnelVoiceAPI.recognize(audio).trim()
+    }
+}
+
 class ModelAwareSpeechRecognitionProvider(
     private val settingsProvider: SettingsProvider,
     private val saluteSpeechProvider: SaluteSpeechRecognitionProvider,
     private val openAiSpeechProvider: OpenAISpeechRecognitionProvider,
+    private val aiTunnelSpeechProvider: AiTunnelSpeechRecognitionProvider,
 ) : SpeechRecognitionProvider {
-    override val enabled: Boolean = true
+    private val allProviders: List<SpeechRecognitionProvider> = listOf(
+        saluteSpeechProvider,
+        openAiSpeechProvider,
+        aiTunnelSpeechProvider,
+    )
+
+    override val enabled: Boolean
+        get() = allProviders.any { it.enabled }
+
     override val hasRequiredKey: Boolean
-        get() = resolveProvider().hasRequiredKey
+        get() = resolveProvider()?.hasRequiredKey ?: false
 
-    override suspend fun recognize(audio: ByteArray): String = resolveProvider().recognize(audio)
+    override suspend fun recognize(audio: ByteArray): String {
+        val provider = resolveProvider() ?: throw VoiceRecognitionUnavailableException()
+        return provider.recognize(audio)
+    }
 
-    private fun resolveProvider(): SpeechRecognitionProvider {
+    private fun resolveProvider(): SpeechRecognitionProvider? {
         val preferred = when (settingsProvider.gigaModel.provider) {
-            LlmProvider.GIGA -> listOf(saluteSpeechProvider, openAiSpeechProvider)
-            LlmProvider.OPENAI -> listOf(openAiSpeechProvider, saluteSpeechProvider)
-            LlmProvider.QWEN, LlmProvider.AI_TUNNEL, LlmProvider.ANTHROPIC -> listOf(
-                openAiSpeechProvider, saluteSpeechProvider
+            LlmProvider.GIGA -> listOf(saluteSpeechProvider, aiTunnelSpeechProvider, openAiSpeechProvider)
+            LlmProvider.OPENAI -> listOf(openAiSpeechProvider, aiTunnelSpeechProvider, saluteSpeechProvider)
+            LlmProvider.AI_TUNNEL -> listOf(aiTunnelSpeechProvider, openAiSpeechProvider, saluteSpeechProvider)
+            LlmProvider.QWEN, LlmProvider.ANTHROPIC -> listOf(
+                openAiSpeechProvider, aiTunnelSpeechProvider, saluteSpeechProvider
             )
-        }
-        return preferred.firstOrNull { it.hasRequiredKey } ?: preferred.first()
+        }.filter { it.enabled }
+        return preferred.firstOrNull { it.hasRequiredKey } ?: preferred.firstOrNull()
     }
 }
 

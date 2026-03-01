@@ -30,7 +30,7 @@ Primary stack:
 - **Safer file editing**: `EditFile` now replaces only when `oldText` matches exactly once and writes via temp-file swap (atomic when supported) to reduce partial-write risk.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
 - **Telegram PC Control bot**: automated bot creation via `@BotFather`, long-polling command listener, and agent-driven responses — all managed from the Telegram settings screen. Bot credentials (`TG_BOT_TOKEN`, `TG_BOT_OWNER_ID`, `TG_BOT_USERNAME`) are stored in `ConfigStore`. The bot can be created/deleted from the UI; on creation it automatically sends `/start` and sets a profile avatar. Telegram integration is runtime-gated on macOS and disabled on versions below macOS 15 (with UI/tool warnings instead of app crash). Telegram tool category is also disabled while Telegram auth state is not `READY`.
-- **Model-aware speech recognition routing**: voice input recognition can use SaluteSpeech or OpenAI transcription (`/v1/audio/transcriptions`) and selects provider based on active model provider and configured keys.
+- **Model-aware speech recognition routing**: voice input recognition can use SaluteSpeech, OpenAI transcription (`/v1/audio/transcriptions`), or AiTunnel transcription (`/v1/audio/transcriptions`, RU edition only), and selects provider based on active model provider and configured keys.
 
 ## Project Structure
 ```text
@@ -122,5 +122,5 @@ Notes:
 - macOS signing config is now split by build mode: App Store builds (`-PmacOsAppStoreRelease=true`) use provisioning profiles + sandbox entitlements, while Developer ID DMG builds use non-App-Store entitlements and do not embed provisioning profiles.
 - macOS runtime image explicitly includes `java.net.http` so release app bundles contain `java.net.http.HttpClient` used by Telegram service startup.
 - Voice recognition audio upload now sends raw PCM (`audio/x-pcm;bit=16;rate=16000`) directly to Salute Speech, so the app no longer depends on JAVE/embedded FFmpeg binaries for microphone transcription.
-- OpenAI voice transcription wraps recorded raw PCM (16kHz mono 16-bit) into a WAV container before multipart upload (`capture.wav`, `audio/wav`) because OpenAI transcriptions do not accept the recorder's raw PCM stream directly.
+- OpenAI and AiTunnel voice transcription wrap recorded raw PCM (16kHz mono 16-bit) into a WAV container before multipart upload (`capture.wav`, `audio/wav`) because these transcription endpoints do not accept the recorder's raw PCM stream directly.
 - `ConfigStore` now encrypts sensitive values (LLM API keys, Telegram bot token, MCP OAuth state, `MCP_SERVERS_JSON`) before writing to Java Preferences using AES-GCM + PBKDF2. `SOUZ_MASTER_KEY` (env var or JVM system property) can be used as an override; otherwise the app auto-generates and stores a local master key file in the user profile (platform-specific app config directory). Legacy plaintext values are read and transparently migrated to encrypted storage.

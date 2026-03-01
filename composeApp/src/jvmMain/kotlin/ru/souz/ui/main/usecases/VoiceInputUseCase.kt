@@ -19,6 +19,7 @@ import org.slf4j.LoggerFactory
 import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.giga.MissingVoiceKeyException
 import ru.souz.keys.HotkeyListener
+import ru.souz.llms.MissingAiTunnelVoiceKeyException
 import ru.souz.llms.MissingOpenAiVoiceKeyException
 import ru.souz.ui.main.MainState
 import souz.composeapp.generated.resources.Res
@@ -82,7 +83,11 @@ class VoiceInputUseCase(
 
             userInputFlow.retryWhen { cause, attempt ->
                 if (cause is CancellationException) return@retryWhen false
-                if (cause is MissingVoiceKeyException || cause is MissingOpenAiVoiceKeyException) {
+                if (
+                    cause is MissingVoiceKeyException ||
+                    cause is MissingOpenAiVoiceKeyException ||
+                    cause is MissingAiTunnelVoiceKeyException
+                ) {
                     emitVoiceKeyMissing()
                     return@retryWhen true
                 }

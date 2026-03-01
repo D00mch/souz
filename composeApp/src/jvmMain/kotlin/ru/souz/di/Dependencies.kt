@@ -34,6 +34,7 @@ import ru.souz.giga.SessionTokenLogging
 import ru.souz.giga.TokenLogging
 import ru.souz.keys.Keys
 import ru.souz.llms.AiTunnelChatAPI
+import ru.souz.llms.AiTunnelVoiceAPI
 import ru.souz.llms.AnthropicChatAPI
 import ru.souz.llms.OpenAIChatAPI
 import ru.souz.llms.OpenAIVoiceAPI
@@ -58,6 +59,7 @@ import ru.souz.tool.notes.*
 import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
 import ru.souz.ui.main.usecases.MainUseCasesFactory
+import ru.souz.ui.main.usecases.AiTunnelSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.main.usecases.ModelAwareSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.OpenAISpeechRecognitionProvider
@@ -193,10 +195,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<GigaChatAPI> { instance<LLMFactory>() }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton { OpenAIVoiceAPI(instance()) }
+    bindSingleton { AiTunnelVoiceAPI(instance()) }
     bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
+    bindSingleton { AiTunnelSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton<SpeechRecognitionProvider> {
-        ModelAwareSpeechRecognitionProvider(instance(), instance(), instance())
+        ModelAwareSpeechRecognitionProvider(instance(), instance(), instance(), instance())
     }
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
