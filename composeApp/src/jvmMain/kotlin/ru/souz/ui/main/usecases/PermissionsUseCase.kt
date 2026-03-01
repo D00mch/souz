@@ -19,6 +19,7 @@ import kotlin.math.min
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.StringResource
 
 class PermissionsUseCase(
     private val settingsProvider: SettingsProvider,
@@ -66,7 +67,7 @@ class PermissionsUseCase(
 
         settingsProvider.needsOnboarding = false
         settingsProvider.onboardingCompleted = true
-        val displayText = getString(Res.string.onboarding_display_text)
+        val displayText = readString(Res.string.onboarding_display_text)
         emitState {
             copy(
                 isSpeaking = true,
@@ -80,7 +81,7 @@ class PermissionsUseCase(
         }
 
         onboardingSpeechStartedAt = System.currentTimeMillis()
-        speechUseCase.queuePrepared(getString(Res.string.onboarding_speech_text))
+        speechUseCase.queuePrepared(readString(Res.string.onboarding_speech_text))
     }
 
     fun registerNativeHook(): Boolean = runCatching {
@@ -103,7 +104,7 @@ class PermissionsUseCase(
                 }
             }
 
-            val statusMsg = getString(Res.string.onboarding_input_permission_request)
+            val statusMsg = readString(Res.string.onboarding_input_permission_request)
             emitState {
                 copy(
                     statusMessage = statusMsg
@@ -116,7 +117,7 @@ class PermissionsUseCase(
                     l.info("Input monitoring permission granted, relaunching application")
                     if (!relaunchApp()) {
                         l.error("Automatic relaunch failed after input monitoring permission was granted")
-                        val restartFailedMsg = getString(Res.string.onboarding_input_permission_restart_failed)
+                        val restartFailedMsg = readString(Res.string.onboarding_input_permission_restart_failed)
                         emitState { copy(statusMessage = restartFailedMsg) }
                     }
                     return@launch
@@ -145,6 +146,13 @@ class PermissionsUseCase(
     private suspend fun emitState(reduce: MainState.() -> MainState) {
         _outputs.send(MainUseCaseOutput.State(reduce))
     }
+
+    private suspend fun readString(resource: StringResource): String =
+        runCatching { getString(resource) }
+            .getOrElse {
+                l.warn("Failed to load string resource {}: {}", resource, it.message)
+                "[resource-unavailable]"
+            }
 
     companion object {
         private const val ONBOARDING_PERMISSION_DELAY_MS = 100000

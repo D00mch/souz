@@ -36,6 +36,7 @@ import ru.souz.ui.settings.SettingsEvent.*
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.StringResource
 import java.awt.Desktop
 import java.nio.file.Files
 import java.nio.file.Path
@@ -277,9 +278,9 @@ class SettingsViewModel(
         }.onSuccess {
             setState { copy(telegramAuthBusy = false, isTelegramBotActive = true) }
             telegramBotController.restartPolling()
-            send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_created_success_message)))
+            send(SettingsEffect.ShowSnackbar(readString(Res.string.bot_created_success_message)))
         }.onFailure { error ->
-            val errorMsg = error.message ?: getString(Res.string.error_failed_to_create_bot)
+            val errorMsg = error.message ?: readString(Res.string.error_failed_to_create_bot)
             setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
         }
     }
@@ -301,7 +302,7 @@ class SettingsViewModel(
                 disconnectBot()
             }
         }.onFailure { error ->
-            val errorMsg = error.message ?: getString(Res.string.error_failed_to_delete_bot)
+            val errorMsg = error.message ?: readString(Res.string.error_failed_to_delete_bot)
             setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
         }
     }
@@ -313,9 +314,9 @@ class SettingsViewModel(
         }.onSuccess {
             telegramBotController.stopPolling()
             setState { copy(isTelegramBotActive = false, telegramAuthBusy = false) }
-            send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_deleted_success_message)))
+            send(SettingsEffect.ShowSnackbar(readString(Res.string.bot_deleted_success_message)))
         }.onFailure { error ->
-            val errorMsg = error.message ?: getString(Res.string.error_failed_to_delete_bot)
+            val errorMsg = error.message ?: readString(Res.string.error_failed_to_delete_bot)
             setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
         }
     }
@@ -616,7 +617,7 @@ class SettingsViewModel(
                 }
             }
             .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_send_logs)
+                val errorMsg = error.message ?: readString(Res.string.error_failed_send_logs)
                 setState {
                     copy(
                         isSendingLogs = false,
@@ -640,7 +641,7 @@ class SettingsViewModel(
             desktop.browse(targetPath.toUri())
         }.onFailure { error ->
             l.warn("Failed to open privacy policy", error)
-            val fallbackMessage = getString(Res.string.error_failed_open_privacy_policy)
+            val fallbackMessage = readString(Res.string.error_failed_open_privacy_policy)
             send(SettingsEffect.ShowSnackbar(error.message ?: fallbackMessage))
         }
     }
@@ -663,7 +664,7 @@ class SettingsViewModel(
         when (currentState.gigaModel.provider) {
             LlmProvider.GIGA -> {
                 if (currentState.gigaChatKey.isBlank()) {
-                    val errorMsg = getString(Res.string.error_gigachat_key_missing)
+                    val errorMsg = readString(Res.string.error_gigachat_key_missing)
                     setState {
                         copy(
                             balance = emptyList(),
@@ -675,7 +676,7 @@ class SettingsViewModel(
                 }
             }
             LlmProvider.QWEN -> {
-                val errorMsg = getString(Res.string.error_balance_unavailable_qwen)
+                val errorMsg = readString(Res.string.error_balance_unavailable_qwen)
                 setState {
                     copy(
                         balance = emptyList(),
@@ -686,7 +687,7 @@ class SettingsViewModel(
                 return@launch
             }
             LlmProvider.AI_TUNNEL -> {
-                val errorMsg = getString(Res.string.error_balance_unavailable_aitunnel)
+                val errorMsg = readString(Res.string.error_balance_unavailable_aitunnel)
                 setState {
                     copy(
                         balance = emptyList(),
@@ -697,7 +698,7 @@ class SettingsViewModel(
                 return@launch
             }
             LlmProvider.ANTHROPIC -> {
-                val errorMsg = getString(Res.string.error_balance_unavailable_anthropic)
+                val errorMsg = readString(Res.string.error_balance_unavailable_anthropic)
                 setState {
                     copy(
                         balance = emptyList(),
@@ -708,7 +709,7 @@ class SettingsViewModel(
                 return@launch
             }
             LlmProvider.OPENAI -> {
-                val errorMsg = getString(Res.string.error_balance_unavailable_openai)
+                val errorMsg = readString(Res.string.error_balance_unavailable_openai)
                 setState {
                     copy(
                         balance = emptyList(),
@@ -745,14 +746,14 @@ class SettingsViewModel(
     private fun submitTelegramPhone() = viewModelScope.launch(Dispatchers.IO) {
         val phone = currentState.telegramPhoneInput.trim()
         if (phone.isBlank()) {
-            val errorMsg = getString(Res.string.error_enter_phone)
+            val errorMsg = readString(Res.string.error_enter_phone)
             setState { copy(telegramAuthError = errorMsg) }
             return@launch
         }
 
         runCatching { telegramService.submitPhoneNumber(phone) }
             .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_request_code)
+                val errorMsg = error.message ?: readString(Res.string.error_failed_request_code)
                 setState { copy(telegramAuthError = errorMsg) }
             }
     }
@@ -760,14 +761,14 @@ class SettingsViewModel(
     private fun submitTelegramCode() = viewModelScope.launch(Dispatchers.IO) {
         val code = currentState.telegramCodeInput.trim()
         if (code.isBlank()) {
-            val errorMsg = getString(Res.string.error_enter_code)
+            val errorMsg = readString(Res.string.error_enter_code)
             setState { copy(telegramAuthError = errorMsg) }
             return@launch
         }
 
         runCatching { telegramService.submitLoginCode(code) }
             .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_verify_code)
+                val errorMsg = error.message ?: readString(Res.string.error_failed_verify_code)
                 setState { copy(telegramAuthError = errorMsg) }
             }
     }
@@ -775,14 +776,14 @@ class SettingsViewModel(
     private fun submitTelegramPassword() = viewModelScope.launch(Dispatchers.IO) {
         val password = currentState.telegramPasswordInput
         if (password.isBlank()) {
-            val errorMsg = getString(Res.string.error_enter_password)
+            val errorMsg = readString(Res.string.error_enter_password)
             setState { copy(telegramAuthError = errorMsg) }
             return@launch
         }
 
         runCatching { telegramService.submitTwoFaPassword(password) }
             .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_verify_password)
+                val errorMsg = error.message ?: readString(Res.string.error_failed_verify_password)
                 setState { copy(telegramAuthError = errorMsg) }
             }
     }
@@ -790,7 +791,7 @@ class SettingsViewModel(
     private fun telegramLogout() = viewModelScope.launch(Dispatchers.IO) {
         runCatching { telegramService.logout() }
             .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_logout)
+                val errorMsg = error.message ?: readString(Res.string.error_failed_logout)
                 setState { copy(telegramAuthError = errorMsg) }
             }
     }
@@ -815,6 +816,13 @@ class SettingsViewModel(
         SUPPORT_EMAIL,
         SYSTEM_PROMPT,
     }
+
+    private suspend fun readString(resource: StringResource): String =
+        runCatching { getString(resource) }
+            .getOrElse {
+                l.warn("Failed to load string resource {}: {}", resource, it.message)
+                "[resource-unavailable]"
+            }
 
     companion object {
         private const val KEY_INPUT_SAVE_DEBOUNCE_MS = 400L

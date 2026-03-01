@@ -24,6 +24,7 @@ import ru.souz.ui.main.MainState
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.StringResource
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceInputUseCase(
@@ -97,7 +98,7 @@ class VoiceInputUseCase(
                 }
 
                 l.error("Agent flow failed, attempt {}, cause: {}", attempt, cause.message, cause)
-                val errorMsg = getString(Res.string.error_prefix).format(cause.message ?: "")
+                val errorMsg = readString(Res.string.error_prefix).format(cause.message ?: "")
                 emitState { copy(isProcessing = false, statusMessage = errorMsg) }
                 delay(1000L)
                 true
@@ -125,7 +126,7 @@ class VoiceInputUseCase(
         chatUseCase.cancelActiveJob()
         speechUseCase.playMacPingSafely(scope)
 
-        val statusMsg = getString(Res.string.voice_status_recording_started)
+        val statusMsg = readString(Res.string.voice_status_recording_started)
         emitState {
             copy(
                 isListening = true,
@@ -140,7 +141,7 @@ class VoiceInputUseCase(
         if (!isListening) return
 
         audioRecorder.stop()
-        val statusMsg = getString(Res.string.voice_status_processing_input)
+        val statusMsg = readString(Res.string.voice_status_processing_input)
         emitState {
             copy(
                 isListening = false,
@@ -155,19 +156,19 @@ class VoiceInputUseCase(
     private suspend fun onTextRecognizeSideEffects(recognizedText: String) {
         if (recognizedText.isNotBlank()) return
 
-        val msg = getString(Res.string.voice_status_speech_not_recognized)
+        val msg = readString(Res.string.voice_status_speech_not_recognized)
         speechUseCase.queue(msg)
         emitState { copy(statusMessage = msg, isProcessing = false) }
     }
 
     private suspend fun emitVoiceKeyMissing() {
-        val msg = getString(Res.string.voice_error_missing_key)
+        val msg = readString(Res.string.voice_error_missing_key)
         speechUseCase.queue(msg)
         emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }
 
     private suspend fun emitVoiceRecognitionUnavailable() {
-        val msg = getString(Res.string.voice_error_recognition_unavailable)
+        val msg = readString(Res.string.voice_error_recognition_unavailable)
         speechUseCase.queue(msg)
         emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }
@@ -175,6 +176,14 @@ class VoiceInputUseCase(
     private suspend fun emitState(reduce: MainState.() -> MainState) {
         _outputs.send(MainUseCaseOutput.State(reduce))
     }
+
+
+    private suspend fun readString(resource: StringResource): String =
+        runCatching { getString(resource) }
+            .getOrElse {
+                l.warn("Failed to load string resource {}: {}", resource, it.message)
+                "[resource-unavailable]"
+            }
 
     private fun isDuplicateRecognition(text: String): Boolean {
         val now = System.currentTimeMillis()
