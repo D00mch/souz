@@ -45,6 +45,7 @@ import ru.souz.service.telegram.TelegramService
 import ru.souz.service.telegram.TelegramBotController
 import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.telemetry.TelemetryOutboxRepository
+import ru.souz.telemetry.TelemetryCryptoService
 import ru.souz.telemetry.TelemetryRuntimeConfig
 import ru.souz.telemetry.TelemetryService
 import ru.souz.tool.*
@@ -188,8 +189,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             objectMapper = instance(DiTags.TAG_LOG),
         )
     }
+    bindSingleton { TelemetryCryptoService() }
     bindSingleton { TelemetryRuntimeConfig.production() }
-    bindSingleton { TelemetryService(instance(), instance()) }
+    bindSingleton { TelemetryService(instance(), instance(), instance()) }
 
     // API
     bindSingleton { GigaAuth(instance()) }

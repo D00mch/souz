@@ -23,6 +23,7 @@ import kotlin.test.assertTrue
 class TelemetryServiceTest {
 
     private val objectMapper = jacksonObjectMapper()
+    private val cryptoService = TelemetryCryptoService()
 
     @Test
     fun `flush registers installation signs telemetry batch and clears outbox`() = runTest {
@@ -45,7 +46,7 @@ class TelemetryServiceTest {
                 "/v1/installations/register",
                 exchange.requestHeaders.getFirst("X-Telemetry-Timestamp"),
                 exchange.requestHeaders.getFirst("X-Telemetry-Nonce"),
-                sha256Base64(body),
+                cryptoService.sha256Base64(body),
             ).joinToString("\n")
             assertTrue(
                 verifySignature(
@@ -71,7 +72,7 @@ class TelemetryServiceTest {
                 installationId,
                 exchange.requestHeaders.getFirst("X-Telemetry-Timestamp"),
                 exchange.requestHeaders.getFirst("X-Telemetry-Nonce"),
-                sha256Base64(body),
+                cryptoService.sha256Base64(body),
             ).joinToString("\n")
             assertTrue(
                 verifySignature(
@@ -92,6 +93,7 @@ class TelemetryServiceTest {
             )
             val service = TelemetryService(
                 outboxRepository = repo,
+                cryptoService = cryptoService,
                 runtimeConfig = TelemetryRuntimeConfig(baseUrl = "http://127.0.0.1:${server.address.port}"),
             )
 
@@ -173,6 +175,7 @@ class TelemetryServiceTest {
             )
             val service = TelemetryService(
                 outboxRepository = repo,
+                cryptoService = cryptoService,
                 runtimeConfig = TelemetryRuntimeConfig(baseUrl = ""),
             )
 
@@ -270,11 +273,11 @@ class TelemetryServiceTest {
     ): Boolean {
         if (signature.isNullOrBlank()) return false
         val keyFactory = KeyFactory.getInstance("Ed25519")
-        val publicKey = keyFactory.generatePublic(X509EncodedKeySpec(base64Decode(encodedPublicKey)))
+        val publicKey = keyFactory.generatePublic(X509EncodedKeySpec(cryptoService.decodeBase64(encodedPublicKey)))
         val verifier = Signature.getInstance("Ed25519")
         verifier.initVerify(publicKey)
         verifier.update(payload.toByteArray(StandardCharsets.UTF_8))
-        return verifier.verify(base64Decode(signature))
+        return verifier.verify(cryptoService.decodeBase64(signature))
     }
 
     private fun resetTelemetryConfigStore() {

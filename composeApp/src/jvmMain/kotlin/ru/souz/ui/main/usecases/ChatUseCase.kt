@@ -218,13 +218,12 @@ class ChatUseCase(
             }
             onResult?.invoke(Result.failure(e))
         } finally {
-            val requestTokenUsage = tokenLogging.currentRequestTokenUsage(requestContext.requestId)
             telemetryService.finishRequest(
                 context = requestContext,
                 status = telemetryStatus,
                 responseLengthChars = telemetryResponseLength,
                 errorMessage = telemetryErrorMessage,
-                requestTokenUsage = requestTokenUsage,
+                requestTokenUsage = tokenLogging.currentRequestTokenUsage(requestContext.requestId),
                 sessionTokenUsage = tokenLogging.sessionTokenUsage(),
             )
             tokenLogging.finishRequest(requestContext.requestId)

@@ -32,6 +32,7 @@ import ru.souz.giga.plus
 import ru.souz.tool.ToolCategory
 import java.net.URI
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -39,6 +40,7 @@ import kotlin.coroutines.CoroutineContext
 
 class TelemetryService(
     private val outboxRepository: TelemetryOutboxRepository,
+    private val cryptoService: TelemetryCryptoService,
     private val runtimeConfig: TelemetryRuntimeConfig = TelemetryRuntimeConfig.production(),
 ) {
     private val l = LoggerFactory.getLogger(TelemetryService::class.java)
@@ -48,7 +50,6 @@ class TelemetryService(
     private val registrationMutex = Mutex()
     private val lastSuccessfulFlushAtMs = AtomicLong(0L)
     private val lastErrorMessage = AtomicReference<String?>(null)
-    private val stateLock = Any()
     private val appStartedAtMs = System.currentTimeMillis()
     private val appSessionId = UUID.randomUUID().toString()
     private val installationId = AtomicReference<String?>(loadInstallationId())
@@ -68,8 +69,8 @@ class TelemetryService(
     }
 
     private val currentRequestContext = ThreadLocal<TelemetryRequestContext?>()
-    private val activeRequests = LinkedHashMap<String, ActiveTelemetryRequest>()
-    private val conversations = LinkedHashMap<String, ConversationMetrics>()
+    private val activeRequests = ConcurrentHashMap<String, ActiveTelemetryRequest>()
+    private val conversations = ConcurrentHashMap<String, ConversationMetrics>()
 
     fun start() {
         if (!senderStarted.compareAndSet(false, true)) return
@@ -97,12 +98,10 @@ class TelemetryService(
 
     fun startConversation(reason: TelemetryConversationStartReason): String {
         val conversationId = UUID.randomUUID().toString()
-        synchronized(stateLock) {
-            conversations[conversationId] = ConversationMetrics(
-                startedAtMs = System.currentTimeMillis(),
-                startReason = reason,
-            )
-        }
+        conversations[conversationId] = ConversationMetrics(
+            startedAtMs = System.currentTimeMillis(),
+            startReason = reason,
+        )
         enqueueEvent(
             eventType = TelemetryEventType.CONVERSATION_STARTED,
             conversationId = conversationId,
@@ -113,7 +112,7 @@ class TelemetryService(
 
     fun finishConversation(conversationId: String?, reason: TelemetryConversationEndReason) {
         if (conversationId.isNullOrBlank()) return
-        val snapshot = synchronized(stateLock) { conversations.remove(conversationId) } ?: return
+        val snapshot = conversations.remove(conversationId) ?: return
         enqueueEvent(
             eventType = TelemetryEventType.CONVERSATION_FINISHED,
             conversationId = conversationId,
@@ -149,9 +148,7 @@ class TelemetryService(
             attachedFilesCount = attachedFilesCount,
             startedAtMs = System.currentTimeMillis(),
         )
-        synchronized(stateLock) {
-            activeRequests[context.requestId] = ActiveTelemetryRequest(context = context)
-        }
+        activeRequests[context.requestId] = ActiveTelemetryRequest(context = context)
         return context
     }
 
@@ -164,17 +161,13 @@ class TelemetryService(
         sessionTokenUsage: GigaResponse.Usage,
     ) {
         val durationMs = System.currentTimeMillis() - context.startedAtMs
-        val toolCallCount = synchronized(stateLock) {
-            val current = activeRequests.remove(context.requestId)
-            val resolvedToolCallCount = current?.toolCallCount ?: 0
-            conversations[context.conversationId]?.let { metrics ->
-                conversations[context.conversationId] = metrics.copy(
-                    requestCount = metrics.requestCount + 1,
-                    toolCallCount = metrics.toolCallCount + resolvedToolCallCount,
-                    tokenUsage = metrics.tokenUsage + requestTokenUsage,
-                )
-            }
-            resolvedToolCallCount
+        val toolCallCount = activeRequests.remove(context.requestId)?.toolCallCount ?: 0
+        conversations.computeIfPresent(context.conversationId) { _, metrics ->
+            metrics.copy(
+                requestCount = metrics.requestCount + 1,
+                toolCallCount = metrics.toolCallCount + toolCallCount,
+                tokenUsage = metrics.tokenUsage + requestTokenUsage,
+            )
         }
 
         enqueueEvent(
@@ -206,12 +199,10 @@ class TelemetryService(
         success: Boolean,
         errorMessage: String?,
     ) {
-        val requestContext = synchronized(stateLock) {
-            val currentContext = currentRequestContext.get() ?: return
-            val current = activeRequests[currentContext.requestId] ?: return
-            activeRequests[currentContext.requestId] = current.copy(toolCallCount = current.toolCallCount + 1)
-            current.context
-        }
+        val currentContext = currentRequestContext.get() ?: return
+        val requestContext = activeRequests.computeIfPresent(currentContext.requestId) { _, current ->
+            current.copy(toolCallCount = current.toolCallCount + 1)
+        }?.context ?: return
         enqueueEvent(
             eventType = TelemetryEventType.TOOL_EXECUTED,
             conversationId = requestContext.conversationId,
@@ -521,7 +512,9 @@ class TelemetryService(
             ?.takeIf { it.isNotEmpty() }
 
         val keyPair = if (storedPrivateKey != null && storedPublicKey != null) {
-            runCatching { loadSigningKeyPair(runtimeConfig.keyAlgorithm, storedPrivateKey, storedPublicKey) }
+            runCatching {
+                cryptoService.loadSigningKeyPair(runtimeConfig.keyAlgorithm, storedPrivateKey, storedPublicKey)
+            }
                 .onFailure {
                     l.warn("Failed to load telemetry signing key, generating a new one: {}", it.message)
                     clearInstallationId()
@@ -529,7 +522,7 @@ class TelemetryService(
                 .getOrNull()
         } else {
             null
-        } ?: generateSigningKeyPair(runtimeConfig.keyAlgorithm).also {
+        } ?: cryptoService.generateSigningKeyPair(runtimeConfig.keyAlgorithm).also {
             ConfigStore.put(TelemetryStorageKeys.PRIVATE_KEY, it.encodedPrivateKey)
             ConfigStore.put(TelemetryStorageKeys.PUBLIC_KEY, it.encodedPublicKey)
             clearInstallationId()
@@ -555,7 +548,7 @@ class TelemetryService(
     private fun signedRegistrationRequest(path: String, payloadJson: String): SignedTelemetryRequest {
         val timestampMs = System.currentTimeMillis()
         val nonce = UUID.randomUUID().toString()
-        val signature = signTelemetryPayload(
+        val signature = cryptoService.signPayload(
             keyAlgorithm = runtimeConfig.keyAlgorithm,
             privateKey = identity.keyPair.privateKey,
             payload = registrationSignaturePayload(
@@ -575,7 +568,7 @@ class TelemetryService(
     ): SignedTelemetryRequest {
         val timestampMs = System.currentTimeMillis()
         val nonce = UUID.randomUUID().toString()
-        val signature = signTelemetryPayload(
+        val signature = cryptoService.signPayload(
             keyAlgorithm = runtimeConfig.keyAlgorithm,
             privateKey = identity.keyPair.privateKey,
             payload = batchSignaturePayload(
@@ -599,7 +592,7 @@ class TelemetryService(
         path,
         timestampMs.toString(),
         nonce,
-        sha256Base64(payloadJson),
+        cryptoService.sha256Base64(payloadJson),
     ).joinToString("\n")
 
     private fun batchSignaturePayload(
@@ -614,7 +607,7 @@ class TelemetryService(
         installationId,
         timestampMs.toString(),
         nonce,
-        sha256Base64(payloadJson),
+        cryptoService.sha256Base64(payloadJson),
     ).joinToString("\n")
 
     private fun retryDelayMs(attempt: Int): Long {

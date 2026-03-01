@@ -2,6 +2,8 @@ package ru.souz.giga
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.asContextElement
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
@@ -18,15 +20,12 @@ interface TokenLogging {
 class SessionTokenLogging(
     private val logObjectMapper: ObjectMapper,
 ) : TokenLogging {
-    private val stateLock = Any()
     private val activeRequestId = ThreadLocal<String?>()
-    private var currentSessionTokensUsage: GigaResponse.Usage = ZERO_USAGE
-    private val requestTokenUsage = LinkedHashMap<String, GigaResponse.Usage>()
+    private val currentSessionTokensUsage = AtomicReference(ZERO_USAGE)
+    private val requestTokenUsage = ConcurrentHashMap<String, GigaResponse.Usage>()
 
     override fun startRequest(requestId: String) {
-        synchronized(stateLock) {
-            requestTokenUsage[requestId] = ZERO_USAGE
-        }
+        requestTokenUsage[requestId] = ZERO_USAGE
     }
 
     override fun requestContextElement(requestId: String): CoroutineContext =
@@ -34,12 +33,11 @@ class SessionTokenLogging(
 
     override fun logTokenUsage(result: GigaResponse.Chat.Ok, body: GigaRequest.Chat) {
         val requestId = activeRequestId.get()
-        val newCurrentTokensUsage = synchronized(stateLock) {
-            currentSessionTokensUsage += result.usage
-            requestId?.let {
-                requestTokenUsage[it] = (requestTokenUsage[it] ?: ZERO_USAGE) + result.usage
+        val newCurrentTokensUsage = currentSessionTokensUsage.updateAndGet { it + result.usage }
+        requestId?.let { id ->
+            requestTokenUsage.compute(id) { _, currentUsage ->
+                (currentUsage ?: ZERO_USAGE) + result.usage
             }
-            currentSessionTokensUsage
         }
 
         val (_, _, spent, cached) = result.usage
@@ -55,18 +53,14 @@ class SessionTokenLogging(
     }
 
     override fun finishRequest(requestId: String) {
-        synchronized(stateLock) {
-            requestTokenUsage.remove(requestId)
-        }
+        requestTokenUsage.remove(requestId)
     }
 
     override fun currentRequestTokenUsage(requestId: String): GigaResponse.Usage =
-        synchronized(stateLock) {
-            requestTokenUsage[requestId] ?: ZERO_USAGE
-        }
+        requestTokenUsage[requestId] ?: ZERO_USAGE
 
     override fun sessionTokenUsage(): GigaResponse.Usage =
-        synchronized(stateLock) { currentSessionTokensUsage }
+        currentSessionTokensUsage.get()
 
     private companion object {
         val ZERO_USAGE = GigaResponse.Usage(0, 0, 0, 0)
