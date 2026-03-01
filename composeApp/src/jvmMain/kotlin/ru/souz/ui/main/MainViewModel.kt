@@ -141,7 +141,7 @@ class MainViewModel(
             MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()
             MainEvent.ClearContext -> clearContext()
             MainEvent.StopSpeech -> chatUseCase.stopSpeechAndSideEffects()
-            MainEvent.UserPressStop -> chatUseCase.cancelActiveJob()
+            MainEvent.UserPressStop -> chatUseCase.stopCurrentExecution()
             MainEvent.ShowLastText -> setPreviousText()
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
             is MainEvent.UpdateChatModel -> updateChatModel(event.model)

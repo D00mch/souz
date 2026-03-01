@@ -73,8 +73,6 @@ class MainViewModelTest {
 
     @BeforeTest
     fun setUp() {
-        assumeTrue(isJNativeHookRuntimeAvailable(), "Skipping MainViewModelTest: libXtst is unavailable")
-
         mainDispatcher = StandardTestDispatcher()
         Dispatchers.setMain(mainDispatcher)
 
@@ -137,6 +135,62 @@ class MainViewModelTest {
             }
             assertEquals(listOf("second request", "second answer"), finalState.chatMessages.map { it.text })
         } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `stop exits processing when agent cancel is non-cooperative`() = runTest(mainDispatcher) {
+        val firstResponse = CompletableDeferred<String>()
+        val secondResponse = CompletableDeferred<String>()
+        val harness = createHarness(
+            executeBehavior = { input ->
+                when (input) {
+                    "first request" -> firstResponse.await()
+                    "second request" -> secondResponse.await()
+                    else -> error("Unexpected input: $input")
+                }
+            },
+            onCancelActiveJob = { /* Simulate hung execution that ignores cancel */ },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
+
+            awaitState(viewModel) { state ->
+                state.isProcessing && state.chatMessages.any { it.isUser && it.text == "first request" }
+            }
+
+            viewModel.handleEvent(MainEvent.UserPressStop)
+
+            val afterStop = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.none { it.text == "first request" }
+            }
+            assertFalse(afterStop.isProcessing)
+            assertFalse(afterStop.chatMessages.any { it.text == "first request" })
+
+            firstResponse.complete("late answer")
+            advanceUntilIdle()
+            val afterLateCompletion = viewModel.uiState.value
+            assertFalse(afterLateCompletion.chatMessages.any { it.text == "late answer" })
+            assertFalse(afterLateCompletion.isProcessing)
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("second request"))
+            awaitState(viewModel) { state ->
+                state.isProcessing && state.chatMessages.any { it.isUser && it.text == "second request" }
+            }
+
+            secondResponse.complete("second answer")
+            val finalState = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "second answer" }
+            }
+            assertEquals(listOf("second request", "second answer"), finalState.chatMessages.map { it.text })
+        } finally {
+            firstResponse.completeExceptionally(CancellationException("cleanup"))
+            secondResponse.completeExceptionally(CancellationException("cleanup"))
             harness.clear()
         }
     }

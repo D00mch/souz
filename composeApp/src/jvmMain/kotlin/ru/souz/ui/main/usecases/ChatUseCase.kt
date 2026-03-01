@@ -35,6 +35,7 @@ class ChatUseCase(
     private val l = LoggerFactory.getLogger(ChatUseCase::class.java)
     private val taskSideEffectJobs = ArrayList<Job>()
     private val activeChatRequestId = AtomicLong(0L)
+    private val activeRequestMessages = AtomicReference<ActiveRequestMessages?>(null)
     private var agentRef: AtomicReference<GraphBasedAgent?> = AtomicReference(graphAgent)
 
     private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
@@ -90,6 +91,13 @@ class ChatUseCase(
             text = "",
             isUser = false,
             isVoice = isVoice,
+        )
+        activeRequestMessages.set(
+            ActiveRequestMessages(
+                requestId = requestId,
+                userMessageId = userMessage.id,
+                pendingMessageId = pendingBotMessage.id,
+            )
         )
 
         var sideEffectsJob: Job? = null
@@ -173,11 +181,32 @@ class ChatUseCase(
         } finally {
             sideEffectsJob?.cancel()
             sideEffectsJob?.let { taskSideEffectJobs.remove(it) }
+            val currentActiveRequest = activeRequestMessages.get()
+            if (currentActiveRequest?.requestId == requestId) {
+                activeRequestMessages.compareAndSet(currentActiveRequest, null)
+            }
         }
     }
 
     fun cancelActiveJob() {
         activeAgent().cancelActiveJob()
+    }
+
+    suspend fun stopCurrentExecution() {
+        val nextRequestId = activeChatRequestId.incrementAndGet()
+        val inFlightMessages = activeRequestMessages.getAndSet(null)
+
+        killTaskSideEffectJobs()
+        cancelActiveJob()
+
+        emitState {
+            val idsToDrop = inFlightMessages?.let { arrayOf(it.userMessageId, it.pendingMessageId) } ?: emptyArray()
+            copy(
+                chatMessages = if (idsToDrop.isEmpty()) chatMessages else chatMessages.filterNot { it.id in idsToDrop },
+                isProcessing = false,
+            )
+        }
+        l.info("Stop requested: invalidated request {}", nextRequestId)
     }
 
     fun stopSpeechAndSideEffects() {
@@ -267,4 +296,10 @@ class ChatUseCase(
     private companion object {
         const val CODE_BLOCK = "```"
     }
+
+    private data class ActiveRequestMessages(
+        val requestId: Long,
+        val userMessageId: String,
+        val pendingMessageId: String,
+    )
 }
