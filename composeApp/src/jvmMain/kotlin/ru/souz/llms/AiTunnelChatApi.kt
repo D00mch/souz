@@ -302,6 +302,11 @@ class AiTunnelChatAPI(
                     put("type", prop.type)
                     prop.description?.let { put("description", it) }
                     prop.enum?.let { put("enum", it) }
+                    if (prop.type == "array") {
+                        // AiTunnel routes OpenAI-compatible models that reject array schemas without items.
+                        // Keep items unconstrained to preserve existing tools with mixed array payloads.
+                        put("items", emptyMap<String, Any>())
+                    }
                 }
             }
             buildMap {
