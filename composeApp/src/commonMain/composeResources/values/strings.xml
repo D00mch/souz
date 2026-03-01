@@ -69,7 +69,7 @@
     <string name="keys_hint_chat_ru_build">One key is enough to chat: GigaChat, Qwen, or AI Tunnel.</string>
     <string name="keys_hint_chat_en_build">One key is enough to chat: OpenAI, Qwen, or Anthropic.</string>
     <string name="keys_hint_voice">Voice commands depend on build capabilities.</string>
-    <string name="keys_hint_voice_required">For voice commands, add at least one speech key (OpenAI for now).</string>
+    <string name="keys_hint_voice_required">For voice commands, add at least one speech recognition key.</string>
     <string name="keys_hint_voice_unavailable">Voice commands are not available in this build yet.</string>
     <string name="label_key_gigachat">GigaChat Key</string>
     <string name="label_key_qwen">Qwen Key</string>
@@ -147,7 +147,7 @@
     <string name="setup_title">Connect API Keys</string>
     <string name="setup_hint_add_key">Add at least one key to start. Others can be connected later in settings.</string>
     <string name="setup_hint_keys_found">Keys found: %d. You can continue.</string>
-    <string name="setup_hint_voice_required">Voice commands require at least one speech key (OpenAI for now).</string>
+    <string name="setup_hint_voice_required">Voice commands require at least one speech recognition key.</string>
     <string name="setup_hint_voice_unavailable">Voice commands are not available in this build yet.</string>
     <string name="button_open_souz">Open Souz AI</string>
     <string name="button_add_key_to_proceed">Add at least one key</string>
@@ -180,6 +180,7 @@
     <!-- Dropdowns -->
     <string name="label_model">Model</string>
     <string name="label_embeddings_model">Embeddings model</string>
+    <string name="label_voice_recognition_model">Voice recognition model</string>
 
     <!-- Finder Service -->
     <string name="error_empty_path">Empty path</string>
@@ -223,7 +224,7 @@
     <string name="voice_status_recording_started">Recording started</string>
     <string name="voice_status_processing_input">Processing input</string>
     <string name="voice_status_speech_not_recognized">Speech not recognized</string>
-    <string name="voice_error_missing_key">Add a speech API key (OpenAI for now) in Settings > My Keys to use voice commands</string>
+    <string name="voice_error_missing_key">Add the API key for the selected voice recognition model in Settings > My Keys to use voice commands</string>
     <string name="voice_error_recognition_unavailable">Voice recognition is not available in this build yet.</string>
 
     <!-- Main ViewModel & status -->

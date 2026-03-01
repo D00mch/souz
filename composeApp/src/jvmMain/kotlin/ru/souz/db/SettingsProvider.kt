@@ -7,6 +7,8 @@ import ru.souz.giga.DEFAULT_MAX_TOKENS
 import ru.souz.giga.GigaModel
 import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.LlmProvider
+import ru.souz.giga.VoiceRecognitionModel
+import ru.souz.giga.VoiceRecognitionProvider
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
@@ -37,6 +39,7 @@ interface SettingsProvider {
     var temperature: Float
     var forbiddenFolders: List<String>
     var embeddingsModel: EmbeddingsModel
+    var voiceRecognitionModel: VoiceRecognitionModel
     var mcpServersJson: String?
     var mcpServersFile: String?
 }
@@ -86,6 +89,10 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     private var _embeddingsModelDelegate: String? by keyDelegate(
         configKey = EMBEDDINGS_MODEL,
         envKey = EMBEDDINGS_MODEL
+    )
+    private var _voiceRecognitionModelDelegate: String? by keyDelegate(
+        configKey = VOICE_RECOGNITION_MODEL,
+        envKey = VOICE_RECOGNITION_MODEL
     )
 
     init {
@@ -225,6 +232,19 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
             _embeddingsModelDelegate = value.name
         }
 
+    override var voiceRecognitionModel: VoiceRecognitionModel
+        get() = _voiceRecognitionModelDelegate?.let { value ->
+            VoiceRecognitionModel.entries.firstOrNull {
+                it.name.equals(value, ignoreCase = true) || it.alias.equals(
+                    value,
+                    ignoreCase = true
+                )
+            }
+        } ?: VoiceRecognitionModel.SaluteSpeech
+        set(value) {
+            _voiceRecognitionModelDelegate = value.name
+        }
+
     override var mcpServersJson: String? by keyDelegate(
         configKey = MCP_SERVERS_JSON,
         envKey = MCP_SERVERS_JSON
@@ -276,6 +296,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val TEMPERATURE = "TEMPERATURE"
         private const val FORBIDDEN_FOLDERS = "FORBIDDEN_FOLDERS"
         private const val EMBEDDINGS_MODEL = "EMBEDDINGS_MODEL"
+        private const val VOICE_RECOGNITION_MODEL = "VOICE_RECOGNITION_MODEL"
         private const val MCP_SERVERS_JSON = "MCP_SERVERS_JSON"
         private const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
         private val DEFAULT_FORBIDDEN_FOLDERS = listOf("~/Library/")
@@ -296,6 +317,12 @@ fun SettingsProvider.hasKey(provider: EmbeddingsProvider): Boolean = when (provi
     EmbeddingsProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
     EmbeddingsProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
     EmbeddingsProvider.OPENAI -> !openaiKey.isNullOrBlank()
+}
+
+fun SettingsProvider.hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
+    VoiceRecognitionProvider.SALUTE_SPEECH -> !saluteSpeechKey.isNullOrBlank()
+    VoiceRecognitionProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
+    VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
 }
 
 fun main() {

@@ -4,7 +4,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.edition.BuildEdition
 import ru.souz.edition.BuildEditionConfig
 import ru.souz.giga.GigaVoiceAPI
-import ru.souz.giga.LlmProvider
+import ru.souz.giga.VoiceRecognitionProvider
 import ru.souz.llms.AiTunnelVoiceAPI
 import ru.souz.llms.OpenAIVoiceAPI
 
@@ -80,15 +80,20 @@ class ModelAwareSpeechRecognitionProvider(
     }
 
     private fun resolveProvider(): SpeechRecognitionProvider? {
-        val preferred = when (settingsProvider.gigaModel.provider) {
-            LlmProvider.GIGA -> listOf(saluteSpeechProvider, aiTunnelSpeechProvider, openAiSpeechProvider)
-            LlmProvider.OPENAI -> listOf(openAiSpeechProvider, aiTunnelSpeechProvider, saluteSpeechProvider)
-            LlmProvider.AI_TUNNEL -> listOf(aiTunnelSpeechProvider, openAiSpeechProvider, saluteSpeechProvider)
-            LlmProvider.QWEN, LlmProvider.ANTHROPIC -> listOf(
-                openAiSpeechProvider, aiTunnelSpeechProvider, saluteSpeechProvider
-            )
-        }.filter { it.enabled }
+        val selectedProvider = providerFor(settingsProvider.voiceRecognitionModel.provider)
+        val preferred = buildList {
+            selectedProvider?.let(::add)
+            add(openAiSpeechProvider)
+            add(aiTunnelSpeechProvider)
+            add(saluteSpeechProvider)
+        }.distinct().filter { it.enabled }
         return preferred.firstOrNull { it.hasRequiredKey } ?: preferred.firstOrNull()
+    }
+
+    private fun providerFor(provider: VoiceRecognitionProvider): SpeechRecognitionProvider? = when (provider) {
+        VoiceRecognitionProvider.SALUTE_SPEECH -> saluteSpeechProvider
+        VoiceRecognitionProvider.AI_TUNNEL -> aiTunnelSpeechProvider
+        VoiceRecognitionProvider.OPENAI -> openAiSpeechProvider
     }
 }
 

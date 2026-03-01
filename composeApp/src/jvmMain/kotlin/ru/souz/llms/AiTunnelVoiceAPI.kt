@@ -13,6 +13,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
+import ru.souz.giga.VoiceRecognitionProvider
 import ru.souz.giga.gigaJsonMapper
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -32,7 +33,10 @@ class AiTunnelVoiceAPI(
             ?: throw MissingAiTunnelVoiceKeyException()
 
     private val transcriptionModel: String
-        get() = System.getenv("AITUNNEL_TRANSCRIPTION_MODEL")
+        get() = settingsProvider.voiceRecognitionModel
+            .takeIf { it.provider == VoiceRecognitionProvider.AI_TUNNEL }
+            ?.alias
+            ?: System.getenv("AITUNNEL_TRANSCRIPTION_MODEL")
             ?: System.getProperty("AITUNNEL_TRANSCRIPTION_MODEL")
             ?: DEFAULT_TRANSCRIPTION_MODEL
 

@@ -6,7 +6,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.GigaModel
+import ru.souz.giga.VoiceRecognitionModel
 import ru.souz.llms.AiTunnelVoiceAPI
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -32,7 +32,7 @@ class ModelAwareSpeechRecognitionProviderTest {
     @Test
     fun `ai tunnel model prefers ai tunnel speech provider`() = runTest {
         val settingsProvider = mockk<SettingsProvider>()
-        every { settingsProvider.gigaModel } returns GigaModel.AiTunnelGpt5Nano
+        every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.AiTunnelGpt4oTranscribe
 
         val saluteProvider = mockk<SaluteSpeechRecognitionProvider>()
         every { saluteProvider.enabled } returns true
@@ -66,7 +66,7 @@ class ModelAwareSpeechRecognitionProviderTest {
     @Test
     fun `disabled ai tunnel provider falls back to openai provider`() = runTest {
         val settingsProvider = mockk<SettingsProvider>()
-        every { settingsProvider.gigaModel } returns GigaModel.AiTunnelGpt5Nano
+        every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.AiTunnelGpt4oTranscribe
 
         val saluteProvider = mockk<SaluteSpeechRecognitionProvider>()
         every { saluteProvider.enabled } returns true
