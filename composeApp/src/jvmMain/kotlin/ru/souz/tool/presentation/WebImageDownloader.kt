@@ -7,10 +7,17 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.net.http.HttpTimeoutException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.time.Duration
+import java.util.concurrent.CompletionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+
+private const val IMAGE_DOWNLOAD_CONNECT_TIMEOUT_MS = 5_000L
+private const val IMAGE_DOWNLOAD_REQUEST_TIMEOUT_MS = 10_000L
 
 /**
  * Shared image downloader/validator used by:
@@ -24,7 +31,7 @@ class WebImageDownloader(
 ) {
     private val client: HttpClient = HttpClient.newBuilder()
         .followRedirects(HttpClient.Redirect.ALWAYS)
-        .connectTimeout(Duration.ofSeconds(6))
+        .connectTimeout(Duration.ofMillis(IMAGE_DOWNLOAD_CONNECT_TIMEOUT_MS))
         .build()
 
     fun downloadToDirectory(
@@ -70,9 +77,13 @@ class WebImageDownloader(
             val request = HttpRequest.newBuilder(uri)
                 .GET()
                 .header("User-Agent", "Mozilla/5.0 (Souz WebTools)")
-                .timeout(Duration.ofSeconds(10))
+                .timeout(Duration.ofMillis(IMAGE_DOWNLOAD_REQUEST_TIMEOUT_MS))
                 .build()
-            val response = client.send(request, HttpResponse.BodyHandlers.ofFile(tempFile.toPath()))
+            val response = sendWithTimeout(
+                request = request,
+                imageUrl = imageUrl,
+                bodyHandler = HttpResponse.BodyHandlers.ofFile(tempFile.toPath()),
+            )
             if (response.statusCode() >= 400) {
                 throw BadInputException("Image download failed: HTTP ${response.statusCode()} for $imageUrl")
             }
@@ -102,7 +113,7 @@ class WebImageDownloader(
     }
 
     private fun resolveImageOutputDir(outputDir: String?): File {
-        val raw = outputDir?.trim().takeUnless { it.isNullOrBlank() } ?: "~/souz/Documents/web_assets"
+        val raw = outputDir?.trim().takeUnless { it.isNullOrBlank() } ?: "~/Documents/souz/web_assets"
         val resolved = File(filesToolUtil.applyDefaultEnvs(raw))
         val dir = if (resolved.isDirectory || raw.endsWith("/") || raw.endsWith("\\")) {
             resolved
@@ -115,6 +126,26 @@ class WebImageDownloader(
     }
 
     private fun toSafeUri(url: String): URI = URI.create(url.replace(" ", "%20"))
+
+    private fun <T> sendWithTimeout(
+        request: HttpRequest,
+        imageUrl: String,
+        bodyHandler: HttpResponse.BodyHandler<T>,
+    ): HttpResponse<T> {
+        return runCatching {
+            client.sendAsync(request, bodyHandler)
+                .orTimeout(IMAGE_DOWNLOAD_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .join()
+        }.getOrElse { error ->
+            val cause = (error as? CompletionException)?.cause ?: error
+            if (cause is HttpTimeoutException || cause is TimeoutException) {
+                throw BadInputException(
+                    "Image download timed out after ${IMAGE_DOWNLOAD_REQUEST_TIMEOUT_MS}ms for $imageUrl",
+                )
+            }
+            throw cause
+        }
+    }
 
     private fun detectDownloadedImageExtension(
         file: File,
