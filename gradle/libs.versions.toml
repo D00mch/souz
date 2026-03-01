@@ -26,6 +26,7 @@ tika = "3.2.3"
 poi = "5.2.5"
 tdlight-java = "3.4.4+td.1.8.52"
 tdlight-natives = "4.0.558"
+jsoup = "1.18.3"
 
 
 [libraries]
@@ -68,6 +69,7 @@ compose-ui-tooling-preview-desktop = { module = "org.jetbrains.compose.ui:ui-too
 poi = { module = "org.apache.poi:poi", version.ref = "poi" }
 poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "poi" }
 tdlight-java = { module = "it.tdlight:tdlight-java", version.ref = "tdlight-java" }
+jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 
 [bundles]
 ktorClient = [

@@ -454,7 +454,7 @@ private fun ToolsScreenPreview() {
                         )
                     ),
                     ToolsCategoryUi(
-                        category = ToolCategory.DATAANALYTICS,
+                        category = ToolCategory.DATA_ANALYTICS,
                         enabled = false,
                         tools = listOf(
                             ToolUi("CreatePlotFromCsv", "Plot data from CSV", true),
