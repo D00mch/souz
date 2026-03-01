@@ -58,6 +58,8 @@ import ru.souz.tool.mail.*
 import ru.souz.tool.notes.*
 import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
+import ru.souz.ui.main.ComposeMainLocalization
+import ru.souz.ui.main.MainLocalization
 import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.ui.main.usecases.AiTunnelSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.FinderPathExtractor
@@ -224,8 +226,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolsFactory(di) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
     bindSingleton { TelegramBotController(instance(), instance()) }
+    bindSingleton<MainLocalization> { ComposeMainLocalization }
     bindSingleton { FinderPathExtractor(instance()) }
-    bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { McpConfigProvider(instance()) }
     bindSingleton { McpClientManager(instance()) }
 

@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
@@ -65,6 +66,18 @@ import kotlin.test.assertTrue
 class MainViewModelTest {
 
     private lateinit var mainDispatcher: TestDispatcher
+
+    private val testLocalization = object : MainLocalization {
+        override suspend fun startTips(): List<String> = emptyList()
+
+        override suspend fun onboardingDisplayText(): String = TEST_ONBOARDING_DISPLAY_TEXT
+
+        override suspend fun onboardingSpeechText(): String = "Test onboarding speech"
+
+        override suspend fun onboardingPermissionRequest(): String = TEST_ONBOARDING_PERMISSION_REQUEST
+
+        override suspend fun onboardingPermissionRestartFailed(): String = "Test restart failed"
+    }
 
     @BeforeTest
     fun setUp() {
@@ -273,7 +286,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            val expectedPermissionMessage = MainLocalization.onboardingPermissionRequest()
+            val expectedPermissionMessage = TEST_ONBOARDING_PERMISSION_REQUEST
 
             val permissionState = awaitState(viewModel) { state ->
                 state.statusMessage == expectedPermissionMessage
@@ -291,7 +304,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            val expectedOnboardingText = MainLocalization.onboardingDisplayText()
+            val expectedOnboardingText = TEST_ONBOARDING_DISPLAY_TEXT
 
             val onboardingState = awaitState(viewModel) { state ->
                 state.chatMessages.any { !it.isUser && it.text == expectedOnboardingText }
@@ -412,11 +425,11 @@ class MainViewModelTest {
         viewModel: MainViewModel,
         predicate: (MainState) -> Boolean,
     ): MainState {
-        val deadlineMs = System.currentTimeMillis() + 5_000
-        while (System.currentTimeMillis() < deadlineMs) {
+        repeat(1_000) {
             runCurrent()
             val state = viewModel.uiState.value
             if (predicate(state)) return state
+            advanceTimeBy(10)
             withContext(Dispatchers.Default) { yield() }
         }
         error("Timed out waiting for expected MainState")
@@ -427,12 +440,12 @@ class MainViewModelTest {
         data: ByteArray,
         predicate: (MainState) -> Boolean,
     ): MainState {
-        val deadlineMs = System.currentTimeMillis() + 5_000
-        while (System.currentTimeMillis() < deadlineMs) {
+        repeat(1_000) {
             emitAudioFlowEvent(viewModel, data)
             runCurrent()
             val state = viewModel.uiState.value
             if (predicate(state)) return state
+            advanceTimeBy(10)
             withContext(Dispatchers.Default) { yield() }
         }
         error("Timed out waiting for voice request to start")
@@ -521,9 +534,11 @@ class MainViewModelTest {
             bindSingleton { telegramBotController }
             bindSingleton { InMemoryAudioRecorder() }
             bindSingleton { FilesToolUtil(instance()) }
+            bindSingleton<MainLocalization> { testLocalization }
             bindSingleton { FinderPathExtractor(instance()) }
             bindSingleton {
                 MainUseCasesFactory(
+                    instance(),
                     instance(),
                     instance(),
                     instance(),
@@ -549,6 +564,11 @@ class MainViewModelTest {
             say = say,
             incomingMessages = incomingMessages
         )
+    }
+
+    companion object {
+        private const val TEST_ONBOARDING_DISPLAY_TEXT = "Test onboarding display"
+        private const val TEST_ONBOARDING_PERMISSION_REQUEST = "Test permission request"
     }
 
     private fun emptyAgentContext() = AgentContext(

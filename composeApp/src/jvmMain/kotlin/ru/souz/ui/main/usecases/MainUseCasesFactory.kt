@@ -6,6 +6,7 @@ import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.tool.ToolPermissionBroker
+import ru.souz.ui.main.MainLocalization
 
 data class MainUseCases(
     val chat: ChatUseCase,
@@ -23,6 +24,7 @@ class MainUseCasesFactory(
     private val say: Say,
     private val toolPermissionBroker: ToolPermissionBroker,
     private val finderPathExtractor: FinderPathExtractor,
+    private val localization: MainLocalization,
     private val nativeHookGateway: NativeHookGateway = JNativeHookGateway,
 ) {
 
@@ -41,6 +43,7 @@ class MainUseCasesFactory(
             settingsProvider = settingsProvider,
             toolPermissionBroker = toolPermissionBroker,
             speechUseCase = speechUseCase,
+            localization = localization,
             nativeHookGateway = nativeHookGateway,
         )
         val voiceInputUseCase = VoiceInputUseCase(

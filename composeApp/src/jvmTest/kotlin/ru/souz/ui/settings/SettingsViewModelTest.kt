@@ -2,10 +2,12 @@
 
 package ru.souz.ui.settings
 
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.mockkObject
+import io.mockk.mockkStatic
 import io.mockk.runs
 import io.mockk.unmockkAll
 import io.mockk.verify
@@ -17,6 +19,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import org.jetbrains.compose.resources.getString
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import ru.souz.agent.GraphBasedAgent
@@ -49,6 +52,8 @@ class SettingsViewModelTest {
     @BeforeTest
     fun setUp() {
         Dispatchers.setMain(dispatcher)
+        mockkStatic("org.jetbrains.compose.resources.StringResourcesKt")
+        coEvery { getString(any()) } returns "mocked-string"
     }
 
     @AfterTest
@@ -127,24 +132,34 @@ class SettingsViewModelTest {
         }
 
         val viewModel = SettingsViewModel(di)
-        advanceUntilIdle()
+        try {
+            advanceUntilIdle()
 
-        val expectedLlmModel = settingsProvider.defaultLlmModel()
-        assertNotNull(expectedLlmModel, "Expected at least one available llm model")
-        val expectedEmbeddingsModel = settingsProvider.defaultEmbeddingsModel()
-        assertNotNull(expectedEmbeddingsModel, "Expected at least one available embeddings model")
-        val expectedVoiceRecognitionModel = settingsProvider.defaultVoiceRecognitionModel()
-        assertNotNull(expectedVoiceRecognitionModel, "Expected at least one available voice recognition model")
+            val expectedLlmModel = settingsProvider.defaultLlmModel()
+            assertNotNull(expectedLlmModel, "Expected at least one available llm model")
+            val expectedEmbeddingsModel = settingsProvider.defaultEmbeddingsModel()
+            assertNotNull(expectedEmbeddingsModel, "Expected at least one available embeddings model")
+            val expectedVoiceRecognitionModel = settingsProvider.defaultVoiceRecognitionModel()
+            assertNotNull(expectedVoiceRecognitionModel, "Expected at least one available voice recognition model")
 
-        val state = viewModel.uiState.value
-        assertEquals(expectedLlmModel, state.gigaModel)
-        assertEquals(expectedEmbeddingsModel, state.embeddingsModel)
-        assertEquals(expectedEmbeddingsModel, embeddingsModelValue)
-        assertEquals(expectedVoiceRecognitionModel, state.voiceRecognitionModel)
-        assertEquals(expectedVoiceRecognitionModel, voiceRecognitionModelValue)
-        assertEquals("prompt-for-${expectedLlmModel.alias}", state.systemPrompt)
+            val state = viewModel.uiState.value
+            assertEquals(expectedLlmModel, state.gigaModel)
+            assertEquals(expectedEmbeddingsModel, state.embeddingsModel)
+            assertEquals(expectedEmbeddingsModel, embeddingsModelValue)
+            assertEquals(expectedVoiceRecognitionModel, state.voiceRecognitionModel)
+            assertEquals(expectedVoiceRecognitionModel, voiceRecognitionModelValue)
+            assertEquals("prompt-for-${expectedLlmModel.alias}", state.systemPrompt)
 
-        verify(exactly = 1) { graphBasedAgent.updateModel(expectedLlmModel) }
-        verify(exactly = 1) { VectorDB.clearAllData() }
+            verify(exactly = 1) { graphBasedAgent.updateModel(expectedLlmModel) }
+            verify(exactly = 1) { VectorDB.clearAllData() }
+        } finally {
+            clearViewModel(viewModel)
+        }
+    }
+
+    private fun clearViewModel(viewModel: SettingsViewModel) {
+        val clear = androidx.lifecycle.ViewModel::class.java.getDeclaredMethod("clear\$lifecycle_viewmodel")
+        clear.isAccessible = true
+        clear.invoke(viewModel)
     }
 }

@@ -9,51 +9,24 @@ import souz.composeapp.generated.resources.onboarding_input_permission_restart_f
 import souz.composeapp.generated.resources.onboarding_speech_text
 import souz.composeapp.generated.resources.start_tips
 
-internal object MainLocalization {
-    private const val FALLBACK_ONBOARDING_DISPLAY_TEXT =
-        "Привет! Меня зовут Souz. Я могу помогать с задачами на вашем компьютере."
-    private const val FALLBACK_ONBOARDING_SPEECH_TEXT =
-        "Привет! Меня зовут Союз. Я могу помогать с задачами на вашем компьютере."
-    private const val FALLBACK_ONBOARDING_PERMISSION_REQUEST =
-        "Пожалуйста, разрешите доступ к Input Monitoring и перезапустите приложение."
-    private const val FALLBACK_ONBOARDING_PERMISSION_RESTART_FAILED =
-        "Доступ к Input Monitoring получен. Пожалуйста, перезапустите приложение вручную."
-
-    suspend fun startTips(): List<String> {
-        if (!canReadComposeResources()) return emptyList()
-        return runCatching { getStringArray(Res.array.start_tips) }.getOrElse { emptyList() }
-    }
-
-    suspend fun onboardingDisplayText(): String = getStringWithFallback(
-        fallback = FALLBACK_ONBOARDING_DISPLAY_TEXT,
-    ) {
-        getString(Res.string.onboarding_display_text)
-    }
-
-    suspend fun onboardingSpeechText(): String = getStringWithFallback(
-        fallback = FALLBACK_ONBOARDING_SPEECH_TEXT,
-    ) {
-        getString(Res.string.onboarding_speech_text)
-    }
-
-    suspend fun onboardingPermissionRequest(): String = getStringWithFallback(
-        fallback = FALLBACK_ONBOARDING_PERMISSION_REQUEST,
-    ) {
-        getString(Res.string.onboarding_input_permission_request)
-    }
-
-    suspend fun onboardingPermissionRestartFailed(): String = getStringWithFallback(
-        fallback = FALLBACK_ONBOARDING_PERMISSION_RESTART_FAILED,
-    ) {
-        getString(Res.string.onboarding_input_permission_restart_failed)
-    }
-
-    private suspend fun getStringWithFallback(fallback: String, loader: suspend () -> String): String {
-        if (!canReadComposeResources()) return fallback
-        return runCatching { loader() }.getOrElse { fallback }
-    }
-
-    private fun canReadComposeResources(): Boolean =
-        runCatching { !java.awt.GraphicsEnvironment.isHeadless() }.getOrDefault(false)
+interface MainLocalization {
+    suspend fun startTips(): List<String>
+    suspend fun onboardingDisplayText(): String
+    suspend fun onboardingSpeechText(): String
+    suspend fun onboardingPermissionRequest(): String
+    suspend fun onboardingPermissionRestartFailed(): String
 }
 
+object ComposeMainLocalization : MainLocalization {
+    override suspend fun startTips(): List<String> = getStringArray(Res.array.start_tips)
+
+    override suspend fun onboardingDisplayText(): String = getString(Res.string.onboarding_display_text)
+
+    override suspend fun onboardingSpeechText(): String = getString(Res.string.onboarding_speech_text)
+
+    override suspend fun onboardingPermissionRequest(): String =
+        getString(Res.string.onboarding_input_permission_request)
+
+    override suspend fun onboardingPermissionRestartFailed(): String =
+        getString(Res.string.onboarding_input_permission_restart_failed)
+}

@@ -50,6 +50,7 @@ class MainViewModel(
     private val desktopInfoRepository: DesktopInfoRepository by di.instance()
     private val settingsProvider: SettingsProvider by di.instance()
     private val mainUseCasesFactory: MainUseCasesFactory by di.instance()
+    private val localization: MainLocalization by di.instance()
 
     private val agentRef = AtomicReference<GraphBasedAgent?>(null)
     private val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
@@ -69,7 +70,7 @@ class MainViewModel(
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectUseCaseOutputs() }
 
         viewModelScope.launch {
-            startTips = MainLocalization.startTips()
+            startTips = localization.startTips()
             val randomTip = startTips.randomOrNull() ?: ""
             val availableModels = settingsProvider.availableLlmModels()
             val selectedModel = pickConfiguredOrDefaultModel(availableModels)

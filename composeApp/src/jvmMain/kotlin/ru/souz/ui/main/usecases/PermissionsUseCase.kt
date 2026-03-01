@@ -22,6 +22,7 @@ class PermissionsUseCase(
     private val settingsProvider: SettingsProvider,
     private val toolPermissionBroker: ToolPermissionBroker,
     private val speechUseCase: SpeechUseCase,
+    private val localization: MainLocalization,
     private val relaunchApp: () -> Boolean = { AppRelauncher.relaunch() },
     private val nativeHookGateway: NativeHookGateway = JNativeHookGateway,
 ) {
@@ -64,7 +65,7 @@ class PermissionsUseCase(
 
         settingsProvider.needsOnboarding = false
         settingsProvider.onboardingCompleted = true
-        val displayText = MainLocalization.onboardingDisplayText()
+        val displayText = localization.onboardingDisplayText()
         emitState {
             copy(
                 isSpeaking = true,
@@ -78,7 +79,7 @@ class PermissionsUseCase(
         }
 
         onboardingSpeechStartedAt = System.currentTimeMillis()
-        speechUseCase.queuePrepared(MainLocalization.onboardingSpeechText())
+        speechUseCase.queuePrepared(localization.onboardingSpeechText())
     }
 
     fun registerNativeHook(): Boolean = runCatching {
@@ -101,7 +102,7 @@ class PermissionsUseCase(
                 }
             }
 
-            val statusMsg = MainLocalization.onboardingPermissionRequest()
+            val statusMsg = localization.onboardingPermissionRequest()
             emitState {
                 copy(
                     statusMessage = statusMsg
@@ -114,7 +115,7 @@ class PermissionsUseCase(
                     l.info("Input monitoring permission granted, relaunching application")
                     if (!relaunchApp()) {
                         l.error("Automatic relaunch failed after input monitoring permission was granted")
-                        val restartFailedMsg = MainLocalization.onboardingPermissionRestartFailed()
+                        val restartFailedMsg = localization.onboardingPermissionRestartFailed()
                         emitState { copy(statusMessage = restartFailedMsg) }
                     }
                     return@launch
