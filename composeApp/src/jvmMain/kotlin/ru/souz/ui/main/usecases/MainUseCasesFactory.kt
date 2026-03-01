@@ -5,6 +5,8 @@ import ru.souz.agent.GraphBasedAgent
 import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
+import ru.souz.giga.TokenLogging
+import ru.souz.telemetry.TelemetryService
 import ru.souz.tool.ToolPermissionBroker
 
 data class MainUseCases(
@@ -23,6 +25,8 @@ class MainUseCasesFactory(
     private val say: Say,
     private val toolPermissionBroker: ToolPermissionBroker,
     private val finderPathExtractor: FinderPathExtractor,
+    private val tokenLogging: TokenLogging,
+    private val telemetryService: TelemetryService,
 ) {
 
     fun create(ioDispatcher: CoroutineDispatcher): MainUseCases {
@@ -34,6 +38,8 @@ class MainUseCasesFactory(
             speechUseCase = speechUseCase,
             finderPathExtractor = finderPathExtractor,
             chatAttachmentsUseCase = attachmentsUseCase,
+            tokenLogging = tokenLogging,
+            telemetryService = telemetryService,
             ioDispatcher = ioDispatcher,
         )
         val permissionsUseCase = OnboardingUseCase(

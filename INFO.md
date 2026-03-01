@@ -22,6 +22,7 @@ Primary stack:
 ### Features
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
+- **Telemetry pipeline with local SQLite outbox**: app usage, chat/conversation usage, tool usage, and token usage are always captured per auto-generated user/device IDs, queued in `~/.local/state/souz/telemetry.db`, and sent batched after installation registration and Ed25519-signed requests.
 - **Edition-aware builds** (`ru`/`en`) with build-profile based provider/model availability and packaging metadata.
 - **Key-aware model selection in Settings**: chat and embeddings model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
@@ -66,6 +67,7 @@ Primary stack:
 │       │   │       │   └── telegram/  # Telegram client (TdLib) + Bot polling controller
 │       │   │       │       ├── TelegramService.kt       # TdLib wrapper: auth, messaging, bot creation via BotFather
 │       │   │       │       └── TelegramBotController.kt  # Long-polling listener for the PC Control bot
+│       │   │       ├── telemetry/      # Local telemetry outbox, batching sender, and event models
 │       │   │       ├── tool/           # Tool framework and concrete tool implementations
 │       │   │       │   ├── application/    # App launch/list tools
 │       │   │       │   ├── browser/        # Browser operations/hotkeys/tab control
@@ -123,3 +125,4 @@ Notes:
 - Voice recognition audio upload now sends raw PCM (`audio/x-pcm;bit=16;rate=16000`) directly to Salute Speech, so the app no longer depends on JAVE/embedded FFmpeg binaries for microphone transcription.
 - OpenAI voice transcription wraps recorded raw PCM (16kHz mono 16-bit) into a WAV container before multipart upload (`capture.wav`, `audio/wav`) because OpenAI transcriptions do not accept the recorder's raw PCM stream directly.
 - `ConfigStore` now encrypts sensitive values (LLM API keys, Telegram bot token, MCP OAuth state, `MCP_SERVERS_JSON`) before writing to Java Preferences using AES-GCM + PBKDF2. `SOUZ_MASTER_KEY` (env var or JVM system property) can be used as an override; otherwise the app auto-generates and stores a local master key file in the user profile (platform-specific app config directory). Legacy plaintext values are read and transparently migrated to encrypted storage.
+- Telemetry is always on and no longer exposed in Settings UI. `TelemetryService` starts from `Main.kt`, persists an auto-generated `userId`, `deviceId`, installation keypair, and server-issued `installationId` in `ConfigStore`, registers installations via `/v1/installations/register`, and sends signed batches to `/v1/metrics/batch`. The runtime endpoint is centralized in `TelemetryRuntimeConfig`, batching stays at 50 events, retries use exponential backoff, and the local SQLite outbox remains `~/.local/state/souz/telemetry.db`.

@@ -10,6 +10,7 @@ import ru.souz.db.SettingsProviderImpl.Companion.QWEN_CHAT_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.SALUTE_SPEECH_KEY
 import ru.souz.giga.gigaJsonMapper
 import ru.souz.mcp.OAUTH_STORE_PREFIX
+import ru.souz.telemetry.TelemetryStorageKeys
 import java.security.SecureRandom
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
@@ -94,6 +95,7 @@ internal object SecretPrefsCodec {
         ANTHROPIC_KEY,
         OPENAI_KEY,
         SALUTE_SPEECH_KEY,
+        TelemetryStorageKeys.PRIVATE_KEY,
     )
 
     fun encodeForStorage(key: String, value: String): String {

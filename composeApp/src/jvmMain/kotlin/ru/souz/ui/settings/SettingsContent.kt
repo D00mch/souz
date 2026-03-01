@@ -1005,6 +1005,8 @@ fun SupportSettingsContent(
                 )
             }
 
+            SettingsGroupDivider()
+
             LogsView(state, onSupportEmailInput, onSendLogs, clipboardManager, onShowSnack)
         }
     }

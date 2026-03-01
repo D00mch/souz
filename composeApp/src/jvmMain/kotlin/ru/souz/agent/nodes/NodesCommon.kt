@@ -9,9 +9,11 @@ import ru.souz.db.SettingsProvider
 import ru.souz.db.StorredData
 import ru.souz.db.StorredType
 import ru.souz.giga.*
+import ru.souz.telemetry.TelemetryService
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.browser.detectDefaultBrowser
 import ru.souz.tool.browser.prettyName
+import ru.souz.tool.ToolCategory
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -25,6 +27,7 @@ import java.util.Locale
 class NodesCommon(
     private val desktopInfoRepository: DesktopInfoRepository,
     private val settingsProvider: SettingsProvider,
+    private val telemetryService: TelemetryService,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
@@ -220,8 +223,34 @@ class NodesCommon(
             GigaMessageRole.function, """{"result":"no such function ${functionCall.name}"}"""
         )
         l.info("Executing tool: ${fn.fn.name}, arguments: ${functionCall.arguments}")
-        return fn.invoke(functionCall)
+        val startedAtMs = System.currentTimeMillis()
+        val toolCategory = resolveToolCategory(settings, functionCall.name)
+        return try {
+            fn.invoke(functionCall).also {
+                telemetryService.recordToolExecution(
+                    functionName = functionCall.name,
+                    functionArguments = functionCall.arguments,
+                    toolCategory = toolCategory,
+                    durationMs = System.currentTimeMillis() - startedAtMs,
+                    success = true,
+                    errorMessage = null,
+                )
+            }
+        } catch (e: Exception) {
+            telemetryService.recordToolExecution(
+                functionName = functionCall.name,
+                functionArguments = functionCall.arguments,
+                toolCategory = toolCategory,
+                durationMs = System.currentTimeMillis() - startedAtMs,
+                success = false,
+                errorMessage = e.message,
+            )
+            throw e
+        }
     }
+
+    private fun resolveToolCategory(settings: AgentSettings, functionName: String): ToolCategory? =
+        settings.toolsByCategory.entries.firstOrNull { (_, tools) -> functionName in tools }?.key
 }
 
 fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaRequest.Chat {

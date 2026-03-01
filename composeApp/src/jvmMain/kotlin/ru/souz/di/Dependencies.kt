@@ -43,6 +43,9 @@ import ru.souz.mcp.McpConfigProvider
 import ru.souz.service.telegram.TelegramService
 import ru.souz.service.telegram.TelegramBotController
 import ru.souz.service.telegram.TelegramPlatformSupport
+import ru.souz.telemetry.TelemetryOutboxRepository
+import ru.souz.telemetry.TelemetryRuntimeConfig
+import ru.souz.telemetry.TelemetryService
 import ru.souz.tool.*
 import ru.souz.tool.application.*
 import ru.souz.tool.browser.*
@@ -72,6 +75,7 @@ import ru.souz.tool.telegram.ToolTelegramSavedMessages
 import ru.souz.tool.telegram.ToolTelegramSearch
 import ru.souz.tool.telegram.ToolTelegramSend
 import ru.souz.tool.telegram.ToolTelegramSetState
+import java.nio.file.Path
 
 private object DiTags {
     const val MODULE_MAIN = "main"
@@ -166,6 +170,14 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { GraphSessionRepository() }
     bindSingleton { GraphSessionService(instance(), instance(DiTags.TAG_LOG)) }
     bindSingleton { DesktopDataExtractor(instance(), instance()) }
+    bindSingleton {
+        TelemetryOutboxRepository(
+            databasePath = Path.of(FilesToolUtil.homeDirectory.absolutePath, ".local", "state", "souz", "telemetry.db"),
+            objectMapper = instance(DiTags.TAG_LOG),
+        )
+    }
+    bindSingleton { TelemetryRuntimeConfig.production() }
+    bindSingleton { TelemetryService(instance(), instance()) }
 
     // API
     bindSingleton { GigaAuth(instance()) }
@@ -193,7 +205,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     // LLM
     bindSingleton { NodesErrorHandling() }
-    bindSingleton { NodesCommon(instance(), instance()) }
+    bindSingleton { NodesCommon(instance(), instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
     bindSingleton { NodesSummarization(instance(), instance()) }
@@ -211,7 +223,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
     bindSingleton { TelegramBotController(instance(), instance()) }
     bindSingleton { FinderPathExtractor(instance()) }
-    bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { McpConfigProvider(instance()) }
     bindSingleton { McpClientManager(instance()) }
 

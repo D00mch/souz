@@ -45,10 +45,12 @@ import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.audio.Say
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
+import ru.souz.giga.TokenLogging
 import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.GigaVoiceAPI
 import ru.souz.service.telegram.TelegramBotController
+import ru.souz.telemetry.TelemetryService
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.ui.main.usecases.FinderPathExtractor
@@ -458,6 +460,8 @@ class MainViewModelTest {
         val cleanCommands = MutableSharedFlow<Unit>()
         every { telegramBotController.incomingMessages } returns incomingMessages
         every { telegramBotController.cleanCommands } returns cleanCommands
+        val tokenLogging = mockk<TokenLogging>(relaxed = true)
+        val telemetryService = mockk<TelemetryService>(relaxed = true)
 
         val di = DI {
             bindSingleton { graphAgent }
@@ -471,8 +475,10 @@ class MainViewModelTest {
             bindSingleton { InMemoryAudioRecorder() }
             bindSingleton { FilesToolUtil(instance()) }
             bindSingleton { FinderPathExtractor(instance()) }
+            bindSingleton<TokenLogging> { tokenLogging }
+            bindSingleton { telemetryService }
             bindSingleton {
-                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance())
+                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance())
             }
         }
 
