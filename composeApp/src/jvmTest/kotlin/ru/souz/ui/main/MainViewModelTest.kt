@@ -31,10 +31,6 @@ import kotlinx.coroutines.yield
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
-import souz.composeapp.generated.resources.Res
-import souz.composeapp.generated.resources.onboarding_display_text
-import souz.composeapp.generated.resources.onboarding_input_permission_request
-import org.jetbrains.compose.resources.getString
 import ru.souz.agent.GraphBasedAgent
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
@@ -277,7 +273,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            val expectedPermissionMessage = getString(Res.string.onboarding_input_permission_request)
+            val expectedPermissionMessage = MainLocalization.onboardingPermissionRequest()
 
             val permissionState = awaitState(viewModel) { state ->
                 state.statusMessage == expectedPermissionMessage
@@ -295,7 +291,7 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
-            val expectedOnboardingText = getString(Res.string.onboarding_display_text)
+            val expectedOnboardingText = MainLocalization.onboardingDisplayText()
 
             val onboardingState = awaitState(viewModel) { state ->
                 state.chatMessages.any { !it.isUser && it.text == expectedOnboardingText }

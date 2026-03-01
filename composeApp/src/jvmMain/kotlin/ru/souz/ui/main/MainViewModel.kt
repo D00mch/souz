@@ -38,7 +38,6 @@ import kotlin.time.Duration.Companion.minutes
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
-import org.jetbrains.compose.resources.getStringArray
 import java.awt.datatransfer.Transferable
 
 class MainViewModel(
@@ -70,7 +69,7 @@ class MainViewModel(
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectUseCaseOutputs() }
 
         viewModelScope.launch {
-            startTips = getStringArray(Res.array.start_tips)
+            startTips = MainLocalization.startTips()
             val randomTip = startTips.randomOrNull() ?: ""
             val availableModels = settingsProvider.availableLlmModels()
             val selectedModel = pickConfiguredOrDefaultModel(availableModels)

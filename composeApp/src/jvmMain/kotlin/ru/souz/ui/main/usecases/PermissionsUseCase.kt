@@ -16,9 +16,7 @@ import ru.souz.ui.main.MainState
 import ru.souz.ui.main.ToolPermissionDialogData
 import kotlin.math.max
 import kotlin.math.min
-import souz.composeapp.generated.resources.Res
-import souz.composeapp.generated.resources.*
-import org.jetbrains.compose.resources.getString
+import ru.souz.ui.main.MainLocalization
 
 class PermissionsUseCase(
     private val settingsProvider: SettingsProvider,
@@ -66,7 +64,7 @@ class PermissionsUseCase(
 
         settingsProvider.needsOnboarding = false
         settingsProvider.onboardingCompleted = true
-        val displayText = getString(Res.string.onboarding_display_text)
+        val displayText = MainLocalization.onboardingDisplayText()
         emitState {
             copy(
                 isSpeaking = true,
@@ -80,7 +78,7 @@ class PermissionsUseCase(
         }
 
         onboardingSpeechStartedAt = System.currentTimeMillis()
-        speechUseCase.queuePrepared(getString(Res.string.onboarding_speech_text))
+        speechUseCase.queuePrepared(MainLocalization.onboardingSpeechText())
     }
 
     fun registerNativeHook(): Boolean = runCatching {
@@ -103,7 +101,7 @@ class PermissionsUseCase(
                 }
             }
 
-            val statusMsg = getString(Res.string.onboarding_input_permission_request)
+            val statusMsg = MainLocalization.onboardingPermissionRequest()
             emitState {
                 copy(
                     statusMessage = statusMsg
@@ -116,7 +114,7 @@ class PermissionsUseCase(
                     l.info("Input monitoring permission granted, relaunching application")
                     if (!relaunchApp()) {
                         l.error("Automatic relaunch failed after input monitoring permission was granted")
-                        val restartFailedMsg = getString(Res.string.onboarding_input_permission_restart_failed)
+                        val restartFailedMsg = MainLocalization.onboardingPermissionRestartFailed()
                         emitState { copy(statusMessage = restartFailedMsg) }
                     }
                     return@launch
