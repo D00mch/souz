@@ -18,6 +18,12 @@ import javax.xml.parsers.DocumentBuilderFactory
 class ToolPresentationCreateCompatibilityTest {
     companion object {
         private const val SPEAKER_NOTES_PPTX_PROPERTY = "souz.presentation.enableSpeakerNotesPptx"
+
+        private fun createOutputDir(): File =
+            File.createTempFile("souz-presentation-test-", "", FilesToolUtil.homeDirectory).apply {
+                delete()
+                mkdirs()
+            }
     }
 
     @Test
@@ -34,7 +40,7 @@ class ToolPresentationCreateCompatibilityTest {
                 webImageDownloader = WebImageDownloader(filesToolUtil),
             )
 
-            val outputDir = File(System.getProperty("user.dir"), "build/tmp/presentation-tool-tests/${System.nanoTime()}").absoluteFile
+            val outputDir = createOutputDir()
             val resultJson = tool.invoke(
                 PresentationCreateInput(
                     title = "Notes Compatibility Test",
@@ -105,7 +111,7 @@ class ToolPresentationCreateCompatibilityTest {
             webImageDownloader = WebImageDownloader(filesToolUtil),
         )
 
-        val outputDir = File(System.getProperty("user.dir"), "build/tmp/presentation-tool-tests/${System.nanoTime()}").absoluteFile
+        val outputDir = createOutputDir()
         val resultJson = tool.invoke(
             PresentationCreateInput(
                 title = "Notes Disabled By Default Test",
@@ -154,7 +160,7 @@ class ToolPresentationCreateCompatibilityTest {
             webImageDownloader = WebImageDownloader(filesToolUtil),
         )
 
-        val outputDir = File(System.getProperty("user.dir"), "build/tmp/presentation-tool-tests/${System.nanoTime()}").absoluteFile
+        val outputDir = createOutputDir()
         val resultJson = tool.invoke(
             PresentationCreateInput(
                 title = "Notes Guard Off Test",

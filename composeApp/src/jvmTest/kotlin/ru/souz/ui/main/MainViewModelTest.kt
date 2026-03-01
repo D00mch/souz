@@ -30,6 +30,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -73,6 +74,8 @@ class MainViewModelTest {
 
     @BeforeTest
     fun setUp() {
+        assumeTrue(isJNativeHookRuntimeAvailable(), "Skipping MainViewModelTest: libXtst is unavailable")
+
         mainDispatcher = StandardTestDispatcher()
         Dispatchers.setMain(mainDispatcher)
 
@@ -489,6 +492,17 @@ class MainViewModelTest {
             say = say,
             incomingMessages = incomingMessages
         )
+    }
+
+    private fun isJNativeHookRuntimeAvailable(): Boolean {
+        val mapped = System.mapLibraryName("Xtst")
+        val candidates = listOf(
+            File("/usr/lib/x86_64-linux-gnu/$mapped"),
+            File("/lib/x86_64-linux-gnu/$mapped"),
+            File("/usr/lib64/$mapped"),
+            File("/usr/lib/$mapped"),
+        )
+        return candidates.any { it.exists() }
     }
 
     private fun emptyAgentContext() = AgentContext(
