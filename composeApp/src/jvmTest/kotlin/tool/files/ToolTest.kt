@@ -5,6 +5,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.tool.BadInputException
@@ -358,6 +359,100 @@ class ToolTest {
 
             assertEquals("OK", result)
             assertEquals("Hello\nWorld\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile applies patch with absolute file headers`() {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/absolute.patch.txt"
+            File(path).writeText("before\n")
+
+            val patch = listOf(
+                "--- $path",
+                "+++ $path",
+                "@@ -1 +1 @@",
+                "-before",
+                "+after",
+                ""
+            ).joinToString("\n")
+
+            val result = ToolModifyFile(filesToolUtil).invoke(
+                ToolModifyFile.Input(path = path, patch = patch, strip = 0)
+            )
+
+            assertEquals("OK", result)
+            assertEquals("after\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile rejects invalid hunk header without ranges`() {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val fileName = "invalid-hunk.txt"
+            val path = "${tempDir.absolutePath}/$fileName"
+            File(path).writeText("x\n")
+
+            val patch = listOf(
+                "--- $fileName",
+                "+++ $fileName",
+                "@@",
+                "-x",
+                "+y",
+                ""
+            ).joinToString("\n")
+
+            val error = assertFailsWith<BadInputException> {
+                ToolModifyFile(filesToolUtil).invoke(
+                    ToolModifyFile.Input(path = path, patch = patch, strip = 0)
+                )
+            }
+
+            assertContains(error.message.orEmpty(), "Invalid hunk header")
+            assertEquals("x\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile validates patch before asking permission`() = runTest {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/prevalidate.txt"
+            File(path).writeText("line\n")
+
+            val settingsProvider = mockk<SettingsProvider>()
+            every { settingsProvider.safeModeEnabled } returns true
+            val permissionBroker = ToolPermissionBroker(settingsProvider)
+            val tool = ToolModifyFile(filesToolUtil, permissionBroker)
+
+            val patch = """
+                *** Begin Patch
+                *** Update File: $path
+                @@
+                -line
+                +LINE
+                *** End Patch
+            """.trimIndent()
+
+            val error = assertFailsWith<BadInputException> {
+                tool.suspendInvoke(ToolModifyFile.Input(path = path, patch = patch, strip = 0))
+            }
+
+            assertContains(error.message.orEmpty(), "unified diff")
+            val pendingRequest = withTimeoutOrNull(150) { permissionBroker.requests.first() }
+            assertEquals(null, pendingRequest)
+            assertEquals("line\n", File(path).readText())
         } finally {
             tempDir.deleteRecursively()
         }

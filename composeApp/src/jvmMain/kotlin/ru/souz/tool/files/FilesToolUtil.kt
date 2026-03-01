@@ -48,7 +48,7 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) {
     /**
      * Validates that a unified diff patch (`---` / `+++` headers) touches exactly one file and that,
      * after applying the same `strip` logic as `patch -pN`, the resulting target path matches
-     * [expectedFileName].
+     * [expectedFilePath].
      *
      * This is a guardrail for tools that apply patches inside a directory and want to ensure the patch
      * cannot unexpectedly target another file. It supports common diff header formats including:
@@ -64,16 +64,35 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) {
      * - no file headers are found
      * - more than one file is targeted
      * - the patch path is incompatible with [strip]
-     * - the normalized target does not match [expectedFileName]
+     * - the normalized target does not match [expectedFilePath]
      */
     fun validateUnifiedDiffTargetsSingleFile(
         patch: String,
-        expectedFileName: String,
+        expectedFilePath: String,
         strip: Int,
     ) {
+        val expectedFile = File(expectedFilePath).canonicalFile
         val touched = mutableSetOf<String>()
 
+        if (patch.lines().any { line ->
+                line.startsWith("*** Begin Patch") ||
+                        line.startsWith("*** Update File:") ||
+                        line.startsWith("*** End Patch")
+            }
+        ) {
+            throw BadInputException(
+                "Patch must be a unified diff with ---/+++ headers. " +
+                        "Do not use the *** Begin Patch / *** End Patch wrapper."
+            )
+        }
+
         patch.lineSequence().forEach { line ->
+            if (line.startsWith("@@") && !UNIFIED_DIFF_HUNK_HEADER.matches(line)) {
+                throw BadInputException(
+                    "Invalid hunk header '$line'. Expected format like '@@ -1,3 +1,4 @@'."
+                )
+            }
+
             val rawPath = extractUnifiedDiffHeaderPath(line) ?: return@forEach
 
             if (rawPath == "/dev/null") return@forEach
@@ -86,8 +105,12 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) {
 
         if (touched.isEmpty()) throw BadInputException("Patch has no file headers (---/+++).")
         if (touched.size != 1) throw BadInputException("Patch must target exactly one file; got: $touched")
-        if (touched.first() != expectedFileName) {
-            throw BadInputException("Patch targets '${touched.first()}', but tool path is '$expectedFileName'")
+        val target = touched.first()
+        val absoluteTargetMatch = isAbsolutePath(target) &&
+                runCatching { File(target).canonicalFile == expectedFile }.getOrDefault(false)
+        val relativeTargetMatch = target == expectedFile.name
+        if (!absoluteTargetMatch && !relativeTargetMatch) {
+            throw BadInputException("Patch targets '$target', but tool path is '${expectedFile.path}'")
         }
     }
 
@@ -167,7 +190,16 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) {
         return parts.drop(strip).joinToString("/")
     }
 
+    private fun isAbsolutePath(path: String): Boolean {
+        if (path.startsWith("/")) return true
+        return WINDOWS_ABSOLUTE_PATH.matches(path)
+    }
+
     companion object {
+        private val UNIFIED_DIFF_HUNK_HEADER =
+            Regex("^@@ -\\d+(?:,\\d+)? \\+\\d+(?:,\\d+)? @@(?: .*)?$")
+        private val WINDOWS_ABSOLUTE_PATH = Regex("^[A-Za-z]:[\\\\/].*")
+
         val homeStr: String get() = System.getenv("HOME") ?: System.getProperty("user.home")
         val homeDirectory: File get() = File(homeStr).canonicalFile
 

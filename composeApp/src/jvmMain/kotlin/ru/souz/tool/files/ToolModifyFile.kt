@@ -57,6 +57,7 @@ class ToolModifyFile(
 
     override suspend fun suspendInvoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
+        validateInput(input, fixedPath)
         val result = permissionBroker?.requestPermission(
             getString(Res.string.permission_modify_file),
             linkedMapOf(
@@ -71,19 +72,7 @@ class ToolModifyFile(
 
     override fun invoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
-        val file = File(fixedPath)
-
-        if (!filesToolUtil.isPathSafe(file)) throw ForbiddenFolder(fixedPath)
-        if (input.path.isBlank() || input.patch.isBlank()) throw BadInputException("Invalid input parameters")
-        if (!file.exists()) throw BadInputException("File does not exist")
-        if (input.strip !in 0..10) throw BadInputException("Invalid strip value")
-
-        // Guardrail: patch must only target the given file (by filename)
-        filesToolUtil.validateUnifiedDiffTargetsSingleFile(
-            patch = input.patch,
-            expectedFileName = file.name,
-            strip = input.strip
-        )
+        val file = validateInput(input, fixedPath)
 
         val workDir = file.parentFile ?: throw BadInputException("File has no parent directory")
         // Dry run first
@@ -145,4 +134,20 @@ class ToolModifyFile(
         return CmdResult(code, out.trim())
     }
 
+    private fun validateInput(input: Input, fixedPath: String): File {
+        val file = File(fixedPath)
+
+        if (input.path.isBlank() || input.patch.isBlank()) throw BadInputException("Invalid input parameters")
+        if (!filesToolUtil.isPathSafe(file)) throw ForbiddenFolder(fixedPath)
+        if (!file.exists()) throw BadInputException("File does not exist")
+        if (input.strip !in 0..10) throw BadInputException("Invalid strip value")
+
+        // Guardrail: patch must only target the given file.
+        filesToolUtil.validateUnifiedDiffTargetsSingleFile(
+            patch = input.patch,
+            expectedFilePath = fixedPath,
+            strip = input.strip
+        )
+        return file
+    }
 }
