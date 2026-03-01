@@ -176,6 +176,8 @@ data class PresentationCreateInput(
     val themeBodyFont: String? = null,
     @InputParamDescription("Render mode. HTML_FIRST (default) uses a storyboard-first renderer for cleaner layouts. CLASSIC keeps legacy placeholder rendering.")
     val renderMode: String? = null,
+    @InputParamDescription("Request embedding speaker notes into the PPTX notes pane. Ignored unless JVM property 'souz.presentation.enableSpeakerNotesPptx=true' is enabled.")
+    val includeSpeakerNotes: Boolean = false,
     @InputParamDescription("Save generated HTML storyboard next to pptx. Recommended for easy manual tweaking/reuse.")
     val saveHtmlPreview: Boolean = true
 )
@@ -184,6 +186,10 @@ class ToolPresentationCreate(
     private val filesToolUtil: FilesToolUtil,
     private val webImageDownloader: WebImageDownloader,
 ) : ToolSetupWithAttachments<PresentationCreateInput> {
+    companion object {
+        private const val SPEAKER_NOTES_PPTX_PROPERTY = "souz.presentation.enableSpeakerNotesPptx"
+    }
+
     private val playfulKeywords = setOf(
         "шут", "шуточ", "юмор", "смеш", "мем", "прикол", "пук", "перд", "funny", "joke", "humor", "playful", "lighthearted", "lol", "fart"
     )
@@ -191,7 +197,8 @@ class ToolPresentationCreate(
         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
     override val name: String = "PresentationCreate"
     override val description: String = "Create a PowerPoint presentation (.pptx) from text content. " +
-            "Supports creating slides with bullet points, speaker notes, and images. " +
+            "Supports creating slides with bullet points and images. " +
+            "Speaker notes in PPTX are guarded for compatibility and require JVM property '$SPEAKER_NOTES_PPTX_PROPERTY=true'. " +
             "Can use a custom template (.pptx) and specific slide layouts (e.g. TITLE, PIC_TX, TWO_COL_TX). " +
             "Default rendering mode is HTML_FIRST for cleaner visual balance and fewer broken placeholder layouts. " +
             "Chart blocks currently render a clear placeholder with source data summary (not a native PPT chart). " +
@@ -283,6 +290,13 @@ class ToolPresentationCreate(
     override fun invoke(input: PresentationCreateInput): String {
         val renderMode = resolveRenderMode(input.renderMode)
         val customTheme = buildCustomTheme(input)
+        val includeSpeakerNotesInPptx = input.includeSpeakerNotes && isSpeakerNotesPptxEnabled()
+        if (input.includeSpeakerNotes && !includeSpeakerNotesInPptx) {
+            println(
+                "Warning: includeSpeakerNotes=true requested, but PPTX notes are disabled by compatibility guard. " +
+                    "Set -D$SPEAKER_NOTES_PPTX_PROPERTY=true to re-enable experimental notes export."
+            )
+        }
         val slides = resolveSlides(input).map { slide ->
             slide.copy(points = polishPoints(slide.points))
         }
@@ -335,6 +349,7 @@ class ToolPresentationCreate(
                         resolvedTheme = resolvedThemeObj,
                         customTheme = customTheme,
                         defaultDesignId = inferredDeckDesignId,
+                        includeSpeakerNotes = includeSpeakerNotesInPptx,
                         slideIndex = index + 1,
                         totalSlides = slides.size,
                     )
@@ -380,7 +395,9 @@ class ToolPresentationCreate(
                 PresentationDesignSystem.applyDesign(slide, effectiveDesignId, resolvedThemeObj)
             }
 
-            addSpeakerNotes(ppt, slide, slideData.notes)
+            if (includeSpeakerNotesInPptx) {
+                addSpeakerNotes(ppt, slide, slideData.notes)
+            }
 
             if (slideData.backgroundShapes != null) {
                 slideData.backgroundShapes.forEach { shape ->
@@ -788,6 +805,7 @@ class ToolPresentationCreate(
         resolvedTheme: PresentationTheme?,
         customTheme: CustomThemeParam?,
         defaultDesignId: String?,
+        includeSpeakerNotes: Boolean,
         slideIndex: Int,
         totalSlides: Int,
     ) {
@@ -808,7 +826,9 @@ class ToolPresentationCreate(
         val playfulTone = isPlayfulSlide(slideData)
         val variant = resolveHtmlFirstVariant(resolvedTheme, effectiveDesign, requestedBackgroundColor, playfulTone)
 
-        addSpeakerNotes(ppt, slide, slideData.notes)
+        if (includeSpeakerNotes) {
+            addSpeakerNotes(ppt, slide, slideData.notes)
+        }
 
         slideData.backgroundShapes?.forEach { createShape(slide, it, resolvedTheme, customTheme) }
 
@@ -2018,6 +2038,9 @@ class ToolPresentationCreate(
 
     private fun containsCyrillic(text: String): Boolean = text.any { it in '\u0400'..'\u04FF' }
 
+    private fun isSpeakerNotesPptxEnabled(): Boolean =
+        System.getProperty(SPEAKER_NOTES_PPTX_PROPERTY)?.equals("true", ignoreCase = true) == true
+
     private fun isDarkColor(color: java.awt.Color): Boolean = relativeLuminance(color) < 0.42
 
     private fun ensureReadableColor(
@@ -2049,9 +2072,12 @@ class ToolPresentationCreate(
         notes: String?,
     ) {
         if (notes.isNullOrBlank()) return
-        val notesSlide = getOrCreateNotesSlide(ppt, slide)
-        val notesPlaceholder = notesSlide?.let { resolveNotesTextPlaceholder(it) }
-        notesPlaceholder?.text = notes
+        val notesSlide = getOrCreateNotesSlide(ppt, slide) ?: return
+        sanitizeNotesSystemPlaceholders(notesSlide)
+        val notesPlaceholder = resolveNotesTextPlaceholder(notesSlide) ?: return
+        notesPlaceholder.clearText()
+        val paragraph = notesPlaceholder.addNewTextParagraph()
+        paragraph.addNewTextRun().setText(notes.trim())
     }
 
     private fun getOrCreateNotesSlide(
@@ -2082,6 +2108,24 @@ class ToolPresentationCreate(
         if (bodyPlaceholder != null) return bodyPlaceholder
         return (notesSlide.getPlaceholder(1) as? org.apache.poi.xslf.usermodel.XSLFTextShape)
             ?: (notesSlide.getPlaceholder(0) as? org.apache.poi.xslf.usermodel.XSLFTextShape)
+    }
+
+    private fun sanitizeNotesSystemPlaceholders(
+        notesSlide: org.apache.poi.xslf.usermodel.XSLFNotes,
+    ) {
+        notesSlide.shapes
+            .filterIsInstance<org.apache.poi.xslf.usermodel.XSLFTextShape>()
+            .forEach { shape ->
+                val placeholder = runCatching { shape.placeholderDetails.placeholder }.getOrNull()
+                if (placeholder == org.apache.poi.sl.usermodel.Placeholder.HEADER ||
+                    placeholder == org.apache.poi.sl.usermodel.Placeholder.DATETIME ||
+                    placeholder == org.apache.poi.sl.usermodel.Placeholder.FOOTER ||
+                    placeholder == org.apache.poi.sl.usermodel.Placeholder.SLIDE_NUMBER
+                ) {
+                    shape.clearText()
+                    shape.addNewTextParagraph()
+                }
+            }
     }
 
     private fun addImageToSlide(
@@ -2296,6 +2340,9 @@ class ToolPresentationCreate(
             val imageHtml = slide.imagePath?.takeIf { it.isNotBlank() }?.let { source ->
                 "<div class=\"image-card\"><img src=\"${escapeHtml(source)}\" alt=\"slide-image\"/></div>"
             }.orEmpty()
+            val notesHtml = slide.notes?.takeIf { it.isNotBlank() }?.let { notes ->
+                "<div class=\"speaker-notes\"><strong>Speaker notes:</strong> ${escapeHtml(notes)}</div>"
+            }.orEmpty()
             val storyboardVariant = resolveHtmlFirstVariant(
                 theme = theme,
                 designId = slide.designId,
@@ -2311,6 +2358,7 @@ class ToolPresentationCreate(
               ${slide.subtitle?.takeIf { it.isNotBlank() }?.let { "<h2>${escapeHtml(it)}</h2>" } ?: ""}
               $pointsHtml
               $imageHtml
+              $notesHtml
             </section>
             """.trimIndent()
         }.joinToString("\n")
@@ -2384,6 +2432,16 @@ class ToolPresentationCreate(
               border: 1px solid rgba(15, 23, 42, 0.10);
               border-radius: 18px;
               padding: 18px;
+            }
+            .speaker-notes {
+              margin-top: 14px;
+              max-width: 72%;
+              padding: 12px 14px;
+              border-radius: 10px;
+              border: 1px dashed color-mix(in srgb, var(--accent), #ffffff 58%);
+              background: color-mix(in srgb, var(--accent), #ffffff 90%);
+              font-size: 14px;
+              line-height: 1.4;
             }
             img { width: 100%; height: 100%; object-fit: contain; border-radius: 10px; }
           </style>
