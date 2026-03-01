@@ -13,6 +13,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -44,6 +49,27 @@ fun App(
     val snackbarScope = rememberCoroutineScope()
     val isOnline = remember { mutableStateOf(true) }
 
+    fun goBackFromCurrentScreen(): Boolean {
+        return when (val screen = currentScreen) {
+            Setup, Main -> false
+            Settings -> {
+                currentScreen = Main
+                true
+            }
+            is Tools -> {
+                currentScreen = Settings
+                true
+            }
+            is ToolDetails -> {
+                if (toolsScreen == null) {
+                    toolsScreen = Tools()
+                }
+                currentScreen = toolsScreen ?: Tools()
+                true
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
             val online = withContext(Dispatchers.IO) { isInternetAvailable() }
@@ -60,7 +86,17 @@ fun App(
             color = Color.Transparent
         ) {
             SharedTransitionLayout {
-                Box(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                                goBackFromCurrentScreen()
+                            } else {
+                                false
+                            }
+                        }
+                ) {
                     AnimatedContent(
                         targetState = currentScreen,
                         transitionSpec = {
