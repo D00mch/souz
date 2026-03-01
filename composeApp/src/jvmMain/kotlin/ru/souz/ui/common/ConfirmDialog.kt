@@ -33,6 +33,7 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -97,6 +98,9 @@ fun ConfirmDialog(
     title: String,
     message: String? = null,
     details:String? = null,
+    detailsContent: (@Composable ColumnScope.() -> Unit)? = null,
+    dialogMaxWidth: Dp = 320.dp,
+    dialogMaxHeightFraction: Float = 0.9f,
     confirmText: String = stringResource(Res.string.dialog_confirm),
     cancelText: String = stringResource(Res.string.dialog_cancel),
     onConfirm: () -> Unit,
@@ -126,6 +130,8 @@ fun ConfirmDialog(
             .zIndex(100f), // Ensure it's on top
         contentAlignment = Alignment.Center
     ) {
+        val effectiveMaxHeightFraction = dialogMaxHeightFraction.coerceIn(0.5f, 1f)
+
         // Overlay
         Box(
             modifier = Modifier
@@ -144,9 +150,9 @@ fun ConfirmDialog(
         Box(
             modifier = Modifier
                 .padding(horizontal = 24.dp, vertical = 24.dp)
-                .widthIn(max = 320.dp)
+                .widthIn(max = dialogMaxWidth)
                 .fillMaxWidth()
-                .heightIn(max = maxHeight * 0.9f)
+                .heightIn(max = maxHeight * effectiveMaxHeightFraction)
                 .scale(dialogScale)
                 .alpha(dialogOpacity)
                 .clip(RoundedCornerShape(12.dp))
@@ -215,7 +221,7 @@ fun ConfirmDialog(
                 }
 
                 // Details
-                if (!details.isNullOrEmpty()) {
+                if (!details.isNullOrEmpty() || detailsContent != null) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -225,13 +231,20 @@ fun ConfirmDialog(
                             .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(8.dp))
                             .padding(10.dp)
                     ) {
-                         Text(
-                            text = details,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = Color(0x80FFFFFF),
-                            lineHeight = 18.sp, // 1.5 line height (12 * 1.5 = 18)
-                        )
+                        if (detailsContent != null) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                content = detailsContent
+                            )
+                        } else {
+                            Text(
+                                text = details.orEmpty(),
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0x80FFFFFF),
+                                lineHeight = 18.sp, // 1.5 line height (12 * 1.5 = 18)
+                            )
+                        }
                     }
                 }
 

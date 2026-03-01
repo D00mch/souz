@@ -11,7 +11,8 @@ class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewF
         val text: String
     )
     override val name = "NewFile"
-    override val description = "Creates a new TEXT file at the given path with the provided content. If the path ends with a slash, creates a folder instead. forbidden: .xlsx, .xls, .png, .jpg, .pdf."
+    override val description = "Creates a new TEXT file at the given path with the provided content." +
+            " If the path ends with a slash, creates a folder instead. forbidden: .xlsx, .xls, .png, .jpg, .pdf."
     override val fewShotExamples = listOf(
         FewShotExample(
             request = "Create notes.txt with greeting",
@@ -37,7 +38,7 @@ class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewF
         }
         if (file.exists()) {
             val typeLabel = if (isDirectoryRequest) "Folder" else "File"
-            throw BadInputException("$typeLabel already exists: ${input.path}")
+            throw BadInputException("$typeLabel already exists: ${input.path}. Use EditFile to modify existing files.")
         }
         if (isDirectoryRequest) {
             if (!file.mkdirs()) {

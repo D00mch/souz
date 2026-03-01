@@ -87,6 +87,12 @@ private val FinderPathChipBorder = Color(0x8812E0B5)
 private val FinderPathChipTextColor = Color(0xFF12E0B5)
 private val MessageAttachmentPreviewSize = 64.dp
 private val MessageAttachmentNameColor = Color(0x99FFFFFF)
+private val ToolPermissionDialogMaxWidth = 920.dp
+private const val ToolPermissionDialogMaxHeightFraction = 1f
+private val ToolModifyPatchPreviewMinHeight = 220.dp
+private val ToolModifyPatchPreviewMaxHeight = 620.dp
+private const val ToolModifyPatchParam = "patch"
+private const val ToolModifyPatchPreviewMaxLines = 350
 
 
 @Composable
@@ -181,6 +187,7 @@ fun MainScreenContent(
     val stringPermissionTitle = stringResource(Res.string.dialog_permission_title)
     val stringPermissionAllow = stringResource(Res.string.dialog_permission_allow)
     val stringPermissionDeny = stringResource(Res.string.dialog_permission_deny)
+    val stringPermissionModifyFile = stringResource(Res.string.permission_modify_file)
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -355,8 +362,11 @@ fun MainScreenContent(
             }
 
             state.toolPermissionDialog?.let { dialog ->
-                val paramsString = if (dialog.params.isNotEmpty()) {
-                    dialog.params.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+                val patchText = dialog.params[ToolModifyPatchParam]?.takeIf { it.isNotBlank() }
+                val isToolModifyPermission = dialog.description == stringPermissionModifyFile && patchText != null
+                val visibleParams = dialog.params.filterKeys { it != ToolModifyPatchParam }
+                val paramsString = if (visibleParams.isNotEmpty()) {
+                    visibleParams.entries.joinToString("\n") { "${it.key}: ${it.value}" }
                 } else null
 
                 ConfirmDialog(
@@ -364,6 +374,25 @@ fun MainScreenContent(
                     title = stringPermissionTitle,
                     message = dialog.description,
                     details = paramsString,
+                    dialogMaxWidth = ToolPermissionDialogMaxWidth,
+                    dialogMaxHeightFraction = ToolPermissionDialogMaxHeightFraction,
+                    detailsContent = if (isToolModifyPermission) {
+                        {
+                            if (!paramsString.isNullOrBlank()) {
+                                Text(
+                                    text = paramsString,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0x80FFFFFF),
+                                    lineHeight = 18.sp,
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                            ToolModifyPatchPreview(patch = patchText.orEmpty())
+                        }
+                    } else {
+                        null
+                    },
                     confirmText = stringPermissionAllow,
                     cancelText = stringPermissionDeny,
                     onConfirm = onApproveToolPermission,
@@ -382,6 +411,86 @@ private fun chatMarkdownColors(textColor: Color) = DefaultMarkdownColors(
     inlineCodeBackground = Color(0x1AFFFFFF),
     dividerColor = textColor.copy(alpha = 0.2f),
     linkText = Color(0xFF82B1FF)
+)
+
+@Composable
+private fun ToolModifyPatchPreview(patch: String) {
+    val (lines, isTruncated) = remember(patch) {
+        buildPatchPreviewLines(patch, ToolModifyPatchPreviewMaxLines)
+    }
+    val verticalScroll = rememberScrollState()
+    val horizontalScroll = rememberScrollState()
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(
+                min = ToolModifyPatchPreviewMinHeight,
+                max = ToolModifyPatchPreviewMaxHeight
+            )
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0x33000000))
+            .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(6.dp))
+            .padding(8.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(verticalScroll)
+                .horizontalScroll(horizontalScroll),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            lines.forEach { line ->
+                Text(
+                    text = line.text,
+                    color = line.color,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                )
+            }
+            if (isTruncated) {
+                Text(
+                    text = "... (preview truncated)",
+                    color = Color(0x99FFFFFF),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+    }
+}
+
+private fun buildPatchPreviewLines(
+    patch: String,
+    maxLines: Int,
+): Pair<List<PatchPreviewLine>, Boolean> {
+    if (patch.isBlank()) {
+        return listOf(PatchPreviewLine("(empty patch)", Color(0x99FFFFFF))) to false
+    }
+
+    val allLines = patch.lines()
+    val preview = allLines
+        .take(maxLines)
+        .map { line ->
+            val color = when {
+                line.startsWith("+++") || line.startsWith("---") -> Color(0xFF90CAF9)
+                line.startsWith("@@") -> Color(0xFFFFCC80)
+                line.startsWith("+") -> Color(0xFFB9F6CA)
+                line.startsWith("-") -> Color(0xFFFF8A80)
+                line.startsWith("diff ") || line.startsWith("index ") -> Color(0xFFB0BEC5)
+                else -> Color(0xCCFFFFFF)
+            }
+            PatchPreviewLine(text = line, color = color)
+        }
+
+    return preview to (allLines.size > maxLines)
+}
+
+private data class PatchPreviewLine(
+    val text: String,
+    val color: Color,
 )
 
 @Composable
