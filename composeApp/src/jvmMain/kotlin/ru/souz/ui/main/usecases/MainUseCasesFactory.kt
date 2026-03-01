@@ -11,7 +11,7 @@ data class MainUseCases(
     val chat: ChatUseCase,
     val voiceInput: VoiceInputUseCase,
     val speech: SpeechUseCase,
-    val permissions: OnboardingUseCase,
+    val permissions: PermissionsUseCase,
     val attachments: ChatAttachmentsUseCase,
 )
 
@@ -36,7 +36,7 @@ class MainUseCasesFactory(
             chatAttachmentsUseCase = attachmentsUseCase,
             ioDispatcher = ioDispatcher,
         )
-        val permissionsUseCase = OnboardingUseCase(
+        val permissionsUseCase = PermissionsUseCase(
             settingsProvider = settingsProvider,
             toolPermissionBroker = toolPermissionBroker,
             speechUseCase = speechUseCase,

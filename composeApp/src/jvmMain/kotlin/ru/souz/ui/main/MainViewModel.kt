@@ -28,7 +28,7 @@ import ru.souz.ui.main.usecases.ChatUseCase
 import ru.souz.ui.main.usecases.MainUseCaseOutput
 import ru.souz.ui.main.usecases.MainUseCases
 import ru.souz.ui.main.usecases.MainUseCasesFactory
-import ru.souz.ui.main.usecases.OnboardingUseCase
+import ru.souz.ui.main.usecases.PermissionsUseCase
 import ru.souz.ui.main.usecases.SpeechUseCase
 import ru.souz.ui.main.usecases.VoiceInputUseCase
 import ru.souz.ui.settings.availableLlmModels
@@ -59,7 +59,7 @@ class MainViewModel(
     private val chatUseCase: ChatUseCase = useCases.chat
     private val voiceInputUseCase: VoiceInputUseCase = useCases.voiceInput
     private val speechUseCase: SpeechUseCase = useCases.speech
-    private val permissionsUseCase: OnboardingUseCase = useCases.permissions
+    private val permissionsUseCase: PermissionsUseCase = useCases.permissions
     private val attachmentsUseCase = useCases.attachments
     private var startTips: List<String> = emptyList()
 
