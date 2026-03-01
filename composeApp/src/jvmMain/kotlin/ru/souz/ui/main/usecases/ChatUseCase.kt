@@ -1,6 +1,5 @@
 package ru.souz.ui.main.usecases
 
-import androidx.compose.ui.text.input.TextFieldValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -82,7 +81,6 @@ class ChatUseCase(
             copy(
                 chatMessages = chatMessages + userMessage,
                 chatStartTip = "",
-                chatInputText = TextFieldValue(""),
                 isProcessing = true,
                 statusMessage = "",
             )

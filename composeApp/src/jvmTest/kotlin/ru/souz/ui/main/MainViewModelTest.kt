@@ -2,7 +2,6 @@
 
 package ru.souz.ui.main
 
-import androidx.compose.ui.text.input.TextFieldValue
 import com.github.kwhat.jnativehook.GlobalScreen
 import io.mockk.coEvery
 import io.mockk.every
@@ -115,19 +114,17 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("first request")))
-            viewModel.handleEvent(MainEvent.SendChatMessage)
+            viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
 
             val firstInProgress = awaitState(viewModel) { it.isProcessing }
             assertTrue(firstInProgress.chatMessages.any { it.isUser && it.text == "first request" })
 
-            viewModel.handleEvent(MainEvent.StopAgentJob)
+            viewModel.handleEvent(MainEvent.UserPressStop)
 
             val afterStop = awaitState(viewModel) { !it.isProcessing }
             assertFalse(afterStop.chatMessages.any { it.text == "first request" })
 
-            viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("second request")))
-            viewModel.handleEvent(MainEvent.SendChatMessage)
+            viewModel.handleEvent(MainEvent.SendChatMessage("second request"))
 
             awaitState(viewModel) { state ->
                 state.isProcessing && state.chatMessages.any { it.isUser && it.text == "second request" }
@@ -168,8 +165,7 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("first request")))
-            viewModel.handleEvent(MainEvent.SendChatMessage)
+            viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
 
             awaitState(viewModel) { state ->
                 state.isProcessing && state.chatMessages.any { it.isUser && it.text == "first request" }
@@ -349,11 +345,10 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            viewModel.handleEvent(MainEvent.UpdateChatInput(TextFieldValue("Please inspect")))
             viewModel.handleEvent(MainEvent.AttachDroppedFiles(listOf(tempFile.absolutePath)))
             awaitState(viewModel) { state -> state.attachedFiles.size == 1 }
 
-            viewModel.handleEvent(MainEvent.SendChatMessage)
+            viewModel.handleEvent(MainEvent.SendChatMessage("Please inspect"))
 
             val finalState = awaitState(viewModel) { state ->
                 !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "assistant reply" }

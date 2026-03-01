@@ -130,14 +130,13 @@ fun MainScreen(
         onShowLastText = { viewModel.send(MainEvent.ShowLastText) },
         onToggleThinkingPanel = { viewModel.send(MainEvent.ToggleThinkingPanel) },
         onShowSnack = onShowSnack,
-        onUpdateChatInput = { viewModel.send(MainEvent.UpdateChatInput(it)) },
         onChatModelChange = { viewModel.send(MainEvent.UpdateChatModel(it)) },
         onChatContextSizeChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
         onPickChatAttachments = { viewModel.send(MainEvent.PickChatAttachments) },
         onAttachDroppedTransferable = { viewModel.onAttachDroppedTransferable(it) },
         onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
-        onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage) },
-        onClearContext = { viewModel.send(MainEvent.StopAgentJob) },
+        onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage(it)) },
+        onClearContext = { viewModel.send(MainEvent.UserPressStop) },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
         onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
@@ -160,13 +159,12 @@ fun MainScreenContent(
     onShowLastText: () -> Unit = {},
     onToggleThinkingPanel: () -> Unit = {},
     onShowSnack: (String) -> Unit = {},
-    onUpdateChatInput: (TextFieldValue) -> Unit = {},
     onChatModelChange: (String) -> Unit = {},
     onChatContextSizeChange: (Int) -> Unit = {},
     onPickChatAttachments: () -> Unit = {},
     onAttachDroppedTransferable: (Transferable) -> Unit = {},
     onRemoveChatAttachment: (String) -> Unit = {},
-    onSendChatMessage: () -> Unit = {},
+    onSendChatMessage: (String) -> Unit = {},
     onClearContext: () -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
@@ -302,7 +300,7 @@ fun MainScreenContent(
                 ChatModeContent(
                     messages = state.chatMessages,
                     chatPlaceholder = state.chatStartTip,
-                    inputText = state.chatInputText,
+                    chatSessionId = state.chatSessionId,
                     selectedModel = state.selectedModel,
                     availableModelAliases = state.availableModelAliases,
                     selectedContextSize = state.selectedContextSize,
@@ -311,7 +309,6 @@ fun MainScreenContent(
                     isListening = state.isListening,
                     isOnline = isOnline,
                     isSpeaking = state.isSpeaking,
-                    onInputChange = onUpdateChatInput,
                     onModelChange = onChatModelChange,
                     onContextChange = onChatContextSizeChange,
                     onPickAttachments = onPickChatAttachments,
@@ -436,7 +433,7 @@ private enum class HeadingScale { LARGE, SMALL }
 fun ChatModeContent(
     messages: List<ChatMessage>,
     chatPlaceholder: String,
-    inputText: TextFieldValue,
+    chatSessionId: Long,
     selectedModel: String,
     availableModelAliases: List<String>,
     selectedContextSize: Int,
@@ -445,13 +442,12 @@ fun ChatModeContent(
     isListening: Boolean,
     isOnline: Boolean,
     isSpeaking: Boolean,
-    onInputChange: (TextFieldValue) -> Unit,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
     onPickAttachments: () -> Unit,
     onDropTransferable: (Transferable) -> Unit,
     onRemoveAttachment: (String) -> Unit,
-    onSendMessage: () -> Unit,
+    onSendMessage: (String) -> Unit,
     onCancelProcessing: () -> Unit = {},
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
@@ -465,6 +461,7 @@ fun ChatModeContent(
     val textColor = MaterialTheme.glassColors.textPrimary
     val speakingAssistantMessageId = remember(messages) { messages.lastOrNull { !it.isUser }?.id }
     val stringProcessing = stringResource(Res.string.status_processing)
+    var inputText by remember(chatSessionId) { mutableStateOf(TextFieldValue("")) }
     var isFileDragActive by remember { mutableStateOf(false) }
 
     val windowInfo = LocalWindowInfo.current
@@ -483,7 +480,6 @@ fun ChatModeContent(
     }
 
 
-    
     ChatFileDropTarget(
         enabled = true,
         onDropTransferable = onDropTransferable,
@@ -566,8 +562,12 @@ fun ChatModeContent(
 
         ChatInputWithQuickSettings(
             value = inputText,
-            onValueChange = onInputChange,
-            onSend = onSendMessage,
+            onValueChange = { inputText = it },
+            onSend = {
+                val currentText = inputText.text
+                onSendMessage(currentText)
+                inputText = TextFieldValue("")
+            },
             onCancel = onCancelProcessing,
             attachedFiles = attachedFiles,
             onAttachClick = onPickAttachments,
@@ -1191,7 +1191,6 @@ fun PreviewChatMode() {
                         ChatMessage("Привет! Все отлично, спасибо за вопрос. Чем могу помочь?", isUser = false, timestamp = System.currentTimeMillis() - 30000),
                         ChatMessage("Покажи погоду в Москве", isUser = true, timestamp = System.currentTimeMillis())
                     ),
-                    chatInputText = TextFieldValue(""),
                     displayedText = "",
                     statusMessage = "Чат режим",
                     isListening = false
@@ -1210,7 +1209,6 @@ fun PreviewChatModeEmpty() {
             MainScreenContent(
                 state = MainState(
                     chatMessages = emptyList(),
-                    chatInputText = TextFieldValue(""),
                     displayedText = "",
                     statusMessage = "Чат режим",
                     isListening = false

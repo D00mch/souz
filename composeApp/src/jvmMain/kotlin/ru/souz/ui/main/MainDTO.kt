@@ -5,7 +5,6 @@ import ru.souz.giga.DEFAULT_MAX_TOKENS
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
-import androidx.compose.ui.text.input.TextFieldValue
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.LlmBuildProfile
 
@@ -68,7 +67,7 @@ data class MainState(
     val isThinkingPanelOpen: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
     val chatStartTip: String = "",
-    val chatInputText: TextFieldValue = TextFieldValue(""),
+    val chatSessionId: Long = 0L, // need this so local draft resets reliably when conversation resets.
     val selectedModel: String = LlmBuildProfile.defaultModel.alias,
     val availableModelAliases: List<String> = LlmBuildProfile.availableModels.map { it.alias },
     val selectedContextSize: Int = DEFAULT_MAX_TOKENS,
@@ -91,16 +90,15 @@ sealed interface MainEvent : VMEvent {
     data object DismissNewConversationDialog : MainEvent
     data object ClearContext : MainEvent
     data object StopSpeech : MainEvent
-    data object StopAgentJob : MainEvent
+    data object UserPressStop : MainEvent
     data object ShowLastText : MainEvent
     data object ToggleThinkingPanel : MainEvent
-    data class UpdateChatInput(val text: TextFieldValue) : MainEvent
     data class UpdateChatModel(val model: String) : MainEvent
     data class UpdateChatContextSize(val size: Int) : MainEvent
     data object PickChatAttachments : MainEvent
     data class AttachDroppedFiles(val paths: List<String>) : MainEvent
     data class RemoveChatAttachment(val path: String) : MainEvent
-    data object SendChatMessage : MainEvent
+    data class SendChatMessage(val text: String) : MainEvent
     data class OpenPath(val path: String) : MainEvent
     data object RefreshSettings : MainEvent
     data object ApproveToolPermission : MainEvent
