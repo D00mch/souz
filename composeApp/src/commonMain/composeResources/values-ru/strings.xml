@@ -217,6 +217,7 @@
     <string name="error_prefix">Ошибка: %s</string>
     <string name="error_agent_timeout">Агент не успел решить задачу за отведенное время. Попробуйте увеличить таймаут в настройках.</string>
     <string name="error_agent_context_reset">Слишком много информации. Я запутался, давай начнем заново и по чуть-чуть.</string>
+    <string name="error_agent_no_money">Не хватает токенов</string>
     <string name="voice_status_recording_started">Запись запущена</string>
     <string name="voice_status_processing_input">Обработка входа</string>
     <string name="voice_status_speech_not_recognized">Речь не распознана</string>
