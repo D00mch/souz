@@ -358,7 +358,4 @@
     <!-- Tools Screen -->
     <string name="tools_expand">Expand</string>
     <string name="tools_collapse">Collapse</string>
-
-    <!-- Telemetry -->
-
 </resources>

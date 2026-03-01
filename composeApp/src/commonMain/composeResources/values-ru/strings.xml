@@ -355,8 +355,6 @@
     <string name="tools_expand">Развернуть</string>
     <string name="tools_collapse">Свернуть</string>
 
-    <!-- Telemetry -->
-
     <!-- Dialogs -->
     <string name="telegram_dialog_delete_title">Удаление бота</string>
     <string name="telegram_dialog_delete_text">Вы действительно хотите безвозвратно удалить бота @%s?</string>
