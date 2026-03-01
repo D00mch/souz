@@ -2,6 +2,9 @@ package ru.souz.tool.textReplace
 
 import ru.souz.keys.MrRobot
 import ru.souz.tool.*
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
+import java.awt.datatransfer.Transferable
 
 class ToolTextReplace(
     private val bash: ToolRunBashCommand
@@ -29,9 +32,24 @@ class ToolTextReplace(
     )
 
     override fun invoke(input: Input): String {
-        MrRobot.clipboardPut(input.newText)
-        bash.apple(SCRIPT)
-        return "ok"
+        val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+        val previousContent: Transferable? = runCatching { clipboard.getContents(null) }.getOrNull()
+
+        return try {
+            runCatching { clipboard.setContents(StringSelection(input.newText), null) }
+                .onFailure { MrRobot.clipboardPut(input.newText) }
+            bash.apple(SCRIPT)
+            Thread.sleep(PASTE_SETTLE_DELAY_MS)
+            "ok"
+        } finally {
+            if (previousContent != null) {
+                runCatching { clipboard.setContents(previousContent, null) }
+            }
+        }
+    }
+
+    private companion object {
+        private const val PASTE_SETTLE_DELAY_MS = 70L
     }
 }
 

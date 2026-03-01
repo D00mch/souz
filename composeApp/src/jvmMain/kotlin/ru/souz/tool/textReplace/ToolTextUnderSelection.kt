@@ -5,6 +5,10 @@ import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
+import java.awt.datatransfer.Transferable
+import java.util.UUID
 
 class ToolTextUnderSelection(
     private val bash: ToolRunBashCommand,
@@ -24,8 +28,33 @@ class ToolTextUnderSelection(
     }
 
     private fun getDataFromSelectionWithKeys(): String {
-        bash.apple(SCRIPT)
-        return toolGetClipboard.invoke(ToolGetClipboard.Input)
+        val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+        val previousContent: Transferable? = runCatching { clipboard.getContents(null) }.getOrNull()
+        val marker = "SOUZ_SELECTION_MARKER_${UUID.randomUUID()}"
+        runCatching { clipboard.setContents(StringSelection(marker), null) }
+
+        return try {
+            bash.apple(SCRIPT)
+
+            repeat(COPY_RETRY_ATTEMPTS) {
+                Thread.sleep(COPY_RETRY_DELAY_MS)
+                val current = toolGetClipboard.invoke(ToolGetClipboard.Input)
+                if (current == NO_SELECTION_ERROR) return@repeat
+                if (current != marker) return current
+            }
+
+            NO_SELECTION_ERROR
+        } finally {
+            if (previousContent != null) {
+                runCatching { clipboard.setContents(previousContent, null) }
+            }
+        }
+    }
+
+    private companion object {
+        private const val NO_SELECTION_ERROR = "Error: \"Nothing in selection\""
+        private const val COPY_RETRY_ATTEMPTS = 8
+        private const val COPY_RETRY_DELAY_MS = 30L
     }
 }
 
