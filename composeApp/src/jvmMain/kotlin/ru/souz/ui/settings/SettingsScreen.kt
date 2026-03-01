@@ -2,16 +2,24 @@ package ru.souz.ui.settings
 
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.debounce
@@ -56,6 +64,10 @@ fun SettingsScreen(
     LaunchedEffect(Unit) {
         viewModel.send(SettingsEvent.RefreshFromProvider)
     }
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(state.currentScreen) {
+        focusRequester.requestFocus()
+    }
 
     val windowScope = ru.souz.LocalWindowScope.current
     DisposableEffect(windowScope) {
@@ -64,54 +76,79 @@ fun SettingsScreen(
         onDispose { window?.minimumSize = originalMinSize }
     }
     
-    when (state.currentScreen) {
-        SettingsSubScreen.MAIN -> {
-            SettingsScreenMain(
-                state = state,
-                viewModel = viewModel,
-                onClose = onClose,
-                onOpenTools = onOpenTools,
-                onShowSnack = onShowSnack
-            )
-        }
-        SettingsSubScreen.SESSIONS -> {
-            GraphSessionsScreen(
-                sessionRepository = sessionRepository,
-                onClose = { viewModel.send(SettingsEvent.BackToSettings) },
-                onSelectSession = { session -> viewModel.send(SettingsEvent.OpenGraphVisualization(session.id)) }
-            )
-        }
-        SettingsSubScreen.VISUALIZATION -> {
-            val session = remember(state.selectedSessionId) {
-                state.selectedSessionId?.let { sessionRepository.loadById(it) }
-            }
-            if (session != null) {
-                GraphVisualizationScreen(
-                    session = session,
-                    onBack = { viewModel.send(SettingsEvent.BackToSessions) }
-                )
-            } else {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(stringResource(Res.string.error_session_not_found), color = Color.White)
-                    Button(onClick = { viewModel.send(SettingsEvent.BackToSessions) }) { Text(stringResource(Res.string.button_back)) }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    if (state.currentScreen == SettingsSubScreen.TELEGRAM && state.showBotDeleteConfirmation) {
+                        viewModel.send(SettingsEvent.CancelDisconnectTelegramBot)
+                        return@onPreviewKeyEvent true
+                    }
+                    when (state.currentScreen) {
+                        SettingsSubScreen.MAIN -> onClose()
+                        SettingsSubScreen.VISUALIZATION -> viewModel.send(SettingsEvent.BackToSessions)
+                        SettingsSubScreen.SESSIONS,
+                        SettingsSubScreen.FOLDERS,
+                        SettingsSubScreen.TELEGRAM -> viewModel.send(SettingsEvent.BackToSettings)
+                    }
+                    true
+                } else {
+                    false
                 }
             }
-        }
-        SettingsSubScreen.FOLDERS -> {
-            FoldersManagementScreen(
-                onClose = { viewModel.send(SettingsEvent.BackToSettings) }
-            )
-        }
-        SettingsSubScreen.TELEGRAM -> {
-            TelegramSettingsScreen(
-                state = state,
-                onClose = { viewModel.send(SettingsEvent.BackToSettings) },
-                onStartWork = onClose,
-                onCreateControlBot = { viewModel.send(SettingsEvent.CreateControlBot) },
-                onDisconnectControlBot = { viewModel.send(SettingsEvent.DisconnectTelegramBot) },
-                onConfirmDisconnectControlBot = { viewModel.send(SettingsEvent.ConfirmDisconnectTelegramBot) },
-                onCancelDisconnectControlBot = { viewModel.send(SettingsEvent.CancelDisconnectTelegramBot) },
-            )
+    ) {
+        when (state.currentScreen) {
+            SettingsSubScreen.MAIN -> {
+                SettingsScreenMain(
+                    state = state,
+                    viewModel = viewModel,
+                    onClose = onClose,
+                    onOpenTools = onOpenTools,
+                    onShowSnack = onShowSnack
+                )
+            }
+            SettingsSubScreen.SESSIONS -> {
+                GraphSessionsScreen(
+                    sessionRepository = sessionRepository,
+                    onClose = { viewModel.send(SettingsEvent.BackToSettings) },
+                    onSelectSession = { session -> viewModel.send(SettingsEvent.OpenGraphVisualization(session.id)) }
+                )
+            }
+            SettingsSubScreen.VISUALIZATION -> {
+                val session = remember(state.selectedSessionId) {
+                    state.selectedSessionId?.let { sessionRepository.loadById(it) }
+                }
+                if (session != null) {
+                    GraphVisualizationScreen(
+                        session = session,
+                        onBack = { viewModel.send(SettingsEvent.BackToSessions) }
+                    )
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(stringResource(Res.string.error_session_not_found), color = Color.White)
+                        Button(onClick = { viewModel.send(SettingsEvent.BackToSessions) }) { Text(stringResource(Res.string.button_back)) }
+                    }
+                }
+            }
+            SettingsSubScreen.FOLDERS -> {
+                FoldersManagementScreen(
+                    onClose = { viewModel.send(SettingsEvent.BackToSettings) }
+                )
+            }
+            SettingsSubScreen.TELEGRAM -> {
+                TelegramSettingsScreen(
+                    state = state,
+                    onClose = { viewModel.send(SettingsEvent.BackToSettings) },
+                    onStartWork = onClose,
+                    onCreateControlBot = { viewModel.send(SettingsEvent.CreateControlBot) },
+                    onDisconnectControlBot = { viewModel.send(SettingsEvent.DisconnectTelegramBot) },
+                    onConfirmDisconnectControlBot = { viewModel.send(SettingsEvent.ConfirmDisconnectTelegramBot) },
+                    onCancelDisconnectControlBot = { viewModel.send(SettingsEvent.CancelDisconnectTelegramBot) },
+                )
+            }
         }
     }
 }
