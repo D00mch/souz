@@ -53,10 +53,13 @@ import ru.souz.service.telegram.TelegramBotController
 import ru.souz.telemetry.TelemetryRequestContext
 import ru.souz.telemetry.TelemetryRequestSource
 import ru.souz.telemetry.TelemetryService
+import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.telegram.TelegramChatSelectionBroker
+import ru.souz.tool.telegram.TelegramChatSelectionApprovalSource
 import ru.souz.tool.telegram.TelegramContactSelectionBroker
+import ru.souz.tool.telegram.TelegramContactSelectionApprovalSource
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
@@ -551,6 +554,14 @@ class MainViewModelTest {
             bindSingleton { toolPermissionBroker }
             bindSingleton { TelegramContactSelectionBroker() }
             bindSingleton { TelegramChatSelectionBroker() }
+            bindSingleton { TelegramContactSelectionApprovalSource(instance()) }
+            bindSingleton { TelegramChatSelectionApprovalSource(instance()) }
+            bindSingleton<Set<SelectionApprovalSource>> {
+                setOf(
+                    instance<TelegramContactSelectionApprovalSource>(),
+                    instance<TelegramChatSelectionApprovalSource>(),
+                )
+            }
             bindSingleton { telegramBotController }
             bindSingleton { InMemoryAudioRecorder() }
             bindSingleton { FilesToolUtil(instance()) }
@@ -559,7 +570,6 @@ class MainViewModelTest {
             bindSingleton { telemetryService }
             bindSingleton {
                 MainUseCasesFactory(
-                    instance(),
                     instance(),
                     instance(),
                     instance(),
