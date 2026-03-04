@@ -2,15 +2,7 @@ package ru.souz.service.telegram
 
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.LoggerContext
-import com.ibm.icu.text.Transliterator
 import it.tdlight.client.APIToken
-import it.tdlight.client.AuthenticationData
-import it.tdlight.client.AuthenticationSupplier
-import it.tdlight.client.ClientInteraction
-import it.tdlight.client.InputParameter
-import it.tdlight.client.ParameterInfo
-import it.tdlight.client.ParameterInfoCode
-import it.tdlight.client.ParameterInfoPasswordHint
 import it.tdlight.client.SimpleTelegramClient
 import it.tdlight.client.SimpleTelegramClientFactory
 import it.tdlight.client.TDLibSettings
@@ -24,27 +16,15 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import ru.souz.db.ConfigStore
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Duration
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.delay
 
 private const val TELEGRAM_MAX_CONTACTS_CACHE = 5_000
 private const val TELEGRAM_MAX_CHATS_CACHE = 100
@@ -52,130 +32,12 @@ private const val TELEGRAM_DEFAULT_API_ID = 34456605
 private const val TELEGRAM_DEFAULT_API_HASH = "04779e90346d857b3f0f313ff8d2aa39"
 private const val TELEGRAM_CFG_DEBUG_LOGS = "TELEGRAM_DEBUG_LOGS"
 private const val TELEGRAM_ENV_DEBUG_LOGS = "SOUZ_TG_DEBUG_LOGS"
-private const val BOT_FATHER_STEP_DELAY_MS = 1_500L
-private const val BOT_FATHER_POLL_DELAY_MS = 1_000L
-private const val BOT_FATHER_POLL_ATTEMPTS = 10
-private const val BOT_LOOKUP_TIMEOUT_MS = 5_000L
 private const val TELEGRAM_CONTACT_MIN_SCORE = 620
 private const val TELEGRAM_CONTACT_AMBIGUOUS_SCORE = 700
 private const val TELEGRAM_CONTACT_AMBIGUITY_GAP = 80
-private const val TELEGRAM_CONTACT_FUZZY_TOP_K = 40
 private const val TELEGRAM_CHAT_MIN_SCORE = 620
 private const val TELEGRAM_CHAT_AMBIGUOUS_SCORE = 700
 private const val TELEGRAM_CHAT_AMBIGUITY_GAP = 80
-private const val TELEGRAM_CHAT_FUZZY_TOP_K = 25
-private val LOOKUP_TRANSLITERATOR = ThreadLocal.withInitial {
-    Transliterator.getInstance("Russian-Latin/BGN; Latin-ASCII")
-}
-
-enum class TelegramAuthStep {
-    INITIALIZING,
-    WAIT_PHONE,
-    WAIT_CODE,
-    WAIT_PASSWORD,
-    READY,
-    LOGGING_OUT,
-    CLOSED,
-    ERROR,
-}
-
-enum class BotTaskType { NONE, CREATE, DELETE }
-
-enum class BotCreationStep {
-    NONE, INIT, NAME, USERNAME, WAIT_TOKEN, START, AVATAR_CMD, AVATAR_MOCK, AVATAR_PIC, SETCMDS_CMD, SETCMDS_BOT, SETCMDS_LIST, FINISHED
-}
-
-enum class BotDeletionStep {
-    NONE, INIT, WAIT_NO_BOTS, USERNAME, WAIT_DELETION, FINISHED
-}
-
-data class TelegramAuthState(
-    val step: TelegramAuthStep = TelegramAuthStep.INITIALIZING,
-    val activePhoneMasked: String? = null,
-    val codeHint: String? = null,
-    val passwordHint: String? = null,
-    val isBusy: Boolean = false,
-    val errorMessage: String? = null,
-)
-
-data class TelegramCachedContact(
-    val userId: Long,
-    val displayName: String,
-    val aliases: Set<String>,
-)
-
-data class TelegramContactCandidate(
-    val userId: Long,
-    val displayName: String,
-    val username: String?,
-    val phoneMasked: String?,
-    val isContact: Boolean,
-    val chatId: Long?,
-    val lastMessageText: String?,
-    val score: Int,
-)
-
-sealed interface TelegramContactLookupResult {
-    data class Resolved(val candidate: TelegramContactCandidate) : TelegramContactLookupResult
-    data class Ambiguous(
-        val query: String,
-        val candidates: List<TelegramContactCandidate>,
-    ) : TelegramContactLookupResult
-
-    data class NotFound(val query: String) : TelegramContactLookupResult
-}
-
-data class TelegramCachedChat(
-    val chatId: Long,
-    val title: String,
-    val unreadCount: Int,
-    val lastMessageId: Long,
-    val lastMessageText: String?,
-    val order: Long,
-    val linkedUserId: Long?,
-)
-
-data class TelegramChatCandidate(
-    val chatId: Long,
-    val title: String,
-    val unreadCount: Int,
-    val linkedUserId: Long?,
-    val lastMessageText: String?,
-    val score: Int,
-)
-
-sealed interface TelegramChatLookupResult {
-    data class Resolved(val candidate: TelegramChatCandidate) : TelegramChatLookupResult
-    data class Ambiguous(
-        val query: String,
-        val candidates: List<TelegramChatCandidate>,
-    ) : TelegramChatLookupResult
-
-    data class NotFound(val query: String) : TelegramChatLookupResult
-}
-
-data class TelegramInboxItem(
-    val chatId: Long,
-    val title: String,
-    val unreadCount: Int,
-    val lastText: String?,
-)
-
-data class TelegramMessageView(
-    val chatId: Long,
-    val chatTitle: String,
-    val messageId: Long,
-    val sender: String?,
-    val unixTime: Long,
-    val text: String?,
-)
-
-enum class TelegramChatAction {
-    Mute,
-    Archive,
-    MarkRead,
-    Delete,
-}
 
 
 class TelegramService(
@@ -184,9 +46,6 @@ class TelegramService(
 ) {
 
     private val l = LoggerFactory.getLogger(TelegramService::class.java)
-    private val botLookupHttpClient: HttpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofMillis(BOT_LOOKUP_TIMEOUT_MS))
-        .build()
 
     private val authStateFlow = MutableStateFlow(TelegramAuthState())
     val authState: StateFlow<TelegramAuthState> = authStateFlow.asStateFlow()
@@ -199,7 +58,15 @@ class TelegramService(
     private val orderedChatIdsRef = AtomicReference<List<Long>>(emptyList())
     private val meUserIdRef = AtomicReference<Long?>(null)
 
-    private val authBridge = InteractiveAuthBridge()
+    private val authBridge = TelegramInteractiveAuthBridge(authStateFlow)
+    private val lookupEngine = TelegramLookupEngine()
+    private val botWorkflow = TelegramBotWorkflow(
+        logger = l,
+        requireClient = { requireClient() },
+        resolveCurrentUser = { tdClient -> resolveCurrentUser(tdClient) },
+        extractMessageText = { message -> extractMessageText(message) },
+    )
+
     @Volatile
     private var clientFactory: SimpleTelegramClientFactory? = null
     private val clientMutex = Mutex()
@@ -221,32 +88,12 @@ class TelegramService(
             scope.launch {
                 runCatching {
                     startClientIfNeeded()
-                    resumePendingBotTasks()
+                    botWorkflow.resumePendingTask(
+                        authState = authState,
+                        onCreateTask = { createControlBot() },
+                        onDeleteTask = { deleteControlBot() },
+                    )
                 }.onFailure(::onUnhandledError)
-            }
-        }
-    }
-
-    private suspend fun resumePendingBotTasks() {
-        val taskTypeStr = ConfigStore.get(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.NONE.name)
-        val taskType = runCatching { BotTaskType.valueOf(taskTypeStr) }.getOrDefault(BotTaskType.NONE)
-
-        if (taskType == BotTaskType.NONE) return
-
-        l.info("Pending bot task found ({}). Waiting for Telegram to be READY...", taskType)
-        authStateFlow.first { it.step == TelegramAuthStep.READY }
-
-        when (taskType) {
-            BotTaskType.CREATE -> {
-                l.info("Resuming pending createControlBot task")
-                createControlBot()
-            }
-            BotTaskType.DELETE -> {
-                l.info("Resuming pending deleteControlBot task")
-                deleteControlBot()
-            }
-            BotTaskType.NONE -> {
-                /* Should not happen due to check above */
             }
         }
     }
@@ -365,11 +212,11 @@ class TelegramService(
             throw IllegalArgumentException("chatName is required")
         }
 
-        var candidates = findChatCandidates(chatName)
+        var candidates = lookupEngine.findChatCandidates(chatName, lookupSnapshot())
         if (candidates.isEmpty()) {
             refreshTopChatsCache()
             refreshContactsCache()
-            candidates = findChatCandidates(chatName)
+            candidates = lookupEngine.findChatCandidates(chatName, lookupSnapshot())
         }
 
         val best = candidates.firstOrNull()
@@ -458,11 +305,11 @@ class TelegramService(
             throw IllegalArgumentException("targetName is required")
         }
 
-        var candidates = findContactCandidates(targetName)
+        var candidates = lookupEngine.findContactCandidates(targetName, lookupSnapshot())
         if (candidates.isEmpty()) {
             refreshContactsCache()
             refreshTopChatsCache()
-            candidates = findContactCandidates(targetName)
+            candidates = lookupEngine.findContactCandidates(targetName, lookupSnapshot())
         }
 
         val best = candidates.firstOrNull()
@@ -523,274 +370,15 @@ class TelegramService(
     }
 
     suspend fun createControlBot(step: BotCreationStep = BotCreationStep.NONE, forceNew: Boolean = false) {
-        if (forceNew) {
-            ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.CREATE.name)
-            ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, BotCreationStep.INIT.name)
-            ConfigStore.rm(ConfigStore.TG_BOT_TASK_START_MSG_ID)
-            ConfigStore.rm(ConfigStore.TG_BOT_USERNAME)
-        }
-
-        val isNewTask = forceNew || (step == BotCreationStep.NONE && ConfigStore.get(ConfigStore.TG_BOT_TASK_TYPE, "") != BotTaskType.CREATE.name)
-        val currentStep = if (step == BotCreationStep.NONE) {
-            if (forceNew) BotCreationStep.INIT
-            else {
-                val savedStepStr = ConfigStore.get(ConfigStore.TG_BOT_TASK_STEP, BotCreationStep.INIT.name)
-                runCatching { BotCreationStep.valueOf(savedStepStr) }.getOrDefault(BotCreationStep.INIT)
-            }
-        } else step
-
-        ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.CREATE.name)
-        ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, currentStep.name)
-
-        val tdClient = requireClient()
-        val me = resolveCurrentUser(tdClient)
-        val botFatherChat = resolveBotFatherChat(tdClient)
-        
-        if (isNewTask) {
-            val startMsgId = latestMessageId(tdClient, botFatherChat.id)
-            ConfigStore.put(ConfigStore.TG_BOT_TASK_START_MSG_ID, startMsgId)
-        }
-        val baselineMessageId = ConfigStore.get(ConfigStore.TG_BOT_TASK_START_MSG_ID, 0L)
-
-        val cachedUsername = ConfigStore.get<String>(ConfigStore.TG_BOT_USERNAME)
-        val botUsername = cachedUsername ?: "souz_control_${me.id}_${System.currentTimeMillis() % 10000}_bot"
-
-        when (currentStep) {
-            BotCreationStep.NONE -> { /* Should not be reached */ }
-
-            BotCreationStep.INIT -> {
-                l.info("BotCreationStep.INIT")
-                val snapshots = loadBotFatherSnapshots(tdClient, botFatherChat.id)
-                val waitingForName = BotFatherReplyParser.isWaitingForName(snapshots)
-                l.info("BotCreationStep.INIT: isWaitingForName={}", waitingForName)
-                
-                if (!waitingForName) {
-                    l.info("BotCreationStep.INIT: Sending /newbot")
-                    sendTextMessage(tdClient, botFatherChat.id, "/newbot")
-                    delay(BOT_FATHER_STEP_DELAY_MS)
-                }
-                createControlBot(BotCreationStep.NAME)
-            }
-
-            BotCreationStep.NAME -> {
-                l.info("BotCreationStep.NAME")
-                val snapshots = loadBotFatherSnapshots(tdClient, botFatherChat.id)
-                val waitingForUsername = BotFatherReplyParser.isWaitingForUsername(snapshots)
-                l.info("BotCreationStep.NAME: isWaitingForUsername={}", waitingForUsername)
-                
-                if (!waitingForUsername) {
-                    val botName = "Souz AI"
-                    l.info("BotCreationStep.NAME: Sending bot name: {}", botName)
-                    sendTextMessage(tdClient, botFatherChat.id, botName)
-                    delay(BOT_FATHER_STEP_DELAY_MS)
-                }
-                createControlBot(BotCreationStep.USERNAME)
-            }
-
-            BotCreationStep.USERNAME -> {
-                if (cachedUsername == null) {
-                    ConfigStore.put(ConfigStore.TG_BOT_USERNAME, botUsername)
-                }
-                
-                val tokenExtracted = BotFatherReplyParser.extractToken(
-                    loadBotFatherSnapshots(tdClient, botFatherChat.id)
-                ) != null
-                
-                if (!tokenExtracted) {
-                    sendTextMessage(tdClient, botFatherChat.id, botUsername)
-                }
-                createControlBot(BotCreationStep.WAIT_TOKEN)
-            }
-
-            BotCreationStep.WAIT_TOKEN -> {
-                val token = waitForNewBotToken(tdClient, botFatherChat.id)
-                    ?: throw IllegalStateException("Failed to extract bot token from BotFather replies")
-
-                ConfigStore.put(ConfigStore.TG_BOT_TOKEN, token)
-                ConfigStore.put(ConfigStore.TG_BOT_OWNER_ID, me.id)
-                // TG_BOT_USERNAME is already saved in BotCreationStep.USERNAME
-                l.info("Control bot created for ownerId={}", me.id)
-
-                createControlBot(BotCreationStep.START)
-            }
-
-            BotCreationStep.START -> {
-                runCatching {
-                    delay(BOT_FATHER_STEP_DELAY_MS)
-                    val newBotChat = tdClient.send(TdApi.SearchPublicChat(botUsername)).awaitResult()
-                    sendTextMessage(tdClient, newBotChat.id, "/start")
-                }.onFailure {
-                    l.warn("Failed to send /start to newly created bot @{}", botUsername)
-                }
-                createControlBot(BotCreationStep.AVATAR_CMD)
-            }
-
-            BotCreationStep.AVATAR_CMD -> {
-                runCatching {
-                    delay(BOT_FATHER_STEP_DELAY_MS)
-                    sendTextMessage(tdClient, botFatherChat.id, "/setuserpic")
-                }.onFailure { l.warn("Failed to set /setuserpic via BotFather: ${it.message}") }
-                createControlBot(BotCreationStep.AVATAR_MOCK)
-            }
-
-            BotCreationStep.AVATAR_MOCK -> {
-                runCatching {
-                    delay(BOT_FATHER_STEP_DELAY_MS)
-                    sendTextMessage(tdClient, botFatherChat.id, "@$botUsername")
-                }.onFailure { l.warn("Failed to set bot username for avatar via BotFather: ${it.message}") }
-                createControlBot(BotCreationStep.AVATAR_PIC)
-            }
-
-            BotCreationStep.AVATAR_PIC -> {
-                runCatching {
-                    delay(BOT_FATHER_STEP_DELAY_MS)
-                    uploadBotAvatar(tdClient, botFatherChat.id)
-                }.onFailure { l.warn("Failed to set bot avatar via BotFather: ${it.message}") }
-                createControlBot(BotCreationStep.SETCMDS_CMD)
-            }
-
-            BotCreationStep.SETCMDS_CMD -> {
-                runCatching {
-                    delay(BOT_FATHER_STEP_DELAY_MS)
-                    sendTextMessage(tdClient, botFatherChat.id, "/setcommands")
-                }.onFailure { l.warn("Failed to send /setcommands via BotFather: ${it.message}") }
-                createControlBot(BotCreationStep.SETCMDS_BOT)
-            }
-
-            BotCreationStep.SETCMDS_BOT -> {
-                runCatching {
-                    delay(BOT_FATHER_STEP_DELAY_MS)
-                    sendTextMessage(tdClient, botFatherChat.id, "@$botUsername")
-                }.onFailure { l.warn("Failed to select bot for /setcommands: ${it.message}") }
-                createControlBot(BotCreationStep.SETCMDS_LIST)
-            }
-
-            BotCreationStep.SETCMDS_LIST -> {
-                runCatching {
-                    delay(BOT_FATHER_STEP_DELAY_MS)
-                    sendTextMessage(tdClient, botFatherChat.id, "clean - Clear context")
-                }.onFailure { l.warn("Failed to send commands list to BotFather: ${it.message}") }
-                createControlBot(BotCreationStep.FINISHED)
-            }
-
-            BotCreationStep.FINISHED -> {
-                ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.NONE.name)
-                ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, BotCreationStep.NONE.name)
-                ConfigStore.rm(ConfigStore.TG_BOT_TASK_START_MSG_ID)
-            }
-        }
+        botWorkflow.createControlBot(step = step, forceNew = forceNew)
     }
 
     suspend fun deleteControlBot(step: BotDeletionStep = BotDeletionStep.NONE, forceNew: Boolean = false) {
-        if (forceNew) {
-            ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.DELETE.name)
-            ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, BotDeletionStep.INIT.name)
-            ConfigStore.rm(ConfigStore.TG_BOT_TASK_START_MSG_ID)
-        }
-
-        val isNewTask = forceNew || (step == BotDeletionStep.NONE && ConfigStore.get(ConfigStore.TG_BOT_TASK_TYPE, "") != BotTaskType.DELETE.name)
-        val currentStep = if (step == BotDeletionStep.NONE) {
-            if (forceNew) BotDeletionStep.INIT
-            else {
-                val savedStepStr = ConfigStore.get(ConfigStore.TG_BOT_TASK_STEP, BotDeletionStep.INIT.name)
-                runCatching { BotDeletionStep.valueOf(savedStepStr) }.getOrDefault(BotDeletionStep.INIT)
-            }
-        } else step
-
-        ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.DELETE.name)
-        ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, currentStep.name)
-
-        val tdClient = requireClient()
-        val botUsername = resolveControlBotUsername()
-
-        if (botUsername == null) {
-            clearControlBotCredentials()
-            l.info("Control bot username is unknown, stale credentials were cleared")
-            ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.NONE.name)
-            ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, BotDeletionStep.NONE.name)
-            ConfigStore.rm(ConfigStore.TG_BOT_TASK_START_MSG_ID)
-            return
-        }
-
-        val botFatherChat = resolveBotFatherChat(tdClient)
-        
-        if (isNewTask) {
-            val startMsgId = latestMessageId(tdClient, botFatherChat.id)
-            ConfigStore.put(ConfigStore.TG_BOT_TASK_START_MSG_ID, startMsgId)
-        }
-        val baselineMessageId = ConfigStore.get(ConfigStore.TG_BOT_TASK_START_MSG_ID, 0L)
-
-        when (currentStep) {
-            BotDeletionStep.NONE -> { /* Should not be reached */ }
-
-            BotDeletionStep.INIT -> {
-                sendTextMessage(tdClient, botFatherChat.id, "/deletebot")
-                deleteControlBot(BotDeletionStep.WAIT_NO_BOTS)
-            }
-
-            BotDeletionStep.WAIT_NO_BOTS -> {
-                if (waitForNoBotsState(tdClient, botFatherChat.id)) {
-                    clearControlBotCredentials()
-                    l.info("Control bot credentials cleared because BotFather has no bots for current account")
-                    deleteControlBot(BotDeletionStep.FINISHED)
-                } else {
-                    deleteControlBot(BotDeletionStep.USERNAME)
-                }
-            }
-
-            BotDeletionStep.USERNAME -> {
-                delay(BOT_FATHER_STEP_DELAY_MS)
-                sendTextMessage(tdClient, botFatherChat.id, "@$botUsername")
-                deleteControlBot(BotDeletionStep.WAIT_DELETION)
-            }
-
-            BotDeletionStep.WAIT_DELETION -> {
-                val deleted = waitForBotDeletionConfirmation(tdClient, botFatherChat.id, botUsername) ||
-                    isBotMissingInMyBotsList(tdClient, botFatherChat.id, botUsername)
-                if (!deleted) {
-                    throw IllegalStateException("BotFather did not confirm deletion for @$botUsername")
-                }
-
-                clearControlBotCredentials()
-                l.info("Control bot @{} deleted and local credentials cleared", botUsername)
-                deleteControlBot(BotDeletionStep.FINISHED)
-            }
-
-            BotDeletionStep.FINISHED -> {
-                ConfigStore.put(ConfigStore.TG_BOT_TASK_TYPE, BotTaskType.NONE.name)
-                ConfigStore.put(ConfigStore.TG_BOT_TASK_STEP, BotDeletionStep.NONE.name)
-                ConfigStore.rm(ConfigStore.TG_BOT_TASK_START_MSG_ID)
-            }
-        }
+        botWorkflow.deleteControlBot(step = step, forceNew = forceNew)
     }
 
     suspend fun fetchActiveBotUsernameFromBotFather(): String? {
-        val tdClient = requireClient()
-        val botFatherChat = resolveBotFatherChat(tdClient)
-        val localUsername = resolveControlBotUsername() ?: return null
-
-        val sentMsg = sendTextMessage(tdClient, botFatherChat.id, "/mybots")
-        val baselineId = sentMsg.id
-        
-        repeat(BOT_FATHER_POLL_ATTEMPTS) {
-            delay(BOT_FATHER_POLL_DELAY_MS)
-            val snapshots = loadBotFatherSnapshots(tdClient, botFatherChat.id).filter { it.id > baselineId }
-            if (snapshots.isEmpty()) return@repeat
-
-            if (BotFatherReplyParser.hasNoBots(snapshots)) {
-                return null
-            }
-            val listedUsernames = BotFatherReplyParser.listedBotUsernames(snapshots)
-            if (listedUsernames.isNotEmpty()) {
-                val normalized = localUsername.removePrefix("@").lowercase()
-                return if (listedUsernames.contains(normalized)) {
-                    localUsername
-                } else {
-                    null
-                }
-            }
-        }
-        return null
+        return botWorkflow.fetchActiveBotUsernameFromBotFather()
     }
 
     private suspend fun resolveCurrentUser(tdClient: SimpleTelegramClient): TdApi.User {
@@ -804,215 +392,6 @@ class TelegramService(
         meUserIdRef.set(me.id)
         cacheUser(me)
         return me
-    }
-
-    private suspend fun resolveBotFatherChat(tdClient: SimpleTelegramClient): TdApi.Chat {
-        return runCatching {
-            tdClient.send(TdApi.SearchPublicChat("botfather")).awaitResult()
-        }.getOrElse {
-            throw IllegalStateException("Failed to resolve @BotFather. Please check internet connection.")
-        }
-    }
-
-    private suspend fun latestMessageId(tdClient: SimpleTelegramClient, chatId: Long): Long {
-        val history = tdClient.send(TdApi.GetChatHistory(chatId, 0L, 0, 1, false)).awaitResult()
-        return history.messages.orEmpty().firstOrNull()?.id ?: 0L
-    }
-
-    private suspend fun sendTextMessage(tdClient: SimpleTelegramClient, chatId: Long, text: String): TdApi.Message {
-        return tdClient.send(
-            TdApi.SendMessage(
-                chatId,
-                0L,
-                null,
-                null,
-                null,
-                TdApi.InputMessageText(
-                    TdApi.FormattedText(text, null),
-                    null,
-                    false,
-                ),
-            ),
-        ).awaitResult()
-    }
-
-    private suspend fun waitForNewBotToken(
-        tdClient: SimpleTelegramClient,
-        chatId: Long,
-    ): String? {
-        repeat(BOT_FATHER_POLL_ATTEMPTS) {
-            delay(BOT_FATHER_POLL_DELAY_MS)
-            val snapshots = loadBotFatherSnapshots(tdClient, chatId)
-            val token = BotFatherReplyParser.extractToken(snapshots)
-            if (!token.isNullOrBlank()) {
-                return token
-            }
-        }
-        return null
-    }
-
-    private suspend fun waitForNoBotsState(
-        tdClient: SimpleTelegramClient,
-        chatId: Long,
-    ): Boolean {
-        repeat(BOT_FATHER_POLL_ATTEMPTS) {
-            delay(BOT_FATHER_POLL_DELAY_MS)
-            val snapshots = loadBotFatherSnapshots(tdClient, chatId)
-            if (BotFatherReplyParser.hasNoBots(snapshots)) {
-                return true
-            }
-            if (snapshots.any { !it.isOutgoing }) {
-                return false
-            }
-        }
-        return false
-    }
-
-    private suspend fun waitForBotDeletionConfirmation(
-        tdClient: SimpleTelegramClient,
-        chatId: Long,
-        botUsername: String,
-    ): Boolean {
-        var confirmationSent = false
-
-        repeat(BOT_FATHER_POLL_ATTEMPTS) {
-            delay(BOT_FATHER_POLL_DELAY_MS)
-            val snapshots = loadBotFatherSnapshots(tdClient, chatId)
-            if (BotFatherReplyParser.isDeleteConfirmed(snapshots, botUsername)) {
-                return true
-            }
-            if (!confirmationSent && BotFatherReplyParser.requiresDeleteConfirmationText(snapshots)) {
-                sendTextMessage(tdClient, chatId, "Yes, I am totally sure.")
-                confirmationSent = true
-            }
-        }
-
-        return false
-    }
-
-    private suspend fun isBotMissingInMyBotsList(
-        tdClient: SimpleTelegramClient,
-        chatId: Long,
-        username: String,
-    ): Boolean {
-        val normalizedUsername = normalizeBotUsername(username) ?: return false
-        val baselineMessageId = latestMessageId(tdClient, chatId)
-        sendTextMessage(tdClient, chatId, "/mybots")
-
-        repeat(BOT_FATHER_POLL_ATTEMPTS) {
-            delay(BOT_FATHER_POLL_DELAY_MS)
-            val snapshots = loadBotFatherSnapshots(tdClient, chatId)
-            if (BotFatherReplyParser.hasNoBots(snapshots)) {
-                return true
-            }
-            val listedBots = BotFatherReplyParser.listedBotUsernames(snapshots)
-            if (listedBots.isNotEmpty()) {
-                return normalizedUsername !in listedBots
-            }
-        }
-
-        return false
-    }
-
-    private suspend fun loadBotFatherSnapshots(
-        tdClient: SimpleTelegramClient,
-        chatId: Long,
-        limit: Int = 20,
-    ): List<BotFatherMessageSnapshot> {
-        val history = tdClient.send(TdApi.GetChatHistory(chatId, 0L, 0, limit, false)).awaitResult()
-        return history.messages.orEmpty().map { message ->
-            BotFatherMessageSnapshot(
-                id = message.id,
-                text = extractMessageText(message),
-                isOutgoing = message.isOutgoing,
-            )
-        }
-    }
-
-    private suspend fun uploadBotAvatar(tdClient: SimpleTelegramClient, chatId: Long) {
-        val avatarFilePath = copyBotAvatarToTempFile() ?: run {
-            l.warn("Bot avatar resource not found at /bot_avatar.png")
-            return
-        }
-
-        try {
-            tdClient.send(
-                TdApi.SendMessage(
-                    chatId,
-                    0L,
-                    null,
-                    null,
-                    null,
-                    TdApi.InputMessagePhoto(
-                        TdApi.InputFileLocal(avatarFilePath.toAbsolutePath().toString()),
-                        null,
-                        null,
-                        0,
-                        0,
-                        null,
-                        false,
-                        null,
-                        false,
-                    ),
-                ),
-            ).awaitResult()
-        } finally {
-            runCatching { Files.deleteIfExists(avatarFilePath) }
-        }
-    }
-
-    private fun copyBotAvatarToTempFile(): Path? {
-        val avatarStream = TelegramService::class.java.getResourceAsStream("/bot_avatar.png") ?: return null
-        val file = Files.createTempFile("bot_avatar", ".png")
-        avatarStream.use { input ->
-            Files.newOutputStream(file).use { output ->
-                input.copyTo(output)
-            }
-        }
-        return file
-    }
-
-    private fun resolveControlBotUsername(): String? {
-        val configured = normalizeBotUsername(ConfigStore.get(ConfigStore.TG_BOT_USERNAME))
-        if (configured != null) {
-            return configured
-        }
-
-        val token = ConfigStore.get<String>(ConfigStore.TG_BOT_TOKEN) ?: return null
-        val resolvedFromApi = normalizeBotUsername(resolveBotUsernameByToken(token))
-
-        if (resolvedFromApi != null) {
-            ConfigStore.put(ConfigStore.TG_BOT_USERNAME, resolvedFromApi)
-        }
-
-        return resolvedFromApi
-    }
-
-    private fun resolveBotUsernameByToken(token: String): String? {
-        val request = HttpRequest.newBuilder()
-            .uri(URI.create("https://api.telegram.org/bot$token/getMe"))
-            .timeout(Duration.ofMillis(BOT_LOOKUP_TIMEOUT_MS))
-            .GET()
-            .build()
-
-        val body = runCatching {
-            botLookupHttpClient.send(request, HttpResponse.BodyHandlers.ofString()).body()
-        }.getOrNull() ?: return null
-
-        val json = runCatching { ru.souz.giga.gigaJsonMapper.readTree(body) }.getOrNull() ?: return null
-        if (!json.path("ok").asBoolean(false)) {
-            return null
-        }
-        return json.path("result").path("username").asText(null)
-    }
-
-    private fun normalizeBotUsername(value: String?): String? =
-        value?.trim()?.removePrefix("@")?.takeIf { it.isNotBlank() }
-
-    private fun clearControlBotCredentials() {
-        ConfigStore.rm(ConfigStore.TG_BOT_TOKEN)
-        ConfigStore.rm(ConfigStore.TG_BOT_OWNER_ID)
-        ConfigStore.rm(ConfigStore.TG_BOT_USERNAME)
     }
 
     suspend fun forwardMessageByChatIds(fromChatId: Long, toChatId: Long, messageId: String): TelegramMessageView {
@@ -1487,205 +866,19 @@ class TelegramService(
         }
     }
 
-    private data class ContactCandidateDraft(
-        val userId: Long,
-        val displayName: String,
-        val username: String?,
-        val phoneMasked: String?,
-        val isContact: Boolean,
-        val chatId: Long?,
-        val lastMessageText: String?,
-        val aliases: Set<String>,
-        val recencyBoost: Int,
-    ) {
-        fun toCandidate(score: Int): TelegramContactCandidate {
-            return TelegramContactCandidate(
-                userId = userId,
-                displayName = displayName,
-                username = username,
-                phoneMasked = phoneMasked,
-                isContact = isContact,
-                chatId = chatId,
-                lastMessageText = lastMessageText,
-                score = score,
-            )
-        }
-    }
-
-    private data class ChatCandidateDraft(
-        val chatId: Long,
-        val title: String,
-        val unreadCount: Int,
-        val linkedUserId: Long?,
-        val lastMessageText: String?,
-        val aliases: Set<String>,
-        val recencyBoost: Int,
-    ) {
-        fun toCandidate(score: Int): TelegramChatCandidate {
-            return TelegramChatCandidate(
-                chatId = chatId,
-                title = title,
-                unreadCount = unreadCount,
-                linkedUserId = linkedUserId,
-                lastMessageText = lastMessageText,
-                score = score,
-            )
-        }
-    }
-
-    private fun findContactCandidates(rawName: String): List<TelegramContactCandidate> {
-        val queryVariants = lookupVariants(rawName)
-        if (queryVariants.isEmpty()) return emptyList()
-        val chatRanks = orderedChatRanks()
-
-        val candidateIds = linkedSetOf<Long>()
-        candidateIds += contactsByUserId.keys
-        candidateIds += privateChatByUserId.keys
-        meUserIdRef.get()?.let(candidateIds::add)
-
-        val drafts = candidateIds
-            .mapNotNull { userId -> buildContactCandidateDraft(userId, chatRanks) }
-        if (drafts.isEmpty()) return emptyList()
-
-        val draftsById = drafts.associateBy { it.userId }
-        val cheapScored = drafts
-            .mapNotNull { draft ->
-                val score = aliasScore(
-                    aliases = draft.aliases,
-                    queryVariants = queryVariants,
-                    includeFuzzy = false,
-                ) + draft.recencyBoost
-                if (score <= 0) null else draft.toCandidate(score)
-            }
-        if (cheapScored.isEmpty()) return emptyList()
-
-        val refineIds = cheapScored
-            .sortedWith(contactCandidatesComparator())
-            .take(TELEGRAM_CONTACT_FUZZY_TOP_K)
-            .map { it.userId }
-            .toHashSet()
-
-        return cheapScored
-            .map { candidate ->
-                if (candidate.userId !in refineIds) {
-                    return@map candidate
-                }
-                val draft = draftsById[candidate.userId] ?: return@map candidate
-                val refinedScore = aliasScore(
-                    aliases = draft.aliases,
-                    queryVariants = queryVariants,
-                    includeFuzzy = true,
-                ) + draft.recencyBoost
-                candidate.copy(score = refinedScore)
-            }
-            .sortedWith(contactCandidatesComparator())
-    }
-
-    private fun buildContactCandidateDraft(
-        userId: Long,
-        chatRanks: Map<Long, Int>,
-    ): ContactCandidateDraft? {
-        val cachedContact = contactsByUserId[userId]
-        val user = usersById[userId]
-        val displayName = cachedContact?.displayName ?: userDisplayName(user)
-        if (displayName.isBlank() || displayName == "Unknown") return null
-
-        val linkedChat = privateChatByUserId[userId]?.let(chatsById::get)
-        val aliases = linkedSetOf<String>()
-        aliases += cachedContact?.aliases.orEmpty()
-        user?.let { aliases += userAliases(it) }
-        aliases += normalizeLookup(displayName)
-        linkedChat?.title?.let { aliases += normalizeLookup(it) }
-        if (aliases.isEmpty()) return null
-
-        return ContactCandidateDraft(
-            userId = userId,
-            displayName = displayName,
-            username = user?.usernames?.activeUsernames?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() },
-            phoneMasked = maskPhone(user?.phoneNumber?.takeIf { it.isNotBlank() }),
-            isContact = user?.isContact == true || cachedContact != null,
-            chatId = linkedChat?.chatId,
-            lastMessageText = linkedChat?.lastMessageText,
-            aliases = aliases,
-            recencyBoost = chatRecencyBoost(linkedChat, chatRanks),
-        )
-    }
-
-    private fun findChatCandidates(rawName: String): List<TelegramChatCandidate> {
-        val queryVariants = lookupVariants(rawName)
-        if (queryVariants.isEmpty()) return emptyList()
-        val chatRanks = orderedChatRanks()
-
-        val drafts = chatsById.values
-            .mapNotNull { chat -> buildChatCandidateDraft(chat, chatRanks) }
-        if (drafts.isEmpty()) return emptyList()
-
-        val draftsById = drafts.associateBy { it.chatId }
-        val cheapScored = drafts
-            .mapNotNull { draft ->
-                val score = aliasScore(
-                    aliases = draft.aliases,
-                    queryVariants = queryVariants,
-                    includeFuzzy = false,
-                ) + draft.recencyBoost
-                if (score <= 0) null else draft.toCandidate(score)
-            }
-        if (cheapScored.isEmpty()) return emptyList()
-
-        val refineIds = cheapScored
-            .sortedWith(chatCandidatesComparator())
-            .take(TELEGRAM_CHAT_FUZZY_TOP_K)
-            .map { it.chatId }
-            .toHashSet()
-
-        return cheapScored
-            .map { candidate ->
-                if (candidate.chatId !in refineIds) {
-                    return@map candidate
-                }
-                val draft = draftsById[candidate.chatId] ?: return@map candidate
-                val refinedScore = aliasScore(
-                    aliases = draft.aliases,
-                    queryVariants = queryVariants,
-                    includeFuzzy = true,
-                ) + draft.recencyBoost
-                candidate.copy(score = refinedScore)
-            }
-            .sortedWith(chatCandidatesComparator())
-    }
-
-    private fun buildChatCandidateDraft(
-        chat: TelegramCachedChat,
-        chatRanks: Map<Long, Int>,
-    ): ChatCandidateDraft? {
-        val aliases = linkedSetOf<String>()
-        aliases += normalizeLookup(chat.title)
-        chat.linkedUserId
-            ?.let(usersById::get)
-            ?.let(::userAliases)
-            ?.let(aliases::addAll)
-        if (aliases.isEmpty()) return null
-        return ChatCandidateDraft(
-            chatId = chat.chatId,
-            title = chat.title,
-            unreadCount = chat.unreadCount,
-            linkedUserId = chat.linkedUserId,
-            lastMessageText = chat.lastMessageText,
-            aliases = aliases,
-            recencyBoost = chatRecencyBoost(chat, chatRanks),
+    private fun lookupSnapshot(): TelegramLookupSnapshot {
+        return TelegramLookupSnapshot(
+            contactsByUserId = contactsByUserId.toMap(),
+            usersById = usersById.toMap(),
+            chatsById = chatsById.toMap(),
+            privateChatByUserId = privateChatByUserId.toMap(),
+            orderedChatIds = orderedChatIdsRef.get(),
+            meUserId = meUserIdRef.get(),
         )
     }
 
     private fun resolveChatByName(rawName: String): TelegramCachedChat {
-        val asId = rawName.trim().toLongOrNull()
-        if (asId != null) {
-            chatsById[asId]?.let { return it }
-        }
-
-        val best = findChatCandidates(rawName).firstOrNull()
-            ?: throw IllegalStateException("Chat '$rawName' not found in Telegram cache")
-
-        return chatsById[best.chatId]
+        return lookupEngine.resolveChatByName(rawName, lookupSnapshot())
             ?: throw IllegalStateException("Chat '$rawName' not found in Telegram cache")
     }
 
@@ -1822,159 +1015,6 @@ class TelegramService(
         return aliases
     }
 
-    private fun aliasScore(aliases: Set<String>, query: String): Int {
-        return aliasScore(
-            aliases = aliases,
-            queryVariants = lookupVariants(query),
-            includeFuzzy = true,
-        )
-    }
-
-    private fun aliasScore(
-        aliases: Set<String>,
-        queryVariants: Set<String>,
-        includeFuzzy: Boolean,
-    ): Int {
-        var best = 0
-
-        for (alias in aliases) {
-            if (alias.isBlank()) continue
-            val aliasVariants = lookupVariants(alias)
-            for (query in queryVariants) {
-                val score = aliasVariants.maxOfOrNull { variant ->
-                    if (includeFuzzy) {
-                        fullSimilarityScore(variant, query)
-                    } else {
-                        cheapSimilarityScore(variant, query)
-                    }
-                } ?: 0
-                if (score > best) {
-                    best = score
-                }
-            }
-        }
-        return best
-    }
-
-    private fun fullSimilarityScore(alias: String, query: String): Int {
-        val cheap = cheapSimilarityScore(alias, query)
-        if (cheap > 0) return cheap
-        val compactAlias = alias.replace(" ", "")
-        val compactQuery = query.replace(" ", "")
-        return fuzzySimilarityScore(compactAlias, compactQuery)
-    }
-
-    private fun cheapSimilarityScore(alias: String, query: String): Int {
-        if (alias.isBlank() || query.isBlank()) return 0
-        val compactAlias = alias.replace(" ", "")
-        val compactQuery = query.replace(" ", "")
-        val queryTokens = query.split(" ").filter { it.isNotBlank() }
-        val aliasTokens = alias.split(" ").filter { it.isNotBlank() }
-
-        return when {
-            compactAlias == compactQuery -> 1_000
-            compactAlias.length >= 4 && compactQuery.startsWith(compactAlias) -> 930
-            compactQuery.length >= 3 && compactAlias.startsWith(compactQuery) -> 900
-            compactQuery.length >= 3 && (compactAlias.contains(compactQuery) || compactQuery.contains(compactAlias)) -> 760
-            queryTokens.isNotEmpty() && queryTokens.all { token ->
-                aliasTokens.any { aliasToken ->
-                    aliasToken == token ||
-                        aliasToken.startsWith(token) ||
-                        token.startsWith(aliasToken)
-                }
-            } -> 720
-
-            else -> 0
-        }
-    }
-
-    private fun fuzzySimilarityScore(alias: String, query: String): Int {
-        val maxLen = maxOf(alias.length, query.length)
-        if (maxLen < 4) return 0
-
-        val distance = levenshteinDistance(alias, query)
-        val similarity = 1.0 - (distance.toDouble() / maxLen.toDouble())
-        return when {
-            distance == 1 -> 700
-            similarity >= 0.90 -> 680
-            similarity >= 0.84 -> 640
-            else -> 0
-        }
-    }
-
-    private fun orderedChatRanks(): Map<Long, Int> {
-        return orderedChatIdsRef.get().withIndex().associate { (index, chatId) -> chatId to index }
-    }
-
-    private fun chatRecencyBoost(chat: TelegramCachedChat?, chatRanks: Map<Long, Int>): Int {
-        if (chat == null) return 0
-        val rank = chatRanks[chat.chatId] ?: -1
-        return when {
-            rank == -1 -> 10
-            rank < 10 -> 30 - rank
-            rank < 30 -> 15
-            else -> 5
-        }
-    }
-
-    private fun contactCandidatesComparator(): Comparator<TelegramContactCandidate> {
-        return compareByDescending<TelegramContactCandidate> { it.score }
-            .thenByDescending { it.isContact }
-            .thenBy { it.displayName.lowercase() }
-    }
-
-    private fun chatCandidatesComparator(): Comparator<TelegramChatCandidate> {
-        return compareByDescending<TelegramChatCandidate> { it.score }
-            .thenByDescending { it.unreadCount }
-            .thenBy { it.title.lowercase() }
-    }
-
-    private fun lookupVariants(value: String): Set<String> {
-        val normalized = normalizeLookup(value)
-        if (normalized.isBlank()) return emptySet()
-
-        return buildSet {
-            add(normalized)
-            add(normalized.replace(" ", ""))
-            val latinized = transliterateToLatin(normalized)
-            if (latinized.isNotBlank()) {
-                add(latinized)
-                add(latinized.replace(" ", ""))
-            }
-        }
-    }
-
-    private fun transliterateToLatin(value: String): String {
-        val transliterated = LOOKUP_TRANSLITERATOR.get().transliterate(value.lowercase())
-        return normalizeLookup(transliterated)
-    }
-
-    private fun levenshteinDistance(left: String, right: String): Int {
-        if (left == right) return 0
-        if (left.isEmpty()) return right.length
-        if (right.isEmpty()) return left.length
-
-        var previous = IntArray(right.length + 1) { it }
-        var current = IntArray(right.length + 1)
-
-        for (i in left.indices) {
-            current[0] = i + 1
-            for (j in right.indices) {
-                val substitution = if (left[i] == right[j]) 0 else 1
-                current[j + 1] = minOf(
-                    current[j] + 1,
-                    previous[j + 1] + 1,
-                    previous[j] + substitution,
-                )
-            }
-            val temp = previous
-            previous = current
-            current = temp
-        }
-
-        return previous[right.length]
-    }
-
     private fun onUnhandledError(throwable: Throwable) {
         val rawMessage = when (throwable) {
             is TelegramError -> throwable.errorMessage
@@ -2104,150 +1144,5 @@ class TelegramService(
         settings.applicationVersion = "0.0.1"
         settings.deviceModel = "Souz AI"
         return settings
-    }
-
-    private suspend fun <T> CompletableFuture<T>.awaitResult(): T {
-        return suspendCancellableCoroutine { continuation ->
-            whenComplete { value, throwable ->
-                if (throwable != null) {
-                    continuation.resumeWithException(throwable)
-                } else {
-                    continuation.resume(value)
-                }
-            }
-
-            continuation.invokeOnCancellation {
-                cancel(true)
-            }
-        }
-    }
-
-    private inner class InteractiveAuthBridge : AuthenticationSupplier<AuthenticationData>, ClientInteraction {
-
-        private val phoneFutureRef = AtomicReference<CompletableFuture<AuthenticationData>?>(null)
-        private val codeFutureRef = AtomicReference<CompletableFuture<String>?>(null)
-        private val passwordFutureRef = AtomicReference<CompletableFuture<String>?>(null)
-        private val queuedPhoneRef = AtomicReference<String?>(null)
-        private val queuedCodeRef = AtomicReference<String?>(null)
-        private val queuedPasswordRef = AtomicReference<String?>(null)
-
-        override fun get(): CompletableFuture<AuthenticationData> {
-            val queuedPhone = queuedPhoneRef.getAndSet(null)
-            if (!queuedPhone.isNullOrBlank()) {
-                @Suppress("UNCHECKED_CAST")
-                val authData = AuthenticationSupplier.user(queuedPhone) as AuthenticationData
-                return CompletableFuture.completedFuture(authData)
-            }
-
-            val created = CompletableFuture<AuthenticationData>()
-            phoneFutureRef.set(created)
-            authStateFlow.update {
-                it.copy(
-                    step = TelegramAuthStep.WAIT_PHONE,
-                    isBusy = false,
-                    errorMessage = null,
-                )
-            }
-            return created
-        }
-
-        override fun onParameterRequest(parameter: InputParameter, parameterInfo: ParameterInfo): CompletableFuture<String> {
-            return when (parameter) {
-                InputParameter.ASK_CODE -> {
-                    val hintPhone = (parameterInfo as? ParameterInfoCode)?.phoneNumber
-                    val queuedCode = queuedCodeRef.getAndSet(null)
-                    if (!queuedCode.isNullOrBlank()) {
-                        authStateFlow.update {
-                            it.copy(
-                                step = TelegramAuthStep.WAIT_CODE,
-                                codeHint = hintPhone,
-                                isBusy = true,
-                                errorMessage = null,
-                            )
-                        }
-                        return CompletableFuture.completedFuture(queuedCode)
-                    }
-
-                    val future = CompletableFuture<String>()
-                    codeFutureRef.set(future)
-                    authStateFlow.update {
-                        it.copy(
-                            step = TelegramAuthStep.WAIT_CODE,
-                            codeHint = hintPhone,
-                            isBusy = false,
-                            errorMessage = null,
-                        )
-                    }
-                    future
-                }
-
-                InputParameter.ASK_PASSWORD -> {
-                    val hint = (parameterInfo as? ParameterInfoPasswordHint)?.hint
-                    val queuedPassword = queuedPasswordRef.getAndSet(null)
-                    if (!queuedPassword.isNullOrBlank()) {
-                        authStateFlow.update {
-                            it.copy(
-                                step = TelegramAuthStep.WAIT_PASSWORD,
-                                passwordHint = hint,
-                                isBusy = true,
-                                errorMessage = null,
-                            )
-                        }
-                        return CompletableFuture.completedFuture(queuedPassword)
-                    }
-
-                    val future = CompletableFuture<String>()
-                    passwordFutureRef.set(future)
-                    authStateFlow.update {
-                        it.copy(
-                            step = TelegramAuthStep.WAIT_PASSWORD,
-                            passwordHint = hint,
-                            isBusy = false,
-                            errorMessage = null,
-                        )
-                    }
-                    future
-                }
-
-                else -> CompletableFuture.completedFuture("")
-            }
-        }
-
-        fun providePhone(phone: String) {
-            val pending = phoneFutureRef.getAndSet(null)
-            if (pending != null && !pending.isDone) {
-                @Suppress("UNCHECKED_CAST")
-                pending.complete(AuthenticationSupplier.user(phone) as AuthenticationData)
-            } else {
-                queuedPhoneRef.set(phone)
-            }
-        }
-
-        fun provideCode(code: String) {
-            val pending = codeFutureRef.getAndSet(null)
-            if (pending != null && !pending.isDone) {
-                pending.complete(code)
-            } else {
-                queuedCodeRef.set(code)
-            }
-        }
-
-        fun providePassword(password: String) {
-            val pending = passwordFutureRef.getAndSet(null)
-            if (pending != null && !pending.isDone) {
-                pending.complete(password)
-            } else {
-                queuedPasswordRef.set(password)
-            }
-        }
-
-        fun reset() {
-            phoneFutureRef.getAndSet(null)?.cancel(true)
-            codeFutureRef.getAndSet(null)?.cancel(true)
-            passwordFutureRef.getAndSet(null)?.cancel(true)
-            queuedPhoneRef.set(null)
-            queuedCodeRef.set(null)
-            queuedPasswordRef.set(null)
-        }
     }
 }

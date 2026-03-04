@@ -65,9 +65,14 @@ Primary stack:
 │       │   │       ├── mcp/            # MCP sessions, transport, config, OAuth, protocol adapter
 │       │   │       ├── permissions/    # Permission/relaunch helpers
 │       │   │       ├── service/       # Service-layer integrations
-│       │   │       │   └── telegram/  # Telegram client (TdLib) + Bot polling controller
-│       │   │       │       ├── TelegramService.kt       # TdLib wrapper: auth, messaging, bot creation via BotFather
-│       │   │       │       └── TelegramBotController.kt  # Long-polling listener for the PC Control bot
+│       │   │       │   └── telegram/  # Telegram client (TdLib) + bot polling/controller workflows
+│       │   │       │       ├── TelegramService.kt         # Facade/orchestrator for auth/session/messages and cache refresh
+│       │   │       │       ├── TelegramBotWorkflow.kt     # BotFather create/delete/resume flows + credential resolution
+│       │   │       │       ├── TelegramLookupEngine.kt    # Contact/chat candidate scoring and fuzzy lookup logic
+│       │   │       │       ├── TelegramInteractiveAuthBridge.kt # Interactive TDLib auth parameter bridge
+│       │   │       │       ├── TelegramModels.kt          # Shared telegram DTOs/enums exposed across UI/tools
+│       │   │       │       ├── TelegramTdlightExtensions.kt # Coroutine helpers for TdLight async APIs
+│       │   │       │       └── TelegramBotController.kt   # Long-polling listener for the PC Control bot
 │       │   │       ├── telemetry/      # Local telemetry outbox, batching sender, and event models
 │       │   │       ├── tool/           # Tool framework and concrete tool implementations
 │       │   │       │   ├── application/    # App launch/list tools
