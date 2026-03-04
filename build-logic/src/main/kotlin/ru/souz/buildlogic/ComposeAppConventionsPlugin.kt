@@ -5,31 +5,15 @@ import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.VersionCatalogsExtension
-import org.gradle.api.model.ObjectFactory
-import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Sync
-import org.gradle.api.tasks.testing.Test
-import org.gradle.process.JavaForkOptions
 import java.io.File
-import javax.inject.Inject
-
-abstract class ComposeAppConventionsExtension @Inject constructor(
-    objects: ObjectFactory,
-) {
-    val edition: Property<String> = objects.property(String::class.java).convention("ru")
-}
 
 class ComposeAppConventionsPlugin : Plugin<Project> {
     override fun apply(project: Project) {
         project.pluginManager.apply("ru.souz.mac-signing-conventions")
-        val extension = project.extensions.create(
-            "composeAppConventions",
-            ComposeAppConventionsExtension::class.java,
-        )
-
         configureNativeExtraction(project)
-        configureEditionAwareTasks(project, extension)
+        configureDistributionTasks(project)
     }
 }
 
@@ -204,38 +188,8 @@ private fun configureNativeExtraction(project: Project) {
     }
 }
 
-private fun configureEditionAwareTasks(
-    project: Project,
-    extension: ComposeAppConventionsExtension,
-) {
+private fun configureDistributionTasks(project: Project) {
     val macSigning = project.extensions.getByType(MacSigningSettings::class.java)
-
-    project.tasks.matching { it.name == "jvmRun" }.configureEach {
-        if (this is JavaForkOptions) {
-            val javaForkTask = this
-            doFirst {
-                javaForkTask.systemProperty("souz.edition", extension.edition.get())
-            }
-        }
-    }
-
-    project.tasks.withType(Test::class.java).configureEach {
-        doFirst {
-            systemProperty("souz.edition", extension.edition.get())
-        }
-    }
-
-    project.tasks.register("packageRuReleaseDmg") {
-        group = "distribution"
-        description = "Build RU release DMG."
-        dependsOn("packageReleaseDmg")
-    }
-
-    project.tasks.register("packageEnReleaseDmg") {
-        group = "distribution"
-        description = "Build EN release DMG."
-        dependsOn("packageReleaseDmg")
-    }
 
     val patchReleaseAppForNotarization = project.tasks.register("patchReleaseAppForNotarization") {
         group = "distribution"

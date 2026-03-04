@@ -1,8 +1,7 @@
 package ru.souz.ui.main.usecases
 
 import ru.souz.db.SettingsProvider
-import ru.souz.edition.BuildEdition
-import ru.souz.edition.BuildEditionConfig
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.giga.GigaVoiceAPI
 import ru.souz.giga.VoiceRecognitionProvider
 import ru.souz.llms.AiTunnelVoiceAPI
@@ -42,10 +41,10 @@ class OpenAISpeechRecognitionProvider(
 class AiTunnelSpeechRecognitionProvider(
     private val aiTunnelVoiceAPI: AiTunnelVoiceAPI,
     private val settingsProvider: SettingsProvider,
-    private val isRuEdition: Boolean = BuildEditionConfig.current == BuildEdition.RU,
+    private val isRuBuildProvider: () -> Boolean = { settingsProvider.regionProfile == REGION_RU },
 ) : SpeechRecognitionProvider {
     override val enabled: Boolean
-        get() = isRuEdition
+        get() = isRuBuildProvider()
 
     override val hasRequiredKey: Boolean
         get() = enabled && !settingsProvider.aiTunnelKey.isNullOrBlank()

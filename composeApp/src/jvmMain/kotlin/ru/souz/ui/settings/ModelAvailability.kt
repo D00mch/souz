@@ -2,41 +2,39 @@ package ru.souz.ui.settings
 
 import ru.souz.db.SettingsProvider
 import ru.souz.db.hasKey
-import ru.souz.edition.BuildEdition
-import ru.souz.edition.BuildEditionConfig
 import ru.souz.giga.EmbeddingsModel
-import ru.souz.giga.EmbeddingsProvider
 import ru.souz.giga.GigaModel
 import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.LlmProvider
 import ru.souz.giga.VoiceRecognitionModel
 import ru.souz.giga.VoiceRecognitionProvider
 
-fun SettingsProvider.availableLlmModels(): List<GigaModel> =
-    LlmBuildProfile.availableModels.filter { model -> this.hasKey(model.provider) }
+fun SettingsProvider.availableLlmModels(llmBuildProfile: LlmBuildProfile): List<GigaModel> =
+    llmBuildProfile.availableModels.filter { model -> this.hasKey(model.provider) }
 
-fun SettingsProvider.defaultLlmModel(): GigaModel? {
-    val availableModels = this.availableLlmModels()
+fun SettingsProvider.defaultLlmModel(llmBuildProfile: LlmBuildProfile): GigaModel? {
+    val availableModels = this.availableLlmModels(llmBuildProfile)
     if (availableModels.isEmpty()) return null
 
-    val preferredProvider = LlmBuildProfile.providerPriorities()
+    val preferredProvider = llmBuildProfile.providerPriorities()
         .firstOrNull(this::hasKey)
 
     return preferredProvider
-        ?.let(LlmBuildProfile::defaultModelForProvider)
+        ?.let(llmBuildProfile::defaultModelForProvider)
         ?.takeIf { model -> model in availableModels }
         ?: availableModels.first()
 }
 
-fun SettingsProvider.availableEmbeddingsModels(): List<EmbeddingsModel> = EmbeddingsModel.entries
-    .filter { model -> this.hasKey(model.provider) }
+fun SettingsProvider.availableEmbeddingsModels(llmBuildProfile: LlmBuildProfile): List<EmbeddingsModel> = EmbeddingsModel.entries
+    .filter { model ->
+        this.hasKey(model.provider) && model.provider in llmBuildProfile.availableProviders
+    }
 
-fun SettingsProvider.defaultEmbeddingsModel(): EmbeddingsModel? {
-    val availableModels = this.availableEmbeddingsModels()
+fun SettingsProvider.defaultEmbeddingsModel(llmBuildProfile: LlmBuildProfile): EmbeddingsModel? {
+    val availableModels = this.availableEmbeddingsModels(llmBuildProfile)
     if (availableModels.isEmpty()) return null
 
-    val preferredProvider = LlmBuildProfile.providerPriorities()
-        .mapNotNull { it.toEmbeddingsProviderOrNull() }
+    val preferredProvider = llmBuildProfile.providerPriorities()
         .firstOrNull { provider -> availableModels.any { it.provider == provider } }
 
     return preferredProvider
@@ -44,29 +42,22 @@ fun SettingsProvider.defaultEmbeddingsModel(): EmbeddingsModel? {
         ?: availableModels.first()
 }
 
-fun SettingsProvider.availableVoiceRecognitionModels(): List<VoiceRecognitionModel> = VoiceRecognitionModel.entries
-    .filter { model -> model.provider.isEnabledInBuild() && this.hasKey(model.provider) }
+fun SettingsProvider.availableVoiceRecognitionModels(llmBuildProfile: LlmBuildProfile): List<VoiceRecognitionModel> =
+    VoiceRecognitionModel.entries.filter { model ->
+        model.provider.isEnabledInBuild(llmBuildProfile) && this.hasKey(model.provider)
+    }
 
-fun SettingsProvider.defaultVoiceRecognitionModel(): VoiceRecognitionModel? {
-    val availableModels = this.availableVoiceRecognitionModels()
+fun SettingsProvider.defaultVoiceRecognitionModel(llmBuildProfile: LlmBuildProfile): VoiceRecognitionModel? {
+    val availableModels = this.availableVoiceRecognitionModels(llmBuildProfile)
     if (availableModels.isEmpty()) return null
 
-    val preferredProvider = LlmBuildProfile.providerPriorities()
+    val preferredProvider = llmBuildProfile.providerPriorities()
         .mapNotNull { it.toVoiceRecognitionProviderOrNull() }
         .firstOrNull { provider -> availableModels.any { it.provider == provider } }
 
     return preferredProvider
         ?.let { provider -> availableModels.firstOrNull { it.provider == provider } }
         ?: availableModels.first()
-}
-
-/** Some llms doesn't have embeddings, Anthropic, for example */
-private fun LlmProvider.toEmbeddingsProviderOrNull(): EmbeddingsProvider? = when (this) {
-    LlmProvider.GIGA -> EmbeddingsProvider.GIGA
-    LlmProvider.QWEN -> EmbeddingsProvider.QWEN
-    LlmProvider.AI_TUNNEL -> EmbeddingsProvider.AI_TUNNEL
-    LlmProvider.ANTHROPIC -> null
-    LlmProvider.OPENAI -> EmbeddingsProvider.OPENAI
 }
 
 private fun LlmProvider.toVoiceRecognitionProviderOrNull(): VoiceRecognitionProvider? = when (this) {
@@ -77,8 +68,8 @@ private fun LlmProvider.toVoiceRecognitionProviderOrNull(): VoiceRecognitionProv
     LlmProvider.ANTHROPIC -> VoiceRecognitionProvider.OPENAI
 }
 
-private fun VoiceRecognitionProvider.isEnabledInBuild(): Boolean = when (this) {
-    VoiceRecognitionProvider.SALUTE_SPEECH -> LlmBuildProfile.supportsSaluteSpeechRecognition
-    VoiceRecognitionProvider.AI_TUNNEL -> BuildEditionConfig.current == BuildEdition.RU
-    VoiceRecognitionProvider.OPENAI -> BuildEditionConfig.current == BuildEdition.EN
+private fun VoiceRecognitionProvider.isEnabledInBuild(llmBuildProfile: LlmBuildProfile): Boolean = when (this) {
+    VoiceRecognitionProvider.SALUTE_SPEECH -> llmBuildProfile.supportsSaluteSpeechRecognition
+    VoiceRecognitionProvider.AI_TUNNEL -> LlmProvider.AI_TUNNEL in llmBuildProfile.availableProviders
+    VoiceRecognitionProvider.OPENAI -> LlmProvider.OPENAI in llmBuildProfile.availableProviders
 }

@@ -18,11 +18,12 @@ import ru.souz.agent.GraphBasedAgent
 import ru.souz.audio.Say
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.db.VectorDB
-import ru.souz.edition.BuildEdition
-import ru.souz.edition.BuildEditionConfig
 import ru.souz.giga.GigaChatAPI
 import ru.souz.giga.GigaResponse
+import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.LlmProvider
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.service.telegram.TelegramPlatformSupport
@@ -32,6 +33,8 @@ import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.calendar.CalendarAppleScriptCommands
 import ru.souz.ui.BaseViewModel
 import ru.souz.ui.common.openProviderLink
+import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
+import ru.souz.ui.common.usecases.ApiKeyValues
 import ru.souz.ui.settings.SettingsEvent.*
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
@@ -47,6 +50,8 @@ class SettingsViewModel(
 
     private val l = LoggerFactory.getLogger(SettingsViewModel::class.java)
     private val keysProvider: SettingsProvider by di.instance()
+    private val llmBuildProfile: LlmBuildProfile by di.instance()
+    private val apiKeyAvailabilityUseCase: ApiKeyAvailabilityUseCase by di.instance()
     private val chatApi: GigaChatAPI by di.instance()
     private val graphBasedAgent: GraphBasedAgent by di.instance()
     private val telegramPlatformSupport: TelegramPlatformSupport by di.instance()
@@ -126,6 +131,15 @@ class SettingsViewModel(
             is InputNotificationSoundEnabled -> {
                 keysProvider.notificationSoundEnabled = event.enabled
                 setState { copy(notificationSoundEnabled = event.enabled) }
+            }
+            is InputUseEnglishVersion -> {
+                val newLanguage = if (event.enabled) REGION_EN else REGION_RU
+                if (keysProvider.regionProfile != newLanguage) {
+                    keysProvider.regionProfile = newLanguage
+                    flushPendingSystemPromptSave()
+                    refreshFromProvider()
+                    fetchBalance()
+                }
             }
             is InputAiTunnelKey -> {
                 handleDeferredKeyInput(DeferredSettingsKey.AI_TUNNEL, event.key)
@@ -333,42 +347,55 @@ class SettingsViewModel(
         val aiTunnelKey = pendingKeyDrafts[DeferredSettingsKey.AI_TUNNEL] ?: keysProvider.aiTunnelKey.orEmpty()
         val anthropicKey = pendingKeyDrafts[DeferredSettingsKey.ANTHROPIC] ?: keysProvider.anthropicKey.orEmpty()
         val openAiKey = pendingKeyDrafts[DeferredSettingsKey.OPENAI] ?: keysProvider.openaiKey.orEmpty()
+        val saluteSpeechKey = pendingKeyDrafts[DeferredSettingsKey.SALUTE_SPEECH] ?: (keysProvider.saluteSpeechKey ?: "")
         val mcpServersJson = pendingTextSettingDrafts[DeferredTextSetting.MCP_SERVERS_JSON] ?: (keysProvider.mcpServersJson ?: "")
         val supportEmail = pendingTextSettingDrafts[DeferredTextSetting.SUPPORT_EMAIL]
             ?: (keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL)
+        val apiKeyAvailability = apiKeyAvailabilityUseCase.availability()
 
-        val availableLlmModels = keysProvider.availableLlmModels()
+        val availableLlmModels = keysProvider.availableLlmModels(llmBuildProfile)
         val configuredLlmModel = keysProvider.gigaModel
         val selectedLlmModel = pickConfiguredOrDefault(
             configured = configuredLlmModel,
             available = availableLlmModels,
-        ) { keysProvider.defaultLlmModel() }
-        val selectedPrompt = if (selectedLlmModel != configuredLlmModel) {
+        ) { keysProvider.defaultLlmModel(llmBuildProfile) }
+        val selectedPrompt = if (selectedLlmModel != currentState.gigaModel) {
             graphBasedAgent.updateModel(selectedLlmModel)
         } else {
             keysProvider.getSystemPromptForModel(selectedLlmModel) ?: DEFAULT_SYSTEM_PROMPT
         }
 
-        val availableEmbeddingsModels = keysProvider.availableEmbeddingsModels()
+        val availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(llmBuildProfile)
         val configuredEmbeddingsModel = keysProvider.embeddingsModel
         val selectedEmbeddingsModel = pickConfiguredOrDefault(
             configured = configuredEmbeddingsModel,
             available = availableEmbeddingsModels,
-        ) { keysProvider.defaultEmbeddingsModel() }
+        ) { keysProvider.defaultEmbeddingsModel(llmBuildProfile) }
         if (selectedEmbeddingsModel != configuredEmbeddingsModel) {
             keysProvider.embeddingsModel = selectedEmbeddingsModel
             VectorDB.clearAllData()
         }
 
-        val availableVoiceRecognitionModels = keysProvider.availableVoiceRecognitionModels()
+        val availableVoiceRecognitionModels = keysProvider.availableVoiceRecognitionModels(llmBuildProfile)
         val configuredVoiceRecognitionModel = keysProvider.voiceRecognitionModel
         val selectedVoiceRecognitionModel = pickConfiguredOrDefault(
             configured = configuredVoiceRecognitionModel,
             available = availableVoiceRecognitionModels,
-        ) { keysProvider.defaultVoiceRecognitionModel() }
+        ) { keysProvider.defaultVoiceRecognitionModel(llmBuildProfile) }
         if (selectedVoiceRecognitionModel != configuredVoiceRecognitionModel) {
             keysProvider.voiceRecognitionModel = selectedVoiceRecognitionModel
         }
+
+        val configuredKeysCount = apiKeyAvailabilityUseCase.configuredKeysCount(
+            values = ApiKeyValues(
+                gigaChatKey = gigaChatKey,
+                qwenChatKey = qwenChatKey,
+                aiTunnelKey = aiTunnelKey,
+                anthropicKey = anthropicKey,
+                openaiKey = openAiKey,
+                saluteSpeechKey = saluteSpeechKey,
+            ),
+        )
 
         setState {
             copy(
@@ -377,11 +404,16 @@ class SettingsViewModel(
                 aiTunnelKey = aiTunnelKey,
                 anthropicKey = anthropicKey,
                 openaiKey = openAiKey,
-                saluteSpeechKey = pendingKeyDrafts[DeferredSettingsKey.SALUTE_SPEECH] ?: (keysProvider.saluteSpeechKey ?: ""),
+                saluteSpeechKey = saluteSpeechKey,
+                availableApiKeyFields = apiKeyAvailability.fields,
+                availableApiKeyProviders = apiKeyAvailability.providers,
+                supportsVoiceRecognitionApiKeys = apiKeyAvailability.supportsVoiceRecognitionApiKeys,
+                configuredKeysCount = configuredKeysCount,
                 mcpServersJson = mcpServersJson,
                 useFewShotExamples = keysProvider.useFewShotExamples,
                 useStreaming = keysProvider.useStreaming,
                 notificationSoundEnabled = keysProvider.notificationSoundEnabled,
+                useEnglishVersion = keysProvider.regionProfile == REGION_EN,
                 safeModeEnabled = keysProvider.safeModeEnabled,
                 gigaModel = selectedLlmModel,
                 embeddingsModel = selectedEmbeddingsModel,
@@ -416,13 +448,18 @@ class SettingsViewModel(
     }
 
     private suspend fun setDeferredKeyState(field: DeferredSettingsKey, value: String) {
-        when (field) {
-            DeferredSettingsKey.GIGA_CHAT -> setState { copy(gigaChatKey = value) }
-            DeferredSettingsKey.QWEN_CHAT -> setState { copy(qwenChatKey = value) }
-            DeferredSettingsKey.AI_TUNNEL -> setState { copy(aiTunnelKey = value) }
-            DeferredSettingsKey.ANTHROPIC -> setState { copy(anthropicKey = value) }
-            DeferredSettingsKey.OPENAI -> setState { copy(openaiKey = value) }
-            DeferredSettingsKey.SALUTE_SPEECH -> setState { copy(saluteSpeechKey = value) }
+        setState {
+            val updated = when (field) {
+                DeferredSettingsKey.GIGA_CHAT -> copy(gigaChatKey = value)
+                DeferredSettingsKey.QWEN_CHAT -> copy(qwenChatKey = value)
+                DeferredSettingsKey.AI_TUNNEL -> copy(aiTunnelKey = value)
+                DeferredSettingsKey.ANTHROPIC -> copy(anthropicKey = value)
+                DeferredSettingsKey.OPENAI -> copy(openaiKey = value)
+                DeferredSettingsKey.SALUTE_SPEECH -> copy(saluteSpeechKey = value)
+            }
+            updated.copy(
+                configuredKeysCount = apiKeyAvailabilityUseCase.configuredKeysCount(updated.toApiKeyValues()),
+            )
         }
     }
 
@@ -550,6 +587,15 @@ class SettingsViewModel(
         }
     }
 
+    private fun SettingsState.toApiKeyValues(): ApiKeyValues = ApiKeyValues(
+        gigaChatKey = gigaChatKey,
+        qwenChatKey = qwenChatKey,
+        aiTunnelKey = aiTunnelKey,
+        anthropicKey = anthropicKey,
+        openaiKey = openaiKey,
+        saluteSpeechKey = saluteSpeechKey,
+    )
+
     private fun <T> pickConfiguredOrDefault(
         configured: T,
         available: List<T>,
@@ -629,9 +675,10 @@ class SettingsViewModel(
 
     private fun openPrivacyPolicy() = viewModelScope.launch(Dispatchers.IO) {
         runCatching {
-            val resourcePath = when (BuildEditionConfig.current) {
-                BuildEdition.RU -> "support/privacy-policy-ru.html"
-                BuildEdition.EN -> "support/privacy-policy.html"
+            val resourcePath = if (keysProvider.regionProfile == REGION_EN) {
+                "support/privacy-policy.html"
+            } else {
+                "support/privacy-policy-ru.html"
             }
             val targetPath = extractClasspathResourceToTemp(resourcePath)
             if (!Desktop.isDesktopSupported()) error("Desktop browsing is not supported")

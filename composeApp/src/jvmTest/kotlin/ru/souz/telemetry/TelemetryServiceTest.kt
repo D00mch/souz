@@ -2,9 +2,14 @@ package ru.souz.telemetry
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.sun.net.httpserver.HttpServer
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.runs
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import ru.souz.db.ConfigStore
+import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaResponse
 import ru.souz.tool.ToolCategory
 import java.net.InetSocketAddress
@@ -24,6 +29,10 @@ class TelemetryServiceTest {
 
     private val objectMapper = jacksonObjectMapper()
     private val cryptoService = TelemetryCryptoService()
+    private val settingsProvider = mockk<SettingsProvider>(relaxed = true).apply {
+        every { regionProfile } returns "ru"
+        every { regionProfile = any() } just runs
+    }
 
     @Test
     fun `flush registers installation signs telemetry batch and clears outbox`() = runTest {
@@ -94,6 +103,7 @@ class TelemetryServiceTest {
             val service = TelemetryService(
                 outboxRepository = repo,
                 cryptoService = cryptoService,
+                settingsProvider = settingsProvider,
                 runtimeConfig = TelemetryRuntimeConfig(baseUrl = "http://127.0.0.1:${server.address.port}"),
             )
 
@@ -176,6 +186,7 @@ class TelemetryServiceTest {
             val service = TelemetryService(
                 outboxRepository = repo,
                 cryptoService = cryptoService,
+                settingsProvider = settingsProvider,
                 runtimeConfig = TelemetryRuntimeConfig(baseUrl = ""),
             )
 

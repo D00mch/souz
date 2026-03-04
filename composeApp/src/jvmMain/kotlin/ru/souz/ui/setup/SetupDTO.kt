@@ -1,5 +1,6 @@
 package ru.souz.ui.setup
 
+import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
@@ -12,6 +13,9 @@ data class SetupState(
     val anthropicKey: String = "",
     val openaiKey: String = "",
     val saluteSpeechKey: String = "",
+    val availableApiKeyFields: Set<ApiKeyField> = emptySet(),
+    val availableApiKeyProviders: List<ApiKeyProvider> = emptyList(),
+    val supportsVoiceRecognitionApiKeys: Boolean = false,
     val configuredKeysCount: Int = 0,
     val canProceed: Boolean = false,
     val shouldProceed: Boolean = false,

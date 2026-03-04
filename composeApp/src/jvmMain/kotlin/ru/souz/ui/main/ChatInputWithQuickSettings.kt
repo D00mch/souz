@@ -93,7 +93,7 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.delay
 import kotlin.math.max
-import ru.souz.giga.LlmBuildProfile
+import ru.souz.giga.GigaModel
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -182,7 +182,7 @@ internal fun ChatInputWithQuickSettings(
 
     val modelOptions = remember(availableModelAliases) {
         availableModelAliases.mapNotNull { alias ->
-            LlmBuildProfile.findModelByAlias(alias)?.let { model ->
+            GigaModel.entries.firstOrNull { it.alias == alias }?.let { model ->
                 QuickOption(value = model.alias, label = model.displayName)
             }
         }

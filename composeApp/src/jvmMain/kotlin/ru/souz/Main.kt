@@ -34,12 +34,6 @@ import androidx.compose.ui.res.painterResource as jvmPainterResource
 val LocalWindowScope = staticCompositionLocalOf<WindowScope?> { null }
 private val startupLog = LoggerFactory.getLogger("AppStartup")
 
-/**
- * for EN build, pass VM options
- * ```
- * -Dorg.gradle.project.edition=en
- * ```
- */
 fun main() {
     //System.setProperty("apple.awt.UIElement", "true") // - Makes the app tray-only on macOS
     logStartupPlatformInfo()

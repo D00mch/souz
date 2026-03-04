@@ -22,7 +22,7 @@ class ModelAwareSpeechRecognitionProviderTest {
         val provider = AiTunnelSpeechRecognitionProvider(
             aiTunnelVoiceAPI = mockk<AiTunnelVoiceAPI>(),
             settingsProvider = settingsProvider,
-            isRuEdition = false,
+            isRuBuildProvider = { false },
         )
 
         assertFalse(provider.enabled)

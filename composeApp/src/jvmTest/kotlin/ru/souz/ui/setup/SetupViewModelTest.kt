@@ -16,9 +16,11 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.BuildEdition
 import ru.souz.giga.GigaModel
 import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.LlmProvider
+import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -255,15 +257,19 @@ class SetupViewModelTest {
 
     private fun createViewModel(settingsProvider: SettingsProvider): SetupViewModel {
         val say = mockk<Say>(relaxed = true)
+        val llmBuildProfile = LlmBuildProfile(settingsProvider)
+        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
+            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
             bindSingleton<Say> { say }
         }
         return SetupViewModel(di)
     }
 
     private fun supportsProvider(provider: LlmProvider): Boolean =
-        LlmBuildProfile.defaultModelForProvider(provider) != null
+        LlmBuildProfile.defaultsForEdition(BuildEdition.RU)[provider] != null
 
     private fun settingsProviderStub(
         giga: String,
@@ -286,6 +292,7 @@ class SetupViewModelTest {
         var gigaModelValue = gigaModel
         var onboardingCompletedValue = onboardingCompleted
         var needsOnboardingValue = false
+        var appLanguageValue = "ru"
 
         every { settingsProvider.gigaChatKey } answers { gigaValue }
         every { settingsProvider.gigaChatKey = any() } answers { gigaValue = firstArg() }
@@ -313,6 +320,8 @@ class SetupViewModelTest {
 
         every { settingsProvider.needsOnboarding } answers { needsOnboardingValue }
         every { settingsProvider.needsOnboarding = any() } answers { needsOnboardingValue = firstArg() }
+        every { settingsProvider.regionProfile } answers { appLanguageValue }
+        every { settingsProvider.regionProfile = any() } answers { appLanguageValue = firstArg() }
 
         return settingsProvider
     }

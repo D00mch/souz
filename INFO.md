@@ -23,7 +23,7 @@ Primary stack:
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Telemetry pipeline with local SQLite outbox**: app usage, chat/conversation usage, tool usage, and token usage are always captured per auto-generated user/device IDs, queued in `~/.local/state/souz/telemetry.db`, and sent batched after installation registration and Ed25519-signed requests.
-- **Edition-aware builds** (`ru`/`en`) with build-profile based provider/model availability and packaging metadata.
+- **Runtime EN/RU profile toggle** with one packaged build: profile is switched in Settings and controls provider/model availability.
 - **Key-aware model selection in Settings**: chat, embeddings, and voice recognition model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop toolset**: files, browser, calendar, mail, notes, desktop automation, analytics, and presentations.
@@ -31,7 +31,7 @@ Primary stack:
 - **Safer file editing**: `EditFile` now applies unified patches with dry-run validation and feeds patch content directly from memory (no temporary patch files), and in safe mode shows a patch diff preview before apply. On patch errors, tool guidance now explicitly forbids delete+recreate fallback.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
 - **Telegram PC Control bot**: automated bot creation via `@BotFather`, long-polling command listener, and agent-driven responses — all managed from the Telegram settings screen. Bot credentials (`TG_BOT_TOKEN`, `TG_BOT_OWNER_ID`, `TG_BOT_USERNAME`) are stored in `ConfigStore`. The bot can be created/deleted from the UI; on creation it automatically sends `/start` and sets a profile avatar. Telegram integration is runtime-gated on macOS and disabled on versions below macOS 15 (with UI/tool warnings instead of app crash). Telegram tool category is also disabled while Telegram auth state is not `READY`.
-- **Model-aware speech recognition routing**: voice input recognition can use SaluteSpeech, OpenAI transcription (`/v1/audio/transcriptions`), or AiTunnel transcription (`/v1/audio/transcriptions`, RU edition only), and selects provider based on the chosen voice recognition model and configured keys.
+- **Model-aware speech recognition routing**: voice input recognition can use SaluteSpeech, OpenAI transcription (`/v1/audio/transcriptions`), or AiTunnel transcription (`/v1/audio/transcriptions`, RU profile only), and selects provider based on the chosen voice recognition model and configured keys.
 
 ## Project Structure
 ```text
@@ -56,8 +56,8 @@ Primary stack:
 │       │   │       ├── audio/          # Audio capture/playback utilities
 │       │   │       ├── db/             # Local config/data extraction/vector DB layer
 │       │   │       ├── di/             # Dependency wiring (DI container setup)
-│       │   │       ├── edition/        # Runtime build edition parsing/config (RU/EN)
-│       │   │       ├── giga/           # GigaChat auth/chat/voice clients and edition-aware model profile
+│       │   │       ├── edition/        # Runtime profile parsing/config (RU/EN)
+│       │   │       ├── giga/           # GigaChat auth/chat/voice clients and profile-aware model profile
 │       │   │       ├── image/          # Image utility helpers
 │       │   │       ├── keys/           # Keyboard listeners and key automation
 │       │   │       ├── libs/           # Native library bridge wrappers

@@ -22,6 +22,7 @@ import org.kodein.di.bindSingleton
 import ru.souz.agent.GraphBasedAgent
 import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.db.VectorDB
 import ru.souz.giga.DEFAULT_MAX_TOKENS
 import ru.souz.giga.EmbeddingsModel
@@ -36,6 +37,7 @@ import ru.souz.service.telegram.TelegramBotController
 import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.service.telegram.TelegramService
 import ru.souz.tool.ToolRunBashCommand
+import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -65,18 +67,23 @@ class SettingsViewModelTest {
         mockkObject(ToolRunBashCommand)
         every { ToolRunBashCommand.sh(any()) } returns ""
 
-        val supportsSalute = LlmBuildProfile.supportsSaluteSpeechRecognition
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        every { settingsProvider.regionProfile } returns REGION_RU
+        every { settingsProvider.regionProfile = any() } just runs
+        val llmBuildProfile = LlmBuildProfile(settingsProvider)
+        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
+
+        val supportsSalute = llmBuildProfile.supportsSaluteSpeechRecognition
         val configuredVoiceRecognitionModel = if (supportsSalute) {
             VoiceRecognitionModel.OpenAIGpt4oTranscribe
         } else {
             VoiceRecognitionModel.SaluteSpeech
         }
 
-        val configuredModel = LlmBuildProfile.availableModels.first {
+        val configuredModel = llmBuildProfile.availableModels.first {
             it.provider != LlmProvider.QWEN && it.provider != LlmProvider.OPENAI
         }
 
-        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         var embeddingsModelValue = EmbeddingsModel.GigaEmbeddings
         var voiceRecognitionModelValue = configuredVoiceRecognitionModel
 
@@ -118,6 +125,8 @@ class SettingsViewModelTest {
 
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
+            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
             bindSingleton<GigaChatAPI> { chatApi }
             bindSingleton<GraphBasedAgent> { graphBasedAgent }
             bindSingleton<TelegramPlatformSupport> { TelegramPlatformSupport }
@@ -129,11 +138,11 @@ class SettingsViewModelTest {
         val viewModel = SettingsViewModel(di)
         advanceUntilIdle()
 
-        val expectedLlmModel = settingsProvider.defaultLlmModel()
+        val expectedLlmModel = settingsProvider.defaultLlmModel(llmBuildProfile)
         assertNotNull(expectedLlmModel, "Expected at least one available llm model")
-        val expectedEmbeddingsModel = settingsProvider.defaultEmbeddingsModel()
+        val expectedEmbeddingsModel = settingsProvider.defaultEmbeddingsModel(llmBuildProfile)
         assertNotNull(expectedEmbeddingsModel, "Expected at least one available embeddings model")
-        val expectedVoiceRecognitionModel = settingsProvider.defaultVoiceRecognitionModel()
+        val expectedVoiceRecognitionModel = settingsProvider.defaultVoiceRecognitionModel(llmBuildProfile)
         assertNotNull(expectedVoiceRecognitionModel, "Expected at least one available voice recognition model")
 
         val state = viewModel.uiState.value
