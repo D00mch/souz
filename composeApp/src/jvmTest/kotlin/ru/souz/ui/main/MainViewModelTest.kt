@@ -91,10 +91,13 @@ class MainViewModelTest {
         every { anyConstructed<ActiveSoundRecorderImpl>().startRecording() } just runs
         coEvery { anyConstructed<ActiveSoundRecorderImpl>().stopRecording() } returns ByteArray(0)
 
-        mockkStatic(GlobalScreen::class)
-        every { GlobalScreen.registerNativeHook() } just runs
-        every { GlobalScreen.addNativeKeyListener(any()) } just runs
-        every { GlobalScreen.unregisterNativeHook() } just runs
+        val globalScreenMocked = runCatching {
+            mockkStatic(GlobalScreen::class)
+            every { GlobalScreen.registerNativeHook() } just runs
+            every { GlobalScreen.addNativeKeyListener(any()) } just runs
+            every { GlobalScreen.unregisterNativeHook() } just runs
+        }.isSuccess
+        assumeTrue(globalScreenMocked, "JNativeHook runtime is unavailable in this environment")
 
     }
 
