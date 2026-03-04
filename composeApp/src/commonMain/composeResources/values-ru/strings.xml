@@ -52,8 +52,8 @@
     <string name="setting_streaming_desc">Ответы появляются постепенно, по мере генерации</string>
     <string name="setting_notification_sound_title">Звук уведомления</string>
     <string name="setting_notification_sound_desc">Проигрывать короткий звук, когда ответ ассистента готов</string>
-    <string name="setting_language_profile_title">EN-профиль</string>
-    <string name="setting_language_profile_desc">Включено: профиль OpenAI/Anthropic. Выключено: профиль GigaChat/AI Tunnel.</string>
+    <string name="setting_language_profile_title">Региональный профиль</string>
+    <string name="setting_language_profile_desc">В России доступны специальные модели</string>
     <string name="label_voice_speed">Скорость речи</string>
     <string name="hint_voice_speed">Текущее значение: %d. Чем больше, тем быстрее речь.</string>
     <string name="label_voice_selection">Выбор голоса</string>
