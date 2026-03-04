@@ -21,6 +21,17 @@
     <string name="dialog_permission_title">Подтверждение действия</string>
     <string name="dialog_permission_allow">Разрешить</string>
     <string name="dialog_permission_deny">Запретить</string>
+    <string name="telegram_contact_select_title">Выбор контакта Telegram</string>
+    <string name="telegram_contact_select_message">Найдено несколько контактов для «%s». Выберите нужный.</string>
+    <string name="telegram_contact_select_choose">Выбрать</string>
+    <string name="telegram_contact_select_cancel">Отмена</string>
+    <string name="telegram_contact_select_contact_badge">контакт</string>
+    <string name="telegram_chat_select_title">Выбор Telegram чата</string>
+    <string name="telegram_chat_select_message">Найдено несколько чатов для «%s». Выберите нужный.</string>
+    <string name="telegram_chat_select_choose">Выбрать</string>
+    <string name="telegram_chat_select_cancel">Отмена</string>
+    <string name="telegram_chat_select_private_badge">личный чат</string>
+    <string name="telegram_chat_select_unread">непрочитано: %d</string>
 
     <!-- Settings Sidebar -->
     <string name="settings_title">Настройки</string>

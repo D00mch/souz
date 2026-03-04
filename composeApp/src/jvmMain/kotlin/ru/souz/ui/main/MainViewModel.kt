@@ -185,6 +185,30 @@ class MainViewModel(
 
             MainEvent.RejectToolPermission ->
                 permissionsUseCase.resolveToolPermission(currentState.toolPermissionDialog?.requestId, approved = false)
+
+            is MainEvent.SelectTelegramContact ->
+                permissionsUseCase.resolveTelegramContactSelection(
+                    currentState.telegramContactSelectionDialog?.requestId,
+                    selectedUserId = event.userId,
+                )
+
+            MainEvent.CancelTelegramContactSelection ->
+                permissionsUseCase.resolveTelegramContactSelection(
+                    currentState.telegramContactSelectionDialog?.requestId,
+                    selectedUserId = null,
+                )
+
+            is MainEvent.SelectTelegramChat ->
+                permissionsUseCase.resolveTelegramChatSelection(
+                    currentState.telegramChatSelectionDialog?.requestId,
+                    selectedChatId = event.chatId,
+                )
+
+            MainEvent.CancelTelegramChatSelection ->
+                permissionsUseCase.resolveTelegramChatSelection(
+                    currentState.telegramChatSelectionDialog?.requestId,
+                    selectedChatId = null,
+                )
         }
     }
 
@@ -388,6 +412,8 @@ class MainViewModel(
     override fun onCleared() {
         super.onCleared()
         permissionsUseCase.rejectPendingPermissionRequest(currentState.toolPermissionDialog?.requestId)
+        permissionsUseCase.rejectPendingTelegramContactSelection(currentState.telegramContactSelectionDialog?.requestId)
+        permissionsUseCase.rejectPendingTelegramChatSelection(currentState.telegramChatSelectionDialog?.requestId)
         chatUseCase.onCleared()
         permissionsUseCase.onCleared()
     }

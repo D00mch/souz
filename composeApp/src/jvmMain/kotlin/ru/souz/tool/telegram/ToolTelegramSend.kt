@@ -17,6 +17,7 @@ import org.jetbrains.compose.resources.getString
 
 class ToolTelegramSend(
     private val telegramService: TelegramService,
+    private val contactSelectionBroker: TelegramContactSelectionBroker? = null,
     private val permissionBroker: ToolPermissionBroker? = null,
 ) : ToolSetup<ToolTelegramSend.Input> {
 
@@ -54,17 +55,24 @@ class ToolTelegramSend(
             throw BadInputException("text is required")
         }
 
+        val candidate = resolveTelegramContactCandidate(
+            telegramService = telegramService,
+            selectionBroker = contactSelectionBroker,
+            rawTargetName = input.targetName,
+        ) ?: return telegramSelectionCancelled.msg
+
         val result = permissionBroker?.requestPermission(
             getString(Res.string.permission_telegram_send),
             linkedMapOf(
-                "targetName" to input.targetName,
+                "targetName" to candidate.displayName,
+                "targetUsername" to (candidate.username?.let { "@$it" } ?: "-"),
                 "text" to input.text,
             )
         )
         if (result is ToolPermissionResult.No) return result.msg
 
         val sent = runCatching {
-            telegramService.sendMessageToTarget(input.targetName, input.text)
+            telegramService.sendMessageToUser(candidate.userId, input.text)
         }.getOrElse { error ->
             throw BadInputException(error.message ?: "Failed to send Telegram message")
         }

@@ -3,6 +3,7 @@
 package ru.souz.ui.main
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -145,6 +146,10 @@ fun MainScreen(
         onClearContext = { viewModel.send(MainEvent.UserPressStop) },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
+        onSelectTelegramContact = { viewModel.send(MainEvent.SelectTelegramContact(it)) },
+        onCancelTelegramContactSelection = { viewModel.send(MainEvent.CancelTelegramContactSelection) },
+        onSelectTelegramChat = { viewModel.send(MainEvent.SelectTelegramChat(it)) },
+        onCancelTelegramChatSelection = { viewModel.send(MainEvent.CancelTelegramChatSelection) },
         onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
     )
 }
@@ -174,6 +179,10 @@ fun MainScreenContent(
     onClearContext: () -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
+    onSelectTelegramContact: (Long) -> Unit = {},
+    onCancelTelegramContactSelection: () -> Unit = {},
+    onSelectTelegramChat: (Long) -> Unit = {},
+    onCancelTelegramChatSelection: () -> Unit = {},
     onOpenPath: (String) -> Unit = {},
 ) {
     val windowInfo = LocalWindowInfo.current
@@ -188,6 +197,17 @@ fun MainScreenContent(
     val stringPermissionAllow = stringResource(Res.string.dialog_permission_allow)
     val stringPermissionDeny = stringResource(Res.string.dialog_permission_deny)
     val stringPermissionModifyFile = stringResource(Res.string.permission_modify_file)
+    val stringTelegramContactTitle = stringResource(Res.string.telegram_contact_select_title)
+    val stringTelegramContactMessage = stringResource(Res.string.telegram_contact_select_message)
+    val stringTelegramContactChoose = stringResource(Res.string.telegram_contact_select_choose)
+    val stringTelegramContactCancel = stringResource(Res.string.telegram_contact_select_cancel)
+    val stringTelegramContactBadge = stringResource(Res.string.telegram_contact_select_contact_badge)
+    val stringTelegramChatTitle = stringResource(Res.string.telegram_chat_select_title)
+    val stringTelegramChatMessage = stringResource(Res.string.telegram_chat_select_message)
+    val stringTelegramChatChoose = stringResource(Res.string.telegram_chat_select_choose)
+    val stringTelegramChatCancel = stringResource(Res.string.telegram_chat_select_cancel)
+    val stringTelegramChatPrivateBadge = stringResource(Res.string.telegram_chat_select_private_badge)
+    val stringTelegramChatUnread = stringResource(Res.string.telegram_chat_select_unread)
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -399,6 +419,207 @@ fun MainScreenContent(
                     onDismiss = onRejectToolPermission
                 )
             }
+
+            state.telegramContactSelectionDialog?.let { dialog ->
+                TelegramSelectionDialog(
+                    requestId = dialog.requestId,
+                    title = stringTelegramContactTitle,
+                    message = stringTelegramContactMessage.format(dialog.query),
+                    candidates = dialog.candidates,
+                    confirmText = stringTelegramContactChoose,
+                    cancelText = stringTelegramContactCancel,
+                    getId = { it.userId },
+                    getTitle = { it.displayName },
+                    getBadge = { if (it.isContact) stringTelegramContactBadge else null },
+                    getMeta = { candidate ->
+                        buildList {
+                            candidate.username?.let { add("@$it") }
+                            candidate.phoneMasked?.let { add(it) }
+                        }.takeIf { it.isNotEmpty() }?.joinToString("  •  ")
+                    },
+                    getPreview = { it.lastMessageText?.takeIf { text -> text.isNotBlank() } },
+                    onConfirmSelection = onSelectTelegramContact,
+                    onDismiss = onCancelTelegramContactSelection,
+                )
+            }
+
+            state.telegramChatSelectionDialog?.let { dialog ->
+                TelegramSelectionDialog(
+                    requestId = dialog.requestId,
+                    title = stringTelegramChatTitle,
+                    message = stringTelegramChatMessage.format(dialog.query),
+                    candidates = dialog.candidates,
+                    confirmText = stringTelegramChatChoose,
+                    cancelText = stringTelegramChatCancel,
+                    getId = { it.chatId },
+                    getTitle = { it.title },
+                    getBadge = { if (it.isPrivateChat) stringTelegramChatPrivateBadge else null },
+                    getMeta = { candidate -> stringTelegramChatUnread.format(candidate.unreadCount) },
+                    getPreview = { it.lastMessageText?.takeIf { text -> text.isNotBlank() } },
+                    onConfirmSelection = onSelectTelegramChat,
+                    onDismiss = onCancelTelegramChatSelection,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun <T> TelegramSelectionDialog(
+    requestId: Long,
+    title: String,
+    message: String,
+    candidates: List<T>,
+    confirmText: String,
+    cancelText: String,
+    getId: (T) -> Long,
+    getTitle: (T) -> String,
+    getBadge: (T) -> String?,
+    getMeta: (T) -> String?,
+    getPreview: (T) -> String?,
+    onConfirmSelection: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var selectedId by remember(requestId) { mutableStateOf<Long?>(null) }
+
+    ConfirmDialog(
+        type = ConfirmDialogType.WARNING,
+        title = title,
+        message = message,
+        dialogMaxWidth = ToolPermissionDialogMaxWidth,
+        dialogMaxHeightFraction = ToolPermissionDialogMaxHeightFraction,
+        detailsContent = {
+            TelegramSelectionCandidatesList(
+                candidates = candidates,
+                selectedId = selectedId,
+                getId = getId,
+                getTitle = getTitle,
+                getBadge = getBadge,
+                getMeta = getMeta,
+                getPreview = getPreview,
+                onSelect = { selectedId = it },
+            )
+        },
+        confirmText = confirmText,
+        cancelText = cancelText,
+        confirmEnabled = selectedId != null,
+        onConfirm = { selectedId?.let(onConfirmSelection) },
+        onDismiss = onDismiss,
+    )
+}
+
+@Composable
+private fun <T> TelegramSelectionCandidatesList(
+    candidates: List<T>,
+    selectedId: Long?,
+    getId: (T) -> Long,
+    getTitle: (T) -> String,
+    getBadge: (T) -> String?,
+    getMeta: (T) -> String?,
+    getPreview: (T) -> String?,
+    onSelect: (Long) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        candidates.forEach { candidate ->
+            val candidateId = getId(candidate)
+            TelegramSelectionCandidateRow(
+                title = getTitle(candidate),
+                selected = candidateId == selectedId,
+                badge = getBadge(candidate),
+                meta = getMeta(candidate),
+                preview = getPreview(candidate),
+                onClick = { onSelect(candidateId) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TelegramSelectionCandidateRow(
+    title: String,
+    selected: Boolean,
+    badge: String?,
+    meta: String?,
+    preview: String?,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            selected -> Color(0xFFF59E0B)
+            isHovered -> Color(0x66FFFFFF)
+            else -> Color(0x1AFFFFFF)
+        }
+    )
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            selected -> Color(0x26F59E0B)
+            isHovered -> Color(0x14FFFFFF)
+            else -> Color(0x0DFFFFFF)
+        }
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(backgroundColor)
+            .border(1.dp, borderColor, RoundedCornerShape(10.dp))
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                color = Color(0xF2FFFFFF),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (!badge.isNullOrBlank()) {
+                Text(
+                    text = badge,
+                    color = Color(0xFFF59E0B),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+
+        meta?.takeIf { it.isNotBlank() }?.let { metaText ->
+            Text(
+                text = metaText,
+                color = Color(0x99FFFFFF),
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        preview?.takeIf { it.isNotBlank() }?.let { previewText ->
+            Text(
+                text = previewText,
+                color = Color(0x80FFFFFF),
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

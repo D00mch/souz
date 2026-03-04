@@ -52,6 +52,35 @@ data class ToolPermissionDialogData(
     val params: Map<String, String>,
 )
 
+data class TelegramContactSelectionDialogData(
+    val requestId: Long,
+    val query: String,
+    val candidates: List<TelegramContactCandidateUi>,
+)
+
+data class TelegramChatSelectionDialogData(
+    val requestId: Long,
+    val query: String,
+    val candidates: List<TelegramChatCandidateUi>,
+)
+
+data class TelegramContactCandidateUi(
+    val userId: Long,
+    val displayName: String,
+    val username: String?,
+    val phoneMasked: String?,
+    val isContact: Boolean,
+    val lastMessageText: String?,
+)
+
+data class TelegramChatCandidateUi(
+    val chatId: Long,
+    val title: String,
+    val unreadCount: Int,
+    val isPrivateChat: Boolean,
+    val lastMessageText: String?,
+)
+
 /**
  * State for the main screen that mirrors the floating glass panel experience.
  */
@@ -74,6 +103,8 @@ data class MainState(
     val isSpeaking: Boolean = false,
     val showNewChatDialog: Boolean = false,
     val toolPermissionDialog: ToolPermissionDialogData? = null,
+    val telegramContactSelectionDialog: TelegramContactSelectionDialogData? = null,
+    val telegramChatSelectionDialog: TelegramChatSelectionDialogData? = null,
     val attachedFiles: List<ChatAttachedFile> = emptyList(),
 ) : VMState {
 
@@ -103,6 +134,10 @@ sealed interface MainEvent : VMEvent {
     data object RefreshSettings : MainEvent
     data object ApproveToolPermission : MainEvent
     data object RejectToolPermission : MainEvent
+    data class SelectTelegramContact(val userId: Long) : MainEvent
+    data object CancelTelegramContactSelection : MainEvent
+    data class SelectTelegramChat(val chatId: Long) : MainEvent
+    data object CancelTelegramChatSelection : MainEvent
 }
 
 sealed interface MainEffect : VMSideEffect {
