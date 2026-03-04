@@ -2,6 +2,7 @@ package ru.souz.service.telegram
 
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.LoggerContext
+import com.ibm.icu.text.Transliterator
 import it.tdlight.client.APIToken
 import it.tdlight.client.AuthenticationData
 import it.tdlight.client.AuthenticationSupplier
@@ -63,6 +64,9 @@ private const val TELEGRAM_CHAT_MIN_SCORE = 620
 private const val TELEGRAM_CHAT_AMBIGUOUS_SCORE = 700
 private const val TELEGRAM_CHAT_AMBIGUITY_GAP = 80
 private const val TELEGRAM_CHAT_FUZZY_TOP_K = 25
+private val LOOKUP_TRANSLITERATOR = ThreadLocal.withInitial {
+    Transliterator.getInstance("Russian-Latin/BGN; Latin-ASCII")
+}
 
 enum class TelegramAuthStep {
     INITIALIZING,
@@ -1941,47 +1945,8 @@ class TelegramService(
     }
 
     private fun transliterateToLatin(value: String): String {
-        val result = StringBuilder(value.length * 2)
-        for (char in value.lowercase()) {
-            val mapped = when (char) {
-                'а' -> "a"
-                'б' -> "b"
-                'в' -> "v"
-                'г' -> "g"
-                'д' -> "d"
-                'е' -> "e"
-                'ё' -> "e"
-                'ж' -> "zh"
-                'з' -> "z"
-                'и' -> "i"
-                'й' -> "y"
-                'к' -> "k"
-                'л' -> "l"
-                'м' -> "m"
-                'н' -> "n"
-                'о' -> "o"
-                'п' -> "p"
-                'р' -> "r"
-                'с' -> "s"
-                'т' -> "t"
-                'у' -> "u"
-                'ф' -> "f"
-                'х' -> "h"
-                'ц' -> "ts"
-                'ч' -> "ch"
-                'ш' -> "sh"
-                'щ' -> "sch"
-                'ъ' -> ""
-                'ы' -> "y"
-                'ь' -> ""
-                'э' -> "e"
-                'ю' -> "yu"
-                'я' -> "ya"
-                else -> char.toString()
-            }
-            result.append(mapped)
-        }
-        return normalizeLookup(result.toString())
+        val transliterated = LOOKUP_TRANSLITERATOR.get().transliterate(value.lowercase())
+        return normalizeLookup(transliterated)
     }
 
     private fun levenshteinDistance(left: String, right: String): Int {

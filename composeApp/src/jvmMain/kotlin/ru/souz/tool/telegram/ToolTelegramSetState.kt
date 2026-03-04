@@ -21,7 +21,7 @@ import org.jetbrains.compose.resources.getString
 
 class ToolTelegramSetState(
     private val telegramService: TelegramService,
-    private val chatSelectionBroker: TelegramChatSelectionBroker? = null,
+    private val chatSelectionBroker: TelegramChatSelectionBroker,
     private val permissionBroker: ToolPermissionBroker? = null,
 ) : ToolSetup<ToolTelegramSetState.Input> {
     private val settingsProvider: SettingsProvider by lazy { SettingsProviderImpl(ConfigStore) }
@@ -73,11 +73,12 @@ class ToolTelegramSetState(
             )
         }
 
-        val chatCandidate = resolveTelegramChatCandidate(
-            telegramService = telegramService,
-            selectionBroker = chatSelectionBroker,
-            rawChatName = input.chatName,
-        ) ?: return telegramSelectionCancelled.msg
+        val chatCandidate = with(TelegramToolResolvers) {
+            chatSelectionBroker.resolveTelegramChatCandidate(
+                telegramService = telegramService,
+                rawChatName = input.chatName,
+            )
+        } ?: return TelegramToolResolvers.telegramSelectionCancelled.msg
 
         val result = permissionBroker?.requestPermission(
             getString(Res.string.permission_telegram_set_state),

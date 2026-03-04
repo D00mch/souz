@@ -20,7 +20,7 @@ import org.jetbrains.compose.resources.getString
 
 class ToolTelegramForward(
     private val telegramService: TelegramService,
-    private val chatSelectionBroker: TelegramChatSelectionBroker? = null,
+    private val chatSelectionBroker: TelegramChatSelectionBroker,
     private val permissionBroker: ToolPermissionBroker? = null,
 ) : ToolSetup<ToolTelegramForward.Input> {
     private val settingsProvider: SettingsProvider by lazy { SettingsProviderImpl(ConfigStore) }
@@ -70,16 +70,18 @@ class ToolTelegramForward(
             )
         }
 
-        val sourceChat = resolveTelegramChatCandidate(
-            telegramService = telegramService,
-            selectionBroker = chatSelectionBroker,
-            rawChatName = input.fromChat,
-        ) ?: return telegramSelectionCancelled.msg
-        val targetChat = resolveTelegramChatCandidate(
-            telegramService = telegramService,
-            selectionBroker = chatSelectionBroker,
-            rawChatName = input.toChat,
-        ) ?: return telegramSelectionCancelled.msg
+        val sourceChat = with(TelegramToolResolvers) {
+            chatSelectionBroker.resolveTelegramChatCandidate(
+                telegramService = telegramService,
+                rawChatName = input.fromChat,
+            )
+        } ?: return TelegramToolResolvers.telegramSelectionCancelled.msg
+        val targetChat = with(TelegramToolResolvers) {
+            chatSelectionBroker.resolveTelegramChatCandidate(
+                telegramService = telegramService,
+                rawChatName = input.toChat,
+            )
+        } ?: return TelegramToolResolvers.telegramSelectionCancelled.msg
 
         val result = permissionBroker?.requestPermission(
             getString(Res.string.permission_telegram_forward),
