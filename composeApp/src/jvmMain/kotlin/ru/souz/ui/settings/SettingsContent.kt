@@ -49,6 +49,7 @@ import ru.souz.giga.VoiceRecognitionModel
 import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
+import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
 import org.jetbrains.compose.resources.stringResource
@@ -418,9 +419,9 @@ fun GeneralSettingsContent(
                 title = stringResource(Res.string.setting_language_profile_title),
                 description = stringResource(Res.string.setting_language_profile_desc),
                 content = {
-                    SettingsCheckbox(
-                        checked = state.useEnglishVersion,
-                        onCheckedChange = onUseEnglishVersionChange
+                    RegionProfileToggle(
+                        useEnglishProfile = state.useEnglishVersion,
+                        onProfileChange = onUseEnglishVersionChange
                     )
                 }
             )

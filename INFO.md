@@ -23,7 +23,7 @@ Primary stack:
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Telemetry pipeline with local SQLite outbox**: app usage, chat/conversation usage, tool usage, and token usage are always captured per auto-generated user/device IDs, queued in `~/.local/state/souz/telemetry.db`, and sent batched after installation registration and Ed25519-signed requests.
-- **Runtime EN/RU profile toggle** with one packaged build: profile is switched in Settings and controls provider/model availability.
+- **Runtime EN/RU profile toggle** with one packaged build: profile is switched via a shared segmented RU/EN toggle in Setup and Settings and controls provider/model availability.
 - **Key-aware model selection in Settings**: chat, embeddings, and voice recognition model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop toolset**: files, browser, calendar, mail, notes, desktop automation, analytics, and presentations.
@@ -36,40 +36,37 @@ Primary stack:
 ## Project Structure
 ```text
 .
-├── composeApp/                         # Main desktop application module
-│   ├── build/                          # Build output for composeApp (generated)
-│   ├── composeApp/                     # Auxiliary nested folder with test resource skeleton
+├── composeApp/                             # Main desktop application module
+│   ├── build/                              # Build output for composeApp (generated)
+│   ├── composeApp/                         # Auxiliary nested folder with test resource skeleton
 │   │   └── src/
 │   │       └── jvmTest/
 │   │           └── resources/
-│   │               └── directory/      # Placeholder fixture directory
+│   │               └── directory/          # Placeholder fixture directory
 │   └── src/
-│       ├── jvmMain/                    # Production JVM sources/resources
-│       │   ├── composeResources/       # Compose Multiplatform resources
-│       │   │   └── drawable/           # Application icons and drawable assets
+│       ├── jvmMain/                        # Production JVM sources/resources
+│       │   ├── composeResources/           # Compose Multiplatform resources
+│       │   │   └── drawable/               # Application icons and drawable assets
 │       │   ├── kotlin/
-│       │   │   └── ru/souz/        # Application Kotlin code
-│       │   │       ├── agent/          # Graph-based agent assembly. The main agent related logic is here
-│       │   │       │   ├── engine/     # Core graph primitives (Node, Graph, runner/runtime)
-│       │   │       │   ├── nodes/      # Graph node implementations (LLM, MCP, classification, etc.)
-│       │   │       │   └── session/    # Graph session models, repository, and service
-│       │   │       ├── audio/          # Audio capture/playback utilities
-│       │   │       ├── db/             # Local config/data extraction/vector DB layer
-│       │   │       ├── di/             # Dependency wiring (DI container setup)
-│       │   │       ├── edition/        # Runtime profile parsing/config (RU/EN)
-│       │   │       ├── giga/           # GigaChat auth/chat/voice clients and profile-aware model profile
-│       │   │       ├── image/          # Image utility helpers
-│       │   │       ├── keys/           # Keyboard listeners and key automation
-│       │   │       ├── libs/           # Native library bridge wrappers
-│       │   │       ├── llms/           # Additional LLM provider clients (Qwen, AiTunnel, Anthropic)
-│       │   │       ├── mcp/            # MCP sessions, transport, config, OAuth, protocol adapter
-│       │   │       ├── permissions/    # Permission/relaunch helpers
-│       │   │       ├── service/       # Service-layer integrations
-│       │   │       │   └── telegram/  # Telegram client (TdLib) + Bot polling controller
-│       │   │       │       ├── TelegramService.kt       # TdLib wrapper: auth, messaging, bot creation via BotFather
-│       │   │       │       └── TelegramBotController.kt  # Long-polling listener for the PC Control bot
-│       │   │       ├── telemetry/      # Local telemetry outbox, batching sender, and event models
-│       │   │       ├── tool/           # Tool framework and concrete tool implementations
+│       │   │   └── ru/souz/                # Application Kotlin code
+│       │   │       ├── agent/              # Graph-based agent assembly. The main agent related logic is here
+│       │   │       │   ├── engine/         # Core graph primitives (Node, Graph, runner/runtime)
+│       │   │       │   ├── nodes/          # Graph node implementations (LLM, MCP, classification, etc.)
+│       │   │       │   └── session/        # Graph session models, repository, and service
+│       │   │       ├── audio/              # Audio capture/playback utilities
+│       │   │       ├── db/                 # Local config/data extraction/vector DB layer
+│       │   │       ├── di/                 # Dependency wiring (DI container setup)
+│       │   │       ├── giga/               # GigaChat auth/chat/voice clients and profile-aware model profile
+│       │   │       ├── image/              # Image utility helpers
+│       │   │       ├── keys/               # Keyboard listeners and key automation
+│       │   │       ├── libs/               # Native library bridge wrappers
+│       │   │       ├── llms/               # Additional LLM provider clients (Qwen, AiTunnel, Anthropic)
+│       │   │       ├── mcp/                # MCP sessions, transport, config, OAuth, protocol adapter
+│       │   │       ├── permissions/        # Permission/relaunch helpers
+│       │   │       ├── service/            # Service-layer integrations
+│       │   │       │   └── telegram/       # Telegram client (TdLib) + Bot polling controller
+│       │   │       ├── telemetry/          # Local telemetry outbox, batching sender, and event models
+│       │   │       ├── tool/               # Tool framework and concrete tool implementations
 │       │   │       │   ├── application/    # App launch/list tools
 │       │   │       │   ├── browser/        # Browser operations/hotkeys/tab control
 │       │   │       │   ├── calendar/       # Calendar list/create/delete tools
@@ -83,38 +80,39 @@ Primary stack:
 │       │   │       │   ├── notes/          # Notes CRUD/search tools
 │       │   │       │   ├── presentation/   # Presentation create/read/style helpers
 │       │   │       │   └── textReplace/    # Clipboard and selected-text tools
-│       │   │       └── ui/             # Compose UI layer
-│       │   │           ├── common/     # Shared UI utilities/components
-│       │   │           ├── components/ # Reusable UI widgets
-│       │   │           ├── graphlog/   # Graph sessions visualization screens
-│       │   │           ├── main/       # Main chat screen/view-model. Agent interaction happens here
-│       │   │           │   └── usecases/   # Main flow use cases (chat, speech, onboarding)
-|       |   |           |   └── INFO.md # The same file as this one, with the details on ui/main
-│       │   │           ├── settings/   # Settings screens and view-models
-│       │   │           ├── setup/      # First-run setup flow
-│       │   │           └── tools/      # Tool management/detail screens
-│       │   ├── resources/              # Runtime resources
-│       │   │   ├── bot_avatar.png      # Default avatar image for the Telegram PC Control bot
-│       │   │   ├── certs/              # Trusted certificate bundles
-│       │   │   ├── darwin-arm64/       # macOS arm64 JNI/native binaries
-│       │   │   └── scripts/            # Helper scripts and native build helpers
-│       │   └── swift/                  # Swift source for native media keys bridge
-│       └── jvmTest/                    # JVM test source set
-│           ├── kotlin/                 # Unit/integration tests by feature domain
-│           │   ├── agent/              # Agent scenario/integration tests
-│           │   ├── classification/     # Classification prompt tests
-│           │   ├── db/                 # Data/vector DB tests
-│           │   ├── giga/               # Giga API/tool tests
-│           │   ├── ru/souz/        # Package-aligned tests
-│           │   │   ├── tool/           # Tool tests in package namespace
-│           │   │   └── ui/             # UI/view-model tests
-│           │   └── tool/files/         # File-tool focused tests
+│       │   │       └── ui/                 # Compose UI layer
+│       │   │           ├── common/         # Shared UI utilities/components
+│       │   │           ├── components/     # Reusable UI widgets
+│       │   │           ├── graphlog/       # Graph sessions visualization screens
+│       │   │           ├── main/           # Main chat screen/view-model. Agent interaction happens here
+│       │   │           │   ├── usecases/   # Main flow use cases (chat, speech, onboarding)
+│       │   │           │   └── INFO.md     # Local notes for ui/main package
+│       │   │           ├── settings/       # Settings screens and view-models
+│       │   │           │   └── INFO.md     # Local notes for ui/settings package
+│       │   │           ├── setup/          # First-run setup flow
+│       │   │           └── tools/          # Tool management/detail screens
+│       │   ├── resources/                  # Runtime resources
+│       │   │   ├── bot_avatar.png          # Default avatar image for the Telegram PC Control bot
+│       │   │   ├── certs/                  # Trusted certificate bundles
+│       │   │   ├── darwin-arm64/           # macOS arm64 JNI/native binaries
+│       │   │   └── scripts/                # Helper scripts and native build helpers
+│       │   └── swift/                      # Swift source for native media keys bridge
+│       └── jvmTest/                        # JVM test source set
+│           ├── kotlin/                     # Unit/integration tests by feature domain
+│           │   ├── agent/                  # Agent scenario/integration tests
+│           │   ├── classification/         # Classification prompt tests
+│           │   ├── db/                     # Data/vector DB tests
+│           │   ├── giga/                   # Giga API/tool tests
+│           │   ├── ru/souz/                # Package-aligned tests
+│           │   │   ├── tool/               # Tool tests in package namespace
+│           │   │   └── ui/                 # UI/view-model tests
+│           │   └── tool/files/             # File-tool focused tests
 │           └── resources/
-│               └── directory/          # File fixture directory for tests
-├── dest/                               # Local output/scratch directory (currently empty)
-├── build-logic/                        # Included Gradle build with convention plugins/shared build logic
-├── gradle/                             # Gradle version catalog and wrapper configuration
-│   └── wrapper/                        # Gradle wrapper JAR/properties
+│               └── directory/              # File fixture directory for tests
+├── dest/                                   # Local output/scratch directory (currently empty)
+├── build-logic/                            # Included Gradle build with convention plugins/shared build logic
+├── gradle/                                 # Gradle version catalog and wrapper configuration
+│   └── wrapper/                            # Gradle wrapper JAR/properties
 ```
 
 Notes:

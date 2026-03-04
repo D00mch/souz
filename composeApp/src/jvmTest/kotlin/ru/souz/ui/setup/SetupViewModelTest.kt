@@ -16,6 +16,8 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.llms.BuildEdition
 import ru.souz.giga.GigaModel
 import ru.souz.giga.LlmBuildProfile
@@ -242,6 +244,33 @@ class SetupViewModelTest {
         advanceUntilIdle()
 
         assertEquals(GigaModel.Pro, settingsProvider.gigaModel)
+    }
+
+    @Test
+    fun `setup updates profile toggle and persists selection`() = runTest(dispatcher) {
+        val settingsProvider = settingsProviderStub(
+            giga = "",
+            qwen = "",
+            aiTunnel = "",
+            speech = "",
+            onboardingCompleted = false,
+        )
+        val viewModel = createViewModel(settingsProvider)
+
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.useEnglishVersion)
+
+        viewModel.send(SetupEvent.InputUseEnglishVersion(true))
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.useEnglishVersion)
+        verify { settingsProvider.regionProfile = REGION_EN }
+
+        viewModel.send(SetupEvent.InputUseEnglishVersion(false))
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.useEnglishVersion)
+        verify { settingsProvider.regionProfile = REGION_RU }
     }
 
     private fun hasOpenGlRuntime(): Boolean {

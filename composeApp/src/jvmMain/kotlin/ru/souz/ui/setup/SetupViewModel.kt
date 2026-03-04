@@ -8,6 +8,8 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.giga.GigaModel
 import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.LlmProvider
@@ -73,6 +75,21 @@ class SetupViewModel(
 
     override suspend fun handleEvent(event: SetupEvent) {
         when (event) {
+            is SetupEvent.InputUseEnglishVersion -> {
+                val newLanguage = if (event.enabled) REGION_EN else REGION_RU
+                if (settingsProvider.regionProfile != newLanguage) {
+                    settingsProvider.regionProfile = newLanguage
+                    updateKeysState(
+                        gigaChatKey = currentState.gigaChatKey,
+                        qwenChatKey = currentState.qwenChatKey,
+                        aiTunnelKey = currentState.aiTunnelKey,
+                        anthropicKey = currentState.anthropicKey,
+                        openAiKey = currentState.openaiKey,
+                        saluteSpeechKey = currentState.saluteSpeechKey,
+                    )
+                }
+            }
+
             is SetupEvent.InputGigaChatKey -> {
                 settingsProvider.gigaChatKey = event.key
                 val qwenChatKey = currentState.qwenChatKey
@@ -272,6 +289,7 @@ class SetupViewModel(
                 availableApiKeyFields = availability.fields,
                 availableApiKeyProviders = availability.providers,
                 supportsVoiceRecognitionApiKeys = availability.supportsVoiceRecognitionApiKeys,
+                useEnglishVersion = settingsProvider.regionProfile == REGION_EN,
                 configuredKeysCount = configuredKeysCount,
                 canProceed = configuredKeysCount > 0
             )

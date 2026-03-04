@@ -45,6 +45,7 @@ import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.common.ConfirmDialog
 import ru.souz.ui.common.ConfirmDialogType
+import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
 import ru.souz.ui.main.RealLiquidGlassCard
@@ -76,6 +77,7 @@ fun SetupScreen(
 
     SetupScreenContent(
         state = state,
+        onUseEnglishVersionChange = { enabled -> viewModel.send(SetupEvent.InputUseEnglishVersion(enabled)) },
         onGigaChatKeyInput = { key -> viewModel.send(SetupEvent.InputGigaChatKey(key)) },
         onQwenChatKeyInput = { key -> viewModel.send(SetupEvent.InputQwenChatKey(key)) },
         onAiTunnelKeyInput = { key -> viewModel.send(SetupEvent.InputAiTunnelKey(key)) },
@@ -93,6 +95,7 @@ fun SetupScreen(
 @Composable
 fun SetupScreenContent(
     state: SetupState,
+    onUseEnglishVersionChange: (Boolean) -> Unit,
     onGigaChatKeyInput: (String) -> Unit,
     onQwenChatKeyInput: (String) -> Unit,
     onAiTunnelKeyInput: (String) -> Unit,
@@ -135,6 +138,24 @@ fun SetupScreenContent(
                             fontWeight = FontWeight.Bold
                         )
                     }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(Res.string.setting_language_profile_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White.copy(alpha = 0.95f),
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = stringResource(Res.string.setting_language_profile_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.65f)
+                    )
+                    RegionProfileToggle(
+                        useEnglishProfile = state.useEnglishVersion,
+                        onProfileChange = onUseEnglishVersionChange,
+                    )
                 }
 
                 Text(
@@ -391,6 +412,7 @@ private fun SetupScreenPreview() {
                 configuredKeysCount = 0,
                 canProceed = false
             ),
+            onUseEnglishVersionChange = {},
             onGigaChatKeyInput = {},
             onQwenChatKeyInput = {},
             onAiTunnelKeyInput = {},
