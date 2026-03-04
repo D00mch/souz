@@ -146,10 +146,8 @@ fun MainScreen(
         onClearContext = { viewModel.send(MainEvent.UserPressStop) },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
-        onSelectTelegramContact = { viewModel.send(MainEvent.SelectTelegramContact(it)) },
-        onCancelTelegramContactSelection = { viewModel.send(MainEvent.CancelTelegramContactSelection) },
-        onSelectTelegramChat = { viewModel.send(MainEvent.SelectTelegramChat(it)) },
-        onCancelTelegramChatSelection = { viewModel.send(MainEvent.CancelTelegramChatSelection) },
+        onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
+        onCancelSelectionDialog = { viewModel.send(MainEvent.CancelSelectionDialog) },
         onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
     )
 }
@@ -179,10 +177,8 @@ fun MainScreenContent(
     onClearContext: () -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
-    onSelectTelegramContact: (Long) -> Unit = {},
-    onCancelTelegramContactSelection: () -> Unit = {},
-    onSelectTelegramChat: (Long) -> Unit = {},
-    onCancelTelegramChatSelection: () -> Unit = {},
+    onSelectApprovalCandidate: (Long) -> Unit = {},
+    onCancelSelectionDialog: () -> Unit = {},
     onOpenPath: (String) -> Unit = {},
 ) {
     val windowInfo = LocalWindowInfo.current
@@ -197,17 +193,6 @@ fun MainScreenContent(
     val stringPermissionAllow = stringResource(Res.string.dialog_permission_allow)
     val stringPermissionDeny = stringResource(Res.string.dialog_permission_deny)
     val stringPermissionModifyFile = stringResource(Res.string.permission_modify_file)
-    val stringTelegramContactTitle = stringResource(Res.string.telegram_contact_select_title)
-    val stringTelegramContactMessage = stringResource(Res.string.telegram_contact_select_message)
-    val stringTelegramContactChoose = stringResource(Res.string.telegram_contact_select_choose)
-    val stringTelegramContactCancel = stringResource(Res.string.telegram_contact_select_cancel)
-    val stringTelegramContactBadge = stringResource(Res.string.telegram_contact_select_contact_badge)
-    val stringTelegramChatTitle = stringResource(Res.string.telegram_chat_select_title)
-    val stringTelegramChatMessage = stringResource(Res.string.telegram_chat_select_message)
-    val stringTelegramChatChoose = stringResource(Res.string.telegram_chat_select_choose)
-    val stringTelegramChatCancel = stringResource(Res.string.telegram_chat_select_cancel)
-    val stringTelegramChatPrivateBadge = stringResource(Res.string.telegram_chat_select_private_badge)
-    val stringTelegramChatUnread = stringResource(Res.string.telegram_chat_select_unread)
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -420,44 +405,16 @@ fun MainScreenContent(
                 )
             }
 
-            state.telegramContactSelectionDialog?.let { dialog ->
-                TelegramSelectionDialog(
+            state.selectionDialog?.let { dialog ->
+                SelectionDialog(
                     requestId = dialog.requestId,
-                    title = stringTelegramContactTitle,
-                    message = stringTelegramContactMessage.format(dialog.query),
+                    title = dialog.title,
+                    message = dialog.message,
                     candidates = dialog.candidates,
-                    confirmText = stringTelegramContactChoose,
-                    cancelText = stringTelegramContactCancel,
-                    getId = { it.userId },
-                    getTitle = { it.displayName },
-                    getBadge = { if (it.isContact) stringTelegramContactBadge else null },
-                    getMeta = { candidate ->
-                        buildList {
-                            candidate.username?.let { add("@$it") }
-                            candidate.phoneMasked?.let { add(it) }
-                        }.takeIf { it.isNotEmpty() }?.joinToString("  •  ")
-                    },
-                    getPreview = { it.lastMessageText?.takeIf { text -> text.isNotBlank() } },
-                    onConfirmSelection = onSelectTelegramContact,
-                    onDismiss = onCancelTelegramContactSelection,
-                )
-            }
-
-            state.telegramChatSelectionDialog?.let { dialog ->
-                TelegramSelectionDialog(
-                    requestId = dialog.requestId,
-                    title = stringTelegramChatTitle,
-                    message = stringTelegramChatMessage.format(dialog.query),
-                    candidates = dialog.candidates,
-                    confirmText = stringTelegramChatChoose,
-                    cancelText = stringTelegramChatCancel,
-                    getId = { it.chatId },
-                    getTitle = { it.title },
-                    getBadge = { if (it.isPrivateChat) stringTelegramChatPrivateBadge else null },
-                    getMeta = { candidate -> stringTelegramChatUnread.format(candidate.unreadCount) },
-                    getPreview = { it.lastMessageText?.takeIf { text -> text.isNotBlank() } },
-                    onConfirmSelection = onSelectTelegramChat,
-                    onDismiss = onCancelTelegramChatSelection,
+                    confirmText = dialog.confirmText,
+                    cancelText = dialog.cancelText,
+                    onConfirmSelection = onSelectApprovalCandidate,
+                    onDismiss = onCancelSelectionDialog,
                 )
             }
         }
@@ -465,18 +422,13 @@ fun MainScreenContent(
 }
 
 @Composable
-private fun <T> TelegramSelectionDialog(
+private fun SelectionDialog(
     requestId: Long,
     title: String,
     message: String,
-    candidates: List<T>,
+    candidates: List<SelectionDialogCandidateUi>,
     confirmText: String,
     cancelText: String,
-    getId: (T) -> Long,
-    getTitle: (T) -> String,
-    getBadge: (T) -> String?,
-    getMeta: (T) -> String?,
-    getPreview: (T) -> String?,
     onConfirmSelection: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -489,14 +441,9 @@ private fun <T> TelegramSelectionDialog(
         dialogMaxWidth = ToolPermissionDialogMaxWidth,
         dialogMaxHeightFraction = ToolPermissionDialogMaxHeightFraction,
         detailsContent = {
-            TelegramSelectionCandidatesList(
+            SelectionCandidatesList(
                 candidates = candidates,
                 selectedId = selectedId,
-                getId = getId,
-                getTitle = getTitle,
-                getBadge = getBadge,
-                getMeta = getMeta,
-                getPreview = getPreview,
                 onSelect = { selectedId = it },
             )
         },
@@ -509,14 +456,9 @@ private fun <T> TelegramSelectionDialog(
 }
 
 @Composable
-private fun <T> TelegramSelectionCandidatesList(
-    candidates: List<T>,
+private fun SelectionCandidatesList(
+    candidates: List<SelectionDialogCandidateUi>,
     selectedId: Long?,
-    getId: (T) -> Long,
-    getTitle: (T) -> String,
-    getBadge: (T) -> String?,
-    getMeta: (T) -> String?,
-    getPreview: (T) -> String?,
     onSelect: (Long) -> Unit,
 ) {
     Column(
@@ -524,13 +466,13 @@ private fun <T> TelegramSelectionCandidatesList(
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         candidates.forEach { candidate ->
-            val candidateId = getId(candidate)
-            TelegramSelectionCandidateRow(
-                title = getTitle(candidate),
+            val candidateId = candidate.id
+            SelectionCandidateRow(
+                title = candidate.title,
                 selected = candidateId == selectedId,
-                badge = getBadge(candidate),
-                meta = getMeta(candidate),
-                preview = getPreview(candidate),
+                badge = candidate.badge,
+                meta = candidate.meta,
+                preview = candidate.preview,
                 onClick = { onSelect(candidateId) },
             )
         }
@@ -538,7 +480,7 @@ private fun <T> TelegramSelectionCandidatesList(
 }
 
 @Composable
-private fun TelegramSelectionCandidateRow(
+private fun SelectionCandidateRow(
     title: String,
     selected: Boolean,
     badge: String?,

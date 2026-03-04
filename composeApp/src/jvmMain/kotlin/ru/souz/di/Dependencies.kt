@@ -79,6 +79,8 @@ import ru.souz.tool.presentation.WebResearchClient
 import ru.souz.tool.telegram.ToolTelegramForward
 import ru.souz.tool.telegram.TelegramChatSelectionBroker
 import ru.souz.tool.telegram.TelegramContactSelectionBroker
+import ru.souz.tool.telegram.TelegramChatSelectionApprovalSource
+import ru.souz.tool.telegram.TelegramContactSelectionApprovalSource
 import ru.souz.tool.telegram.ToolTelegramGetHistory
 import ru.souz.tool.telegram.ToolTelegramReadInbox
 import ru.souz.tool.telegram.ToolTelegramSavedMessages
@@ -119,6 +121,14 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolPermissionBroker(instance()) }
     bindSingleton { TelegramContactSelectionBroker() }
     bindSingleton { TelegramChatSelectionBroker() }
+    bindSingleton { TelegramContactSelectionApprovalSource(instance()) }
+    bindSingleton { TelegramChatSelectionApprovalSource(instance()) }
+    bindSingleton<Set<SelectionApprovalSource>> {
+        setOf(
+            instance<TelegramContactSelectionApprovalSource>(),
+            instance<TelegramChatSelectionApprovalSource>(),
+        )
+    }
     bindSingleton { TelegramService(instance()) }
 
     // Tools
@@ -243,7 +253,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
     bindSingleton { TelegramBotController(instance(), instance()) }
     bindSingleton { FinderPathExtractor(instance()) }
-    bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { McpConfigProvider(instance()) }
     bindSingleton { McpClientManager(instance()) }
 

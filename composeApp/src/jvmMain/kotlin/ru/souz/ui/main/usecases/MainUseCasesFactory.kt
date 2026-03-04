@@ -7,9 +7,8 @@ import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.giga.TokenLogging
 import ru.souz.telemetry.TelemetryService
+import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
-import ru.souz.tool.telegram.TelegramChatSelectionBroker
-import ru.souz.tool.telegram.TelegramContactSelectionBroker
 
 data class MainUseCases(
     val chat: ChatUseCase,
@@ -26,8 +25,7 @@ class MainUseCasesFactory(
     private val audioRecorder: InMemoryAudioRecorder,
     private val say: Say,
     private val toolPermissionBroker: ToolPermissionBroker,
-    private val telegramContactSelectionBroker: TelegramContactSelectionBroker,
-    private val telegramChatSelectionBroker: TelegramChatSelectionBroker,
+    private val selectionApprovalSources: Set<SelectionApprovalSource>,
     private val finderPathExtractor: FinderPathExtractor,
     private val tokenLogging: TokenLogging,
     private val telemetryService: TelemetryService,
@@ -49,8 +47,7 @@ class MainUseCasesFactory(
         val permissionsUseCase = PermissionsUseCase(
             settingsProvider = settingsProvider,
             toolPermissionBroker = toolPermissionBroker,
-            telegramContactSelectionBroker = telegramContactSelectionBroker,
-            telegramChatSelectionBroker = telegramChatSelectionBroker,
+            selectionApprovalSources = selectionApprovalSources,
             speechUseCase = speechUseCase,
         )
         val voiceInputUseCase = VoiceInputUseCase(

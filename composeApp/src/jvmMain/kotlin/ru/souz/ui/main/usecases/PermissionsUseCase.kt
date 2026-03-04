@@ -12,17 +12,12 @@ import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.permissions.AppRelauncher
-import ru.souz.service.telegram.TelegramChatCandidate
-import ru.souz.service.telegram.TelegramContactCandidate
+import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
-import ru.souz.tool.telegram.TelegramChatSelectionBroker
-import ru.souz.tool.telegram.TelegramContactSelectionBroker
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainState
-import ru.souz.ui.main.TelegramChatCandidateUi
-import ru.souz.ui.main.TelegramChatSelectionDialogData
-import ru.souz.ui.main.TelegramContactCandidateUi
-import ru.souz.ui.main.TelegramContactSelectionDialogData
+import ru.souz.ui.main.SelectionDialogCandidateUi
+import ru.souz.ui.main.SelectionDialogData
 import ru.souz.ui.main.ToolPermissionDialogData
 import kotlin.math.max
 import kotlin.math.min
@@ -33,14 +28,15 @@ import org.jetbrains.compose.resources.getString
 class PermissionsUseCase(
     private val settingsProvider: SettingsProvider,
     private val toolPermissionBroker: ToolPermissionBroker,
-    private val telegramContactSelectionBroker: TelegramContactSelectionBroker,
-    private val telegramChatSelectionBroker: TelegramChatSelectionBroker,
+    private val selectionApprovalSources: Set<SelectionApprovalSource>,
     private val speechUseCase: SpeechUseCase,
     private val relaunchApp: () -> Boolean = { AppRelauncher.relaunch() },
 ) {
     private val l = LoggerFactory.getLogger(PermissionsUseCase::class.java)
     private var onboardingSpeechStartedAt: Long? = null
     private var permissionWatcherJob: Job? = null
+    private val selectionApprovalSourcesById: Map<String, SelectionApprovalSource> =
+        selectionApprovalSources.associateBy { it.sourceId }
 
     private val _outputs = Channel<MainUseCaseOutput>()
     val outputs: Flow<MainUseCaseOutput> = _outputs.consumeAsFlow()
@@ -62,35 +58,33 @@ class PermissionsUseCase(
                 }
             }
         }
-        scope.launch {
-            telegramContactSelectionBroker.requests.collect { request ->
-                if (settingsProvider.notificationSoundEnabled) {
-                    speechUseCase.playMacPingMsgSafely(scope)
-                }
-                emitState {
-                    copy(
-                        telegramContactSelectionDialog = TelegramContactSelectionDialogData(
-                            requestId = request.id,
-                            query = request.query,
-                            candidates = request.candidates.map(::toContactCandidateUi),
+        selectionApprovalSourcesById.values.forEach { source ->
+            scope.launch {
+                source.requests.collect { request ->
+                    if (settingsProvider.notificationSoundEnabled) {
+                        speechUseCase.playMacPingMsgSafely(scope)
+                    }
+                    emitState {
+                        copy(
+                            selectionDialog = SelectionDialogData(
+                                sourceId = request.sourceId,
+                                requestId = request.requestId,
+                                title = request.title,
+                                message = request.message,
+                                confirmText = request.confirmText,
+                                cancelText = request.cancelText,
+                                candidates = request.candidates.map { candidate ->
+                                    SelectionDialogCandidateUi(
+                                        id = candidate.id,
+                                        title = candidate.title,
+                                        badge = candidate.badge,
+                                        meta = candidate.meta,
+                                        preview = candidate.preview,
+                                    )
+                                },
+                            )
                         )
-                    )
-                }
-            }
-        }
-        scope.launch {
-            telegramChatSelectionBroker.requests.collect { request ->
-                if (settingsProvider.notificationSoundEnabled) {
-                    speechUseCase.playMacPingMsgSafely(scope)
-                }
-                emitState {
-                    copy(
-                        telegramChatSelectionDialog = TelegramChatSelectionDialogData(
-                            requestId = request.id,
-                            query = request.query,
-                            candidates = request.candidates.map(::toChatCandidateUi),
-                        )
-                    )
+                    }
                 }
             }
         }
@@ -102,16 +96,14 @@ class PermissionsUseCase(
         emitState { copy(toolPermissionDialog = null) }
     }
 
-    suspend fun resolveTelegramContactSelection(requestId: Long?, selectedUserId: Long?) {
-        if (requestId == null) return
-        telegramContactSelectionBroker.resolve(requestId, selectedUserId)
-        emitState { copy(telegramContactSelectionDialog = null) }
-    }
-
-    suspend fun resolveTelegramChatSelection(requestId: Long?, selectedChatId: Long?) {
-        if (requestId == null) return
-        telegramChatSelectionBroker.resolve(requestId, selectedChatId)
-        emitState { copy(telegramChatSelectionDialog = null) }
+    suspend fun resolveSelectionDialog(
+        sourceId: String?,
+        requestId: Long?,
+        selectedCandidateId: Long?,
+    ) {
+        if (sourceId == null || requestId == null) return
+        selectionApprovalSourcesById[sourceId]?.resolve(requestId, selectedCandidateId)
+        emitState { copy(selectionDialog = null) }
     }
 
     suspend fun runOnboardingIfNeeded() {
@@ -187,12 +179,9 @@ class PermissionsUseCase(
         requestId?.let { toolPermissionBroker.resolve(it, approved = false) }
     }
 
-    fun rejectPendingTelegramContactSelection(requestId: Long?) {
-        requestId?.let { telegramContactSelectionBroker.resolve(it, null) }
-    }
-
-    fun rejectPendingTelegramChatSelection(requestId: Long?) {
-        requestId?.let { telegramChatSelectionBroker.resolve(it, null) }
+    fun rejectPendingSelectionDialog(sourceId: String?, requestId: Long?) {
+        if (sourceId == null || requestId == null) return
+        selectionApprovalSourcesById[sourceId]?.resolve(requestId, null)
     }
 
     fun onCleared() {
@@ -207,27 +196,6 @@ class PermissionsUseCase(
 
     private suspend fun emitState(reduce: MainState.() -> MainState) {
         _outputs.send(MainUseCaseOutput.State(reduce))
-    }
-
-    private fun toContactCandidateUi(candidate: TelegramContactCandidate): TelegramContactCandidateUi {
-        return TelegramContactCandidateUi(
-            userId = candidate.userId,
-            displayName = candidate.displayName,
-            username = candidate.username,
-            phoneMasked = candidate.phoneMasked,
-            isContact = candidate.isContact,
-            lastMessageText = candidate.lastMessageText,
-        )
-    }
-
-    private fun toChatCandidateUi(candidate: TelegramChatCandidate): TelegramChatCandidateUi {
-        return TelegramChatCandidateUi(
-            chatId = candidate.chatId,
-            title = candidate.title,
-            unreadCount = candidate.unreadCount,
-            isPrivateChat = candidate.linkedUserId != null,
-            lastMessageText = candidate.lastMessageText,
-        )
     }
 
     companion object {
