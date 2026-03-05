@@ -48,33 +48,26 @@ Primary stack:
 │       │   ├── composeResources/           # Compose Multiplatform resources
 │       │   │   └── drawable/               # Application icons and drawable assets
 │       │   ├── kotlin/
-│       │   │   └── ru/souz/        # Application Kotlin code
-│       │   │       ├── agent/          # Graph-based agent assembly. The main agent related logic is here
-│       │   │       │   ├── engine/     # Core graph primitives (Node, Graph, runner/runtime)
-│       │   │       │   ├── nodes/      # Graph node implementations (LLM, MCP, classification, etc.)
-│       │   │       │   └── session/    # Graph session models, repository, and service
-│       │   │       ├── audio/          # Audio capture/playback utilities
-│       │   │       ├── db/             # Local config/data extraction/vector DB layer
-│       │   │       ├── di/             # Dependency wiring (DI container setup)
-│       │   │       ├── edition/        # Runtime build edition parsing/config (RU/EN)
-│       │   │       ├── giga/           # GigaChat auth/chat/voice clients and edition-aware model profile
-│       │   │       ├── image/          # Image utility helpers
-│       │   │       ├── keys/           # Keyboard listeners and key automation
-│       │   │       ├── libs/           # Native library bridge wrappers
-│       │   │       ├── llms/           # Additional LLM provider clients (Qwen, AiTunnel, Anthropic)
-│       │   │       ├── mcp/            # MCP sessions, transport, config, OAuth, protocol adapter
-│       │   │       ├── permissions/    # Permission/relaunch helpers
-│       │   │       ├── service/       # Service-layer integrations
-│       │   │       │   └── telegram/  # Telegram client (TdLib) + bot polling/controller workflows
-│       │   │       │       ├── TelegramService.kt         # Facade/orchestrator for auth/session/messages and cache refresh
-│       │   │       │       ├── TelegramBotWorkflow.kt     # BotFather create/delete/resume flows + credential resolution
-│       │   │       │       ├── TelegramLookupEngine.kt    # Contact/chat candidate scoring and fuzzy lookup logic
-│       │   │       │       ├── TelegramInteractiveAuthBridge.kt # Interactive TDLib auth parameter bridge
-│       │   │       │       ├── TelegramModels.kt          # Shared telegram DTOs/enums exposed across UI/tools
-│       │   │       │       ├── TelegramTdlightExtensions.kt # Coroutine helpers for TdLight async APIs
-│       │   │       │       └── TelegramBotController.kt   # Long-polling listener for the PC Control bot
-│       │   │       ├── telemetry/      # Local telemetry outbox, batching sender, and event models
-│       │   │       ├── tool/           # Tool framework and concrete tool implementations
+│       │   │   └── ru/souz/                # Application Kotlin code
+│       │   │       ├── agent/              # Graph-based agent assembly. The main agent related logic is here
+│       │   │       │   ├── engine/         # Core graph primitives (Node, Graph, runner/runtime)
+│       │   │       │   ├── nodes/          # Graph node implementations (LLM, MCP, classification, etc.)
+│       │   │       │   └── session/        # Graph session models, repository, and service
+│       │   │       ├── audio/              # Audio capture/playback utilities
+│       │   │       ├── db/                 # Local config/data extraction/vector DB layer
+│       │   │       ├── di/                 # Dependency wiring (DI container setup)
+│       │   │       ├── edition/            # Runtime build edition parsing/config (RU/EN)
+│       │   │       ├── giga/               # GigaChat auth/chat/voice clients and edition-aware model profile
+│       │   │       ├── image/              # Image utility helpers
+│       │   │       ├── keys/               # Keyboard listeners and key automation
+│       │   │       ├── libs/               # Native library bridge wrappers
+│       │   │       ├── llms/               # Additional LLM provider clients (Qwen, AiTunnel, Anthropic)
+│       │   │       ├── mcp/                # MCP sessions, transport, config, OAuth, protocol adapter
+│       │   │       ├── permissions/        # Permission/relaunch helpers
+│       │   │       ├── service/            # Service-layer integrations
+│       │   │       │   └── telegram/       # Telegram client (TdLib) + bot polling/controller workflows
+│       │   │       ├── telemetry/          # Local telemetry outbox, batching sender, and event models
+│       │   │       ├── tool/               # Tool framework and concrete tool implementations
 │       │   │       │   ├── application/    # App launch/list tools
 │       │   │       │   ├── browser/        # Browser operations/hotkeys/tab control
 │       │   │       │   ├── calendar/       # Calendar list/create/delete tools
