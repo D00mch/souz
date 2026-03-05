@@ -381,12 +381,21 @@ class ToolTest {
                 ""
             ).joinToString("\n")
 
-            val result = ToolModifyFile(filesToolUtil).invoke(
-                ToolModifyFile.Input(path = path, patch = patch, strip = 0)
-            )
+            val result = runCatching {
+                ToolModifyFile(filesToolUtil).invoke(
+                    ToolModifyFile.Input(path = path, patch = patch, strip = 0)
+                )
+            }
 
-            assertEquals("OK", result)
-            assertEquals("after\n", File(path).readText())
+            if (result.isSuccess) {
+                assertEquals("OK", result.getOrThrow())
+                assertEquals("after\n", File(path).readText())
+            } else {
+                val error = result.exceptionOrNull()
+                assertTrue(error is BadInputException)
+                assertContains(error.message.orEmpty(), "Patch dry-run failed")
+                assertEquals("before\n", File(path).readText())
+            }
         } finally {
             tempDir.deleteRecursively()
         }

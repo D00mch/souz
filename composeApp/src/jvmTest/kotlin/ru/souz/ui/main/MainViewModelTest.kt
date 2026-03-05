@@ -3,6 +3,7 @@
 package ru.souz.ui.main
 
 import com.github.kwhat.jnativehook.GlobalScreen
+import com.github.kwhat.jnativehook.keyboard.NativeKeyListener
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.just
@@ -94,8 +95,14 @@ class MainViewModelTest {
         val globalScreenMocked = runCatching {
             mockkStatic(GlobalScreen::class)
             every { GlobalScreen.registerNativeHook() } just runs
-            every { GlobalScreen.addNativeKeyListener(any()) } just runs
+            every { GlobalScreen.addNativeKeyListener(any<NativeKeyListener>()) } just runs
+            every { GlobalScreen.removeNativeKeyListener(any<NativeKeyListener>()) } just runs
             every { GlobalScreen.unregisterNativeHook() } just runs
+            val listener = mockk<NativeKeyListener>(relaxed = true)
+            GlobalScreen.registerNativeHook()
+            GlobalScreen.addNativeKeyListener(listener)
+            GlobalScreen.removeNativeKeyListener(listener)
+            GlobalScreen.unregisterNativeHook()
         }.isSuccess
         assumeTrue(globalScreenMocked, "JNativeHook runtime is unavailable in this environment")
 
