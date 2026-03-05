@@ -47,11 +47,14 @@ interface SettingsProvider {
 class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvider {
 
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
-    private var _appLanguageDelegate: String? by keyDelegate(
-        configKey = APP_LANGUAGE,
-        envKey = LEGACY_EDITION_ENV,
-        sysPropKey = LEGACY_EDITION_SYSTEM_PROPERTY,
-    )
+    private var _appLanguageDelegate: String?
+        get() = configStore.get(APP_LANGUAGE)
+        set(value) {
+            when (value) {
+                null, "" -> configStore.rm(APP_LANGUAGE)
+                else -> configStore.put(APP_LANGUAGE, value)
+            }
+        }
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
     private var _useStreamingDelegate: String? by keyDelegate(configKey = USE_STREAMING, envKey = USE_STREAMING)
     private var _notificationSoundEnabledDelegate: String? by keyDelegate(
@@ -326,8 +329,6 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val VOICE_RECOGNITION_MODEL = "VOICE_RECOGNITION_MODEL"
         private const val MCP_SERVERS_JSON = "MCP_SERVERS_JSON"
         private const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
-        private const val LEGACY_EDITION_SYSTEM_PROPERTY = "souz.edition"
-        private const val LEGACY_EDITION_ENV = "souz_EDITION"
         const val REGION_RU = "ru"
         const val REGION_EN = "en"
         private val DEFAULT_FORBIDDEN_FOLDERS = listOf("~/Library/")
