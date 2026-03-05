@@ -3,7 +3,6 @@
 package ru.souz.ui.main
 
 import com.github.kwhat.jnativehook.GlobalScreen
-import com.github.kwhat.jnativehook.keyboard.NativeKeyListener
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.just
@@ -37,7 +36,6 @@ import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.onboarding_display_text
 import souz.composeapp.generated.resources.onboarding_input_permission_request
 import org.jetbrains.compose.resources.getString
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import ru.souz.agent.GraphBasedAgent
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
@@ -55,13 +53,8 @@ import ru.souz.service.telegram.TelegramBotController
 import ru.souz.telemetry.TelemetryRequestContext
 import ru.souz.telemetry.TelemetryRequestSource
 import ru.souz.telemetry.TelemetryService
-import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
-import ru.souz.tool.telegram.TelegramChatSelectionBroker
-import ru.souz.tool.telegram.TelegramChatSelectionApprovalSource
-import ru.souz.tool.telegram.TelegramContactSelectionBroker
-import ru.souz.tool.telegram.TelegramContactSelectionApprovalSource
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
@@ -93,14 +86,10 @@ class MainViewModelTest {
         every { anyConstructed<ActiveSoundRecorderImpl>().startRecording() } just runs
         coEvery { anyConstructed<ActiveSoundRecorderImpl>().stopRecording() } returns ByteArray(0)
 
-        val globalScreenMocked = runCatching {
-            mockkStatic(GlobalScreen::class)
-            every { GlobalScreen.registerNativeHook() } throws RuntimeException("Native hook is disabled by default in tests")
-            every { GlobalScreen.addNativeKeyListener(any<NativeKeyListener>()) } just runs
-            every { GlobalScreen.removeNativeKeyListener(any<NativeKeyListener>()) } just runs
-            every { GlobalScreen.unregisterNativeHook() } just runs
-        }.isSuccess
-        assumeTrue(globalScreenMocked, "JNativeHook runtime is unavailable in this environment")
+        mockkStatic(GlobalScreen::class)
+        every { GlobalScreen.registerNativeHook() } just runs
+        every { GlobalScreen.addNativeKeyListener(any()) } just runs
+        every { GlobalScreen.unregisterNativeHook() } just runs
 
     }
 
@@ -226,7 +215,6 @@ class MainViewModelTest {
             onCancelActiveJob = {
                 firstResponse.completeExceptionally(CancellationException("Cancelled by alt press"))
             },
-            enableNativeHook = true,
             recognizeBehavior = {
                 GigaResponse.RecognizeResponse(result = listOf("second request"))
             },
@@ -268,7 +256,6 @@ class MainViewModelTest {
                     if (input != "hello") error("Unexpected input: $input")
                     response.await()
                 },
-                enableNativeHook = true,
                 recognizeBehavior = {
                     GigaResponse.RecognizeResponse(result = listOf("hello"))
                 },
@@ -483,19 +470,11 @@ class MainViewModelTest {
     private fun createHarness(
         executeBehavior: suspend (String) -> String = { "stub response" },
         onCancelActiveJob: () -> Unit = {},
-        enableNativeHook: Boolean = false,
         needsOnboarding: Boolean = false,
         recognizeBehavior: suspend (ByteArray) -> GigaResponse.RecognizeResponse = {
             GigaResponse.RecognizeResponse()
         },
     ): TestHarness {
-        if (enableNativeHook) {
-            every { GlobalScreen.registerNativeHook() } just runs
-            every { GlobalScreen.addNativeKeyListener(any<NativeKeyListener>()) } just runs
-            every { GlobalScreen.removeNativeKeyListener(any<NativeKeyListener>()) } just runs
-            every { GlobalScreen.unregisterNativeHook() } just runs
-        }
-
         val graphAgent = mockk<GraphBasedAgent>(relaxed = true)
         val sideEffects = MutableSharedFlow<String>()
         every { graphAgent.sideEffects } returns sideEffects
@@ -572,16 +551,6 @@ class MainViewModelTest {
             bindSingleton<LlmBuildProfile> { llmBuildProfile }
             bindSingleton { say }
             bindSingleton { toolPermissionBroker }
-            bindSingleton { TelegramContactSelectionBroker() }
-            bindSingleton { TelegramChatSelectionBroker() }
-            bindSingleton { TelegramContactSelectionApprovalSource(instance()) }
-            bindSingleton { TelegramChatSelectionApprovalSource(instance()) }
-            bindSingleton<Set<SelectionApprovalSource>> {
-                setOf(
-                    instance<TelegramContactSelectionApprovalSource>(),
-                    instance<TelegramChatSelectionApprovalSource>(),
-                )
-            }
             bindSingleton { telegramBotController }
             bindSingleton { InMemoryAudioRecorder() }
             bindSingleton { FilesToolUtil(instance()) }
@@ -589,18 +558,7 @@ class MainViewModelTest {
             bindSingleton<TokenLogging> { tokenLogging }
             bindSingleton { telemetryService }
             bindSingleton {
-                MainUseCasesFactory(
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                )
+                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance())
             }
         }
 

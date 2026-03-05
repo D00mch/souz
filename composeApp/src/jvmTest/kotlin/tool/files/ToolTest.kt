@@ -4,9 +4,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
@@ -383,21 +381,12 @@ class ToolTest {
                 ""
             ).joinToString("\n")
 
-            val result = runCatching {
-                ToolModifyFile(filesToolUtil).invoke(
-                    ToolModifyFile.Input(path = path, patch = patch, strip = 0)
-                )
-            }
+            val result = ToolModifyFile(filesToolUtil).invoke(
+                ToolModifyFile.Input(path = path, patch = patch, strip = 0)
+            )
 
-            if (result.isSuccess) {
-                assertEquals("OK", result.getOrThrow())
-                assertEquals("after\n", File(path).readText())
-            } else {
-                val error = result.exceptionOrNull()
-                assertTrue(error is BadInputException)
-                assertContains(error.message.orEmpty(), "Patch dry-run failed")
-                assertEquals("before\n", File(path).readText())
-            }
+            assertEquals("OK", result)
+            assertEquals("after\n", File(path).readText())
         } finally {
             tempDir.deleteRecursively()
         }
@@ -481,8 +470,8 @@ class ToolTest {
     }
 
     @Test
-    fun `test ToolDeleteFile returns disapproved when user rejects action`() = runBlocking {
-        if (!hasOpenGlRuntime()) return@runBlocking
+    fun `test ToolDeleteFile returns disapproved when user rejects action`() = runTest {
+        if (!hasOpenGlRuntime()) return@runTest
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
@@ -497,10 +486,10 @@ class ToolTest {
             val resultDeferred = async {
                 tool.suspendInvoke(ToolDeleteFile.Input(path))
             }
-            val request = withTimeout(2_000) { permissionBroker.requests.first() }
+            val request = permissionBroker.requests.first()
             permissionBroker.resolve(request.id, approved = false)
 
-            val result = withTimeout(2_000) { resultDeferred.await() }
+            val result = resultDeferred.await()
 
             assertEquals("User disapproved", result)
             assertEquals(true, File(path).exists())
