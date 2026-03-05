@@ -23,7 +23,7 @@ Primary stack:
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Telemetry pipeline with local SQLite outbox**: app usage, chat/conversation usage, tool usage, and token usage are always captured per auto-generated user/device IDs, queued in `~/.local/state/souz/telemetry.db`, and sent batched after installation registration and Ed25519-signed requests.
-- **Edition-aware builds** (`ru`/`en`) with build-profile based provider/model availability and packaging metadata.
+- **Runtime EN/RU profile toggle** with one packaged build: profile is switched via a shared segmented RU/EN toggle in Setup and Settings and controls provider/model availability.
 - **Key-aware model selection in Settings**: chat, embeddings, and voice recognition model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop toolset**: files, browser, calendar, mail, notes, desktop automation, analytics, and presentations.
@@ -31,22 +31,22 @@ Primary stack:
 - **Safer file editing**: `EditFile` now applies unified patches with dry-run validation and feeds patch content directly from memory (no temporary patch files), and in safe mode shows a patch diff preview before apply. On patch errors, tool guidance now explicitly forbids delete+recreate fallback.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
 - **Telegram PC Control bot**: automated bot creation via `@BotFather`, long-polling command listener, and agent-driven responses — all managed from the Telegram settings screen. Bot credentials (`TG_BOT_TOKEN`, `TG_BOT_OWNER_ID`, `TG_BOT_USERNAME`) are stored in `ConfigStore`. The bot can be created/deleted from the UI; on creation it automatically sends `/start` and sets a profile avatar. Telegram integration is runtime-gated on macOS and disabled on versions below macOS 15 (with UI/tool warnings instead of app crash). Telegram tool category is also disabled while Telegram auth state is not `READY`.
-- **Model-aware speech recognition routing**: voice input recognition can use SaluteSpeech, OpenAI transcription (`/v1/audio/transcriptions`), or AiTunnel transcription (`/v1/audio/transcriptions`, RU edition only), and selects provider based on the chosen voice recognition model and configured keys.
+- **Model-aware speech recognition routing**: voice input recognition can use SaluteSpeech, OpenAI transcription (`/v1/audio/transcriptions`), or AiTunnel transcription (`/v1/audio/transcriptions`, RU profile only), and selects provider based on the chosen voice recognition model and configured keys.
 
 ## Project Structure
 ```text
 .
-├── composeApp/                         # Main desktop application module
-│   ├── build/                          # Build output for composeApp (generated)
-│   ├── composeApp/                     # Auxiliary nested folder with test resource skeleton
+├── composeApp/                             # Main desktop application module
+│   ├── build/                              # Build output for composeApp (generated)
+│   ├── composeApp/                         # Auxiliary nested folder with test resource skeleton
 │   │   └── src/
 │   │       └── jvmTest/
 │   │           └── resources/
-│   │               └── directory/      # Placeholder fixture directory
+│   │               └── directory/          # Placeholder fixture directory
 │   └── src/
-│       ├── jvmMain/                    # Production JVM sources/resources
-│       │   ├── composeResources/       # Compose Multiplatform resources
-│       │   │   └── drawable/           # Application icons and drawable assets
+│       ├── jvmMain/                        # Production JVM sources/resources
+│       │   ├── composeResources/           # Compose Multiplatform resources
+│       │   │   └── drawable/               # Application icons and drawable assets
 │       │   ├── kotlin/
 │       │   │   └── ru/souz/        # Application Kotlin code
 │       │   │       ├── agent/          # Graph-based agent assembly. The main agent related logic is here
@@ -88,38 +88,39 @@ Primary stack:
 │       │   │       │   ├── notes/          # Notes CRUD/search tools
 │       │   │       │   ├── presentation/   # Presentation create/read/style helpers
 │       │   │       │   └── textReplace/    # Clipboard and selected-text tools
-│       │   │       └── ui/             # Compose UI layer
-│       │   │           ├── common/     # Shared UI utilities/components
-│       │   │           ├── components/ # Reusable UI widgets
-│       │   │           ├── graphlog/   # Graph sessions visualization screens
-│       │   │           ├── main/       # Main chat screen/view-model. Agent interaction happens here
-│       │   │           │   └── usecases/   # Main flow use cases (chat, speech, onboarding)
-|       |   |           |   └── INFO.md # The same file as this one, with the details on ui/main
-│       │   │           ├── settings/   # Settings screens and view-models
-│       │   │           ├── setup/      # First-run setup flow
-│       │   │           └── tools/      # Tool management/detail screens
-│       │   ├── resources/              # Runtime resources
-│       │   │   ├── bot_avatar.png      # Default avatar image for the Telegram PC Control bot
-│       │   │   ├── certs/              # Trusted certificate bundles
-│       │   │   ├── darwin-arm64/       # macOS arm64 JNI/native binaries
-│       │   │   └── scripts/            # Helper scripts and native build helpers
-│       │   └── swift/                  # Swift source for native media keys bridge
-│       └── jvmTest/                    # JVM test source set
-│           ├── kotlin/                 # Unit/integration tests by feature domain
-│           │   ├── agent/              # Agent scenario/integration tests
-│           │   ├── classification/     # Classification prompt tests
-│           │   ├── db/                 # Data/vector DB tests
-│           │   ├── giga/               # Giga API/tool tests
-│           │   ├── ru/souz/        # Package-aligned tests
-│           │   │   ├── tool/           # Tool tests in package namespace
-│           │   │   └── ui/             # UI/view-model tests
-│           │   └── tool/files/         # File-tool focused tests
+│       │   │       └── ui/                 # Compose UI layer
+│       │   │           ├── common/         # Shared UI utilities/components
+│       │   │           ├── components/     # Reusable UI widgets
+│       │   │           ├── graphlog/       # Graph sessions visualization screens
+│       │   │           ├── main/           # Main chat screen/view-model. Agent interaction happens here
+│       │   │           │   ├── usecases/   # Main flow use cases (chat, speech, onboarding)
+│       │   │           │   └── INFO.md     # Local notes for ui/main package
+│       │   │           ├── settings/       # Settings screens and view-models
+│       │   │           │   └── INFO.md     # Local notes for ui/settings package
+│       │   │           ├── setup/          # First-run setup flow
+│       │   │           └── tools/          # Tool management/detail screens
+│       │   ├── resources/                  # Runtime resources
+│       │   │   ├── bot_avatar.png          # Default avatar image for the Telegram PC Control bot
+│       │   │   ├── certs/                  # Trusted certificate bundles
+│       │   │   ├── darwin-arm64/           # macOS arm64 JNI/native binaries
+│       │   │   └── scripts/                # Helper scripts and native build helpers
+│       │   └── swift/                      # Swift source for native media keys bridge
+│       └── jvmTest/                        # JVM test source set
+│           ├── kotlin/                     # Unit/integration tests by feature domain
+│           │   ├── agent/                  # Agent scenario/integration tests
+│           │   ├── classification/         # Classification prompt tests
+│           │   ├── db/                     # Data/vector DB tests
+│           │   ├── giga/                   # Giga API/tool tests
+│           │   ├── ru/souz/                # Package-aligned tests
+│           │   │   ├── tool/               # Tool tests in package namespace
+│           │   │   └── ui/                 # UI/view-model tests
+│           │   └── tool/files/             # File-tool focused tests
 │           └── resources/
-│               └── directory/          # File fixture directory for tests
-├── dest/                               # Local output/scratch directory (currently empty)
-├── build-logic/                        # Included Gradle build with convention plugins/shared build logic
-├── gradle/                             # Gradle version catalog and wrapper configuration
-│   └── wrapper/                        # Gradle wrapper JAR/properties
+│               └── directory/              # File fixture directory for tests
+├── dest/                                   # Local output/scratch directory (currently empty)
+├── build-logic/                            # Included Gradle build with convention plugins/shared build logic
+├── gradle/                                 # Gradle version catalog and wrapper configuration
+│   └── wrapper/                            # Gradle wrapper JAR/properties
 ```
 
 Notes:

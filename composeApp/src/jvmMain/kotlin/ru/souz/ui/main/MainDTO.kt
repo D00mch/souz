@@ -6,7 +6,7 @@ import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
 import ru.souz.giga.GigaRequest
-import ru.souz.giga.LlmBuildProfile
+import ru.souz.giga.GigaModel
 
 /**
  * Chat message for the chat mode.
@@ -86,8 +86,8 @@ data class MainState(
     val chatMessages: List<ChatMessage> = emptyList(),
     val chatStartTip: String = "",
     val chatSessionId: Long = 0L, // need this so local draft resets reliably when conversation resets.
-    val selectedModel: String = LlmBuildProfile.defaultModel.alias,
-    val availableModelAliases: List<String> = LlmBuildProfile.availableModels.map { it.alias },
+    val selectedModel: String = GigaModel.Max.alias,
+    val availableModelAliases: List<String> = listOf(GigaModel.Max.alias),
     val selectedContextSize: Int = DEFAULT_MAX_TOKENS,
     val isSpeaking: Boolean = false,
     val showNewChatDialog: Boolean = false,

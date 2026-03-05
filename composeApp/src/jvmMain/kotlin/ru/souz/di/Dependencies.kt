@@ -30,6 +30,7 @@ import ru.souz.giga.GigaChatAPI
 import ru.souz.giga.LLMFactory
 import ru.souz.giga.GigaRestChatAPI
 import ru.souz.giga.GigaVoiceAPI
+import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.SessionTokenLogging
 import ru.souz.giga.TokenLogging
 import ru.souz.keys.Keys
@@ -69,6 +70,7 @@ import ru.souz.ui.main.usecases.ModelAwareSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.OpenAISpeechRecognitionProvider
 import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
+import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
 import ru.souz.tool.presentation.ToolWebImageSearch
@@ -114,7 +116,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ConfigStore }
     bindSingleton { VectorDB }
     bindSingleton { TelegramPlatformSupport }
-    bindSingleton<SettingsProvider> { SettingsProviderImpl(instance()) }
+    bindSingleton { SettingsProviderImpl(instance()) }
+    bindSingleton<SettingsProvider> { instance<SettingsProviderImpl>() }
+    bindSingleton { LlmBuildProfile(instance()) }
+    bindSingleton { ApiKeyAvailabilityUseCase(instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
     bindSingleton { ToolsSettings(instance(), instance(), instance(), instance()) }
     bindSingleton { FilesToolUtil(instance()) }
@@ -205,7 +210,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { TelemetryCryptoService() }
     bindSingleton { TelemetryRuntimeConfig.production() }
-    bindSingleton { TelemetryService(instance(), instance(), instance()) }
+    bindSingleton { TelemetryService(instance(), instance(), instance(), instance()) }
 
     // API
     bindSingleton { GigaAuth(instance()) }

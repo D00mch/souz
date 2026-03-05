@@ -49,8 +49,7 @@ import ru.souz.giga.VoiceRecognitionModel
 import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
-import ru.souz.ui.common.ApiKeysBuildProfile
-import ru.souz.ui.common.configuredApiKeysCount
+import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
 import org.jetbrains.compose.resources.stringResource
@@ -373,6 +372,7 @@ fun GeneralSettingsContent(
     onDefaultCalendarChange: (String?) -> Unit,
     onUseStreamingChange: (Boolean) -> Unit,
     onNotificationSoundEnabledChange: (Boolean) -> Unit,
+    onUseEnglishVersionChange: (Boolean) -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
     onChooseVoice: () -> Unit,
     onMcpServersJsonInput: (String) -> Unit,
@@ -411,6 +411,17 @@ fun GeneralSettingsContent(
                     SettingsCheckbox(
                         checked = state.notificationSoundEnabled,
                         onCheckedChange = onNotificationSoundEnabledChange
+                    )
+                }
+            )
+
+            SettingsRow(
+                title = stringResource(Res.string.setting_language_profile_title),
+                description = stringResource(Res.string.setting_language_profile_desc),
+                content = {
+                    RegionProfileToggle(
+                        useEnglishProfile = state.useEnglishVersion,
+                        onProfileChange = onUseEnglishVersionChange
                     )
                 }
             )
@@ -502,17 +513,9 @@ fun KeysSettingsContent(
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
     onClose: () -> Unit
 ) {
-    val configuredKeysCount = configuredApiKeysCount(
-        gigaChatKey = state.gigaChatKey,
-        qwenChatKey = state.qwenChatKey,
-        aiTunnelKey = state.aiTunnelKey,
-        anthropicKey = state.anthropicKey,
-        openaiKey = state.openaiKey,
-        saluteSpeechKey = state.saluteSpeechKey,
-    )
-    val supportsSaluteSpeech = ApiKeysBuildProfile.hasField(ApiKeyField.SALUTE_SPEECH)
-    val supportsVoiceRecognition = ApiKeysBuildProfile.supportsSpeechRecognition
-    val keysHintChat = if (ApiKeysBuildProfile.hasField(ApiKeyField.GIGA_CHAT)) {
+    val supportsSaluteSpeech = ApiKeyField.SALUTE_SPEECH in state.availableApiKeyFields
+    val supportsVoiceRecognition = state.supportsVoiceRecognitionApiKeys
+    val keysHintChat = if (ApiKeyField.GIGA_CHAT in state.availableApiKeyFields) {
         Res.string.keys_hint_chat_ru_build
     } else {
         Res.string.keys_hint_chat_en_build
@@ -539,7 +542,7 @@ fun KeysSettingsContent(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = stringResource(Res.string.keys_configured_count).format(configuredKeysCount),
+                        text = stringResource(Res.string.keys_configured_count).format(state.configuredKeysCount),
                         style = MaterialTheme.typography.titleSmall,
                         color = SettingsStrongTextColor
                     )
@@ -557,7 +560,7 @@ fun KeysSettingsContent(
             }
 
 
-            if (ApiKeysBuildProfile.hasField(ApiKeyField.GIGA_CHAT)) {
+            if (ApiKeyField.GIGA_CHAT in state.availableApiKeyFields) {
                 LabeledTextField(
                     label = stringResource(Res.string.label_key_gigachat),
                     value = state.gigaChatKey,
@@ -566,7 +569,7 @@ fun KeysSettingsContent(
                 )
             }
 
-            if (ApiKeysBuildProfile.hasField(ApiKeyField.QWEN_CHAT)) {
+            if (ApiKeyField.QWEN_CHAT in state.availableApiKeyFields) {
                 LabeledTextField(
                     label = stringResource(Res.string.label_key_qwen),
                     value = state.qwenChatKey,
@@ -575,7 +578,7 @@ fun KeysSettingsContent(
                 )
             }
 
-            if (ApiKeysBuildProfile.hasField(ApiKeyField.AI_TUNNEL)) {
+            if (ApiKeyField.AI_TUNNEL in state.availableApiKeyFields) {
                 LabeledTextField(
                     label = stringResource(Res.string.label_key_aitunnel),
                     value = state.aiTunnelKey,
@@ -584,7 +587,7 @@ fun KeysSettingsContent(
                 )
             }
 
-            if (ApiKeysBuildProfile.hasField(ApiKeyField.ANTHROPIC)) {
+            if (ApiKeyField.ANTHROPIC in state.availableApiKeyFields) {
                 LabeledTextField(
                     label = stringResource(Res.string.label_key_anthropic),
                     value = state.anthropicKey,
@@ -593,7 +596,7 @@ fun KeysSettingsContent(
                 )
             }
 
-            if (ApiKeysBuildProfile.hasField(ApiKeyField.OPENAI)) {
+            if (ApiKeyField.OPENAI in state.availableApiKeyFields) {
                 LabeledTextField(
                     label = stringResource(Res.string.label_key_openai),
                     value = state.openaiKey,
@@ -622,7 +625,7 @@ fun KeysSettingsContent(
                 style = MaterialTheme.typography.titleMedium,
                 color = SettingsStrongTextColor
             )
-            ApiKeysBuildProfile.providers.forEach { provider ->
+            state.availableApiKeyProviders.forEach { provider ->
                 ProviderLinkCard(
                     provider = provider,
                     onOpen = { onOpenProviderLink(provider) }
@@ -1839,6 +1842,7 @@ private fun GeneralSettingsContentPreview() {
             onDefaultCalendarChange = {},
             onUseStreamingChange = {},
             onNotificationSoundEnabledChange = {},
+            onUseEnglishVersionChange = {},
             onVoiceSpeedInput = {},
             onChooseVoice = {},
             onMcpServersJsonInput = {},

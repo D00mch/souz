@@ -1,8 +1,6 @@
 package ru.souz.ui.common
 
 import org.jetbrains.compose.resources.StringResource
-import ru.souz.edition.BuildEdition
-import ru.souz.edition.BuildEditionConfig
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 
@@ -52,66 +50,3 @@ enum class ApiKeyField {
     OPENAI,
     SALUTE_SPEECH,
 }
-
-object ApiKeysBuildProfile {
-    val availableFields: Set<ApiKeyField> = when (BuildEditionConfig.current) {
-        BuildEdition.RU -> setOf(
-            ApiKeyField.GIGA_CHAT,
-            ApiKeyField.QWEN_CHAT,
-            ApiKeyField.AI_TUNNEL,
-            ApiKeyField.SALUTE_SPEECH,
-        )
-
-        BuildEdition.EN -> setOf(
-            ApiKeyField.QWEN_CHAT,
-            ApiKeyField.ANTHROPIC,
-            ApiKeyField.OPENAI,
-        )
-    }
-
-    val providers: List<ApiKeyProvider> = when (BuildEditionConfig.current) {
-        BuildEdition.RU -> listOf(
-            ApiKeyProvider.SBER,
-            ApiKeyProvider.QWEN,
-            ApiKeyProvider.AI_TUNNEL,
-        )
-
-        BuildEdition.EN -> listOf(
-            ApiKeyProvider.OPENAI,
-            ApiKeyProvider.QWEN,
-            ApiKeyProvider.ANTHROPIC,
-        )
-    }
-
-    val supportsSpeechRecognition: Boolean =
-        hasField(ApiKeyField.SALUTE_SPEECH) || hasField(ApiKeyField.OPENAI)
-
-    fun hasField(field: ApiKeyField): Boolean = field in availableFields
-}
-
-fun configuredApiKeysCount(
-    gigaChatKey: String,
-    qwenChatKey: String,
-    aiTunnelKey: String,
-    anthropicKey: String,
-    openaiKey: String,
-    saluteSpeechKey: String,
-): Int = mapOf(
-    ApiKeyField.GIGA_CHAT to gigaChatKey,
-    ApiKeyField.QWEN_CHAT to qwenChatKey,
-    ApiKeyField.AI_TUNNEL to aiTunnelKey,
-    ApiKeyField.ANTHROPIC to anthropicKey,
-    ApiKeyField.OPENAI to openaiKey,
-    ApiKeyField.SALUTE_SPEECH to saluteSpeechKey,
-).count { (field, key) ->
-    ApiKeysBuildProfile.hasField(field) && key.isNotBlank()
-}
-
-fun hasAnyConfiguredApiKey(
-    gigaChatKey: String,
-    qwenChatKey: String,
-    aiTunnelKey: String,
-    anthropicKey: String,
-    openaiKey: String,
-    saluteSpeechKey: String,
-): Boolean = configuredApiKeysCount(gigaChatKey, qwenChatKey, aiTunnelKey, anthropicKey, openaiKey, saluteSpeechKey) > 0

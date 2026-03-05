@@ -23,20 +23,15 @@ Run tests with:
 
 # Compose builds
 
-## Build Editions
-- Edition is selected by Gradle property `-Pedition=ru|en` (default: `ru`) in `composeApp/build.gradle.kts`.
-- Dedicated DMG tasks infer edition automatically by task name when `-Pedition` is not provided.
-- Runtime edition is passed via `-Dsouz.edition` (or `souz_EDITION` fallback) and parsed in `composeApp/src/jvmMain/kotlin/ru/souz/edition/BuildEdition.kt`.
-- Packaging metadata depends on edition:
-  - `ru`: package name `Союз ИИ`, bundle ID `ru.souz`, Dock name `Союз c ИИ`.
-  - `en`: package name `Souz AI`, bundle ID `en.souz`, Dock name `Souz AI`.
-- Dedicated DMG tasks:
-  - `./gradlew :composeApp:packageRuReleaseDmg`
-  - `./gradlew :composeApp:packageEnReleaseDmg`
-- Edition-specific runtime profile (`composeApp/src/jvmMain/kotlin/ru/souz/giga/LlmBuildProfile.kt`):
-  - `ru`: `GIGA`, `QWEN`, `AI_TUNNEL`; SaluteSpeech recognition is enabled.
-  - `en`: `QWEN`, `ANTHROPIC`; speech recognition is disabled (`DisabledSpeechRecognitionProvider`).
-- Edition-specific key fields/providers are configured in `composeApp/src/jvmMain/kotlin/ru/souz/ui/common/ApiKeyProviders.kt` and drive Setup/Settings key UI.
+## Runtime profile (EN/RU)
+- Build is now single-profile at packaging time (no `-Pedition` split).
+- Active EN/RU profile is selected at runtime from Settings (`General` section toggle) and persisted in `ConfigStore.APP_LANGUAGE`.
+- Runtime profile controls model/provider availability in:
+  - `composeApp/src/jvmMain/kotlin/ru/souz/giga/LlmBuildProfile.kt`
+  - `composeApp/src/jvmMain/kotlin/ru/souz/ui/common/ApiKeyProviders.kt`
+  - `composeApp/src/jvmMain/kotlin/ru/souz/ui/settings/ModelAvailability.kt`
+- Default DMG task:
+  - `./gradlew :composeApp:packageReleaseDmg`
 
 ## Release builds
 

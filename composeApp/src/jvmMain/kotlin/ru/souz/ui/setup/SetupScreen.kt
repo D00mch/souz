@@ -38,15 +38,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.flow.collect
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
-import ru.souz.ui.common.ApiKeysBuildProfile
 import ru.souz.ui.common.ConfirmDialog
 import ru.souz.ui.common.ConfirmDialogType
+import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
 import ru.souz.ui.main.RealLiquidGlassCard
@@ -78,6 +77,7 @@ fun SetupScreen(
 
     SetupScreenContent(
         state = state,
+        onUseEnglishVersionChange = { enabled -> viewModel.send(SetupEvent.InputUseEnglishVersion(enabled)) },
         onGigaChatKeyInput = { key -> viewModel.send(SetupEvent.InputGigaChatKey(key)) },
         onQwenChatKeyInput = { key -> viewModel.send(SetupEvent.InputQwenChatKey(key)) },
         onAiTunnelKeyInput = { key -> viewModel.send(SetupEvent.InputAiTunnelKey(key)) },
@@ -95,6 +95,7 @@ fun SetupScreen(
 @Composable
 fun SetupScreenContent(
     state: SetupState,
+    onUseEnglishVersionChange: (Boolean) -> Unit,
     onGigaChatKeyInput: (String) -> Unit,
     onQwenChatKeyInput: (String) -> Unit,
     onAiTunnelKeyInput: (String) -> Unit,
@@ -109,8 +110,8 @@ fun SetupScreenContent(
 ) {
     LaunchedEffect(Unit) { onResizeRequest(SetupWindowSize) }
     val hasNoKeys = state.configuredKeysCount == 0
-    val supportsSaluteSpeech = ApiKeysBuildProfile.hasField(ApiKeyField.SALUTE_SPEECH)
-    val supportsVoiceRecognition = ApiKeysBuildProfile.supportsSpeechRecognition
+    val supportsSaluteSpeech = ApiKeyField.SALUTE_SPEECH in state.availableApiKeyFields
+    val supportsVoiceRecognition = state.supportsVoiceRecognitionApiKeys
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -139,6 +140,24 @@ fun SetupScreenContent(
                     }
                 }
 
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(Res.string.setting_language_profile_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White.copy(alpha = 0.95f),
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = stringResource(Res.string.setting_language_profile_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.65f)
+                    )
+                    RegionProfileToggle(
+                        useEnglishProfile = state.useEnglishVersion,
+                        onProfileChange = onUseEnglishVersionChange,
+                    )
+                }
+
                 Text(
                     text = if (hasNoKeys) {
                         stringResource(Res.string.setup_hint_add_key)
@@ -151,7 +170,7 @@ fun SetupScreenContent(
 
                 Spacer(Modifier.height(4.dp))
 
-                if (ApiKeysBuildProfile.hasField(ApiKeyField.GIGA_CHAT)) {
+                if (ApiKeyField.GIGA_CHAT in state.availableApiKeyFields) {
                     LabeledTextField(
                         label = stringResource(Res.string.label_key_gigachat),
                         value = state.gigaChatKey,
@@ -160,7 +179,7 @@ fun SetupScreenContent(
                     )
                 }
 
-                if (ApiKeysBuildProfile.hasField(ApiKeyField.QWEN_CHAT)) {
+                if (ApiKeyField.QWEN_CHAT in state.availableApiKeyFields) {
                     LabeledTextField(
                         label = stringResource(Res.string.label_key_qwen),
                         value = state.qwenChatKey,
@@ -169,7 +188,7 @@ fun SetupScreenContent(
                     )
                 }
 
-                if (ApiKeysBuildProfile.hasField(ApiKeyField.AI_TUNNEL)) {
+                if (ApiKeyField.AI_TUNNEL in state.availableApiKeyFields) {
                     LabeledTextField(
                         label = stringResource(Res.string.label_key_aitunnel),
                         value = state.aiTunnelKey,
@@ -178,7 +197,7 @@ fun SetupScreenContent(
                     )
                 }
 
-                if (ApiKeysBuildProfile.hasField(ApiKeyField.ANTHROPIC)) {
+                if (ApiKeyField.ANTHROPIC in state.availableApiKeyFields) {
                     LabeledTextField(
                         label = stringResource(Res.string.label_key_anthropic),
                         value = state.anthropicKey,
@@ -187,7 +206,7 @@ fun SetupScreenContent(
                     )
                 }
 
-                if (ApiKeysBuildProfile.hasField(ApiKeyField.OPENAI)) {
+                if (ApiKeyField.OPENAI in state.availableApiKeyFields) {
                     LabeledTextField(
                         label = stringResource(Res.string.label_key_openai),
                         value = state.openaiKey,
@@ -197,7 +216,10 @@ fun SetupScreenContent(
                 }
 
                 if (hasNoKeys) {
-                    KeyProvidersSection(onOpenProviderLink = onOpenProviderLink)
+                    KeyProvidersSection(
+                        availableProviders = state.availableApiKeyProviders,
+                        onOpenProviderLink = onOpenProviderLink,
+                    )
                 }
 
                 if (supportsSaluteSpeech) {
@@ -307,6 +329,7 @@ private fun SetupBorderDragAreas(
 
 @Composable
 private fun KeyProvidersSection(
+    availableProviders: List<ApiKeyProvider>,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -317,7 +340,7 @@ private fun KeyProvidersSection(
             color = MaterialTheme.glassColors.textPrimary
         )
 
-        ApiKeysBuildProfile.providers.forEach { provider ->
+        availableProviders.forEach { provider ->
             ProviderLinkCard(
                 provider = provider,
                 onOpen = { onOpenProviderLink(provider) }
@@ -389,6 +412,7 @@ private fun SetupScreenPreview() {
                 configuredKeysCount = 0,
                 canProceed = false
             ),
+            onUseEnglishVersionChange = {},
             onGigaChatKeyInput = {},
             onQwenChatKeyInput = {},
             onAiTunnelKeyInput = {},

@@ -115,14 +115,6 @@ enum class LlmProvider {
     OPENAI,
 }
 
-enum class EmbeddingsProvider {
-    GIGA,
-    QWEN,
-    AI_TUNNEL,
-    ANTHROPIC,
-    OPENAI,
-}
-
 enum class VoiceRecognitionProvider {
     SALUTE_SPEECH,
     AI_TUNNEL,
@@ -160,14 +152,14 @@ enum class GigaModel(
 enum class EmbeddingsModel(
     val displayName: String,
     val alias: String,
-    val provider: EmbeddingsProvider,
+    val provider: LlmProvider,
 ) {
-    GigaEmbeddings("GigaChat", "Embeddings", EmbeddingsProvider.GIGA),
-    QwenEmbeddings("Qwen", "text-embedding-v3", EmbeddingsProvider.QWEN),
-    AiTunnelEmbedding3Small("AI-Tunnel: text-embedding-3-small", "text-embedding-3-small", EmbeddingsProvider.AI_TUNNEL),
-    AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", EmbeddingsProvider.AI_TUNNEL),
-    AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", EmbeddingsProvider.AI_TUNNEL),
-    OpenAITextEmbedding3Small("OpenAI: text-embedding-3-small", "text-embedding-3-small", EmbeddingsProvider.OPENAI),
+    GigaEmbeddings("GigaChat", "Embeddings", LlmProvider.GIGA),
+    QwenEmbeddings("Qwen", "text-embedding-v3", LlmProvider.QWEN),
+    AiTunnelEmbedding3Small("AI-Tunnel: text-embedding-3-small", "text-embedding-3-small", LlmProvider.AI_TUNNEL),
+    AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", LlmProvider.AI_TUNNEL),
+    AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", LlmProvider.AI_TUNNEL),
+    OpenAITextEmbedding3Small("OpenAI: text-embedding-3-small", "text-embedding-3-small", LlmProvider.OPENAI),
 }
 
 enum class VoiceRecognitionModel(

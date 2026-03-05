@@ -30,7 +30,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -46,6 +45,7 @@ import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.audio.Say
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
+import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.TokenLogging
 import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
@@ -503,6 +503,9 @@ class MainViewModelTest {
         every { settingsProvider.gigaModel } returns GigaModel.Max
         every { settingsProvider.contextSize } returns 16_000
         every { settingsProvider.useStreaming } returns false
+        every { settingsProvider.regionProfile } returns "ru"
+        every { settingsProvider.regionProfile = any() } just runs
+        val llmBuildProfile = LlmBuildProfile(settingsProvider)
         var needsOnboardingState = needsOnboarding
         every { settingsProvider.needsOnboarding } answers { needsOnboardingState }
         every { settingsProvider.needsOnboarding = any() } answers { needsOnboardingState = firstArg<Boolean>() }
@@ -560,6 +563,7 @@ class MainViewModelTest {
             bindSingleton<SpeechRecognitionProvider> { SaluteSpeechRecognitionProvider(instance(), instance()) }
             bindSingleton { desktopInfoRepository }
             bindSingleton<SettingsProvider> { settingsProvider }
+            bindSingleton<LlmBuildProfile> { llmBuildProfile }
             bindSingleton { say }
             bindSingleton { toolPermissionBroker }
             bindSingleton { TelegramContactSelectionBroker() }

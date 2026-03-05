@@ -1,5 +1,4 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-import ru.souz.buildlogic.ComposeAppConventionsExtension
 import ru.souz.buildlogic.MacSigningSettings
 
 fun tdlightNativeClassifier(): String {
@@ -32,38 +31,9 @@ plugins {
     id("ru.souz.compose-app-conventions")
 }
 
-val explicitEdition = providers.gradleProperty("edition").orNull?.trim()?.lowercase().orEmpty().ifBlank { null }
-if (explicitEdition != null) {
-    require(explicitEdition in setOf("ru", "en")) {
-        "Unsupported edition '$explicitEdition'. Use -Pedition=ru or -Pedition=en."
-    }
-}
-
-val requestedTasks = gradle.startParameter.taskNames
-val ruTaskRequested = requestedTasks.any { it.endsWith("packageRuReleaseDmg") }
-val enTaskRequested = requestedTasks.any { it.endsWith("packageEnReleaseDmg") }
-
-val inferredEdition = when {
-    ruTaskRequested && enTaskRequested -> {
-        error("Cannot invoke packageRuReleaseDmg and packageEnReleaseDmg in a single Gradle run.")
-    }
-
-    ruTaskRequested -> "ru"
-    enTaskRequested -> "en"
-    else -> null
-}
-
-if (explicitEdition != null && inferredEdition != null && explicitEdition != inferredEdition) {
-    error("Conflicting edition: -Pedition=$explicitEdition but requested task implies $inferredEdition.")
-}
-
-val edition = explicitEdition ?: inferredEdition ?: "ru"
-
-val editionPackageName = if (edition == "ru") "Союз ИИ" else "Souz AI"
-val editionBundleId = if (edition == "ru") "ru.souz" else "en.souz"
-val editionDockName = if (edition == "ru") "Союз c ИИ" else "Souz AI"
-
-extensions.getByType<ComposeAppConventionsExtension>().edition.set(edition)
+val distributionPackageName = "Souz AI"
+val distributionBundleId = "ru.souz"
+val distributionDockName = "Souz AI"
 val macSigning = extensions.getByType<MacSigningSettings>()
 
 kotlin {
@@ -165,7 +135,6 @@ val includeAllMacNativeResources: Boolean =
 compose.desktop {
     application {
         mainClass = "ru.souz.MainKt"
-        jvmArgs("-Dsouz.edition=$edition")
 
         val isArm64 = System.getProperty("os.arch").lowercase().let { it.contains("aarch64") || it.contains("arm64") }
         val nativeResourceDir = if (isArm64) "darwin-arm64" else "darwin-x64"
@@ -182,14 +151,14 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Pkg)
-            packageName = editionPackageName
+            packageName = distributionPackageName
             packageVersion = "1.0.0"
 
             // include HTTP client and java.sql needed by Apache Tika parser discovery
             modules("java.naming", "java.net.http", "java.sql")
 
             macOS {
-                bundleID = editionBundleId
+                bundleID = distributionBundleId
                 appCategory = "public.app-category.productivity"
                 minimumSystemVersion = "12.0"
                 appStore = isAppStoreRelease
@@ -234,14 +203,13 @@ compose.desktop {
             }
 
             // macOS dark mode support, works only on the release build, not in debug
-            jvmArgs("-Dsouz.edition=$edition")
             // Include both architectures so universal bundles are not pinned to build-host arch.
             jvmArgs("-Djava.library.path=$nativeLibraryPath")
             // Safety net: never let JNativeHook extract into Contents/app (which breaks code signature).
             jvmArgs("-Djnativehook.lib.path=/tmp/souz-jnativehook")
             jvmArgs("-Dapple.awt.application.appearance=system")
             jvmArgs("-Xdock:icon=src/jvmMain/resources/icon-light.icns")
-            jvmArgs("-Xdock:name=$editionDockName")
+            jvmArgs("-Xdock:name=$distributionDockName")
         }
     }
 }

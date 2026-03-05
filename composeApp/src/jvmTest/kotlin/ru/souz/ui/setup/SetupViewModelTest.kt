@@ -16,9 +16,13 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
+import ru.souz.llms.BuildEdition
 import ru.souz.giga.GigaModel
 import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.LlmProvider
+import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -242,6 +246,33 @@ class SetupViewModelTest {
         assertEquals(GigaModel.Pro, settingsProvider.gigaModel)
     }
 
+    @Test
+    fun `setup updates profile toggle and persists selection`() = runTest(dispatcher) {
+        val settingsProvider = settingsProviderStub(
+            giga = "",
+            qwen = "",
+            aiTunnel = "",
+            speech = "",
+            onboardingCompleted = false,
+        )
+        val viewModel = createViewModel(settingsProvider)
+
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.useEnglishVersion)
+
+        viewModel.send(SetupEvent.InputUseEnglishVersion(true))
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.useEnglishVersion)
+        verify { settingsProvider.regionProfile = REGION_EN }
+
+        viewModel.send(SetupEvent.InputUseEnglishVersion(false))
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.useEnglishVersion)
+        verify { settingsProvider.regionProfile = REGION_RU }
+    }
+
     private fun hasOpenGlRuntime(): Boolean {
         val mapped = System.mapLibraryName("GL")
         val candidates = listOf(
@@ -255,15 +286,19 @@ class SetupViewModelTest {
 
     private fun createViewModel(settingsProvider: SettingsProvider): SetupViewModel {
         val say = mockk<Say>(relaxed = true)
+        val llmBuildProfile = LlmBuildProfile(settingsProvider)
+        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
+            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
             bindSingleton<Say> { say }
         }
         return SetupViewModel(di)
     }
 
     private fun supportsProvider(provider: LlmProvider): Boolean =
-        LlmBuildProfile.defaultModelForProvider(provider) != null
+        LlmBuildProfile.defaultsForEdition(BuildEdition.RU)[provider] != null
 
     private fun settingsProviderStub(
         giga: String,
@@ -286,6 +321,7 @@ class SetupViewModelTest {
         var gigaModelValue = gigaModel
         var onboardingCompletedValue = onboardingCompleted
         var needsOnboardingValue = false
+        var appLanguageValue = "ru"
 
         every { settingsProvider.gigaChatKey } answers { gigaValue }
         every { settingsProvider.gigaChatKey = any() } answers { gigaValue = firstArg() }
@@ -313,6 +349,8 @@ class SetupViewModelTest {
 
         every { settingsProvider.needsOnboarding } answers { needsOnboardingValue }
         every { settingsProvider.needsOnboarding = any() } answers { needsOnboardingValue = firstArg() }
+        every { settingsProvider.regionProfile } answers { appLanguageValue }
+        every { settingsProvider.regionProfile = any() } answers { appLanguageValue = firstArg() }
 
         return settingsProvider
     }

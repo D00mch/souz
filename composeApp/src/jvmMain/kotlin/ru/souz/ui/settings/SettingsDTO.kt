@@ -1,16 +1,15 @@
 package ru.souz.ui.settings
 
-import ru.souz.agent.DEFAULT_SYSTEM_PROMPT
 import ru.souz.giga.EmbeddingsModel
 import ru.souz.giga.DEFAULT_MAX_TOKENS
 import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
-import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.VoiceRecognitionModel
 import ru.souz.tool.config.ToolSoundConfig
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
+import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import org.jetbrains.compose.resources.StringResource
 import souz.composeapp.generated.resources.Res
@@ -50,12 +49,17 @@ data class SettingsState(
     val anthropicKey: String = "",
     val openaiKey: String = "",
     val saluteSpeechKey: String = "",
+    val availableApiKeyFields: Set<ApiKeyField> = emptySet(),
+    val availableApiKeyProviders: List<ApiKeyProvider> = emptyList(),
+    val supportsVoiceRecognitionApiKeys: Boolean = false,
+    val configuredKeysCount: Int = 0,
     val mcpServersJson: String = "",
     val useFewShotExamples: Boolean = false,
     val useStreaming: Boolean = false,
     val notificationSoundEnabled: Boolean = true,
+    val useEnglishVersion: Boolean = false,
     val safeModeEnabled: Boolean = false,
-    val gigaModel: GigaModel = LlmBuildProfile.defaultModel,
+    val gigaModel: GigaModel = GigaModel.Max,
     val embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
     val voiceRecognitionModel: VoiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech,
     val availableLlmModels: List<GigaModel> = emptyList(),
@@ -117,6 +121,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
     data class InputUseStreaming(val enabled: Boolean): SettingsEvent
     data class InputNotificationSoundEnabled(val enabled: Boolean): SettingsEvent
+    data class InputUseEnglishVersion(val enabled: Boolean): SettingsEvent
     data class InputSafeModeEnabled(val enabled: Boolean): SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
     data class SelectEmbeddingsModel(val model: EmbeddingsModel): SettingsEvent

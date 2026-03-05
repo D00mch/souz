@@ -8,13 +8,15 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.giga.GigaModel
 import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.LlmProvider
 import ru.souz.ui.BaseViewModel
-import ru.souz.ui.common.configuredApiKeysCount
-import ru.souz.ui.common.hasAnyConfiguredApiKey
 import ru.souz.ui.common.openProviderLink
+import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
+import ru.souz.ui.common.usecases.ApiKeyValues
 
 class SetupViewModel(
     override val di: DI,
@@ -22,14 +24,18 @@ class SetupViewModel(
 
     private val l = LoggerFactory.getLogger(SetupViewModel::class.java)
     private val settingsProvider: SettingsProvider by di.instance()
+    private val llmBuildProfile: LlmBuildProfile by di.instance()
+    private val apiKeyAvailabilityUseCase: ApiKeyAvailabilityUseCase by di.instance()
     private val say: Say by di.instance()
-    private val startedWithoutAnyApiKeys: Boolean = !hasAnyConfiguredApiKey(
+    private val startedWithoutAnyApiKeys: Boolean = !apiKeyAvailabilityUseCase.hasAnyConfiguredKey(
+        values = ApiKeyValues(
         gigaChatKey = settingsProvider.gigaChatKey.orEmpty(),
         qwenChatKey = settingsProvider.qwenChatKey.orEmpty(),
         aiTunnelKey = settingsProvider.aiTunnelKey.orEmpty(),
         anthropicKey = settingsProvider.anthropicKey.orEmpty(),
         openaiKey = settingsProvider.openaiKey.orEmpty(),
         saluteSpeechKey = settingsProvider.saluteSpeechKey.orEmpty(),
+        ),
     )
 
     init {
@@ -48,13 +54,15 @@ class SetupViewModel(
                 openAiKey = openAiKey,
                 saluteSpeechKey = saluteSpeechKey,
             )
-            val hasAnyConfiguredKey = hasAnyConfiguredApiKey(
+            val hasAnyConfiguredKey = apiKeyAvailabilityUseCase.hasAnyConfiguredKey(
+                values = ApiKeyValues(
                 gigaChatKey = gigaChatKey,
                 qwenChatKey = qwenChatKey,
                 aiTunnelKey = aiTunnelKey,
                 anthropicKey = anthropicKey,
                 openaiKey = openAiKey,
                 saluteSpeechKey = saluteSpeechKey,
+                ),
             )
             setState {
                 copy(shouldProceed = hasAnyConfiguredKey)
@@ -67,6 +75,21 @@ class SetupViewModel(
 
     override suspend fun handleEvent(event: SetupEvent) {
         when (event) {
+            is SetupEvent.InputUseEnglishVersion -> {
+                val newLanguage = if (event.enabled) REGION_EN else REGION_RU
+                if (settingsProvider.regionProfile != newLanguage) {
+                    settingsProvider.regionProfile = newLanguage
+                    updateKeysState(
+                        gigaChatKey = currentState.gigaChatKey,
+                        qwenChatKey = currentState.qwenChatKey,
+                        aiTunnelKey = currentState.aiTunnelKey,
+                        anthropicKey = currentState.anthropicKey,
+                        openAiKey = currentState.openaiKey,
+                        saluteSpeechKey = currentState.saluteSpeechKey,
+                    )
+                }
+            }
+
             is SetupEvent.InputGigaChatKey -> {
                 settingsProvider.gigaChatKey = event.key
                 val qwenChatKey = currentState.qwenChatKey
@@ -244,13 +267,16 @@ class SetupViewModel(
         openAiKey: String,
         saluteSpeechKey: String,
     ) {
-        val configuredKeysCount = configuredApiKeysCount(
+        val availability = apiKeyAvailabilityUseCase.availability()
+        val configuredKeysCount = apiKeyAvailabilityUseCase.configuredKeysCount(
+            values = ApiKeyValues(
             gigaChatKey = gigaChatKey,
             qwenChatKey = qwenChatKey,
             aiTunnelKey = aiTunnelKey,
             anthropicKey = anthropicKey,
             openaiKey = openAiKey,
             saluteSpeechKey = saluteSpeechKey,
+            ),
         )
         setState {
             copy(
@@ -260,6 +286,10 @@ class SetupViewModel(
                 anthropicKey = anthropicKey,
                 openaiKey = openAiKey,
                 saluteSpeechKey = saluteSpeechKey,
+                availableApiKeyFields = availability.fields,
+                availableApiKeyProviders = availability.providers,
+                supportsVoiceRecognitionApiKeys = availability.supportsVoiceRecognitionApiKeys,
+                useEnglishVersion = settingsProvider.regionProfile == REGION_EN,
                 configuredKeysCount = configuredKeysCount,
                 canProceed = configuredKeysCount > 0
             )
@@ -289,7 +319,7 @@ class SetupViewModel(
             LlmProvider.ANTHROPIC to anthropicKey,
             LlmProvider.OPENAI to openAiKey,
         )
-        val preferredProvider = LlmBuildProfile.providerPriorities()
+        val preferredProvider = llmBuildProfile.providerPriorities()
             .firstOrNull { provider -> keysByProvider[provider].orEmpty().isNotBlank() }
             ?: return
 
@@ -297,6 +327,6 @@ class SetupViewModel(
     }
 
     private fun defaultSetupModelForProvider(provider: LlmProvider): GigaModel =
-        LlmBuildProfile.defaultModelForProvider(provider)
+        llmBuildProfile.defaultModelForProvider(provider)
             ?: error("Default setup model is not configured for provider: $provider")
 }

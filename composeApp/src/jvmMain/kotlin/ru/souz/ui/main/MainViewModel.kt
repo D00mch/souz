@@ -23,6 +23,7 @@ import ru.souz.agent.engine.AgentContext
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
+import ru.souz.giga.LlmBuildProfile
 import ru.souz.ui.BaseViewModel
 import ru.souz.ui.main.usecases.ChatUseCase
 import ru.souz.ui.main.usecases.MainUseCaseOutput
@@ -52,6 +53,7 @@ class MainViewModel(
     private val graphAgent by di.instance<GraphBasedAgent>()
     private val desktopInfoRepository: DesktopInfoRepository by di.instance()
     private val settingsProvider: SettingsProvider by di.instance()
+    private val llmBuildProfile: LlmBuildProfile by di.instance()
     private val mainUseCasesFactory: MainUseCasesFactory by di.instance()
 
     private val agentRef = AtomicReference<GraphBasedAgent?>(null)
@@ -74,7 +76,7 @@ class MainViewModel(
         viewModelScope.launch {
             startTips = getStringArray(Res.array.start_tips)
             val randomTip = startTips.randomOrNull() ?: ""
-            val availableModels = settingsProvider.availableLlmModels()
+            val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
             val selectedModel = pickConfiguredOrDefaultModel(availableModels)
             applySelectedModel(selectedModel)
 
@@ -303,7 +305,7 @@ class MainViewModel(
     }
 
     private suspend fun updateChatModel(modelAlias: String) {
-        val availableModels = settingsProvider.availableLlmModels()
+        val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
         val model = availableModels.firstOrNull { it.alias == modelAlias } ?: return
         settingsProvider.gigaModel = model
         chatUseCase.updateModel(model)
@@ -318,7 +320,7 @@ class MainViewModel(
     }
 
     private suspend fun refreshSettings() {
-        val availableModels = settingsProvider.availableLlmModels()
+        val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
         val selectedModel = pickConfiguredOrDefaultModel(availableModels)
         applySelectedModel(selectedModel)
 
@@ -334,7 +336,7 @@ class MainViewModel(
     private fun pickConfiguredOrDefaultModel(availableModels: List<GigaModel>) = when {
         availableModels.isEmpty() -> settingsProvider.gigaModel
         settingsProvider.gigaModel in availableModels -> settingsProvider.gigaModel
-        else -> settingsProvider.defaultLlmModel() ?: availableModels.first()
+        else -> settingsProvider.defaultLlmModel(llmBuildProfile) ?: availableModels.first()
     }
 
     private fun applySelectedModel(model: GigaModel) {

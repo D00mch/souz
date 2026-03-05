@@ -2,7 +2,6 @@ package ru.souz.db
 
 import ru.souz.agent.DEFAULT_SYSTEM_PROMPT
 import ru.souz.giga.EmbeddingsModel
-import ru.souz.giga.EmbeddingsProvider
 import ru.souz.giga.DEFAULT_MAX_TOKENS
 import ru.souz.giga.GigaModel
 import ru.souz.giga.LlmBuildProfile
@@ -25,6 +24,7 @@ interface SettingsProvider {
     var supportEmail: String?
     var systemPrompt: String?
     var defaultCalendar: String?
+    var regionProfile: String
     var gigaModel: GigaModel
     var useFewShotExamples: Boolean
     var useStreaming: Boolean
@@ -47,6 +47,14 @@ interface SettingsProvider {
 class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvider {
 
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
+    private var _appLanguageDelegate: String?
+        get() = configStore.get(APP_LANGUAGE)
+        set(value) {
+            when (value) {
+                null, "" -> configStore.rm(APP_LANGUAGE)
+                else -> configStore.put(APP_LANGUAGE, value)
+            }
+        }
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
     private var _useStreamingDelegate: String? by keyDelegate(configKey = USE_STREAMING, envKey = USE_STREAMING)
     private var _notificationSoundEnabledDelegate: String? by keyDelegate(
@@ -123,15 +131,28 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     override var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
     override var systemPrompt: String? by keyDelegate(configKey = SYSTEM_PROMPT, envKey = SYSTEM_PROMPT)
     override var defaultCalendar: String? by keyDelegate(configKey = DEFAULT_CALENDAR, envKey = DEFAULT_CALENDAR)
+    override var regionProfile: String
+        get() {
+            val raw = _appLanguageDelegate?.trim()?.lowercase()
+            val normalized = if (raw == REGION_EN) REGION_EN else REGION_RU
+            if (raw != normalized) {
+                _appLanguageDelegate = normalized
+            }
+            return normalized
+        }
+        set(value) {
+            _appLanguageDelegate = if (value.trim().lowercase() == REGION_EN) REGION_EN else REGION_RU
+        }
+
     override var gigaModel: GigaModel
         get() = _gigaModelDelegate?.let { value ->
             GigaModel.entries.firstOrNull { model ->
                 model.name.equals(value, ignoreCase = true) || model.alias.equals(value, ignoreCase = true)
             }
-        }?.let(LlmBuildProfile::normalizeModel)
-            ?: LlmBuildProfile.defaultModel
+        }?.let(::normalizeGigaModel)
+            ?: defaultLlmModel()
         set(value) {
-            _gigaModelDelegate = LlmBuildProfile.normalizeModel(value).alias
+            _gigaModelDelegate = normalizeGigaModel(value).alias
         }
 
     override var useFewShotExamples: Boolean
@@ -255,6 +276,14 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         envKey = MCP_SERVERS_FILE
     )
 
+    private fun defaultLlmModel(): GigaModel =
+        LlmBuildProfile.defaultsForLanguage(regionProfile).values.first()
+
+    private fun normalizeGigaModel(model: GigaModel): GigaModel {
+        val availableProviders = LlmBuildProfile.defaultsForLanguage(regionProfile).keys
+        return if (model.provider in availableProviders) model else defaultLlmModel()
+    }
+
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
         object : ReadWriteProperty<Any?, String?> {
 
@@ -278,6 +307,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         const val ANTHROPIC_KEY = "ANTHROPIC_KEY"
         const val OPENAI_KEY = "OPENAI_KEY"
         const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
+        const val APP_LANGUAGE = "APP_LANGUAGE"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         private const val USE_STREAMING = "USE_STREAMING"
         private const val NOTIFICATION_SOUND_ENABLED = "NOTIFICATION_SOUND_ENABLED"
@@ -299,6 +329,8 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val VOICE_RECOGNITION_MODEL = "VOICE_RECOGNITION_MODEL"
         private const val MCP_SERVERS_JSON = "MCP_SERVERS_JSON"
         private const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
+        const val REGION_RU = "ru"
+        const val REGION_EN = "en"
         private val DEFAULT_FORBIDDEN_FOLDERS = listOf("~/Library/")
     }
 }
@@ -309,14 +341,6 @@ fun SettingsProvider.hasKey(provider: LlmProvider): Boolean = when (provider) {
     LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
     LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
     LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
-}
-
-fun SettingsProvider.hasKey(provider: EmbeddingsProvider): Boolean = when (provider) {
-    EmbeddingsProvider.GIGA -> !gigaChatKey.isNullOrBlank()
-    EmbeddingsProvider.QWEN -> !qwenChatKey.isNullOrBlank()
-    EmbeddingsProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
-    EmbeddingsProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
-    EmbeddingsProvider.OPENAI -> !openaiKey.isNullOrBlank()
 }
 
 fun SettingsProvider.hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
