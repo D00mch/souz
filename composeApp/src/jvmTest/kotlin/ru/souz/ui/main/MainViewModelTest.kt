@@ -95,15 +95,10 @@ class MainViewModelTest {
 
         val globalScreenMocked = runCatching {
             mockkStatic(GlobalScreen::class)
-            every { GlobalScreen.registerNativeHook() } just runs
+            every { GlobalScreen.registerNativeHook() } throws RuntimeException("Native hook is disabled by default in tests")
             every { GlobalScreen.addNativeKeyListener(any<NativeKeyListener>()) } just runs
             every { GlobalScreen.removeNativeKeyListener(any<NativeKeyListener>()) } just runs
             every { GlobalScreen.unregisterNativeHook() } just runs
-            val listener = mockk<NativeKeyListener>(relaxed = true)
-            GlobalScreen.registerNativeHook()
-            GlobalScreen.addNativeKeyListener(listener)
-            GlobalScreen.removeNativeKeyListener(listener)
-            GlobalScreen.unregisterNativeHook()
         }.isSuccess
         assumeTrue(globalScreenMocked, "JNativeHook runtime is unavailable in this environment")
 
@@ -231,6 +226,7 @@ class MainViewModelTest {
             onCancelActiveJob = {
                 firstResponse.completeExceptionally(CancellationException("Cancelled by alt press"))
             },
+            enableNativeHook = true,
             recognizeBehavior = {
                 GigaResponse.RecognizeResponse(result = listOf("second request"))
             },
@@ -272,6 +268,7 @@ class MainViewModelTest {
                     if (input != "hello") error("Unexpected input: $input")
                     response.await()
                 },
+                enableNativeHook = true,
                 recognizeBehavior = {
                     GigaResponse.RecognizeResponse(result = listOf("hello"))
                 },
@@ -486,11 +483,19 @@ class MainViewModelTest {
     private fun createHarness(
         executeBehavior: suspend (String) -> String = { "stub response" },
         onCancelActiveJob: () -> Unit = {},
+        enableNativeHook: Boolean = false,
         needsOnboarding: Boolean = false,
         recognizeBehavior: suspend (ByteArray) -> GigaResponse.RecognizeResponse = {
             GigaResponse.RecognizeResponse()
         },
     ): TestHarness {
+        if (enableNativeHook) {
+            every { GlobalScreen.registerNativeHook() } just runs
+            every { GlobalScreen.addNativeKeyListener(any<NativeKeyListener>()) } just runs
+            every { GlobalScreen.removeNativeKeyListener(any<NativeKeyListener>()) } just runs
+            every { GlobalScreen.unregisterNativeHook() } just runs
+        }
+
         val graphAgent = mockk<GraphBasedAgent>(relaxed = true)
         val sideEffects = MutableSharedFlow<String>()
         every { graphAgent.sideEffects } returns sideEffects
