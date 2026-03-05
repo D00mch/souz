@@ -37,6 +37,7 @@ import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.onboarding_display_text
 import souz.composeapp.generated.resources.onboarding_input_permission_request
 import org.jetbrains.compose.resources.getString
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import ru.souz.agent.GraphBasedAgent
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
