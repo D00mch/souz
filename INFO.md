@@ -56,7 +56,8 @@ Primary stack:
 │       │   │       ├── audio/              # Audio capture/playback utilities
 │       │   │       ├── db/                 # Local config/data extraction/vector DB layer
 │       │   │       ├── di/                 # Dependency wiring (DI container setup)
-│       │   │       ├── giga/               # GigaChat auth/chat/voice clients and profile-aware model profile
+│       │   │       ├── edition/            # Runtime build edition parsing/config (RU/EN)
+│       │   │       ├── giga/               # GigaChat auth/chat/voice clients and edition-aware model profile
 │       │   │       ├── image/              # Image utility helpers
 │       │   │       ├── keys/               # Keyboard listeners and key automation
 │       │   │       ├── libs/               # Native library bridge wrappers
@@ -64,7 +65,7 @@ Primary stack:
 │       │   │       ├── mcp/                # MCP sessions, transport, config, OAuth, protocol adapter
 │       │   │       ├── permissions/        # Permission/relaunch helpers
 │       │   │       ├── service/            # Service-layer integrations
-│       │   │       │   └── telegram/       # Telegram client (TdLib) + Bot polling controller
+│       │   │       │   └── telegram/       # Telegram client (TdLib) + bot polling/controller workflows
 │       │   │       ├── telemetry/          # Local telemetry outbox, batching sender, and event models
 │       │   │       ├── tool/               # Tool framework and concrete tool implementations
 │       │   │       │   ├── application/    # App launch/list tools

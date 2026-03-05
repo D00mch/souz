@@ -3,6 +3,7 @@
 package ru.souz.ui.main
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -145,6 +146,8 @@ fun MainScreen(
         onClearContext = { viewModel.send(MainEvent.UserPressStop) },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
+        onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
+        onCancelSelectionDialog = { viewModel.send(MainEvent.CancelSelectionDialog) },
         onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
     )
 }
@@ -174,6 +177,8 @@ fun MainScreenContent(
     onClearContext: () -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
+    onSelectApprovalCandidate: (Long) -> Unit = {},
+    onCancelSelectionDialog: () -> Unit = {},
     onOpenPath: (String) -> Unit = {},
 ) {
     val windowInfo = LocalWindowInfo.current
@@ -399,6 +404,164 @@ fun MainScreenContent(
                     onDismiss = onRejectToolPermission
                 )
             }
+
+            state.selectionDialog?.let { dialog ->
+                SelectionDialog(
+                    requestId = dialog.requestId,
+                    title = dialog.title,
+                    message = dialog.message,
+                    candidates = dialog.candidates,
+                    confirmText = dialog.confirmText,
+                    cancelText = dialog.cancelText,
+                    onConfirmSelection = onSelectApprovalCandidate,
+                    onDismiss = onCancelSelectionDialog,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectionDialog(
+    requestId: Long,
+    title: String,
+    message: String,
+    candidates: List<SelectionDialogCandidateUi>,
+    confirmText: String,
+    cancelText: String,
+    onConfirmSelection: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var selectedId by remember(requestId) { mutableStateOf<Long?>(null) }
+
+    ConfirmDialog(
+        type = ConfirmDialogType.WARNING,
+        title = title,
+        message = message,
+        dialogMaxWidth = ToolPermissionDialogMaxWidth,
+        dialogMaxHeightFraction = ToolPermissionDialogMaxHeightFraction,
+        detailsContent = {
+            SelectionCandidatesList(
+                candidates = candidates,
+                selectedId = selectedId,
+                onSelect = { selectedId = it },
+            )
+        },
+        confirmText = confirmText,
+        cancelText = cancelText,
+        confirmEnabled = selectedId != null,
+        onConfirm = { selectedId?.let(onConfirmSelection) },
+        onDismiss = onDismiss,
+    )
+}
+
+@Composable
+private fun SelectionCandidatesList(
+    candidates: List<SelectionDialogCandidateUi>,
+    selectedId: Long?,
+    onSelect: (Long) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        candidates.forEach { candidate ->
+            val candidateId = candidate.id
+            SelectionCandidateRow(
+                title = candidate.title,
+                selected = candidateId == selectedId,
+                badge = candidate.badge,
+                meta = candidate.meta,
+                preview = candidate.preview,
+                onClick = { onSelect(candidateId) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectionCandidateRow(
+    title: String,
+    selected: Boolean,
+    badge: String?,
+    meta: String?,
+    preview: String?,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            selected -> Color(0xFFF59E0B)
+            isHovered -> Color(0x66FFFFFF)
+            else -> Color(0x1AFFFFFF)
+        }
+    )
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            selected -> Color(0x26F59E0B)
+            isHovered -> Color(0x14FFFFFF)
+            else -> Color(0x0DFFFFFF)
+        }
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(backgroundColor)
+            .border(1.dp, borderColor, RoundedCornerShape(10.dp))
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                color = Color(0xF2FFFFFF),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (!badge.isNullOrBlank()) {
+                Text(
+                    text = badge,
+                    color = Color(0xFFF59E0B),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+
+        meta?.takeIf { it.isNotBlank() }?.let { metaText ->
+            Text(
+                text = metaText,
+                color = Color(0x99FFFFFF),
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        preview?.takeIf { it.isNotBlank() }?.let { previewText ->
+            Text(
+                text = previewText,
+                color = Color(0x80FFFFFF),
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

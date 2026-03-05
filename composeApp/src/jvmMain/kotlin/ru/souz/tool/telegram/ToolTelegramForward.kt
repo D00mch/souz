@@ -20,6 +20,7 @@ import org.jetbrains.compose.resources.getString
 
 class ToolTelegramForward(
     private val telegramService: TelegramService,
+    private val chatSelectionBroker: TelegramChatSelectionBroker,
     private val permissionBroker: ToolPermissionBroker? = null,
 ) : ToolSetup<ToolTelegramForward.Input> {
     private val settingsProvider: SettingsProvider by lazy { SettingsProviderImpl(ConfigStore) }
@@ -69,18 +70,31 @@ class ToolTelegramForward(
             )
         }
 
+        val sourceChat = with(TelegramToolResolvers) {
+            chatSelectionBroker.resolveTelegramChatCandidate(
+                telegramService = telegramService,
+                rawChatName = input.fromChat,
+            )
+        } ?: return TelegramToolResolvers.telegramSelectionCancelled.msg
+        val targetChat = with(TelegramToolResolvers) {
+            chatSelectionBroker.resolveTelegramChatCandidate(
+                telegramService = telegramService,
+                rawChatName = input.toChat,
+            )
+        } ?: return TelegramToolResolvers.telegramSelectionCancelled.msg
+
         val result = permissionBroker?.requestPermission(
             getString(Res.string.permission_telegram_forward),
             linkedMapOf(
-                "fromChat" to input.fromChat,
-                "toChat" to input.toChat,
+                "fromChat" to sourceChat.title,
+                "toChat" to targetChat.title,
                 "messageId" to input.messageId,
             )
         )
         if (result is ToolPermissionResult.No) return result.msg
 
         val forwarded = runCatching {
-            telegramService.forwardMessage(input.fromChat, input.toChat, input.messageId)
+            telegramService.forwardMessageByChatIds(sourceChat.chatId, targetChat.chatId, input.messageId)
         }.getOrElse { error ->
             throw BadInputException(error.message ?: "Failed to forward Telegram message")
         }

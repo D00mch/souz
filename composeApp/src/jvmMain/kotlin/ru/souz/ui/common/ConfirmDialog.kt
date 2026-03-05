@@ -103,6 +103,7 @@ fun ConfirmDialog(
     dialogMaxHeightFraction: Float = 0.9f,
     confirmText: String = stringResource(Res.string.dialog_confirm),
     cancelText: String = stringResource(Res.string.dialog_cancel),
+    confirmEnabled: Boolean = true,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -270,6 +271,7 @@ fun ConfirmDialog(
                     ConfirmDialogButton(
                         text = confirmText,
                         type = type,
+                        enabled = confirmEnabled,
                         onClick = onConfirm,
                         modifier = Modifier.weight(1f)
                     )
@@ -286,6 +288,7 @@ private fun DialogButton(
     borderColor: Color,
     backgroundColor: Color,
     hoverBackgroundColor: Color,
+    enabled: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -302,26 +305,35 @@ private fun DialogButton(
         animationSpec = tween(200)
     )
 
-    val currentBg = if (isHovered) hoverBackgroundColor else backgroundColor
+    val currentBg = if (enabled && isHovered) hoverBackgroundColor else backgroundColor
+    val effectiveTextColor = if (enabled) textColor else textColor.copy(alpha = 0.45f)
+    val effectiveBorderColor = if (enabled) borderColor else borderColor.copy(alpha = 0.45f)
+    val effectiveBackground = if (enabled) currentBg else backgroundColor.copy(alpha = 0.45f)
 
     Box(
         modifier = modifier
-            .scale(scale)
+            .scale(if (enabled) scale else 1f)
             .clip(RoundedCornerShape(8.dp))
-            .background(currentBg)
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
-            .pointerHoverIcon(PointerIcon.Hand)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
+            .background(effectiveBackground)
+            .border(1.dp, effectiveBorderColor, RoundedCornerShape(8.dp))
+            .pointerHoverIcon(if (enabled) PointerIcon.Hand else PointerIcon.Default)
+            .then(
+                if (enabled) {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick
+                    )
+                } else {
+                    Modifier
+                }
             )
             .padding(vertical = 8.dp, horizontal = 12.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
-            color = textColor,
+            color = effectiveTextColor,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium
         )
@@ -332,6 +344,7 @@ private fun DialogButton(
 private fun ConfirmDialogButton(
     text: String,
     type: ConfirmDialogType,
+    enabled: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -348,19 +361,22 @@ private fun ConfirmDialogButton(
         animationSpec = tween(200)
     )
     
-    val shadowColor = if (isHovered) type.confirmBtnHoverShadowColor else type.confirmBtnShadowColor
-    val shadowOpacity = if (isHovered) 0.3f else 0.2f
+    val shadowColor = if (enabled && isHovered) type.confirmBtnHoverShadowColor else type.confirmBtnShadowColor
 
     // Gradient Brush
     val brush = Brush.linearGradient(
-        colors = listOf(type.confirmBtnStartColor, type.confirmBtnEndColor),
+        colors = if (enabled) {
+            listOf(type.confirmBtnStartColor, type.confirmBtnEndColor)
+        } else {
+            listOf(type.confirmBtnStartColor.copy(alpha = 0.35f), type.confirmBtnEndColor.copy(alpha = 0.35f))
+        },
         start = androidx.compose.ui.geometry.Offset.Zero,
         end = androidx.compose.ui.geometry.Offset.Infinite // Simplified direction 135deg approximation
     )
 
     Box(
         modifier = modifier
-            .scale(scale)
+            .scale(if (enabled) scale else 1f)
             .shadow(
                 elevation = 0.dp, // Manually drawing shadow to control color and opacity precisely if needed, or stick to Box shadow
                 shape = RoundedCornerShape(8.dp),
@@ -370,12 +386,22 @@ private fun ConfirmDialogButton(
              // Using manual shadow with colored background for better control
             .clip(RoundedCornerShape(8.dp))
             .background(brush)
-            .border(1.dp, type.confirmBtnBorderColor, RoundedCornerShape(8.dp))
-            .pointerHoverIcon(PointerIcon.Hand)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
+            .border(
+                1.dp,
+                if (enabled) type.confirmBtnBorderColor else type.confirmBtnBorderColor.copy(alpha = 0.45f),
+                RoundedCornerShape(8.dp)
+            )
+            .pointerHoverIcon(if (enabled) PointerIcon.Hand else PointerIcon.Default)
+            .then(
+                if (enabled) {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick
+                    )
+                } else {
+                    Modifier
+                }
             )
             .padding(vertical = 8.dp, horizontal = 12.dp),
         contentAlignment = Alignment.Center
@@ -383,7 +409,7 @@ private fun ConfirmDialogButton(
          // Apply shadow effect manually if needed, but for now simple shadow is handled by modifier
         Text(
             text = text,
-            color = type.confirmBtnTextColor,
+            color = if (enabled) type.confirmBtnTextColor else type.confirmBtnTextColor.copy(alpha = 0.45f),
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium
         )

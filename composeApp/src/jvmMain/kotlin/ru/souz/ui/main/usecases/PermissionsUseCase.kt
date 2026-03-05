@@ -1,5 +1,6 @@
 package ru.souz.ui.main.usecases
 
+import androidx.annotation.MainThread
 import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -12,29 +13,37 @@ import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.permissions.AppRelauncher
+import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainState
+import ru.souz.ui.main.SelectionDialogCandidateUi
+import ru.souz.ui.main.SelectionDialogData
 import ru.souz.ui.main.ToolPermissionDialogData
 import kotlin.math.max
 import kotlin.math.min
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import java.util.concurrent.ConcurrentHashMap
 
 class PermissionsUseCase(
     private val settingsProvider: SettingsProvider,
     private val toolPermissionBroker: ToolPermissionBroker,
+    private val selectionApprovalSources: Set<SelectionApprovalSource>,
     private val speechUseCase: SpeechUseCase,
     private val relaunchApp: () -> Boolean = { AppRelauncher.relaunch() },
 ) {
     private val l = LoggerFactory.getLogger(PermissionsUseCase::class.java)
     private var onboardingSpeechStartedAt: Long? = null
     private var permissionWatcherJob: Job? = null
+    private val selectionApprovalSourcesById: Map<String, SelectionApprovalSource> =
+        selectionApprovalSources.associateBy { it.sourceId }
 
     private val _outputs = Channel<MainUseCaseOutput>()
     val outputs: Flow<MainUseCaseOutput> = _outputs.consumeAsFlow()
 
+    @MainThread
     fun start(scope: CoroutineScope) {
         scope.launch {
             toolPermissionBroker.requests.collect { request ->
@@ -52,12 +61,53 @@ class PermissionsUseCase(
                 }
             }
         }
+        selectionApprovalSourcesById.values.forEach { source ->
+            scope.launch {
+                source.requests.collect { request ->
+                    if (settingsProvider.notificationSoundEnabled) {
+                        speechUseCase.playMacPingMsgSafely(scope)
+                    }
+                    emitState {
+                        copy(
+                            selectionDialog = SelectionDialogData(
+                                sourceId = request.sourceId,
+                                requestId = request.requestId,
+                                title = request.title,
+                                message = request.message,
+                                confirmText = request.confirmText,
+                                cancelText = request.cancelText,
+                                candidates = request.candidates.map { candidate ->
+                                    SelectionDialogCandidateUi(
+                                        id = candidate.id,
+                                        title = candidate.title,
+                                        badge = candidate.badge,
+                                        meta = candidate.meta,
+                                        preview = candidate.preview,
+                                    )
+                                },
+                            )
+                        )
+                    }
+                }
+            }
+        }
     }
 
     suspend fun resolveToolPermission(requestId: Long?, approved: Boolean) {
         if (requestId == null) return
         toolPermissionBroker.resolve(requestId, approved)
         emitState { copy(toolPermissionDialog = null) }
+    }
+
+    @MainThread
+    suspend fun resolveSelectionDialog(
+        sourceId: String?,
+        requestId: Long?,
+        selectedCandidateId: Long?,
+    ) {
+        if (sourceId == null || requestId == null) return
+        selectionApprovalSourcesById[sourceId]?.resolve(requestId, selectedCandidateId)
+        emitState { copy(selectionDialog = null) }
     }
 
     suspend fun runOnboardingIfNeeded() {
@@ -131,6 +181,11 @@ class PermissionsUseCase(
 
     fun rejectPendingPermissionRequest(requestId: Long?) {
         requestId?.let { toolPermissionBroker.resolve(it, approved = false) }
+    }
+
+    fun rejectPendingSelectionDialog(sourceId: String?, requestId: Long?) {
+        if (sourceId == null || requestId == null) return
+        selectionApprovalSourcesById[sourceId]?.resolve(requestId, null)
     }
 
     fun onCleared() {

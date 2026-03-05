@@ -21,6 +21,7 @@ import org.jetbrains.compose.resources.getString
 
 class ToolTelegramSetState(
     private val telegramService: TelegramService,
+    private val chatSelectionBroker: TelegramChatSelectionBroker,
     private val permissionBroker: ToolPermissionBroker? = null,
 ) : ToolSetup<ToolTelegramSetState.Input> {
     private val settingsProvider: SettingsProvider by lazy { SettingsProviderImpl(ConfigStore) }
@@ -72,10 +73,17 @@ class ToolTelegramSetState(
             )
         }
 
+        val chatCandidate = with(TelegramToolResolvers) {
+            chatSelectionBroker.resolveTelegramChatCandidate(
+                telegramService = telegramService,
+                rawChatName = input.chatName,
+            )
+        } ?: return TelegramToolResolvers.telegramSelectionCancelled.msg
+
         val result = permissionBroker?.requestPermission(
             getString(Res.string.permission_telegram_set_state),
             linkedMapOf(
-                "chatName" to input.chatName,
+                "chatName" to chatCandidate.title,
                 "action" to input.action.name,
             )
         )
@@ -89,7 +97,7 @@ class ToolTelegramSetState(
         }
 
         val chat = runCatching {
-            telegramService.setChatState(input.chatName, action)
+            telegramService.setChatStateById(chatCandidate.chatId, action)
         }.getOrElse { error ->
             throw BadInputException(error.message ?: "Failed to apply Telegram chat action")
         }

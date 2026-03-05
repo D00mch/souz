@@ -52,6 +52,24 @@ data class ToolPermissionDialogData(
     val params: Map<String, String>,
 )
 
+data class SelectionDialogData(
+    val sourceId: String,
+    val requestId: Long,
+    val title: String,
+    val message: String,
+    val confirmText: String,
+    val cancelText: String,
+    val candidates: List<SelectionDialogCandidateUi>,
+)
+
+data class SelectionDialogCandidateUi(
+    val id: Long,
+    val title: String,
+    val badge: String?,
+    val meta: String?,
+    val preview: String?,
+)
+
 /**
  * State for the main screen that mirrors the floating glass panel experience.
  */
@@ -74,6 +92,7 @@ data class MainState(
     val isSpeaking: Boolean = false,
     val showNewChatDialog: Boolean = false,
     val toolPermissionDialog: ToolPermissionDialogData? = null,
+    val selectionDialog: SelectionDialogData? = null,
     val attachedFiles: List<ChatAttachedFile> = emptyList(),
 ) : VMState {
 
@@ -103,6 +122,8 @@ sealed interface MainEvent : VMEvent {
     data object RefreshSettings : MainEvent
     data object ApproveToolPermission : MainEvent
     data object RejectToolPermission : MainEvent
+    data class SelectApprovalCandidate(val candidateId: Long) : MainEvent
+    data object CancelSelectionDialog : MainEvent
 }
 
 sealed interface MainEffect : VMSideEffect {

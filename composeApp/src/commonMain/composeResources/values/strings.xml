@@ -21,6 +21,17 @@
     <string name="dialog_permission_title">Action confirmation</string>
     <string name="dialog_permission_allow">Allow</string>
     <string name="dialog_permission_deny">Deny</string>
+    <string name="telegram_contact_select_title">Select Telegram Contact</string>
+    <string name="telegram_contact_select_message">Multiple contacts match “%s”. Choose the right one.</string>
+    <string name="telegram_contact_select_choose">Choose</string>
+    <string name="telegram_contact_select_cancel">Cancel</string>
+    <string name="telegram_contact_select_contact_badge">contact</string>
+    <string name="telegram_chat_select_title">Select Telegram Chat</string>
+    <string name="telegram_chat_select_message">Multiple chats match “%s”. Choose the right one.</string>
+    <string name="telegram_chat_select_choose">Choose</string>
+    <string name="telegram_chat_select_cancel">Cancel</string>
+    <string name="telegram_chat_select_private_badge">private chat</string>
+    <string name="telegram_chat_select_unread">unread: %d</string>
     <string name="telegram_dialog_delete_title">Delete bot</string>
     <string name="telegram_dialog_delete_text">Are you sure you want to permanently delete the bot @%s?</string>
     <string name="telegram_dialog_delete_confirm">Delete</string>

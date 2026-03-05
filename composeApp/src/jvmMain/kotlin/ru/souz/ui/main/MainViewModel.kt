@@ -187,6 +187,20 @@ class MainViewModel(
 
             MainEvent.RejectToolPermission ->
                 permissionsUseCase.resolveToolPermission(currentState.toolPermissionDialog?.requestId, approved = false)
+
+            is MainEvent.SelectApprovalCandidate ->
+                permissionsUseCase.resolveSelectionDialog(
+                    sourceId = currentState.selectionDialog?.sourceId,
+                    requestId = currentState.selectionDialog?.requestId,
+                    selectedCandidateId = event.candidateId,
+                )
+
+            MainEvent.CancelSelectionDialog ->
+                permissionsUseCase.resolveSelectionDialog(
+                    sourceId = currentState.selectionDialog?.sourceId,
+                    requestId = currentState.selectionDialog?.requestId,
+                    selectedCandidateId = null,
+                )
         }
     }
 
@@ -390,6 +404,10 @@ class MainViewModel(
     override fun onCleared() {
         super.onCleared()
         permissionsUseCase.rejectPendingPermissionRequest(currentState.toolPermissionDialog?.requestId)
+        permissionsUseCase.rejectPendingSelectionDialog(
+            sourceId = currentState.selectionDialog?.sourceId,
+            requestId = currentState.selectionDialog?.requestId,
+        )
         chatUseCase.onCleared()
         permissionsUseCase.onCleared()
     }
