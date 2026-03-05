@@ -27,7 +27,7 @@ poi = "5.2.5"
 tdlight-java = "3.4.4+td.1.8.52"
 tdlight-natives = "4.0.558"
 jsoup = "1.18.3"
-icu4j = "76.1"
+icu4j = "78.2"
 
 
 [libraries]
