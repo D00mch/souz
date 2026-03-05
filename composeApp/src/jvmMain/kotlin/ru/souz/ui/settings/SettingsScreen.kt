@@ -228,6 +228,7 @@ fun SettingsScreenMain(
                             onDefaultCalendarChange = { viewModel.send(SettingsEvent.SelectDefaultCalendar(it)) },
                             onUseStreamingChange = { viewModel.send(SettingsEvent.InputUseStreaming(it)) },
                             onNotificationSoundEnabledChange = { viewModel.send(SettingsEvent.InputNotificationSoundEnabled(it)) },
+                            onUseEnglishVersionChange = { viewModel.send(SettingsEvent.InputUseEnglishVersion(it)) },
                             onVoiceSpeedInput = { viewModel.send(SettingsEvent.InputVoiceSpeed(it)) },
                             onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
                             onMcpServersJsonInput = { viewModel.send(SettingsEvent.InputMcpServersJson(it)) },

@@ -19,24 +19,18 @@ COMPOSE_CHECK_RUNTIME_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/checkRuntim
 
 usage() {
   cat <<'EOF'
-Usage: kmp-build-macos-dev.sh --edition ru|en --jdk-arch arm64|aarch64|x86_64|x64
+Usage: kmp-build-macos-dev.sh --jdk-arch arm64|aarch64|x86_64|x64
 
 Examples:
-  ./build-logic/kmp-build-macos-dev.sh --edition ru --jdk-arch arm64
-  ./build-logic/kmp-build-macos-dev.sh --edition en --jdk-arch x86_64
+  ./build-logic/kmp-build-macos-dev.sh --jdk-arch arm64
+  ./build-logic/kmp-build-macos-dev.sh --jdk-arch x86_64
 EOF
 }
 
-BUILD_EDITION=""
 JDK_ARCH_INPUT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --edition)
-      [[ $# -ge 2 ]] || { echo "Missing value for --edition" >&2; usage; exit 1; }
-      BUILD_EDITION="$2"
-      shift 2
-      ;;
     --jdk-arch)
       [[ $# -ge 2 ]] || { echo "Missing value for --jdk-arch" >&2; usage; exit 1; }
       JDK_ARCH_INPUT="$2"
@@ -53,15 +47,6 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-
-case "$BUILD_EDITION" in
-  ru|en) ;;
-  *)
-    echo "Unsupported edition '$BUILD_EDITION'. Expected ru or en." >&2
-    usage
-    exit 1
-    ;;
-esac
 
 case "$JDK_ARCH_INPUT" in
   arm64|aarch64)
@@ -111,7 +96,6 @@ fi
 # The real script
 # =============================================================================
 
-echo "Edition: $BUILD_EDITION"
 echo "JDK arch: $JDK_ARCH"
 echo "JDK home: $JDK_HOME"
 
@@ -124,7 +108,6 @@ echo "Cleaning cached Compose runtime image: $COMPOSE_RUNTIME_CACHE_DIR"
 rm -rf "$COMPOSE_RUNTIME_CACHE_DIR" "$COMPOSE_CHECK_RUNTIME_DIR"
 
 "$PROJECT_DIR/gradlew" :composeApp:notarizeReleaseDmg \
-  -Pedition="$BUILD_EDITION" \
   -PmacOsAppStoreRelease=false \
   -Pmac.signing.enabled=true \
   -Pmac.signing.identity="$APPLE_SIGNING_ID" \

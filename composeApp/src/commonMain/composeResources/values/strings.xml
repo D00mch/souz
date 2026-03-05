@@ -56,6 +56,8 @@
     <string name="setting_streaming_desc">Responses appear gradually as they are generated</string>
     <string name="setting_notification_sound_title">Notification sound</string>
     <string name="setting_notification_sound_desc">Play a short sound when the assistant response is ready</string>
+    <string name="setting_language_profile_title">Region profile</string>
+    <string name="setting_language_profile_desc">Different models and LLM providers available per region.</string>
     <string name="label_voice_speed">Voice speed</string>
     <string name="hint_voice_speed">Current value: %d. Higher is faster.</string>
     <string name="label_voice_selection">Voice selection</string>
@@ -66,11 +68,11 @@
     <!-- Keys Settings -->
     <string name="keys_configured_count">Configured keys: %d</string>
     <string name="keys_hint_chat">One key is enough to chat.</string>
-    <string name="keys_hint_chat_ru_build">One key is enough to chat: GigaChat, Qwen, or AI Tunnel.</string>
-    <string name="keys_hint_chat_en_build">One key is enough to chat: OpenAI, Qwen, or Anthropic.</string>
-    <string name="keys_hint_voice">Voice commands depend on build capabilities.</string>
+    <string name="keys_hint_chat_ru_build">One key is enough to chat in RU profile: GigaChat, Qwen, or AI Tunnel.</string>
+    <string name="keys_hint_chat_en_build">One key is enough to chat in EN profile: OpenAI, Qwen, or Anthropic.</string>
+    <string name="keys_hint_voice">Voice commands depend on the active profile.</string>
     <string name="keys_hint_voice_required">For voice commands, add at least one speech recognition key.</string>
-    <string name="keys_hint_voice_unavailable">Voice commands are not available in this build yet.</string>
+    <string name="keys_hint_voice_unavailable">Voice commands are not available in the active profile.</string>
     <string name="label_key_gigachat">GigaChat Key</string>
     <string name="label_key_qwen">Qwen Key</string>
     <string name="label_key_aitunnel">AI Tunnel Key</string>

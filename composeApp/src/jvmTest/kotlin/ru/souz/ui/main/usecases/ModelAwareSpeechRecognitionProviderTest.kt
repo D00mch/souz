@@ -6,13 +6,47 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import ru.souz.db.SettingsProvider
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
+import ru.souz.giga.GigaVoiceAPI
 import ru.souz.giga.VoiceRecognitionModel
 import ru.souz.llms.AiTunnelVoiceAPI
+import ru.souz.llms.OpenAIVoiceAPI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
 class ModelAwareSpeechRecognitionProviderTest {
+
+    @Test
+    fun `openai speech provider is disabled outside en profile`() {
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.regionProfile } returns REGION_RU
+        every { settingsProvider.openaiKey } returns "openai-key"
+
+        val provider = OpenAISpeechRecognitionProvider(
+            openAIVoiceAPI = mockk<OpenAIVoiceAPI>(),
+            settingsProvider = settingsProvider,
+        )
+
+        assertFalse(provider.enabled)
+        assertFalse(provider.hasRequiredKey)
+    }
+
+    @Test
+    fun `salute speech provider is disabled outside ru profile`() {
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.regionProfile } returns REGION_EN
+        every { settingsProvider.saluteSpeechKey } returns "salute-key"
+
+        val provider = SaluteSpeechRecognitionProvider(
+            gigaVoiceAPI = mockk<GigaVoiceAPI>(),
+            settingsProvider = settingsProvider,
+        )
+
+        assertFalse(provider.enabled)
+        assertFalse(provider.hasRequiredKey)
+    }
 
     @Test
     fun `ai tunnel speech provider is disabled outside ru edition`() {
@@ -22,7 +56,7 @@ class ModelAwareSpeechRecognitionProviderTest {
         val provider = AiTunnelSpeechRecognitionProvider(
             aiTunnelVoiceAPI = mockk<AiTunnelVoiceAPI>(),
             settingsProvider = settingsProvider,
-            isRuEdition = false,
+            isRuBuildProvider = { false },
         )
 
         assertFalse(provider.enabled)

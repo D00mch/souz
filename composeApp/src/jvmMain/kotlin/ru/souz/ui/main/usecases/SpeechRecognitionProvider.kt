@@ -1,8 +1,8 @@
 package ru.souz.ui.main.usecases
 
 import ru.souz.db.SettingsProvider
-import ru.souz.edition.BuildEdition
-import ru.souz.edition.BuildEditionConfig
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.giga.GigaVoiceAPI
 import ru.souz.giga.VoiceRecognitionProvider
 import ru.souz.llms.AiTunnelVoiceAPI
@@ -20,9 +20,10 @@ class SaluteSpeechRecognitionProvider(
     private val gigaVoiceAPI: GigaVoiceAPI,
     private val settingsProvider: SettingsProvider,
 ) : SpeechRecognitionProvider {
-    override val enabled: Boolean = true
+    override val enabled: Boolean
+        get() = settingsProvider.regionProfile == REGION_RU
     override val hasRequiredKey: Boolean
-        get() = !settingsProvider.saluteSpeechKey.isNullOrBlank()
+        get() = enabled && !settingsProvider.saluteSpeechKey.isNullOrBlank()
 
     override suspend fun recognize(audio: ByteArray): String =
         gigaVoiceAPI.recognize(audio).result.joinToString("\n").trim()
@@ -32,9 +33,10 @@ class OpenAISpeechRecognitionProvider(
     private val openAIVoiceAPI: OpenAIVoiceAPI,
     private val settingsProvider: SettingsProvider,
 ) : SpeechRecognitionProvider {
-    override val enabled: Boolean = true
+    override val enabled: Boolean
+        get() = settingsProvider.regionProfile == REGION_EN
     override val hasRequiredKey: Boolean
-        get() = !settingsProvider.openaiKey.isNullOrBlank()
+        get() = enabled && !settingsProvider.openaiKey.isNullOrBlank()
 
     override suspend fun recognize(audio: ByteArray): String = openAIVoiceAPI.recognize(audio).trim()
 }
@@ -42,10 +44,10 @@ class OpenAISpeechRecognitionProvider(
 class AiTunnelSpeechRecognitionProvider(
     private val aiTunnelVoiceAPI: AiTunnelVoiceAPI,
     private val settingsProvider: SettingsProvider,
-    private val isRuEdition: Boolean = BuildEditionConfig.current == BuildEdition.RU,
+    private val isRuBuildProvider: () -> Boolean = { settingsProvider.regionProfile == REGION_RU },
 ) : SpeechRecognitionProvider {
     override val enabled: Boolean
-        get() = isRuEdition
+        get() = isRuBuildProvider()
 
     override val hasRequiredKey: Boolean
         get() = enabled && !settingsProvider.aiTunnelKey.isNullOrBlank()

@@ -113,13 +113,6 @@ log_step "Loading configuration"
 # Build number (passed as argument or default to 1)
 BUILD_NUMBER="${1:-1}"
 
-# Release edition (ru/en)
-EDITION="${EDITION:-ru}"
-if [ "$EDITION" != "ru" ] && [ "$EDITION" != "en" ]; then
-    log_error "Unsupported edition '$EDITION'. Use EDITION=ru or EDITION=en."
-    exit 1
-fi
-
 # JDK paths - environment/local.properties first, then fail-fast discovery
 JDK_ARM64="${JDK_ARM64:-$(read_property 'macos.jdk.arm64' "$LOCAL_PROPERTIES")}"
 JDK_X64="${JDK_X64:-$(read_property 'macos.jdk.x64' "$LOCAL_PROPERTIES")}"
@@ -153,7 +146,6 @@ OUTPUT_PKG=""
 
 # Display configuration
 log_info "Configuration:"
-log_info "  Edition: $EDITION"
 log_info "  App Name: ${APP_NAME:-(auto-detect from built app bundle)}"
 log_info "  Version: $VERSION"
 log_info "  Build Number: $BUILD_NUMBER"
@@ -301,7 +293,6 @@ reset_compose_runtime_cache
 # Build with x86_64 JDK
 log_info "Running Gradle build with x86_64 JDK..."
 ./gradlew :composeApp:createReleaseDistributable \
-    -Pedition="$EDITION" \
     -Pmac.includeAllNativeResources=true \
     -PmacOsAppStoreRelease=true \
     -PbuildNumber="$BUILD_NUMBER" \
@@ -374,7 +365,6 @@ reset_compose_runtime_cache
 # Build with arm64 JDK
 log_info "Running Gradle build with arm64 JDK..."
 ./gradlew :composeApp:createReleaseDistributable \
-    -Pedition="$EDITION" \
     -Pmac.includeAllNativeResources=true \
     -PmacOsAppStoreRelease=true \
     -PbuildNumber="$BUILD_NUMBER" \

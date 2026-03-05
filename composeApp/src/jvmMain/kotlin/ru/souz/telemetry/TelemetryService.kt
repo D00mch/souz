@@ -26,7 +26,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import ru.souz.db.ConfigStore
-import ru.souz.edition.BuildEditionConfig
+import ru.souz.db.SettingsProvider
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
+import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.plus
 import ru.souz.tool.ToolCategory
@@ -41,6 +43,7 @@ import kotlin.coroutines.CoroutineContext
 class TelemetryService(
     private val outboxRepository: TelemetryOutboxRepository,
     private val cryptoService: TelemetryCryptoService,
+    private val settingsProvider: SettingsProvider,
     private val runtimeConfig: TelemetryRuntimeConfig = TelemetryRuntimeConfig.production(),
 ) {
     private val l = LoggerFactory.getLogger(TelemetryService::class.java)
@@ -396,7 +399,7 @@ class TelemetryService(
         enqueueEvent(
             eventType = TelemetryEventType.APP_OPENED,
             payload = mapOf(
-                "edition" to BuildEditionConfig.current.name.lowercase(),
+                "edition" to editionWireValue(),
                 "osName" to System.getProperty("os.name").orEmpty(),
                 "osVersion" to System.getProperty("os.version").orEmpty(),
                 "osArch" to System.getProperty("os.arch").orEmpty(),
@@ -457,7 +460,7 @@ class TelemetryService(
     private fun clientMetadata(installationId: String?): TelemetryClientMetadata = TelemetryClientMetadata(
         appName = runtimeConfig.appName,
         appVersion = appVersion(),
-        edition = BuildEditionConfig.current.name.lowercase(),
+        edition = editionWireValue(),
         userId = identity.userId,
         deviceId = identity.deviceId,
         installationId = installationId,
@@ -467,6 +470,9 @@ class TelemetryService(
         osArch = System.getProperty("os.arch").orEmpty(),
         sentAtMs = System.currentTimeMillis(),
     )
+
+    private fun editionWireValue(): String =
+        if (settingsProvider.regionProfile == REGION_EN) REGION_EN else REGION_RU
 
     private fun resolvedUrl(baseUrl: String, path: String): String =
         URI(baseUrl.trim().ifEmpty { error("Empty telemetry base URL") })

@@ -17,25 +17,21 @@ class LLMFactory(
     private val openAiApi: OpenAIChatAPI,
 ) : GigaChatAPI {
 
+    private fun chatApiFor(provider: LlmProvider): GigaChatAPI = when (provider) {
+        LlmProvider.QWEN -> qwenApi
+        LlmProvider.AI_TUNNEL -> aiTunnelApi
+        LlmProvider.ANTHROPIC -> anthropicApi
+        LlmProvider.OPENAI -> openAiApi
+        LlmProvider.GIGA -> restApi
+    }
+
     fun current(): GigaChatAPI {
         val model = settingsProvider.gigaModel
-        return when (model.provider) {
-            LlmProvider.QWEN -> qwenApi
-            LlmProvider.AI_TUNNEL -> aiTunnelApi
-            LlmProvider.ANTHROPIC -> anthropicApi
-            LlmProvider.OPENAI -> openAiApi
-            LlmProvider.GIGA -> restApi
-        }
+        return chatApiFor(model.provider)
     }
 
     private fun currentEmbeddings(): GigaChatAPI {
-        return when (settingsProvider.embeddingsModel.provider) {
-            EmbeddingsProvider.QWEN -> qwenApi
-            EmbeddingsProvider.AI_TUNNEL -> aiTunnelApi
-            EmbeddingsProvider.ANTHROPIC -> anthropicApi
-            EmbeddingsProvider.OPENAI -> openAiApi
-            EmbeddingsProvider.GIGA -> restApi
-        }
+        return chatApiFor(settingsProvider.embeddingsModel.provider)
     }
 
     override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = current().message(body)
