@@ -1,5 +1,6 @@
 package ru.souz.ui.main.usecases
 
+import androidx.annotation.MainThread
 import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -24,6 +25,7 @@ import kotlin.math.min
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import java.util.concurrent.ConcurrentHashMap
 
 class PermissionsUseCase(
     private val settingsProvider: SettingsProvider,
@@ -41,6 +43,7 @@ class PermissionsUseCase(
     private val _outputs = Channel<MainUseCaseOutput>()
     val outputs: Flow<MainUseCaseOutput> = _outputs.consumeAsFlow()
 
+    @MainThread
     fun start(scope: CoroutineScope) {
         scope.launch {
             toolPermissionBroker.requests.collect { request ->
@@ -96,6 +99,7 @@ class PermissionsUseCase(
         emitState { copy(toolPermissionDialog = null) }
     }
 
+    @MainThread
     suspend fun resolveSelectionDialog(
         sourceId: String?,
         requestId: Long?,
