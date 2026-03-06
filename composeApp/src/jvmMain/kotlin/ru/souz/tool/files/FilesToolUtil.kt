@@ -4,6 +4,7 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
+import ru.souz.service.files.FilesService
 import ru.souz.tool.BadInputException
 import java.io.File
 import java.io.IOException
@@ -13,22 +14,36 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
-class FilesToolUtil(private val settingsProvider: SettingsProvider) {
+class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesService {
 
-    val homeStr: String
+    override val homeStr: String
         get() = Companion.homeStr
+
+    override val homeDirectory: File
+        get() = Companion.homeDirectory
+
+    val souzDocumentsDirectoryPath: Path
+        get() = Companion.souzDocumentsDirectoryPath
+
+    val souzTelegramControlDirectoryPath: Path
+        get() = Companion.souzTelegramControlDirectoryPath
+
+    val souzWebAssetsDirectoryPath: Path
+        get() = Companion.souzWebAssetsDirectoryPath
+
+    fun normalizeExistingFilePath(raw: String?): String? = Companion.normalizeExistingFilePath(raw)
 
     /**
      * Generally, we don't want Agent to mess around anything out of $HOME and everything user disallowed
      */
-    fun isPathSafe(file: File): Boolean {
+    override fun isPathSafe(file: File): Boolean {
         val canonicalPath = file.canonicalFile
         return file.canonicalPath.startsWith(homeStr) &&
                 forbiddenDirectories().none { canonicalPath.startsWith(it) }
     }
 
     @Throws(BadInputException::class)
-    fun requirePathIsSave(file: File) {
+    override fun requirePathIsSave(file: File) {
         if (!isPathSafe(file)) {
             throw BadInputException("Access denied: File path must be within the home directory")
         }
@@ -36,12 +51,12 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) {
 
     fun resourceAsText(path: String): String = Companion.resourceAsText(path)
 
-    fun applyDefaultEnvs(s: String): String {
-        if (s.startsWith("~")) {
-            return s.replace("~", homeStr)
+    override fun applyDefaultEnvs(path: String): String {
+        if (path.startsWith("~")) {
+            return path.replace("~", homeStr)
         }
-        if (s == "home") return homeStr
-        return s.replace("\$HOME", homeStr)
+        if (path == "home") return homeStr
+        return path.replace("\$HOME", homeStr)
             .replace("HOME", homeStr)
     }
 
@@ -202,6 +217,23 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) {
 
         val homeStr: String get() = System.getenv("HOME") ?: System.getProperty("user.home")
         val homeDirectory: File get() = File(homeStr).canonicalFile
+        val documentsDirectoryPath: Path
+            get() {
+                val homePath = homeDirectory.toPath()
+                val preferred = homePath.resolve("Documents")
+                val fallback = homePath.resolve("documents")
+                return when {
+                    Files.isDirectory(preferred) -> preferred
+                    Files.isDirectory(fallback) -> fallback
+                    else -> preferred
+                }
+            }
+        val souzDocumentsDirectoryPath: Path
+            get() = documentsDirectoryPath.resolve("souz")
+        val souzTelegramControlDirectoryPath: Path
+            get() = souzDocumentsDirectoryPath.resolve("telegram")
+        val souzWebAssetsDirectoryPath: Path
+            get() = souzDocumentsDirectoryPath.resolve("web_assets")
 
         fun resourceStream(path: String): InputStream =
             Thread.currentThread().contextClassLoader.getResourceAsStream(path)
@@ -209,6 +241,25 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) {
 
         fun resourceAsText(path: String): String =
             resourceStream(path).bufferedReader().use { it.readText() }
+
+        fun normalizeExistingFilePath(raw: String?): String? {
+            val cleaned = raw
+                ?.trim()
+                ?.removeSurrounding("`")
+                ?.removeSurrounding("\"")
+                ?.removeSurrounding("'")
+                ?.removePrefix("file://")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: return null
+            val expanded = if (cleaned.startsWith("~")) {
+                cleaned.replaceFirst("~", homeStr)
+            } else {
+                cleaned
+            }
+            val file = File(expanded)
+            return file.takeIf { it.exists() && it.isFile }?.canonicalPath
+        }
     }
 }
 

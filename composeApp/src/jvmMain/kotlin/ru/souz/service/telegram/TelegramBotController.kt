@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.GraphBasedAgent
 import ru.souz.db.ConfigStore
 import ru.souz.giga.gigaJsonMapper
+import ru.souz.tool.files.FilesToolUtil
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import java.nio.file.Files
 import java.nio.file.Path
@@ -51,13 +52,25 @@ object PreferencesTelegramBotConfigProvider : TelegramBotConfigProvider {
 }
 
 interface TelegramBotApi {
+    /**
+     * Reads updates from Telegram Bot API (`getUpdates`).
+     */
     suspend fun getUpdates(token: String, offset: Long, timeoutSeconds: Int = 30): TelegramUpdatesResponse
 
+    /**
+     * Sends text back to Telegram chat (`sendMessage`).
+     */
     suspend fun sendMessage(token: String, chatId: Long, text: String)
 
-    suspend fun getFile(token: String, fileId: String): TelegramBotFileResponse
+    /**
+     * Resolves Telegram Bot API file metadata by file id (`getFile`).
+     */
+    suspend fun getTelegramFileInfo(token: String, fileId: String): TelegramBotFileResponse
 
-    suspend fun downloadFile(token: String, filePath: String): ByteArray
+    /**
+     * Downloads raw file bytes from Telegram file CDN using `file_path` from [getTelegramFileInfo].
+     */
+    suspend fun downloadTelegramFileBytes(token: String, filePath: String): ByteArray
 
     fun close() {}
 }
@@ -91,14 +104,14 @@ private class KtorTelegramBotApi : TelegramBotApi {
         }
     }
 
-    override suspend fun getFile(token: String, fileId: String): TelegramBotFileResponse {
+    override suspend fun getTelegramFileInfo(token: String, fileId: String): TelegramBotFileResponse {
         val response = client.get("https://api.telegram.org/bot$token/getFile") {
             parameter("file_id", fileId)
         }
         return gigaJsonMapper.readValue(response.bodyAsText())
     }
 
-    override suspend fun downloadFile(token: String, filePath: String): ByteArray {
+    override suspend fun downloadTelegramFileBytes(token: String, filePath: String): ByteArray {
         return client.get("https://api.telegram.org/file/bot$token/$filePath").body()
     }
 
@@ -113,7 +126,7 @@ class TelegramBotController(
     private val speechRecognitionProvider: SpeechRecognitionProvider? = null,
     private val configProvider: TelegramBotConfigProvider = PreferencesTelegramBotConfigProvider,
     private val botApi: TelegramBotApi = KtorTelegramBotApi(),
-    private val downloadsDirProvider: () -> Path = { Path.of(System.getProperty("user.home"), "Downloads") },
+    private val downloadsDirProvider: () -> Path = { FilesToolUtil.souzTelegramControlDirectoryPath },
     private val voiceToPcmDecoder: suspend (ByteArray, String?) -> ByteArray =
         { audio, fileName -> decodeTelegramVoiceToPcm(audio, fileName) },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
@@ -341,7 +354,7 @@ class TelegramBotController(
     }
 
     private suspend fun downloadBotFile(token: String, fileId: String, fileNameHint: String?): DownloadedBotFile {
-        val info = botApi.getFile(token, fileId)
+        val info = botApi.getTelegramFileInfo(token, fileId)
         if (!info.ok) {
             throw IllegalStateException(info.description ?: "Telegram Bot API getFile failed")
         }
@@ -352,7 +365,7 @@ class TelegramBotController(
         if (fileSize != null && fileSize > MAX_BOT_FILE_BYTES) {
             throw IllegalStateException("Telegram file is too large: $fileSize bytes (max $MAX_BOT_FILE_BYTES)")
         }
-        val bytes = botApi.downloadFile(token, filePath)
+        val bytes = botApi.downloadTelegramFileBytes(token, filePath)
         if (bytes.size.toLong() > MAX_BOT_FILE_BYTES) {
             throw IllegalStateException("Telegram file is too large: ${bytes.size} bytes (max $MAX_BOT_FILE_BYTES)")
         }
@@ -370,7 +383,7 @@ class TelegramBotController(
             Files.createDirectories(preferred)
             preferred
         }.getOrElse {
-            val fallback = Path.of(System.getProperty("user.home"))
+            val fallback = FilesToolUtil.souzDocumentsDirectoryPath
             Files.createDirectories(fallback)
             fallback
         }

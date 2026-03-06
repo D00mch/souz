@@ -155,7 +155,7 @@ data class PresentationCreateInput(
     val slidesData: String? = null,
     @InputParamDescription("Optional output filename (without extension). Defaults to 'Presentation_<Title>'")
     val filename: String? = null,
-    @InputParamDescription("Optional output path (file or directory). If omitted, uses ~/souz/Documents.")
+    @InputParamDescription("Optional output path (file or directory). If omitted, uses ~/Documents/souz.")
     val outputPath: String? = null,
     @InputParamDescription("Absolute path to a .pptx file to use as a template")
     val templatePath: String? = null,
@@ -306,9 +306,7 @@ class ToolPresentationCreate(
         val effectiveTemplatePath = if (input.templatePath.isNullOrBlank()) null else input.templatePath
 
         val ppt = if (effectiveTemplatePath != null) {
-            val resolvedTemplatePath = if (effectiveTemplatePath.startsWith("~"))
-                effectiveTemplatePath.replaceFirst("~", System.getProperty("user.home"))
-            else effectiveTemplatePath
+            val resolvedTemplatePath = filesToolUtil.applyDefaultEnvs(effectiveTemplatePath)
 
             val file = File(resolvedTemplatePath)
             if (file.exists()) {
@@ -2507,7 +2505,8 @@ class ToolPresentationCreate(
     }
 
     private fun resolveOutputFile(input: PresentationCreateInput, defaultFileName: String): File {
-        val rawOutputPath = input.outputPath?.takeIf { it.isNotBlank() } ?: "~/souz/Documents/$defaultFileName"
+        val defaultOutputPath = FilesToolUtil.souzDocumentsDirectoryPath.resolve(defaultFileName).toString()
+        val rawOutputPath = input.outputPath?.takeIf { it.isNotBlank() } ?: defaultOutputPath
         val expandedPath = filesToolUtil.applyDefaultEnvs(rawOutputPath)
         val outputTarget = File(expandedPath)
 

@@ -240,7 +240,7 @@ class TelegramBotControllerTest {
             sentTexts += text
         }
 
-        override suspend fun getFile(token: String, fileId: String): TelegramBotFileResponse {
+        override suspend fun getTelegramFileInfo(token: String, fileId: String): TelegramBotFileResponse {
             val file = filesById[fileId] ?: error("Unknown fileId in test: $fileId")
             return TelegramBotFileResponse(
                 ok = true,
@@ -248,7 +248,7 @@ class TelegramBotControllerTest {
             )
         }
 
-        override suspend fun downloadFile(token: String, filePath: String): ByteArray {
+        override suspend fun downloadTelegramFileBytes(token: String, filePath: String): ByteArray {
             val file = filesById.values.firstOrNull { it.filePath == filePath }
                 ?: error("Unknown filePath in test: $filePath")
             return file.bytes

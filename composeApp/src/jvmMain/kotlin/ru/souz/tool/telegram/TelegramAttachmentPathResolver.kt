@@ -1,6 +1,6 @@
 package ru.souz.tool.telegram
 
-import java.io.File
+import ru.souz.tool.files.FilesToolUtil
 
 internal object TelegramAttachmentPathResolver {
 
@@ -24,7 +24,7 @@ internal object TelegramAttachmentPathResolver {
             addAll(extractLineCandidates(text).asReversed())
         }
         for (candidate in candidates) {
-            val normalized = normalizeExistingFilePath(candidate) ?: continue
+            val normalized = FilesToolUtil.normalizeExistingFilePath(candidate) ?: continue
             return normalized
         }
         return null
@@ -34,7 +34,7 @@ internal object TelegramAttachmentPathResolver {
         if (text.isBlank() || resolvedAttachmentPath == null) return text.trim()
         return text.lineSequence()
             .filterNot { line ->
-                normalizeExistingFilePath(line)?.equals(resolvedAttachmentPath, ignoreCase = true) == true
+                FilesToolUtil.normalizeExistingFilePath(line)?.equals(resolvedAttachmentPath, ignoreCase = true) == true
             }
             .joinToString("\n")
             .trim()
@@ -46,24 +46,5 @@ internal object TelegramAttachmentPathResolver {
             .map { line -> line.trim().removePrefix("- ").removePrefix("* ").removePrefix("• ").trim() }
             .filter { it.isNotBlank() }
             .toList()
-    }
-
-    private fun normalizeExistingFilePath(raw: String?): String? {
-        val cleaned = raw
-            ?.trim()
-            ?.removeSurrounding("`")
-            ?.removeSurrounding("\"")
-            ?.removeSurrounding("'")
-            ?.removePrefix("file://")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: return null
-        val expanded = if (cleaned.startsWith("~")) {
-            System.getProperty("user.home") + cleaned.removePrefix("~")
-        } else {
-            cleaned
-        }
-        val file = File(expanded)
-        return file.takeIf { it.exists() && it.isFile }?.absolutePath
     }
 }

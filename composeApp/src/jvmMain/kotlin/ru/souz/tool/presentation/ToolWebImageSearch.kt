@@ -33,7 +33,7 @@ class ToolWebImageSearch(
         val limit: Int = 8,
         @InputParamDescription("Download image results locally and return absolute paths")
         val downloadImages: Boolean = false,
-        @InputParamDescription("Output directory for downloaded images. Defaults to ~/souz/Documents/web_assets")
+        @InputParamDescription("Output directory for downloaded images. Defaults to ~/Documents/souz/web_assets")
         val outputDir: String? = null,
     )
 
