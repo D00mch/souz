@@ -113,7 +113,8 @@ class WebImageDownloader(
     }
 
     private fun resolveImageOutputDir(outputDir: String?): File {
-        val raw = outputDir?.trim().takeUnless { it.isNullOrBlank() } ?: "~/Documents/souz/web_assets"
+        val raw = outputDir?.trim().takeUnless { it.isNullOrBlank() }
+            ?: FilesToolUtil.souzWebAssetsDirectoryPath.toString() + File.separator
         val resolved = File(filesToolUtil.applyDefaultEnvs(raw))
         val dir = if (resolved.isDirectory || raw.endsWith("/") || raw.endsWith("\\")) {
             resolved

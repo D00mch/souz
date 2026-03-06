@@ -45,6 +45,7 @@ import ru.souz.mcp.McpConfigProvider
 import ru.souz.service.telegram.TelegramService
 import ru.souz.service.telegram.TelegramBotController
 import ru.souz.service.telegram.TelegramPlatformSupport
+import ru.souz.service.files.FilesService
 import ru.souz.telemetry.TelemetryOutboxRepository
 import ru.souz.telemetry.TelemetryCryptoService
 import ru.souz.telemetry.TelemetryRuntimeConfig
@@ -123,6 +124,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
     bindSingleton { ToolsSettings(instance(), instance(), instance(), instance()) }
     bindSingleton { FilesToolUtil(instance()) }
+    bindSingleton<FilesService> { instance<FilesToolUtil>() }
     bindSingleton { ToolPermissionBroker(instance()) }
     bindSingleton { TelegramContactSelectionBroker() }
     bindSingleton { TelegramChatSelectionBroker() }
@@ -256,7 +258,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { ToolsFactory(di) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
-    bindSingleton { TelegramBotController(instance(), instance()) }
+    bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }
     bindSingleton { FinderPathExtractor(instance()) }
     bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { McpConfigProvider(instance()) }

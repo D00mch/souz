@@ -23,6 +23,7 @@ import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import ru.souz.db.ConfigStore
 import java.nio.file.Path
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
@@ -334,8 +335,10 @@ class TelegramService(
         }
     }
 
-    suspend fun sendMessageToUser(userId: Long, text: String): TelegramMessageView {
-        if (text.isBlank()) {
+    suspend fun sendMessageToUser(userId: Long, text: String, attachmentPath: String? = null): TelegramMessageView {
+        val normalizedText = text.trim()
+        val normalizedAttachment = attachmentPath?.trim().takeUnless { it.isNullOrBlank() }
+        if (normalizedText.isBlank() && normalizedAttachment == null) {
             throw IllegalArgumentException("Message text is empty")
         }
 
@@ -345,6 +348,7 @@ class TelegramService(
 
         sendChatAction(privateChat.id, typing = true)
         val sentMessage = try {
+            val content = buildTextOrDocumentContent(normalizedText, normalizedAttachment)
             tdClient.send(
                 TdApi.SendMessage(
                     privateChat.id,
@@ -352,11 +356,7 @@ class TelegramService(
                     null,
                     null,
                     null,
-                    TdApi.InputMessageText(
-                        TdApi.FormattedText(text, null),
-                        null,
-                        false,
-                    )
+                    content
                 )
             ).awaitResult()
         } finally {
@@ -467,8 +467,10 @@ class TelegramService(
         return searchMessages(query = query, chatId = chat?.chatId, limit = limit)
     }
 
-    suspend fun sendToSavedMessages(text: String): TelegramMessageView {
-        if (text.isBlank()) {
+    suspend fun sendToSavedMessages(text: String, attachmentPath: String? = null): TelegramMessageView {
+        val normalizedText = text.trim()
+        val normalizedAttachment = attachmentPath?.trim().takeUnless { it.isNullOrBlank() }
+        if (normalizedText.isBlank() && normalizedAttachment == null) {
             throw IllegalArgumentException("Message text is empty")
         }
 
@@ -482,6 +484,7 @@ class TelegramService(
 
         sendChatAction(savedMessagesChat.id, typing = true)
         val sent = try {
+            val content = buildTextOrDocumentContent(normalizedText, normalizedAttachment)
             tdClient.send(
                 TdApi.SendMessage(
                     savedMessagesChat.id,
@@ -489,11 +492,7 @@ class TelegramService(
                     null,
                     null,
                     null,
-                    TdApi.InputMessageText(
-                        TdApi.FormattedText(text, null),
-                        null,
-                        false,
-                    )
+                    content
                 )
             ).awaitResult()
         } finally {
@@ -1087,6 +1086,26 @@ class TelegramService(
 
     private fun resolveApiToken(): APIToken {
         return APIToken(TELEGRAM_DEFAULT_API_ID, TELEGRAM_DEFAULT_API_HASH)
+    }
+
+    private fun buildTextOrDocumentContent(text: String, attachmentPath: String?): TdApi.InputMessageContent {
+        if (attachmentPath != null) {
+            val attachmentFile = File(attachmentPath)
+            if (!attachmentFile.exists() || !attachmentFile.isFile) {
+                throw IllegalArgumentException("Attachment file not found: $attachmentPath")
+            }
+            return TdApi.InputMessageDocument(
+                TdApi.InputFileLocal(attachmentFile.absolutePath),
+                null,
+                false,
+                text.takeIf { it.isNotBlank() }?.let { TdApi.FormattedText(it, null) },
+            )
+        }
+        return TdApi.InputMessageText(
+            TdApi.FormattedText(text, null),
+            null,
+            false,
+        )
     }
 
     private fun isTelegramDebugLogsEnabled(): Boolean {

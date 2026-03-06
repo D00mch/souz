@@ -118,7 +118,7 @@ class MainViewModel(
             telegramBotController.incomingMessages.collect { msg ->
                 chatUseCase.sendChatMessage(
                     scope = this,
-                    isVoice = false,
+                    isVoice = msg.isVoice,
                     chatMessage = msg.text,
                     requestSource = TelemetryRequestSource.TELEGRAM_BOT,
                     onResult = { result ->
