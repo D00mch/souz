@@ -53,6 +53,7 @@ import ru.souz.service.telegram.TelegramBotController
 import ru.souz.telemetry.TelemetryRequestContext
 import ru.souz.telemetry.TelemetryRequestSource
 import ru.souz.telemetry.TelemetryService
+import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.ui.main.usecases.FinderPathExtractor
@@ -555,10 +556,11 @@ class MainViewModelTest {
             bindSingleton { InMemoryAudioRecorder() }
             bindSingleton { FilesToolUtil(instance()) }
             bindSingleton { FinderPathExtractor(instance()) }
+            bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
             bindSingleton<TokenLogging> { tokenLogging }
             bindSingleton { telemetryService }
             bindSingleton {
-                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance())
+                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance())
             }
         }
 

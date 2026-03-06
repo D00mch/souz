@@ -24,8 +24,10 @@ class ToolTelegramSend(
     data class Input(
         @InputParamDescription("Target contact name (fuzzy match in Telegram contact cache)")
         val targetName: String,
-        @InputParamDescription("Message text")
+        @InputParamDescription("Message text. Can be empty if attachmentPath is provided.")
         val text: String,
+        @InputParamDescription("Optional local file path to send as Telegram attachment.")
+        val attachmentPath: String? = null,
     )
 
     override val name: String = "ToolTelegramSend"
@@ -36,6 +38,14 @@ class ToolTelegramSend(
             params = mapOf(
                 "targetName" to "Вася",
                 "text" to "Буду через 10 минут",
+            )
+        ),
+        FewShotExample(
+            request = "Отправь Ане отчет файлом",
+            params = mapOf(
+                "targetName" to "Аня",
+                "text" to "Отправляю отчет",
+                "attachmentPath" to "/Users/user/Downloads/report.pdf",
             )
         )
     )
@@ -51,8 +61,14 @@ class ToolTelegramSend(
         if (input.targetName.isBlank()) {
             throw BadInputException("targetName is required")
         }
-        if (input.text.isBlank()) {
-            throw BadInputException("text is required")
+        val resolvedInput = TelegramAttachmentPathResolver.resolveInput(
+            text = input.text,
+            explicitPath = input.attachmentPath,
+        )
+        val resolvedAttachmentPath = resolvedInput.attachmentPath
+        val messageText = resolvedInput.text
+        if (messageText.isBlank() && resolvedAttachmentPath == null) {
+            throw BadInputException("text is required when attachmentPath is missing")
         }
 
         val candidate = with(TelegramToolResolvers) {
@@ -67,13 +83,18 @@ class ToolTelegramSend(
             linkedMapOf(
                 "targetName" to candidate.displayName,
                 "targetUsername" to (candidate.username?.let { "@$it" } ?: "-"),
-                "text" to input.text,
+                "text" to messageText,
+                "attachmentPath" to (resolvedAttachmentPath ?: "-"),
             )
         )
         if (result is ToolPermissionResult.No) return result.msg
 
         val sent = runCatching {
-            telegramService.sendMessageToUser(candidate.userId, input.text)
+            telegramService.sendMessageToUser(
+                userId = candidate.userId,
+                text = messageText,
+                attachmentPath = resolvedAttachmentPath,
+            )
         }.getOrElse { error ->
             throw BadInputException(error.message ?: "Failed to send Telegram message")
         }
@@ -85,6 +106,7 @@ class ToolTelegramSend(
                 "chatTitle" to sent.chatTitle,
                 "messageId" to sent.messageId,
                 "text" to sent.text,
+                "attachmentPath" to resolvedAttachmentPath,
                 "time" to sent.unixTime,
             )
         )

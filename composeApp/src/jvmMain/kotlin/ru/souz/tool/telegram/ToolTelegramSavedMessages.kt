@@ -15,8 +15,10 @@ class ToolTelegramSavedMessages(
 ) : ToolSetup<ToolTelegramSavedMessages.Input> {
 
     data class Input(
-        @InputParamDescription("Text to save into Telegram Saved Messages")
+        @InputParamDescription("Text to save into Telegram Saved Messages. Can be empty if attachmentPath is provided.")
         val text: String,
+        @InputParamDescription("Optional local file path to send as attachment to Telegram Saved Messages.")
+        val attachmentPath: String? = null,
     )
 
     override val name: String = "ToolTelegramSavedMessages"
@@ -25,6 +27,13 @@ class ToolTelegramSavedMessages(
         FewShotExample(
             request = "Сохрани в Избранное Telegram: созвон в 16:30",
             params = mapOf("text" to "Созвон в 16:30"),
+        ),
+        FewShotExample(
+            request = "Отправь в Избранное файл отчета",
+            params = mapOf(
+                "text" to "Отчет",
+                "attachmentPath" to "/Users/user/Downloads/report.pdf",
+            ),
         )
     )
     override val returnParameters: ReturnParameters = ReturnParameters(
@@ -36,12 +45,21 @@ class ToolTelegramSavedMessages(
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 
     override suspend fun suspendInvoke(input: Input): String {
-        if (input.text.isBlank()) {
-            throw BadInputException("text is required")
+        val resolvedInput = TelegramAttachmentPathResolver.resolveInput(
+            text = input.text,
+            explicitPath = input.attachmentPath,
+        )
+        val resolvedAttachmentPath = resolvedInput.attachmentPath
+        val messageText = resolvedInput.text
+        if (messageText.isBlank() && resolvedAttachmentPath == null) {
+            throw BadInputException("text is required when attachmentPath is missing")
         }
 
         val sent = runCatching {
-            telegramService.sendToSavedMessages(input.text)
+            telegramService.sendToSavedMessages(
+                text = messageText,
+                attachmentPath = resolvedAttachmentPath,
+            )
         }.getOrElse { error ->
             throw BadInputException(error.message ?: "Failed to write to Telegram Saved Messages")
         }
@@ -53,6 +71,7 @@ class ToolTelegramSavedMessages(
                 "chatTitle" to sent.chatTitle,
                 "messageId" to sent.messageId,
                 "text" to sent.text,
+                "attachmentPath" to resolvedAttachmentPath,
                 "time" to sent.unixTime,
             )
         )

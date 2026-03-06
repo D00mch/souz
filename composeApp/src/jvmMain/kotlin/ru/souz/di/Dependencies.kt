@@ -256,7 +256,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { ToolsFactory(di) }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
-    bindSingleton { TelegramBotController(instance(), instance()) }
+    bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }
     bindSingleton { FinderPathExtractor(instance()) }
     bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { McpConfigProvider(instance()) }
