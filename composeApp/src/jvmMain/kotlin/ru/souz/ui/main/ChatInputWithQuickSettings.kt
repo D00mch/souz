@@ -1,8 +1,11 @@
 package ru.souz.ui.main
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -36,6 +39,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Close
@@ -118,6 +122,8 @@ private val ControlTextMuted = Color(0x59FFFFFF)
 private val ControlTextHover = Color(0x99FFFFFF)
 private val ControlButtonSize = 32.dp
 private val ControlIconSize = 16.dp
+private val VoiceButtonSize = 36.dp
+private val VoiceIconSize = 18.dp
 private val StopIconSize = 10.dp
 private val SendButtonInactiveBackground = Color(0x14FFFFFF)
 private val SendButtonInactiveBorder = Color(0x1AFFFFFF)
@@ -129,6 +135,12 @@ private val StopButtonIcon = Color(0xE6FFFFFF)
 private val StopButtonPulseRing = Color(0x33FFFFFF)
 private val ControlTooltipBackground = Color(0xE6000000)
 private val ControlTooltipBorder = Color(0x33FFFFFF)
+private val VoiceStopColor = Color(0xFFEF4444)
+private val VoiceStopBackground = Color(0x33EF4444)
+private val VoiceStopBorder = Color(0x66EF4444)
+private val VoiceHoverBorder = Color(0x669CA3AF)
+private val VoiceListeningBackground = Color(0x3312E0B5)
+private val VoiceIdleIcon = Color(0x80FFFFFF)
 private val EaseInOut = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 private val BounceEasing = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
 private val SendButtonActiveGradient = Brush.linearGradient(
@@ -152,8 +164,10 @@ internal fun ChatInputWithQuickSettings(
     isFileDragActive: Boolean,
     isProcessing: Boolean,
     isListening: Boolean,
+    speakingMessageId: String?,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
+    onStopSpeaking: () -> Unit,
     enabled: Boolean,
     focusRequester: FocusRequester,
     selectedModel: String,
@@ -169,7 +183,7 @@ internal fun ChatInputWithQuickSettings(
     val hasAttachments = attachedFiles.isNotEmpty()
     val hasSendPayload = (hasText || hasAttachments) && enabled
     val canSendOrCancel = hasSendPayload || isProcessing
-    val canToggleMic = enabled || isListening
+    val canToggleMic = enabled || isListening || speakingMessageId != null
     val containerShape = RoundedCornerShape(24.dp)
     var isModelDropdownOpen by remember { mutableStateOf(false) }
     var isContextDropdownOpen by remember { mutableStateOf(false) }
@@ -320,9 +334,11 @@ internal fun ChatInputWithQuickSettings(
 
                 VoiceToggleButton(
                     isListening = isListening,
+                    speakingMessageId = speakingMessageId,
                     enabled = canToggleMic,
                     onPressStart = onStartListening,
-                    onPressEnd = onStopListening
+                    onPressEnd = onStopListening,
+                    onStopSpeaking = onStopSpeaking,
                 )
 
                 Spacer(Modifier.width(8.dp))
@@ -700,61 +716,155 @@ private fun AttachmentRemoveButton(
 @OptIn(ExperimentalComposeUiApi::class)
 private fun VoiceToggleButton(
     isListening: Boolean,
+    speakingMessageId: String?,
     enabled: Boolean,
     onPressStart: () -> Unit,
     onPressEnd: () -> Unit,
+    onStopSpeaking: () -> Unit,
 ) {
+    val isSpeaking = speakingMessageId != null
+    val canInteract = enabled || isSpeaking
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
     var isPressing by remember { mutableStateOf(false) }
+    LaunchedEffect(isSpeaking) {
+        if (isSpeaking) isPressing = false
+    }
+    val isButtonPressed = isPressing || isPressed
     val scale by animateFloatAsState(
         targetValue = when {
-            isPressing -> 0.95f
+            isButtonPressed -> 0.95f
             isHovered -> 1.05f
             else -> 1f
         },
-        animationSpec = tween(150)
+        animationSpec = tween(150),
+        label = "voiceScale"
     )
+    val iconColor by animateColorAsState(
+        targetValue = when {
+            isSpeaking -> VoiceStopColor
+            isListening -> AccentTurquoise
+            else -> VoiceIdleIcon
+        },
+        animationSpec = tween(220),
+        label = "voiceIconColor"
+    )
+    val background by animateColorAsState(
+        targetValue = when {
+            isSpeaking -> VoiceStopBackground
+            isListening -> VoiceListeningBackground
+            else -> Color(0x00000000)
+        },
+        animationSpec = tween(220),
+        label = "voiceBackground"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isSpeaking -> VoiceStopBorder
+            isHovered -> VoiceHoverBorder
+            else -> Color(0x00000000)
+        },
+        animationSpec = tween(220),
+        label = "voiceBorder"
+    )
+    val pulseTransition = rememberInfiniteTransition(label = "voicePulse")
+    val pulseProgress by pulseTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1_500, easing = EaseInOut),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "voicePulseProgress"
+    )
+    val tooltipText = if (isSpeaking) {
+        stringResource(Res.string.tooltip_stop_speech)
+    } else {
+        stringResource(Res.string.tooltip_hold_option)
+    }
 
-    val iconColor = if (isListening) AccentTurquoise else Color(0x80FFFFFF)
-    val background = if (isListening) Color(0x3312E0B5) else Color.Transparent
-    val hoverBorderColor = if (isHovered) Color(0x669CA3AF) else Color.Transparent
+    Box(modifier = Modifier.size(VoiceButtonSize)) {
+        ControlTooltip(visible = isHovered, text = tooltipText)
 
-    Box(modifier = Modifier.size(ControlButtonSize)) {
-        ControlTooltip(visible = isHovered, text = stringResource(Res.string.tooltip_hold_option))
+        if (isSpeaking) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        val spread = 0.22f * pulseProgress
+                        scaleX = 1f + spread
+                        scaleY = 1f + spread
+                        alpha = 1f - pulseProgress
+                    }
+                    .border(2.dp, VoiceStopBorder, CircleShape)
+            )
+        }
 
         Box(
             modifier = Modifier
-                .size(ControlButtonSize)
+                .size(VoiceButtonSize)
                 .scale(scale)
                 .clip(CircleShape)
                 .background(background)
-                .border(1.dp, hoverBorderColor, CircleShape)
+                .border(1.dp, borderColor, CircleShape)
                 .hoverable(interactionSource = interactionSource)
-                .pointerHoverIcon(PointerIcon.Hand)
-                .pointerInput(enabled) {
-                    detectTapGestures(
-                        onPress = {
-                            if (!enabled) return@detectTapGestures
-                            isPressing = true
-                            onPressStart()
-                            try {
-                                tryAwaitRelease()
-                            } finally {
-                                isPressing = false
-                                onPressEnd()
-                            }
+                .pointerHoverIcon(if (canInteract) PointerIcon.Hand else PointerIcon.Default)
+                .then(
+                    if (isSpeaking) {
+                        Modifier.clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            onClick = onStopSpeaking
+                        )
+                    } else {
+                        Modifier.pointerInput(enabled) {
+                            detectTapGestures(
+                                onPress = {
+                                    if (!enabled) return@detectTapGestures
+                                    isPressing = true
+                                    onPressStart()
+                                    try {
+                                        tryAwaitRelease()
+                                    } finally {
+                                        isPressing = false
+                                        onPressEnd()
+                                    }
+                                }
+                            )
                         }
-                    )
-                },
+                    }
+                ),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Mic,
-                contentDescription = stringResource(Res.string.content_desc_voice_input),
-                tint = iconColor,
-                modifier = Modifier.size(ControlIconSize)
-            )
+            AnimatedContent(
+                targetState = isSpeaking,
+                transitionSpec = {
+                    (
+                        fadeIn(animationSpec = tween(220)) + scaleIn(
+                            animationSpec = tween(220),
+                            initialScale = 0.85f
+                        )
+                        ) togetherWith (
+                        fadeOut(animationSpec = tween(220)) + scaleOut(
+                            animationSpec = tween(220),
+                            targetScale = 0.85f
+                        )
+                    )
+                },
+                label = "voiceIconSwap"
+            ) { speaking ->
+                Icon(
+                    imageVector = if (speaking) {
+                        Icons.AutoMirrored.Rounded.VolumeOff
+                    } else {
+                        Icons.Rounded.Mic
+                    },
+                    contentDescription = stringResource(Res.string.content_desc_voice_input),
+                    tint = iconColor,
+                    modifier = Modifier.size(VoiceIconSize)
+                )
+            }
         }
     }
 }
