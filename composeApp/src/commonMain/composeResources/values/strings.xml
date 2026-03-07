@@ -74,6 +74,7 @@
     <string name="label_voice_selection">Voice selection</string>
     <string name="button_select_voice">Select voice</string>
     <string name="label_mcp_servers">MCP servers JSON</string>
+    <string name="warning_mcp_risk">Warning: use MCP at your own risk. MCP can be insecure and expensive to use.</string>
     <string name="hint_restart_required">Changes will apply after application restart</string>
 
     <!-- Keys Settings -->

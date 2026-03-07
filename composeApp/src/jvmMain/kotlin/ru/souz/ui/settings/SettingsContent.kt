@@ -476,6 +476,11 @@ fun GeneralSettingsContent(
             
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
                 Text(
+                    text = stringResource(Res.string.warning_mcp_risk),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Text(
                     text = stringResource(Res.string.label_mcp_servers),
                      style = MaterialTheme.typography.labelMedium.copy(
                          fontSize = 14.sp,
