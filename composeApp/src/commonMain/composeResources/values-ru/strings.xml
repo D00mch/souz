@@ -70,6 +70,7 @@
     <string name="label_voice_selection">Выбор голоса</string>
     <string name="button_select_voice">Выбрать голос</string>
     <string name="label_mcp_servers">MCP servers JSON</string>
+    <string name="warning_mcp_risk">Предупреждение: используйте MCP на свой риск. MCP может быть небезопасным и дорогим в использовании.</string>
     <string name="hint_restart_required">Изменения применятся после перезапуска приложения</string>
 
     <!-- Keys Settings -->
