@@ -331,7 +331,15 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
         const val REGION_RU = "ru"
         const val REGION_EN = "en"
-        private val DEFAULT_FORBIDDEN_FOLDERS = listOf("~/Library/")
+        private val DEFAULT_FORBIDDEN_FOLDERS = listOf(
+            "~/Library/",
+            "~/.bash_history",
+            "~/.zsh_history",
+            "~/.zprofile",
+            "~/.zshenv",
+            "~/.bashprofile",
+            "~/.ssh",
+        )
     }
 }
 
