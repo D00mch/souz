@@ -210,6 +210,7 @@
     <!-- Chat Input -->
     <string name="chat_input_placeholder">Введите сообщение...</string>
     <string name="tooltip_hold_option">Зажать правый Option</string>
+    <string name="tooltip_stop_speech">Остановить озвучку</string>
     <string name="tooltip_attach_file">Прикрепить файл</string>
     <string name="content_desc_voice_input">Голосовой ввод</string>
     <string name="content_desc_attach_file">Прикрепить файл</string>

@@ -22,7 +22,6 @@ import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -280,17 +279,6 @@ fun MainScreenContent(
                             MinimalGlassButton(onClick = onShowLastText) {
                                 Icon(
                                     Icons.Rounded.SkipPrevious,
-                                    null,
-                                    tint = iconTint,
-                                    modifier = Modifier.size(TopIconSize)
-                                )
-                            }
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        if (state.isSpeaking) {
-                            MinimalGlassButton(onClick = onStopSpeech) {
-                                Icon(
-                                    Icons.AutoMirrored.Rounded.VolumeOff,
                                     null,
                                     tint = iconTint,
                                     modifier = Modifier.size(TopIconSize)
@@ -731,7 +719,9 @@ fun ChatModeContent(
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
     val textColor = MaterialTheme.glassColors.textPrimary
-    val speakingAssistantMessageId = remember(messages) { messages.lastOrNull { !it.isUser }?.id }
+    val speakingMessageId = messages.lastOrNull()
+        ?.takeIf { isSpeaking && !it.isUser && it.isVoice }
+        ?.id
     val stringProcessing = stringResource(Res.string.status_processing)
     var inputText by remember(chatSessionId) { mutableStateOf(TextFieldValue("")) }
     var isFileDragActive by remember { mutableStateOf(false) }
@@ -789,8 +779,6 @@ fun ChatModeContent(
                 items(messages, key = { it.id }) { message ->
                     ChatBubble(
                         message = message,
-                        isSpeaking = isSpeaking && speakingAssistantMessageId == message.id,
-                        onStopSpeech = onStopSpeech,
                         onShowSnack = onShowSnack,
                         onOpenPath = onOpenPath
                     )
@@ -847,8 +835,10 @@ fun ChatModeContent(
             isFileDragActive = isFileDragActive,
             isProcessing = isProcessing,
             isListening = isListening,
+            speakingMessageId = speakingMessageId,
             onStartListening = onStartListening,
             onStopListening = onStopListening,
+            onStopSpeaking = onStopSpeech,
             enabled = !isProcessing,
             focusRequester = focusRequester,
             selectedModel = selectedModel,
@@ -916,8 +906,6 @@ private fun ChatFileDropTarget(
 @Composable
 private fun ChatBubble(
     message: ChatMessage,
-    isSpeaking: Boolean,
-    onStopSpeech: () -> Unit,
     onShowSnack: (String) -> Unit,
     onOpenPath: (String) -> Unit
 ) {
@@ -1083,11 +1071,6 @@ private fun ChatBubble(
                     color = if (message.isUser) ChatUserTimestampColor else ChatAssistantTimestampColor,
                     fontSize = 11.sp
                 )
-                if (!message.isUser && isSpeaking) {
-                    SpeakingWaves(
-                        onClick = onStopSpeech
-                    )
-                }
             }
         }
     }
@@ -1219,105 +1202,6 @@ private fun FinderPathChip(
         }
     }
 }
-
-@Composable
-private fun SpeakingWaves(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = when {
-            isPressed -> 0.98f
-            isHovered -> 1.05f
-            else -> 1f
-        },
-        animationSpec = tween(150)
-    )
-    val wavesColor = Color(0xFF12E0B5)
-    val transition = rememberInfiniteTransition()
-    val barHeights = listOf(
-        transition.animateFloat(
-            initialValue = 4f,
-            targetValue = 12f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 800, delayMillis = 0, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            )
-        ),
-        transition.animateFloat(
-            initialValue = 6f,
-            targetValue = 16f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 800, delayMillis = 100, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            )
-        ),
-        transition.animateFloat(
-            initialValue = 4f,
-            targetValue = 10f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 800, delayMillis = 200, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            )
-        ),
-        transition.animateFloat(
-            initialValue = 8f,
-            targetValue = 14f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 800, delayMillis = 150, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            )
-        ),
-    )
-
-    TooltipArea(
-        delayMillis = 300,
-        tooltip = {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xE6000000))
-                    .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Text(
-                    text = "Нажмите, чтобы остановить озвучку",
-                    color = Color(0xF2FFFFFF),
-                    fontSize = 12.sp
-                )
-            }
-        }
-    ) {
-        Row(
-            modifier = modifier
-                .height(16.dp)
-                .scale(scale)
-                .pointerHoverIcon(PointerIcon.Hand)
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onClick
-                ),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.Bottom
-        ) {
-            barHeights.forEach { animatedHeight ->
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .height(animatedHeight.value.dp)
-                        .clip(RoundedCornerShape(percent = 100))
-                        .background(wavesColor)
-                )
-            }
-        }
-    }
-}
-
-
 
 private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
 

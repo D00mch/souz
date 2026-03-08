@@ -214,6 +214,7 @@
     <!-- Chat Input -->
     <string name="chat_input_placeholder">Type a message...</string>
     <string name="tooltip_hold_option">Hold right Option</string>
+    <string name="tooltip_stop_speech">Stop speech</string>
     <string name="tooltip_attach_file">Attach file</string>
     <string name="content_desc_voice_input">Voice input</string>
     <string name="content_desc_attach_file">Attach file</string>
