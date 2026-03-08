@@ -789,6 +789,51 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(atLeast = 1) { toolGetClipboard.invoke(any()) }
     }
 
+    @ParameterizedTest(name = "scenario23_readFileThenSendEmailIfNoSecret[{index}] {0}")
+    @ValueSource(
+        strings = [
+            "Прочти public-note.txt. Если в тексте нет слова secret, создай письмо на audit@example.com с темой Public Note и вставь в тело текст файла.",
+            "Сделай по шагам: 1) найди и прочти файл public-note.txt; 2) если в нём нет слова secret, подготовь email для audit@example.com с темой Public Note и исходным текстом файла",
+        ]
+    )
+    fun scenario23_readFileThenSendEmailIfNoSecret(userPrompt: String) = runTest {
+        val toolFindFilesByName: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
+        val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
+        val toolMailSendNewMessage: ToolMailSendNewMessage = spyk(ToolMailSendNewMessage(ToolRunBashCommand))
+
+        val foundFilePath = "~/tmp/public-note.txt"
+        val safeFileText = "launch approved for finance review"
+
+        every { toolFindFilesByName.invoke(any()) } returns """["$foundFilePath"]"""
+        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns """["$foundFilePath"]"""
+        every { toolExtractText.invoke(any()) } returns safeFileText
+        coEvery { toolExtractText.suspendInvoke(any()) } returns safeFileText
+        every { toolMailSendNewMessage.invoke(any()) } returns "Sent"
+        coEvery { toolMailSendNewMessage.suspendInvoke(any()) } returns "Sent"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
+            bindSingleton<ToolExtractText> { toolExtractText }
+            bindSingleton<ToolMailSendNewMessage> { toolMailSendNewMessage }
+        }
+
+        coVerifyOrder {
+            toolFindFilesByName.suspendInvoke(match { it.fileName.contains("public-note.txt") })
+            toolExtractText.suspendInvoke(match { it.filePath.contains("public-note.txt") })
+            toolMailSendNewMessage.suspendInvoke(any())
+        }
+        coVerify(exactly = 1) {
+            toolMailSendNewMessage.suspendInvoke(
+                match {
+                    it.recipientAddress.contains("audit@example.com", ignoreCase = true) &&
+                            (it.subject?.contains("Public Note", ignoreCase = true) == true) &&
+                            (it.content == safeFileText) &&
+                            (it.content.contains("secret", ignoreCase = true)).not()
+                }
+            )
+        }
+    }
+
     @ParameterizedTest(name = "excelRead_overview[{index}] {0}")
     @ValueSource(
         strings = [
