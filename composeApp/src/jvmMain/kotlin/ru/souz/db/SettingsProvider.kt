@@ -1,6 +1,6 @@
 package ru.souz.db
 
-import ru.souz.agent.DEFAULT_SYSTEM_PROMPT
+import ru.souz.agent.isDefaultSystemPrompt
 import ru.souz.giga.EmbeddingsModel
 import ru.souz.giga.DEFAULT_MAX_TOKENS
 import ru.souz.giga.GigaModel
@@ -117,7 +117,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     override fun setSystemPromptForModel(model: GigaModel, prompt: String?) {
         val key = "${SYSTEM_PROMPT}_${model.name}"
         when {
-            prompt.isNullOrBlank() || prompt == DEFAULT_SYSTEM_PROMPT -> configStore.rm(key)
+            prompt.isNullOrBlank() || isDefaultSystemPrompt(prompt) -> configStore.rm(key)
             else -> configStore.put(key, prompt)
         }
     }
