@@ -13,7 +13,7 @@ import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
-import ru.souz.agent.DEFAULT_SYSTEM_PROMPT
+import ru.souz.agent.defaultSystemPromptForRegion
 import ru.souz.agent.GraphBasedAgent
 import ru.souz.audio.Say
 import ru.souz.db.ConfigStore
@@ -251,7 +251,7 @@ class SettingsViewModel(
                 cancelPendingSystemPromptSave()
                 graphBasedAgent.resetSystemPrompt()
                 send(SettingsEffect.NotifyOnSystemPrompt)
-                setState { copy(systemPrompt = DEFAULT_SYSTEM_PROMPT) }
+                setState { copy(systemPrompt = defaultSystemPromptForRegion(keysProvider.regionProfile)) }
             }
             is SendLogsToSupport -> sendLogs()
             OpenPrivacyPolicy -> openPrivacyPolicy()
@@ -362,7 +362,8 @@ class SettingsViewModel(
         val selectedPrompt = if (selectedLlmModel != currentState.gigaModel) {
             graphBasedAgent.updateModel(selectedLlmModel)
         } else {
-            keysProvider.getSystemPromptForModel(selectedLlmModel) ?: DEFAULT_SYSTEM_PROMPT
+            keysProvider.getSystemPromptForModel(selectedLlmModel)
+                ?: defaultSystemPromptForRegion(keysProvider.regionProfile)
         }
 
         val availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(llmBuildProfile)

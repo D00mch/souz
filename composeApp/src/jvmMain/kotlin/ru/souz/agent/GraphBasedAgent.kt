@@ -113,7 +113,11 @@ class GraphBasedAgent(
     fun resetSystemPrompt() {
         val currentModel = settingsProvider.gigaModel
         settingsProvider.setSystemPromptForModel(currentModel, null)
-        _ctx.tryEmit(currentContext.value.copy(systemPrompt = DEFAULT_SYSTEM_PROMPT))
+        _ctx.tryEmit(
+            currentContext.value.copy(
+                systemPrompt = defaultSystemPromptForRegion(settingsProvider.regionProfile)
+            )
+        )
     }
 
     fun updateModel(model: GigaModel): String {
@@ -121,7 +125,8 @@ class GraphBasedAgent(
         val newSettings = settings.load().copy(model = model.alias)
         settings.store(newSettings)
 
-        val promptForModel = settingsProvider.getSystemPromptForModel(model) ?: DEFAULT_SYSTEM_PROMPT
+        val promptForModel = settingsProvider.getSystemPromptForModel(model)
+            ?: defaultSystemPromptForRegion(settingsProvider.regionProfile)
         _ctx.tryEmit(currentContext.value.copy(settings = newSettings, systemPrompt = promptForModel))
         return promptForModel
     }
@@ -180,9 +185,10 @@ class GraphBasedAgent(
 
     private fun createInitialCtx(): AgentContext<String> {
         val currentModel = settingsProvider.gigaModel
+        val defaultPrompt = defaultSystemPromptForRegion(settingsProvider.regionProfile)
         val prompt = settingsProvider.getSystemPromptForModel(currentModel)
-            ?: settingsProvider.systemPrompt
-            ?: DEFAULT_SYSTEM_PROMPT
+            ?: settingsProvider.systemPrompt?.takeUnless(::isDefaultSystemPrompt)
+            ?: defaultPrompt
         return AgentContext(
             input = "",
             settings = settings.load(),
@@ -194,7 +200,17 @@ class GraphBasedAgent(
 }
 
 
-val DEFAULT_SYSTEM_PROMPT = """
+fun defaultSystemPromptForRegion(regionProfile: String): String =
+    if (regionProfile.equals("en", ignoreCase = true)) {
+        DEFAULT_SYSTEM_PROMPT_EN
+    } else {
+        DEFAULT_SYSTEM_PROMPT_RU
+    }
+
+fun isDefaultSystemPrompt(prompt: String): Boolean =
+    prompt == DEFAULT_SYSTEM_PROMPT_RU || prompt == DEFAULT_SYSTEM_PROMPT_EN
+
+val DEFAULT_SYSTEM_PROMPT_RU = """
 ## Правила работы:
 1. **Приоритет инструментов:** Если задачу можно решить вызовом функции — ВЫЗЫВАЙ ЕЁ. Никогда не пиши название функции текстом и не присылай примеры кода на Python/Bash, если ты не собираешься их исполнять через инструмент.
 2. **Рассуждения (Chain of Thought):** Перед действием кратко проанализируй запрос. Сначала подумай, какой инструмент нужен, затем используй его.
@@ -208,6 +224,22 @@ val DEFAULT_SYSTEM_PROMPT = """
 
 ## Критически важно:
 Твоя задача — ДЕЙСТВОВАТЬ, а не болтать. 
+""".trimIndent()
+
+val DEFAULT_SYSTEM_PROMPT_EN = """
+## Work Rules:
+1. **Tool Priority:** If a task can be solved by calling a function, CALL IT. Never write function names as plain text and never provide Python/Bash code examples unless you are going to execute them via a tool.
+2. **Reasoning (Chain of Thought):** Briefly analyze the request before acting. First decide which tool is needed, then use it.
+3. **Response Format:**
+   - If the result is obtained: briefly report success.
+   - If there is an error: explain the issue and suggest a solution.
+4. **Working with Files:** Be concise. Do not output file contents unless explicitly asked.
+5. **Returning Text:**
+   - If text must be returned, use Markdown format.
+   - Do not use tables in Markdown; use formatted lists instead.
+
+## Critically Important:
+Your task is to ACT, not to chat.
 """.trimIndent()
 
 suspend fun main() {
