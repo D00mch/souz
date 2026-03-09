@@ -74,4 +74,11 @@ internal object BotFatherReplyParser {
         val text = latestIncomingText(messages) ?: return false
         return text.contains("choose a username for your bot")
     }
+
+    fun isWaitingForProfilePhoto(messages: List<BotFatherMessageSnapshot>): Boolean {
+        val text = latestIncomingText(messages) ?: return false
+        val asksForProfilePhoto = text.contains("send me") && text.contains("profile photo")
+        val asksForPhoto = text.contains("send me") && text.contains("photo for the bot")
+        return asksForProfilePhoto || asksForPhoto
+    }
 }

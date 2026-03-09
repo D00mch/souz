@@ -13,6 +13,7 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.time.Duration
 
 private const val BOT_FATHER_STEP_DELAY_MS = 1_500L
@@ -180,8 +181,12 @@ internal class TelegramBotWorkflow(
 
             BotCreationStep.AVATAR_PIC -> {
                 runCatching {
-                    delay(BOT_FATHER_STEP_DELAY_MS)
+                    val readyForAvatar = waitForAvatarUploadPrompt(tdClient, botFatherChat.id)
+                    if (!readyForAvatar) {
+                        throw IllegalStateException("BotFather did not request profile photo upload")
+                    }
                     uploadBotAvatar(tdClient, botFatherChat.id)
+                    delay(BOT_FATHER_STEP_DELAY_MS)
                 }.onFailure { logger.warn("Failed to set bot avatar via BotFather: ${it.message}") }
                 createControlBot(BotCreationStep.SETCMDS_CMD)
             }
@@ -458,41 +463,58 @@ internal class TelegramBotWorkflow(
             return
         }
 
-        try {
-            tdClient.send(
-                TdApi.SendMessage(
-                    chatId,
-                    0L,
+        tdClient.send(
+            TdApi.SendMessage(
+                chatId,
+                0L,
+                null,
+                null,
+                null,
+                TdApi.InputMessagePhoto(
+                    TdApi.InputFileLocal(avatarFilePath.toAbsolutePath().toString()),
                     null,
                     null,
+                    0,
+                    0,
                     null,
-                    TdApi.InputMessagePhoto(
-                        TdApi.InputFileLocal(avatarFilePath.toAbsolutePath().toString()),
-                        null,
-                        null,
-                        0,
-                        0,
-                        null,
-                        false,
-                        null,
-                        false,
-                    ),
+                    false,
+                    null,
+                    false,
                 ),
-            ).awaitResult()
-        } finally {
-            runCatching { Files.deleteIfExists(avatarFilePath) }
-        }
+            ),
+        ).awaitResult()
     }
 
     private fun copyBotAvatarToTempFile(): Path? {
         val avatarStream = TelegramBotWorkflow::class.java.getResourceAsStream("/bot_avatar.png") ?: return null
-        val file = Files.createTempFile("bot_avatar", ".png")
+        val tempDir = Path.of(System.getProperty("java.io.tmpdir"), "souz")
+        Files.createDirectories(tempDir)
+        val file = tempDir.resolve("bot_avatar.png")
         avatarStream.use { input ->
-            Files.newOutputStream(file).use { output ->
+            Files.newOutputStream(
+                file,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.WRITE,
+            ).use { output ->
                 input.copyTo(output)
             }
         }
         return file
+    }
+
+    private suspend fun waitForAvatarUploadPrompt(
+        tdClient: SimpleTelegramClient,
+        chatId: Long,
+    ): Boolean {
+        repeat(BOT_FATHER_POLL_ATTEMPTS) {
+            delay(BOT_FATHER_POLL_DELAY_MS)
+            val snapshots = loadBotFatherSnapshots(tdClient, chatId)
+            if (BotFatherReplyParser.isWaitingForProfilePhoto(snapshots)) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun resolveControlBotUsername(): String? {
