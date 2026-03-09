@@ -111,4 +111,35 @@ class BotFatherReplyParserTest {
 
         assertEquals(setOf("souz_control_191296537_8011_bot", "another_demo_bot"), listed)
     }
+
+    @Test
+    fun `isWaitingForProfilePhoto detects BotFather request`() {
+        val messages = listOf(
+            BotFatherMessageSnapshot(
+                id = 41,
+                text = "OK. Send me the new profile photo for the bot.",
+                isOutgoing = false,
+            ),
+        )
+
+        assertTrue(BotFatherReplyParser.isWaitingForProfilePhoto(messages))
+    }
+
+    @Test
+    fun `isWaitingForProfilePhoto checks only latest incoming response`() {
+        val messages = listOf(
+            BotFatherMessageSnapshot(
+                id = 42,
+                text = "Choose a bot to change the list of commands.",
+                isOutgoing = false,
+            ),
+            BotFatherMessageSnapshot(
+                id = 41,
+                text = "OK. Send me the new profile photo for the bot.",
+                isOutgoing = false,
+            ),
+        )
+
+        assertFalse(BotFatherReplyParser.isWaitingForProfilePhoto(messages))
+    }
 }
