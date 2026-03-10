@@ -71,6 +71,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MainViewModelTest {
@@ -270,6 +271,30 @@ class MainViewModelTest {
             assertEquals(draft, state.pendingVoiceInputDraft)
             assertTrue(state.chatMessages.isEmpty())
             assertFalse(state.isProcessing)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `consuming pending voice draft clears it`() = runTest(mainDispatcher) {
+        val draft = "voice draft input"
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = { GigaResponse.RecognizeResponse(result = listOf(draft)) },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(7, 7, 7))
+            awaitState(viewModel) { it.pendingVoiceInputDraft == draft }
+
+            viewModel.handleEvent(MainEvent.ConsumePendingVoiceInputDraft)
+
+            val state = awaitState(viewModel) { it.pendingVoiceInputDraft == null }
+            assertNull(state.pendingVoiceInputDraft)
         } finally {
             harness.clear()
         }

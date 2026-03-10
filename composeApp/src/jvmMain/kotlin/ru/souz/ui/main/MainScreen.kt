@@ -144,6 +144,7 @@ fun MainScreen(
         onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
         onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage(it)) },
         onClearContext = { viewModel.send(MainEvent.UserPressStop) },
+        onConsumePendingVoiceInputDraft = { viewModel.send(MainEvent.ConsumePendingVoiceInputDraft) },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
         onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
@@ -175,6 +176,7 @@ fun MainScreenContent(
     onRemoveChatAttachment: (String) -> Unit = {},
     onSendChatMessage: (String) -> Unit = {},
     onClearContext: () -> Unit = {},
+    onConsumePendingVoiceInputDraft: () -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
     onSelectApprovalCandidate: (Long) -> Unit = {},
@@ -319,6 +321,7 @@ fun MainScreenContent(
                     onRemoveAttachment = onRemoveChatAttachment,
                     onSendMessage = onSendChatMessage,
                     onCancelProcessing = onClearContext,
+                    onConsumePendingVoiceInputDraft = onConsumePendingVoiceInputDraft,
                     onStartListening = onStartListening,
                     onStopListening = onStopListening,
                     onStopSpeech = onStopSpeech,
@@ -714,6 +717,7 @@ fun ChatModeContent(
     onRemoveAttachment: (String) -> Unit,
     onSendMessage: (String) -> Unit,
     onCancelProcessing: () -> Unit = {},
+    onConsumePendingVoiceInputDraft: () -> Unit,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
     onStopSpeech: () -> Unit,
@@ -750,11 +754,12 @@ fun ChatModeContent(
         val recognizedText = pendingVoiceInputDraft?.trim().orEmpty()
         if (recognizedText.isEmpty()) return@LaunchedEffect
 
-        val mergedText = mergeVoiceDraftIntoInput(inputText.text, recognizedText)
+        val mergedText = mergeVoiceDraftIntoInputText(inputText.text, recognizedText)
         inputText = TextFieldValue(
             text = mergedText,
             selection = TextRange(mergedText.length),
         )
+        onConsumePendingVoiceInputDraft()
         focusRequester.requestFocus()
     }
 
@@ -871,15 +876,6 @@ fun ChatModeContent(
         )
     }
 }
-
-private fun mergeVoiceDraftIntoInput(currentInput: String, voiceDraft: String): String {
-    if (currentInput.isBlank()) return voiceDraft
-    val separator = if (currentInput.endsWith('\n') || currentInput.endsWith(' ')) "" else "\n"
-    return currentInput + separator + voiceDraft
-}
-
-
-
 
 @Composable
 private fun ChatFileDropTarget(

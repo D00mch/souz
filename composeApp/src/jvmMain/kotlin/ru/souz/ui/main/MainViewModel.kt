@@ -151,6 +151,7 @@ class MainViewModel(
         when (event) {
             MainEvent.StartListening -> voiceInputUseCase.startRecording(viewModelScope, currentState.isListening)
             MainEvent.StopListening -> voiceInputUseCase.stopRecording(currentState.isListening)
+            MainEvent.ConsumePendingVoiceInputDraft -> setState { copy(pendingVoiceInputDraft = null) }
             MainEvent.RequestNewConversation -> requestNewConversation()
             MainEvent.ConfirmNewConversation -> confirmNewConversation()
             MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()

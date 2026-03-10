@@ -106,6 +106,7 @@ data class MainState(
 sealed interface MainEvent : VMEvent {
     data object StartListening : MainEvent
     data object StopListening : MainEvent
+    data object ConsumePendingVoiceInputDraft : MainEvent
     data object RequestNewConversation : MainEvent
     data object ConfirmNewConversation : MainEvent
     data object DismissNewConversationDialog : MainEvent
