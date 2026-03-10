@@ -249,6 +249,33 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `voice recognition stores draft in input when review is enabled`() = runTest(mainDispatcher) {
+        val draft = "voice draft input"
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = {
+                GigaResponse.RecognizeResponse(result = listOf(draft))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(7, 7, 7))
+
+            val state = awaitState(viewModel) { uiState ->
+                uiState.pendingVoiceInputDraft == draft && uiState.pendingVoiceInputDraftToken > 0
+            }
+            assertEquals(draft, state.pendingVoiceInputDraft)
+            assertTrue(state.chatMessages.isEmpty())
+            assertFalse(state.isProcessing)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `response while speaking sets isSpeaking true, updates history, completes processing`() =
         runTest(mainDispatcher) {
             val response = CompletableDeferred<String>()
@@ -472,6 +499,7 @@ class MainViewModelTest {
         executeBehavior: suspend (String) -> String = { "stub response" },
         onCancelActiveJob: () -> Unit = {},
         needsOnboarding: Boolean = false,
+        voiceInputReviewEnabled: Boolean = false,
         recognizeBehavior: suspend (ByteArray) -> GigaResponse.RecognizeResponse = {
             GigaResponse.RecognizeResponse()
         },
@@ -499,6 +527,11 @@ class MainViewModelTest {
         every { settingsProvider.onboardingCompleted } answers { onboardingCompletedState }
         every { settingsProvider.onboardingCompleted = any() } answers { onboardingCompletedState = firstArg<Boolean>() }
         every { settingsProvider.safeModeEnabled } returns false
+        var voiceInputReviewEnabledState = voiceInputReviewEnabled
+        every { settingsProvider.voiceInputReviewEnabled } answers { voiceInputReviewEnabledState }
+        every { settingsProvider.voiceInputReviewEnabled = any() } answers {
+            voiceInputReviewEnabledState = firstArg<Boolean>()
+        }
 
         val say = mockk<Say>(relaxed = true)
         val speakingFlow = MutableStateFlow(false)

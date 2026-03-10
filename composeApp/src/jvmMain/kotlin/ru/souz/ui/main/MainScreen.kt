@@ -49,6 +49,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -305,6 +306,8 @@ fun MainScreenContent(
                     availableModelAliases = state.availableModelAliases,
                     selectedContextSize = state.selectedContextSize,
                     attachedFiles = state.attachedFiles,
+                    pendingVoiceInputDraft = state.pendingVoiceInputDraft,
+                    pendingVoiceInputDraftToken = state.pendingVoiceInputDraftToken,
                     isProcessing = state.isProcessing,
                     isListening = state.isListening,
                     isOnline = isOnline,
@@ -698,6 +701,8 @@ fun ChatModeContent(
     availableModelAliases: List<String>,
     selectedContextSize: Int,
     attachedFiles: List<ChatAttachedFile>,
+    pendingVoiceInputDraft: String?,
+    pendingVoiceInputDraftToken: Long,
     isProcessing: Boolean,
     isListening: Boolean,
     isOnline: Boolean,
@@ -739,6 +744,18 @@ fun ChatModeContent(
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
+    }
+
+    LaunchedEffect(pendingVoiceInputDraftToken) {
+        val recognizedText = pendingVoiceInputDraft?.trim().orEmpty()
+        if (recognizedText.isEmpty()) return@LaunchedEffect
+
+        val mergedText = mergeVoiceDraftIntoInput(inputText.text, recognizedText)
+        inputText = TextFieldValue(
+            text = mergedText,
+            selection = TextRange(mergedText.length),
+        )
+        focusRequester.requestFocus()
     }
 
 
@@ -853,6 +870,12 @@ fun ChatModeContent(
                 .padding(top = 12.dp)
         )
     }
+}
+
+private fun mergeVoiceDraftIntoInput(currentInput: String, voiceDraft: String): String {
+    if (currentInput.isBlank()) return voiceDraft
+    val separator = if (currentInput.endsWith('\n') || currentInput.endsWith(' ')) "" else "\n"
+    return currentInput + separator + voiceDraft
 }
 
 

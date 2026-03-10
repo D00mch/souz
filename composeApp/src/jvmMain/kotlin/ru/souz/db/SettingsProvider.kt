@@ -29,6 +29,7 @@ interface SettingsProvider {
     var useFewShotExamples: Boolean
     var useStreaming: Boolean
     var notificationSoundEnabled: Boolean
+    var voiceInputReviewEnabled: Boolean
     var safeModeEnabled: Boolean
     var needsOnboarding: Boolean
     var onboardingCompleted: Boolean
@@ -60,6 +61,10 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     private var _notificationSoundEnabledDelegate: String? by keyDelegate(
         configKey = NOTIFICATION_SOUND_ENABLED,
         envKey = NOTIFICATION_SOUND_ENABLED
+    )
+    private var _voiceInputReviewEnabledDelegate: String? by keyDelegate(
+        configKey = VOICE_INPUT_REVIEW_ENABLED,
+        envKey = VOICE_INPUT_REVIEW_ENABLED
     )
     private var _safeModeDelegate: String? by keyDelegate(configKey = SAFE_MODE_ENABLED, envKey = SAFE_MODE_ENABLED)
     private var _requestTimeoutDelegate: String? by keyDelegate(
@@ -177,6 +182,12 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         get() = _notificationSoundEnabledDelegate?.toBooleanStrictOrNull() ?: true
         set(value) {
             _notificationSoundEnabledDelegate = value.toString()
+        }
+
+    override var voiceInputReviewEnabled: Boolean
+        get() = _voiceInputReviewEnabledDelegate?.toBooleanStrictOrNull() ?: false
+        set(value) {
+            _voiceInputReviewEnabledDelegate = value.toString()
         }
 
     override var safeModeEnabled: Boolean
@@ -311,6 +322,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         private const val USE_STREAMING = "USE_STREAMING"
         private const val NOTIFICATION_SOUND_ENABLED = "NOTIFICATION_SOUND_ENABLED"
+        private const val VOICE_INPUT_REVIEW_ENABLED = "VOICE_INPUT_REVIEW_ENABLED"
         private const val SAFE_MODE_ENABLED = "SAFE_MODE_ENABLED"
         private const val USE_GRPC_LEGACY = "USE_GRPC"
         private const val SUPPORT_EMAIL = "SUPPORT_EMAIL"

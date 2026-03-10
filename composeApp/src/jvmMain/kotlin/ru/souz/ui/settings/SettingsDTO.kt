@@ -57,6 +57,7 @@ data class SettingsState(
     val useFewShotExamples: Boolean = false,
     val useStreaming: Boolean = false,
     val notificationSoundEnabled: Boolean = true,
+    val voiceInputReviewEnabled: Boolean = false,
     val useEnglishVersion: Boolean = false,
     val safeModeEnabled: Boolean = false,
     val gigaModel: GigaModel = GigaModel.Max,
@@ -121,6 +122,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent
     data class InputUseStreaming(val enabled: Boolean): SettingsEvent
     data class InputNotificationSoundEnabled(val enabled: Boolean): SettingsEvent
+    data class InputVoiceInputReviewEnabled(val enabled: Boolean): SettingsEvent
     data class InputUseEnglishVersion(val enabled: Boolean): SettingsEvent
     data class InputSafeModeEnabled(val enabled: Boolean): SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent

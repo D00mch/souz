@@ -94,6 +94,8 @@ data class MainState(
     val toolPermissionDialog: ToolPermissionDialogData? = null,
     val selectionDialog: SelectionDialogData? = null,
     val attachedFiles: List<ChatAttachedFile> = emptyList(),
+    val pendingVoiceInputDraft: String? = null,
+    val pendingVoiceInputDraftToken: Long = 0L,
 ) : VMState {
 
     companion object {
