@@ -78,6 +78,7 @@ kotlin {
             implementation(libs.compose.ui.tooling.preview.desktop)
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
+            implementation(libs.sqlite.jdbc)
 
             // kotlin
             implementation(kotlin("reflect"))
@@ -114,7 +115,6 @@ kotlin {
 
             // Telegram user client (TDLib)
             implementation(libs.tdlight.java)
-            implementation("org.xerial:sqlite-jdbc:3.45.1.0")
             runtimeOnly("it.tdlight:tdlight-natives:${libs.versions.tdlight.natives.get()}:${tdlightNativeClassifier()}")
         }
 
@@ -143,6 +143,8 @@ compose.desktop {
         } else {
             "\$APPDIR/resources/$nativeResourceDir"
         }
+        val sqliteLibraryPath = "\$APPDIR/resources"
+        val sqliteLibraryName = "libsqlitejdbc.dylib"
 
         buildTypes.release.proguard {
             isEnabled.set(false)
@@ -152,7 +154,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Pkg)
             packageName = distributionPackageName
-            packageVersion = "1.0.0"
+            packageVersion = "1.0.2"
 
             // include HTTP client and java.sql needed by Apache Tika parser discovery
             modules("java.naming", "java.net.http", "java.sql")
@@ -205,6 +207,13 @@ compose.desktop {
             // macOS dark mode support, works only on the release build, not in debug
             // Include both architectures so universal bundles are not pinned to build-host arch.
             jvmArgs("-Djava.library.path=$nativeLibraryPath")
+            // Force JNA to load the bundled dispatcher and never unpack jna*.tmp at runtime.
+            jvmArgs("-Djna.boot.library.path=$nativeLibraryPath")
+            jvmArgs("-Djna.nosys=true")
+            jvmArgs("-Djna.noclasspath=true")
+            // Force sqlite-jdbc to use bundled native binary and avoid sqlite-*.tmp extraction.
+            jvmArgs("-Dorg.sqlite.lib.path=$sqliteLibraryPath")
+            jvmArgs("-Dorg.sqlite.lib.name=$sqliteLibraryName")
             // Safety net: never let JNativeHook extract into Contents/app (which breaks code signature).
             jvmArgs("-Djnativehook.lib.path=/tmp/souz-jnativehook")
             jvmArgs("-Dapple.awt.application.appearance=system")

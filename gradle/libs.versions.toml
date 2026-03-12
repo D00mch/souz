@@ -6,6 +6,7 @@ composeMultiplatform = "1.9.3"
 jackson = "2.17.0"
 jnativehook = "2.2.2"
 jna = "5.14.0"
+sqlite-jdbc = "3.45.1.0"
 junit = "4.13.2"
 junitJupiter = "6.0.2"
 javaDiffUtils = "4.15"
@@ -38,6 +39,7 @@ jackson = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", versi
 jnativehook = { module = "com.github.kwhat:jnativehook", version.ref = "jnativehook" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
 junit = { module = "junit:junit", version.ref = "junit" }
 java-diffUtils = { module = "io.github.java-diff-utils:java-diff-utils", version.ref = "javaDiffUtils" }
 kodein-di-framework-compose = { module = "org.kodein.di:kodein-di-framework-compose", version.ref = "kodeinDi" }

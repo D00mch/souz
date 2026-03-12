@@ -63,12 +63,54 @@ private fun configureNativeExtraction(project: Project) {
         description = "JNativeHook jar used to extract macOS x64 JNI binary"
     }
 
+    val jnaMacosArm64NativeFileName = "libjnidispatch.jnilib"
+    val jnaMacosArm64NativeTargetDir = generatedNativeResourcesRoot.map { it.dir("darwin-arm64") }
+    val jnaMacosArm64NativeConfiguration = project.configurations.create("jnaMacosArm64Native") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+        isTransitive = false
+        description = "JNA jar used to extract macOS arm64 native dispatcher"
+    }
+
+    val jnaMacosX64NativeFileName = "libjnidispatch.jnilib"
+    val jnaMacosX64NativeTargetDir = generatedNativeResourcesRoot.map { it.dir("darwin-x64") }
+    val jnaMacosX64NativeConfiguration = project.configurations.create("jnaMacosX64Native") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+        isTransitive = false
+        description = "JNA jar used to extract macOS x64 native dispatcher"
+    }
+
+    val sqliteMacosArm64NativeFileName = "libsqlitejdbc.dylib"
+    val sqliteMacosArm64NativeTargetDir = generatedNativeResourcesRoot.map { it.dir("darwin-arm64") }
+    val sqliteMacosArm64NativeConfiguration = project.configurations.create("sqliteMacosArm64Native") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+        isTransitive = false
+        description = "sqlite-jdbc jar used to extract macOS arm64 native dispatcher"
+    }
+
+    val sqliteMacosX64NativeFileName = "libsqlitejdbc.dylib"
+    val sqliteMacosX64NativeTargetDir = generatedNativeResourcesRoot.map { it.dir("darwin-x64") }
+    val sqliteMacosX64NativeConfiguration = project.configurations.create("sqliteMacosX64Native") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+        isTransitive = false
+        description = "sqlite-jdbc jar used to extract macOS x64 native dispatcher"
+    }
+
     val libs = project.extensions.getByType(VersionCatalogsExtension::class.java).named("libs")
     val tdlightNativesVersion = libs.findVersion("tdlight-natives").orElseThrow {
         GradleException("Version 'tdlight-natives' is missing in libs.versions.toml")
     }.requiredVersion
     val jnativehookVersion = libs.findVersion("jnativehook").orElseThrow {
         GradleException("Version 'jnativehook' is missing in libs.versions.toml")
+    }.requiredVersion
+    val jnaVersion = libs.findVersion("jna").orElseThrow {
+        GradleException("Version 'jna' is missing in libs.versions.toml")
+    }.requiredVersion
+    val sqliteJdbcVersion = libs.findVersion("sqlite-jdbc").orElseThrow {
+        GradleException("Version 'sqlite-jdbc' is missing in libs.versions.toml")
     }.requiredVersion
 
     project.dependencies.add(
@@ -86,6 +128,22 @@ private fun configureNativeExtraction(project: Project) {
     project.dependencies.add(
         jnativehookMacosX64NativeConfiguration.name,
         "com.github.kwhat:jnativehook:$jnativehookVersion@jar",
+    )
+    project.dependencies.add(
+        jnaMacosArm64NativeConfiguration.name,
+        "net.java.dev.jna:jna:$jnaVersion@jar",
+    )
+    project.dependencies.add(
+        jnaMacosX64NativeConfiguration.name,
+        "net.java.dev.jna:jna:$jnaVersion@jar",
+    )
+    project.dependencies.add(
+        sqliteMacosArm64NativeConfiguration.name,
+        "org.xerial:sqlite-jdbc:$sqliteJdbcVersion@jar",
+    )
+    project.dependencies.add(
+        sqliteMacosX64NativeConfiguration.name,
+        "org.xerial:sqlite-jdbc:$sqliteJdbcVersion@jar",
     )
 
     val syncTdlightNativeMacosArm64 = project.tasks.register("syncTdlightNativeMacosArm64", Copy::class.java) {
@@ -144,14 +202,74 @@ private fun configureNativeExtraction(project: Project) {
         into(jnativehookMacosX64NativeTargetDir)
     }
 
+    val syncJnaNativeMacosArm64 = project.tasks.register("syncJnaNativeMacosArm64", Copy::class.java) {
+        group = "native"
+        description = "Extract JNA macOS arm64 native dispatcher into build/generated/native-resources/darwin-arm64"
+        from(
+            { jnaMacosArm64NativeConfiguration.files.map { project.zipTree(it) } },
+            Action {
+                include("com/sun/jna/darwin-aarch64/$jnaMacosArm64NativeFileName")
+                eachFile { path = jnaMacosArm64NativeFileName }
+                includeEmptyDirs = false
+            },
+        )
+        into(jnaMacosArm64NativeTargetDir)
+    }
+
+    val syncJnaNativeMacosX64 = project.tasks.register("syncJnaNativeMacosX64", Copy::class.java) {
+        group = "native"
+        description = "Extract JNA macOS x64 native dispatcher into build/generated/native-resources/darwin-x64"
+        from(
+            { jnaMacosX64NativeConfiguration.files.map { project.zipTree(it) } },
+            Action {
+                include("com/sun/jna/darwin-x86-64/$jnaMacosX64NativeFileName")
+                eachFile { path = jnaMacosX64NativeFileName }
+                includeEmptyDirs = false
+            },
+        )
+        into(jnaMacosX64NativeTargetDir)
+    }
+
+    val syncSqliteNativeMacosArm64 = project.tasks.register("syncSqliteNativeMacosArm64", Copy::class.java) {
+        group = "native"
+        description = "Extract sqlite-jdbc macOS arm64 native dispatcher into build/generated/native-resources/darwin-arm64"
+        from(
+            { sqliteMacosArm64NativeConfiguration.files.map { project.zipTree(it) } },
+            Action {
+                include("org/sqlite/native/Mac/aarch64/$sqliteMacosArm64NativeFileName")
+                eachFile { path = sqliteMacosArm64NativeFileName }
+                includeEmptyDirs = false
+            },
+        )
+        into(sqliteMacosArm64NativeTargetDir)
+    }
+
+    val syncSqliteNativeMacosX64 = project.tasks.register("syncSqliteNativeMacosX64", Copy::class.java) {
+        group = "native"
+        description = "Extract sqlite-jdbc macOS x64 native dispatcher into build/generated/native-resources/darwin-x64"
+        from(
+            { sqliteMacosX64NativeConfiguration.files.map { project.zipTree(it) } },
+            Action {
+                include("org/sqlite/native/Mac/x86_64/$sqliteMacosX64NativeFileName")
+                eachFile { path = sqliteMacosX64NativeFileName }
+                includeEmptyDirs = false
+            },
+        )
+        into(sqliteMacosX64NativeTargetDir)
+    }
+
     val selectedSyncTasks = buildList {
         if (includeAllMacNativeResources || isArm64Build) {
             add(syncTdlightNativeMacosArm64)
             add(syncJnativehookNativeMacosArm64)
+            add(syncJnaNativeMacosArm64)
+            add(syncSqliteNativeMacosArm64)
         }
         if (includeAllMacNativeResources || !isArm64Build) {
             add(syncTdlightNativeMacosX64)
             add(syncJnativehookNativeMacosX64)
+            add(syncJnaNativeMacosX64)
+            add(syncSqliteNativeMacosX64)
         }
     }
 
@@ -173,6 +291,14 @@ private fun configureNativeExtraction(project: Project) {
                     include(jnativehookMacosArm64NativeFileName)
                     into("darwin-arm64")
                 }
+                from(jnaMacosArm64NativeTargetDir) {
+                    include(jnaMacosArm64NativeFileName)
+                    into("darwin-arm64")
+                }
+                from(sqliteMacosArm64NativeTargetDir) {
+                    include(sqliteMacosArm64NativeFileName)
+                    into("darwin-arm64")
+                }
             }
             if (includeAllMacNativeResources || !isArm64Build) {
                 from(tdlightMacosX64NativeTargetDir) {
@@ -183,6 +309,21 @@ private fun configureNativeExtraction(project: Project) {
                     include(jnativehookMacosX64NativeFileName)
                     into("darwin-x64")
                 }
+                from(jnaMacosX64NativeTargetDir) {
+                    include(jnaMacosX64NativeFileName)
+                    into("darwin-x64")
+                }
+                from(sqliteMacosX64NativeTargetDir) {
+                    include(sqliteMacosX64NativeFileName)
+                    into("darwin-x64")
+                }
+            }
+
+            val sqliteRuntimeNativeTargetDir =
+                if (isArm64Build) sqliteMacosArm64NativeTargetDir else sqliteMacosX64NativeTargetDir
+            from(sqliteRuntimeNativeTargetDir) {
+                include(sqliteMacosArm64NativeFileName)
+                into("")
             }
         }
     }

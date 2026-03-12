@@ -28,6 +28,15 @@ COMPOSE_CHECK_RUNTIME_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/checkRuntim
 UNIVERSAL_BUILD_DIR="$PROJECT_DIR/composeApp/build/universal-build"
 LOCAL_PROPERTIES="$PROJECT_DIR/local.properties"
 BUILD_GRADLE="$PROJECT_DIR/composeApp/build.gradle.kts"
+JNA_LIBRARY_FILE="libjnidispatch.jnilib"
+JNA_ARM64_RELATIVE_PATH="Contents/app/resources/darwin-arm64/$JNA_LIBRARY_FILE"
+JNA_X64_RELATIVE_PATH="Contents/app/resources/darwin-x64/$JNA_LIBRARY_FILE"
+JNA_BOOT_LIBRARY_PATH='$APPDIR/resources/darwin-arm64:$APPDIR/resources/darwin-x64'
+SQLITE_LIBRARY_FILE="libsqlitejdbc.dylib"
+SQLITE_ARM64_RELATIVE_PATH="Contents/app/resources/darwin-arm64/$SQLITE_LIBRARY_FILE"
+SQLITE_X64_RELATIVE_PATH="Contents/app/resources/darwin-x64/$SQLITE_LIBRARY_FILE"
+SQLITE_BUNDLED_RELATIVE_PATH="Contents/app/resources/$SQLITE_LIBRARY_FILE"
+SQLITE_BUNDLED_LIBRARY_PATH='$APPDIR/resources'
 
 # =============================================================================
 # Helper functions
@@ -211,6 +220,61 @@ reset_compose_runtime_cache() {
     rm -rf "$COMPOSE_RUNTIME_CACHE_DIR" "$COMPOSE_CHECK_RUNTIME_DIR"
 }
 
+assert_file_exists() {
+    local target="$1"
+    local description="$2"
+    if [ ! -f "$target" ]; then
+        log_error "$description is missing: $target"
+        exit 1
+    fi
+}
+
+assert_file_arch() {
+    local target="$1"
+    local expected_arch="$2"
+    local description="$3"
+    local details
+
+    details="$(file "$target")"
+    if ! grep -Fq "$expected_arch" <<<"$details"; then
+        log_error "$description arch mismatch. Expected '$expected_arch'."
+        log_info "$details"
+        exit 1
+    fi
+}
+
+assert_cfg_java_option() {
+    local cfg_path="$1"
+    local expected_option="$2"
+    if ! grep -Fqx "java-options=$expected_option" "$cfg_path"; then
+        log_error "Missing Java option in app cfg: $expected_option"
+        log_info "Checked cfg: $cfg_path"
+        exit 1
+    fi
+}
+
+verify_jna_bundle_layout() {
+    local app_bundle="$1"
+    local arm64_jna="$app_bundle/$JNA_ARM64_RELATIVE_PATH"
+    local x64_jna="$app_bundle/$JNA_X64_RELATIVE_PATH"
+
+    assert_file_exists "$arm64_jna" "Bundled JNA arm64 library"
+    assert_file_exists "$x64_jna" "Bundled JNA x64 library"
+    assert_file_arch "$arm64_jna" "arm64" "Bundled JNA arm64 library"
+    assert_file_arch "$x64_jna" "x86_64" "Bundled JNA x64 library"
+}
+
+verify_sqlite_bundle_layout() {
+    local app_bundle="$1"
+    local arm64_sqlite="$app_bundle/$SQLITE_ARM64_RELATIVE_PATH"
+    local x64_sqlite="$app_bundle/$SQLITE_X64_RELATIVE_PATH"
+
+    assert_file_exists "$arm64_sqlite" "Bundled sqlite arm64 library"
+    assert_file_exists "$x64_sqlite" "Bundled sqlite x64 library"
+    assert_file_arch "$arm64_sqlite" "arm64" "Bundled sqlite arm64 library"
+    assert_file_arch "$x64_sqlite" "x86_64" "Bundled sqlite x64 library"
+}
+
 cleanup() {
     log_info "Cleaning up..."
     rm -f "${APP_PROFILE_PLIST_TMP:-}" \
@@ -326,7 +390,7 @@ fi
 APP_NAME="${MACOS_APP_NAME:-}"
 
 VERSION="${MACOS_APP_VERSION:-$(extract_gradle_value 'packageVersion')}"
-VERSION="${VERSION:-1.0.0}"
+VERSION="${VERSION:-1.0.2}"
 
 # Entitlements and profiles
 ENTITLEMENTS="$RESOURCES_DIR/entitlements.plist"
@@ -565,12 +629,16 @@ cd "$PROJECT_DIR"
 
 # The compose app conventions plugin defines these tasks and wires them into
 # resource/packaging tasks. Running them here makes failures explicit early.
-log_info "Syncing TDLight/JNativeHook macOS JNI binaries..."
+log_info "Syncing TDLight/JNativeHook/JNA/sqlite macOS native binaries..."
 ./gradlew \
     :composeApp:syncTdlightNativeMacosArm64 \
     :composeApp:syncTdlightNativeMacosX64 \
     :composeApp:syncJnativehookNativeMacosArm64 \
     :composeApp:syncJnativehookNativeMacosX64 \
+    :composeApp:syncJnaNativeMacosArm64 \
+    :composeApp:syncJnaNativeMacosX64 \
+    :composeApp:syncSqliteNativeMacosArm64 \
+    :composeApp:syncSqliteNativeMacosX64 \
     --quiet
 
 # Verify expected files exist (as configured in ComposeAppConventionsPlugin)
@@ -578,8 +646,16 @@ TDLIGHT_ARM64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-arm64/libtdjni.macos_arm64
 TDLIGHT_X64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-x64/libtdjni.macos_amd64.dylib"
 JNATIVEHOOK_ARM64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-arm64/libJNativeHook.dylib"
 JNATIVEHOOK_X64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-x64/libJNativeHook.dylib"
+JNA_ARM64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-arm64/$JNA_LIBRARY_FILE"
+JNA_X64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-x64/$JNA_LIBRARY_FILE"
+SQLITE_ARM64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-arm64/$SQLITE_LIBRARY_FILE"
+SQLITE_X64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-x64/$SQLITE_LIBRARY_FILE"
 
-for file in "$TDLIGHT_ARM64" "$TDLIGHT_X64" "$JNATIVEHOOK_ARM64" "$JNATIVEHOOK_X64"; do
+for file in \
+    "$TDLIGHT_ARM64" "$TDLIGHT_X64" \
+    "$JNATIVEHOOK_ARM64" "$JNATIVEHOOK_X64" \
+    "$JNA_ARM64" "$JNA_X64" \
+    "$SQLITE_ARM64" "$SQLITE_X64"; do
     if [ ! -f "$file" ]; then
         log_error "Required native JNI resource not found: $file"
         exit 1
@@ -646,14 +722,11 @@ APP_NAME="$DETECTED_APP_NAME"
 OUTPUT_PKG="$PROJECT_DIR/composeApp/build/${APP_NAME}-${VERSION}-universal.pkg"
 log_info "Resolved app bundle name: $APP_NAME"
 
-if ! file "$X64_APP/Contents/MacOS/${APP_NAME}" | grep -q "x86_64"; then
-    log_error "x86_64 build verification failed"
-    exit 1
-fi
-if ! file "$X64_APP/Contents/runtime/Contents/Home/lib/libjli.dylib" | grep -q "x86_64"; then
-    log_error "x86_64 runtime verification failed (libjli is not x86_64)"
-    exit 1
-fi
+assert_file_arch "$X64_APP/Contents/MacOS/${APP_NAME}" "x86_64" "x86_64 launcher binary"
+assert_file_arch "$X64_APP/Contents/runtime/Contents/Home/lib/libjli.dylib" "x86_64" "x86_64 runtime libjli"
+verify_jna_bundle_layout "$X64_APP"
+verify_sqlite_bundle_layout "$X64_APP"
+assert_file_arch "$X64_APP/$SQLITE_BUNDLED_RELATIVE_PATH" "x86_64" "Bundled sqlite runtime library"
 
 # Save x86_64 build
 log_info "Saving x86_64 build..."
@@ -691,14 +764,11 @@ if [ ! -d "$ARM64_APP" ]; then
     exit 1
 fi
 
-if ! file "$ARM64_APP/Contents/MacOS/${APP_NAME}" | grep -q "arm64"; then
-    log_error "arm64 build verification failed"
-    exit 1
-fi
-if ! file "$ARM64_APP/Contents/runtime/Contents/Home/lib/libjli.dylib" | grep -q "arm64"; then
-    log_error "arm64 runtime verification failed (libjli is not arm64)"
-    exit 1
-fi
+assert_file_arch "$ARM64_APP/Contents/MacOS/${APP_NAME}" "arm64" "arm64 launcher binary"
+assert_file_arch "$ARM64_APP/Contents/runtime/Contents/Home/lib/libjli.dylib" "arm64" "arm64 runtime libjli"
+verify_jna_bundle_layout "$ARM64_APP"
+verify_sqlite_bundle_layout "$ARM64_APP"
+assert_file_arch "$ARM64_APP/$SQLITE_BUNDLED_RELATIVE_PATH" "arm64" "Bundled sqlite runtime library"
 
 log_success "arm64 build complete"
 
@@ -749,7 +819,7 @@ while IFS= read -r -d '' arm64_file; do
             echo "  Combined: $rel_path"
         fi
     fi
-done < <(find "$ARM64_APP" -type f \( -name "*.dylib" -o -perm +111 \) -print0)
+done < <(find "$ARM64_APP" -type f \( -name "*.dylib" -o -name "*.jnilib" -o -perm +111 \) -print0)
 
 log_info "Lipo summary: combined $combined_count file(s), skipped $skipped_overlap_count file(s) with overlapping architectures"
 
@@ -761,18 +831,19 @@ if [ -f "$SKIKO_X64" ]; then
     log_info "  Copied x64 Skiko library"
 fi
 
-# =============================================================================
-# JNA native library is now bundled via appResourcesRootDir in build.gradle.kts
-# =============================================================================
-# The libjnidispatch.jnilib universal binary is in composeApp/resources/macos/
-# and is automatically included and signed by the Compose Desktop plugin.
-log_info "JNA native library: using pre-bundled universal binary from resources"
+assert_file_arch "$UNIVERSAL_APP/Contents/MacOS/${APP_NAME}" "universal" "Universal launcher binary"
 
-# Verify main executable is universal
-if ! file "$UNIVERSAL_APP/Contents/MacOS/${APP_NAME}" | grep -q "universal"; then
-    log_error "Universal binary creation failed"
-    exit 1
-fi
+verify_jna_bundle_layout "$UNIVERSAL_APP"
+verify_sqlite_bundle_layout "$UNIVERSAL_APP"
+assert_file_arch "$UNIVERSAL_APP/$SQLITE_BUNDLED_RELATIVE_PATH" "universal" "Bundled sqlite runtime library"
+
+APP_CFG_PATH="$UNIVERSAL_APP/Contents/app/${APP_NAME}.cfg"
+assert_file_exists "$APP_CFG_PATH" "App launcher cfg"
+assert_cfg_java_option "$APP_CFG_PATH" "-Djna.boot.library.path=$JNA_BOOT_LIBRARY_PATH"
+assert_cfg_java_option "$APP_CFG_PATH" "-Djna.nosys=true"
+assert_cfg_java_option "$APP_CFG_PATH" "-Djna.noclasspath=true"
+assert_cfg_java_option "$APP_CFG_PATH" "-Dorg.sqlite.lib.path=$SQLITE_BUNDLED_LIBRARY_PATH"
+assert_cfg_java_option "$APP_CFG_PATH" "-Dorg.sqlite.lib.name=$SQLITE_LIBRARY_FILE"
 
 log_success "Universal binary created"
 
@@ -832,33 +903,38 @@ for skiko in "$UNIVERSAL_APP/Contents/app/libskiko"*.dylib; do
     fi
 done
 
-# Sign bundled JNA native library if present (path depends on JNA packaging mode).
-log_info "Signing JNA native library (if bundled)..."
-JNA_SIGNED_COUNT=0
-while IFS= read -r -d '' jna_lib; do
-    codesign_sign "$RUNTIME_COMPONENT_ENTITLEMENTS_TMP" "$jna_lib"
-    JNA_SIGNED_COUNT=$((JNA_SIGNED_COUNT + 1))
-    log_info "  Signed: ${jna_lib#$UNIVERSAL_APP/}"
-done < <(find "$UNIVERSAL_APP" -type f \( -name 'libjnidispatch*.jnilib' -o -name 'libjnidispatch*.dylib' \) -print0)
-
-if [ "$JNA_SIGNED_COUNT" -eq 0 ]; then
-    log_info "  No bundled libjnidispatch binary found; JNA will load native library from jar/runtime path."
-fi
-
 # Sign JNI/JNA native libraries bundled under app resources.
 # These binaries are loaded at runtime from Contents/app/resources/darwin-*.
 log_info "Signing bundled app resource native libraries..."
 RESOURCE_NATIVE_SIGNED_COUNT=0
+JNA_SIGNED_COUNT=0
+SQLITE_SIGNED=0
 while IFS= read -r -d '' resource_native_lib; do
     if file "$resource_native_lib" | grep -q "Mach-O"; then
         codesign_sign "$RUNTIME_COMPONENT_ENTITLEMENTS_TMP" "$resource_native_lib"
         RESOURCE_NATIVE_SIGNED_COUNT=$((RESOURCE_NATIVE_SIGNED_COUNT + 1))
+        if [ "$(basename "$resource_native_lib")" = "$JNA_LIBRARY_FILE" ]; then
+            JNA_SIGNED_COUNT=$((JNA_SIGNED_COUNT + 1))
+        fi
+        if [ "$resource_native_lib" = "$UNIVERSAL_APP/$SQLITE_BUNDLED_RELATIVE_PATH" ]; then
+            SQLITE_SIGNED=1
+        fi
         log_info "  Signed: ${resource_native_lib#$UNIVERSAL_APP/}"
     fi
 done < <(find "$UNIVERSAL_APP/Contents/app/resources" -type f \( -name "*.dylib" -o -name "*.jnilib" \) -print0)
 
 if [ "$RESOURCE_NATIVE_SIGNED_COUNT" -eq 0 ]; then
     log_info "  No native libraries found in Contents/app/resources."
+fi
+
+if [ "$JNA_SIGNED_COUNT" -eq 0 ]; then
+    log_error "Bundled $JNA_LIBRARY_FILE was not signed from Contents/app/resources."
+    exit 1
+fi
+
+if [ "$SQLITE_SIGNED" -ne 1 ]; then
+    log_error "Bundled $SQLITE_LIBRARY_FILE was not signed from Contents/app/resources."
+    exit 1
 fi
 
 # Sign runtime bundle
