@@ -144,7 +144,9 @@ fun MainScreen(
         onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
         onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage(it)) },
         onClearContext = { viewModel.send(MainEvent.UserPressStop) },
-        onConsumePendingVoiceInputDraft = { viewModel.send(MainEvent.ConsumePendingVoiceInputDraft) },
+        onConsumePendingVoiceInputDraft = { token ->
+            viewModel.send(MainEvent.ConsumePendingVoiceInputDraft(token))
+        },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
         onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
@@ -176,7 +178,7 @@ fun MainScreenContent(
     onRemoveChatAttachment: (String) -> Unit = {},
     onSendChatMessage: (String) -> Unit = {},
     onClearContext: () -> Unit = {},
-    onConsumePendingVoiceInputDraft: () -> Unit = {},
+    onConsumePendingVoiceInputDraft: (Long) -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
     onSelectApprovalCandidate: (Long) -> Unit = {},
@@ -717,7 +719,7 @@ fun ChatModeContent(
     onRemoveAttachment: (String) -> Unit,
     onSendMessage: (String) -> Unit,
     onCancelProcessing: () -> Unit = {},
-    onConsumePendingVoiceInputDraft: () -> Unit,
+    onConsumePendingVoiceInputDraft: (Long) -> Unit,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
     onStopSpeech: () -> Unit,
@@ -754,12 +756,13 @@ fun ChatModeContent(
         val recognizedText = pendingVoiceInputDraft?.trim().orEmpty()
         if (recognizedText.isEmpty()) return@LaunchedEffect
 
+        val draftToken = pendingVoiceInputDraftToken
         val mergedText = mergeVoiceDraftIntoInputText(inputText.text, recognizedText)
         inputText = TextFieldValue(
             text = mergedText,
             selection = TextRange(mergedText.length),
         )
-        onConsumePendingVoiceInputDraft()
+        onConsumePendingVoiceInputDraft(draftToken)
         focusRequester.requestFocus()
     }
 

@@ -25,6 +25,7 @@ import ru.souz.ui.main.MainState
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import java.util.concurrent.atomic.AtomicBoolean
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceInputUseCase(
@@ -37,6 +38,7 @@ class VoiceInputUseCase(
     private val l = LoggerFactory.getLogger(VoiceInputUseCase::class.java)
     private var lastRecognizedText: String? = null
     private var lastRecognizedAtMs: Long = 0L
+    private val isRecognitionInProgress = AtomicBoolean(false)
 
     private val _outputs = Channel<MainUseCaseOutput>()
     val outputs: Flow<MainUseCaseOutput> = _outputs.consumeAsFlow()
@@ -73,8 +75,17 @@ class VoiceInputUseCase(
                 .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
                 .catch { l.error("Error in audio flow: ${it.message}") }
                 .mapLatest { audioData ->
-                    l.debug("[Sending PCM audio data: ${audioData.size} bytes]")
-                    speechRecognitionProvider.recognize(audioData)
+                    if (!isRecognitionInProgress.compareAndSet(false, true)) {
+                        l.debug("Skipping recognition request because previous one is still in progress")
+                        return@mapLatest ""
+                    }
+
+                    try {
+                        l.debug("[Sending PCM audio data: ${audioData.size} bytes]")
+                        speechRecognitionProvider.recognize(audioData)
+                    } finally {
+                        isRecognitionInProgress.set(false)
+                    }
                 }
 
                 .catch { l.error("Error in recognition: ${it.message}") }
@@ -112,6 +123,11 @@ class VoiceInputUseCase(
 
     suspend fun startRecording(scope: CoroutineScope, isListening: Boolean) {
         if (isListening) return
+        if (isRecognitionInProgress.get()) {
+            val statusMsg = getString(Res.string.voice_status_processing_input)
+            emitState { copy(statusMessage = statusMsg) }
+            return
+        }
         if (!speechRecognitionProvider.enabled) {
             emitVoiceRecognitionUnavailable()
             return
