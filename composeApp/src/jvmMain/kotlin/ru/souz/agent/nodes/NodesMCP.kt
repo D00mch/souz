@@ -20,7 +20,8 @@ class NodesMCP(private val mcpClientManager: McpClientManager) {
             .getOrElse { emptyList() }
 
         val mcpByName: Map<String, GigaToolSetup> = mcpTools.associateBy { it.fn.name }
-        val updatedSettings: AgentSettings = ctx.settings.copy(tools = ctx.settings.tools + mcpByName)
+        val updatedSettings: AgentSettings =
+            ctx.settings.copy(tools = ctx.settings.tools.copy(byName = ctx.settings.tools.byName + mcpByName))
         val updatedActiveTools = (ctx.activeTools + mcpTools.map { it.fn })
             .distinctBy { it.name }
 

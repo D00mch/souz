@@ -149,6 +149,8 @@ kotlin {
             implementation(libs.markdown)
             implementation(libs.jsoup)
             implementation(libs.java.diffUtils)
+            implementation(libs.luajava)
+            implementation(libs.luaj.jse)
 
             // Excel support
             implementation(libs.poi)

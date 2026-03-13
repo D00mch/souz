@@ -32,7 +32,7 @@ import kotlin.coroutines.cancellation.CancellationException
 class GraphBasedAgent(
     di: DI,
     private val logObjectMapper: ObjectMapper,
-) {
+) : Agent {
     private val l = LoggerFactory.getLogger(GraphBasedAgent::class.java)
 
     private val toolsFactory: ToolsFactory by di.instance()
@@ -53,14 +53,14 @@ class GraphBasedAgent(
             contextSize = settingsProvider.contextSize,
         )
     )
-    private val allFunctions: List<GigaRequest.Function> = settings.load().tools.values.map { it.fn }
+    private val allFunctions: List<GigaRequest.Function> = settings.load().tools.byName.values.map { it.fn }
 
     private val _ctx: MutableStateFlow<AgentContext<String>> = MutableStateFlow(createInitialCtx())
-    val currentContext: StateFlow<AgentContext<String>> = _ctx
+    override val currentContext: StateFlow<AgentContext<String>> = _ctx
 
     private val runningJob = AtomicReference<Deferred<*>?>(null)
 
-    val sideEffects: Flow<String> = nodesLLM.sideEffects
+    override val sideEffects: Flow<String> = nodesLLM.sideEffects
 
     private val graph: Graph<String, String> = buildGraph(name = "Agent") {
         // nodes
@@ -94,23 +94,23 @@ class GraphBasedAgent(
         chatErrorToFinish.edgeTo(nodeFinish)
     }
 
-    fun clearContext(): Boolean {
+    override fun clearContext(): Boolean {
         cancelActiveJob()
         return _ctx.tryEmit(createInitialCtx())
     }
 
-    fun setContext(ctx: AgentContext<String>): Boolean {
+    override fun setContext(ctx: AgentContext<String>): Boolean {
         cancelActiveJob()
         return _ctx.tryEmit(ctx)
     }
 
-    fun updateSystemPrompt(prompt: String) {
+    override fun updateSystemPrompt(prompt: String) {
         val currentModel = settingsProvider.gigaModel
         settingsProvider.setSystemPromptForModel(currentModel, prompt)
         _ctx.tryEmit(currentContext.value.copy(systemPrompt = prompt))
     }
 
-    fun resetSystemPrompt() {
+    override fun resetSystemPrompt() {
         val currentModel = settingsProvider.gigaModel
         settingsProvider.setSystemPromptForModel(currentModel, null)
         _ctx.tryEmit(
@@ -120,7 +120,7 @@ class GraphBasedAgent(
         )
     }
 
-    fun updateModel(model: GigaModel): String {
+    override fun setModel(model: GigaModel): String {
         settingsProvider.gigaModel = model
         val newSettings = settings.load().copy(model = model.alias)
         settings.store(newSettings)
@@ -131,24 +131,24 @@ class GraphBasedAgent(
         return promptForModel
     }
 
-    fun updateTemperature(temperature: Float) {
+    override fun setTemperature(temperature: Float) {
         val newSettings = settings.load().copy(temperature = temperature)
         settings.store(newSettings)
         _ctx.tryEmit(currentContext.value.copy(settings = newSettings))
     }
 
-    fun updateContextSize(contextSize: Int) {
+    override fun setContextSize(contextSize: Int) {
         val newSettings = settings.load().copy(contextSize = contextSize)
         settings.store(newSettings)
         _ctx.tryEmit(currentContext.value.copy(settings = newSettings))
     }
 
-    fun cancelActiveJob() {
+    override fun cancelActiveJob() {
         runningJob.load()?.cancel(CancellationException("Cleared by force"))
     }
 
     /** Execute one job at a time */
-    suspend fun execute(input: String): String {
+    override suspend fun execute(input: String): String {
         cancelActiveJob()
         val ctx = currentContext.value.copy(input = input)
 

@@ -114,7 +114,7 @@ class SettingsViewModelTest {
         every { settingsProvider.temperature } returns 0.7f
 
         val graphBasedAgent = mockk<GraphBasedAgent>()
-        every { graphBasedAgent.updateModel(any()) } answers {
+        every { graphBasedAgent.setModel(any()) } answers {
             val model = firstArg<GigaModel>()
             "prompt-for-${model.alias}"
         }
@@ -153,7 +153,7 @@ class SettingsViewModelTest {
         assertEquals(expectedVoiceRecognitionModel, voiceRecognitionModelValue)
         assertEquals("prompt-for-${expectedLlmModel.alias}", state.systemPrompt)
 
-        verify(exactly = 1) { graphBasedAgent.updateModel(expectedLlmModel) }
+        verify(exactly = 1) { graphBasedAgent.setModel(expectedLlmModel) }
         verify(exactly = 1) { VectorDB.clearAllData() }
     }
 }

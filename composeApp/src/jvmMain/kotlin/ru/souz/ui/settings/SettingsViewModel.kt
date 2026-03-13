@@ -157,7 +157,7 @@ class SettingsViewModel(
             is SelectModel -> {
                 if (event.model !in currentState.availableLlmModels) return
                 flushPendingSystemPromptSave()
-                val newPrompt = graphBasedAgent.updateModel(event.model)
+                val newPrompt = graphBasedAgent.setModel(event.model)
                 setState { copy(gigaModel = event.model, systemPrompt = newPrompt) }
                 fetchBalance()
             }
@@ -193,7 +193,7 @@ class SettingsViewModel(
                 val newContextSize = normalized.toIntOrNull()?.takeIf { it > 0 }
                 if (newContextSize != null) {
                     keysProvider.contextSize = newContextSize
-                    graphBasedAgent.updateContextSize(newContextSize)
+                    graphBasedAgent.setContextSize(newContextSize)
                 }
                 setState {
                     copy(
@@ -208,7 +208,7 @@ class SettingsViewModel(
                 val newTemperature = normalized.toFloatOrNull()
                 if (newTemperature != null) {
                     keysProvider.temperature = newTemperature
-                    graphBasedAgent.updateTemperature(newTemperature)
+                    graphBasedAgent.setTemperature(newTemperature)
                 }
                 setState {
                     copy(
@@ -360,7 +360,7 @@ class SettingsViewModel(
             available = availableLlmModels,
         ) { keysProvider.defaultLlmModel(llmBuildProfile) }
         val selectedPrompt = if (selectedLlmModel != currentState.gigaModel) {
-            graphBasedAgent.updateModel(selectedLlmModel)
+            graphBasedAgent.setModel(selectedLlmModel)
         } else {
             keysProvider.getSystemPromptForModel(selectedLlmModel)
                 ?: defaultSystemPromptForRegion(keysProvider.regionProfile)

@@ -287,11 +287,11 @@ class ChatUseCase(
     fun snapshotContext(): AgentContext<String>? = activeAgent().currentContext.value
 
     fun updateModel(model: GigaModel) {
-        activeAgent().updateModel(model)
+        activeAgent().setModel(model)
     }
 
     fun updateContextSize(size: Int) {
-        activeAgent().updateContextSize(size)
+        activeAgent().setContextSize(size)
     }
 
     fun onCleared() {

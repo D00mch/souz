@@ -22,12 +22,28 @@ data class AgentContext<I>(
     ): AgentContext<O> = AgentContext(input = transform(input), settings, history, activeTools, systemPrompt)
 }
 
+/** Wrapper to simplify accessing tools related data */
+data class AgentTools(
+    val byCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
+    val byName: Map<String, GigaToolSetup> = byCategory.values.flatMap { it.entries }
+        .associate { it.key to it.value },
+    val categoryByName: Map<String, ToolCategory> = buildMap {
+        byCategory.forEach { (category, name2tool) ->
+            name2tool.keys.forEach { name -> put(name, category) }
+        }
+    }
+)
+
 data class AgentSettings(
     val model: String,
     val temperature: Float,
-    val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
+    val tools: AgentTools,
     val contextSize: Int = DEFAULT_MAX_TOKENS,
-    val tools: Map<String, GigaToolSetup> = toolsByCategory.values
-        .flatMap { it.entries }
-        .associate { it.key to it.value }
-)
+) {
+    constructor(
+        model: String,
+        temperature: Float,
+        toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
+        contextSize: Int = DEFAULT_MAX_TOKENS,
+    ): this(model, temperature, AgentTools(toolsByCategory), contextSize)
+}
