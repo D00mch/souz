@@ -1,4 +1,4 @@
-package ru.souz.agent.lua
+package ru.souz.agent.runtime
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -12,39 +12,31 @@ import org.luaj.vm2.Varargs
 import org.luaj.vm2.lib.OneArgFunction
 import org.luaj.vm2.lib.VarArgFunction
 import org.luaj.vm2.lib.jse.JsePlatform
-import ru.souz.agent.AgentToolExecutor
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.gigaJsonMapper
 import kotlin.coroutines.CoroutineContext
 
-class LuaScriptRuntime(
+class LuaRuntime(
     private val toolExecutor: AgentToolExecutor,
 ) {
     suspend fun execute(
         code: String,
         settings: AgentSettings,
         activeTools: List<GigaRequest.Function>,
-    ): String {
-        val parentContext = currentCoroutineContext()
-        return withContext(Dispatchers.IO) {
-            try {
-                val globals = createGlobals(
-                    settings = settings,
-                    activeTools = activeTools.associateBy { it.name },
-                    parentContext = parentContext,
-                )
-                val chunk = globals.load(code, "agent.lua")
-                val result = chunk.invoke().arg1().takeUnless { it.isnil() } ?: globals.get("result")
-                luaResultToString(result)
-            } catch (e: LuaError) {
-                throw LuaExecutionException(
-                    message = e.message ?: "Lua execution failed",
-                    code = code,
-                    cause = e,
-                )
-            }
+    ): String = withContext(Dispatchers.IO) {
+        try {
+            val globals = createGlobals(
+                settings = settings,
+                activeTools = activeTools.associateBy { it.name },
+                parentContext = currentCoroutineContext(),
+            )
+            val chunk = globals.load(code, "agent.lua")
+            val result = chunk.invoke().arg1().takeUnless { it.isnil() } ?: globals.get("result")
+            luaResultToString(result)
+        } catch (e: LuaError) {
+            throw LuaExecutionException(message = e.message ?: "Lua execution failed", code, e)
         }
     }
 
@@ -54,9 +46,7 @@ class LuaScriptRuntime(
         parentContext: CoroutineContext,
     ): Globals {
         val globals = JsePlatform.standardGlobals()
-        // Keep the runtime focused on the provided tools and pure Lua helpers.
-        listOf("dofile", "loadfile", "require", "package", "io", "os", "debug", "luajava")
-            .forEach { globals.set(it, LuaValue.NIL) }
+        forbidden.forEach { globals.set(it, LuaValue.NIL) }
 
         val toolsTable = LuaTable()
         activeTools.forEach { (name, fn) ->
@@ -87,7 +77,7 @@ class LuaScriptRuntime(
             )
         })
         globals.set("json_encode", object : OneArgFunction() {
-            override fun call(arg: LuaValue): LuaValue = LuaValue.valueOf(
+            override fun call(arg: LuaValue): LuaValue = valueOf(
                 gigaJsonMapper.writeValueAsString(luaToJava(arg))
             )
         })
@@ -246,6 +236,10 @@ class LuaScriptRuntime(
         if (fromIndex > args.narg()) return LuaValue.NONE
         val values = Array(args.narg() - fromIndex + 1) { offset -> args.arg(fromIndex + offset) }
         return LuaValue.varargsOf(values)
+    }
+
+    companion object {
+        val forbidden = listOf("dofile", "loadfile", "require", "package", "io", "os", "debug", "luajava")
     }
 }
 

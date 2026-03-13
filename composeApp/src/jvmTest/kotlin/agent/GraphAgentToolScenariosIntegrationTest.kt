@@ -74,7 +74,7 @@ class GraphAgentToolScenariosIntegrationTest {
                 every { gigaModel } returns selectedModel
                 every { requestTimeoutMillis } returns 60_000L
                 every { temperature } returns 0.2f
-                every { systemPrompt } returns "Будь полезен. Выполняй инструкции с помощью тулов."
+                every { getSystemPromptForModel(any()) } returns "Будь полезен. Выполняй инструкции с помощью тулов."
             }
         }
     }

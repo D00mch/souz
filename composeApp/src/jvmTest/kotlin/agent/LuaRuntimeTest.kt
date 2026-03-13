@@ -6,10 +6,10 @@ import kotlinx.coroutines.test.runTest
 import org.luaj.vm2.LuaError
 import org.kodein.di.DI
 import org.kodein.di.instance
-import ru.souz.agent.AgentToolExecutor
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.engine.AgentSettings
-import ru.souz.agent.lua.LuaExecutionException
-import ru.souz.agent.lua.LuaScriptRuntime
+import ru.souz.agent.runtime.LuaExecutionException
+import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
 import ru.souz.giga.toGiga
@@ -22,7 +22,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
-class LuaScriptRuntimeTest {
+class LuaRuntimeTest {
     @Test
     fun `lua runtime can call registered tool`() = runBlocking {
         val calculator = ToolCalculator().toGiga()
@@ -33,7 +33,7 @@ class LuaScriptRuntimeTest {
                 ToolCategory.CALCULATOR to mapOf(calculator.fn.name to calculator)
             ),
         )
-        val runtime = LuaScriptRuntime(
+        val runtime = LuaRuntime(
             toolExecutor = AgentToolExecutor(mockk<TelemetryService>(relaxed = true))
         )
 
@@ -51,7 +51,7 @@ class LuaScriptRuntimeTest {
 
     @Test
     fun `invalid lua is wrapped with source preview`() = runBlocking {
-        val runtime = LuaScriptRuntime(
+        val runtime = LuaRuntime(
             toolExecutor = AgentToolExecutor(mockk<TelemetryService>(relaxed = true))
         )
         val settings = AgentSettings(
@@ -89,7 +89,7 @@ return file:read("*a")
         val settingsProvider: SettingsProvider by di.instance()
         val toolsFactory: ToolsFactory by di.instance()
 
-        val runtime = LuaScriptRuntime(toolExecutor)
+        val runtime = LuaRuntime(toolExecutor)
         val error = assertFailsWith<LuaExecutionException> {
             runtime.execute(
                 code = code,
@@ -119,7 +119,7 @@ return "answer=" .. total
         val settingsProvider: SettingsProvider by di.instance()
         val toolsFactory: ToolsFactory by di.instance()
 
-        val runtime = LuaScriptRuntime(toolExecutor)
+        val runtime = LuaRuntime(toolExecutor)
         val result = runtime.execute(
             code = code,
             settings = AgentSettings(

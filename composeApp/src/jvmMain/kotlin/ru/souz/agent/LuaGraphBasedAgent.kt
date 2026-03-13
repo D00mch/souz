@@ -96,7 +96,8 @@ class LuaGraphBasedAgent(
     override fun resetSystemPrompt() {
         val currentModel = settingsProvider.gigaModel
         settingsProvider.setSystemPromptForModel(currentModel, null)
-        _ctx.tryEmit(currentContext.value.copy(systemPrompt = DEFAULT_LUA_SYSTEM_PROMPT))
+        val new = currentContext.value.copy(systemPrompt = defaultSystemPromptForRegion(settingsProvider.regionProfile))
+        _ctx.tryEmit(new)
     }
 
     override fun setModel(model: GigaModel): String {
@@ -104,7 +105,8 @@ class LuaGraphBasedAgent(
         val newSettings = settings.load().copy(model = model.alias)
         settings.store(newSettings)
 
-        val promptForModel = settingsProvider.getSystemPromptForModel(model) ?: DEFAULT_LUA_SYSTEM_PROMPT
+        val promptForModel = settingsProvider.getSystemPromptForModel(model)
+            ?: defaultSystemPromptForRegion(settingsProvider.regionProfile)
         _ctx.tryEmit(currentContext.value.copy(settings = newSettings, systemPrompt = promptForModel))
         return promptForModel
     }
@@ -159,7 +161,8 @@ class LuaGraphBasedAgent(
 
     private fun createInitialCtx(): AgentContext<String> {
         val currentModel = settingsProvider.gigaModel
-        val prompt = settingsProvider.getSystemPromptForModel(currentModel) ?: DEFAULT_LUA_SYSTEM_PROMPT
+        val prompt = settingsProvider.getSystemPromptForModel(currentModel)
+            ?: defaultSystemPromptForRegion(settingsProvider.regionProfile)
         return AgentContext(
             input = "",
             settings = settings.load(),
@@ -169,10 +172,3 @@ class LuaGraphBasedAgent(
         )
     }
 }
-
-val DEFAULT_LUA_SYSTEM_PROMPT = """
-Work as an autonomous desktop assistant that solves tasks by writing Lua code for immediate execution.
-Prefer tools (not Lua libraries) when possible.
-When you are not sure if the path is correct, try to find the file by tools first.
-Keep the final answer concise, and return Markdown when formatting helps.
-""".trimIndent()

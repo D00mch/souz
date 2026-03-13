@@ -6,8 +6,8 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.withContext
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Node
-import ru.souz.agent.lua.LuaExecutionException
-import ru.souz.agent.lua.LuaScriptRuntime
+import ru.souz.agent.runtime.LuaExecutionException
+import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.giga.GigaChatAPI
 import ru.souz.giga.GigaException
 import ru.souz.giga.GigaMessageRole
@@ -17,9 +17,12 @@ import ru.souz.giga.GigaResponse
 // TODO: review after agent
 class NodesLua(
     private val llmApi: GigaChatAPI,
-    private val luaScriptRuntime: LuaScriptRuntime,
+    private val luaRuntime: LuaRuntime,
 ) {
     val sideEffects: Flow<String> = emptyFlow()
+
+    private val systemPrompt: String =
+        LUA_AGENT_SYSTEM_PROMPT.format(LuaRuntime.forbidden.joinToString(", ") { "`$it`" })
 
     fun plan(name: String = "Lua LLM"): Node<String, String> = Node(name) { ctx ->
         val response = withContext(Dispatchers.IO) {
@@ -56,14 +59,14 @@ class NodesLua(
         ctx: AgentContext<String>,
         code: String,
     ): String = try {
-        luaScriptRuntime.execute(
+        luaRuntime.execute(
             code = code,
             settings = ctx.settings,
             activeTools = ctx.activeTools,
         )
     } catch (e: LuaExecutionException) {
         val repairedCode = repairLuaCode(ctx, code, e)
-        luaScriptRuntime.execute(
+        luaRuntime.execute(
             code = repairedCode,
             settings = ctx.settings,
             activeTools = ctx.activeTools,
@@ -95,7 +98,7 @@ class NodesLua(
         basePrompt: String,
         tools: List<GigaRequest.Function>,
     ): String = buildString {
-        appendLine(LUA_AGENT_SYSTEM_PROMPT)
+        appendLine(systemPrompt)
         appendLine()
         appendLine("Additional instructions from the app/user:")
         appendLine(basePrompt.ifBlank { "No extra instructions." })
@@ -228,7 +231,7 @@ class NodesLua(
         basePrompt: String,
         tools: List<GigaRequest.Function>,
     ): String = buildString {
-        appendLine(LUA_AGENT_SYSTEM_PROMPT)
+        appendLine(systemPrompt)
         appendLine()
         appendLine(LUA_REPAIR_SYSTEM_PROMPT)
         appendLine()
@@ -250,7 +253,7 @@ Your response is executed immediately in a Lua runtime. Follow these rules stric
 3. Tool calls return host-decoded Lua values. If a returned string itself contains JSON text, call `json_decode(...)` manually.
 4. End the script with `return "final markdown for the user"`. The returned string is shown to the user verbatim.
 5. Never paste raw multiline text inside quoted string literals. Keep tool output in variables and pass variables directly. If you need a multiline literal, use Lua long brackets `[[...]]`.
-6. Do not use `require`, `package`, `io`, `os`, `debug`, or invented helpers.
+6. Do not use %s, or invented helpers.
 7. If no tool is needed, still return Lua code that directly returns the answer.
 """
 

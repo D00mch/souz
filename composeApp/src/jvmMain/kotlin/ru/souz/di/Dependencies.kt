@@ -7,10 +7,10 @@ import ru.souz.db.SettingsProviderImpl
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
-import ru.souz.agent.AgentToolExecutor
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.GraphBasedAgent
 import ru.souz.agent.LuaGraphBasedAgent
-import ru.souz.agent.lua.LuaScriptRuntime
+import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesLLM
@@ -249,7 +249,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { NodesErrorHandling() }
     bindSingleton { NodesCommon(instance(), instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
-    bindSingleton { LuaScriptRuntime(instance()) }
+    bindSingleton { LuaRuntime(instance()) }
     bindSingleton { NodesLua(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
     bindSingleton { NodesSummarization(instance(), instance()) }

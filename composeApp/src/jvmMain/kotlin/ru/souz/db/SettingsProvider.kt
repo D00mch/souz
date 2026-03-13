@@ -22,7 +22,6 @@ interface SettingsProvider {
     var openaiKey: String?
     var saluteSpeechKey: String?
     var supportEmail: String?
-    var systemPrompt: String?
     var defaultCalendar: String?
     var regionProfile: String
     var gigaModel: GigaModel
@@ -129,7 +128,6 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     override var openaiKey: String? by keyDelegate(configKey = OPENAI_KEY, envKey = "OPENAI_API_KEY")
     override var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
     override var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
-    override var systemPrompt: String? by keyDelegate(configKey = SYSTEM_PROMPT, envKey = SYSTEM_PROMPT)
     override var defaultCalendar: String? by keyDelegate(configKey = DEFAULT_CALENDAR, envKey = DEFAULT_CALENDAR)
     override var regionProfile: String
         get() {

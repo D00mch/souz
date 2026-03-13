@@ -22,7 +22,6 @@ import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.db.SettingsProvider
-import ru.souz.di.mainDiModule
 import ru.souz.giga.*
 import ru.souz.tool.*
 import kotlin.concurrent.atomics.AtomicReference
@@ -185,10 +184,8 @@ class GraphBasedAgent(
 
     private fun createInitialCtx(): AgentContext<String> {
         val currentModel = settingsProvider.gigaModel
-        val defaultPrompt = defaultSystemPromptForRegion(settingsProvider.regionProfile)
         val prompt = settingsProvider.getSystemPromptForModel(currentModel)
-            ?: settingsProvider.systemPrompt?.takeUnless(::isDefaultSystemPrompt)
-            ?: defaultPrompt
+            ?: defaultSystemPromptForRegion(settingsProvider.regionProfile)
         return AgentContext(
             input = "",
             settings = settings.load(),
@@ -198,7 +195,6 @@ class GraphBasedAgent(
         )
     }
 }
-
 
 fun defaultSystemPromptForRegion(regionProfile: String): String =
     if (regionProfile.equals("en", ignoreCase = true)) {
@@ -241,10 +237,3 @@ val DEFAULT_SYSTEM_PROMPT_EN = """
 ## Critically Important:
 Your task is to ACT, not to chat.
 """.trimIndent()
-
-suspend fun main() {
-    val di = DI.invoke { import(mainDiModule) }
-    val graph: GraphBasedAgent by di.instance()
-    val result = graph.execute("Hey")
-    println(result)
-}

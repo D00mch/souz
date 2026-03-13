@@ -1,7 +1,7 @@
 package ru.souz.agent.nodes
 
 import org.slf4j.LoggerFactory
-import ru.souz.agent.AgentToolExecutor
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.agent.engine.Node
