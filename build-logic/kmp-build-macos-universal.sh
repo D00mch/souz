@@ -21,7 +21,6 @@ set -Eeuo pipefail  # Exit on error; fail on unset vars and pipeline errors
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 RESOURCES_DIR="$PROJECT_DIR/composeApp/src/jvmMain/resources"
-GENERATED_NATIVE_RESOURCES_DIR="$PROJECT_DIR/composeApp/build/generated/native-resources"
 BUILD_DIR="$PROJECT_DIR/composeApp/build/compose/binaries"
 COMPOSE_RUNTIME_CACHE_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/main/runtime"
 COMPOSE_CHECK_RUNTIME_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/checkRuntime"
@@ -355,6 +354,10 @@ if [ -z "$JDK_X64" ]; then
     JDK_X64="$(resolve_jdk_home x86_64 JDK_X64)"
 fi
 
+# Gradle tasks without explicit -Dorg.gradle.java.home (clean/--stop) should
+# still run on a known supported JDK.
+GRADLE_JAVA_HOME="${MACOS_GRADLE_JAVA_HOME:-$JDK_ARM64}"
+
 # Signing identities - from environment or local.properties
 # These are the sertificates names (Common Name)
 APP_SIGNING_IDENTITY="${MACOS_APP_SIGNING_IDENTITY:-$(read_property 'macos.signing.app.identity' "$LOCAL_PROPERTIES")}"
@@ -414,6 +417,7 @@ log_info "  Version: $VERSION"
 log_info "  Build Number: $BUILD_NUMBER"
 log_info "  JDK ARM64: $JDK_ARM64"
 log_info "  JDK x64: $JDK_X64"
+log_info "  Gradle JDK: $GRADLE_JAVA_HOME"
 log_info "  App Signing Identity: ${APP_SIGNING_IDENTITY:-(not set)}"
 log_info "  Installer Signing Identity: ${INSTALLER_SIGNING_IDENTITY:-(not set)}"
 log_info "  Code Signing Timestamp: $CODESIGN_TIMESTAMP_FLAG"
@@ -462,6 +466,12 @@ if [ ! -d "$JDK_X64" ]; then
     log_info "Please install x86_64 JDK or set JDK_X64 environment variable"
     log_info "Or add to local.properties: macos.jdk.x64=/path/to/jdk"
     log_info "Download from: https://www.azul.com/downloads/?os=macos&architecture=x86-64-bit&package=jdk"
+    exit 1
+fi
+
+if [ ! -d "$GRADLE_JAVA_HOME" ]; then
+    log_error "Gradle JDK not found at: $GRADLE_JAVA_HOME"
+    log_info "Set MACOS_GRADLE_JAVA_HOME to a valid JDK path."
     exit 1
 fi
 
@@ -609,7 +619,7 @@ log_step "Cleaning previous build artifacts"
 cd "$PROJECT_DIR"
 
 log_info "Running Gradle clean..."
-./gradlew clean --quiet
+./gradlew clean --quiet -Dorg.gradle.java.home="$GRADLE_JAVA_HOME"
 
 log_success "Clean complete"
 
@@ -620,36 +630,23 @@ log_success "Clean complete"
 mkdir -p "$UNIVERSAL_BUILD_DIR"
 
 # =============================================================================
-# Prepare native JNI resources (ComposeApp conventions)
+# Validate native JNI resources bundled from composeApp/src/jvmMain/resources
 # =============================================================================
 
-log_step "Preparing native JNI resources"
+log_step "Validating native JNI resources"
 
 cd "$PROJECT_DIR"
 
-# The compose app conventions plugin defines these tasks and wires them into
-# resource/packaging tasks. Running them here makes failures explicit early.
-log_info "Syncing TDLight/JNativeHook/JNA/sqlite macOS native binaries..."
-./gradlew \
-    :composeApp:syncTdlightNativeMacosArm64 \
-    :composeApp:syncTdlightNativeMacosX64 \
-    :composeApp:syncJnativehookNativeMacosArm64 \
-    :composeApp:syncJnativehookNativeMacosX64 \
-    :composeApp:syncJnaNativeMacosArm64 \
-    :composeApp:syncJnaNativeMacosX64 \
-    :composeApp:syncSqliteNativeMacosArm64 \
-    :composeApp:syncSqliteNativeMacosX64 \
-    --quiet
-
-# Verify expected files exist (as configured in ComposeAppConventionsPlugin)
-TDLIGHT_ARM64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-arm64/libtdjni.macos_arm64.dylib"
-TDLIGHT_X64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-x64/libtdjni.macos_amd64.dylib"
-JNATIVEHOOK_ARM64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-arm64/libJNativeHook.dylib"
-JNATIVEHOOK_X64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-x64/libJNativeHook.dylib"
-JNA_ARM64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-arm64/$JNA_LIBRARY_FILE"
-JNA_X64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-x64/$JNA_LIBRARY_FILE"
-SQLITE_ARM64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-arm64/$SQLITE_LIBRARY_FILE"
-SQLITE_X64="$GENERATED_NATIVE_RESOURCES_DIR/darwin-x64/$SQLITE_LIBRARY_FILE"
+log_info "Checking TDLight/JNativeHook/JNA/sqlite macOS native binaries..."
+TDLIGHT_ARM64="$RESOURCES_DIR/darwin-arm64/libtdjni.macos_arm64.dylib"
+TDLIGHT_X64="$RESOURCES_DIR/darwin-x64/libtdjni.macos_amd64.dylib"
+JNATIVEHOOK_ARM64="$RESOURCES_DIR/darwin-arm64/libJNativeHook.dylib"
+JNATIVEHOOK_X64="$RESOURCES_DIR/darwin-x64/libJNativeHook.dylib"
+JNA_ARM64="$RESOURCES_DIR/common/darwin-arm64/$JNA_LIBRARY_FILE"
+JNA_X64="$RESOURCES_DIR/common/darwin-x64/$JNA_LIBRARY_FILE"
+SQLITE_ARM64="$RESOURCES_DIR/common/darwin-arm64/$SQLITE_LIBRARY_FILE"
+SQLITE_X64="$RESOURCES_DIR/common/darwin-x64/$SQLITE_LIBRARY_FILE"
+SQLITE_UNIVERSAL="$RESOURCES_DIR/common/$SQLITE_LIBRARY_FILE"
 
 for file in \
     "$TDLIGHT_ARM64" "$TDLIGHT_X64" \
@@ -662,7 +659,19 @@ for file in \
     fi
 done
 
-log_success "Native JNI resources are prepared"
+assert_file_exists "$SQLITE_UNIVERSAL" "Bundled sqlite universal library"
+
+assert_file_arch "$TDLIGHT_ARM64" "arm64" "TDLight arm64 library"
+assert_file_arch "$TDLIGHT_X64" "x86_64" "TDLight x64 library"
+assert_file_arch "$JNATIVEHOOK_ARM64" "arm64" "JNativeHook arm64 library"
+assert_file_arch "$JNATIVEHOOK_X64" "x86_64" "JNativeHook x64 library"
+assert_file_arch "$JNA_ARM64" "arm64" "JNA arm64 library"
+assert_file_arch "$JNA_X64" "x86_64" "JNA x64 library"
+assert_file_arch "$SQLITE_ARM64" "arm64" "sqlite arm64 library"
+assert_file_arch "$SQLITE_X64" "x86_64" "sqlite x64 library"
+assert_file_arch "$SQLITE_UNIVERSAL" "universal" "sqlite universal library"
+
+log_success "Native JNI resources are valid"
 
 # =============================================================================
 # Build x86_64 version
@@ -673,7 +682,7 @@ log_step "Building x86_64 version"
 cd "$PROJECT_DIR"
 
 # Stop any running Gradle daemons
-./gradlew --stop 2>/dev/null || true
+./gradlew --stop -Dorg.gradle.java.home="$GRADLE_JAVA_HOME" 2>/dev/null || true
 
 # Clean previous builds
 rm -rf "$BUILD_DIR"
@@ -742,7 +751,7 @@ log_success "x86_64 build complete"
 log_step "Building arm64 version"
 
 # Stop daemon to switch JDK
-./gradlew --stop
+./gradlew --stop -Dorg.gradle.java.home="$GRADLE_JAVA_HOME"
 
 # Clean binaries directory
 rm -rf "$BUILD_DIR"
