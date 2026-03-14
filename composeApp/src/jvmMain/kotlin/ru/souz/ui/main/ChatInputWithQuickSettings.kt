@@ -132,7 +132,9 @@ private val StopIconSize = 10.dp
 private val SendButtonInactiveBackground = Color(0x0FFFFFFF)
 private val SendButtonInactiveBorder = Color(0x00000000)
 private val SendButtonInactiveIcon = Color(0x33FFFFFF)
-private val SendButtonActiveBorder = Color(0x00000000)
+private val SendButtonActiveBorder = Color(0x26FFFFFF)
+private val SendButtonActiveIcon = Color(0xFF1E2228)
+private val SendButtonActiveGlow = Color(0x4DFFFFFF)
 private val StopButtonBackground = Color(0xE61E1E28)
 private val StopButtonBorder = Color(0x26FFFFFF)
 private val StopButtonIcon = Color(0xE6FFFFFF)
@@ -149,8 +151,8 @@ private val EaseInOut = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 private val BounceEasing = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
 private val SendButtonActiveGradient = Brush.linearGradient(
     colors = listOf(
-        Color(0xFF8B5CF6),
-        Color(0xFF6366F1)
+        Color(0xFFFFFFFF),
+        Color(0xFFF0F2F6)
     )
 )
 
@@ -945,7 +947,7 @@ private fun SendMessageButton(
     }
     val iconColor = when {
         isProcessing -> StopButtonIcon
-        isActive -> Color.White
+        isActive -> SendButtonActiveIcon
         else -> SendButtonInactiveIcon
     }
 
@@ -973,8 +975,8 @@ private fun SendMessageButton(
                 .shadow(
                     elevation = if (isActive && !isProcessing) 10.dp else 0.dp,
                     shape = CircleShape,
-                    ambientColor = Color(0x408B5CF6),
-                    spotColor = Color(0x408B5CF6),
+                    ambientColor = SendButtonActiveGlow,
+                    spotColor = SendButtonActiveGlow,
                     clip = false
                 )
                 .scale(scale)
