@@ -274,6 +274,10 @@ compose.desktop {
             // Safety net: never let JNativeHook extract into Contents/app (which breaks code signature).
             jvmArgs("-Djnativehook.lib.path=/tmp/souz-jnativehook")
             jvmArgs("-Dapple.awt.application.appearance=system")
+            // Needed for reflective access to AWT peers to attach NSVisualEffectView on macOS.
+            jvmArgs("--add-opens=java.desktop/java.awt=ALL-UNNAMED")
+            jvmArgs("--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED")
+            jvmArgs("--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED")
             jvmArgs("-Xdock:icon=src/jvmMain/resources/icon-light.icns")
             jvmArgs("-Xdock:name=$distributionDockName")
         }

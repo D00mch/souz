@@ -42,6 +42,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Mic
@@ -95,6 +96,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.coroutines.delay
 import kotlin.math.max
 import ru.souz.giga.GigaModel
@@ -106,30 +108,34 @@ import org.jetbrains.compose.resources.stringResource
 private val AccentTurquoise = Color(0xFF12E0B5)
 private val AccentTurquoiseDark = Color(0xFF0EA889)
 
-private val GlassBackground = Color(0x4D000000)
-private val GlassBackgroundDark = Color(0xFA111827)
-private val GlassBorder = Color(0x26FFFFFF)
+private val GlassBackground = Color(0xD9202226)
+private val GlassBackgroundDark = Color(0xE61F2026)
+private val GlassBorder = Color(0x1AFFFFFF)
 private val GlassBorderLight = Color(0x1AFFFFFF)
-private val GlassDivider = Color(0x0FFFFFFF)
+private val GlassDivider = Color(0x14FFFFFF)
 
 private val TextPrimary = Color(0xE6FFFFFF)
-private val TextSecondary = Color(0xB3FFFFFF)
-private val TextTertiary = Color(0x80FFFFFF)
-private val TextDisabled = Color(0x66FFFFFF)
+private val TextSecondary = Color(0x99FFFFFF)
+private val TextTertiary = Color(0x66FFFFFF)
+private val TextDisabled = Color(0x40FFFFFF)
 
 private val HoverBackground = Color(0x0DFFFFFF)
 private val ActiveBackground = Color(0x1A12E0B5)
-private val ControlTextMuted = Color(0x59FFFFFF)
-private val ControlTextHover = Color(0x99FFFFFF)
+private val SelectMenuSelectedBackground = Color(0x2E3F434A)
+private val SelectMenuSelectedText = Color(0xE6FFFFFF)
+private val ControlTextMuted = Color(0x80FFFFFF)
+private val ControlTextHover = Color(0xB3FFFFFF)
 private val ControlButtonSize = 32.dp
 private val ControlIconSize = 16.dp
-private val VoiceButtonSize = 36.dp
-private val VoiceIconSize = 18.dp
+private val VoiceButtonSize = 32.dp
+private val VoiceIconSize = 16.dp
 private val StopIconSize = 10.dp
-private val SendButtonInactiveBackground = Color(0x14FFFFFF)
-private val SendButtonInactiveBorder = Color(0x1AFFFFFF)
-private val SendButtonInactiveIcon = Color(0x66FFFFFF)
-private val SendButtonActiveBorder = Color(0x6612E0B5)
+private val SendButtonInactiveBackground = Color(0x0FFFFFFF)
+private val SendButtonInactiveBorder = Color(0x00000000)
+private val SendButtonInactiveIcon = Color(0x33FFFFFF)
+private val SendButtonActiveBorder = Color(0x26FFFFFF)
+private val SendButtonActiveIcon = Color(0xFF1E2228)
+private val SendButtonActiveGlow = Color(0x4DFFFFFF)
 private val StopButtonBackground = Color(0xE61E1E28)
 private val StopButtonBorder = Color(0x26FFFFFF)
 private val StopButtonIcon = Color(0xE6FFFFFF)
@@ -139,15 +145,15 @@ private val ControlTooltipBorder = Color(0x33FFFFFF)
 private val VoiceStopColor = Color(0xFFEF4444)
 private val VoiceStopBackground = Color(0x33EF4444)
 private val VoiceStopBorder = Color(0x66EF4444)
-private val VoiceHoverBorder = Color(0x669CA3AF)
-private val VoiceListeningBackground = Color(0x3312E0B5)
-private val VoiceIdleIcon = Color(0x80FFFFFF)
+private val VoiceHoverBorder = Color.Transparent
+private val VoiceListeningBackground = Color(0x0FFFFFFF)
+private val VoiceIdleIcon = Color(0x4DFFFFFF)
 private val EaseInOut = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 private val BounceEasing = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
 private val SendButtonActiveGradient = Brush.linearGradient(
     colors = listOf(
-        Color(0x4D12E0B5),
-        Color(0x3312E0B5)
+        Color(0xFFFFFFFF),
+        Color(0xFFF0F2F6)
     )
 )
 
@@ -185,7 +191,7 @@ internal fun ChatInputWithQuickSettings(
     val hasSendPayload = (hasText || hasAttachments) && enabled
     val canSendOrCancel = hasSendPayload || isProcessing
     val canToggleMic = enabled || isListening || speakingMessageId != null
-    val containerShape = RoundedCornerShape(24.dp)
+    val containerShape = RoundedCornerShape(16.dp)
     var isModelDropdownOpen by remember { mutableStateOf(false) }
     var isContextDropdownOpen by remember { mutableStateOf(false) }
     val windowInfo = LocalWindowInfo.current
@@ -209,19 +215,23 @@ internal fun ChatInputWithQuickSettings(
     Box(
         modifier = modifier
             .clip(containerShape)
-            .border(1.dp, if (isFileDragActive) Color(0x6612E0B5) else GlassBorder, containerShape)
+            .border(
+                1.dp,
+                if (isFileDragActive) Color(0x6612E0B5) else GlassBorder,
+                containerShape
+            )
     ) {
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .background(GlassBackground)
-                .blur(14.dp)
+                .blur(40.dp)
         )
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(GlassBackground)
+                .background(Color.Transparent)
         ) {
             QuickSettingsPanel(
                 modelOptions = modelOptions,
@@ -267,8 +277,8 @@ internal fun ChatInputWithQuickSettings(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 12.dp)
-                    .heightIn(min = 44.dp, max = 120.dp)
+                    .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)
+                    .heightIn(min = 44.dp, max = 160.dp)
                     .onPreviewKeyEvent { event ->
                         when {
                             event.type == KeyEventType.KeyDown && event.key == Key.Enter && !event.isShiftPressed -> {
@@ -286,19 +296,23 @@ internal fun ChatInputWithQuickSettings(
                             else -> false
                         }
                     },
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Bottom
             ) {
-                AttachFilesButton(
-                    enabled = enabled,
-                    filesCount = attachedFiles.size,
-                    isDragActive = isFileDragActive,
-                    onClick = onAttachClick
-                )
+                Box(modifier = Modifier.padding(bottom = 2.dp)) {
+                    AttachFilesButton(
+                        enabled = enabled,
+                        filesCount = attachedFiles.size,
+                        isDragActive = isFileDragActive,
+                        onClick = onAttachClick
+                    )
+                }
 
                 Spacer(Modifier.width(8.dp))
 
                 Box(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 4.dp, vertical = 6.dp),
                     contentAlignment = Alignment.CenterStart
                 ) {
                     if (value.text.isEmpty()) {
@@ -323,7 +337,7 @@ internal fun ChatInputWithQuickSettings(
                             lineHeight = 20.sp
                         ),
                         singleLine = false,
-                        maxLines = 5,
+                        maxLines = 8,
                         cursorBrush = SolidColor(AccentTurquoise),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -333,25 +347,29 @@ internal fun ChatInputWithQuickSettings(
 
                 Spacer(Modifier.width(8.dp))
 
-                VoiceToggleButton(
-                    isListening = isListening,
-                    speakingMessageId = speakingMessageId,
-                    enabled = canToggleMic,
-                    onPressStart = onStartListening,
-                    onPressEnd = onStopListening,
-                    onStopSpeaking = onStopSpeaking,
-                )
+                Row(
+                    modifier = Modifier.padding(bottom = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    VoiceToggleButton(
+                        isListening = isListening,
+                        speakingMessageId = speakingMessageId,
+                        enabled = canToggleMic,
+                        onPressStart = onStartListening,
+                        onPressEnd = onStopListening,
+                        onStopSpeaking = onStopSpeaking,
+                    )
 
-                Spacer(Modifier.width(8.dp))
-
-                SendMessageButton(
-                    isActive = canSendOrCancel,
-                    isProcessing = isProcessing,
-                    onClick = {
-                        if (isProcessing) onCancel()
-                        else onSend()
-                    }
-                )
+                    SendMessageButton(
+                        isActive = canSendOrCancel,
+                        isProcessing = isProcessing,
+                        onClick = {
+                            if (isProcessing) onCancel()
+                            else onSend()
+                        }
+                    )
+                }
             }
         }
     }
@@ -379,29 +397,19 @@ private fun AttachFilesButton(
     )
 
     val backgroundColor = when {
-        !enabled -> Color(0x0AFFFFFF)
-        hasFiles && isPressed -> Color(0x3312E0B5)
-        hasFiles && isHovered -> Color(0x2E12E0B5)
-        hasFiles -> Color(0x2612E0B5)
-        isPressed -> Color(0x26FFFFFF)
-        isHovered -> Color(0x1FFFFFFF)
-        else -> Color(0x14FFFFFF)
+        !enabled -> Color.Transparent
+        isPressed -> Color(0x14FFFFFF)
+        isHovered || hasFiles -> Color(0x0FFFFFFF)
+        else -> Color.Transparent
     }
     val borderColor = when {
-        !enabled -> Color(0x1AFFFFFF)
-        hasFiles && isPressed -> Color(0x6612E0B5)
-        hasFiles && isHovered -> Color(0x5912E0B5)
-        hasFiles -> Color(0x4D12E0B5)
-        isPressed -> Color(0x40FFFFFF)
-        isHovered -> Color(0x33FFFFFF)
-        else -> Color(0x26FFFFFF)
+        !enabled -> Color.Transparent
+        else -> Color.Transparent
     }
     val iconColor = when {
-        !enabled -> Color(0x40FFFFFF)
-        hasFiles -> AccentTurquoise
-        isPressed -> Color(0xF2FFFFFF)
-        isHovered -> Color(0xCCFFFFFF)
-        else -> Color(0x99FFFFFF)
+        !enabled -> Color(0x2EFFFFFF)
+        isHovered -> Color(0x80FFFFFF)
+        else -> Color(0x4DFFFFFF)
     }
 
     Box(
@@ -745,7 +753,8 @@ private fun VoiceToggleButton(
     val iconColor by animateColorAsState(
         targetValue = when {
             isSpeaking -> VoiceStopColor
-            isListening -> AccentTurquoise
+            isListening -> Color(0xB3FFFFFF)
+            isHovered -> Color(0x80FFFFFF)
             else -> VoiceIdleIcon
         },
         animationSpec = tween(220),
@@ -755,7 +764,8 @@ private fun VoiceToggleButton(
         targetValue = when {
             isSpeaking -> VoiceStopBackground
             isListening -> VoiceListeningBackground
-            else -> Color(0x00000000)
+            isHovered -> Color(0x0FFFFFFF)
+            else -> Color.Transparent
         },
         animationSpec = tween(220),
         label = "voiceBackground"
@@ -763,8 +773,7 @@ private fun VoiceToggleButton(
     val borderColor by animateColorAsState(
         targetValue = when {
             isSpeaking -> VoiceStopBorder
-            isHovered -> VoiceHoverBorder
-            else -> Color(0x00000000)
+            else -> Color.Transparent
         },
         animationSpec = tween(220),
         label = "voiceBorder"
@@ -941,7 +950,7 @@ private fun SendMessageButton(
     }
     val iconColor = when {
         isProcessing -> StopButtonIcon
-        isActive -> AccentTurquoise
+        isActive -> SendButtonActiveIcon
         else -> SendButtonInactiveIcon
     }
 
@@ -966,6 +975,13 @@ private fun SendMessageButton(
         Box(
             modifier = Modifier
                 .size(ControlButtonSize)
+                .shadow(
+                    elevation = if (isActive && !isProcessing) 10.dp else 0.dp,
+                    shape = CircleShape,
+                    ambientColor = SendButtonActiveGlow,
+                    spotColor = SendButtonActiveGlow,
+                    clip = false
+                )
                 .scale(scale)
                 .clip(CircleShape)
                 .background(backgroundBrush)
@@ -1112,24 +1128,25 @@ private fun QuickSettingsPanel(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         QuickDropdown(
             label = selectedModelLabel,
-            width = 144.dp,
+            width = 109.dp,
             expanded = isModelDropdownOpen,
             options = modelOptions,
             selectedValue = selectedModel,
             onExpandedChange = onModelDropdownChange,
             onSelect = onModelSelect,
-            menuLabel = { option -> option.label }
+            menuLabel = { option -> option.label },
+            leadingIcon = Icons.Rounded.AutoAwesome,
         )
 
         QuickDropdown(
             label = stringResource(Res.string.label_context),
-            width = 160.dp,
+            width = 73.dp,
             expanded = isContextDropdownOpen,
             options = contextOptions,
             selectedValue = selectedContextSize,
@@ -1150,6 +1167,7 @@ private fun <T> QuickDropdown(
     onSelect: (QuickOption<T>) -> Unit,
     menuMaxHeight: Dp = 240.dp,
     menuLabel: (QuickOption<T>) -> String = { it.label },
+    leadingIcon: ImageVector? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
@@ -1173,14 +1191,22 @@ private fun <T> QuickDropdown(
     Box {
         Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(4.dp))
-                .background(if (isHovered || expanded) HoverBackground else Color.Transparent)
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (isHovered || expanded) Color(0x1AFFFFFF) else Color(0x0FFFFFFF))
                 .hoverable(interactionSource = interactionSource)
                 .clickable { onExpandedChange(!expanded) }
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                .padding(horizontal = 7.dp, vertical = 1.4.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (leadingIcon != null) {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    tint = if (isHovered || expanded) ControlTextHover else ControlTextMuted,
+                    modifier = Modifier.size(8.dp)
+                )
+            }
             Text(
                 text = label,
                 fontSize = 11.sp,
@@ -1190,7 +1216,7 @@ private fun <T> QuickDropdown(
                 imageVector = Icons.Rounded.KeyboardArrowDown,
                 contentDescription = stringResource(Res.string.content_desc_open_label).format(label),
                 tint = if (isHovered || expanded) ControlTextHover else ControlTextMuted,
-                modifier = Modifier.size(10.dp)
+                modifier = Modifier.size(8.dp)
             )
         }
 
@@ -1247,11 +1273,11 @@ private fun <T> QuickDropdown(
                                     val itemInteractionSource = remember { MutableInteractionSource() }
                                     val itemHovered by itemInteractionSource.collectIsHoveredAsState()
                                     val backgroundColor = when {
-                                        selected -> ActiveBackground
+                                        selected -> SelectMenuSelectedBackground
                                         itemHovered -> HoverBackground
                                         else -> Color.Transparent
                                     }
-                                    val textColor = if (selected) AccentTurquoise else TextSecondary
+                                    val textColor = if (selected) SelectMenuSelectedText else TextSecondary
 
                                     Box(
                                         modifier = Modifier
