@@ -61,13 +61,15 @@ class VoiceInputUseCase(
 
         launch { audioRecorder.logState() }
 
-        if (!permissionsUseCase.registerNativeHook()) {
+        val nativeHookRegistered = permissionsUseCase.registerNativeHook()
+        if (!nativeHookRegistered) {
             permissionsUseCase.handleMissingInputMonitoringPermission(scope)
-            return@coroutineScope
         }
 
         try {
-            GlobalScreen.addNativeKeyListener(hotkeyListener)
+            if (nativeHookRegistered) {
+                GlobalScreen.addNativeKeyListener(hotkeyListener)
+            }
 
             val userInputFlow = audioRecorder.audioFlow
                 .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
@@ -106,7 +108,9 @@ class VoiceInputUseCase(
                 onRecognizedText(userInput)
             }
         } finally {
-            GlobalScreen.unregisterNativeHook()
+            if (nativeHookRegistered) {
+                runCatching { GlobalScreen.unregisterNativeHook() }
+            }
         }
     }
 

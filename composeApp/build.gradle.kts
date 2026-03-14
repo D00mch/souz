@@ -239,8 +239,14 @@ compose.desktop {
                         <string>Needed for voice capture.</string>
                         <key>NSSystemAdministrationUsageDescription</key>
                         <string>Needed to observe input for shortcuts.</string>
+                        <key>NSCalendarsUsageDescription</key>
+                        <string>Needed to read and manage calendar events.</string>
+                        <key>NSCalendarsFullAccessUsageDescription</key>
+                        <string>Needed to read and manage calendar events.</string>
+                        <key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+                        <string>Needed to create calendar events requested by the user.</string>
                         <key>NSAppleEventsUsageDescription</key>
-                        <string>Needed to control Chrome for browser automation.</string>
+                        <string>Needed to automate Calendar and browser actions requested by the user.</string>
                     """.trimIndent()
                 }
 

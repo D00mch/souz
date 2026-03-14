@@ -241,6 +241,7 @@
     <string name="onboarding_display_text">Hello! I am Souz AI, a smart assistant on your computer.\nNow I will ask for permissions to access applications, the system, and files to work correctly.\nI can:\n- Use the browser\n- Work with mail and calendar\n- Work with files on your PC\n- Explain and rewrite selected text\n- Open applications, create notes, answer questions\n- Build charts and diagrams based on data\n\n\nTo start voice input - hold right opt(alt)\nTo clear conversation context - use top left button\n</string>
     <string name="onboarding_input_permission_request">Allow access to input monitoring in macOS settings — the application will try to restart automatically after confirmation</string>
     <string name="onboarding_input_permission_restart_failed">Input Monitoring permission is granted, but automatic restart failed. Please restart the application manually.</string>
+    <string name="onboarding_input_permission_sandbox_limited">Global input monitoring is unavailable in the sandboxed build. You can still use voice input from the microphone button.</string>
 
     <!-- Voice Input -->
     <string name="error_prefix">Error: %s</string>

@@ -13,6 +13,8 @@ import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.permissions.AppRelauncher
+import ru.souz.permissions.MacAppEnvironment
+import ru.souz.permissions.MacInputMonitoringAccess
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.ui.main.ChatMessage
@@ -134,16 +136,27 @@ class PermissionsUseCase(
         speechUseCase.queuePrepared(getString(Res.string.onboarding_speech_text))
     }
 
-    fun registerNativeHook(): Boolean = runCatching {
-        GlobalScreen.registerNativeHook()
-        true
-    }.getOrElse { e ->
-        l.error("Failed to initialize hotkey listener: {}", e.message)
-        false
+    fun registerNativeHook(): Boolean {
+        MacInputMonitoringAccess.requestAccessPromptIfNeeded()
+        return runCatching {
+            GlobalScreen.registerNativeHook()
+            true
+        }.getOrElse { e ->
+            l.error("Failed to initialize hotkey listener: {}", e.message)
+            false
+        }
     }
 
     fun handleMissingInputMonitoringPermission(scope: CoroutineScope) {
         permissionWatcherJob?.cancel()
+        if (MacAppEnvironment.isSandboxed) {
+            permissionWatcherJob = scope.launch {
+                val statusMsg = getString(Res.string.onboarding_input_permission_sandbox_limited)
+                emitState { copy(statusMessage = statusMsg) }
+            }
+            return
+        }
+
         permissionWatcherJob = scope.launch {
             val startAt = onboardingSpeechStartedAt
             if (startAt != null) {

@@ -4,6 +4,7 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
+import ru.souz.permissions.MacAppEnvironment
 import ru.souz.service.files.FilesService
 import ru.souz.tool.BadInputException
 import java.io.File
@@ -215,7 +216,7 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
             Regex("^@@ -\\d+(?:,\\d+)? \\+\\d+(?:,\\d+)? @@(?: .*)?$")
         private val WINDOWS_ABSOLUTE_PATH = Regex("^[A-Za-z]:[\\\\/].*")
 
-        val homeStr: String get() = System.getenv("HOME") ?: System.getProperty("user.home")
+        val homeStr: String get() = MacAppEnvironment.userHomeForUserFacingPaths
         val homeDirectory: File get() = File(homeStr).canonicalFile
         val documentsDirectoryPath: Path
             get() {
