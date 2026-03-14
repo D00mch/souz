@@ -53,6 +53,7 @@ Primary stack:
 │       │   │   └── ru/souz/                # Application Kotlin code
 │       │   │       ├── agent/              # Graph-based agent assembly. The main agent related logic is here
 │       │   │       │   ├── engine/         # Core graph primitives (Node, Graph, runner/runtime)
+│       │   │       │   ├── impl/           # Agent implementations: Lua scripts and Function calling
 │       │   │       │   ├── runtime/        # LuaRuntime, ToolExecution
 │       │   │       │   ├── nodes/          # Graph node implementations (LLM, MCP, classification, etc.)
 │       │   │       │   └── session/        # Graph session models, repository, and service

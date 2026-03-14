@@ -9,68 +9,127 @@ import ru.souz.agent.engine.Node
 import ru.souz.agent.runtime.LuaExecutionException
 import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.giga.GigaChatAPI
-import ru.souz.giga.GigaException
 import ru.souz.giga.GigaMessageRole
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaResponse
+import ru.souz.giga.toMessage
 
 // TODO: review after agent
 class NodesLua(
     private val llmApi: GigaChatAPI,
     private val luaRuntime: LuaRuntime,
 ) {
+    sealed interface LuaExecutionResult {
+        data class Success(val output: String) : LuaExecutionResult
+        data class Failure(
+            val brokenCode: String,
+            val error: LuaExecutionException,
+        ) : LuaExecutionResult
+    }
+
     val sideEffects: Flow<String> = emptyFlow()
 
     private val systemPrompt: String =
         LUA_AGENT_SYSTEM_PROMPT.format(LuaRuntime.forbidden.joinToString(", ") { "`$it`" })
 
-    fun plan(name: String = "Lua LLM"): Node<String, String> = Node(name) { ctx ->
+    fun plan(name: String = "Lua LLM"): Node<String, GigaResponse.Chat> = Node(name) { ctx ->
         val response = withContext(Dispatchers.IO) {
             llmApi.message(buildRequest(ctx))
         }
-        when (response) {
-            is GigaResponse.Chat.Error -> throw GigaException(response)
-            is GigaResponse.Chat.Ok -> {
-                val content = response.choices
-                    .asReversed()
-                    .firstOrNull { it.message.content.isNotBlank() }
-                    ?.message
-                    ?.content
-                    .orEmpty()
-                ctx.map { extractLuaCode(content) }
+        val history = when (response) {
+            is GigaResponse.Chat.Error -> ctx.history
+            is GigaResponse.Chat.Ok -> ArrayList(ctx.history).apply {
+                addAll(response.choices.mapNotNull { it.toMessage() })
             }
+        }
+        ctx.map(history = history) { response }
+    }
+
+    fun responseToCode(name: String = "Lua -> Code"): Node<String, String> = Node(name) { ctx ->
+        ctx.map { extractLuaCode(ctx.input) }
+    }
+
+    fun execute(name: String = "Lua Runtime"): Node<String, LuaExecutionResult> = Node(name) { ctx ->
+        try {
+            val result = luaRuntime.execute(
+                code = ctx.input,
+                settings = ctx.settings,
+                activeTools = ctx.activeTools,
+            )
+            val history = ArrayList(ctx.history).apply {
+                add(
+                    GigaRequest.Message(
+                        role = GigaMessageRole.assistant,
+                        content = result,
+                    )
+                )
+            }
+            ctx.map(history = history) { LuaExecutionResult.Success(result) }
+        } catch (e: LuaExecutionException) {
+            ctx.map { LuaExecutionResult.Failure(brokenCode = ctx.input, error = e) }
         }
     }
 
-    fun execute(name: String = "Lua Runtime"): Node<String, String> = Node(name) { ctx ->
-        val result = executeWithRepair(ctx, ctx.input)
-        val history = ArrayList(ctx.history).apply {
-            add(
-                GigaRequest.Message(
-                    role = GigaMessageRole.assistant,
-                    content = result,
+    fun executeSuccessToString(name: String = "Lua Runtime.Ok"): Node<LuaExecutionResult, String> = Node(name) { ctx ->
+        val success = ctx.input as LuaExecutionResult.Success
+        ctx.map { success.output }
+    }
+
+    fun executeFailureToRepair(name: String = "Lua Runtime.Error"): Node<LuaExecutionResult, LuaExecutionResult.Failure> =
+        Node(name) { ctx ->
+            ctx.map { ctx.input as LuaExecutionResult.Failure }
+        }
+
+    fun repair(
+        name: String = "Lua Repair",
+    ): Node<LuaExecutionResult.Failure, GigaResponse.Chat> = Node(name) { ctx ->
+        val latestUserRequest = ctx.history
+            .lastOrNull { it.role == GigaMessageRole.user && !it.content.contains("<context>") }
+            ?.content
+            .orEmpty()
+
+        val response = withContext(Dispatchers.IO) {
+            llmApi.message(
+                GigaRequest.Chat(
+                    model = ctx.settings.model,
+                    messages = listOf(
+                        GigaRequest.Message(
+                            role = GigaMessageRole.system,
+                            content = buildRepairSystemPrompt(
+                                basePrompt = ctx.systemPrompt,
+                                tools = ctx.activeTools,
+                            ),
+                        ),
+                        GigaRequest.Message(
+                            role = GigaMessageRole.user,
+                            content = buildString {
+                                appendLine("Original user request:")
+                                appendLine(latestUserRequest)
+                                appendLine()
+                                appendLine("Lua error:")
+                                appendLine(ctx.input.error.cause?.message ?: ctx.input.error.message.orEmpty())
+                                appendLine()
+                                appendLine("Broken Lua code:")
+                                appendLine("```lua")
+                                appendLine(ctx.input.brokenCode)
+                                appendLine("```")
+                            }.trim(),
+                        ),
+                    ),
+                    functions = emptyList(),
+                    temperature = 0f,
+                    maxTokens = ctx.settings.contextSize,
                 )
             )
         }
-        ctx.map(history = history) { result }
-    }
 
-    private suspend fun executeWithRepair(
-        ctx: AgentContext<String>,
-        code: String,
-    ): String = try {
-        luaRuntime.execute(
-            code = code,
-            settings = ctx.settings,
-            activeTools = ctx.activeTools,
-        )
-    } catch (e: LuaExecutionException) {
-        val repairedCode = repairLuaCode(ctx, code, e)
-        luaRuntime.execute(
-            code = repairedCode,
-            settings = ctx.settings,
-            activeTools = ctx.activeTools,
-        )
+        val history = when (response) {
+            is GigaResponse.Chat.Error -> ctx.history
+            is GigaResponse.Chat.Ok -> ArrayList(ctx.history).apply {
+                addAll(response.choices.mapNotNull { it.toMessage() })
+            }
+        }
+        ctx.map(history = history) { response }
     }
 
     private fun buildRequest(ctx: AgentContext<String>): GigaRequest.Chat {
@@ -166,65 +225,6 @@ class NodesLua(
     private fun extractLuaCode(content: String): String {
         val codeBlock = LUA_BLOCK_REGEX.find(content)?.groupValues?.get(1)
         return (codeBlock ?: content).trim()
-    }
-
-    private suspend fun repairLuaCode(
-        ctx: AgentContext<String>,
-        brokenCode: String,
-        error: LuaExecutionException,
-    ): String {
-        val latestUserRequest = ctx.history
-            .lastOrNull { it.role == GigaMessageRole.user && !it.content.contains("<context>") }
-            ?.content
-            .orEmpty()
-
-        val response = withContext(Dispatchers.IO) {
-            llmApi.message(
-                GigaRequest.Chat(
-                    model = ctx.settings.model,
-                    messages = listOf(
-                        GigaRequest.Message(
-                            role = GigaMessageRole.system,
-                            content = buildRepairSystemPrompt(
-                                basePrompt = ctx.systemPrompt,
-                                tools = ctx.activeTools,
-                            ),
-                        ),
-                        GigaRequest.Message(
-                            role = GigaMessageRole.user,
-                            content = buildString {
-                                appendLine("Original user request:")
-                                appendLine(latestUserRequest)
-                                appendLine()
-                                appendLine("Lua error:")
-                                appendLine(error.cause?.message ?: error.message.orEmpty())
-                                appendLine()
-                                appendLine("Broken Lua code:")
-                                appendLine("```lua")
-                                appendLine(brokenCode)
-                                appendLine("```")
-                            }.trim(),
-                        ),
-                    ),
-                    functions = emptyList(),
-                    temperature = 0f,
-                    maxTokens = ctx.settings.contextSize,
-                )
-            )
-        }
-
-        return when (response) {
-            is GigaResponse.Chat.Error -> throw GigaException(response)
-            is GigaResponse.Chat.Ok -> {
-                val content = response.choices
-                    .asReversed()
-                    .firstOrNull { it.message.content.isNotBlank() }
-                    ?.message
-                    ?.content
-                    .orEmpty()
-                extractLuaCode(content)
-            }
-        }
     }
 
     private fun buildRepairSystemPrompt(
