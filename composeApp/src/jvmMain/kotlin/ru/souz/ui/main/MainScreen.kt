@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -93,6 +94,11 @@ private val ToolModifyPatchPreviewMinHeight = 220.dp
 private val ToolModifyPatchPreviewMaxHeight = 620.dp
 private const val ToolModifyPatchParam = "patch"
 private const val ToolModifyPatchPreviewMaxLines = 350
+
+enum class LiquidGlassPreset {
+    Default,
+    Hero
+}
 
 
 @Composable
@@ -199,7 +205,8 @@ fun MainScreenContent(
     ) {
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
-            isWindowFocused = isFocused
+            isWindowFocused = isFocused,
+            preset = LiquidGlassPreset.Hero
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 DraggableWindowArea {
@@ -294,7 +301,7 @@ fun MainScreenContent(
                             Icon(Icons.Rounded.Close, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                         }
                     }
-                }
+                    }
                 }
 
                 ChatModeContent(
@@ -327,6 +334,22 @@ fun MainScreenContent(
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 )
             }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(top = 43.dp)
+                    .height(1.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            0.0f to Color.Transparent,
+                            0.04f to Color(0x18FFFFFF),
+                            0.96f to Color(0x18FFFFFF),
+                            1.0f to Color.Transparent
+                        )
+                    )
+            )
             
             // Thinking Panel Overlay
             AnimatedVisibility(
@@ -1238,78 +1261,173 @@ fun RealLiquidGlassCard(
     modifier: Modifier = Modifier,
     isWindowFocused: Boolean,
     cornerRadius: Dp = 23.dp,
+    preset: LiquidGlassPreset = LiquidGlassPreset.Default,
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(cornerRadius)
-    val borderThickness = 1.5.dp
-    val noiseBrush = rememberNoiseBrush()
+    val borderThickness = if (preset == LiquidGlassPreset.Hero) 1.dp else 1.5.dp
 
     val backdropAlpha by animateFloatAsState(
-        targetValue = if (isWindowFocused) 0.95f else 0.0f,
+        targetValue = when (preset) {
+            LiquidGlassPreset.Default -> if (isWindowFocused) 0.95f else 0.0f
+            LiquidGlassPreset.Hero -> 1.0f
+        },
         animationSpec = tween(400)
     )
 
-    val noiseAlpha by animateFloatAsState(
-        targetValue = if (isWindowFocused) 0.25f else 0.0f,
+    val accentAlpha by animateFloatAsState(
+        targetValue = when (preset) {
+            LiquidGlassPreset.Default -> if (isWindowFocused) 1f else 0f
+            LiquidGlassPreset.Hero -> 0.62f
+        },
         animationSpec = tween(400)
     )
 
     Box(modifier = modifier) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .clip(shape)
-                .background(Color.Black.copy(alpha = backdropAlpha))
-        )
+        when (preset) {
+            LiquidGlassPreset.Default -> {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(shape)
+                        .background(Color.Black.copy(alpha = backdropAlpha))
+                )
+            }
 
-        if (noiseAlpha > 0f) {
-            Canvas(modifier = Modifier.matchParentSize().clip(shape).alpha(noiseAlpha)) {
-                drawRect(brush = noiseBrush)
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color.Transparent, Color(0x80000000)),
-                        radius = size.maxDimension / 1.0f
+            LiquidGlassPreset.Hero -> {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(shape)
+                        .background(Color(0xFC151820))
+                        .alpha(backdropAlpha)
+                )
+
+                Canvas(modifier = Modifier.matchParentSize().clip(shape).alpha(accentAlpha)) {
+                    drawRect(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0x0FD7B585),
+                                Color(0x09987855),
+                                Color.Transparent
+                            ),
+                            start = Offset(0f, 0f),
+                            end = Offset(size.width * 0.70f, size.height * 0.50f)
+                        )
                     )
+
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(Color(0x09E1C79E), Color.Transparent),
+                            center = Offset(size.width * 0.24f, size.height * 0.10f),
+                            radius = size.maxDimension * 0.46f
+                        )
+                    )
+
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color(0x9E05070E)),
+                            startY = size.height * 0.36f,
+                            endY = size.height
+                        )
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(shape)
+                        .background(Color(0x59000000))
                 )
             }
         }
 
         Canvas(modifier = Modifier.matchParentSize().clip(shape)) {
             val strokeWidth = borderThickness.toPx()
-            drawRoundRect(
-                brush = Brush.linearGradient(
-                    0.0f to Color(0xCCFFFFFF),
-                    0.5f to Color(0x00FFFFFF),
-                    1.0f to Color(0x4DFFFFFF),
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, size.height)
-                ),
-                cornerRadius = CornerRadius(cornerRadius.toPx()),
-                style = Stroke(width = strokeWidth)
-            )
+            when (preset) {
+                LiquidGlassPreset.Default -> {
+                    drawRoundRect(
+                        brush = Brush.linearGradient(
+                            0.0f to Color(0xCCFFFFFF),
+                            0.5f to Color(0x00FFFFFF),
+                            1.0f to Color(0x4DFFFFFF),
+                            start = Offset(0f, 0f),
+                            end = Offset(size.width, size.height)
+                        ),
+                        cornerRadius = CornerRadius(cornerRadius.toPx()),
+                        style = Stroke(width = strokeWidth)
+                    )
 
-            drawPath(
-                path = Path().apply {
-                    moveTo(0f, size.height * 0.2f)
-                    lineTo(size.width * 0.4f, 0f)
-                    lineTo(size.width * 0.65f, 0f)
-                    lineTo(0f, size.height * 0.6f)
-                    close()
-                },
-                brush = Brush.linearGradient(
-                    colors = listOf(Color(0x0DFFFFFF), Color.Transparent),
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width / 2, size.height / 2)
-                )
-            )
+                    drawPath(
+                        path = Path().apply {
+                            moveTo(0f, size.height * 0.2f)
+                            lineTo(size.width * 0.4f, 0f)
+                            lineTo(size.width * 0.65f, 0f)
+                            lineTo(0f, size.height * 0.6f)
+                            close()
+                        },
+                        brush = Brush.linearGradient(
+                            colors = listOf(Color(0x0DFFFFFF), Color.Transparent),
+                            start = Offset(0f, 0f),
+                            end = Offset(size.width / 2, size.height / 2)
+                        )
+                    )
+                }
+
+                LiquidGlassPreset.Hero -> {
+                    drawRoundRect(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0x66FFFFFF),
+                                Color(0x22FFFFFF),
+                                Color(0x18FFFFFF),
+                                Color(0x40FFFFFF)
+                            ),
+                            start = Offset(0f, 0f),
+                            end = Offset(size.width, size.height)
+                        ),
+                        cornerRadius = CornerRadius(cornerRadius.toPx()),
+                        style = Stroke(width = strokeWidth)
+                    )
+
+                    val inset = strokeWidth * 1.4f
+                    val innerWidth = (size.width - inset * 2f).coerceAtLeast(0f)
+                    val innerHeight = (size.height - inset * 2f).coerceAtLeast(0f)
+                    drawRoundRect(
+                        color = Color(0x0DFFFFFF),
+                        topLeft = Offset(inset, inset),
+                        size = Size(innerWidth, innerHeight),
+                        cornerRadius = CornerRadius((cornerRadius.toPx() - inset).coerceAtLeast(0f)),
+                        style = Stroke(width = strokeWidth * 0.7f)
+                    )
+                }
+            }
         }
 
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .clip(shape)
-                .background(Color(0x03FFFFFF))
-        )
+        if (preset == LiquidGlassPreset.Default) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(shape)
+                    .background(Color(0x03FFFFFF))
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(shape)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0x0AFFFFFF),
+                                Color(0x05FFFFFF),
+                                Color(0x01FFFFFF)
+                            )
+                        )
+                    )
+                    .alpha(accentAlpha)
+            )
+        }
 
         val innerShape = RoundedCornerShape(cornerRadius - borderThickness)
         Box(modifier = Modifier.padding(borderThickness).clip(innerShape)) {

@@ -13,6 +13,7 @@ import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.roundToInt
@@ -27,6 +28,7 @@ import ru.souz.di.mainDiModule
 import ru.souz.mcp.McpClientManager
 import ru.souz.telemetry.TelemetryService
 import ru.souz.ui.AppTray
+import ru.souz.ui.macos.MacWindowVibrancy
 import ru.souz.ui.rememberTrayWindowController
 
 import androidx.compose.ui.res.painterResource as jvmPainterResource
@@ -101,6 +103,22 @@ fun main() {
                 resizable = true,
                 alwaysOnTop = false
             ) {
+                LaunchedEffect(window) {
+                    // AWT peer can be unavailable on first frame; retry briefly.
+                    repeat(10) {
+                        if (MacWindowVibrancy.install(window)) {
+                            return@LaunchedEffect
+                        }
+                        delay(80)
+                    }
+                }
+
+                DisposableEffect(window) {
+                    onDispose {
+                        MacWindowVibrancy.uninstall(window)
+                    }
+                }
+
                 LaunchedEffect(windowState) {
                     snapshotFlow { windowState.size }
                         .distinctUntilChanged()
