@@ -119,7 +119,11 @@ class PermissionsUseCase(
 
         settingsProvider.needsOnboarding = false
         settingsProvider.onboardingCompleted = true
-        val displayText = getString(Res.string.onboarding_display_text)
+        val displayText = if (MacAppEnvironment.isSandboxed) {
+            getString(Res.string.onboarding_display_text_sandbox)
+        } else {
+            getString(Res.string.onboarding_display_text)
+        }
         emitState {
             copy(
                 isSpeaking = true,
@@ -137,6 +141,10 @@ class PermissionsUseCase(
     }
 
     fun registerNativeHook(): Boolean {
+        if (MacAppEnvironment.isSandboxed) {
+            l.info("Skipping global hotkey registration in sandboxed build")
+            return false
+        }
         MacInputMonitoringAccess.requestAccessPromptIfNeeded()
         return runCatching {
             GlobalScreen.registerNativeHook()

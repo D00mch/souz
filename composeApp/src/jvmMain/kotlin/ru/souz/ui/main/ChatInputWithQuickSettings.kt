@@ -98,6 +98,7 @@ import androidx.compose.ui.zIndex
 import kotlinx.coroutines.delay
 import kotlin.math.max
 import ru.souz.giga.GigaModel
+import ru.souz.permissions.MacAppEnvironment
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -780,6 +781,8 @@ private fun VoiceToggleButton(
     )
     val tooltipText = if (isSpeaking) {
         stringResource(Res.string.tooltip_stop_speech)
+    } else if (MacAppEnvironment.isSandboxed) {
+        stringResource(Res.string.tooltip_hold_mic_button)
     } else {
         stringResource(Res.string.tooltip_hold_option)
     }
