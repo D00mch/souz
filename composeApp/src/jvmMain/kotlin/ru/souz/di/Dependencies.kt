@@ -145,6 +145,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { TelegramService(instance()) }
 
     // Tools
+    bindSingleton { ToolRunBashCommand }
     bindSingleton { ToolGetClipboard() }
     bindSingleton { ToolListFiles(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
@@ -155,40 +156,40 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolExtractText(instance()) }
     bindSingleton { ToolFindFilesByName(instance()) }
     bindSingleton { ToolReadPdfPages(instance()) }
-    bindSingleton { ToolOpen(ToolRunBashCommand, instance()) }
-    bindSingleton { ToolCreateNewBrowserTab(ToolRunBashCommand) }
-    bindSingleton { ToolSafariInfo(ToolRunBashCommand) }
+    bindSingleton { ToolOpen(instance(), instance()) }
+    bindSingleton { ToolCreateNewBrowserTab(instance()) }
+    bindSingleton { ToolSafariInfo(instance()) }
     bindSingleton { ToolBrowserHotkeys(instance()) }
-    bindSingleton { ToolFocusOnTab(ToolRunBashCommand) }
-    bindSingleton { ToolChromeInfo(ToolRunBashCommand) }
-    bindSingleton { ToolOpenDefaultBrowser(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolFocusOnTab(instance()) }
+    bindSingleton { ToolChromeInfo(instance()) }
+    bindSingleton { ToolOpenDefaultBrowser(instance(), instance()) }
     bindSingleton { ToolSoundConfig(ConfigStore) }
     bindSingleton { ToolSoundConfigDiff(ConfigStore) }
     bindSingleton { ToolInstructionStore(ConfigStore, instance()) }
-    bindSingleton { ToolOpenNote(ToolRunBashCommand) }
-    bindSingleton { ToolCreateNote(ToolRunBashCommand, instance()) }
-    bindSingleton { ToolDeleteNote(ToolRunBashCommand, instance()) }
-    bindSingleton { ToolListNotes(ToolRunBashCommand) }
-    bindSingleton { ToolSearchNotes(ToolRunBashCommand) }
-    bindSingleton { ToolShowApps(instance(), ToolRunBashCommand) }
+    bindSingleton { ToolOpenNote(instance()) }
+    bindSingleton { ToolCreateNote(instance(), instance()) }
+    bindSingleton { ToolDeleteNote(instance(), instance()) }
+    bindSingleton { ToolListNotes(instance()) }
+    bindSingleton { ToolSearchNotes(instance()) }
+    bindSingleton { ToolShowApps(instance(), instance()) }
     bindSingleton { ToolCreatePlotFromCsv(instance()) }
-    bindSingleton { ToolCalendarCreateEvent(ToolRunBashCommand) }
-    bindSingleton { ToolCalendarDeleteEvent(ToolRunBashCommand) }
-    bindSingleton { ToolCalendarListCalendars(ToolRunBashCommand) }
+    bindSingleton { ToolCalendarCreateEvent(instance()) }
+    bindSingleton { ToolCalendarDeleteEvent(instance()) }
+    bindSingleton { ToolCalendarListCalendars(instance()) }
     bindSingleton { ToolCalendarListEvents() }
-    bindSingleton { ToolMailUnreadMessagesCount(ToolRunBashCommand) }
-    bindSingleton { ToolMailListMessages(ToolRunBashCommand) }
-    bindSingleton { ToolMailReadMessage(ToolRunBashCommand) }
-    bindSingleton { ToolMailReplyMessage(ToolRunBashCommand) }
-    bindSingleton { ToolMailSendNewMessage(ToolRunBashCommand) }
-    bindSingleton { ToolMailSearch(ToolRunBashCommand) }
-    bindSingleton { ToolTextReplace(ToolRunBashCommand) }
-    bindSingleton { ToolTextUnderSelection(ToolRunBashCommand, instance()) }
-    bindSingleton { ToolFindFolders(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolMailUnreadMessagesCount(instance()) }
+    bindSingleton { ToolMailListMessages(instance()) }
+    bindSingleton { ToolMailReadMessage(instance()) }
+    bindSingleton { ToolMailReplyMessage(instance()) }
+    bindSingleton { ToolMailSendNewMessage(instance()) }
+    bindSingleton { ToolMailSearch(instance()) }
+    bindSingleton { ToolTextReplace(instance()) }
+    bindSingleton { ToolTextUnderSelection(instance(), instance()) }
+    bindSingleton { ToolFindFolders(instance(), instance()) }
     bindSingleton { ToolUploadFile(instance()) }
     bindSingleton { ToolDownloadFile(instance()) }
-    bindSingleton { ToolTakeScreenshot(ToolRunBashCommand) }
-    bindSingleton { ToolStartScreenRecording(ToolRunBashCommand) }
+    bindSingleton { ToolTakeScreenshot(instance()) }
+    bindSingleton { ToolStartScreenRecording(instance()) }
     bindSingleton { ToolCalculator() }
     bindSingleton { ExcelRead(instance()) }
     bindSingleton { ExcelReport(instance()) }
