@@ -2,6 +2,7 @@ package ru.souz.agent.runtime
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.luaj.vm2.Globals
@@ -9,6 +10,7 @@ import org.luaj.vm2.LuaError
 import org.luaj.vm2.LuaTable
 import org.luaj.vm2.LuaValue
 import org.luaj.vm2.Varargs
+import org.luaj.vm2.lib.DebugLib
 import org.luaj.vm2.lib.OneArgFunction
 import org.luaj.vm2.lib.VarArgFunction
 import org.luaj.vm2.lib.jse.JsePlatform
@@ -16,6 +18,7 @@ import ru.souz.agent.engine.AgentSettings
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.gigaJsonMapper
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.CoroutineContext
 
 class LuaRuntime(
@@ -27,10 +30,12 @@ class LuaRuntime(
         activeTools: List<GigaRequest.Function>,
     ): String = withContext(Dispatchers.IO) {
         try {
+            val executionDeadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(LUA_EXECUTION_TIMEOUT_MILLIS)
             val globals = createGlobals(
                 settings = settings,
                 activeTools = activeTools.associateBy { it.name },
                 parentContext = currentCoroutineContext(),
+                executionDeadlineNanos = executionDeadlineNanos,
             )
             val chunk = globals.load(code, "agent.lua")
             val result = chunk.invoke().arg1().takeUnless { it.isnil() } ?: globals.get("result")
@@ -44,8 +49,16 @@ class LuaRuntime(
         settings: AgentSettings,
         activeTools: Map<String, GigaRequest.Function>,
         parentContext: CoroutineContext,
+        executionDeadlineNanos: Long,
     ): Globals {
         val globals = JsePlatform.standardGlobals()
+        globals.load(
+            LoopGuardDebugLib(
+                maxInstructions = LUA_MAX_INSTRUCTIONS,
+                executionDeadlineNanos = executionDeadlineNanos,
+                parentContext = parentContext,
+            )
+        )
         forbidden.forEach { globals.set(it, LuaValue.NIL) }
 
         val toolsTable = LuaTable()
@@ -240,6 +253,34 @@ class LuaRuntime(
 
     companion object {
         val forbidden = listOf("dofile", "loadfile", "require", "package", "io", "os", "debug", "luajava")
+
+        private const val LUA_EXECUTION_TIMEOUT_MILLIS = 5_000L
+        private const val LUA_MAX_INSTRUCTIONS = 5_000_000L
+        private const val LUA_GUARD_CHECK_INTERVAL_INSTRUCTIONS = 1_000L
+    }
+
+    private class LoopGuardDebugLib(
+        private val maxInstructions: Long,
+        private val executionDeadlineNanos: Long,
+        private val parentContext: CoroutineContext,
+    ) : DebugLib() {
+        private var executedInstructions: Long = 0
+
+        override fun onInstruction(pc: Int, v: Varargs, top: Int) {
+            executedInstructions += 1
+            if (executedInstructions > maxInstructions) {
+                throw LuaError("Lua instruction limit exceeded ($maxInstructions)")
+            }
+            if (executedInstructions % LUA_GUARD_CHECK_INTERVAL_INSTRUCTIONS == 0L) {
+                if (!parentContext.isActive) {
+                    throw LuaError("Lua execution was cancelled")
+                }
+                if (System.nanoTime() > executionDeadlineNanos) {
+                    throw LuaError("Lua execution timed out after ${LUA_EXECUTION_TIMEOUT_MILLIS}ms")
+                }
+            }
+            super.onInstruction(pc, v, top)
+        }
     }
 }
 
