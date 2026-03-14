@@ -28,11 +28,11 @@ object MacAppEnvironment {
      * In sandbox this should stay inside the container.
      */
     val appDataHome: String by lazy {
-        if (!isSandboxed) {
-            processHome.ifBlank { resolveRealHomeFromUserName().orEmpty() }
-        } else {
-            processHomeCandidates.firstOrNull { it.contains(SANDBOX_HOME_MARKER) }
+        when {
+            isSandboxed -> processHomeCandidates.firstOrNull { it.contains(SANDBOX_HOME_MARKER) }
                 ?: processHome.ifBlank { resolveRealHomeFromUserName().orEmpty() }
+
+            else -> processHome.ifBlank { resolveRealHomeFromUserName().orEmpty() }
         }
     }
 
