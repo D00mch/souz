@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.application
@@ -30,6 +31,7 @@ import ru.souz.telemetry.TelemetryService
 import ru.souz.ui.AppTray
 import ru.souz.ui.macos.MacWindowVibrancy
 import ru.souz.ui.rememberTrayWindowController
+import java.awt.Dimension
 
 import androidx.compose.ui.res.painterResource as jvmPainterResource
 
@@ -77,6 +79,8 @@ fun main() {
 
             val initialWidth = settingsProvider.initialWindowWidthDp.dp
             val initialHeight = settingsProvider.initialWindowHeightDp.dp
+            val maxWindowWidthPx = 896
+            val maxWindowHeightPx = 700
 
             val windowState = rememberWindowState(
                 width = initialWidth,
@@ -104,6 +108,14 @@ fun main() {
                 alwaysOnTop = false
             ) {
                 LaunchedEffect(window) {
+                    window.maximumSize = Dimension(maxWindowWidthPx, maxWindowHeightPx)
+                    if (window.width > maxWindowWidthPx || window.height > maxWindowHeightPx) {
+                        window.setSize(
+                            window.width.coerceAtMost(maxWindowWidthPx),
+                            window.height.coerceAtMost(maxWindowHeightPx)
+                        )
+                    }
+
                     // AWT peer can be unavailable on first frame; retry briefly.
                     repeat(10) {
                         if (MacWindowVibrancy.install(window)) {
@@ -133,7 +145,14 @@ fun main() {
                     App(
                         onCloseWindow = ::exitApplication,
                         onHideWindow = trayController::hideToTray,
-                        onMinimizeWindow = { windowState.isMinimized = true }
+                        onMinimizeWindow = { windowState.isMinimized = true },
+                        onToggleMaximizeWindow = {
+                            windowState.placement = if (windowState.placement == WindowPlacement.Maximized) {
+                                WindowPlacement.Floating
+                            } else {
+                                WindowPlacement.Maximized
+                            }
+                        }
                     )
                 }
             }

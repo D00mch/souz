@@ -74,6 +74,10 @@ import java.util.*
 
 private val TopButtonSize = 24.dp
 private val TopIconSize = 14.dp
+private val MacTrafficButtonSize = 12.dp
+private val MacTrafficRowSpacing = 8.dp
+private val TopActionButtonSize = 32.dp
+private val TopActionIconSize = 16.dp
 private val ChatUserBubbleGradientStart = Color(0x3312E0B5)
 private val ChatUserBubbleGradientEnd = Color(0x1912E0B5)
 private val ChatUserBubbleBorderColor = Color(0x6612E0B5)
@@ -107,6 +111,7 @@ fun MainScreen(
     onCloseWindow: () -> Unit,
     onHideWindow: () -> Unit,
     onMinimizeWindow: () -> Unit,
+    onToggleMaximizeWindow: () -> Unit,
     onShowSnack: (String) -> Unit = {},
     isOnline: Boolean = true,
 ) {
@@ -132,8 +137,9 @@ fun MainScreen(
         isOnline = isOnline,
         onStartListening = { viewModel.send(MainEvent.StartListening) },
         onStopListening = { viewModel.send(MainEvent.StopListening) },
-        onClose = onCloseWindow,
+        onClose = onHideWindow,
         onMinimize = onMinimizeWindow,
+        onToggleMaximize = onToggleMaximizeWindow,
         onRequestNewConversation = { viewModel.send(MainEvent.RequestNewConversation) },
         onConfirmNewConversation = { viewModel.send(MainEvent.ConfirmNewConversation) },
         onDismissNewConversationDialog = { viewModel.send(MainEvent.DismissNewConversationDialog) },
@@ -168,6 +174,7 @@ fun MainScreenContent(
     onDismissNewConversationDialog: () -> Unit = {},
     onClose: () -> Unit = {},
     onMinimize: () -> Unit = {},
+    onToggleMaximize: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onStopSpeech: () -> Unit = {},
     onShowLastText: () -> Unit = {},
@@ -213,7 +220,7 @@ fun MainScreenContent(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp)
+                            .height(56.dp)
                             .zIndex(2f)
                     ) {
                     Text(
@@ -221,33 +228,63 @@ fun MainScreenContent(
                         modifier = Modifier.align(Alignment.Center),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            color = Color(0x33FFFFFF),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                            color = Color(0x99FFFFFF),
+                            fontSize = 13.sp,
+                            letterSpacing = 0.65.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     )
 
                     Row(
                         modifier = Modifier
                             .align(Alignment.CenterStart)
-                            .padding(start = 8.dp),
+                            .padding(start = 20.dp),
                         horizontalArrangement = Arrangement.Start,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val iconTint = Color(0xCCFFFFFF)
-
+                        MacTrafficLightButton(
+                            color = Color(0xFFFF5F57),
+                            symbol = "×",
+                            onClick = onClose
+                        )
+                        Spacer(Modifier.width(MacTrafficRowSpacing))
+                        MacTrafficLightButton(
+                            color = Color(0xFFFFBD2E),
+                            symbol = "−",
+                            onClick = onMinimize
+                        )
+                        Spacer(Modifier.width(MacTrafficRowSpacing))
+                        MacTrafficLightButton(
+                            color = Color(0xFF28C940),
+                            symbol = "⤢",
+                            onClick = onToggleMaximize
+                        )
+                        Spacer(Modifier.width(12.dp))
                         Box(
-                            modifier = Modifier.size(TopButtonSize),
+                            modifier = Modifier
+                                .size(width = 1.dp, height = 16.dp)
+                                .background(Color(0x14FFFFFF))
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Box(
+                            modifier = Modifier.size(TopActionButtonSize),
                             contentAlignment = Alignment.TopEnd
                         ) {
-                            MinimalGlassButton(onClick = onToggleThinkingPanel) {
-                                Icon(Icons.Rounded.Psychology, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
+                            TopToolbarIconButton(
+                                size = TopActionButtonSize,
+                                onClick = onToggleThinkingPanel
+                            ) { iconTint ->
+                                Icon(
+                                    Icons.Rounded.AccessTime,
+                                    null,
+                                    tint = iconTint,
+                                    modifier = Modifier.size(TopActionIconSize)
+                                )
                             }
                             if (state.isProcessing) {
                                 Box(
                                     modifier = Modifier
-                                        .size(8.dp)
+                                        .size(6.dp)
                                         .offset(x = 2.dp, y = (-2).dp)
                                         .clip(CircleShape)
                                         .background(Color(0xFF00E5FF))
@@ -256,51 +293,62 @@ fun MainScreenContent(
                             }
                         }
 
-                        Spacer(Modifier.width(8.dp))
-
-                        Box(
-                            modifier = Modifier.size(TopButtonSize),
-                            contentAlignment = Alignment.TopEnd
-                        ) {
-                            MinimalGlassButton(onClick = onRequestNewConversation) {
-                                Icon(
-                                    Icons.Rounded.Replay,
-                                    null,
-                                    tint = iconTint,
-                                    modifier = Modifier.size(TopIconSize)
-                                )
-                            }
+                        Spacer(Modifier.width(10.dp))
+                        TopToolbarIconButton(
+                            size = TopActionButtonSize,
+                            onClick = onRequestNewConversation
+                        ) { iconTint ->
+                            Icon(
+                                Icons.Rounded.Add,
+                                null,
+                                tint = iconTint,
+                                modifier = Modifier.size(TopActionIconSize)
+                            )
                         }
                     }
 
                     Row(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
-                            .padding(end = 8.dp),
+                            .padding(end = 20.dp),
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val iconTint = Color(0xCCFFFFFF)
+                        TopToolbarIconButton(
+                            size = TopActionButtonSize,
+                            onClick = onOpenSettings
+                        ) { iconTint ->
+                            Icon(
+                                Icons.Rounded.Settings,
+                                null,
+                                tint = iconTint,
+                                modifier = Modifier.size(TopActionIconSize)
+                            )
+                        }
 
                         if (state.lastText != null) {
-                            MinimalGlassButton(onClick = onShowLastText) {
+                            Spacer(Modifier.width(10.dp))
+                            TopToolbarIconButton(
+                                size = TopActionButtonSize,
+                                onClick = onShowLastText
+                            ) { iconTint ->
                                 Icon(
                                     Icons.Rounded.SkipPrevious,
                                     null,
                                     tint = iconTint,
-                                    modifier = Modifier.size(TopIconSize)
+                                    modifier = Modifier.size(TopActionIconSize)
                                 )
                             }
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        MinimalGlassButton(onClick = onOpenSettings) {
-                            Icon(Icons.Rounded.Settings, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        MinimalGlassButton(onClick = onClose) {
-                            Icon(Icons.Rounded.Close, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                         }
                     }
+
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(Color(0x0FFFFFFF))
+                    )
                     }
                 }
 
@@ -331,25 +379,9 @@ fun MainScreenContent(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(start = 10.dp, end = 10.dp, top = 14.dp, bottom = 0.dp)
                 )
             }
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .padding(top = 43.dp)
-                    .height(1.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            0.0f to Color.Transparent,
-                            0.04f to Color(0x18FFFFFF),
-                            0.96f to Color(0x18FFFFFF),
-                            1.0f to Color.Transparent
-                        )
-                    )
-            )
             
             // Thinking Panel Overlay
             AnimatedVisibility(
@@ -873,7 +905,7 @@ fun ChatModeContent(
             placeholder = if (messages.isEmpty()) chatPlaceholder else "",
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 12.dp)
+                .padding(start = 6.dp, end = 6.dp, top = 8.dp, bottom = 16.dp)
         )
     }
 }
@@ -1235,22 +1267,92 @@ private fun formatTimestamp(timestamp: Long): String =
 
 @Composable
 fun MinimalGlassButton(
+    size: Dp = TopButtonSize,
+    iconSize: Dp = TopIconSize,
     onClick: () -> Unit,
     content: @Composable () -> Unit
 ) {
-    val backgroundColor = Color(0x0DFFFFFF)
-    val borderColor = Color(0x33FFFFFF)
+    val backgroundColor = Color(0x12FFFFFF)
+    val borderColor = Color(0x22FFFFFF)
 
     Box(
         modifier = Modifier
-            .size(TopButtonSize)
+            .size(size)
             .clip(CircleShape)
             .background(backgroundColor)
             .border(0.5.dp, borderColor, CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        content()
+        Box(modifier = Modifier.size(iconSize), contentAlignment = Alignment.Center) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun MacTrafficLightButton(
+    color: Color,
+    symbol: String,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    Box(
+        modifier = Modifier
+            .size(MacTrafficButtonSize)
+            .clip(CircleShape)
+            .background(color)
+            .hoverable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .pointerHoverIcon(PointerIcon.Hand)
+    ) {
+        if (hovered) {
+            Text(
+                text = symbol,
+                modifier = Modifier.align(Alignment.Center),
+                color = Color(0x99000000),
+                fontSize = 8.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun TopToolbarIconButton(
+    size: Dp,
+    onClick: () -> Unit,
+    content: @Composable BoxScope.(Color) -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val background by animateColorAsState(
+        targetValue = if (hovered) Color(0x0FFFFFFF) else Color.Transparent
+    )
+    val iconTint by animateColorAsState(
+        targetValue = if (hovered) Color(0x99FFFFFF) else Color(0x66FFFFFF)
+    )
+
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(background)
+            .hoverable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .pointerHoverIcon(PointerIcon.Hand),
+        contentAlignment = Alignment.Center,
+    ) {
+        content(iconTint)
     }
 }
 
@@ -1260,7 +1362,7 @@ fun MinimalGlassButton(
 fun RealLiquidGlassCard(
     modifier: Modifier = Modifier,
     isWindowFocused: Boolean,
-    cornerRadius: Dp = 23.dp,
+    cornerRadius: Dp = 24.dp,
     preset: LiquidGlassPreset = LiquidGlassPreset.Hero,
     content: @Composable BoxScope.() -> Unit
 ) {
@@ -1278,7 +1380,7 @@ fun RealLiquidGlassCard(
     val accentAlpha by animateFloatAsState(
         targetValue = when (preset) {
             LiquidGlassPreset.Default -> if (isWindowFocused) 1f else 0f
-            LiquidGlassPreset.Hero -> 0.62f
+            LiquidGlassPreset.Hero -> 0.36f
         },
         animationSpec = tween(400)
     )
@@ -1299,7 +1401,7 @@ fun RealLiquidGlassCard(
                     modifier = Modifier
                         .matchParentSize()
                         .clip(shape)
-                        .background(Color(0xFC151820))
+                        .background(Color(0xF21B1C20))
                         .alpha(backdropAlpha)
                 )
 
@@ -1307,13 +1409,26 @@ fun RealLiquidGlassCard(
                     drawRect(
                         brush = Brush.radialGradient(
                             colorStops = arrayOf(
-                                0.0f to Color(0x14D5B284),
-                                0.34f to Color(0x0CB08D5F),
-                                0.72f to Color(0x047A603B),
+                                0.0f to Color(0x14FFFFFF),
+                                0.30f to Color(0x0AFFFFFF),
+                                0.62f to Color(0x03000000),
                                 1.0f to Color.Transparent
                             ),
-                            center = Offset(size.width * 0.16f, size.height * 0.06f),
-                            radius = size.maxDimension * 1.05f
+                            center = Offset(size.width * 0.17f, size.height * 0.08f),
+                            radius = size.maxDimension * 0.98f
+                        )
+                    )
+
+                    drawRect(
+                        brush = Brush.linearGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color(0x0AFFFFFF),
+                                0.35f to Color(0x060E0E11),
+                                0.70f to Color(0x100B0B0E),
+                                1.0f to Color(0x2209090B)
+                            ),
+                            start = Offset.Zero,
+                            end = Offset(size.width, size.height)
                         )
                     )
 
@@ -1321,18 +1436,18 @@ fun RealLiquidGlassCard(
                         brush = Brush.radialGradient(
                             colorStops = arrayOf(
                                 0.0f to Color.Transparent,
-                                0.60f to Color.Transparent,
-                                0.82f to Color(0x3005070E),
-                                1.0f to Color(0x7205070E)
+                                0.66f to Color.Transparent,
+                                0.88f to Color(0x30040406),
+                                1.0f to Color(0x64030305)
                             ),
-                            center = Offset(size.width * 0.50f, size.height * 1.08f),
-                            radius = size.maxDimension * 1.02f
+                            center = Offset(size.width * 0.50f, size.height * 1.02f),
+                            radius = size.maxDimension * 1.15f
                         )
                     )
 
                     drawRect(
                         brush = Brush.radialGradient(
-                            colors = listOf(Color.Transparent, Color(0x22000000)),
+                            colors = listOf(Color.Transparent, Color(0x1A000000)),
                             center = Offset(size.width * 0.50f, size.height * 0.50f),
                             radius = size.maxDimension * 0.95f
                         )
@@ -1343,7 +1458,7 @@ fun RealLiquidGlassCard(
                     modifier = Modifier
                         .matchParentSize()
                         .clip(shape)
-                        .background(Color(0x59000000))
+                        .background(Color(0xB0000000))
                 )
             }
         }
@@ -1384,10 +1499,10 @@ fun RealLiquidGlassCard(
                     drawRoundRect(
                         brush = Brush.linearGradient(
                             colors = listOf(
-                                Color(0x66FFFFFF),
-                                Color(0x22FFFFFF),
+                                Color(0x3AFFFFFF),
                                 Color(0x18FFFFFF),
-                                Color(0x40FFFFFF)
+                                Color(0x14FFFFFF),
+                                Color(0x2AFFFFFF)
                             ),
                             start = Offset(0f, 0f),
                             end = Offset(size.width, size.height)
@@ -1400,7 +1515,7 @@ fun RealLiquidGlassCard(
                     val innerWidth = (size.width - inset * 2f).coerceAtLeast(0f)
                     val innerHeight = (size.height - inset * 2f).coerceAtLeast(0f)
                     drawRoundRect(
-                        color = Color(0x0DFFFFFF),
+                        color = Color(0x08FFFFFF),
                         topLeft = Offset(inset, inset),
                         size = Size(innerWidth, innerHeight),
                         cornerRadius = CornerRadius((cornerRadius.toPx() - inset).coerceAtLeast(0f)),
@@ -1425,8 +1540,8 @@ fun RealLiquidGlassCard(
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                Color(0x0AFFFFFF),
-                                Color(0x05FFFFFF),
+                                Color(0x06FFFFFF),
+                                Color(0x03FFFFFF),
                                 Color(0x01FFFFFF)
                             )
                         )
