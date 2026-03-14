@@ -5,6 +5,8 @@ package ru.souz.ui.main
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.desktop.ui.tooling.preview.Preview
@@ -33,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -48,7 +51,10 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -64,6 +70,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.souz.LocalWindowScope
@@ -81,15 +89,19 @@ private val MacTrafficButtonSize = 12.dp
 private val MacTrafficRowSpacing = 8.dp
 private val TopActionButtonSize = 32.dp
 private val TopActionIconSize = 16.dp
-private val ChatUserBubbleGradientStart = Color(0x3312E0B5)
-private val ChatUserBubbleGradientEnd = Color(0x1912E0B5)
-private val ChatUserBubbleBorderColor = Color(0x6612E0B5)
-private val ChatUserTextColor = Color(0xF2FFFFFF)
-private val ChatUserTimestampColor = Color(0xB212E0B5)
-private val ChatAssistantBubbleBackground = Color(0x4C000000)
-private val ChatAssistantBubbleBorderColor = Color(0x33FFFFFF)
-private val ChatAssistantTextColor = Color(0xE5FFFFFF)
-private val ChatAssistantTimestampColor = Color(0x7FFFFFFF)
+private val ChatUserBubbleBackgroundStart = Color(0x5C3F434A)
+private val ChatUserBubbleBackgroundEnd = Color(0x53363A40)
+private val ChatUserBubbleBorderStart = Color(0x3DFFFFFF)
+private val ChatUserBubbleBorderEnd = Color(0x14FFFFFF)
+private val ChatUserTextColor = Color(0xE6FFFFFF)
+private val ChatUserTimestampColor = Color(0x40FFFFFF)
+private val ChatAssistantTextColor = Color(0xD9FFFFFF)
+private val ChatAssistantTimestampColor = Color(0x40FFFFFF)
+private val ChatHoverIconColor = Color(0x40FFFFFF)
+private val ChatHoverIconHoverColor = Color(0x80FFFFFF)
+private val ChatHoverButtonBackground = Color(0x0FFFFFFF)
+private val ChatSelectionHandleColor = Color(0xFFFFFFFF)
+private val ChatSelectionBackgroundColor = Color(0x66FFFFFF)
 private val FinderPathChipBackground = Color(0x2625CAB0)
 private val FinderPathChipBorder = Color(0x8812E0B5)
 private val FinderPathChipTextColor = Color(0xFF12E0B5)
@@ -843,7 +855,6 @@ fun ChatModeContent(
                 items(messages, key = { it.id }) { message ->
                     ChatBubble(
                         message = message,
-                        onShowSnack = onShowSnack,
                         onOpenPath = onOpenPath
                     )
                 }
@@ -970,129 +981,93 @@ private fun ChatFileDropTarget(
 @Composable
 private fun ChatBubble(
     message: ChatMessage,
-    onShowSnack: (String) -> Unit,
     onOpenPath: (String) -> Unit
 ) {
-    val bubbleShape = if (message.isUser) {
-        RoundedCornerShape(
-            topStart = 16.dp,
-            topEnd = 16.dp,
-            bottomStart = 16.dp,
-            bottomEnd = 4.dp
-        )
-    } else {
-        RoundedCornerShape(
-            topStart = 16.dp,
-            topEnd = 16.dp,
-            bottomStart = 4.dp,
-            bottomEnd = 16.dp
-        )
-    }
+    val hoverInteractionSource = remember { MutableInteractionSource() }
+    val isHovered by hoverInteractionSource.collectIsHoveredAsState()
 
-    val bubbleBorderColor = if (message.isUser) {
-        ChatUserBubbleBorderColor
-    } else {
-        ChatAssistantBubbleBorderColor
-    }
+    var shouldReveal by remember(message.id) { mutableStateOf(false) }
+    LaunchedEffect(message.id) { shouldReveal = true }
+    val revealAlpha by animateFloatAsState(
+        targetValue = if (shouldReveal) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = 250,
+            easing = CubicBezierEasing(0.25f, 0.46f, 0.45f, 0.94f)
+        )
+    )
+    val revealOffset by animateDpAsState(
+        targetValue = if (shouldReveal) 0.dp else 8.dp,
+        animationSpec = tween(
+            durationMillis = 250,
+            easing = CubicBezierEasing(0.25f, 0.46f, 0.45f, 0.94f)
+        )
+    )
+    val revealOffsetPx = with(LocalDensity.current) { revealOffset.toPx() }
 
-    val alignment = if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart
-    
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = alignment
-    ) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = 800.dp)
-                .clip(bubbleShape)
-                .background(
-                    brush = if (message.isUser) {
-                        Brush.linearGradient(
-                            colors = listOf(
-                                ChatUserBubbleGradientStart,
-                                ChatUserBubbleGradientEnd
+    val contentModifier = Modifier
+        .fillMaxWidth()
+        .hoverable(interactionSource = hoverInteractionSource)
+        .graphicsLayer {
+            alpha = revealAlpha
+            translationY = revealOffsetPx
+        }
+
+    if (message.isUser) {
+        val bubbleShape = RoundedCornerShape(16.dp)
+        val customSelectionColors = TextSelectionColors(
+            handleColor = ChatSelectionHandleColor,
+            backgroundColor = ChatSelectionBackgroundColor
+        )
+
+        BoxWithConstraints(modifier = contentModifier) {
+            val maxBubbleWidth = maxWidth * 0.7f
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .widthIn(max = maxBubbleWidth),
+                horizontalAlignment = Alignment.End
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(bubbleShape)
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    ChatUserBubbleBackgroundStart,
+                                    ChatUserBubbleBackgroundEnd
+                                )
                             )
                         )
-                    } else {
-                        Brush.linearGradient(
-                            colors = listOf(
-                                ChatAssistantBubbleBackground,
-                                ChatAssistantBubbleBackground
-                            )
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    ChatUserBubbleBorderStart,
+                                    ChatUserBubbleBorderEnd
+                                )
+                            ),
+                            shape = bubbleShape
                         )
-                    }
-                )
-                .border(1.dp, bubbleBorderColor, bubbleShape)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            if (message.isUser) {
-                if (message.attachedFiles.isNotEmpty()) {
-                    MessageAttachmentsPreview(
-                        files = message.attachedFiles,
-                        onOpenPath = onOpenPath,
-                    )
-                    if (message.text.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
-
-                val customSelectionColors = TextSelectionColors(
-                    handleColor = Color(0xFFFFFFFF),
-                    backgroundColor = Color(0x66FFFFFF)
-                )
-
-                if (message.text.isNotBlank()) {
-                    CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
-                        SelectionContainer {
-                            Text(
-                                text = message.text,
-                                color = ChatUserTextColor,
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp,
-                                modifier = Modifier.padding(bottom = 3.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (message.attachedFiles.isNotEmpty()) {
+                            MessageAttachmentsPreview(
+                                files = message.attachedFiles,
+                                onOpenPath = onOpenPath,
                             )
                         }
-                    }
-                }
-            } else {
-                val parts = remember(message.text) { parseMarkdownContent(message.text) }
-                val baseFontSize = 14.sp
-                val baseStyle = TextStyle(
-                    color = ChatAssistantTextColor,
-                    fontSize = baseFontSize,
-                    lineHeight = 20.sp
-                )
-                val codeStyle = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = baseFontSize * 0.9,
-                    color = Color(0xFFE0E0E0)
-                )
-                val attachmentPathKeys = remember(message.attachedFiles) {
-                    message.attachedFiles.map { it.path.lowercase(Locale.ROOT) }.toSet()
-                }
-                val clickablePaths = message.finderPaths
-                    .filterNot { it.path.lowercase(Locale.ROOT) in attachmentPathKeys }
-                
-                val bubbleTypography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.SMALL)
-                val bubbleColors = chatMarkdownColors(baseStyle.color)
 
-                SelectionContainer {
-                    Column {
-                        parts.forEach { part ->
-                            when (part) {
-                                is MarkdownPart.TextContent -> {
-                                    Markdown(
-                                        content = part.content,
-                                        colors = bubbleColors,
-                                        typography = bubbleTypography,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                                is MarkdownPart.CodeContent -> {
-                                    CodeBlockWithCopy(
-                                        code = part.code,
-                                        language = part.language,
-                                        style = codeStyle
+                        if (message.text.isNotBlank()) {
+                            CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
+                                SelectionContainer {
+                                    Text(
+                                        text = message.text,
+                                        color = ChatUserTextColor,
+                                        fontSize = 14.sp,
+                                        lineHeight = 22.4.sp,
                                     )
                                 }
                             }
@@ -1100,8 +1075,105 @@ private fun ChatBubble(
                     }
                 }
 
+                val userTimestampAlpha by animateFloatAsState(
+                    targetValue = if (isHovered) 1f else 0f,
+                    animationSpec = tween(durationMillis = 200)
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(22.dp),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Text(
+                        text = formatTimestamp(message.timestamp),
+                        color = ChatUserTimestampColor,
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .alpha(userTimestampAlpha)
+                    )
+                }
+            }
+        }
+    } else {
+        val clipboardManager = LocalClipboardManager.current
+        val scope = rememberCoroutineScope()
+        var copied by remember(message.id) { mutableStateOf(false) }
+        var copyNonce by remember(message.id) { mutableStateOf(0) }
+
+        val attachmentPathKeys = remember(message.attachedFiles) {
+            message.attachedFiles.map { it.path.lowercase(Locale.ROOT) }.toSet()
+        }
+        val clickablePaths = message.finderPaths
+            .filterNot { it.path.lowercase(Locale.ROOT) in attachmentPathKeys }
+
+        val copyInteractionSource = remember { MutableInteractionSource() }
+        val isCopyHovered by copyInteractionSource.collectIsHoveredAsState()
+        val copyIconColor by animateColorAsState(
+            targetValue = if (isCopyHovered) ChatHoverIconHoverColor else ChatHoverIconColor,
+            animationSpec = tween(durationMillis = 150)
+        )
+        val copyBackgroundColor by animateColorAsState(
+            targetValue = if (isCopyHovered) ChatHoverButtonBackground else Color.Transparent,
+            animationSpec = tween(durationMillis = 150)
+        )
+
+        Box(modifier = contentModifier) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 17.dp, end = 70.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (message.text.isNotBlank()) {
+                    val parts = remember(message.text) { parseMarkdownContent(message.text) }
+                    val baseFontSize = 14.sp
+                    val baseStyle = TextStyle(
+                        color = ChatAssistantTextColor,
+                        fontSize = baseFontSize,
+                        lineHeight = 22.4.sp
+                    )
+                    val codeStyle = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = baseFontSize * 0.9,
+                        color = Color(0xFFE0E0E0)
+                    )
+                    val typography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.SMALL)
+                    val colors = chatMarkdownColors(baseStyle.color)
+                    val customSelectionColors = TextSelectionColors(
+                        handleColor = ChatSelectionHandleColor,
+                        backgroundColor = ChatSelectionBackgroundColor
+                    )
+
+                    CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
+                        SelectionContainer {
+                            Column {
+                                parts.forEach { part ->
+                                    when (part) {
+                                        is MarkdownPart.TextContent -> {
+                                            Markdown(
+                                                content = part.content,
+                                                colors = colors,
+                                                typography = typography,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+
+                                        is MarkdownPart.CodeContent -> {
+                                            CodeBlockWithCopy(
+                                                code = part.code,
+                                                language = part.language,
+                                                style = codeStyle
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (message.attachedFiles.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
                     MessageAttachmentsPreview(
                         files = message.attachedFiles,
                         onOpenPath = onOpenPath,
@@ -1109,7 +1181,6 @@ private fun ChatBubble(
                 }
 
                 if (clickablePaths.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         clickablePaths.forEach { item ->
                             FinderPathChip(
@@ -1125,16 +1196,54 @@ private fun ChatBubble(
                 }
             }
 
-            Row(
-                modifier = Modifier.padding(top = 0.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+            AnimatedVisibility(
+                visible = isHovered,
+                enter = fadeIn(animationSpec = tween(200)),
+                exit = fadeOut(animationSpec = tween(200)),
+                modifier = Modifier.align(Alignment.TopEnd)
             ) {
-                Text(
-                    text = formatTimestamp(message.timestamp),
-                    color = if (message.isUser) ChatUserTimestampColor else ChatAssistantTimestampColor,
-                    fontSize = 11.sp
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = formatTimestamp(message.timestamp),
+                        color = ChatAssistantTimestampColor,
+                        fontSize = 11.sp
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(copyBackgroundColor)
+                            .hoverable(interactionSource = copyInteractionSource)
+                            .pointerHoverIcon(PointerIcon.Hand)
+                            .clickable(
+                                interactionSource = copyInteractionSource,
+                                indication = null,
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(message.text))
+                                    copied = true
+                                    val clickId = copyNonce + 1
+                                    copyNonce = clickId
+                                    scope.launch {
+                                        delay(2000)
+                                        if (copyNonce == clickId) {
+                                            copied = false
+                                        }
+                                    }
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                            contentDescription = null,
+                            tint = copyIconColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
             }
         }
     }
@@ -1267,7 +1376,7 @@ private fun FinderPathChip(
     }
 }
 
-private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.Locale("ru", "RU"))
 
 private fun formatTimestamp(timestamp: Long): String = 
     timestampFormatter.format(java.util.Date(timestamp))
