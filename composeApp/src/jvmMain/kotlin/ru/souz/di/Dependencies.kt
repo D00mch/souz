@@ -7,10 +7,16 @@ import ru.souz.db.SettingsProviderImpl
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
-import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.AgentFacade
+import ru.souz.agent.impl.GraphBasedAgent
+import ru.souz.agent.impl.LuaGraphBasedAgent
+import ru.souz.agent.SystemPromptResolver
+import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesLLM
+import ru.souz.agent.nodes.NodesLua
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesMCP
@@ -213,6 +219,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { TelemetryCryptoService() }
     bindSingleton { TelemetryRuntimeConfig.production() }
     bindSingleton { TelemetryService(instance(), instance(), instance(), instance()) }
+    bindSingleton { AgentToolExecutor(instance()) }
 
     // API
     bindSingleton { GigaAuth(instance()) }
@@ -244,6 +251,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { NodesErrorHandling() }
     bindSingleton { NodesCommon(instance(), instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
+    bindSingleton { LuaRuntime(instance()) }
+    bindSingleton { NodesLua(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
     bindSingleton { NodesSummarization(instance(), instance()) }
     bindSingleton {
@@ -257,7 +266,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         )
     }
     bindSingleton { ToolsFactory(di) }
+    bindSingleton { SystemPromptResolver() }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
+    bindSingleton { LuaGraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
+    bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }
     bindSingleton { FinderPathExtractor(instance()) }
     bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }

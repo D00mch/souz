@@ -113,6 +113,15 @@
     <!-- Functions Settings -->
     <string name="setting_fewshot_title">Few-Shot Examples</string>
     <string name="setting_fewshot_desc">Класть примеры использования тулов в контекст</string>
+    <string name="label_agent">Агент</string>
+    <string name="agent_option_lua_title">Писатель скриптов</string>
+    <string name="agent_option_lua_description">Строит планы и решает задачи безопасными скриптами. Экономит токены</string>
+    <string name="agent_option_graph_title">Graph-агент</string>
+    <string name="agent_option_graph_description">Классический графовый поток с итеративными вызовами инструментов и суммаризацией.</string>
+    <string name="agent_switch_dialog_title">Сменить активного агента?</string>
+    <string name="agent_switch_dialog_message">Текущая работа будет отменена, а активный контекст беседы будет очищен.</string>
+    <string name="agent_switch_dialog_confirm">Сменить</string>
+    <string name="agent_switch_dialog_cancel">Отмена</string>
     <string name="button_configure_tools">Настройка инструментов</string>
     <string name="button_configure_telegram">Настройка подключения к Telegram</string>
     <string name="telegram_status_connected_format">Подключено: %s</string>
@@ -189,6 +198,7 @@
 
     <!-- Dropdowns -->
     <string name="label_model">Модель</string>
+    <string name="content_desc_select_agent">Выбрать агента</string>
     <string name="label_embeddings_model">Модель эмбеддингов</string>
     <string name="label_voice_recognition_model">Модель распознавания речи</string>
 

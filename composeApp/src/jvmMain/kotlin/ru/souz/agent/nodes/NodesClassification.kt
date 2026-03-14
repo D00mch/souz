@@ -35,7 +35,7 @@ class NodesClassification(
             toolsSettings.applyFilter(toolsFactory.toolsByCategory)
         val categories: List<ToolCategory> = classify(ctx.input, ctx.history, categoryStates)
 
-        val categoriesToChoseFrom = if (categories.isEmpty() || categories.contains(ToolCategory.HELP)) {
+        val categoriesToChoseFrom = if (categories.isEmpty() || categories.contains(HELP)) {
             categoryStates
         } else {
             categoryStates.filter { categories.contains(it.key) }

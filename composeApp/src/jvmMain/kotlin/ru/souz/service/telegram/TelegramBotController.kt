@@ -31,7 +31,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
-import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.AgentFacade
 import ru.souz.db.ConfigStore
 import ru.souz.giga.gigaJsonMapper
 import ru.souz.tool.files.FilesToolUtil
@@ -122,7 +122,7 @@ private class KtorTelegramBotApi : TelegramBotApi {
 
 class TelegramBotController(
     private val telegramService: TelegramService,
-    private val agent: GraphBasedAgent,
+    private val agentFacade: AgentFacade,
     private val speechRecognitionProvider: SpeechRecognitionProvider? = null,
     private val configProvider: TelegramBotConfigProvider = PreferencesTelegramBotConfigProvider,
     private val botApi: TelegramBotApi = KtorTelegramBotApi(),
@@ -278,7 +278,7 @@ class TelegramBotController(
                 _incomingMessages.emit(IncomingMessage(text = text, responseDeferred = deferred, isVoice = isVoice))
                 deferred.await()
             } else {
-                agent.execute(text)
+                agentFacade.execute(text)
             }
             botApi.sendMessage(token, chatId, response)
         } catch (e: Exception) {
