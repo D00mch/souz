@@ -40,10 +40,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
@@ -98,6 +101,12 @@ private val ToolModifyPatchPreviewMinHeight = 220.dp
 private val ToolModifyPatchPreviewMaxHeight = 620.dp
 private const val ToolModifyPatchParam = "patch"
 private const val ToolModifyPatchPreviewMaxLines = 350
+
+private enum class MacTrafficKind {
+    Close,
+    Minimize,
+    Maximize,
+}
 
 enum class LiquidGlassPreset {
     Default,
@@ -244,19 +253,19 @@ fun MainScreenContent(
                     ) {
                         MacTrafficLightButton(
                             color = Color(0xFFFF5F57),
-                            symbol = "×",
+                            kind = MacTrafficKind.Close,
                             onClick = onClose
                         )
                         Spacer(Modifier.width(MacTrafficRowSpacing))
                         MacTrafficLightButton(
                             color = Color(0xFFFFBD2E),
-                            symbol = "−",
+                            kind = MacTrafficKind.Minimize,
                             onClick = onMinimize
                         )
                         Spacer(Modifier.width(MacTrafficRowSpacing))
                         MacTrafficLightButton(
                             color = Color(0xFF28C940),
-                            symbol = "⤢",
+                            kind = MacTrafficKind.Maximize,
                             onClick = onToggleMaximize
                         )
                         Spacer(Modifier.width(12.dp))
@@ -1293,17 +1302,19 @@ fun MinimalGlassButton(
 @Composable
 private fun MacTrafficLightButton(
     color: Color,
-    symbol: String,
+    kind: MacTrafficKind,
     onClick: () -> Unit,
 ) {
+    var hovered by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
-    val hovered by interactionSource.collectIsHoveredAsState()
+
     Box(
         modifier = Modifier
             .size(MacTrafficButtonSize)
             .clip(CircleShape)
             .background(color)
-            .hoverable(interactionSource = interactionSource)
+            .onPointerEvent(PointerEventType.Enter) { hovered = true }
+            .onPointerEvent(PointerEventType.Exit) { hovered = false }
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -1312,13 +1323,59 @@ private fun MacTrafficLightButton(
             .pointerHoverIcon(PointerIcon.Hand)
     ) {
         if (hovered) {
-            Text(
-                text = symbol,
-                modifier = Modifier.align(Alignment.Center),
-                color = Color(0x99000000),
-                fontSize = 8.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val glyphColor = Color(0xCC1A1A1A)
+                val centerX = size.width * 0.5f
+                val centerY = size.height * 0.5f
+                val half = size.minDimension * 0.22f
+                val stroke = size.minDimension * 0.14f
+
+                when (kind) {
+                    MacTrafficKind.Close -> {
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(centerX - half, centerY - half),
+                            end = Offset(centerX + half, centerY + half),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round
+                        )
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(centerX + half, centerY - half),
+                            end = Offset(centerX - half, centerY + half),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round
+                        )
+                    }
+
+                    MacTrafficKind.Minimize -> {
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(centerX - half, centerY),
+                            end = Offset(centerX + half, centerY),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round
+                        )
+                    }
+
+                    MacTrafficKind.Maximize -> {
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(centerX - half, centerY),
+                            end = Offset(centerX + half, centerY),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round
+                        )
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(centerX, centerY - half),
+                            end = Offset(centerX, centerY + half),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round
+                        )
+                    }
+                }
+            }
         }
     }
 }
