@@ -1305,30 +1305,36 @@ fun RealLiquidGlassCard(
 
                 Canvas(modifier = Modifier.matchParentSize().clip(shape).alpha(accentAlpha)) {
                     drawRect(
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                Color(0x0FD7B585),
-                                Color(0x09987855),
-                                Color.Transparent
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color(0x14D5B284),
+                                0.34f to Color(0x0CB08D5F),
+                                0.72f to Color(0x047A603B),
+                                1.0f to Color.Transparent
                             ),
-                            start = Offset(0f, 0f),
-                            end = Offset(size.width * 0.70f, size.height * 0.50f)
+                            center = Offset(size.width * 0.16f, size.height * 0.06f),
+                            radius = size.maxDimension * 1.05f
                         )
                     )
 
                     drawRect(
                         brush = Brush.radialGradient(
-                            colors = listOf(Color(0x09E1C79E), Color.Transparent),
-                            center = Offset(size.width * 0.24f, size.height * 0.10f),
-                            radius = size.maxDimension * 0.46f
+                            colorStops = arrayOf(
+                                0.0f to Color.Transparent,
+                                0.60f to Color.Transparent,
+                                0.82f to Color(0x3005070E),
+                                1.0f to Color(0x7205070E)
+                            ),
+                            center = Offset(size.width * 0.50f, size.height * 1.08f),
+                            radius = size.maxDimension * 1.02f
                         )
                     )
 
                     drawRect(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color(0x9E05070E)),
-                            startY = size.height * 0.36f,
-                            endY = size.height
+                        brush = Brush.radialGradient(
+                            colors = listOf(Color.Transparent, Color(0x22000000)),
+                            center = Offset(size.width * 0.50f, size.height * 0.50f),
+                            radius = size.maxDimension * 0.95f
                         )
                     )
                 }
