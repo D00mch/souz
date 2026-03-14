@@ -5,14 +5,14 @@ import kotlinx.coroutines.flow.flow
 import org.kodein.di.DI
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
-import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.AgentFacade
 import ru.souz.di.mainDiModule
 
 private val logAgent = LoggerFactory.getLogger("Agent")
 
 suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
-    val agent: GraphBasedAgent by di.instance()
+    val agent: AgentFacade by di.instance()
     userInputFlow().collect { input ->
         val response = agent.execute(input)
         logAgent.info(response)

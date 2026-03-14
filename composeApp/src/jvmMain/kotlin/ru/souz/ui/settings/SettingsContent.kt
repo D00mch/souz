@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ru.souz.agent.AgentId
 import ru.souz.giga.EmbeddingsModel
 import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
@@ -49,6 +50,8 @@ import ru.souz.giga.VoiceRecognitionModel
 import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
+import ru.souz.ui.common.ConfirmDialog
+import ru.souz.ui.common.ConfirmDialogType
 import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
@@ -690,6 +693,9 @@ private fun ProviderLinkCard(
 fun FunctionsSettingsContent(
     state: SettingsState,
     onUseFewShotExamplesChange: (Boolean) -> Unit,
+    onAgentSelected: (AgentId) -> Unit,
+    onConfirmAgentSwitch: () -> Unit,
+    onCancelAgentSwitch: () -> Unit,
     onOpenTools: () -> Unit,
     onOpenTelegramSettings: () -> Unit,
     onClose: () -> Unit
@@ -700,6 +706,12 @@ fun FunctionsSettingsContent(
         onClose = onClose
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
+            AgentDropdown(
+                selectedAgent = state.activeAgentId,
+                availableAgents = state.availableAgents,
+                onAgentSelected = onAgentSelected,
+            )
+
             SettingsRow(
                 title = stringResource(Res.string.setting_fewshot_title),
                 description = stringResource(Res.string.setting_fewshot_desc),
@@ -822,6 +834,18 @@ fun FunctionsSettingsContent(
                 }
             }
         }
+    }
+
+    if (state.showAgentSwitchConfirmation && state.pendingAgentId != null) {
+        ConfirmDialog(
+            type = ConfirmDialogType.WARNING,
+            title = stringResource(Res.string.agent_switch_dialog_title),
+            message = stringResource(Res.string.agent_switch_dialog_message),
+            confirmText = stringResource(Res.string.agent_switch_dialog_confirm),
+            cancelText = stringResource(Res.string.agent_switch_dialog_cancel),
+            onConfirm = onConfirmAgentSwitch,
+            onDismiss = onCancelAgentSwitch,
+        )
     }
 }
 
@@ -1521,6 +1545,119 @@ fun TokensBalanceSection(
 }
 
 @Composable
+fun AgentDropdown(
+    selectedAgent: AgentId,
+    availableAgents: List<AgentId>,
+    onAgentSelected: (AgentId) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedDescriptionRes = selectedAgent.descriptionRes()
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(Res.string.label_agent),
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.Medium
+            ),
+            color = SettingsLabelColor,
+        )
+        Box {
+            OutlinedButton(
+                onClick = { expanded = !expanded },
+                enabled = availableAgents.isNotEmpty(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = SettingsFieldBackground,
+                    contentColor = SettingsStrongTextColor
+                ),
+                border = BorderStroke(1.dp, SettingsDefaultBorder),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(selectedAgent.titleRes()),
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 15.sp,
+                            lineHeight = 22.sp
+                        ),
+                        color = SettingsStrongTextColor
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = stringResource(Res.string.content_desc_select_agent),
+                        tint = SettingsStrongTextColor
+                    )
+                }
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier
+                    .fillMaxWidth(0.7f)
+                    .background(SettingsFieldBackground, RoundedCornerShape(12.dp))
+                    .border(1.dp, SettingsDefaultBorder, RoundedCornerShape(12.dp))
+            ) {
+                availableAgents.forEach { agentId ->
+                    DropdownMenuItem(
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = stringResource(agentId.titleRes()),
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp,
+                                        fontWeight = FontWeight.Medium,
+                                    ),
+                                    color = SettingsStrongTextColor
+                                )
+                                Text(
+                                    text = stringResource(agentId.descriptionRes()),
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp
+                                    ),
+                                    color = SettingsHintColor,
+                                )
+                            }
+                        },
+                        onClick = {
+                            onAgentSelected(agentId)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+        Text(
+            text = stringResource(selectedDescriptionRes),
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontSize = 12.sp,
+                lineHeight = 16.sp
+            ),
+            color = SettingsHintColor,
+        )
+    }
+}
+
+private fun AgentId.titleRes() = when (this) {
+    AgentId.GRAPH -> Res.string.agent_option_graph_title
+    AgentId.LUA_GRAPH -> Res.string.agent_option_lua_title
+}
+
+private fun AgentId.descriptionRes() = when (this) {
+    AgentId.GRAPH -> Res.string.agent_option_graph_description
+    AgentId.LUA_GRAPH -> Res.string.agent_option_lua_description
+}
+
+@Composable
 fun ModelDropdown(
     selectedModel: GigaModel,
     availableModels: List<GigaModel>,
@@ -1881,6 +2018,9 @@ private fun FunctionsSettingsContentPreview() {
         FunctionsSettingsContent(
             state = PreviewSettingsState,
             onUseFewShotExamplesChange = {},
+            onAgentSelected = {},
+            onConfirmAgentSwitch = {},
+            onCancelAgentSwitch = {},
             onOpenTools = {},
             onOpenTelegramSettings = {},
             onClose = {}

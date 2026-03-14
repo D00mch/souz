@@ -117,6 +117,15 @@
     <!-- Functions Settings -->
     <string name="setting_fewshot_title">Few-Shot Examples</string>
     <string name="setting_fewshot_desc">Put tool usage examples into context</string>
+    <string name="label_agent">Agent</string>
+    <string name="agent_option_lua_title">Scripts Writer</string>
+    <string name="agent_option_lua_description">Plans with LLM and executes safe scripts. Smarter, better tokens utilisation</string>
+    <string name="agent_option_graph_title">Graph Agent</string>
+    <string name="agent_option_graph_description">Classic graph flow with iterative tool calls and summarization.</string>
+    <string name="agent_switch_dialog_title">Switch active agent?</string>
+    <string name="agent_switch_dialog_message">Current work will be cancelled and the active conversation context will be cleared.</string>
+    <string name="agent_switch_dialog_confirm">Switch</string>
+    <string name="agent_switch_dialog_cancel">Cancel</string>
     <string name="button_configure_tools">Configure tools</string>
     <string name="button_configure_telegram">Configure Telegram connection</string>
     <string name="telegram_status_connected_format">Connected: %s</string>
@@ -193,6 +202,7 @@
 
     <!-- Dropdowns -->
     <string name="label_model">Model</string>
+    <string name="content_desc_select_agent">Select agent</string>
     <string name="label_embeddings_model">Embeddings model</string>
     <string name="label_voice_recognition_model">Voice recognition model</string>
 

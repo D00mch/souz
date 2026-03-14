@@ -83,6 +83,10 @@ fun SettingsScreen(
             .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    if (state.currentScreen == SettingsSubScreen.MAIN && state.showAgentSwitchConfirmation) {
+                        viewModel.send(SettingsEvent.CancelAgentSwitch)
+                        return@onPreviewKeyEvent true
+                    }
                     if (state.currentScreen == SettingsSubScreen.TELEGRAM && state.showBotDeleteConfirmation) {
                         viewModel.send(SettingsEvent.CancelDisconnectTelegramBot)
                         return@onPreviewKeyEvent true
@@ -248,6 +252,9 @@ fun SettingsScreenMain(
                         SettingsSection.FUNCTIONS -> FunctionsSettingsContent(
                             state = state,
                             onUseFewShotExamplesChange = { viewModel.send(SettingsEvent.InputUseFewShotExamples(it)) },
+                            onAgentSelected = { viewModel.send(SettingsEvent.SelectAgent(it)) },
+                            onConfirmAgentSwitch = { viewModel.send(SettingsEvent.ConfirmAgentSwitch) },
+                            onCancelAgentSwitch = { viewModel.send(SettingsEvent.CancelAgentSwitch) },
                             onOpenTools = onOpenTools,
                             onOpenTelegramSettings = { viewModel.send(SettingsEvent.OpenTelegramSettings) },
                             onClose = onClose

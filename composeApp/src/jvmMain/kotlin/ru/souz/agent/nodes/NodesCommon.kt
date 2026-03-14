@@ -1,6 +1,7 @@
 package ru.souz.agent.nodes
 
 import org.slf4j.LoggerFactory
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.agent.engine.Node
@@ -9,11 +10,9 @@ import ru.souz.db.SettingsProvider
 import ru.souz.db.StorredData
 import ru.souz.db.StorredType
 import ru.souz.giga.*
-import ru.souz.telemetry.TelemetryService
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.browser.detectDefaultBrowser
 import ru.souz.tool.browser.prettyName
-import ru.souz.tool.ToolCategory
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -27,7 +26,7 @@ import java.util.Locale
 class NodesCommon(
     private val desktopInfoRepository: DesktopInfoRepository,
     private val settingsProvider: SettingsProvider,
-    private val telemetryService: TelemetryService,
+    private val agentToolExecutor: AgentToolExecutor,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
@@ -217,40 +216,7 @@ class NodesCommon(
     private suspend fun executeTool(
         settings: AgentSettings,
         functionCall: GigaResponse.FunctionCall,
-    ): GigaRequest.Message {
-        val tools = settings.tools
-        val fn: GigaToolSetup = tools[functionCall.name] ?: return GigaRequest.Message(
-            GigaMessageRole.function, """{"result":"no such function ${functionCall.name}"}"""
-        )
-        l.info("Executing tool: ${fn.fn.name}, arguments: ${functionCall.arguments}")
-        val startedAtMs = System.currentTimeMillis()
-        val toolCategory = resolveToolCategory(settings, functionCall.name)
-        return try {
-            fn.invoke(functionCall).also {
-                telemetryService.recordToolExecution(
-                    functionName = functionCall.name,
-                    functionArguments = functionCall.arguments,
-                    toolCategory = toolCategory,
-                    durationMs = System.currentTimeMillis() - startedAtMs,
-                    success = true,
-                    errorMessage = null,
-                )
-            }
-        } catch (e: Exception) {
-            telemetryService.recordToolExecution(
-                functionName = functionCall.name,
-                functionArguments = functionCall.arguments,
-                toolCategory = toolCategory,
-                durationMs = System.currentTimeMillis() - startedAtMs,
-                success = false,
-                errorMessage = e::class.simpleName ?: "UnknownError",
-            )
-            throw e
-        }
-    }
-
-    private fun resolveToolCategory(settings: AgentSettings, functionName: String): ToolCategory? =
-        settings.toolsByCategory.entries.firstOrNull { (_, tools) -> functionName in tools }?.key
+    ): GigaRequest.Message = agentToolExecutor.execute(settings, functionCall)
 }
 
 fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaRequest.Chat {

@@ -13,8 +13,7 @@ import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
-import ru.souz.agent.defaultSystemPromptForRegion
-import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.AgentFacade
 import ru.souz.audio.Say
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
@@ -53,7 +52,7 @@ class SettingsViewModel(
     private val llmBuildProfile: LlmBuildProfile by di.instance()
     private val apiKeyAvailabilityUseCase: ApiKeyAvailabilityUseCase by di.instance()
     private val chatApi: GigaChatAPI by di.instance()
-    private val graphBasedAgent: GraphBasedAgent by di.instance()
+    private val agentFacade: AgentFacade by di.instance()
     private val telegramPlatformSupport: TelegramPlatformSupport by di.instance()
     private val telegramService: TelegramService by di.instance()
     private val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
@@ -154,10 +153,30 @@ class SettingsViewModel(
                 keysProvider.safeModeEnabled = event.enabled
                 setState { copy(safeModeEnabled = event.enabled) }
             }
+            is SelectAgent -> {
+                if (event.agentId == currentState.activeAgentId) return
+                setState { copy(showAgentSwitchConfirmation = true, pendingAgentId = event.agentId) }
+            }
+            ConfirmAgentSwitch -> {
+                flushPendingSystemPromptSave()
+                val targetAgent = currentState.pendingAgentId ?: return
+                agentFacade.setActiveAgent(targetAgent)
+                setState {
+                    copy(
+                        showAgentSwitchConfirmation = false,
+                        pendingAgentId = null,
+                        activeAgentId = targetAgent,
+                        systemPrompt = agentFacade.currentContext.value.systemPrompt,
+                    )
+                }
+            }
+            CancelAgentSwitch -> {
+                setState { copy(showAgentSwitchConfirmation = false, pendingAgentId = null) }
+            }
             is SelectModel -> {
                 if (event.model !in currentState.availableLlmModels) return
                 flushPendingSystemPromptSave()
-                val newPrompt = graphBasedAgent.updateModel(event.model)
+                val newPrompt = agentFacade.setModel(event.model)
                 setState { copy(gigaModel = event.model, systemPrompt = newPrompt) }
                 fetchBalance()
             }
@@ -193,7 +212,7 @@ class SettingsViewModel(
                 val newContextSize = normalized.toIntOrNull()?.takeIf { it > 0 }
                 if (newContextSize != null) {
                     keysProvider.contextSize = newContextSize
-                    graphBasedAgent.updateContextSize(newContextSize)
+                    agentFacade.setContextSize(newContextSize)
                 }
                 setState {
                     copy(
@@ -208,7 +227,7 @@ class SettingsViewModel(
                 val newTemperature = normalized.toFloatOrNull()
                 if (newTemperature != null) {
                     keysProvider.temperature = newTemperature
-                    graphBasedAgent.updateTemperature(newTemperature)
+                    agentFacade.setTemperature(newTemperature)
                 }
                 setState {
                     copy(
@@ -249,9 +268,9 @@ class SettingsViewModel(
             }
             ResetSystemPrompt -> {
                 cancelPendingSystemPromptSave()
-                graphBasedAgent.resetSystemPrompt()
+                agentFacade.resetSystemPrompt()
                 send(SettingsEffect.NotifyOnSystemPrompt)
-                setState { copy(systemPrompt = defaultSystemPromptForRegion(keysProvider.regionProfile)) }
+                setState { copy(systemPrompt = agentFacade.currentContext.value.systemPrompt) }
             }
             is SendLogsToSupport -> sendLogs()
             OpenPrivacyPolicy -> openPrivacyPolicy()
@@ -359,12 +378,9 @@ class SettingsViewModel(
             configured = configuredLlmModel,
             available = availableLlmModels,
         ) { keysProvider.defaultLlmModel(llmBuildProfile) }
-        val selectedPrompt = if (selectedLlmModel != currentState.gigaModel) {
-            graphBasedAgent.updateModel(selectedLlmModel)
-        } else {
-            keysProvider.getSystemPromptForModel(selectedLlmModel)
-                ?: defaultSystemPromptForRegion(keysProvider.regionProfile)
-        }
+        val selectedPrompt = agentFacade.setModel(selectedLlmModel)
+        val activeAgentId = agentFacade.activeAgentId.value
+        val availableAgents = agentFacade.availableAgents
 
         val availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(llmBuildProfile)
         val configuredEmbeddingsModel = keysProvider.embeddingsModel
@@ -416,6 +432,8 @@ class SettingsViewModel(
                 notificationSoundEnabled = keysProvider.notificationSoundEnabled,
                 useEnglishVersion = keysProvider.regionProfile == REGION_EN,
                 safeModeEnabled = keysProvider.safeModeEnabled,
+                activeAgentId = activeAgentId,
+                availableAgents = availableAgents,
                 gigaModel = selectedLlmModel,
                 embeddingsModel = selectedEmbeddingsModel,
                 voiceRecognitionModel = selectedVoiceRecognitionModel,
@@ -543,7 +561,7 @@ class SettingsViewModel(
                 keysProvider.supportEmail = value
             }
             DeferredTextSetting.SYSTEM_PROMPT -> {
-                graphBasedAgent.updateSystemPrompt(value)
+                agentFacade.updateSystemPrompt(value)
                 send(SettingsEffect.NotifyOnSystemPrompt)
             }
         }

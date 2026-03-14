@@ -1,7 +1,7 @@
 package ru.souz.ui.main.usecases
 
 import kotlinx.coroutines.CoroutineDispatcher
-import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.AgentFacade
 import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
@@ -19,7 +19,7 @@ data class MainUseCases(
 )
 
 class MainUseCasesFactory(
-    private val graphAgent: GraphBasedAgent,
+    private val agentFacade: AgentFacade,
     private val settingsProvider: SettingsProvider,
     private val speechRecognitionProvider: SpeechRecognitionProvider,
     private val audioRecorder: InMemoryAudioRecorder,
@@ -35,7 +35,7 @@ class MainUseCasesFactory(
         val speechUseCase = SpeechUseCase(say)
         val attachmentsUseCase = ChatAttachmentsUseCase(ioDispatcher)
         val chatUseCase = ChatUseCase(
-            graphAgent = graphAgent,
+            agentFacade = agentFacade,
             settingsProvider = settingsProvider,
             speechUseCase = speechUseCase,
             finderPathExtractor = finderPathExtractor,

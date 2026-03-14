@@ -18,8 +18,13 @@ import org.junit.jupiter.params.provider.ValueSource
 import org.kodein.di.DI
 import org.kodein.di.bindProvider
 import org.kodein.di.bindSingleton
+import org.kodein.di.direct
 import org.kodein.di.instance
-import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.AgentId
+import ru.souz.agent.impl.GraphBasedAgent
+import ru.souz.agent.SystemPromptResolver
+import ru.souz.agent.engine.AgentContext
+import ru.souz.agent.engine.AgentSettings
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
@@ -51,6 +56,7 @@ import ru.souz.tool.notes.ToolDeleteNote
 import ru.souz.tool.notes.ToolListNotes
 import ru.souz.tool.notes.ToolSearchNotes
 import ru.souz.tool.textReplace.ToolGetClipboard
+import ru.souz.tool.ToolsFactory
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -74,7 +80,9 @@ class GraphAgentToolScenariosIntegrationTest {
                 every { gigaModel } returns selectedModel
                 every { requestTimeoutMillis } returns 60_000L
                 every { temperature } returns 0.2f
-                every { systemPrompt } returns "Будь полезен. Выполняй инструкции с помощью тулов."
+                every { getSystemPromptForAgentModel(any(), any()) } answers {
+                    "Будь полезен. Выполняй инструкции с помощью тулов."
+                }
             }
         }
     }
@@ -125,7 +133,7 @@ class GraphAgentToolScenariosIntegrationTest {
         }
 
         val agent = GraphBasedAgent(di, gigaJsonMapper)
-        agent.execute(userPrompt)
+        runGraphAgent(agent, di, userPrompt)
 
         coVerify(atLeast = 1) {
             testOpenApp.invoke(match { it.target.contains("ru.keepcoder.Telegram", ignoreCase = true) })
@@ -1077,7 +1085,36 @@ class GraphAgentToolScenariosIntegrationTest {
             overrides()
         }
         val agent = GraphBasedAgent(di, gigaJsonMapper)
-        agent.execute(userPrompt)
+        runGraphAgent(agent, di, userPrompt)
+    }
+
+    private suspend fun runGraphAgent(agent: GraphBasedAgent, di: DI, userPrompt: String) {
+        val settingsProvider: SettingsProvider = di.direct.instance()
+        val toolsFactory: ToolsFactory = di.direct.instance()
+        val systemPromptResolver: SystemPromptResolver = di.direct.instance()
+
+        val model = settingsProvider.gigaModel
+        val settings = AgentSettings(
+            model = model.alias,
+            temperature = settingsProvider.temperature,
+            toolsByCategory = toolsFactory.toolsByCategory,
+            contextSize = settingsProvider.contextSize,
+        )
+        val prompt = settingsProvider.getSystemPromptForAgentModel(AgentId.GRAPH, model)
+            ?: systemPromptResolver.defaultPrompt(
+                agentId = AgentId.GRAPH,
+                model = model,
+                regionProfile = settingsProvider.regionProfile,
+            )
+        val ctx = AgentContext(
+            input = userPrompt,
+            settings = settings,
+            history = emptyList(),
+            activeTools = settings.tools.byName.values.map { it.fn },
+            systemPrompt = prompt,
+        )
+
+        agent.execute(ctx)
     }
 
     companion object {

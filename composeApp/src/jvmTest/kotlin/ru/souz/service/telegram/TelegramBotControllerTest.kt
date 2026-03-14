@@ -5,7 +5,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.AgentFacade
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import java.nio.file.Files
 import kotlin.test.Test
@@ -17,13 +17,13 @@ class TelegramBotControllerTest {
 
     @Test
     fun `processUpdates executes only owner private commands`() = runTest {
-        val agent = mockk<GraphBasedAgent>()
-        coEvery { agent.execute("ping") } returns "pong"
+        val agentFacade = mockk<AgentFacade>()
+        coEvery { agentFacade.execute("ping") } returns "pong"
 
         val botApi = FakeBotApi()
         val controller = TelegramBotController(
             telegramService = mockk(relaxed = true),
-            agent = agent,
+            agentFacade = agentFacade,
             botApi = botApi,
         )
 
@@ -46,18 +46,18 @@ class TelegramBotControllerTest {
 
         assertEquals(6, nextOffset)
         assertEquals(listOf("Processing command...", "pong"), botApi.sentTexts)
-        coVerify(exactly = 1) { agent.execute("ping") }
+        coVerify(exactly = 1) { agentFacade.execute("ping") }
 
         controller.close()
     }
 
     @Test
     fun `processUpdates rejects owner commands outside private chat`() = runTest {
-        val agent = mockk<GraphBasedAgent>(relaxed = true)
+        val agentFacade = mockk<AgentFacade>(relaxed = true)
         val botApi = FakeBotApi()
         val controller = TelegramBotController(
             telegramService = mockk(relaxed = true),
-            agent = agent,
+            agentFacade = agentFacade,
             botApi = botApi,
         )
 
@@ -80,18 +80,18 @@ class TelegramBotControllerTest {
 
         assertEquals(11, nextOffset)
         assertTrue(botApi.sentTexts.isEmpty())
-        coVerify(exactly = 0) { agent.execute(any()) }
+        coVerify(exactly = 0) { agentFacade.execute(any()) }
 
         controller.close()
     }
 
     @Test
     fun `processUpdates rejects non-owner private commands`() = runTest {
-        val agent = mockk<GraphBasedAgent>(relaxed = true)
+        val agentFacade = mockk<AgentFacade>(relaxed = true)
         val botApi = FakeBotApi()
         val controller = TelegramBotController(
             telegramService = mockk(relaxed = true),
-            agent = agent,
+            agentFacade = agentFacade,
             botApi = botApi,
         )
 
@@ -114,7 +114,7 @@ class TelegramBotControllerTest {
 
         assertEquals(21, nextOffset)
         assertTrue(botApi.sentTexts.isEmpty())
-        coVerify(exactly = 0) { agent.execute(any()) }
+        coVerify(exactly = 0) { agentFacade.execute(any()) }
 
         controller.close()
     }
@@ -122,8 +122,8 @@ class TelegramBotControllerTest {
     @Test
     fun `processUpdates downloads document and appends local path to command`() = runTest {
         val commandSlot = slot<String>()
-        val agent = mockk<GraphBasedAgent>()
-        coEvery { agent.execute(capture(commandSlot)) } returns "ok"
+        val agentFacade = mockk<AgentFacade>()
+        coEvery { agentFacade.execute(capture(commandSlot)) } returns "ok"
 
         val tmpDownloads = Files.createTempDirectory("tg-bot-test-downloads")
         val botApi = FakeBotApi(
@@ -136,7 +136,7 @@ class TelegramBotControllerTest {
         )
         val controller = TelegramBotController(
             telegramService = mockk(relaxed = true),
-            agent = agent,
+            agentFacade = agentFacade,
             botApi = botApi,
             downloadsDirProvider = { tmpDownloads },
         )
@@ -175,8 +175,8 @@ class TelegramBotControllerTest {
     @Test
     fun `processUpdates uses transcribed voice text as command`() = runTest {
         val commandSlot = slot<String>()
-        val agent = mockk<GraphBasedAgent>()
-        coEvery { agent.execute(capture(commandSlot)) } returns "ok"
+        val agentFacade = mockk<AgentFacade>()
+        coEvery { agentFacade.execute(capture(commandSlot)) } returns "ok"
 
         val voiceProvider = object : SpeechRecognitionProvider {
             override val enabled: Boolean = true
@@ -195,7 +195,7 @@ class TelegramBotControllerTest {
 
         val controller = TelegramBotController(
             telegramService = mockk(relaxed = true),
-            agent = agent,
+            agentFacade = agentFacade,
             speechRecognitionProvider = voiceProvider,
             botApi = botApi,
             voiceToPcmDecoder = { bytes, _ -> bytes },
