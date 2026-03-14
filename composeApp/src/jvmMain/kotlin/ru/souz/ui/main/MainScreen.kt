@@ -1261,7 +1261,7 @@ fun RealLiquidGlassCard(
     modifier: Modifier = Modifier,
     isWindowFocused: Boolean,
     cornerRadius: Dp = 23.dp,
-    preset: LiquidGlassPreset = LiquidGlassPreset.Default,
+    preset: LiquidGlassPreset = LiquidGlassPreset.Hero,
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(cornerRadius)
