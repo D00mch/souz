@@ -216,7 +216,7 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
             Regex("^@@ -\\d+(?:,\\d+)? \\+\\d+(?:,\\d+)? @@(?: .*)?$")
         private val WINDOWS_ABSOLUTE_PATH = Regex("^[A-Za-z]:[\\\\/].*")
 
-        val homeStr: String get() = MacAppEnvironment.userHomeForUserFacingPaths
+        val homeStr: String get() = MacAppEnvironment.appDataHome
         val homeDirectory: File get() = File(homeStr).canonicalFile
         val documentsDirectoryPath: Path
             get() {

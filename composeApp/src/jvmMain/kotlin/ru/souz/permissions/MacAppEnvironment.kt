@@ -28,21 +28,12 @@ object MacAppEnvironment {
      * In sandbox this should stay inside the container.
      */
     val appDataHome: String by lazy {
-        processHome.ifBlank { resolveRealHomeFromUserName().orEmpty() }
-    }
-
-    val userHomeForUserFacingPaths: String by lazy {
-        if (!isSandboxed) return@lazy appDataHome
-        processHomeCandidates.firstNotNullOfOrNull { resolveRealHomeFromSandboxPath(it) }
-            ?: resolveRealHomeFromUserName()
-            ?: appDataHome
-    }
-
-    private fun resolveRealHomeFromSandboxPath(path: String): String? {
-        val markerIndex = path.indexOf(SANDBOX_HOME_MARKER)
-        if (markerIndex <= 0) return null
-        val candidate = path.substring(0, markerIndex)
-        return candidate.takeIf { File(it).isDirectory }
+        if (!isSandboxed) {
+            processHome.ifBlank { resolveRealHomeFromUserName().orEmpty() }
+        } else {
+            processHomeCandidates.firstOrNull { it.contains(SANDBOX_HOME_MARKER) }
+                ?: processHome.ifBlank { resolveRealHomeFromUserName().orEmpty() }
+        }
     }
 
     private fun resolveRealHomeFromUserName(): String? {
