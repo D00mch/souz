@@ -23,6 +23,22 @@ Run tests with:
 
 # Compose builds
 
+## Test build to simulate App Store release build
+
+```bash
+# Package sandbox DMG
+./gradlew :composeApp:packageReleaseDmg -PmacOsAppStoreRelease=true -Pmac.signing.enabled=true -Pmac.signing.identity="$APPLE_SIGNING_ID"
+
+# Verify entitlements on built app
+codesign -d --entitlements :- "composeApp/build/compose/binaries/main-release/app/Souz AI.app"
+
+# reset permission
+tccutil reset All ru.souz
+
+# open it
+open -a "$(pwd)/composeApp/build/compose/binaries/main-release/app/Souz AI.app"
+```
+
 ## Runtime profile (EN/RU)
 - Build is now single-profile at packaging time (no `-Pedition` split).
 - Active EN/RU profile is selected at runtime from Settings (`General` section toggle) and persisted in `ConfigStore.APP_LANGUAGE`.
