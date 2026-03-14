@@ -19,6 +19,7 @@ import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.session.GraphSessionService
+import ru.souz.giga.GigaMessageRole
 import ru.souz.giga.GigaResponse
 
 class LuaGraphBasedAgent(
@@ -47,9 +48,30 @@ class LuaGraphBasedAgent(
         }
         val chatErrorToFinish: Node<GigaResponse.Chat, String> = nodesErrorHandling.chatErrorToFinish()
         val summary: Node<GigaResponse.Chat.Ok, String> = nodesSummarization.summarize()
+        val chatResponseToString: Node<GigaResponse.Chat.Ok, String> = nodesCommon.responseToString("Chat.Ok -> String")
         val responseToCode: Node<String, String> = nodesLua.responseToCode()
         val runLua: Node<String, NodesLua.LuaExecutionResult> = nodesLua.execute()
         val runLuaOk: Node<NodesLua.LuaExecutionResult, String> = nodesLua.executeSuccessToString()
+        val runLuaOutputToChatOk: Node<String, GigaResponse.Chat.Ok> = Node("Lua Output -> Chat.Ok") { ctx ->
+            ctx.map {
+                GigaResponse.Chat.Ok(
+                    choices = listOf(
+                        GigaResponse.Choice(
+                            message = GigaResponse.Message(
+                                content = ctx.input,
+                                role = GigaMessageRole.assistant,
+                                functionsStateId = null,
+                            ),
+                            index = 0,
+                            finishReason = GigaResponse.FinishReason.stop,
+                        )
+                    ),
+                    created = System.currentTimeMillis(),
+                    model = ctx.settings.model,
+                    usage = GigaResponse.Usage(0, 0, 0, 0),
+                )
+            }
+        }
         val runLuaError: Node<NodesLua.LuaExecutionResult, NodesLua.LuaExecutionResult.Failure> =
             nodesLua.executeFailureToRepair()
         val repairLua: Node<NodesLua.LuaExecutionResult.Failure, GigaResponse.Chat> = nodesLua.repair()
@@ -65,8 +87,8 @@ class LuaGraphBasedAgent(
                 is GigaResponse.Chat.Ok -> chatOk
             }
         }
-        chatOk.edgeTo(summary)
-        summary.edgeTo(responseToCode)
+        chatOk.edgeTo(chatResponseToString)
+        chatResponseToString.edgeTo(responseToCode)
         responseToCode.edgeTo(runLua)
         runLua.edgeTo { ctx ->
             when (ctx.input) {
@@ -81,7 +103,9 @@ class LuaGraphBasedAgent(
                 is GigaResponse.Chat.Ok -> chatOk
             }
         }
-        runLuaOk.edgeTo(nodeFinish)
+        runLuaOk.edgeTo(runLuaOutputToChatOk)
+        runLuaOutputToChatOk.edgeTo(summary)
+        summary.edgeTo(nodeFinish)
         chatErrorToFinish.edgeTo(nodeFinish)
     }
 
