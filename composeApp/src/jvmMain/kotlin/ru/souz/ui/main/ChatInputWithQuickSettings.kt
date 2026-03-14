@@ -120,6 +120,8 @@ private val TextDisabled = Color(0x40FFFFFF)
 
 private val HoverBackground = Color(0x0DFFFFFF)
 private val ActiveBackground = Color(0x1A12E0B5)
+private val SelectMenuSelectedBackground = Color(0x2E3F434A)
+private val SelectMenuSelectedText = Color(0xE6FFFFFF)
 private val ControlTextMuted = Color(0x80FFFFFF)
 private val ControlTextHover = Color(0xB3FFFFFF)
 private val ControlButtonSize = 32.dp
@@ -1266,11 +1268,11 @@ private fun <T> QuickDropdown(
                                     val itemInteractionSource = remember { MutableInteractionSource() }
                                     val itemHovered by itemInteractionSource.collectIsHoveredAsState()
                                     val backgroundColor = when {
-                                        selected -> ActiveBackground
+                                        selected -> SelectMenuSelectedBackground
                                         itemHovered -> HoverBackground
                                         else -> Color.Transparent
                                     }
-                                    val textColor = if (selected) AccentTurquoise else TextSecondary
+                                    val textColor = if (selected) SelectMenuSelectedText else TextSecondary
 
                                     Box(
                                         modifier = Modifier
