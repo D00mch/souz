@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.AgentFacade
 import ru.souz.agent.engine.AgentContext
 import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.collections.plus
 
 class ChatUseCase(
-    private val graphAgent: GraphBasedAgent,
+    private val agentFacade: AgentFacade,
     private val settingsProvider: SettingsProvider,
     private val speechUseCase: SpeechUseCase,
     private val finderPathExtractor: FinderPathExtractor,
@@ -44,7 +44,6 @@ class ChatUseCase(
     private val taskSideEffectJobs = ArrayList<Job>()
     private val activeChatRequestId = AtomicLong(0L)
     private val activeRequestMessages = AtomicReference<ActiveRequestMessages?>(null)
-    private var agentRef: AtomicReference<GraphBasedAgent?> = AtomicReference(graphAgent)
     private val conversationLock = Any()
     private var currentConversationId: String? = null
     private val pendingConversationClosures = LinkedHashMap<String, TelemetryConversationEndReason>()
@@ -53,13 +52,9 @@ class ChatUseCase(
     private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
     val outputs: Flow<MainUseCaseOutput> = _outputs.asSharedFlow()
 
-    fun bindAgentRef(agentRef: AtomicReference<GraphBasedAgent?>) {
-        this.agentRef = agentRef
-    }
-
     fun start(scope: CoroutineScope) {
         scope.launch {
-            activeAgent().currentContext.collect { ctx ->
+            agentFacade.currentContext.collect { ctx ->
                 emitState { copy(agentHistory = ctx.history) }
             }
         }
@@ -139,7 +134,7 @@ class ChatUseCase(
                     telemetryService.requestContextElement(requestContext) +
                     tokenLogging.requestContextElement(requestContext.requestId)
             ) {
-                activeAgent().execute(userText)
+                agentFacade.execute(userText)
             }
 
             val extractedFinderPaths = extractFinderPaths(response)
@@ -238,7 +233,7 @@ class ChatUseCase(
     }
 
     fun cancelActiveJob() {
-        activeAgent().cancelActiveJob()
+        agentFacade.cancelActiveJob()
     }
 
     suspend fun stopCurrentExecution() {
@@ -263,7 +258,7 @@ class ChatUseCase(
     }
 
     fun clearContext() {
-        activeAgent().clearContext()
+        agentFacade.clearContext()
     }
 
     fun finishCurrentConversation(reason: TelemetryConversationEndReason) {
@@ -281,17 +276,17 @@ class ChatUseCase(
     }
 
     fun setContext(ctx: AgentContext<String>) {
-        activeAgent().setContext(ctx)
+        agentFacade.setContext(ctx)
     }
 
-    fun snapshotContext(): AgentContext<String>? = activeAgent().currentContext.value
+    fun snapshotContext(): AgentContext<String>? = agentFacade.currentContext.value
 
     fun updateModel(model: GigaModel) {
-        activeAgent().setModel(model)
+        agentFacade.setModel(model)
     }
 
     fun updateContextSize(size: Int) {
-        activeAgent().setContextSize(size)
+        agentFacade.setContextSize(size)
     }
 
     fun onCleared() {
@@ -336,7 +331,7 @@ class ChatUseCase(
         val job = scope.launch {
             val isCodeBlockStarted = AtomicBoolean(false)
             var accumulatedText = ""
-            activeAgent().sideEffects.collect { text ->
+            agentFacade.sideEffects.collect { text ->
                 accumulatedText += text
                 emitState {
                     val updatedMessage = msg.copy(
@@ -367,8 +362,6 @@ class ChatUseCase(
         taskSideEffectJobs.add(job)
         return job
     }
-
-    private fun activeAgent(): GraphBasedAgent = agentRef.get() ?: graphAgent
 
     private fun killTaskSideEffectJobs() {
         speechUseCase.clearQueue()

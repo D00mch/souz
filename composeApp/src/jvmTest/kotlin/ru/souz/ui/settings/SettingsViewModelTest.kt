@@ -19,7 +19,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
-import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.AgentFacade
 import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
@@ -101,7 +101,7 @@ class SettingsViewModelTest {
             settingsProvider.voiceRecognitionModel = any()
         } answers { voiceRecognitionModelValue = firstArg() }
 
-        every { settingsProvider.getSystemPromptForModel(any()) } returns null
+        every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
         every { settingsProvider.supportEmail } returns null
         every { settingsProvider.mcpServersJson } returns null
         every { settingsProvider.defaultCalendar } returns null
@@ -113,11 +113,13 @@ class SettingsViewModelTest {
         every { settingsProvider.contextSize } returns DEFAULT_MAX_TOKENS
         every { settingsProvider.temperature } returns 0.7f
 
-        val graphBasedAgent = mockk<GraphBasedAgent>()
-        every { graphBasedAgent.setModel(any()) } answers {
+        val agentFacade = mockk<AgentFacade>(relaxed = true)
+        every { agentFacade.setModel(any()) } answers {
             val model = firstArg<GigaModel>()
             "prompt-for-${model.alias}"
         }
+        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.LUA_GRAPH)
+        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.LUA_GRAPH, ru.souz.agent.AgentId.GRAPH)
 
         val chatApi = mockk<GigaChatAPI>(relaxed = true)
         val telegramService = mockk<TelegramService>(relaxed = true)
@@ -128,7 +130,7 @@ class SettingsViewModelTest {
             bindSingleton<LlmBuildProfile> { llmBuildProfile }
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
             bindSingleton<GigaChatAPI> { chatApi }
-            bindSingleton<GraphBasedAgent> { graphBasedAgent }
+            bindSingleton<AgentFacade> { agentFacade }
             bindSingleton<TelegramPlatformSupport> { TelegramPlatformSupport }
             bindSingleton<TelegramService> { telegramService }
             bindSingleton<TelegramBotController> { mockk(relaxed = true) }
@@ -153,7 +155,7 @@ class SettingsViewModelTest {
         assertEquals(expectedVoiceRecognitionModel, voiceRecognitionModelValue)
         assertEquals("prompt-for-${expectedLlmModel.alias}", state.systemPrompt)
 
-        verify(exactly = 1) { graphBasedAgent.setModel(expectedLlmModel) }
+        verify(exactly = 1) { agentFacade.setModel(expectedLlmModel) }
         verify(exactly = 1) { VectorDB.clearAllData() }
     }
 }

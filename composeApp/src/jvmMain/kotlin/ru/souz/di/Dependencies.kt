@@ -8,8 +8,10 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.GraphBasedAgent
-import ru.souz.agent.LuaGraphBasedAgent
+import ru.souz.agent.AgentFacade
+import ru.souz.agent.impl.GraphBasedAgent
+import ru.souz.agent.impl.LuaGraphBasedAgent
+import ru.souz.agent.SystemPromptResolver
 import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesCommon
@@ -264,8 +266,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         )
     }
     bindSingleton { ToolsFactory(di) }
+    bindSingleton { SystemPromptResolver() }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
     bindSingleton { LuaGraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
+    bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }
     bindSingleton { FinderPathExtractor(instance()) }
     bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }

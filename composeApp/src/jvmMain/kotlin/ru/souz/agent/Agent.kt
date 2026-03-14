@@ -1,22 +1,29 @@
 package ru.souz.agent
 
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.StateFlow
 import ru.souz.agent.engine.AgentContext
-import ru.souz.giga.GigaModel
+import ru.souz.agent.engine.Graph
+import ru.souz.agent.engine.Node
+import ru.souz.agent.engine.StepInfo
 
 interface Agent {
-    val currentContext: StateFlow<AgentContext<String>>
     val sideEffects: Flow<String>
-
-    fun clearContext(): Boolean
-    fun setContext(ctx: AgentContext<String>): Boolean
-    fun updateSystemPrompt(prompt: String)
-    fun resetSystemPrompt()
-    fun setModel(model: GigaModel): String
-    fun setTemperature(temperature: Float)
-    fun setContextSize(contextSize: Int)
+    val graph: Graph<String, String>
+    suspend fun execute(ctx: AgentContext<String>): String
     fun cancelActiveJob()
+}
 
-    suspend fun execute(input: String): String
+data class AgentExecutionResult(
+    val output: String,
+    val context: AgentContext<String>,
+)
+
+internal typealias GraphStepCallback =
+    (step: StepInfo, node: Node<Any?, Any?>, from: AgentContext<Any?>, to: AgentContext<Any?>) -> Unit
+
+internal interface TraceableAgent : Agent {
+    suspend fun executeWithTrace(
+        ctx: AgentContext<String>,
+        onStep: GraphStepCallback? = null,
+    ): AgentExecutionResult
 }
