@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -54,6 +55,7 @@ import ru.souz.ui.common.ConfirmDialog
 import ru.souz.ui.common.ConfirmDialogType
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
+import ru.souz.ui.main.RealLiquidGlassCard
 import org.jetbrains.compose.resources.stringResource
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
@@ -765,17 +767,18 @@ fun FunctionsSettingsContent(
                     onClick = onOpenTelegramSettings,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(SettingsControlHeight),
+                        .height(64.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = SettingsButtonBackground,
                         contentColor = SettingsStrongTextColor
                     ),
                     border = BorderStroke(1.dp, SettingsDefaultBorder),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         Text(
                             text = stringResource(Res.string.button_configure_telegram),
@@ -794,7 +797,7 @@ fun FunctionsSettingsContent(
                                 fontWeight = FontWeight.Normal
                             ),
                             color = if (state.telegramAuthStep == TelegramAuthStepUi.CONNECTED) {
-                                SettingsAccent
+                                SettingsUiColors.hoverItemText
                             } else {
                                 SettingsHintColor
                             }
@@ -932,24 +935,62 @@ fun TelegramSettingsScreen(
     onConfirmDisconnectControlBot: () -> Unit,
     onCancelDisconnectControlBot: () -> Unit,
 ) {
-    SettingsSectionScreen(
-        title = "Telegram",
-        subtitle = "",
-        onClose = onClose
+    val windowInfo = LocalWindowInfo.current
+    val isFocused = windowInfo.isWindowFocused
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
     ) {
-        if (!state.isTelegramSupported) {
-            Text(
-                text = stringResource(Res.string.telegram_error_macos_15_required),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-        } else {
-            TelegramLoginContent(
-                state = state,
-                onStartWork = onStartWork,
-                onCreateControlBot = onCreateControlBot,
-                onDisconnectControlBot = onDisconnectControlBot,
-            )
+        RealLiquidGlassCard(
+            modifier = Modifier.fillMaxSize(),
+            isWindowFocused = isFocused
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(Res.string.button_back),
+                            tint = SettingsUiColors.inactiveItemText,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(SettingsUiColors.sidebarBorder)
+                )
+
+                if (!state.isTelegramSupported) {
+                    Text(
+                        text = stringResource(Res.string.telegram_error_macos_15_required),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    TelegramLoginContent(
+                        state = state,
+                        onStartWork = onStartWork,
+                        onCreateControlBot = onCreateControlBot,
+                        onDisconnectControlBot = onDisconnectControlBot,
+                    )
+                }
+            }
         }
     }
 
