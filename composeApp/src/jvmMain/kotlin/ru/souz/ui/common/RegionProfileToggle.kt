@@ -21,7 +21,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.jetbrains.compose.resources.stringResource
 import ru.souz.ui.settings.SettingsUiColors
+import souz.composeapp.generated.resources.Res
+import souz.composeapp.generated.resources.region_profile_en_label
+import souz.composeapp.generated.resources.region_profile_ru_label
 
 private val ToggleBackground = SettingsUiColors.inputBackground
 private val ToggleBorder = SettingsUiColors.inputBorder
@@ -47,7 +51,7 @@ fun RegionProfileToggle(
         verticalAlignment = Alignment.CenterVertically
     ) {
         ToggleSegment(
-            text = "Русский (RU)",
+            text = stringResource(Res.string.region_profile_ru_label),
             selected = !useEnglishProfile,
             onClick = {
                 if (useEnglishProfile) onProfileChange(false)
@@ -55,7 +59,7 @@ fun RegionProfileToggle(
             modifier = Modifier.weight(1f)
         )
         ToggleSegment(
-            text = "English (EN)",
+            text = stringResource(Res.string.region_profile_en_label),
             selected = useEnglishProfile,
             onClick = {
                 if (!useEnglishProfile) onProfileChange(true)

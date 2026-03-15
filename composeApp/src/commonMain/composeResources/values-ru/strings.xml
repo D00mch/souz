@@ -91,6 +91,8 @@
     <string name="setting_notification_sound_desc">Проигрывать короткий звук, когда ответ ассистента готов</string>
     <string name="setting_language_profile_title">Региональный профиль</string>
     <string name="setting_language_profile_desc">В России доступны специальные модели</string>
+    <string name="region_profile_ru_label">Русский (RU)</string>
+    <string name="region_profile_en_label">English (EN)</string>
     <string name="label_voice_speed">Скорость речи</string>
     <string name="hint_voice_speed">Текущее значение: %d. Чем больше, тем быстрее речь.</string>
     <string name="label_voice_selection">Выбор голоса</string>

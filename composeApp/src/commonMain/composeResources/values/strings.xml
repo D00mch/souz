@@ -95,6 +95,8 @@
     <string name="setting_notification_sound_desc">Play a short sound when the assistant response is ready</string>
     <string name="setting_language_profile_title">Region profile</string>
     <string name="setting_language_profile_desc">Different models and LLM providers available per region.</string>
+    <string name="region_profile_ru_label">Russian (RU)</string>
+    <string name="region_profile_en_label">English (EN)</string>
     <string name="label_voice_speed">Voice speed</string>
     <string name="hint_voice_speed">Current value: %d. Higher is faster.</string>
     <string name="label_voice_selection">Voice selection</string>

@@ -55,6 +55,7 @@ import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.common.ConfirmDialog
 import ru.souz.ui.common.DialogVariant
+import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
 import ru.souz.ui.main.RealLiquidGlassCard
@@ -430,7 +431,7 @@ fun GeneralSettingsContent(
                     color = SettingsLabelColor
                 )
                 SettingsHoverTooltip(text = stringResource(Res.string.setting_language_profile_desc)) {
-                    SettingsRegionProfileToggle(
+                    RegionProfileToggle(
                         useEnglishProfile = state.useEnglishVersion,
                         onProfileChange = onUseEnglishVersionChange,
                         modifier = Modifier.fillMaxWidth()
@@ -1145,37 +1146,6 @@ fun SettingsRow(
 }
 
 @Composable
-private fun SettingsRegionProfileToggle(
-    useEnglishProfile: Boolean,
-    onProfileChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .height(32.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(SettingsFieldBackground)
-            .border(1.dp, SettingsDefaultBorder, RoundedCornerShape(10.dp))
-            .padding(2.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        SettingsRegionSegment(
-            text = "Русский (RU)",
-            selected = !useEnglishProfile,
-            onClick = { if (useEnglishProfile) onProfileChange(false) },
-            modifier = Modifier.weight(1f)
-        )
-        SettingsRegionSegment(
-            text = "English (EN)",
-            selected = useEnglishProfile,
-            onClick = { if (!useEnglishProfile) onProfileChange(true) },
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-@Composable
 private fun SettingsSwitchCard(
     title: String,
     description: String,
@@ -1207,33 +1177,6 @@ private fun SettingsSwitchCard(
                 onCheckedChange = onCheckedChange
             )
         }
-    }
-}
-
-@Composable
-private fun SettingsRegionSegment(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) SettingsUiColors.toggleActiveBackground else Color.Transparent)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium.copy(
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                fontWeight = FontWeight.Medium
-            ),
-            color = if (selected) SettingsUiColors.toggleActiveText else SettingsUiColors.toggleInactiveText,
-        )
     }
 }
 

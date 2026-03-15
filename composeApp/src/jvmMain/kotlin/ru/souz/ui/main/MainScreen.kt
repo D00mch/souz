@@ -47,12 +47,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -85,7 +82,6 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
-import org.jetbrains.skia.Image as SkiaImage
 import ru.souz.LocalWindowScope
 import ru.souz.ui.common.*
 import ru.souz.ui.glassColors
@@ -211,12 +207,6 @@ private val EmptyChatQuickActions = listOf(
         messageRes = Res.string.quick_action_browser_message,
     ),
 )
-
-private fun loadWelcomeLogoBitmap(): ImageBitmap? = runCatching {
-    val classLoader = Thread.currentThread().contextClassLoader ?: return@runCatching null
-    val encoded = classLoader.getResourceAsStream("icon-light.png")?.use { it.readBytes() } ?: return@runCatching null
-    SkiaImage.makeFromEncoded(encoded).toComposeImageBitmap()
-}.getOrNull()
 
 private enum class MacTrafficKind {
     Close,
@@ -1052,7 +1042,6 @@ private fun EmptyChatWelcomeContent(
     val density = LocalDensity.current
     val isLowDpi = density.density < 1.5f
     val logoSize = if (isLowDpi) WelcomeLogoSizeLowDpi else WelcomeLogoSize
-    val logoBitmap = remember { loadWelcomeLogoBitmap() }
 
     LaunchedEffect(Unit) {
         show = true
@@ -1122,22 +1111,12 @@ private fun EmptyChatWelcomeContent(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (logoBitmap != null) {
-                        Image(
-                            bitmap = logoBitmap,
-                            contentDescription = stringResource(Res.string.welcome_logo_content_desc),
-                            contentScale = ContentScale.Fit,
-                            filterQuality = FilterQuality.High,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    } else {
-                        Image(
-                            painter = jvmPainterResource("icon-light.png"),
-                            contentDescription = stringResource(Res.string.welcome_logo_content_desc),
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                    Image(
+                        painter = jvmPainterResource("icon-light.png"),
+                        contentDescription = stringResource(Res.string.welcome_logo_content_desc),
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))

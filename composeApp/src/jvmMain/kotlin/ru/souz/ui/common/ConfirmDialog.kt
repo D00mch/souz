@@ -90,8 +90,8 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     title: String,
     description: String? = null,
-    confirmText: String = "Подтвердить",
-    cancelText: String = "Отмена",
+    confirmText: String = stringResource(Res.string.dialog_confirm),
+    cancelText: String = stringResource(Res.string.dialog_cancel),
     variant: DialogVariant = DialogVariant.INFO,
     details: String? = null
 ) {
