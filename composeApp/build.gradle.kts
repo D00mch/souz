@@ -1,5 +1,7 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.bundling.Jar
+import org.gradle.api.tasks.JavaExec
 
 fun tdlightNativeClassifier(): String {
     val osName = System.getProperty("os.name", "").lowercase()
@@ -27,7 +29,6 @@ plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
-    alias(libs.plugins.composeHotReload)
 }
 
 val distributionPackageName = "Souz AI"
@@ -399,4 +400,26 @@ tasks.matching { it.name == "packageReleaseDmg" || it.name == "notarizeReleaseDm
 
 tasks.matching { it.name == "prepareAppResources" || it.name == "createReleaseDistributable" || it.name == "notarizeReleaseDmg" }.configureEach {
     dependsOn(prepareMacAppResources)
+}
+
+// Keep dev runs stable: run from jvmJar instead of mutable classes directories.
+tasks.withType<JavaExec>().configureEach {
+    if (name != "jvmRun") return@configureEach
+
+    val jvmJarTask = tasks.named<Jar>("jvmJar")
+    val runtimeClasspath = configurations.named("jvmRuntimeClasspath")
+    val buildClassesDir = layout.buildDirectory.dir("classes").get().asFile.absolutePath
+    val buildResourcesDir = layout.buildDirectory.dir("processedResources").get().asFile.absolutePath
+
+    dependsOn(jvmJarTask)
+    mainClass.set(providers.systemProperty("mainClass").orElse("ru.souz.MainKt"))
+    standardInput = System.`in`
+
+    doFirst {
+        val stableRuntimeClasspath = runtimeClasspath.get().filterNot { file ->
+            val path = file.absolutePath
+            path.startsWith(buildClassesDir) || path.startsWith(buildResourcesDir)
+        }
+        classpath = files(jvmJarTask.flatMap { it.archiveFile }) + files(stableRuntimeClasspath)
+    }
 }
