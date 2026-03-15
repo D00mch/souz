@@ -18,6 +18,9 @@ set -Eeuo pipefail  # Exit on error; fail on unset vars and pipeline errors
 # Paths
 # =============================================================================
 
+# Build number (passed as argument or default to 2)
+BUILD_NUMBER="${1:-2}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 RESOURCES_DIR="$PROJECT_DIR/composeApp/src/jvmMain/resources"
@@ -332,9 +335,6 @@ prepare_signing_entitlements() {
 # =============================================================================
 
 log_step "Loading configuration"
-
-# Build number (passed as argument or default to 1)
-BUILD_NUMBER="${1:-1}"
 
 # Release edition (ru/en)
 EDITION="${EDITION:-ru}"
