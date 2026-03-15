@@ -12,6 +12,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -92,6 +94,42 @@ private object SettingsSpacing {
     val sectionSpacing = 20.dp
     val elementSpacing = 12.dp
     val labelToFieldSpacing = 6.dp
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SettingsHoverTooltip(
+    text: String,
+    delayMillis: Int = 300,
+    content: @Composable () -> Unit
+) {
+    if (text.isBlank()) {
+        content()
+        return
+    }
+    TooltipArea(
+        delayMillis = delayMillis,
+        tooltip = {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xE61A1C20))
+                    .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 7.dp)
+            ) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    ),
+                    color = Color(0xE6FFFFFF)
+                )
+            }
+        }
+    ) {
+        content()
+    }
 }
 
 @Composable
@@ -391,19 +429,13 @@ fun GeneralSettingsContent(
                     ),
                     color = SettingsLabelColor
                 )
-                Text(
-                    text = stringResource(Res.string.setting_language_profile_desc),
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp
-                    ),
-                    color = SettingsHintColor
-                )
-                SettingsRegionProfileToggle(
-                    useEnglishProfile = state.useEnglishVersion,
-                    onProfileChange = onUseEnglishVersionChange,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                SettingsHoverTooltip(text = stringResource(Res.string.setting_language_profile_desc)) {
+                    SettingsRegionProfileToggle(
+                        useEnglishProfile = state.useEnglishVersion,
+                        onProfileChange = onUseEnglishVersionChange,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             CalendarDropdown(
@@ -434,17 +466,14 @@ fun GeneralSettingsContent(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
-                LabeledTextField(
-                    label = stringResource(Res.string.label_voice_speed),
-                    value = state.voiceSpeedInput,
-                    onValueChange = onVoiceSpeedInput,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    text = stringResource(Res.string.hint_voice_speed).format(state.voiceSpeed),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = SettingsHintColor
-                )
+                SettingsHoverTooltip(text = stringResource(Res.string.hint_voice_speed).format(state.voiceSpeed)) {
+                    LabeledTextField(
+                        label = stringResource(Res.string.label_voice_speed),
+                        value = state.voiceSpeedInput,
+                        onValueChange = onVoiceSpeedInput,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
@@ -457,39 +486,35 @@ fun GeneralSettingsContent(
                     ),
                     color = SettingsLabelColor
                 )
-                Text(
+                SettingsHoverTooltip(
                     text = if (state.supportsVoiceRecognitionApiKeys) {
                         stringResource(Res.string.setup_hint_voice_required)
                     } else {
                         stringResource(Res.string.setup_hint_voice_unavailable)
-                    },
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp
-                    ),
-                    color = SettingsHintColor
-                )
-                OutlinedButton(
-                    onClick = onChooseVoice,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(SettingsControlHeight),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = SettingsFieldBackground,
-                        contentColor = SettingsStrongTextColor
-                    ),
-                    border = BorderStroke(1.dp, SettingsDefaultBorder),
-                    shape = RoundedCornerShape(12.dp)
+                    }
                 ) {
-                    Text(
-                        text = stringResource(Res.string.button_select_voice),
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            fontWeight = FontWeight.Medium
+                    OutlinedButton(
+                        onClick = onChooseVoice,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(SettingsControlHeight),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = SettingsFieldBackground,
+                            contentColor = SettingsStrongTextColor
                         ),
-                        color = SettingsStrongTextColor
-                    )
+                        border = BorderStroke(1.dp, SettingsDefaultBorder),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = stringResource(Res.string.button_select_voice),
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            color = SettingsStrongTextColor
+                        )
+                    }
                 }
             }
 
@@ -890,34 +915,28 @@ fun SecuritySettingsContent(
                     ),
                     color = SettingsStrongTextColor
                 )
-                Text(
-                    text = stringResource(Res.string.hint_forbidden_folders),
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp
-                    ),
-                    color = SettingsHintColor
-                )
-                Button(
-                    onClick = onOpenFoldersManagement,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(SettingsControlHeight),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = SettingsButtonBackground,
-                        contentColor = SettingsStrongTextColor
-                    ),
-                    border = BorderStroke(1.dp, SettingsDefaultBorder),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = stringResource(Res.string.button_manage_forbidden_folders),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp,
-                            fontWeight = FontWeight.Medium
+                SettingsHoverTooltip(text = stringResource(Res.string.hint_forbidden_folders)) {
+                    Button(
+                        onClick = onOpenFoldersManagement,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(SettingsControlHeight),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SettingsButtonBackground,
+                            contentColor = SettingsStrongTextColor
+                        ),
+                        border = BorderStroke(1.dp, SettingsDefaultBorder),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = stringResource(Res.string.button_manage_forbidden_folders),
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontSize = 15.sp,
+                                lineHeight = 22.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         )
-                    )
+                    }
                 }
             }
 
@@ -1034,36 +1053,29 @@ fun SupportSettingsContent(
                     ),
                     color = SettingsStrongTextColor
                 )
-                Text(
-                    text = stringResource(Res.string.hint_privacy_policy),
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp,
-                        fontWeight = FontWeight.Normal
-                    ),
-                    color = SettingsHintColor
-                )
-                OutlinedButton(
-                    onClick = onOpenPrivacyPolicy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(SettingsControlHeight),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = SettingsButtonBackground,
-                        contentColor = SettingsStrongTextColor
-                    ),
-                    border = BorderStroke(1.dp, SettingsDefaultBorder),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = stringResource(Res.string.button_open_privacy_policy),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp,
-                            fontWeight = FontWeight.Medium
+                SettingsHoverTooltip(text = stringResource(Res.string.hint_privacy_policy)) {
+                    OutlinedButton(
+                        onClick = onOpenPrivacyPolicy,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(SettingsControlHeight),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = SettingsButtonBackground,
+                            contentColor = SettingsStrongTextColor
                         ),
-                        color = SettingsStrongTextColor,
-                    )
+                        border = BorderStroke(1.dp, SettingsDefaultBorder),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = stringResource(Res.string.button_open_privacy_policy),
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontSize = 15.sp,
+                                lineHeight = 22.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            color = SettingsStrongTextColor,
+                        )
+                    }
                 }
             }
 
@@ -1105,35 +1117,28 @@ fun SettingsRow(
     description: String,
     content: @Composable () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.weight(1f)
+    SettingsHoverTooltip(text = description) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    fontWeight = FontWeight.Medium
-                ),
-                color = SettingsStrongTextColor
-            )
-             Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall.copy(
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    fontWeight = FontWeight.Normal
-                ),
-                color = SettingsHintColor
-            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = SettingsStrongTextColor
+                )
+            }
+            content()
         }
-        content()
     }
 }
 
@@ -1176,16 +1181,13 @@ private fun SettingsSwitchCard(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(SettingsFieldBackground)
-            .border(1.dp, SettingsDefaultBorder, RoundedCornerShape(12.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
+    SettingsHoverTooltip(text = description) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(SettingsFieldBackground)
+                .border(1.dp, SettingsDefaultBorder, RoundedCornerShape(12.dp))
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1203,14 +1205,6 @@ private fun SettingsSwitchCard(
                 onCheckedChange = onCheckedChange
             )
         }
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontSize = 11.sp,
-                lineHeight = 14.sp
-            ),
-            color = SettingsHintColor
-        )
     }
 }
 
@@ -1448,38 +1442,40 @@ fun CalendarDropdown(
         )
 
         Box {
-            OutlinedButton(
-                onClick = { expanded = !expanded },
-                modifier = Modifier.fillMaxWidth().height(SettingsControlHeight),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = SettingsFieldBackground,
-                    contentColor = SettingsStrongTextColor
-                ),
-                border = BorderStroke(1.dp, SettingsDefaultBorder),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            SettingsHoverTooltip(text = stringResource(Res.string.hint_calendar_usage)) {
+                OutlinedButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.fillMaxWidth().height(SettingsControlHeight),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = SettingsFieldBackground,
+                        contentColor = SettingsStrongTextColor
+                    ),
+                    border = BorderStroke(1.dp, SettingsDefaultBorder),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(
-                        text = when {
-                            isLoading -> stringResource(Res.string.status_loading_calendars)
-                            selectedCalendar.isNullOrBlank() -> stringResource(Res.string.calendar_not_selected)
-                            else -> selectedCalendar
-                        },
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp
-                        ),
-                        color = SettingsStrongTextColor
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = stringResource(Res.string.content_desc_choose_calendar),
-                        tint = SettingsStrongTextColor
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = when {
+                                isLoading -> stringResource(Res.string.status_loading_calendars)
+                                selectedCalendar.isNullOrBlank() -> stringResource(Res.string.calendar_not_selected)
+                                else -> selectedCalendar
+                            },
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp
+                            ),
+                            color = SettingsStrongTextColor
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = stringResource(Res.string.content_desc_choose_calendar),
+                            tint = SettingsStrongTextColor
+                        )
+                    }
                 }
             }
 
@@ -1545,11 +1541,6 @@ fun CalendarDropdown(
                 }
             }
         }
-        Text(
-            text = stringResource(Res.string.hint_calendar_usage),
-            style = MaterialTheme.typography.bodySmall,
-            color = SettingsHintColor
-        )
     }
 }
 
@@ -1714,37 +1705,39 @@ fun AgentDropdown(
             color = SettingsLabelColor,
         )
         Box {
-            OutlinedButton(
-                onClick = { expanded = !expanded },
-                enabled = availableAgents.isNotEmpty(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(SettingsControlHeight),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = SettingsFieldBackground,
-                    contentColor = SettingsStrongTextColor
-                ),
-                border = BorderStroke(1.dp, SettingsDefaultBorder),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            SettingsHoverTooltip(text = stringResource(selectedDescriptionRes)) {
+                OutlinedButton(
+                    onClick = { expanded = !expanded },
+                    enabled = availableAgents.isNotEmpty(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(SettingsControlHeight),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = SettingsFieldBackground,
+                        contentColor = SettingsStrongTextColor
+                    ),
+                    border = BorderStroke(1.dp, SettingsDefaultBorder),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(
-                        text = stringResource(selectedAgent.titleRes()),
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp
-                        ),
-                        color = SettingsStrongTextColor
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = stringResource(Res.string.content_desc_select_agent),
-                        tint = SettingsStrongTextColor
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(selectedAgent.titleRes()),
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp
+                            ),
+                            color = SettingsStrongTextColor
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = stringResource(Res.string.content_desc_select_agent),
+                            tint = SettingsStrongTextColor
+                        )
+                    }
                 }
             }
             DropdownMenu(
@@ -1786,14 +1779,6 @@ fun AgentDropdown(
                 }
             }
         }
-        Text(
-            text = stringResource(selectedDescriptionRes),
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontSize = 12.sp,
-                lineHeight = 16.sp
-            ),
-            color = SettingsHintColor,
-        )
     }
 }
 
