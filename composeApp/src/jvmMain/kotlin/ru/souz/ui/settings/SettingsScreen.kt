@@ -27,11 +27,9 @@ import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.ui.AppTheme
-import ru.souz.ui.glassColors
 import ru.souz.ui.graphlog.GraphSessionsScreen
 import ru.souz.ui.graphlog.GraphVisualizationScreen
 import ru.souz.ui.main.RealLiquidGlassCard
-import ru.souz.ui.common.DraggableWindowArea
 import ru.souz.ui.common.DraggableWindowArea
 import ru.souz.ui.common.applyMinWindowSize
 import souz.composeapp.generated.resources.Res
@@ -177,26 +175,24 @@ fun SettingsScreenMain(
             modifier = Modifier.fillMaxSize(),
             isWindowFocused = isFocused
         ) {
-            Row(modifier = Modifier.fillMaxSize()) {
-                // Sidebar
-                Column(modifier = Modifier.width(280.dp).fillMaxHeight()) {
-                     DraggableWindowArea {
-                        SettingsSidebar(
-                            activeSection = state.activeSection,
-                            onSectionSelected = { viewModel.send(SettingsEvent.SelectSettingsSection(it)) },
-                            onClose = onClose,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                     }
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(24.dp))
+            ) {
+                DraggableWindowArea {
+                    SettingsSidebar(
+                        activeSection = state.activeSection,
+                        onSectionSelected = { viewModel.send(SettingsEvent.SelectSettingsSection(it)) },
+                        modifier = Modifier.fillMaxHeight()
+                    )
                 }
-               
-               // Vertical divider
+
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
                         .width(1.dp)
-                        .padding(vertical = 24.dp)
-                        .background(MaterialTheme.glassColors.textPrimary.copy(alpha = 0.15f))
+                        .background(SettingsUiColors.sidebarBorder)
                 )
 
                 // Content Area
@@ -204,14 +200,7 @@ fun SettingsScreenMain(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .clip(
-                            RoundedCornerShape(
-                                topStart = 0.dp,
-                                bottomStart = 0.dp,
-                                topEnd = 22.dp,
-                                bottomEnd = 22.dp
-                            )
-                        )
+                        .clip(RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp))
                 ) {
                     when (state.activeSection) {
                         SettingsSection.MODELS -> ModelsSettingsContent(
@@ -233,8 +222,8 @@ fun SettingsScreenMain(
                             onUseStreamingChange = { viewModel.send(SettingsEvent.InputUseStreaming(it)) },
                             onNotificationSoundEnabledChange = { viewModel.send(SettingsEvent.InputNotificationSoundEnabled(it)) },
                             onUseEnglishVersionChange = { viewModel.send(SettingsEvent.InputUseEnglishVersion(it)) },
-                            onVoiceSpeedInput = { viewModel.send(SettingsEvent.InputVoiceSpeed(it)) },
                             onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
+                            onVoiceSpeedInput = { viewModel.send(SettingsEvent.InputVoiceSpeed(it)) },
                             onMcpServersJsonInput = { viewModel.send(SettingsEvent.InputMcpServersJson(it)) },
                             onClose = onClose
                         )
@@ -296,7 +285,6 @@ fun SettingsScreenPreview() {
                 SettingsSidebar(
                     activeSection = previewState.activeSection,
                     onSectionSelected = {},
-                    onClose = {},
                     modifier = Modifier.fillMaxHeight()
                 )
 
@@ -304,8 +292,7 @@ fun SettingsScreenPreview() {
                     modifier = Modifier
                         .fillMaxHeight()
                         .width(1.dp)
-                        .padding(vertical = 24.dp)
-                        .background(MaterialTheme.glassColors.textPrimary.copy(alpha = 0.15f))
+                        .background(SettingsUiColors.sidebarBorder)
                 )
 
                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {

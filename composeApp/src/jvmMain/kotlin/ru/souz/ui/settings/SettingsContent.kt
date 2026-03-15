@@ -5,6 +5,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -22,8 +23,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
@@ -36,7 +37,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -52,28 +52,25 @@ import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.common.ConfirmDialog
 import ru.souz.ui.common.ConfirmDialogType
-import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
 import org.jetbrains.compose.resources.stringResource
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 
-private val SettingsFieldBackground = Color(0x66000000)
-private val SettingsButtonBackground = Color(0x4D000000)
-private val SettingsCheckboxWrapperBackground = Color(0x40000000)
-private val SettingsDefaultBorder = Color(0x26FFFFFF)
-private val SettingsCheckboxBorder = Color(0x4DFFFFFF)
-private val SettingsStrongTextColor = Color(0xF2FFFFFF)
-private val SettingsDescriptionColor = Color(0x99FFFFFF)
-private val SettingsHintColor = Color(0x80FFFFFF)
-private val SettingsLabelColor = Color(0xE6FFFFFF)
-private val SettingsAccent = Color(0xFF12E0B5)
-private val SettingsAccentBackground = Color(0x1A12E0B5)
-private val SettingsAccentActiveBackground = Color(0x3312E0B5)
-private val SettingsContentGradientTop = Color(0xFF0A0A0A)
-private val SettingsContentGradientMiddle = Color(0xFF050505)
-private val SettingsContentGradientBottom = Color(0xFF0A0A0A)
+private val SettingsFieldBackground = SettingsUiColors.inputBackground
+private val SettingsButtonBackground = SettingsUiColors.buttonBackground
+private val SettingsDefaultBorder = SettingsUiColors.inputBorder
+private val SettingsStrongTextColor = SettingsUiColors.inputText
+private val SettingsDescriptionColor = SettingsUiColors.inactiveItemText
+private val SettingsHintColor = SettingsUiColors.labelTextSecondary
+private val SettingsLabelColor = SettingsUiColors.labelText
+private val SettingsAccent = SettingsUiColors.refreshButtonText
+private val SettingsAccentBackground = SettingsUiColors.toggleActiveBackground
+private val SettingsAccentActiveBackground = SettingsUiColors.activeItemBackground
+private val SettingsContentGradientTop = Color(0x0F000000)
+private val SettingsContentGradientMiddle = Color(0x07000000)
+private val SettingsContentGradientBottom = Color(0x0F000000)
 private val SettingsSendLogsNormalGradientStart = Color(0x14FFFFFF)
 private val SettingsSendLogsNormalGradientEnd = Color(0x05FFFFFF)
 private val SettingsSendLogsHoverGradientStart = Color(0x26FFFFFF)
@@ -84,14 +81,15 @@ private val SettingsSendLogsHoverBorder = Color(0x4DFFFFFF)
 private val SettingsSendLogsLoadingBorder = Color(0x14FFFFFF)
 private val SettingsSendLogsText = Color(0xE5FFFFFF)
 private val SettingsSendLogsLoadingText = Color(0x4DFFFFFF)
+private val SettingsControlHeight = 42.dp
 
 private object SettingsSpacing {
-    val screenPaddingHorizontal = 32.dp
-    val screenPaddingTop = 24.dp
-    val screenPaddingBottom = 24.dp
-    val sectionSpacing = 32.dp
-    val elementSpacing = 16.dp
-    val labelToFieldSpacing = 8.dp
+    val screenPaddingHorizontal = 20.dp
+    val screenPaddingTop = 14.dp
+    val screenPaddingBottom = 16.dp
+    val sectionSpacing = 20.dp
+    val elementSpacing = 12.dp
+    val labelToFieldSpacing = 6.dp
 }
 
 @Composable
@@ -117,23 +115,31 @@ private fun SettingsCheckbox(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val thumbOffset by animateDpAsState(
+        targetValue = if (checked) 18.dp else 2.dp,
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "settingsSwitchThumbOffset"
+    )
+    val backgroundColor by animateColorAsState(
+        targetValue = if (checked) SettingsUiColors.switchBackgroundChecked else SettingsUiColors.switchBackground,
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "settingsSwitchBackground"
+    )
+
     Box(
         modifier = Modifier
+            .width(36.dp)
+            .height(20.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(SettingsCheckboxWrapperBackground)
-            .padding(6.dp)
+            .background(backgroundColor)
+            .clickable { onCheckedChange(!checked) }
     ) {
-        Checkbox(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
+        Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(4.dp))
-                .background(SettingsFieldBackground),
-            colors = CheckboxDefaults.colors(
-                checkedColor = SettingsAccent,
-                uncheckedColor = SettingsCheckboxBorder,
-                checkmarkColor = MaterialTheme.colorScheme.onPrimary
-            )
+                .offset(x = thumbOffset, y = 2.dp)
+                .size(16.dp)
+                .clip(CircleShape)
+                .background(SettingsUiColors.switchThumb)
         )
     }
 }
@@ -145,13 +151,6 @@ private fun SettingsSectionScreen(
     onClose: () -> Unit,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val windowInfo = LocalWindowInfo.current
-    val sectionBackgroundAlpha by animateFloatAsState(
-        targetValue = if (windowInfo.isWindowFocused) 1f else 0f,
-        animationSpec = tween(durationMillis = 300),
-        label = "settingsSectionBackgroundAlpha"
-    )
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -159,9 +158,9 @@ private fun SettingsSectionScreen(
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        SettingsContentGradientTop.copy(alpha = sectionBackgroundAlpha),
-                        SettingsContentGradientMiddle.copy(alpha = sectionBackgroundAlpha),
-                        SettingsContentGradientBottom.copy(alpha = sectionBackgroundAlpha)
+                        SettingsContentGradientTop,
+                        SettingsContentGradientMiddle,
+                        SettingsContentGradientBottom
                     )
                 )
             )
@@ -169,57 +168,47 @@ private fun SettingsSectionScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(
-                    start = SettingsSpacing.screenPaddingHorizontal,
-                    end = SettingsSpacing.screenPaddingHorizontal,
-                    top = SettingsSpacing.screenPaddingTop,
-                    bottom = SettingsSpacing.screenPaddingBottom
-                ),
-            verticalArrangement = Arrangement.spacedBy(SettingsSpacing.sectionSpacing)
+                .padding(top = 8.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = 12.dp, top = 2.dp, bottom = 14.dp),
+                contentAlignment = Alignment.CenterEnd
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            lineHeight = 36.sp
-                        ),
-                        color = SettingsStrongTextColor
-                    )
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Normal,
-                            lineHeight = 20.sp
-                        ),
-                        color = SettingsDescriptionColor
-                    )
-                }
-                Spacer(modifier = Modifier.width(16.dp))
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier
+                        .size(40.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = "Закрыть",
-                        tint = Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier.size(20.dp)
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = stringResource(Res.string.button_back),
+                        tint = SettingsUiColors.inactiveItemText,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(SettingsUiColors.sidebarBorder)
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(
+                        start = SettingsSpacing.screenPaddingHorizontal,
+                        end = SettingsSpacing.screenPaddingHorizontal,
+                        top = SettingsSpacing.screenPaddingTop,
+                        bottom = SettingsSpacing.screenPaddingBottom
+                    ),
+                verticalArrangement = Arrangement.spacedBy(SettingsSpacing.sectionSpacing)
+            ) {
             content()
+            }
         }
     }
 }
@@ -266,7 +255,10 @@ fun ModelsSettingsContent(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)
+            ) {
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)
@@ -376,8 +368,8 @@ fun GeneralSettingsContent(
     onUseStreamingChange: (Boolean) -> Unit,
     onNotificationSoundEnabledChange: (Boolean) -> Unit,
     onUseEnglishVersionChange: (Boolean) -> Unit,
-    onVoiceSpeedInput: (String) -> Unit,
     onChooseVoice: () -> Unit,
+    onVoiceSpeedInput: (String) -> Unit,
     onMcpServersJsonInput: (String) -> Unit,
     onClose: () -> Unit
 ) {
@@ -387,6 +379,31 @@ fun GeneralSettingsContent(
         onClose = onClose
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
+            Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
+                Text(
+                    text = stringResource(Res.string.setting_language_profile_title),
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = SettingsLabelColor
+                )
+                Text(
+                    text = stringResource(Res.string.setting_language_profile_desc),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    ),
+                    color = SettingsHintColor
+                )
+                SettingsRegionProfileToggle(
+                    useEnglishProfile = state.useEnglishVersion,
+                    onProfileChange = onUseEnglishVersionChange,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
             CalendarDropdown(
                 selectedCalendar = state.defaultCalendar,
                 availableCalendars = state.availableCalendars,
@@ -394,40 +411,25 @@ fun GeneralSettingsContent(
                 onCalendarSelected = onDefaultCalendarChange
             )
 
-            SettingsGroupDivider()
-
-            SettingsRow(
-                title = stringResource(Res.string.setting_streaming_title),
-                description = stringResource(Res.string.setting_streaming_desc),
-                content = {
-                    SettingsCheckbox(
-                        checked = state.useStreaming,
-                        onCheckedChange = onUseStreamingChange
-                    )
-                }
-            )
-
-            SettingsRow(
-                title = stringResource(Res.string.setting_notification_sound_title),
-                description = stringResource(Res.string.setting_notification_sound_desc),
-                content = {
-                    SettingsCheckbox(
-                        checked = state.notificationSoundEnabled,
-                        onCheckedChange = onNotificationSoundEnabledChange
-                    )
-                }
-            )
-
-            SettingsRow(
-                title = stringResource(Res.string.setting_language_profile_title),
-                description = stringResource(Res.string.setting_language_profile_desc),
-                content = {
-                    RegionProfileToggle(
-                        useEnglishProfile = state.useEnglishVersion,
-                        onProfileChange = onUseEnglishVersionChange
-                    )
-                }
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                SettingsSwitchCard(
+                    title = stringResource(Res.string.setting_streaming_title),
+                    description = stringResource(Res.string.setting_streaming_desc),
+                    checked = state.useStreaming,
+                    onCheckedChange = onUseStreamingChange,
+                    modifier = Modifier.weight(1f)
+                )
+                SettingsSwitchCard(
+                    title = stringResource(Res.string.setting_notification_sound_title),
+                    description = stringResource(Res.string.setting_notification_sound_desc),
+                    checked = state.notificationSoundEnabled,
+                    onCheckedChange = onNotificationSoundEnabledChange,
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
                 LabeledTextField(
@@ -446,20 +448,32 @@ fun GeneralSettingsContent(
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
                 Text(
                     text = stringResource(Res.string.label_voice_selection),
-                     style = MaterialTheme.typography.labelMedium.copy(
-                         fontSize = 14.sp,
-                         lineHeight = 20.sp,
-                         fontWeight = FontWeight.Medium
-                     ),
-                     color = SettingsStrongTextColor
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = SettingsLabelColor
+                )
+                Text(
+                    text = if (state.supportsVoiceRecognitionApiKeys) {
+                        stringResource(Res.string.setup_hint_voice_required)
+                    } else {
+                        stringResource(Res.string.setup_hint_voice_unavailable)
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    ),
+                    color = SettingsHintColor
                 )
                 OutlinedButton(
                     onClick = onChooseVoice,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .height(SettingsControlHeight),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = SettingsButtonBackground,
+                        containerColor = SettingsFieldBackground,
                         contentColor = SettingsStrongTextColor
                     ),
                     border = BorderStroke(1.dp, SettingsDefaultBorder),
@@ -467,30 +481,25 @@ fun GeneralSettingsContent(
                 ) {
                     Text(
                         text = stringResource(Res.string.button_select_voice),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
                             fontWeight = FontWeight.Medium
                         ),
                         color = SettingsStrongTextColor
                     )
                 }
             }
-            
+
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
-                Text(
-                    text = stringResource(Res.string.warning_mcp_risk),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
                 Text(
                     text = stringResource(Res.string.label_mcp_servers),
                      style = MaterialTheme.typography.labelMedium.copy(
-                         fontSize = 14.sp,
-                         lineHeight = 20.sp,
+                         fontSize = 12.sp,
+                         lineHeight = 16.sp,
                          fontWeight = FontWeight.Medium
                      ),
-                     color = SettingsStrongTextColor
+                     color = SettingsLabelColor
                 )
                 LabeledTextField(
                     label = "",
@@ -498,11 +507,6 @@ fun GeneralSettingsContent(
                     onValueChange = onMcpServersJsonInput,
                     modifier = Modifier.fillMaxWidth().height(150.dp),
                     singleLine = false,
-                )
-                Text(
-                    text = stringResource(Res.string.hint_restart_required),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = SettingsHintColor
                 )
             }
         }
@@ -727,7 +731,7 @@ fun FunctionsSettingsContent(
                 onClick = onOpenTools,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .height(SettingsControlHeight),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = SettingsButtonBackground,
                     contentColor = SettingsStrongTextColor
@@ -761,7 +765,7 @@ fun FunctionsSettingsContent(
                     onClick = onOpenTelegramSettings,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .height(SettingsControlHeight),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = SettingsButtonBackground,
                         contentColor = SettingsStrongTextColor
@@ -801,7 +805,7 @@ fun FunctionsSettingsContent(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .height(SettingsControlHeight),
                     color = SettingsButtonBackground,
                     shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(1.dp, SettingsDefaultBorder),
@@ -895,7 +899,7 @@ fun SecuritySettingsContent(
                     onClick = onOpenFoldersManagement,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .height(SettingsControlHeight),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = SettingsButtonBackground,
                         contentColor = SettingsStrongTextColor
@@ -1002,7 +1006,7 @@ fun SupportSettingsContent(
                     onClick = onOpenPrivacyPolicy,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .height(SettingsControlHeight),
                     colors = ButtonDefaults.outlinedButtonColors(
                         containerColor = SettingsButtonBackground,
                         contentColor = SettingsStrongTextColor
@@ -1028,7 +1032,7 @@ fun SupportSettingsContent(
                 onClick = onOpenGraphSessions,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .height(SettingsControlHeight),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = SettingsButtonBackground,
                     contentColor = SettingsStrongTextColor
@@ -1065,7 +1069,6 @@ fun SettingsRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)
     ) {
-        content()
         Column(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.weight(1f)
@@ -1089,6 +1092,111 @@ fun SettingsRow(
                 color = SettingsHintColor
             )
         }
+        content()
+    }
+}
+
+@Composable
+private fun SettingsRegionProfileToggle(
+    useEnglishProfile: Boolean,
+    onProfileChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .height(32.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(SettingsFieldBackground)
+            .border(1.dp, SettingsDefaultBorder, RoundedCornerShape(10.dp))
+            .padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SettingsRegionSegment(
+            text = "Русский (RU)",
+            selected = !useEnglishProfile,
+            onClick = { if (useEnglishProfile) onProfileChange(false) },
+            modifier = Modifier.weight(1f)
+        )
+        SettingsRegionSegment(
+            text = "English (EN)",
+            selected = useEnglishProfile,
+            onClick = { if (!useEnglishProfile) onProfileChange(true) },
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun SettingsSwitchCard(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(SettingsFieldBackground)
+            .border(1.dp, SettingsDefaultBorder, RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 12.sp,
+                    lineHeight = 14.sp,
+                    fontWeight = FontWeight.Medium
+                ),
+                color = SettingsLabelColor
+            )
+            SettingsCheckbox(
+                checked = checked,
+                onCheckedChange = onCheckedChange
+            )
+        }
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontSize = 11.sp,
+                lineHeight = 14.sp
+            ),
+            color = SettingsHintColor
+        )
+    }
+}
+
+@Composable
+private fun SettingsRegionSegment(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) SettingsUiColors.toggleActiveBackground else Color.Transparent)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                fontWeight = FontWeight.Medium
+            ),
+            color = if (selected) SettingsUiColors.toggleActiveText else SettingsUiColors.toggleInactiveText,
+        )
     }
 }
 
@@ -1202,7 +1310,7 @@ private fun SendLogsButton(
         enabled = !isSending,
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp),
+            .height(SettingsControlHeight),
         interactionSource = interactionSource,
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(
@@ -1291,8 +1399,8 @@ fun CalendarDropdown(
         Text(
             text = stringResource(Res.string.label_default_calendar),
             style = MaterialTheme.typography.labelMedium.copy(
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
                 fontWeight = FontWeight.Medium
             ),
             color = SettingsLabelColor,
@@ -1301,7 +1409,7 @@ fun CalendarDropdown(
         Box {
             OutlinedButton(
                 onClick = { expanded = !expanded },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier.fillMaxWidth().height(SettingsControlHeight),
                 colors = ButtonDefaults.outlinedButtonColors(
                     containerColor = SettingsFieldBackground,
                     contentColor = SettingsStrongTextColor
@@ -1321,8 +1429,8 @@ fun CalendarDropdown(
                             else -> selectedCalendar
                         },
                         style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp
                         ),
                         color = SettingsStrongTextColor
                     )
@@ -1344,14 +1452,14 @@ fun CalendarDropdown(
             ) {
                 DropdownMenuItem(
                     text = {
-                        Text(
-                            text = stringResource(Res.string.calendar_not_selected_short),
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontSize = 15.sp,
-                                lineHeight = 22.sp
-                            ),
-                            color = SettingsStrongTextColor
-                        )
+                            Text(
+                                text = stringResource(Res.string.calendar_not_selected_short),
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp
+                                ),
+                                color = SettingsStrongTextColor
+                            )
                     },
                     onClick = {
                         onCalendarSelected(null)
@@ -1365,8 +1473,8 @@ fun CalendarDropdown(
                             Text(
                                 text = stringResource(Res.string.calendar_no_available),
                                 style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontSize = 15.sp,
-                                    lineHeight = 22.sp
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp
                                 ),
                                 color = SettingsDescriptionColor
                             )
@@ -1382,8 +1490,8 @@ fun CalendarDropdown(
                             Text(
                                 text = calendarName,
                                 style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontSize = 15.sp,
-                                    lineHeight = 22.sp
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp
                                 ),
                                 color = SettingsStrongTextColor
                             )
@@ -1423,12 +1531,12 @@ fun TokensBalanceSection(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                color = SettingsAccent.copy(alpha = 0.1f),
+                color = SettingsFieldBackground,
                 shape = RoundedCornerShape(12.dp)
             )
             .border(
                 width = 1.dp,
-                color = SettingsAccent.copy(alpha = 0.25f),
+                color = SettingsDefaultBorder,
                 shape = RoundedCornerShape(12.dp)
             )
             .padding(16.dp),
@@ -1446,7 +1554,7 @@ fun TokensBalanceSection(
                 Icon(
                     imageVector = Icons.Default.Info,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = SettingsUiColors.refreshButtonText
                 )
                 Text(
                     text = stringResource(Res.string.label_tokens_balance),
@@ -1463,7 +1571,8 @@ fun TokensBalanceSection(
                         scaleY = refreshScale
                     }
                     .clip(CircleShape)
-                    .background(SettingsAccentActiveBackground)
+                    .background(if (isRefreshHovered) SettingsUiColors.buttonHoverBackground else SettingsUiColors.buttonBackground)
+                    .border(1.dp, if (isRefreshHovered) SettingsUiColors.buttonHoverBorder else SettingsUiColors.buttonBorder, CircleShape)
                     .clickable(
                         enabled = !isLoading,
                         interactionSource = refreshButtonInteraction,
@@ -1476,14 +1585,14 @@ fun TokensBalanceSection(
                 if (isLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(14.dp),
-                        color = SettingsAccent,
+                        color = SettingsUiColors.refreshButtonTextHover,
                         strokeWidth = 1.8.dp
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = null,
-                        tint = SettingsAccent,
+                        tint = if (isRefreshHovered) SettingsUiColors.refreshButtonTextHover else SettingsUiColors.refreshButtonText,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -1557,8 +1666,8 @@ fun AgentDropdown(
         Text(
             text = stringResource(Res.string.label_agent),
             style = MaterialTheme.typography.labelMedium.copy(
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
                 fontWeight = FontWeight.Medium
             ),
             color = SettingsLabelColor,
@@ -1569,7 +1678,7 @@ fun AgentDropdown(
                 enabled = availableAgents.isNotEmpty(),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .height(SettingsControlHeight),
                 colors = ButtonDefaults.outlinedButtonColors(
                     containerColor = SettingsFieldBackground,
                     contentColor = SettingsStrongTextColor
@@ -1585,8 +1694,8 @@ fun AgentDropdown(
                     Text(
                         text = stringResource(selectedAgent.titleRes()),
                         style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp
                         ),
                         color = SettingsStrongTextColor
                     )
@@ -1669,8 +1778,8 @@ fun ModelDropdown(
         Text(
             text = stringResource(Res.string.label_model),
             style = MaterialTheme.typography.labelMedium.copy(
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
                 fontWeight = FontWeight.Medium
             ),
             color = SettingsLabelColor,
@@ -1679,7 +1788,7 @@ fun ModelDropdown(
             OutlinedButton(
                 onClick = { expanded = !expanded },
                 enabled = availableModels.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier.fillMaxWidth().height(SettingsControlHeight),
                 colors = ButtonDefaults.outlinedButtonColors(
                     containerColor = SettingsFieldBackground,
                     contentColor = SettingsStrongTextColor
@@ -1695,8 +1804,8 @@ fun ModelDropdown(
                     Text(
                         text = "${selectedModel.displayName} (${selectedModel.alias})",
                         style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp
                         ),
                         color = SettingsStrongTextColor
                     )
@@ -1721,8 +1830,8 @@ fun ModelDropdown(
                             Text(
                                 text = "${model.displayName} (${model.alias})",
                                 style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontSize = 15.sp,
-                                    lineHeight = 22.sp
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp
                                 ),
                                 color = SettingsStrongTextColor
                             )
@@ -1750,8 +1859,8 @@ fun EmbeddingsModelDropdown(
         Text(
             text = stringResource(Res.string.label_embeddings_model),
             style = MaterialTheme.typography.labelMedium.copy(
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
                 fontWeight = FontWeight.Medium
             ),
             color = SettingsLabelColor,
@@ -1760,7 +1869,7 @@ fun EmbeddingsModelDropdown(
             OutlinedButton(
                 onClick = { expanded = !expanded },
                 enabled = availableModels.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier.fillMaxWidth().height(SettingsControlHeight),
                 colors = ButtonDefaults.outlinedButtonColors(
                     containerColor = SettingsFieldBackground,
                     contentColor = SettingsStrongTextColor
@@ -1776,8 +1885,8 @@ fun EmbeddingsModelDropdown(
                     Text(
                         text = selectedModel.displayName,
                         style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp
                         ),
                         color = SettingsStrongTextColor
                     )
@@ -1802,8 +1911,8 @@ fun EmbeddingsModelDropdown(
                             Text(
                                 text = model.displayName,
                                 style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontSize = 15.sp,
-                                    lineHeight = 22.sp
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp
                                 ),
                                 color = SettingsStrongTextColor
                             )
@@ -1831,8 +1940,8 @@ fun VoiceRecognitionModelDropdown(
         Text(
             text = stringResource(Res.string.label_voice_recognition_model),
             style = MaterialTheme.typography.labelMedium.copy(
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
                 fontWeight = FontWeight.Medium
             ),
             color = SettingsLabelColor,
@@ -1841,7 +1950,7 @@ fun VoiceRecognitionModelDropdown(
             OutlinedButton(
                 onClick = { expanded = !expanded },
                 enabled = availableModels.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier.fillMaxWidth().height(SettingsControlHeight),
                 colors = ButtonDefaults.outlinedButtonColors(
                     containerColor = SettingsFieldBackground,
                     contentColor = SettingsStrongTextColor
@@ -1857,8 +1966,8 @@ fun VoiceRecognitionModelDropdown(
                     Text(
                         text = selectedModel.displayName,
                         style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp
                         ),
                         color = SettingsStrongTextColor
                     )
@@ -1883,8 +1992,8 @@ fun VoiceRecognitionModelDropdown(
                             Text(
                                 text = model.displayName,
                                 style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontSize = 15.sp,
-                                    lineHeight = 22.sp
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp
                                 ),
                                 color = SettingsStrongTextColor
                             )
@@ -1985,8 +2094,8 @@ private fun GeneralSettingsContentPreview() {
             onUseStreamingChange = {},
             onNotificationSoundEnabledChange = {},
             onUseEnglishVersionChange = {},
-            onVoiceSpeedInput = {},
             onChooseVoice = {},
+            onVoiceSpeedInput = {},
             onMcpServersJsonInput = {},
             onClose = {}
         )

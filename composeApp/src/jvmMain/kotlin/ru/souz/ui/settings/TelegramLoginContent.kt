@@ -11,8 +11,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,7 +22,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.kodein.di.compose.localDI
@@ -39,6 +36,10 @@ import ru.souz.ui.components.LabeledTextField
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
+
+private val TelegramControlHeight = 42.dp
+private val TelegramButtonShape = RoundedCornerShape(12.dp)
+private val TelegramButtonBorder = BorderStroke(1.dp, SettingsUiColors.inputBorder)
 
 @Composable
 fun TelegramLoginContent(
@@ -92,7 +93,7 @@ fun TelegramLoginContent(
         Text(
             text = hint,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            color = SettingsUiColors.labelTextSecondary,
         )
 
         val submitPhone = {
@@ -219,15 +220,23 @@ fun TelegramLoginContent(
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(TelegramControlHeight),
+                    shape = TelegramButtonShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = SettingsUiColors.buttonBackground,
+                        contentColor = SettingsUiColors.inputText,
+                        disabledContainerColor = SettingsUiColors.buttonBackground.copy(alpha = 0.5f),
+                        disabledContentColor = SettingsUiColors.inputText.copy(alpha = 0.4f)
+                    ),
+                    border = TelegramButtonBorder,
                 ) {
                     Text(stringResource(Res.string.telegram_btn_request_code))
                 }
             }
 
             TelegramAuthStepUi.CODE -> {
-                OutlinedTextField(
+                LabeledTextField(
+                    label = stringResource(Res.string.telegram_label_code),
                     value = codeValue,
                     onValueChange = {
                         codeValue = it
@@ -242,24 +251,21 @@ fun TelegramLoginContent(
                             false
                         }
                     },
-                    singleLine = true,
-                    visualTransformation = VisualTransformation.None,
-                    label = { Text(stringResource(Res.string.telegram_label_code)) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        cursorColor = MaterialTheme.colorScheme.primary,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    ),
                 )
                 Button(
                     onClick = { submitCode() },
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(TelegramControlHeight),
+                    shape = TelegramButtonShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = SettingsUiColors.buttonBackground,
+                        contentColor = SettingsUiColors.inputText,
+                        disabledContainerColor = SettingsUiColors.buttonBackground.copy(alpha = 0.5f),
+                        disabledContentColor = SettingsUiColors.inputText.copy(alpha = 0.4f)
+                    ),
+                    border = TelegramButtonBorder,
                 ) {
                     Text(stringResource(Res.string.telegram_btn_verify_code))
                 }
@@ -268,8 +274,15 @@ fun TelegramLoginContent(
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(TelegramControlHeight),
+                    shape = TelegramButtonShape,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = SettingsUiColors.buttonBackground,
+                        contentColor = SettingsUiColors.inputText,
+                        disabledContainerColor = SettingsUiColors.buttonBackground.copy(alpha = 0.5f),
+                        disabledContentColor = SettingsUiColors.inputText.copy(alpha = 0.4f)
+                    ),
+                    border = TelegramButtonBorder,
                 ) {
                     Text(telegramBtnRequestCodeAgain)
                 }
@@ -280,15 +293,23 @@ fun TelegramLoginContent(
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(TelegramControlHeight),
+                    shape = TelegramButtonShape,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = SettingsUiColors.buttonBackground,
+                        contentColor = SettingsUiColors.inputText,
+                        disabledContainerColor = SettingsUiColors.buttonBackground.copy(alpha = 0.5f),
+                        disabledContentColor = SettingsUiColors.inputText.copy(alpha = 0.4f)
+                    ),
+                    border = TelegramButtonBorder,
                 ) {
                     Text(telegramBtnStartOver)
                 }
             }
 
             TelegramAuthStepUi.PASSWORD -> {
-                OutlinedTextField(
+                LabeledTextField(
+                    label = stringResource(Res.string.telegram_label_password),
                     value = passwordValue,
                     onValueChange = {
                         passwordValue = it
@@ -303,24 +324,22 @@ fun TelegramLoginContent(
                             false
                         }
                     },
-                    singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
-                    label = { Text(stringResource(Res.string.telegram_label_password)) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        cursorColor = MaterialTheme.colorScheme.primary,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    ),
                 )
                 Button(
                     onClick = { submitPassword() },
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(TelegramControlHeight),
+                    shape = TelegramButtonShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = SettingsUiColors.buttonBackground,
+                        contentColor = SettingsUiColors.inputText,
+                        disabledContainerColor = SettingsUiColors.buttonBackground.copy(alpha = 0.5f),
+                        disabledContentColor = SettingsUiColors.inputText.copy(alpha = 0.4f)
+                    ),
+                    border = TelegramButtonBorder,
                 ) {
                     Text(stringResource(Res.string.telegram_btn_verify_password))
                 }
@@ -331,8 +350,15 @@ fun TelegramLoginContent(
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(TelegramControlHeight),
+                    shape = TelegramButtonShape,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = SettingsUiColors.buttonBackground,
+                        contentColor = SettingsUiColors.inputText,
+                        disabledContainerColor = SettingsUiColors.buttonBackground.copy(alpha = 0.5f),
+                        disabledContentColor = SettingsUiColors.inputText.copy(alpha = 0.4f)
+                    ),
+                    border = TelegramButtonBorder,
                 ) {
                     Text(telegramBtnStartOver)
                 }
@@ -362,8 +388,15 @@ fun TelegramLoginContent(
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(TelegramControlHeight),
+                    shape = TelegramButtonShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = SettingsUiColors.buttonBackground,
+                        contentColor = SettingsUiColors.inputText,
+                        disabledContainerColor = SettingsUiColors.buttonBackground.copy(alpha = 0.5f),
+                        disabledContentColor = SettingsUiColors.inputText.copy(alpha = 0.4f)
+                    ),
+                    border = TelegramButtonBorder,
                 ) {
                     Text(stringResource(Res.string.telegram_btn_request_code))
                 }
@@ -372,8 +405,15 @@ fun TelegramLoginContent(
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(TelegramControlHeight),
+                    shape = TelegramButtonShape,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = SettingsUiColors.buttonBackground,
+                        contentColor = SettingsUiColors.inputText,
+                        disabledContainerColor = SettingsUiColors.buttonBackground.copy(alpha = 0.5f),
+                        disabledContentColor = SettingsUiColors.inputText.copy(alpha = 0.4f)
+                    ),
+                    border = TelegramButtonBorder,
                 ) {
                     Text(telegramBtnStartOver)
                 }
@@ -383,7 +423,7 @@ fun TelegramLoginContent(
                 Text(
                     text = state.telegramActiveSessionPhone ?: stringResource(Res.string.telegram_status_connected),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = SettingsUiColors.inputText,
                 )
                 if (state.isTelegramBotActive) {
                     Button(
@@ -391,13 +431,15 @@ fun TelegramLoginContent(
                         enabled = !state.telegramAuthBusy,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
+                            .height(TelegramControlHeight),
+                        shape = TelegramButtonShape,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
-                            contentColor = MaterialTheme.colorScheme.onError,
+                            containerColor = SettingsUiColors.buttonBackground,
+                            contentColor = MaterialTheme.colorScheme.error,
+                            disabledContainerColor = SettingsUiColors.buttonBackground.copy(alpha = 0.5f),
+                            disabledContentColor = MaterialTheme.colorScheme.error.copy(alpha = 0.4f),
                         ),
-                        border = BorderStroke(1.dp, Color(0x26FFFFFF)),
+                        border = TelegramButtonBorder,
                     ) {
                         Text(stringResource(Res.string.telegram_btn_delete_control))
                     }
@@ -407,13 +449,15 @@ fun TelegramLoginContent(
                         enabled = !state.telegramAuthBusy,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
+                            .height(TelegramControlHeight),
+                        shape = TelegramButtonShape,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0x4D00AA00),
-                            contentColor = Color(0xF2FFFFFF),
+                            containerColor = SettingsUiColors.buttonBackground,
+                            contentColor = SettingsUiColors.inputText,
+                            disabledContainerColor = SettingsUiColors.buttonBackground.copy(alpha = 0.5f),
+                            disabledContentColor = SettingsUiColors.inputText.copy(alpha = 0.4f),
                         ),
-                        border = BorderStroke(1.dp, Color(0x26FFFFFF)),
+                        border = TelegramButtonBorder,
                     ) {
                         Text(stringResource(Res.string.telegram_btn_create_control))
                     }
@@ -423,13 +467,15 @@ fun TelegramLoginContent(
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(TelegramControlHeight),
+                    shape = TelegramButtonShape,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0x4D000000),
-                        contentColor = Color(0xF2FFFFFF),
+                        containerColor = SettingsUiColors.buttonBackground,
+                        contentColor = SettingsUiColors.inputText,
+                        disabledContainerColor = SettingsUiColors.buttonBackground.copy(alpha = 0.5f),
+                        disabledContentColor = SettingsUiColors.inputText.copy(alpha = 0.4f),
                     ),
-                    border = BorderStroke(1.dp, Color(0x26FFFFFF)),
+                    border = TelegramButtonBorder,
                 ) {
                     Text(telegramBtnStartWork)
                 }
@@ -445,19 +491,22 @@ fun TelegramLoginContent(
                     enabled = !state.telegramAuthBusy,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(TelegramControlHeight),
+                    shape = TelegramButtonShape,
                     colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = SettingsUiColors.buttonBackground,
                         contentColor = MaterialTheme.colorScheme.error,
+                        disabledContainerColor = SettingsUiColors.buttonBackground.copy(alpha = 0.5f),
+                        disabledContentColor = MaterialTheme.colorScheme.error.copy(alpha = 0.4f),
                     ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f)),
                 ) {
                     Text(stringResource(Res.string.telegram_btn_logout))
                 }
             }
 
             TelegramAuthStepUi.LOGGING_OUT -> {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = SettingsUiColors.inputText)
             }
         }
 
@@ -465,7 +514,7 @@ fun TelegramLoginContent(
             Text(
                 text = stringResource(Res.string.telegram_hint_code_sent).format(codeHint),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                color = SettingsUiColors.labelTextSecondary,
             )
         }
 
@@ -473,7 +522,7 @@ fun TelegramLoginContent(
             Text(
                 text = stringResource(Res.string.telegram_hint_password).format(passwordHint),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                color = SettingsUiColors.labelTextSecondary,
             )
         }
 
@@ -490,7 +539,7 @@ fun TelegramLoginContent(
             Text(
                 text = info,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
+                color = SettingsUiColors.labelText,
             )
         }
     }
