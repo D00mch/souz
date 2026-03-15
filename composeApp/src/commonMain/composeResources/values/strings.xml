@@ -67,6 +67,8 @@
     <string name="setting_streaming_desc">Responses appear gradually as they are generated</string>
     <string name="setting_notification_sound_title">Notification sound</string>
     <string name="setting_notification_sound_desc">Play a short sound when the assistant response is ready</string>
+    <string name="setting_voice_input_review_title">Voice input review</string>
+    <string name="setting_voice_input_review_desc">Insert recognized speech into chat input instead of sending it immediately</string>
     <string name="setting_language_profile_title">Region profile</string>
     <string name="setting_language_profile_desc">Different models and LLM providers available per region.</string>
     <string name="label_voice_speed">Voice speed</string>

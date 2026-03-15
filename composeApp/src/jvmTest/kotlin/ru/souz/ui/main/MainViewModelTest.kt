@@ -35,6 +35,7 @@ import org.kodein.di.instance
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.onboarding_display_text
 import souz.composeapp.generated.resources.onboarding_input_permission_request
+import souz.composeapp.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.engine.AgentContext
@@ -70,6 +71,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MainViewModelTest {
@@ -243,6 +245,130 @@ class MainViewModelTest {
             }
             assertEquals(listOf("second request", "second answer"), finalState.chatMessages.map { it.text })
         } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `voice recognition stores draft in input when review is enabled`() = runTest(mainDispatcher) {
+        val draft = "voice draft input"
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = {
+                GigaResponse.RecognizeResponse(result = listOf(draft))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(7, 7, 7))
+
+            val state = awaitState(viewModel) { uiState ->
+                uiState.pendingVoiceInputDraft == draft && uiState.pendingVoiceInputDraftToken > 0
+            }
+            assertEquals(draft, state.pendingVoiceInputDraft)
+            assertTrue(state.chatMessages.isEmpty())
+            assertFalse(state.isProcessing)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `consuming pending voice draft clears it`() = runTest(mainDispatcher) {
+        val draft = "voice draft input"
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = { GigaResponse.RecognizeResponse(result = listOf(draft)) },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(7, 7, 7))
+            val stateWithDraft = awaitState(viewModel) { it.pendingVoiceInputDraft == draft }
+
+            viewModel.handleEvent(
+                MainEvent.ConsumePendingVoiceInputDraft(token = stateWithDraft.pendingVoiceInputDraftToken)
+            )
+
+            val state = awaitState(viewModel) { it.pendingVoiceInputDraft == null }
+            assertNull(state.pendingVoiceInputDraft)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `stale consume event does not clear newer pending voice draft`() = runTest(mainDispatcher) {
+        val firstDraft = "first voice draft"
+        val secondDraft = "second voice draft"
+        var call = 0
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = {
+                call += 1
+                val result = if (call == 1) firstDraft else secondDraft
+                GigaResponse.RecognizeResponse(result = listOf(result))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(1, 2, 3))
+            val firstState = awaitState(viewModel) { it.pendingVoiceInputDraft == firstDraft }
+            val staleToken = firstState.pendingVoiceInputDraftToken
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(4, 5, 6))
+            val secondState = awaitState(viewModel) {
+                it.pendingVoiceInputDraft == secondDraft && it.pendingVoiceInputDraftToken > staleToken
+            }
+
+            viewModel.handleEvent(MainEvent.ConsumePendingVoiceInputDraft(token = staleToken))
+            runCurrent()
+
+            assertEquals(secondDraft, viewModel.uiState.value.pendingVoiceInputDraft)
+            assertEquals(secondState.pendingVoiceInputDraftToken, viewModel.uiState.value.pendingVoiceInputDraftToken)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `start listening is ignored while previous voice recognition is still processing`() = runTest(mainDispatcher) {
+        val recognitionStarted = CompletableDeferred<Unit>()
+        val releaseRecognition = CompletableDeferred<Unit>()
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = {
+                recognitionStarted.complete(Unit)
+                releaseRecognition.await()
+                GigaResponse.RecognizeResponse(result = listOf("final draft"))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(9, 9, 9))
+            recognitionStarted.await()
+
+            viewModel.handleEvent(MainEvent.StartListening)
+
+            val expectedStatus = getString(Res.string.voice_status_processing_input)
+            val state = awaitState(viewModel) { it.statusMessage == expectedStatus }
+            assertFalse(state.isListening)
+
+            releaseRecognition.complete(Unit)
+            runCurrent()
+        } finally {
+            releaseRecognition.complete(Unit)
             harness.clear()
         }
     }
@@ -471,6 +597,7 @@ class MainViewModelTest {
         executeBehavior: suspend (String) -> String = { "stub response" },
         onCancelActiveJob: () -> Unit = {},
         needsOnboarding: Boolean = false,
+        voiceInputReviewEnabled: Boolean = false,
         recognizeBehavior: suspend (ByteArray) -> GigaResponse.RecognizeResponse = {
             GigaResponse.RecognizeResponse()
         },
@@ -500,6 +627,11 @@ class MainViewModelTest {
         every { settingsProvider.onboardingCompleted } answers { onboardingCompletedState }
         every { settingsProvider.onboardingCompleted = any() } answers { onboardingCompletedState = firstArg<Boolean>() }
         every { settingsProvider.safeModeEnabled } returns false
+        var voiceInputReviewEnabledState = voiceInputReviewEnabled
+        every { settingsProvider.voiceInputReviewEnabled } answers { voiceInputReviewEnabledState }
+        every { settingsProvider.voiceInputReviewEnabled = any() } answers {
+            voiceInputReviewEnabledState = firstArg<Boolean>()
+        }
 
         val say = mockk<Say>(relaxed = true)
         val speakingFlow = MutableStateFlow(false)

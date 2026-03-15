@@ -375,6 +375,7 @@ fun GeneralSettingsContent(
     onDefaultCalendarChange: (String?) -> Unit,
     onUseStreamingChange: (Boolean) -> Unit,
     onNotificationSoundEnabledChange: (Boolean) -> Unit,
+    onVoiceInputReviewEnabledChange: (Boolean) -> Unit,
     onUseEnglishVersionChange: (Boolean) -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
     onChooseVoice: () -> Unit,
@@ -414,6 +415,17 @@ fun GeneralSettingsContent(
                     SettingsCheckbox(
                         checked = state.notificationSoundEnabled,
                         onCheckedChange = onNotificationSoundEnabledChange
+                    )
+                }
+            )
+
+            SettingsRow(
+                title = stringResource(Res.string.setting_voice_input_review_title),
+                description = stringResource(Res.string.setting_voice_input_review_desc),
+                content = {
+                    SettingsCheckbox(
+                        checked = state.voiceInputReviewEnabled,
+                        onCheckedChange = onVoiceInputReviewEnabledChange
                     )
                 }
             )
@@ -1984,6 +1996,7 @@ private fun GeneralSettingsContentPreview() {
             onDefaultCalendarChange = {},
             onUseStreamingChange = {},
             onNotificationSoundEnabledChange = {},
+            onVoiceInputReviewEnabledChange = {},
             onUseEnglishVersionChange = {},
             onVoiceSpeedInput = {},
             onChooseVoice = {},

@@ -98,12 +98,21 @@ class MainViewModel(
                 stateProvider = { currentState },
                 onRecognizedText = { recognizedText ->
                     withContext(Dispatchers.Main) {
-                        chatUseCase.sendChatMessage(
-                            scope = viewModelScope,
-                            isVoice = true,
-                            chatMessage = recognizedText,
-                            requestSource = TelemetryRequestSource.VOICE_INPUT,
-                        )
+                        if (settingsProvider.voiceInputReviewEnabled) {
+                            setState {
+                                copy(
+                                    pendingVoiceInputDraft = recognizedText.trim(),
+                                    pendingVoiceInputDraftToken = pendingVoiceInputDraftToken + 1,
+                                )
+                            }
+                        } else {
+                            chatUseCase.sendChatMessage(
+                                scope = viewModelScope,
+                                isVoice = true,
+                                chatMessage = recognizedText,
+                                requestSource = TelemetryRequestSource.VOICE_INPUT,
+                            )
+                        }
                     }
                 },
             )
@@ -152,6 +161,11 @@ class MainViewModel(
         when (event) {
             MainEvent.StartListening -> voiceInputUseCase.startRecording(viewModelScope, currentState.isListening)
             MainEvent.StopListening -> voiceInputUseCase.stopRecording(currentState.isListening)
+            is MainEvent.ConsumePendingVoiceInputDraft -> {
+                if (event.token == currentState.pendingVoiceInputDraftToken) {
+                    setState { copy(pendingVoiceInputDraft = null) }
+                }
+            }
             MainEvent.RequestNewConversation -> requestNewConversation()
             MainEvent.ConfirmNewConversation -> confirmNewConversation()
             MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()
@@ -283,6 +297,7 @@ class MainViewModel(
                 chatStartTip = startTips.randomOrNull() ?: "",
                 chatSessionId = chatSessionId + 1,
                 attachedFiles = emptyList(),
+                pendingVoiceInputDraft = null,
                 showNewChatDialog = false,
             )
         }
@@ -389,6 +404,7 @@ class MainViewModel(
                         chatMessages = emptyList(),
                         chatStartTip = startTips.randomOrNull() ?: "",
                         attachedFiles = emptyList(),
+                        pendingVoiceInputDraft = null,
                         showNewChatDialog = false,
                     )
                 }
@@ -403,6 +419,7 @@ class MainViewModel(
                         chatMessages = emptyList(),
                         chatStartTip = startTips.randomOrNull() ?: "",
                         attachedFiles = emptyList(),
+                        pendingVoiceInputDraft = null,
                         showNewChatDialog = false,
                     )
                 }

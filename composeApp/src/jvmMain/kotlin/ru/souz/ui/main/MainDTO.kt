@@ -94,6 +94,8 @@ data class MainState(
     val toolPermissionDialog: ToolPermissionDialogData? = null,
     val selectionDialog: SelectionDialogData? = null,
     val attachedFiles: List<ChatAttachedFile> = emptyList(),
+    val pendingVoiceInputDraft: String? = null,
+    val pendingVoiceInputDraftToken: Long = 0L,
 ) : VMState {
 
     companion object {
@@ -104,6 +106,7 @@ data class MainState(
 sealed interface MainEvent : VMEvent {
     data object StartListening : MainEvent
     data object StopListening : MainEvent
+    data class ConsumePendingVoiceInputDraft(val token: Long) : MainEvent
     data object RequestNewConversation : MainEvent
     data object ConfirmNewConversation : MainEvent
     data object DismissNewConversationDialog : MainEvent
