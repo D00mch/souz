@@ -44,7 +44,7 @@ class InMemoryAudioRecorder(
         }
     }
 
-    fun start() {
+    fun start(): Boolean {
         if (_recordingState.value == State.Recording || _recordingState.value == State.Starting) {
             throw IllegalStateException("Recording is already in progress")
         }
@@ -53,8 +53,10 @@ class InMemoryAudioRecorder(
         try {
             recorder.startRecording()
             _recordingState.value = State.Recording
+            return true
         } catch (e: Exception) {
             _recordingState.value = State.Error(e.message ?: "Error during audio recording")
+            return false
         }
     }
 

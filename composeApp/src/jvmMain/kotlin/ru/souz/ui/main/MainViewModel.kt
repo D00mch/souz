@@ -18,7 +18,7 @@ import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
-import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.AgentFacade
 import ru.souz.agent.engine.AgentContext
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
@@ -36,7 +36,6 @@ import ru.souz.telemetry.TelemetryConversationEndReason
 import ru.souz.telemetry.TelemetryRequestSource
 import ru.souz.ui.settings.availableLlmModels
 import ru.souz.ui.settings.defaultLlmModel
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.minutes
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
@@ -50,14 +49,14 @@ class MainViewModel(
 
     private val l = LoggerFactory.getLogger(MainViewModel::class.java)
 
-    private val graphAgent by di.instance<GraphBasedAgent>()
+    private val agentFacade: AgentFacade by di.instance()
     private val desktopInfoRepository: DesktopInfoRepository by di.instance()
     private val settingsProvider: SettingsProvider by di.instance()
     private val llmBuildProfile: LlmBuildProfile by di.instance()
     private val mainUseCasesFactory: MainUseCasesFactory by di.instance()
 
-    private val agentRef = AtomicReference<GraphBasedAgent?>(null)
     private val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
+    private var lastAppliedAgentId = agentFacade.activeAgentId.value
 
     private val useCases: MainUseCases = mainUseCasesFactory.create(ioDispatchers)
     private val chatUseCase: ChatUseCase = useCases.chat
@@ -68,9 +67,6 @@ class MainViewModel(
     private var startTips: List<String> = emptyList()
 
     init {
-        agentRef.set(graphAgent)
-        chatUseCase.bindAgentRef(agentRef)
-
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectUseCaseOutputs() }
 
         viewModelScope.launch {
@@ -140,6 +136,20 @@ class MainViewModel(
 
         viewModelScope.launch {
             telegramBotController.cleanCommands.collect {
+                startNewConversation()
+            }
+        }
+
+        viewModelScope.launch {
+            var firstEmission = true
+            agentFacade.activeAgentId.collect { agentId ->
+                if (firstEmission) {
+                    firstEmission = false
+                    lastAppliedAgentId = agentId
+                    return@collect
+                }
+                if (agentId == lastAppliedAgentId) return@collect
+                lastAppliedAgentId = agentId
                 startNewConversation()
             }
         }

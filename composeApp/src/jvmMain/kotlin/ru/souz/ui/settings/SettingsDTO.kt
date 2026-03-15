@@ -1,5 +1,6 @@
 package ru.souz.ui.settings
 
+import ru.souz.agent.AgentId
 import ru.souz.giga.EmbeddingsModel
 import ru.souz.giga.DEFAULT_MAX_TOKENS
 import ru.souz.giga.GigaModel
@@ -60,6 +61,8 @@ data class SettingsState(
     val voiceInputReviewEnabled: Boolean = false,
     val useEnglishVersion: Boolean = false,
     val safeModeEnabled: Boolean = false,
+    val activeAgentId: AgentId = AgentId.default,
+    val availableAgents: List<AgentId> = AgentId.entries,
     val gigaModel: GigaModel = GigaModel.Max,
     val embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
     val voiceRecognitionModel: VoiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech,
@@ -100,6 +103,8 @@ data class SettingsState(
     val isTelegramBotActive: Boolean = false,
     val showBotDeleteConfirmation: Boolean = false,
     val botNameToDelete: String? = null,
+    val showAgentSwitchConfirmation: Boolean = false,
+    val pendingAgentId: AgentId? = null,
     
     // Graph Logs
     val currentScreen: SettingsSubScreen = SettingsSubScreen.MAIN,
@@ -125,6 +130,9 @@ sealed interface SettingsEvent : VMEvent {
     data class InputVoiceInputReviewEnabled(val enabled: Boolean): SettingsEvent
     data class InputUseEnglishVersion(val enabled: Boolean): SettingsEvent
     data class InputSafeModeEnabled(val enabled: Boolean): SettingsEvent
+    data class SelectAgent(val agentId: AgentId): SettingsEvent
+    object ConfirmAgentSwitch : SettingsEvent
+    object CancelAgentSwitch : SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
     data class SelectEmbeddingsModel(val model: EmbeddingsModel): SettingsEvent
     data class SelectVoiceRecognitionModel(val model: VoiceRecognitionModel): SettingsEvent

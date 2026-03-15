@@ -23,13 +23,14 @@ class TelemetryOutboxRepository(
 ) {
     private val l = LoggerFactory.getLogger(TelemetryOutboxRepository::class.java)
     private val jdbcUrl = "jdbc:sqlite:${databasePath.toAbsolutePath()}"
+    private val isAvailable: Boolean
 
     init {
-        initializeWithRetry()
+        isAvailable = initializeWithRetry()
     }
 
     fun enqueue(events: List<TelemetryEvent>) {
-        if (events.isEmpty()) return
+        if (events.isEmpty() || !isAvailable) return
         connection().use { conn ->
             conn.autoCommit = false
             try {
@@ -66,6 +67,9 @@ class TelemetryOutboxRepository(
     }
 
     fun loadReadyBatch(limit: Int, nowMs: Long = System.currentTimeMillis()): List<QueuedTelemetryEvent> =
+        if (!isAvailable) {
+            emptyList()
+        } else
         connection().use { conn ->
             conn.prepareStatement(
                 """
@@ -98,7 +102,7 @@ class TelemetryOutboxRepository(
         }
 
     fun markFailed(rowIds: List<Long>, nextAttemptAtMs: Long, errorMessage: String?) {
-        if (rowIds.isEmpty()) return
+        if (rowIds.isEmpty() || !isAvailable) return
         connection().use { conn ->
             conn.autoCommit = false
             try {
@@ -130,7 +134,7 @@ class TelemetryOutboxRepository(
     }
 
     fun delete(rowIds: List<Long>) {
-        if (rowIds.isEmpty()) return
+        if (rowIds.isEmpty() || !isAvailable) return
         connection().use { conn ->
             conn.autoCommit = false
             try {
@@ -152,6 +156,9 @@ class TelemetryOutboxRepository(
     }
 
     fun pendingCount(): Int =
+        if (!isAvailable) {
+            0
+        } else
         connection().use { conn ->
             conn.prepareStatement("SELECT COUNT(*) FROM telemetry_outbox").use { statement ->
                 statement.executeQuery().use { resultSet ->
@@ -160,8 +167,8 @@ class TelemetryOutboxRepository(
             }
         }
 
-    private fun initializeWithRetry() {
-        retryWithBackoff(description = "telemetry outbox initialization") {
+    private fun initializeWithRetry(): Boolean {
+        return retryWithBackoff(description = "telemetry outbox initialization") {
             Class.forName("org.sqlite.JDBC")
             Files.createDirectories(databasePath.toAbsolutePath().parent)
             connection().use { conn ->
@@ -190,6 +197,12 @@ class TelemetryOutboxRepository(
                     )
                 }
             }
+        } ?: run {
+            l.error(
+                "Telemetry outbox disabled for this run. Path is not writable: {}",
+                databasePath.toAbsolutePath(),
+            )
+            false
         }
     }
 
@@ -223,18 +236,17 @@ class TelemetryOutboxRepository(
         maxAttempts: Int = INIT_MAX_ATTEMPTS,
         initialDelayMs: Long = INIT_BACKOFF_MS,
         block: () -> Unit,
-    ) {
+    ): Boolean? {
         var delayMs = initialDelayMs
-        var lastError: Throwable? = null
         repeat(maxAttempts) { attemptIndex ->
             try {
                 block()
-                return
+                return true
             } catch (t: Throwable) {
-                lastError = t
                 val attemptNumber = attemptIndex + 1
                 if (attemptNumber == maxAttempts) {
-                    throw t
+                    l.error("Failed {} on attempt {}/{}", description, attemptNumber, maxAttempts, t)
+                    return null
                 }
                 l.warn(
                     "Failed {} on attempt {}/{}: {}. Retrying in {} ms",
@@ -248,7 +260,7 @@ class TelemetryOutboxRepository(
                 delayMs *= 2
             }
         }
-        throw lastError ?: IllegalStateException("Failed $description")
+        return null
     }
 
     private fun connection(): Connection = DriverManager.getConnection(jdbcUrl)

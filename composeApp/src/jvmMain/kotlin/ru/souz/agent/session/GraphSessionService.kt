@@ -61,7 +61,7 @@ class GraphSessionService(
 
             if (node.name.lowercase().contains(NODE_NAME_CLASSIFY)) {
                 val toToolNames = to.activeToolNames().toSet()
-                val selectedCategories = to.settings.toolsByCategory
+                val selectedCategories = to.settings.tools.byCategory
                     .filter { (_, tools) -> tools.keys.any { it in toToolNames } }
                     .keys
                     .map { it.name }

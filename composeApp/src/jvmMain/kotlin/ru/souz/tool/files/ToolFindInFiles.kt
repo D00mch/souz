@@ -23,13 +23,8 @@ class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
     )
 
     override val name: String = "SearchFileContent"
-    override val description: String = """
-        Search for files with the CONTENT (text) matching the specified query.
-        Returns the content line and file path.
-        
-        WARNING: Do NOT use this to find a file path by its name. Use 'FindFilesByName' for that.
-        Only use this if you know the file content but not the location.
-    """.trimIndent()
+    override val description: String = "Search for files with the CONTENT (text) matching the specified query. " +
+            "Returns the content line and file path. Only use this if you know the file content but not the location."
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
             request = "Do I wave written articles related to VR",

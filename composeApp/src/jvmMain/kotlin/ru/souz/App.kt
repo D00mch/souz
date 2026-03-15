@@ -42,7 +42,8 @@ import java.net.URI
 fun App(
     onCloseWindow: () -> Unit,
     onHideWindow: () -> Unit,
-    onMinimizeWindow: () -> Unit
+    onMinimizeWindow: () -> Unit,
+    onToggleMaximizeWindow: () -> Unit,
 ) {
     var currentScreen: Screen by remember { mutableStateOf(Setup) }
     var toolsScreen by remember { mutableStateOf<Tools?>(null) }
@@ -98,6 +99,7 @@ fun App(
                                 onCloseWindow = onCloseWindow,
                                 onHideWindow = onHideWindow,
                                 onMinimizeWindow = onMinimizeWindow,
+                                onToggleMaximizeWindow = onToggleMaximizeWindow,
                                 onShowSnack = { message ->
                                     snackbarScope.launch { snackbarHostState.showSnackbar(message) }
                                 },

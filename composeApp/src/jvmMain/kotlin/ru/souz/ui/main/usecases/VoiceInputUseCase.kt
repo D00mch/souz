@@ -63,18 +63,25 @@ class VoiceInputUseCase(
 
         launch { audioRecorder.logState() }
 
-        if (!permissionsUseCase.registerNativeHook()) {
+        val nativeHookRegistered = permissionsUseCase.registerNativeHook()
+        if (!nativeHookRegistered) {
             permissionsUseCase.handleMissingInputMonitoringPermission(scope)
-            return@coroutineScope
         }
 
         try {
-            GlobalScreen.addNativeKeyListener(hotkeyListener)
+            if (nativeHookRegistered) {
+                GlobalScreen.addNativeKeyListener(hotkeyListener)
+            }
 
             val userInputFlow = audioRecorder.audioFlow
                 .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
                 .catch { l.error("Error in audio flow: ${it.message}") }
                 .mapLatest { audioData ->
+                    if (audioData.isEmpty()) {
+                        l.warn("Empty audio payload captured, skipping transcription request")
+                        emitVoiceCaptureTooShort()
+                        return@mapLatest ""
+                    }
                     if (!isRecognitionInProgress.compareAndSet(false, true)) {
                         l.debug("Skipping recognition request because previous one is still in progress")
                         return@mapLatest ""
@@ -117,7 +124,9 @@ class VoiceInputUseCase(
                 onRecognizedText(userInput)
             }
         } finally {
-            GlobalScreen.unregisterNativeHook()
+            if (nativeHookRegistered) {
+                runCatching { GlobalScreen.unregisterNativeHook() }
+            }
         }
     }
 
@@ -149,7 +158,13 @@ class VoiceInputUseCase(
             )
         }
 
-        audioRecorder.start()
+        val started = audioRecorder.start()
+        if (!started) {
+            val recorderState = audioRecorder.recordingState.value
+            val errorMsg = (recorderState as? InMemoryAudioRecorder.State.Error)?.message.orEmpty()
+            l.error("Unable to start microphone capture: {}", errorMsg)
+            emitVoiceCaptureFailed()
+        }
     }
 
     suspend fun stopRecording(isListening: Boolean) {
@@ -184,6 +199,17 @@ class VoiceInputUseCase(
 
     private suspend fun emitVoiceRecognitionUnavailable() {
         val msg = getString(Res.string.voice_error_recognition_unavailable)
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitVoiceCaptureTooShort() {
+        val msg = getString(Res.string.voice_error_empty_audio)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitVoiceCaptureFailed() {
+        val msg = getString(Res.string.voice_error_microphone_unavailable)
         speechUseCase.queue(msg)
         emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }

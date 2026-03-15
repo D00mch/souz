@@ -119,6 +119,15 @@
     <!-- Functions Settings -->
     <string name="setting_fewshot_title">Few-Shot Examples</string>
     <string name="setting_fewshot_desc">Put tool usage examples into context</string>
+    <string name="label_agent">Agent</string>
+    <string name="agent_option_lua_title">Scripts Writer</string>
+    <string name="agent_option_lua_description">Plans with LLM and executes safe scripts. Smarter, better tokens utilisation</string>
+    <string name="agent_option_graph_title">Graph Agent</string>
+    <string name="agent_option_graph_description">Classic graph flow with iterative tool calls and summarization.</string>
+    <string name="agent_switch_dialog_title">Switch active agent?</string>
+    <string name="agent_switch_dialog_message">Current work will be cancelled and the active conversation context will be cleared.</string>
+    <string name="agent_switch_dialog_confirm">Switch</string>
+    <string name="agent_switch_dialog_cancel">Cancel</string>
     <string name="button_configure_tools">Configure tools</string>
     <string name="button_configure_telegram">Configure Telegram connection</string>
     <string name="telegram_status_connected_format">Connected: %s</string>
@@ -195,6 +204,7 @@
 
     <!-- Dropdowns -->
     <string name="label_model">Model</string>
+    <string name="content_desc_select_agent">Select agent</string>
     <string name="label_embeddings_model">Embeddings model</string>
     <string name="label_voice_recognition_model">Voice recognition model</string>
 
@@ -216,6 +226,7 @@
     <!-- Chat Input -->
     <string name="chat_input_placeholder">Type a message...</string>
     <string name="tooltip_hold_option">Hold right Option</string>
+    <string name="tooltip_hold_mic_button">Press and hold the microphone button</string>
     <string name="tooltip_stop_speech">Stop speech</string>
     <string name="tooltip_attach_file">Attach file</string>
     <string name="content_desc_voice_input">Voice input</string>
@@ -231,8 +242,10 @@
     <!-- Onboarding -->
     <string name="onboarding_speech_text">Hello! I am Souz AI, your smart assistant on your computer... I will now ask for permissions to access applications, the system, and files to work correctly... I can use the browser, work with mail and calendar, work with files on your PC, explain and rewrite selected text, open applications, create notes, answer questions, and build charts and diagrams based on data.</string>
     <string name="onboarding_display_text">Hello! I am Souz AI, a smart assistant on your computer.\nNow I will ask for permissions to access applications, the system, and files to work correctly.\nI can:\n- Use the browser\n- Work with mail and calendar\n- Work with files on your PC\n- Explain and rewrite selected text\n- Open applications, create notes, answer questions\n- Build charts and diagrams based on data\n\n\nTo start voice input - hold right opt(alt)\nTo clear conversation context - use top left button\n</string>
+    <string name="onboarding_display_text_sandbox">Hello! I am Souz AI, a smart assistant on your computer.\nNow I will ask for permissions to access applications, the system, and files to work correctly.\nI can:\n- Use the browser\n- Work with mail and calendar\n- Work with files on your PC\n- Explain and rewrite selected text\n- Open applications, create notes, answer questions\n- Build charts and diagrams based on data\n\n\nIn sandbox builds, global Option(Alt) hotkey is unavailable.\nTo start voice input - press and hold the microphone button.\nTo clear conversation context - use top left button\n</string>
     <string name="onboarding_input_permission_request">Allow access to input monitoring in macOS settings — the application will try to restart automatically after confirmation</string>
     <string name="onboarding_input_permission_restart_failed">Input Monitoring permission is granted, but automatic restart failed. Please restart the application manually.</string>
+    <string name="onboarding_input_permission_sandbox_limited">Global input monitoring is unavailable in the sandboxed build. You can still use voice input from the microphone button.</string>
 
     <!-- Voice Input -->
     <string name="error_prefix">Error: %s</string>
@@ -242,6 +255,8 @@
     <string name="voice_status_recording_started">Recording started</string>
     <string name="voice_status_processing_input">Processing input</string>
     <string name="voice_status_speech_not_recognized">Speech not recognized</string>
+    <string name="voice_error_empty_audio">No audio was captured. Hold the microphone button a bit longer and try again.</string>
+    <string name="voice_error_microphone_unavailable">Microphone capture failed. Allow access in macOS Settings &gt; Privacy &amp; Security &gt; Microphone, then restart the app.</string>
     <string name="voice_error_missing_key">Add the API key for the selected voice recognition model in Settings > My Keys to use voice commands</string>
     <string name="voice_error_recognition_unavailable">Voice recognition is not available in this build yet.</string>
 

@@ -5,6 +5,8 @@ package ru.souz.ui.main
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.desktop.ui.tooling.preview.Preview
@@ -33,18 +35,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -61,6 +71,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.souz.LocalWindowScope
@@ -74,15 +86,23 @@ import java.util.*
 
 private val TopButtonSize = 24.dp
 private val TopIconSize = 14.dp
-private val ChatUserBubbleGradientStart = Color(0x3312E0B5)
-private val ChatUserBubbleGradientEnd = Color(0x1912E0B5)
-private val ChatUserBubbleBorderColor = Color(0x6612E0B5)
-private val ChatUserTextColor = Color(0xF2FFFFFF)
-private val ChatUserTimestampColor = Color(0xB212E0B5)
-private val ChatAssistantBubbleBackground = Color(0x4C000000)
-private val ChatAssistantBubbleBorderColor = Color(0x33FFFFFF)
-private val ChatAssistantTextColor = Color(0xE5FFFFFF)
-private val ChatAssistantTimestampColor = Color(0x7FFFFFFF)
+private val MacTrafficButtonSize = 12.dp
+private val MacTrafficRowSpacing = 8.dp
+private val TopActionButtonSize = 32.dp
+private val TopActionIconSize = 16.dp
+private val ChatUserBubbleBackgroundStart = Color(0x5C3F434A)
+private val ChatUserBubbleBackgroundEnd = Color(0x53363A40)
+private val ChatUserBubbleBorderStart = Color(0x3DFFFFFF)
+private val ChatUserBubbleBorderEnd = Color(0x14FFFFFF)
+private val ChatUserTextColor = Color(0xE6FFFFFF)
+private val ChatUserTimestampColor = Color(0x40FFFFFF)
+private val ChatAssistantTextColor = Color(0xD9FFFFFF)
+private val ChatAssistantTimestampColor = Color(0x40FFFFFF)
+private val ChatHoverIconColor = Color(0x40FFFFFF)
+private val ChatHoverIconHoverColor = Color(0x80FFFFFF)
+private val ChatHoverButtonBackground = Color(0x0FFFFFFF)
+private val ChatSelectionHandleColor = Color(0xFFFFFFFF)
+private val ChatSelectionBackgroundColor = Color(0x66FFFFFF)
 private val FinderPathChipBackground = Color(0x2625CAB0)
 private val FinderPathChipBorder = Color(0x8812E0B5)
 private val FinderPathChipTextColor = Color(0xFF12E0B5)
@@ -95,6 +115,17 @@ private val ToolModifyPatchPreviewMaxHeight = 620.dp
 private const val ToolModifyPatchParam = "patch"
 private const val ToolModifyPatchPreviewMaxLines = 350
 
+private enum class MacTrafficKind {
+    Close,
+    Minimize,
+    Maximize,
+}
+
+enum class LiquidGlassPreset {
+    Default,
+    Hero
+}
+
 
 @Composable
 fun MainScreen(
@@ -102,6 +133,7 @@ fun MainScreen(
     onCloseWindow: () -> Unit,
     onHideWindow: () -> Unit,
     onMinimizeWindow: () -> Unit,
+    onToggleMaximizeWindow: () -> Unit,
     onShowSnack: (String) -> Unit = {},
     isOnline: Boolean = true,
 ) {
@@ -127,8 +159,9 @@ fun MainScreen(
         isOnline = isOnline,
         onStartListening = { viewModel.send(MainEvent.StartListening) },
         onStopListening = { viewModel.send(MainEvent.StopListening) },
-        onClose = onCloseWindow,
+        onClose = onHideWindow,
         onMinimize = onMinimizeWindow,
+        onToggleMaximize = onToggleMaximizeWindow,
         onRequestNewConversation = { viewModel.send(MainEvent.RequestNewConversation) },
         onConfirmNewConversation = { viewModel.send(MainEvent.ConfirmNewConversation) },
         onDismissNewConversationDialog = { viewModel.send(MainEvent.DismissNewConversationDialog) },
@@ -166,6 +199,7 @@ fun MainScreenContent(
     onDismissNewConversationDialog: () -> Unit = {},
     onClose: () -> Unit = {},
     onMinimize: () -> Unit = {},
+    onToggleMaximize: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onStopSpeech: () -> Unit = {},
     onShowLastText: () -> Unit = {},
@@ -204,14 +238,15 @@ fun MainScreenContent(
     ) {
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
-            isWindowFocused = isFocused
+            isWindowFocused = isFocused,
+            preset = LiquidGlassPreset.Hero
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 DraggableWindowArea {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp)
+                            .height(56.dp)
                             .zIndex(2f)
                     ) {
                     Text(
@@ -219,33 +254,63 @@ fun MainScreenContent(
                         modifier = Modifier.align(Alignment.Center),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            color = Color(0x33FFFFFF),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                            color = Color(0x99FFFFFF),
+                            fontSize = 13.sp,
+                            letterSpacing = 0.65.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     )
 
                     Row(
                         modifier = Modifier
                             .align(Alignment.CenterStart)
-                            .padding(start = 8.dp),
+                            .padding(start = 20.dp),
                         horizontalArrangement = Arrangement.Start,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val iconTint = Color(0xCCFFFFFF)
-
+                        MacTrafficLightButton(
+                            color = Color(0xFFFF5F57),
+                            kind = MacTrafficKind.Close,
+                            onClick = onClose
+                        )
+                        Spacer(Modifier.width(MacTrafficRowSpacing))
+                        MacTrafficLightButton(
+                            color = Color(0xFFFFBD2E),
+                            kind = MacTrafficKind.Minimize,
+                            onClick = onMinimize
+                        )
+                        Spacer(Modifier.width(MacTrafficRowSpacing))
+                        MacTrafficLightButton(
+                            color = Color(0xFF28C940),
+                            kind = MacTrafficKind.Maximize,
+                            onClick = onToggleMaximize
+                        )
+                        Spacer(Modifier.width(12.dp))
                         Box(
-                            modifier = Modifier.size(TopButtonSize),
+                            modifier = Modifier
+                                .size(width = 1.dp, height = 16.dp)
+                                .background(Color(0x14FFFFFF))
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Box(
+                            modifier = Modifier.size(TopActionButtonSize),
                             contentAlignment = Alignment.TopEnd
                         ) {
-                            MinimalGlassButton(onClick = onToggleThinkingPanel) {
-                                Icon(Icons.Rounded.Psychology, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
+                            TopToolbarIconButton(
+                                size = TopActionButtonSize,
+                                onClick = onToggleThinkingPanel
+                            ) { iconTint ->
+                                Icon(
+                                    Icons.Rounded.AccessTime,
+                                    null,
+                                    tint = iconTint,
+                                    modifier = Modifier.size(TopActionIconSize)
+                                )
                             }
                             if (state.isProcessing) {
                                 Box(
                                     modifier = Modifier
-                                        .size(8.dp)
+                                        .size(6.dp)
                                         .offset(x = 2.dp, y = (-2).dp)
                                         .clip(CircleShape)
                                         .background(Color(0xFF00E5FF))
@@ -254,52 +319,63 @@ fun MainScreenContent(
                             }
                         }
 
-                        Spacer(Modifier.width(8.dp))
-
-                        Box(
-                            modifier = Modifier.size(TopButtonSize),
-                            contentAlignment = Alignment.TopEnd
-                        ) {
-                            MinimalGlassButton(onClick = onRequestNewConversation) {
-                                Icon(
-                                    Icons.Rounded.Replay,
-                                    null,
-                                    tint = iconTint,
-                                    modifier = Modifier.size(TopIconSize)
-                                )
-                            }
+                        Spacer(Modifier.width(10.dp))
+                        TopToolbarIconButton(
+                            size = TopActionButtonSize,
+                            onClick = onRequestNewConversation
+                        ) { iconTint ->
+                            Icon(
+                                Icons.Rounded.Add,
+                                null,
+                                tint = iconTint,
+                                modifier = Modifier.size(TopActionIconSize)
+                            )
                         }
                     }
 
                     Row(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
-                            .padding(end = 8.dp),
+                            .padding(end = 20.dp),
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val iconTint = Color(0xCCFFFFFF)
+                        TopToolbarIconButton(
+                            size = TopActionButtonSize,
+                            onClick = onOpenSettings
+                        ) { iconTint ->
+                            Icon(
+                                Icons.Rounded.Settings,
+                                null,
+                                tint = iconTint,
+                                modifier = Modifier.size(TopActionIconSize)
+                            )
+                        }
 
                         if (state.lastText != null) {
-                            MinimalGlassButton(onClick = onShowLastText) {
+                            Spacer(Modifier.width(10.dp))
+                            TopToolbarIconButton(
+                                size = TopActionButtonSize,
+                                onClick = onShowLastText
+                            ) { iconTint ->
                                 Icon(
                                     Icons.Rounded.SkipPrevious,
                                     null,
                                     tint = iconTint,
-                                    modifier = Modifier.size(TopIconSize)
+                                    modifier = Modifier.size(TopActionIconSize)
                                 )
                             }
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        MinimalGlassButton(onClick = onOpenSettings) {
-                            Icon(Icons.Rounded.Settings, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        MinimalGlassButton(onClick = onClose) {
-                            Icon(Icons.Rounded.Close, null, tint = iconTint, modifier = Modifier.size(TopIconSize))
                         }
                     }
-                }
+
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(Color(0x0FFFFFFF))
+                    )
+                    }
                 }
 
                 ChatModeContent(
@@ -332,7 +408,7 @@ fun MainScreenContent(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(start = 10.dp, end = 10.dp, top = 14.dp, bottom = 0.dp)
                 )
             }
             
@@ -804,7 +880,6 @@ fun ChatModeContent(
                 items(messages, key = { it.id }) { message ->
                     ChatBubble(
                         message = message,
-                        onShowSnack = onShowSnack,
                         onOpenPath = onOpenPath
                     )
                 }
@@ -875,7 +950,7 @@ fun ChatModeContent(
             placeholder = if (messages.isEmpty()) chatPlaceholder else "",
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 12.dp)
+                .padding(start = 6.dp, end = 6.dp, top = 8.dp, bottom = 16.dp)
         )
     }
 }
@@ -928,129 +1003,93 @@ private fun ChatFileDropTarget(
 @Composable
 private fun ChatBubble(
     message: ChatMessage,
-    onShowSnack: (String) -> Unit,
     onOpenPath: (String) -> Unit
 ) {
-    val bubbleShape = if (message.isUser) {
-        RoundedCornerShape(
-            topStart = 16.dp,
-            topEnd = 16.dp,
-            bottomStart = 16.dp,
-            bottomEnd = 4.dp
-        )
-    } else {
-        RoundedCornerShape(
-            topStart = 16.dp,
-            topEnd = 16.dp,
-            bottomStart = 4.dp,
-            bottomEnd = 16.dp
-        )
-    }
+    val hoverInteractionSource = remember { MutableInteractionSource() }
+    val isHovered by hoverInteractionSource.collectIsHoveredAsState()
 
-    val bubbleBorderColor = if (message.isUser) {
-        ChatUserBubbleBorderColor
-    } else {
-        ChatAssistantBubbleBorderColor
-    }
+    var shouldReveal by remember(message.id) { mutableStateOf(false) }
+    LaunchedEffect(message.id) { shouldReveal = true }
+    val revealAlpha by animateFloatAsState(
+        targetValue = if (shouldReveal) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = 250,
+            easing = CubicBezierEasing(0.25f, 0.46f, 0.45f, 0.94f)
+        )
+    )
+    val revealOffset by animateDpAsState(
+        targetValue = if (shouldReveal) 0.dp else 8.dp,
+        animationSpec = tween(
+            durationMillis = 250,
+            easing = CubicBezierEasing(0.25f, 0.46f, 0.45f, 0.94f)
+        )
+    )
+    val revealOffsetPx = with(LocalDensity.current) { revealOffset.toPx() }
 
-    val alignment = if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart
-    
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = alignment
-    ) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = 800.dp)
-                .clip(bubbleShape)
-                .background(
-                    brush = if (message.isUser) {
-                        Brush.linearGradient(
-                            colors = listOf(
-                                ChatUserBubbleGradientStart,
-                                ChatUserBubbleGradientEnd
+    val contentModifier = Modifier
+        .fillMaxWidth()
+        .hoverable(interactionSource = hoverInteractionSource)
+        .graphicsLayer {
+            alpha = revealAlpha
+            translationY = revealOffsetPx
+        }
+
+    if (message.isUser) {
+        val bubbleShape = RoundedCornerShape(16.dp)
+        val customSelectionColors = TextSelectionColors(
+            handleColor = ChatSelectionHandleColor,
+            backgroundColor = ChatSelectionBackgroundColor
+        )
+
+        BoxWithConstraints(modifier = contentModifier) {
+            val maxBubbleWidth = maxWidth * 0.7f
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .widthIn(max = maxBubbleWidth),
+                horizontalAlignment = Alignment.End
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(bubbleShape)
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    ChatUserBubbleBackgroundStart,
+                                    ChatUserBubbleBackgroundEnd
+                                )
                             )
                         )
-                    } else {
-                        Brush.linearGradient(
-                            colors = listOf(
-                                ChatAssistantBubbleBackground,
-                                ChatAssistantBubbleBackground
-                            )
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    ChatUserBubbleBorderStart,
+                                    ChatUserBubbleBorderEnd
+                                )
+                            ),
+                            shape = bubbleShape
                         )
-                    }
-                )
-                .border(1.dp, bubbleBorderColor, bubbleShape)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            if (message.isUser) {
-                if (message.attachedFiles.isNotEmpty()) {
-                    MessageAttachmentsPreview(
-                        files = message.attachedFiles,
-                        onOpenPath = onOpenPath,
-                    )
-                    if (message.text.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
-
-                val customSelectionColors = TextSelectionColors(
-                    handleColor = Color(0xFFFFFFFF),
-                    backgroundColor = Color(0x66FFFFFF)
-                )
-
-                if (message.text.isNotBlank()) {
-                    CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
-                        SelectionContainer {
-                            Text(
-                                text = message.text,
-                                color = ChatUserTextColor,
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp,
-                                modifier = Modifier.padding(bottom = 3.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (message.attachedFiles.isNotEmpty()) {
+                            MessageAttachmentsPreview(
+                                files = message.attachedFiles,
+                                onOpenPath = onOpenPath,
                             )
                         }
-                    }
-                }
-            } else {
-                val parts = remember(message.text) { parseMarkdownContent(message.text) }
-                val baseFontSize = 14.sp
-                val baseStyle = TextStyle(
-                    color = ChatAssistantTextColor,
-                    fontSize = baseFontSize,
-                    lineHeight = 20.sp
-                )
-                val codeStyle = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = baseFontSize * 0.9,
-                    color = Color(0xFFE0E0E0)
-                )
-                val attachmentPathKeys = remember(message.attachedFiles) {
-                    message.attachedFiles.map { it.path.lowercase(Locale.ROOT) }.toSet()
-                }
-                val clickablePaths = message.finderPaths
-                    .filterNot { it.path.lowercase(Locale.ROOT) in attachmentPathKeys }
-                
-                val bubbleTypography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.SMALL)
-                val bubbleColors = chatMarkdownColors(baseStyle.color)
 
-                SelectionContainer {
-                    Column {
-                        parts.forEach { part ->
-                            when (part) {
-                                is MarkdownPart.TextContent -> {
-                                    Markdown(
-                                        content = part.content,
-                                        colors = bubbleColors,
-                                        typography = bubbleTypography,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                                is MarkdownPart.CodeContent -> {
-                                    CodeBlockWithCopy(
-                                        code = part.code,
-                                        language = part.language,
-                                        style = codeStyle
+                        if (message.text.isNotBlank()) {
+                            CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
+                                SelectionContainer {
+                                    Text(
+                                        text = message.text,
+                                        color = ChatUserTextColor,
+                                        fontSize = 14.sp,
+                                        lineHeight = 22.4.sp,
                                     )
                                 }
                             }
@@ -1058,8 +1097,105 @@ private fun ChatBubble(
                     }
                 }
 
+                val userTimestampAlpha by animateFloatAsState(
+                    targetValue = if (isHovered) 1f else 0f,
+                    animationSpec = tween(durationMillis = 200)
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(22.dp),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Text(
+                        text = formatTimestamp(message.timestamp),
+                        color = ChatUserTimestampColor,
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .alpha(userTimestampAlpha)
+                    )
+                }
+            }
+        }
+    } else {
+        val clipboardManager = LocalClipboardManager.current
+        val scope = rememberCoroutineScope()
+        var copied by remember(message.id) { mutableStateOf(false) }
+        var copyNonce by remember(message.id) { mutableStateOf(0) }
+
+        val attachmentPathKeys = remember(message.attachedFiles) {
+            message.attachedFiles.map { it.path.lowercase(Locale.ROOT) }.toSet()
+        }
+        val clickablePaths = message.finderPaths
+            .filterNot { it.path.lowercase(Locale.ROOT) in attachmentPathKeys }
+
+        val copyInteractionSource = remember { MutableInteractionSource() }
+        val isCopyHovered by copyInteractionSource.collectIsHoveredAsState()
+        val copyIconColor by animateColorAsState(
+            targetValue = if (isCopyHovered) ChatHoverIconHoverColor else ChatHoverIconColor,
+            animationSpec = tween(durationMillis = 150)
+        )
+        val copyBackgroundColor by animateColorAsState(
+            targetValue = if (isCopyHovered) ChatHoverButtonBackground else Color.Transparent,
+            animationSpec = tween(durationMillis = 150)
+        )
+
+        Box(modifier = contentModifier) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 17.dp, end = 70.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (message.text.isNotBlank()) {
+                    val parts = remember(message.text) { parseMarkdownContent(message.text) }
+                    val baseFontSize = 14.sp
+                    val baseStyle = TextStyle(
+                        color = ChatAssistantTextColor,
+                        fontSize = baseFontSize,
+                        lineHeight = 22.4.sp
+                    )
+                    val codeStyle = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = baseFontSize * 0.9,
+                        color = Color(0xFFE0E0E0)
+                    )
+                    val typography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.SMALL)
+                    val colors = chatMarkdownColors(baseStyle.color)
+                    val customSelectionColors = TextSelectionColors(
+                        handleColor = ChatSelectionHandleColor,
+                        backgroundColor = ChatSelectionBackgroundColor
+                    )
+
+                    CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
+                        SelectionContainer {
+                            Column {
+                                parts.forEach { part ->
+                                    when (part) {
+                                        is MarkdownPart.TextContent -> {
+                                            Markdown(
+                                                content = part.content,
+                                                colors = colors,
+                                                typography = typography,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+
+                                        is MarkdownPart.CodeContent -> {
+                                            CodeBlockWithCopy(
+                                                code = part.code,
+                                                language = part.language,
+                                                style = codeStyle
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (message.attachedFiles.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
                     MessageAttachmentsPreview(
                         files = message.attachedFiles,
                         onOpenPath = onOpenPath,
@@ -1067,7 +1203,6 @@ private fun ChatBubble(
                 }
 
                 if (clickablePaths.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         clickablePaths.forEach { item ->
                             FinderPathChip(
@@ -1083,16 +1218,54 @@ private fun ChatBubble(
                 }
             }
 
-            Row(
-                modifier = Modifier.padding(top = 0.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+            AnimatedVisibility(
+                visible = isHovered,
+                enter = fadeIn(animationSpec = tween(200)),
+                exit = fadeOut(animationSpec = tween(200)),
+                modifier = Modifier.align(Alignment.TopEnd)
             ) {
-                Text(
-                    text = formatTimestamp(message.timestamp),
-                    color = if (message.isUser) ChatUserTimestampColor else ChatAssistantTimestampColor,
-                    fontSize = 11.sp
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = formatTimestamp(message.timestamp),
+                        color = ChatAssistantTimestampColor,
+                        fontSize = 11.sp
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(copyBackgroundColor)
+                            .hoverable(interactionSource = copyInteractionSource)
+                            .pointerHoverIcon(PointerIcon.Hand)
+                            .clickable(
+                                interactionSource = copyInteractionSource,
+                                indication = null,
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(message.text))
+                                    copied = true
+                                    val clickId = copyNonce + 1
+                                    copyNonce = clickId
+                                    scope.launch {
+                                        delay(2000)
+                                        if (copyNonce == clickId) {
+                                            copied = false
+                                        }
+                                    }
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                            contentDescription = null,
+                            tint = copyIconColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
             }
         }
     }
@@ -1225,7 +1398,7 @@ private fun FinderPathChip(
     }
 }
 
-private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.Locale("ru", "RU"))
 
 private fun formatTimestamp(timestamp: Long): String = 
     timestampFormatter.format(java.util.Date(timestamp))
@@ -1234,22 +1407,140 @@ private fun formatTimestamp(timestamp: Long): String =
 
 @Composable
 fun MinimalGlassButton(
+    size: Dp = TopButtonSize,
+    iconSize: Dp = TopIconSize,
     onClick: () -> Unit,
     content: @Composable () -> Unit
 ) {
-    val backgroundColor = Color(0x0DFFFFFF)
-    val borderColor = Color(0x33FFFFFF)
+    val backgroundColor = Color(0x12FFFFFF)
+    val borderColor = Color(0x22FFFFFF)
 
     Box(
         modifier = Modifier
-            .size(TopButtonSize)
+            .size(size)
             .clip(CircleShape)
             .background(backgroundColor)
             .border(0.5.dp, borderColor, CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        content()
+        Box(modifier = Modifier.size(iconSize), contentAlignment = Alignment.Center) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun MacTrafficLightButton(
+    color: Color,
+    kind: MacTrafficKind,
+    onClick: () -> Unit,
+) {
+    var hovered by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+
+    Box(
+        modifier = Modifier
+            .size(MacTrafficButtonSize)
+            .clip(CircleShape)
+            .background(color)
+            .onPointerEvent(PointerEventType.Enter) { hovered = true }
+            .onPointerEvent(PointerEventType.Exit) { hovered = false }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .pointerHoverIcon(PointerIcon.Hand)
+    ) {
+        if (hovered) {
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val glyphColor = Color(0xCC1A1A1A)
+                val centerX = size.width * 0.5f
+                val centerY = size.height * 0.5f
+                val half = size.minDimension * 0.22f
+                val stroke = size.minDimension * 0.14f
+
+                when (kind) {
+                    MacTrafficKind.Close -> {
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(centerX - half, centerY - half),
+                            end = Offset(centerX + half, centerY + half),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round
+                        )
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(centerX + half, centerY - half),
+                            end = Offset(centerX - half, centerY + half),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round
+                        )
+                    }
+
+                    MacTrafficKind.Minimize -> {
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(centerX - half, centerY),
+                            end = Offset(centerX + half, centerY),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round
+                        )
+                    }
+
+                    MacTrafficKind.Maximize -> {
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(centerX - half, centerY),
+                            end = Offset(centerX + half, centerY),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round
+                        )
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(centerX, centerY - half),
+                            end = Offset(centerX, centerY + half),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopToolbarIconButton(
+    size: Dp,
+    onClick: () -> Unit,
+    content: @Composable BoxScope.(Color) -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val background by animateColorAsState(
+        targetValue = if (hovered) Color(0x0FFFFFFF) else Color.Transparent
+    )
+    val iconTint by animateColorAsState(
+        targetValue = if (hovered) Color(0x99FFFFFF) else Color(0x66FFFFFF)
+    )
+
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(background)
+            .hoverable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .pointerHoverIcon(PointerIcon.Hand),
+        contentAlignment = Alignment.Center,
+    ) {
+        content(iconTint)
     }
 }
 
@@ -1259,79 +1550,193 @@ fun MinimalGlassButton(
 fun RealLiquidGlassCard(
     modifier: Modifier = Modifier,
     isWindowFocused: Boolean,
-    cornerRadius: Dp = 23.dp,
+    cornerRadius: Dp = 24.dp,
+    preset: LiquidGlassPreset = LiquidGlassPreset.Hero,
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(cornerRadius)
-    val borderThickness = 1.5.dp
-    val noiseBrush = rememberNoiseBrush()
+    val borderThickness = if (preset == LiquidGlassPreset.Hero) 1.dp else 1.5.dp
 
     val backdropAlpha by animateFloatAsState(
-        targetValue = if (isWindowFocused) 0.95f else 0.0f,
+        targetValue = when (preset) {
+            LiquidGlassPreset.Default -> if (isWindowFocused) 0.95f else 0.0f
+            LiquidGlassPreset.Hero -> 1.0f
+        },
         animationSpec = tween(400)
     )
 
-    val noiseAlpha by animateFloatAsState(
-        targetValue = if (isWindowFocused) 0.25f else 0.0f,
+    val accentAlpha by animateFloatAsState(
+        targetValue = when (preset) {
+            LiquidGlassPreset.Default -> if (isWindowFocused) 1f else 0f
+            LiquidGlassPreset.Hero -> 0.36f
+        },
         animationSpec = tween(400)
     )
 
     Box(modifier = modifier) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .clip(shape)
-                .background(Color.Black.copy(alpha = backdropAlpha))
-        )
+        when (preset) {
+            LiquidGlassPreset.Default -> {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(shape)
+                        .background(Color.Black.copy(alpha = backdropAlpha))
+                )
+            }
 
-        if (noiseAlpha > 0f) {
-            Canvas(modifier = Modifier.matchParentSize().clip(shape).alpha(noiseAlpha)) {
-                drawRect(brush = noiseBrush)
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color.Transparent, Color(0x80000000)),
-                        radius = size.maxDimension / 1.0f
+            LiquidGlassPreset.Hero -> {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(shape)
+                        .background(Color(0xF21B1C20))
+                        .alpha(backdropAlpha)
+                )
+
+                Canvas(modifier = Modifier.matchParentSize().clip(shape).alpha(accentAlpha)) {
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color(0x14FFFFFF),
+                                0.30f to Color(0x0AFFFFFF),
+                                0.62f to Color(0x03000000),
+                                1.0f to Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.17f, size.height * 0.08f),
+                            radius = size.maxDimension * 0.98f
+                        )
                     )
+
+                    drawRect(
+                        brush = Brush.linearGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color(0x0AFFFFFF),
+                                0.35f to Color(0x060E0E11),
+                                0.70f to Color(0x100B0B0E),
+                                1.0f to Color(0x2209090B)
+                            ),
+                            start = Offset.Zero,
+                            end = Offset(size.width, size.height)
+                        )
+                    )
+
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color.Transparent,
+                                0.66f to Color.Transparent,
+                                0.88f to Color(0x30040406),
+                                1.0f to Color(0x64030305)
+                            ),
+                            center = Offset(size.width * 0.50f, size.height * 1.02f),
+                            radius = size.maxDimension * 1.15f
+                        )
+                    )
+
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(Color.Transparent, Color(0x1A000000)),
+                            center = Offset(size.width * 0.50f, size.height * 0.50f),
+                            radius = size.maxDimension * 0.95f
+                        )
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(shape)
+                        .background(Color(0xB0000000))
                 )
             }
         }
 
         Canvas(modifier = Modifier.matchParentSize().clip(shape)) {
             val strokeWidth = borderThickness.toPx()
-            drawRoundRect(
-                brush = Brush.linearGradient(
-                    0.0f to Color(0xCCFFFFFF),
-                    0.5f to Color(0x00FFFFFF),
-                    1.0f to Color(0x4DFFFFFF),
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, size.height)
-                ),
-                cornerRadius = CornerRadius(cornerRadius.toPx()),
-                style = Stroke(width = strokeWidth)
-            )
+            when (preset) {
+                LiquidGlassPreset.Default -> {
+                    drawRoundRect(
+                        brush = Brush.linearGradient(
+                            0.0f to Color(0xCCFFFFFF),
+                            0.5f to Color(0x00FFFFFF),
+                            1.0f to Color(0x4DFFFFFF),
+                            start = Offset(0f, 0f),
+                            end = Offset(size.width, size.height)
+                        ),
+                        cornerRadius = CornerRadius(cornerRadius.toPx()),
+                        style = Stroke(width = strokeWidth)
+                    )
 
-            drawPath(
-                path = Path().apply {
-                    moveTo(0f, size.height * 0.2f)
-                    lineTo(size.width * 0.4f, 0f)
-                    lineTo(size.width * 0.65f, 0f)
-                    lineTo(0f, size.height * 0.6f)
-                    close()
-                },
-                brush = Brush.linearGradient(
-                    colors = listOf(Color(0x0DFFFFFF), Color.Transparent),
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width / 2, size.height / 2)
-                )
-            )
+                    drawPath(
+                        path = Path().apply {
+                            moveTo(0f, size.height * 0.2f)
+                            lineTo(size.width * 0.4f, 0f)
+                            lineTo(size.width * 0.65f, 0f)
+                            lineTo(0f, size.height * 0.6f)
+                            close()
+                        },
+                        brush = Brush.linearGradient(
+                            colors = listOf(Color(0x0DFFFFFF), Color.Transparent),
+                            start = Offset(0f, 0f),
+                            end = Offset(size.width / 2, size.height / 2)
+                        )
+                    )
+                }
+
+                LiquidGlassPreset.Hero -> {
+                    drawRoundRect(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0x3AFFFFFF),
+                                Color(0x18FFFFFF),
+                                Color(0x14FFFFFF),
+                                Color(0x2AFFFFFF)
+                            ),
+                            start = Offset(0f, 0f),
+                            end = Offset(size.width, size.height)
+                        ),
+                        cornerRadius = CornerRadius(cornerRadius.toPx()),
+                        style = Stroke(width = strokeWidth)
+                    )
+
+                    val inset = strokeWidth * 1.4f
+                    val innerWidth = (size.width - inset * 2f).coerceAtLeast(0f)
+                    val innerHeight = (size.height - inset * 2f).coerceAtLeast(0f)
+                    drawRoundRect(
+                        color = Color(0x08FFFFFF),
+                        topLeft = Offset(inset, inset),
+                        size = Size(innerWidth, innerHeight),
+                        cornerRadius = CornerRadius((cornerRadius.toPx() - inset).coerceAtLeast(0f)),
+                        style = Stroke(width = strokeWidth * 0.7f)
+                    )
+                }
+            }
         }
 
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .clip(shape)
-                .background(Color(0x03FFFFFF))
-        )
+        if (preset == LiquidGlassPreset.Default) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(shape)
+                    .background(Color(0x03FFFFFF))
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(shape)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0x06FFFFFF),
+                                Color(0x03FFFFFF),
+                                Color(0x01FFFFFF)
+                            )
+                        )
+                    )
+                    .alpha(accentAlpha)
+            )
+        }
 
         val innerShape = RoundedCornerShape(cornerRadius - borderThickness)
         Box(modifier = Modifier.padding(borderThickness).clip(innerShape)) {

@@ -7,10 +7,16 @@ import ru.souz.db.SettingsProviderImpl
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
-import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.AgentFacade
+import ru.souz.agent.impl.GraphBasedAgent
+import ru.souz.agent.impl.LuaGraphBasedAgent
+import ru.souz.agent.SystemPromptResolver
+import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesLLM
+import ru.souz.agent.nodes.NodesLua
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesMCP
@@ -139,6 +145,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { TelegramService(instance()) }
 
     // Tools
+    bindSingleton { ToolRunBashCommand }
     bindSingleton { ToolGetClipboard() }
     bindSingleton { ToolListFiles(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
@@ -149,40 +156,40 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolExtractText(instance()) }
     bindSingleton { ToolFindFilesByName(instance()) }
     bindSingleton { ToolReadPdfPages(instance()) }
-    bindSingleton { ToolOpen(ToolRunBashCommand, instance()) }
-    bindSingleton { ToolCreateNewBrowserTab(ToolRunBashCommand) }
-    bindSingleton { ToolSafariInfo(ToolRunBashCommand) }
+    bindSingleton { ToolOpen(instance(), instance()) }
+    bindSingleton { ToolCreateNewBrowserTab(instance()) }
+    bindSingleton { ToolSafariInfo(instance()) }
     bindSingleton { ToolBrowserHotkeys(instance()) }
-    bindSingleton { ToolFocusOnTab(ToolRunBashCommand) }
-    bindSingleton { ToolChromeInfo(ToolRunBashCommand) }
-    bindSingleton { ToolOpenDefaultBrowser(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolFocusOnTab(instance()) }
+    bindSingleton { ToolChromeInfo(instance()) }
+    bindSingleton { ToolOpenDefaultBrowser(instance(), instance()) }
     bindSingleton { ToolSoundConfig(ConfigStore) }
     bindSingleton { ToolSoundConfigDiff(ConfigStore) }
     bindSingleton { ToolInstructionStore(ConfigStore, instance()) }
-    bindSingleton { ToolOpenNote(ToolRunBashCommand) }
-    bindSingleton { ToolCreateNote(ToolRunBashCommand, instance()) }
-    bindSingleton { ToolDeleteNote(ToolRunBashCommand, instance()) }
-    bindSingleton { ToolListNotes(ToolRunBashCommand) }
-    bindSingleton { ToolSearchNotes(ToolRunBashCommand) }
-    bindSingleton { ToolShowApps(instance(), ToolRunBashCommand) }
+    bindSingleton { ToolOpenNote(instance()) }
+    bindSingleton { ToolCreateNote(instance(), instance()) }
+    bindSingleton { ToolDeleteNote(instance(), instance()) }
+    bindSingleton { ToolListNotes(instance()) }
+    bindSingleton { ToolSearchNotes(instance()) }
+    bindSingleton { ToolShowApps(instance(), instance()) }
     bindSingleton { ToolCreatePlotFromCsv(instance()) }
-    bindSingleton { ToolCalendarCreateEvent(ToolRunBashCommand) }
-    bindSingleton { ToolCalendarDeleteEvent(ToolRunBashCommand) }
-    bindSingleton { ToolCalendarListCalendars(ToolRunBashCommand) }
+    bindSingleton { ToolCalendarCreateEvent(instance()) }
+    bindSingleton { ToolCalendarDeleteEvent(instance()) }
+    bindSingleton { ToolCalendarListCalendars(instance()) }
     bindSingleton { ToolCalendarListEvents() }
-    bindSingleton { ToolMailUnreadMessagesCount(ToolRunBashCommand) }
-    bindSingleton { ToolMailListMessages(ToolRunBashCommand) }
-    bindSingleton { ToolMailReadMessage(ToolRunBashCommand) }
-    bindSingleton { ToolMailReplyMessage(ToolRunBashCommand) }
-    bindSingleton { ToolMailSendNewMessage(ToolRunBashCommand) }
-    bindSingleton { ToolMailSearch(ToolRunBashCommand) }
-    bindSingleton { ToolTextReplace(ToolRunBashCommand) }
-    bindSingleton { ToolTextUnderSelection(ToolRunBashCommand, instance()) }
-    bindSingleton { ToolFindFolders(ToolRunBashCommand, instance()) }
+    bindSingleton { ToolMailUnreadMessagesCount(instance()) }
+    bindSingleton { ToolMailListMessages(instance()) }
+    bindSingleton { ToolMailReadMessage(instance()) }
+    bindSingleton { ToolMailReplyMessage(instance()) }
+    bindSingleton { ToolMailSendNewMessage(instance()) }
+    bindSingleton { ToolMailSearch(instance()) }
+    bindSingleton { ToolTextReplace(instance()) }
+    bindSingleton { ToolTextUnderSelection(instance(), instance()) }
+    bindSingleton { ToolFindFolders(instance(), instance()) }
     bindSingleton { ToolUploadFile(instance()) }
     bindSingleton { ToolDownloadFile(instance()) }
-    bindSingleton { ToolTakeScreenshot(ToolRunBashCommand) }
-    bindSingleton { ToolStartScreenRecording(ToolRunBashCommand) }
+    bindSingleton { ToolTakeScreenshot(instance()) }
+    bindSingleton { ToolStartScreenRecording(instance()) }
     bindSingleton { ToolCalculator() }
     bindSingleton { ExcelRead(instance()) }
     bindSingleton { ExcelReport(instance()) }
@@ -213,6 +220,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { TelemetryCryptoService() }
     bindSingleton { TelemetryRuntimeConfig.production() }
     bindSingleton { TelemetryService(instance(), instance(), instance(), instance()) }
+    bindSingleton { AgentToolExecutor(instance()) }
 
     // API
     bindSingleton { GigaAuth(instance()) }
@@ -244,6 +252,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { NodesErrorHandling() }
     bindSingleton { NodesCommon(instance(), instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
+    bindSingleton { LuaRuntime(instance()) }
+    bindSingleton { NodesLua(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
     bindSingleton { NodesSummarization(instance(), instance()) }
     bindSingleton {
@@ -257,7 +267,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         )
     }
     bindSingleton { ToolsFactory(di) }
+    bindSingleton { SystemPromptResolver() }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
+    bindSingleton { LuaGraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
+    bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }
     bindSingleton { FinderPathExtractor(instance()) }
     bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }

@@ -37,7 +37,7 @@ import souz.composeapp.generated.resources.onboarding_display_text
 import souz.composeapp.generated.resources.onboarding_input_permission_request
 import souz.composeapp.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
-import ru.souz.agent.GraphBasedAgent
+import ru.souz.agent.AgentFacade
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.audio.ActiveSoundRecorderImpl
@@ -64,7 +64,6 @@ import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import ru.souz.ui.main.usecases.VoiceInputUseCase
 import ru.souz.ui.common.FinderService
 import java.io.File
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.AfterTest
@@ -603,14 +602,16 @@ class MainViewModelTest {
             GigaResponse.RecognizeResponse()
         },
     ): TestHarness {
-        val graphAgent = mockk<GraphBasedAgent>(relaxed = true)
+        val agentFacade = mockk<AgentFacade>(relaxed = true)
         val sideEffects = MutableSharedFlow<String>()
-        every { graphAgent.sideEffects } returns sideEffects
-        every { graphAgent.currentContext } returns MutableStateFlow(emptyAgentContext())
-        every { graphAgent.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
-        coEvery { graphAgent.execute(any()) } coAnswers {
+        every { agentFacade.sideEffects } returns sideEffects
+        every { agentFacade.currentContext } returns MutableStateFlow(emptyAgentContext())
+        every { agentFacade.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
+        coEvery { agentFacade.execute(any()) } coAnswers {
             executeBehavior.invoke(firstArg())
         }
+        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.LUA_GRAPH)
+        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.LUA_GRAPH, ru.souz.agent.AgentId.GRAPH)
 
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.gigaModel } returns GigaModel.Max
@@ -676,7 +677,7 @@ class MainViewModelTest {
         every { telemetryService.requestContextElement(any()) } returns EmptyCoroutineContext
 
         val di = DI {
-            bindSingleton { graphAgent }
+            bindSingleton<AgentFacade> { agentFacade }
             bindSingleton { gigaVoiceApi }
             bindSingleton<SpeechRecognitionProvider> { SaluteSpeechRecognitionProvider(instance(), instance()) }
             bindSingleton { desktopInfoRepository }
@@ -697,10 +698,6 @@ class MainViewModelTest {
         }
 
         val viewModel = MainViewModel(di)
-        val agentRefField = MainViewModel::class.java.getDeclaredField("agentRef")
-        agentRefField.isAccessible = true
-        @Suppress("UNCHECKED_CAST") val agentRef = agentRefField.get(viewModel) as AtomicReference<GraphBasedAgent?>
-        agentRef.set(graphAgent)
 
         return TestHarness(
             viewModel = viewModel,

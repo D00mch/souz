@@ -1,6 +1,6 @@
 package ru.souz.db
 
-import ru.souz.agent.isDefaultSystemPrompt
+import ru.souz.agent.AgentId
 import ru.souz.giga.EmbeddingsModel
 import ru.souz.giga.DEFAULT_MAX_TOKENS
 import ru.souz.giga.GigaModel
@@ -12,8 +12,8 @@ import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
 interface SettingsProvider {
-    fun getSystemPromptForModel(model: GigaModel): String?
-    fun setSystemPromptForModel(model: GigaModel, prompt: String?)
+    fun getSystemPromptForAgentModel(agentId: AgentId, model: GigaModel): String?
+    fun setSystemPromptForAgentModel(agentId: AgentId, model: GigaModel, prompt: String?)
 
     var gigaChatKey: String?
     var qwenChatKey: String?
@@ -22,9 +22,9 @@ interface SettingsProvider {
     var openaiKey: String?
     var saluteSpeechKey: String?
     var supportEmail: String?
-    var systemPrompt: String?
     var defaultCalendar: String?
     var regionProfile: String
+    var activeAgentId: AgentId
     var gigaModel: GigaModel
     var useFewShotExamples: Boolean
     var useStreaming: Boolean
@@ -114,15 +114,15 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         if (_safeModeDelegate.isNullOrBlank()) _safeModeDelegate = "true"
     }
 
-    override fun getSystemPromptForModel(model: GigaModel): String? {
-        val key = "${SYSTEM_PROMPT}_${model.name}"
+    override fun getSystemPromptForAgentModel(agentId: AgentId, model: GigaModel): String? {
+        val key = "${SYSTEM_PROMPT}_${agentId.storageValue}_${model.name}"
         return configStore.get<String>(key)
     }
 
-    override fun setSystemPromptForModel(model: GigaModel, prompt: String?) {
-        val key = "${SYSTEM_PROMPT}_${model.name}"
+    override fun setSystemPromptForAgentModel(agentId: AgentId, model: GigaModel, prompt: String?) {
+        val key = "${SYSTEM_PROMPT}_${agentId.storageValue}_${model.name}"
         when {
-            prompt.isNullOrBlank() || isDefaultSystemPrompt(prompt) -> configStore.rm(key)
+            prompt.isNullOrBlank() -> configStore.rm(key)
             else -> configStore.put(key, prompt)
         }
     }
@@ -134,7 +134,6 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
     override var openaiKey: String? by keyDelegate(configKey = OPENAI_KEY, envKey = "OPENAI_API_KEY")
     override var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
     override var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
-    override var systemPrompt: String? by keyDelegate(configKey = SYSTEM_PROMPT, envKey = SYSTEM_PROMPT)
     override var defaultCalendar: String? by keyDelegate(configKey = DEFAULT_CALENDAR, envKey = DEFAULT_CALENDAR)
     override var regionProfile: String
         get() {
@@ -147,6 +146,12 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         }
         set(value) {
             _appLanguageDelegate = if (value.trim().lowercase() == REGION_EN) REGION_EN else REGION_RU
+        }
+
+    override var activeAgentId: AgentId
+        get() = AgentId.fromStorageValue(configStore.get<String>(ACTIVE_AGENT_ID))
+        set(value) {
+            configStore.put(ACTIVE_AGENT_ID, value.storageValue)
         }
 
     override var gigaModel: GigaModel
@@ -327,6 +332,7 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         private const val USE_GRPC_LEGACY = "USE_GRPC"
         private const val SUPPORT_EMAIL = "SUPPORT_EMAIL"
         private const val SYSTEM_PROMPT = "SYSTEM_PROMPT"
+        private const val ACTIVE_AGENT_ID = "ACTIVE_AGENT_ID"
         private const val DEFAULT_CALENDAR = "DEFAULT_CALENDAR"
         private const val GIGA_MODEL = "GIGA_MODEL"
         private const val NEEDS_ONBOARDING = "NEEDS_ONBOARDING"
