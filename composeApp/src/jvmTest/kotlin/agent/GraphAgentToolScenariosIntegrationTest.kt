@@ -20,6 +20,7 @@ import org.kodein.di.bindProvider
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
+import ru.souz.agent.Agent
 import ru.souz.agent.AgentId
 import ru.souz.agent.impl.GraphBasedAgent
 import ru.souz.agent.SystemPromptResolver
@@ -124,16 +125,11 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { testOpenApp.invoke(any()) } returns "Opened"
 
-        val di = DI.invoke(allowSilentOverride = true) {
-            import(mainDiModule)
-            import(testOverrideModule, allowOverride = true)
+        runScenarioWithMocks(userPrompt) {
             bindProvider<DI> { this.di }
             bindSingleton<ToolShowApps> { testGetApps }
             bindSingleton<ToolOpen> { testOpenApp }
         }
-
-        val agent = GraphBasedAgent(di, gigaJsonMapper)
-        runGraphAgent(agent, di, userPrompt)
 
         coVerify(atLeast = 1) {
             testOpenApp.invoke(match { it.target.contains("ru.keepcoder.Telegram", ignoreCase = true) })
@@ -1088,7 +1084,7 @@ class GraphAgentToolScenariosIntegrationTest {
         runGraphAgent(agent, di, userPrompt)
     }
 
-    private suspend fun runGraphAgent(agent: GraphBasedAgent, di: DI, userPrompt: String) {
+    private suspend fun runGraphAgent(agent: Agent, di: DI, userPrompt: String) {
         val settingsProvider: SettingsProvider = di.direct.instance()
         val toolsFactory: ToolsFactory = di.direct.instance()
         val systemPromptResolver: SystemPromptResolver = di.direct.instance()
