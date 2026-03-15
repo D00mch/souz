@@ -82,6 +82,7 @@ import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import org.jetbrains.skia.Image as SkiaImage
@@ -135,69 +136,78 @@ private val WelcomeLogoSize = 64.dp
 private val WelcomeLogoSizeLowDpi = 76.dp
 
 private data class QuickActionCardModel(
+    val id: String,
     val icon: ImageVector,
-    val label: String,
-    val description: String,
+    val labelRes: StringResource,
+    val descriptionRes: StringResource,
     val gradient: Brush,
-    val message: String,
+    val messageRes: StringResource,
 )
 
 private val EmptyChatQuickActions = listOf(
     QuickActionCardModel(
+        id = "mail",
         icon = Icons.Filled.Mail,
-        label = "Проверить почту",
-        description = "Работа с почтой",
+        labelRes = Res.string.quick_action_mail_label,
+        descriptionRes = Res.string.quick_action_mail_description,
         gradient = Brush.linearGradient(colors = listOf(Color(0xFF3B82F6), Color(0xFF22D3EE))),
-        message = "Проверить почту",
+        messageRes = Res.string.quick_action_mail_message,
     ),
     QuickActionCardModel(
+        id = "calendar",
         icon = Icons.Filled.CalendarToday,
-        label = "Мой день",
-        description = "Посмотреть календарь",
+        labelRes = Res.string.quick_action_calendar_label,
+        descriptionRes = Res.string.quick_action_calendar_description,
         gradient = Brush.linearGradient(colors = listOf(Color(0xFFF97316), Color(0xFFFBBF24))),
-        message = "Проверь мой календарь на сегодня",
+        messageRes = Res.string.quick_action_calendar_message,
     ),
     QuickActionCardModel(
+        id = "telegram",
         icon = Icons.Filled.Forum,
-        label = "Telegram",
-        description = "Проверить сообщения",
+        labelRes = Res.string.quick_action_telegram_label,
+        descriptionRes = Res.string.quick_action_telegram_description,
         gradient = Brush.linearGradient(colors = listOf(Color(0xFF0EA5E9), Color(0xFF60A5FA))),
-        message = "Проверь Telegram",
+        messageRes = Res.string.quick_action_telegram_message,
     ),
     QuickActionCardModel(
+        id = "documents",
         icon = Icons.Filled.Description,
-        label = "Документы",
-        description = "Создать или найти файл",
+        labelRes = Res.string.quick_action_documents_label,
+        descriptionRes = Res.string.quick_action_documents_description,
         gradient = Brush.linearGradient(colors = listOf(Color(0xFF22C55E), Color(0xFF34D399))),
-        message = "Помоги в работе с файлами на компьютере",
+        messageRes = Res.string.quick_action_documents_message,
     ),
     QuickActionCardModel(
+        id = "presentation",
         icon = Icons.Filled.PresentToAll,
-        label = "Презентация",
-        description = "Создать презентацию",
+        labelRes = Res.string.quick_action_presentation_label,
+        descriptionRes = Res.string.quick_action_presentation_description,
         gradient = Brush.linearGradient(colors = listOf(Color(0xFFF43F5E), Color(0xFFF472B6))),
-        message = "Помоги создать презентацию",
+        messageRes = Res.string.quick_action_presentation_message,
     ),
     QuickActionCardModel(
+        id = "analytics",
         icon = Icons.Filled.BarChart,
-        label = "Аналитика",
-        description = "Графики и данные",
+        labelRes = Res.string.quick_action_analytics_label,
+        descriptionRes = Res.string.quick_action_analytics_description,
         gradient = Brush.linearGradient(colors = listOf(Color(0xFF8B5CF6), Color(0xFFC084FC))),
-        message = "Помоги в работе с данными",
+        messageRes = Res.string.quick_action_analytics_message,
     ),
     QuickActionCardModel(
+        id = "search",
         icon = Icons.Filled.Search,
-        label = "Поиск",
-        description = "Найти в интернете",
+        labelRes = Res.string.quick_action_search_label,
+        descriptionRes = Res.string.quick_action_search_description,
         gradient = Brush.linearGradient(colors = listOf(Color(0xFF14B8A6), Color(0xFF22D3EE))),
-        message = "Нужно найти кое-что в интернете",
+        messageRes = Res.string.quick_action_search_message,
     ),
     QuickActionCardModel(
+        id = "browser",
         icon = Icons.Filled.Public,
-        label = "Браузер",
-        description = "Работа в браузере",
+        labelRes = Res.string.quick_action_browser_label,
+        descriptionRes = Res.string.quick_action_browser_description,
         gradient = Brush.linearGradient(colors = listOf(Color(0xFF6366F1), Color(0xFF60A5FA))),
-        message = "Нужна помощь в работе с браузером",
+        messageRes = Res.string.quick_action_browser_message,
     ),
 )
 
@@ -1109,7 +1119,7 @@ private fun EmptyChatWelcomeContent(
                     if (logoBitmap != null) {
                         Image(
                             bitmap = logoBitmap,
-                            contentDescription = "Souz",
+                            contentDescription = stringResource(Res.string.welcome_logo_content_desc),
                             contentScale = ContentScale.Fit,
                             filterQuality = FilterQuality.High,
                             modifier = Modifier.fillMaxSize(),
@@ -1117,7 +1127,7 @@ private fun EmptyChatWelcomeContent(
                     } else {
                         Image(
                             painter = jvmPainterResource("icon-light.png"),
-                            contentDescription = "Souz",
+                            contentDescription = stringResource(Res.string.welcome_logo_content_desc),
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -1127,7 +1137,7 @@ private fun EmptyChatWelcomeContent(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    text = "Спросите что угодно или выберите быстрое действие",
+                    text = stringResource(Res.string.welcome_quick_actions_subtitle),
                     color = Color.White.copy(alpha = 0.4f),
                     fontSize = 14.sp,
                     lineHeight = 19.6.sp,
@@ -1161,13 +1171,14 @@ private fun EmptyChatWelcomeContent(
                     ) {
                         itemsIndexed(
                             items = EmptyChatQuickActions,
-                            key = { _, item -> item.message }
+                            key = { _, item -> item.id }
                         ) { index, item ->
+                            val message = stringResource(item.messageRes)
                             QuickActionCard(
                                 item = item,
                                 index = index,
                                 height = cardHeight,
-                                onClick = { onSuggestionClick(item.message) },
+                                onClick = { onSuggestionClick(message) },
                             )
                         }
                     }
@@ -1184,7 +1195,7 @@ private fun QuickActionCard(
     height: Dp,
     onClick: () -> Unit,
 ) {
-    var showCard by remember(item.message) { mutableStateOf(false) }
+    var showCard by remember(item.id) { mutableStateOf(false) }
     val density = LocalDensity.current
     val isLowDpi = density.density < 1.5f
     val iconContainerSize = if (isLowDpi) QuickActionIconContainerSizeLowDpi else QuickActionIconContainerSize
@@ -1192,7 +1203,7 @@ private fun QuickActionCard(
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
-    LaunchedEffect(item.message) {
+    LaunchedEffect(item.id) {
         delay(300L + index * 50L)
         showCard = true
     }
@@ -1200,27 +1211,27 @@ private fun QuickActionCard(
     val revealAlpha by animateFloatAsState(
         targetValue = if (showCard) 1f else 0f,
         animationSpec = tween(durationMillis = 250, easing = WelcomeCardEasing),
-        label = "quick_action_card_alpha_${item.message}",
+        label = "quick_action_card_alpha_${item.id}",
     )
     val offsetY by animateDpAsState(
         targetValue = if (showCard) 0.dp else 10.dp,
         animationSpec = tween(durationMillis = 250, easing = WelcomeCardEasing),
-        label = "quick_action_card_offset_${item.message}",
+        label = "quick_action_card_offset_${item.id}",
     )
     val cardBackground by animateColorAsState(
         targetValue = if (isHovered) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.05f),
         animationSpec = tween(durationMillis = 300, easing = WelcomeCardEasing),
-        label = "quick_action_card_bg_${item.message}",
+        label = "quick_action_card_bg_${item.id}",
     )
     val cardBorder by animateColorAsState(
         targetValue = if (isHovered) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.06f),
         animationSpec = tween(durationMillis = 300, easing = WelcomeCardEasing),
-        label = "quick_action_card_border_${item.message}",
+        label = "quick_action_card_border_${item.id}",
     )
     val iconScale by animateFloatAsState(
         targetValue = if (isHovered) 1.1f else 1f,
         animationSpec = tween(durationMillis = 300, easing = WelcomeCardEasing),
-        label = "quick_action_icon_scale_${item.message}",
+        label = "quick_action_icon_scale_${item.id}",
     )
 
     Column(
@@ -1265,7 +1276,7 @@ private fun QuickActionCard(
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = item.label,
+            text = stringResource(item.labelRes),
             color = Color.White.copy(alpha = 0.8f),
             fontSize = 13.sp,
             lineHeight = 15.6.sp,
@@ -1274,7 +1285,7 @@ private fun QuickActionCard(
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
-            text = item.description,
+            text = stringResource(item.descriptionRes),
             color = Color.White.copy(alpha = 0.3f),
             fontSize = 11.sp,
             lineHeight = 13.2.sp,

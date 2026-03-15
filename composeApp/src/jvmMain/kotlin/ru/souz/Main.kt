@@ -79,8 +79,8 @@ fun main() {
                 println("Failed to set dock icon: ${e.message}")
             }
 
-            val minWindowWidthPx = 660
-            val minWindowHeightPx = 600
+            val minWindowWidthPx = 860
+            val minWindowHeightPx = 680
             val maxWindowWidthPx = 896
             val maxWindowHeightPx = 700
             val initialWidth = settingsProvider.initialWindowWidthDp
