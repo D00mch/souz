@@ -11,6 +11,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowScope
+import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import kotlinx.coroutines.FlowPreview
@@ -23,15 +24,18 @@ import org.slf4j.LoggerFactory
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
 import org.kodein.di.instance
-import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
 import ru.souz.mcp.McpClientManager
 import ru.souz.telemetry.TelemetryService
-import ru.souz.ui.AppTray
 import ru.souz.ui.macos.MacWindowVibrancy
-import ru.souz.ui.rememberTrayWindowController
+import java.awt.Desktop
 import java.awt.Dimension
+import java.awt.EventQueue
+import java.awt.desktop.AppForegroundEvent
+import java.awt.desktop.AppForegroundListener
+import java.awt.desktop.AppReopenedEvent
+import java.awt.desktop.AppReopenedListener
 
 import androidx.compose.ui.res.painterResource as jvmPainterResource
 
@@ -39,13 +43,11 @@ val LocalWindowScope = staticCompositionLocalOf<WindowScope?> { null }
 private val startupLog = LoggerFactory.getLogger("AppStartup")
 
 fun main() {
-    //System.setProperty("apple.awt.UIElement", "true") // - Makes the app tray-only on macOS
     logStartupPlatformInfo()
 
     application(exitProcessOnExit = false) {
         withDI(mainDiModule) {
             val di = localDI()
-            val say: Say by di.instance()
             val settingsProvider: SettingsProvider by di.instance()
             val mcpClientManager: McpClientManager by di.instance()
             val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
@@ -77,28 +79,29 @@ fun main() {
                 println("Failed to set dock icon: ${e.message}")
             }
 
-            val initialWidth = settingsProvider.initialWindowWidthDp.dp
-            val initialHeight = settingsProvider.initialWindowHeightDp.dp
+            val minWindowWidthPx = 660
+            val minWindowHeightPx = 600
             val maxWindowWidthPx = 896
             val maxWindowHeightPx = 700
+            val initialWidth = settingsProvider.initialWindowWidthDp
+                .coerceIn(minWindowWidthPx, maxWindowWidthPx)
+                .dp
+            val initialHeight = settingsProvider.initialWindowHeightDp
+                .coerceIn(minWindowHeightPx, maxWindowHeightPx)
+                .dp
 
             val windowState = rememberWindowState(
                 width = initialWidth,
                 height = initialHeight,
                 position = WindowPosition.Aligned(Alignment.BottomEnd)
             )
-
-            val trayController = rememberTrayWindowController(windowState)
-
-            AppTray(
-                controller = trayController,
-                onMute = { say.clearQueue() },
-                onExit = ::exitApplication,
-            )
+            val isMacOs = remember { System.getProperty("os.name").contains("Mac", ignoreCase = true) }
+            val windowController = rememberDockWindowController(windowState, enabled = isMacOs)
+            val onWindowClose = if (isMacOs) windowController::hideWindow else ::exitApplication
 
             Window(
-                onCloseRequest = ::exitApplication,
-                visible = trayController.isWindowVisible,
+                onCloseRequest = onWindowClose,
+                visible = windowController.isWindowVisible,
                 title = org.jetbrains.compose.resources.stringResource(Res.string.app_name),
                 icon = jvmPainterResource("icon-light.png"),
                 state = windowState,
@@ -108,11 +111,14 @@ fun main() {
                 alwaysOnTop = false
             ) {
                 LaunchedEffect(window) {
+                    window.minimumSize = Dimension(minWindowWidthPx, minWindowHeightPx)
                     window.maximumSize = Dimension(maxWindowWidthPx, maxWindowHeightPx)
-                    if (window.width > maxWindowWidthPx || window.height > maxWindowHeightPx) {
+                    if (window.width !in minWindowWidthPx..maxWindowWidthPx ||
+                        window.height !in minWindowHeightPx..maxWindowHeightPx
+                    ) {
                         window.setSize(
-                            window.width.coerceAtMost(maxWindowWidthPx),
-                            window.height.coerceAtMost(maxWindowHeightPx)
+                            window.width.coerceIn(minWindowWidthPx, maxWindowWidthPx),
+                            window.height.coerceIn(minWindowHeightPx, maxWindowHeightPx)
                         )
                     }
 
@@ -143,8 +149,7 @@ fun main() {
                 // Provide WindowScope to nested composables via CompositionLocal
                 CompositionLocalProvider(LocalWindowScope provides this) {
                     App(
-                        onCloseWindow = ::exitApplication,
-                        onHideWindow = trayController::hideToTray,
+                        onCloseWindow = onWindowClose,
                         onMinimizeWindow = { windowState.isMinimized = true },
                         onToggleMaximizeWindow = {
                             windowState.placement = if (windowState.placement == WindowPlacement.Maximized) {
@@ -170,4 +175,72 @@ private fun logStartupPlatformInfo() {
         System.getProperty("java.version").orEmpty(),
         System.getProperty("java.runtime.version").orEmpty(),
     )
+}
+
+private class DockWindowController(
+    private val windowState: WindowState,
+) {
+    var isWindowVisible by mutableStateOf(true)
+        private set
+
+    fun hideWindow() {
+        isWindowVisible = false
+    }
+
+    fun onDockReopen() {
+        if (!isWindowVisible || windowState.isMinimized) {
+            revealWindow()
+        }
+    }
+
+    private fun revealWindow() {
+        isWindowVisible = true
+        windowState.isMinimized = false
+    }
+}
+
+@Composable
+private fun rememberDockWindowController(
+    windowState: WindowState,
+    enabled: Boolean,
+): DockWindowController {
+    val controller = remember(windowState) { DockWindowController(windowState) }
+
+    DisposableEffect(controller, enabled) {
+        if (!enabled) {
+            onDispose { }
+        } else {
+            val desktop = runCatching {
+                if (Desktop.isDesktopSupported()) Desktop.getDesktop() else null
+            }.getOrNull()
+
+            if (desktop == null) {
+                onDispose { }
+            } else {
+                val listener = object : AppForegroundListener, AppReopenedListener {
+                    override fun appRaisedToForeground(event: AppForegroundEvent) {
+                        EventQueue.invokeLater {
+                            controller.onDockReopen()
+                        }
+                    }
+
+                    override fun appMovedToBackground(event: AppForegroundEvent) = Unit
+
+                    override fun appReopened(event: AppReopenedEvent) {
+                        EventQueue.invokeLater {
+                            controller.onDockReopen()
+                        }
+                    }
+                }
+
+                desktop.addAppEventListener(listener)
+
+                onDispose {
+                    runCatching { desktop.removeAppEventListener(listener) }
+                }
+            }
+        }
+    }
+
+    return controller
 }

@@ -130,7 +130,6 @@ enum class LiquidGlassPreset {
 fun MainScreen(
     onOpenSettings: () -> Unit,
     onCloseWindow: () -> Unit,
-    onHideWindow: () -> Unit,
     onMinimizeWindow: () -> Unit,
     onToggleMaximizeWindow: () -> Unit,
     onShowSnack: (String) -> Unit = {},
@@ -143,7 +142,7 @@ fun MainScreen(
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
             when (effect) {
-                MainEffect.Hide -> onHideWindow()
+                MainEffect.Hide -> onCloseWindow()
                 is MainEffect.ShowError -> Unit
             }
         }
@@ -158,7 +157,7 @@ fun MainScreen(
         isOnline = isOnline,
         onStartListening = { viewModel.send(MainEvent.StartListening) },
         onStopListening = { viewModel.send(MainEvent.StopListening) },
-        onClose = onHideWindow,
+        onClose = onCloseWindow,
         onMinimize = onMinimizeWindow,
         onToggleMaximize = onToggleMaximizeWindow,
         onRequestNewConversation = { viewModel.send(MainEvent.RequestNewConversation) },
