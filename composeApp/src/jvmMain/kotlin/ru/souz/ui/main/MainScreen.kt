@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.desktop.ui.tooling.preview.Preview
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -18,12 +19,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -42,9 +47,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -60,6 +69,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -74,6 +84,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
+import org.jetbrains.skia.Image as SkiaImage
 import ru.souz.LocalWindowScope
 import ru.souz.ui.common.*
 import ru.souz.ui.glassColors
@@ -81,6 +92,7 @@ import souz.composeapp.generated.resources.*
 import java.awt.datatransfer.Transferable
 import java.awt.dnd.*
 import java.util.*
+import androidx.compose.ui.res.painterResource as jvmPainterResource
 
 
 private val TopButtonSize = 24.dp
@@ -113,6 +125,87 @@ private val ToolModifyPatchPreviewMinHeight = 220.dp
 private val ToolModifyPatchPreviewMaxHeight = 620.dp
 private const val ToolModifyPatchParam = "patch"
 private const val ToolModifyPatchPreviewMaxLines = 350
+private val WelcomeEnterEasing = CubicBezierEasing(0.25f, 0.46f, 0.45f, 0.94f)
+private val WelcomeCardEasing = CubicBezierEasing(0f, 0f, 0.2f, 1f)
+private val QuickActionIconContainerSize = 38.dp
+private val QuickActionIconSize = 20.dp
+private val QuickActionIconContainerSizeLowDpi = 42.dp
+private val QuickActionIconSizeLowDpi = 24.dp
+private val WelcomeLogoSize = 64.dp
+private val WelcomeLogoSizeLowDpi = 76.dp
+
+private data class QuickActionCardModel(
+    val icon: ImageVector,
+    val label: String,
+    val description: String,
+    val gradient: Brush,
+    val message: String,
+)
+
+private val EmptyChatQuickActions = listOf(
+    QuickActionCardModel(
+        icon = Icons.Filled.Mail,
+        label = "Проверить почту",
+        description = "Работа с почтой",
+        gradient = Brush.linearGradient(colors = listOf(Color(0xFF3B82F6), Color(0xFF22D3EE))),
+        message = "Проверить почту",
+    ),
+    QuickActionCardModel(
+        icon = Icons.Filled.CalendarToday,
+        label = "Мой день",
+        description = "Посмотреть календарь",
+        gradient = Brush.linearGradient(colors = listOf(Color(0xFFF97316), Color(0xFFFBBF24))),
+        message = "Проверь мой календарь на сегодня",
+    ),
+    QuickActionCardModel(
+        icon = Icons.Filled.Forum,
+        label = "Telegram",
+        description = "Проверить сообщения",
+        gradient = Brush.linearGradient(colors = listOf(Color(0xFF0EA5E9), Color(0xFF60A5FA))),
+        message = "Проверь Telegram",
+    ),
+    QuickActionCardModel(
+        icon = Icons.Filled.Description,
+        label = "Документы",
+        description = "Создать или найти файл",
+        gradient = Brush.linearGradient(colors = listOf(Color(0xFF22C55E), Color(0xFF34D399))),
+        message = "Помоги в работе с файлами на компьютере",
+    ),
+    QuickActionCardModel(
+        icon = Icons.Filled.PresentToAll,
+        label = "Презентация",
+        description = "Создать презентацию",
+        gradient = Brush.linearGradient(colors = listOf(Color(0xFFF43F5E), Color(0xFFF472B6))),
+        message = "Помоги создать презентацию",
+    ),
+    QuickActionCardModel(
+        icon = Icons.Filled.BarChart,
+        label = "Аналитика",
+        description = "Графики и данные",
+        gradient = Brush.linearGradient(colors = listOf(Color(0xFF8B5CF6), Color(0xFFC084FC))),
+        message = "Помоги в работе с данными",
+    ),
+    QuickActionCardModel(
+        icon = Icons.Filled.Search,
+        label = "Поиск",
+        description = "Найти в интернете",
+        gradient = Brush.linearGradient(colors = listOf(Color(0xFF14B8A6), Color(0xFF22D3EE))),
+        message = "Нужно найти кое-что в интернете",
+    ),
+    QuickActionCardModel(
+        icon = Icons.Filled.Public,
+        label = "Браузер",
+        description = "Работа в браузере",
+        gradient = Brush.linearGradient(colors = listOf(Color(0xFF6366F1), Color(0xFF60A5FA))),
+        message = "Нужна помощь в работе с браузером",
+    ),
+)
+
+private fun loadWelcomeLogoBitmap(): ImageBitmap? = runCatching {
+    val classLoader = Thread.currentThread().contextClassLoader ?: return@runCatching null
+    val encoded = classLoader.getResourceAsStream("icon-light.png")?.use { it.readBytes() } ?: return@runCatching null
+    SkiaImage.makeFromEncoded(encoded).toComposeImageBitmap()
+}.getOrNull()
 
 private enum class MacTrafficKind {
     Close,
@@ -836,10 +929,14 @@ fun ChatModeContent(
         }
     ) {
         if (messages.isEmpty() && !isProcessing) {
-            Box(
+            EmptyChatWelcomeContent(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxWidth(),
+                onSuggestionClick = { command ->
+                    onSendMessage(command)
+                    inputText = TextFieldValue("")
+                }
             )
         } else {
             LazyColumn(
@@ -929,8 +1026,263 @@ fun ChatModeContent(
     }
 }
 
+@Composable
+private fun EmptyChatWelcomeContent(
+    modifier: Modifier = Modifier,
+    onSuggestionClick: (String) -> Unit,
+) {
+    var show by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+    val isLowDpi = density.density < 1.5f
+    val logoSize = if (isLowDpi) WelcomeLogoSizeLowDpi else WelcomeLogoSize
+    val logoBitmap = remember { loadWelcomeLogoBitmap() }
 
+    LaunchedEffect(Unit) {
+        show = true
+    }
 
+    val logoAlpha by animateFloatAsState(
+        targetValue = if (show) 1f else 0f,
+        animationSpec = tween(durationMillis = 500, easing = WelcomeEnterEasing),
+        label = "welcome_logo_alpha",
+    )
+    val logoScale by animateFloatAsState(
+        targetValue = if (show) 1f else 0.95f,
+        animationSpec = tween(durationMillis = 500, easing = WelcomeEnterEasing),
+        label = "welcome_logo_scale",
+    )
+    val captionAlpha by animateFloatAsState(
+        targetValue = if (show) 1f else 0f,
+        animationSpec = tween(durationMillis = 500, delayMillis = 100, easing = WelcomeEnterEasing),
+        label = "welcome_caption_alpha",
+    )
+    val captionOffset by animateDpAsState(
+        targetValue = if (show) 0.dp else 10.dp,
+        animationSpec = tween(durationMillis = 500, delayMillis = 100, easing = WelcomeEnterEasing),
+        label = "welcome_caption_offset",
+    )
+    val gridAlpha by animateFloatAsState(
+        targetValue = if (show) 1f else 0f,
+        animationSpec = tween(durationMillis = 500, delayMillis = 200, easing = WelcomeEnterEasing),
+        label = "welcome_grid_alpha",
+    )
+    val gridOffset by animateDpAsState(
+        targetValue = if (show) 0.dp else 20.dp,
+        animationSpec = tween(durationMillis = 500, delayMillis = 200, easing = WelcomeEnterEasing),
+        label = "welcome_grid_offset",
+    )
+
+    val captionOffsetPx = with(density) { captionOffset.toPx() }
+    val gridOffsetPx = with(density) { gridOffset.toPx() }
+
+    Box(
+        modifier = modifier
+            .verticalScroll(scrollState)
+            .padding(horizontal = 24.dp, vertical = 24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 800.dp)
+        ) {
+            val columns = if (maxWidth < 560.dp) 2 else 4
+            val rows = (EmptyChatQuickActions.size + columns - 1) / columns
+            val cardHeight = 124.dp
+            val gridHeight = (cardHeight * rows) + (12.dp * (rows - 1))
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(logoSize)
+                        .graphicsLayer {
+                            alpha = logoAlpha
+                            scaleX = logoScale
+                            scaleY = logoScale
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (logoBitmap != null) {
+                        Image(
+                            bitmap = logoBitmap,
+                            contentDescription = "Souz",
+                            contentScale = ContentScale.Fit,
+                            filterQuality = FilterQuality.High,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Image(
+                            painter = jvmPainterResource("icon-light.png"),
+                            contentDescription = "Souz",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = "Спросите что угодно или выберите быстрое действие",
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 14.sp,
+                    lineHeight = 19.6.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .widthIn(max = 448.dp)
+                        .graphicsLayer {
+                            alpha = captionAlpha
+                            translationY = captionOffsetPx
+                        }
+                )
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            alpha = gridAlpha
+                            translationY = gridOffsetPx
+                        }
+                ) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(columns),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        userScrollEnabled = false,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(gridHeight)
+                    ) {
+                        itemsIndexed(
+                            items = EmptyChatQuickActions,
+                            key = { _, item -> item.message }
+                        ) { index, item ->
+                            QuickActionCard(
+                                item = item,
+                                index = index,
+                                height = cardHeight,
+                                onClick = { onSuggestionClick(item.message) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickActionCard(
+    item: QuickActionCardModel,
+    index: Int,
+    height: Dp,
+    onClick: () -> Unit,
+) {
+    var showCard by remember(item.message) { mutableStateOf(false) }
+    val density = LocalDensity.current
+    val isLowDpi = density.density < 1.5f
+    val iconContainerSize = if (isLowDpi) QuickActionIconContainerSizeLowDpi else QuickActionIconContainerSize
+    val iconSize = if (isLowDpi) QuickActionIconSizeLowDpi else QuickActionIconSize
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+
+    LaunchedEffect(item.message) {
+        delay(300L + index * 50L)
+        showCard = true
+    }
+
+    val revealAlpha by animateFloatAsState(
+        targetValue = if (showCard) 1f else 0f,
+        animationSpec = tween(durationMillis = 250, easing = WelcomeCardEasing),
+        label = "quick_action_card_alpha_${item.message}",
+    )
+    val offsetY by animateDpAsState(
+        targetValue = if (showCard) 0.dp else 10.dp,
+        animationSpec = tween(durationMillis = 250, easing = WelcomeCardEasing),
+        label = "quick_action_card_offset_${item.message}",
+    )
+    val cardBackground by animateColorAsState(
+        targetValue = if (isHovered) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.05f),
+        animationSpec = tween(durationMillis = 300, easing = WelcomeCardEasing),
+        label = "quick_action_card_bg_${item.message}",
+    )
+    val cardBorder by animateColorAsState(
+        targetValue = if (isHovered) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.06f),
+        animationSpec = tween(durationMillis = 300, easing = WelcomeCardEasing),
+        label = "quick_action_card_border_${item.message}",
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (isHovered) 1.1f else 1f,
+        animationSpec = tween(durationMillis = 300, easing = WelcomeCardEasing),
+        label = "quick_action_icon_scale_${item.message}",
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height)
+            .graphicsLayer {
+                alpha = revealAlpha
+                translationY = with(density) { offsetY.toPx() }
+            }
+            .clip(RoundedCornerShape(16.dp))
+            .background(cardBackground)
+            .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(16.dp),
+        horizontalAlignment = Alignment.Start
+    ) {
+        Box(
+            modifier = Modifier
+                .size(iconContainerSize)
+                .clip(RoundedCornerShape(12.dp))
+                .background(item.gradient)
+                .graphicsLayer {
+                    scaleX = iconScale
+                    scaleY = iconScale
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = item.icon,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(iconSize)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = item.label,
+            color = Color.White.copy(alpha = 0.8f),
+            fontSize = 13.sp,
+            lineHeight = 15.6.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = item.description,
+            color = Color.White.copy(alpha = 0.3f),
+            fontSize = 11.sp,
+            lineHeight = 13.2.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
 
 @Composable
 private fun ChatFileDropTarget(
