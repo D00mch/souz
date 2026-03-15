@@ -121,6 +121,7 @@ private val FinderPathChipTextColor = Color(0xFF12E0B5)
 private val MessageAttachmentPreviewSize = 64.dp
 private val MessageAttachmentNameColor = Color(0x99FFFFFF)
 private val ToolPermissionDialogMaxWidth = 920.dp
+private val ToolPermissionCompactDialogMaxWidth = 360.dp
 private const val ToolPermissionDialogMaxHeightFraction = 1f
 private val ToolModifyPatchPreviewMinHeight = 220.dp
 private val ToolModifyPatchPreviewMaxHeight = 620.dp
@@ -523,9 +524,10 @@ fun MainScreenContent(
 
             if (state.showNewChatDialog) {
                 ConfirmDialog(
-                    type = ConfirmDialogType.INFO,
+                    isOpen = true,
+                    variant = DialogVariant.INFO,
                     title = stringNewChatTitle,
-                    message = stringNewChatText,
+                    description = stringNewChatText,
                     confirmText = stringNewChatConfirm,
                     onConfirm = onConfirmNewConversation,
                     onDismiss = onDismissNewConversationDialog
@@ -545,7 +547,11 @@ fun MainScreenContent(
                     title = stringPermissionTitle,
                     message = dialog.description,
                     details = paramsString,
-                    dialogMaxWidth = ToolPermissionDialogMaxWidth,
+                    dialogMaxWidth = if (isToolModifyPermission) {
+                        ToolPermissionDialogMaxWidth
+                    } else {
+                        ToolPermissionCompactDialogMaxWidth
+                    },
                     dialogMaxHeightFraction = ToolPermissionDialogMaxHeightFraction,
                     detailsContent = if (isToolModifyPermission) {
                         {

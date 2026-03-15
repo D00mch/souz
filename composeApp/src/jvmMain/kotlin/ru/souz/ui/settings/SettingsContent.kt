@@ -54,7 +54,7 @@ import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.common.ConfirmDialog
-import ru.souz.ui.common.ConfirmDialogType
+import ru.souz.ui.common.DialogVariant
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
 import ru.souz.ui.main.RealLiquidGlassCard
@@ -870,9 +870,10 @@ fun FunctionsSettingsContent(
 
     if (state.showAgentSwitchConfirmation && state.pendingAgentId != null) {
         ConfirmDialog(
-            type = ConfirmDialogType.WARNING,
+            isOpen = true,
+            variant = DialogVariant.WARNING,
             title = stringResource(Res.string.agent_switch_dialog_title),
-            message = stringResource(Res.string.agent_switch_dialog_message),
+            description = stringResource(Res.string.agent_switch_dialog_message),
             confirmText = stringResource(Res.string.agent_switch_dialog_confirm),
             cancelText = stringResource(Res.string.agent_switch_dialog_cancel),
             onConfirm = onConfirmAgentSwitch,
@@ -1014,10 +1015,11 @@ fun TelegramSettingsScreen(
     }
 
     if (state.isTelegramSupported && state.showBotDeleteConfirmation && state.botNameToDelete != null) {
-        ru.souz.ui.common.ConfirmDialog(
-            type = ru.souz.ui.common.ConfirmDialogType.WARNING,
+        ConfirmDialog(
+            isOpen = true,
+            variant = DialogVariant.WARNING,
             title = stringResource(Res.string.telegram_dialog_delete_title),
-            message = stringResource(Res.string.telegram_dialog_delete_text).format(state.botNameToDelete),
+            description = stringResource(Res.string.telegram_dialog_delete_text).format(state.botNameToDelete),
             confirmText = stringResource(Res.string.telegram_dialog_delete_confirm),
             cancelText = stringResource(Res.string.telegram_dialog_delete_cancel),
             onConfirm = onConfirmDisconnectControlBot,

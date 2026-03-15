@@ -44,7 +44,7 @@ import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.common.ConfirmDialog
-import ru.souz.ui.common.ConfirmDialogType
+import ru.souz.ui.common.DialogVariant
 import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.main.RealLiquidGlassCard
@@ -358,9 +358,10 @@ fun SetupScreenContent(
         )
         if (state.showVoiceReminderDialog) {
             ConfirmDialog(
-                type = ConfirmDialogType.INFO,
+                isOpen = true,
+                variant = DialogVariant.INFO,
                 title = stringResource(Res.string.setup_voice_reminder_title),
-                message = stringResource(Res.string.setup_voice_reminder_message),
+                description = stringResource(Res.string.setup_voice_reminder_message),
                 details = stringResource(Res.string.setup_voice_reminder_details),
                 confirmText = stringResource(Res.string.setup_btn_choose_voice),
                 cancelText = stringResource(Res.string.dialog_cancel),
