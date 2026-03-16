@@ -447,70 +447,27 @@ fun GeneralSettingsContent(
                 onCalendarSelected = onDefaultCalendarChange
             )
 
-            SettingsGroupDivider()
-
-            SettingsRow(
+            SettingsSwitchCard(
                 title = stringResource(Res.string.setting_streaming_title),
                 description = stringResource(Res.string.setting_streaming_desc),
-                content = {
-                    SettingsCheckbox(
-                        checked = state.useStreaming,
-                        onCheckedChange = onUseStreamingChange
-                    )
-                }
+                checked = state.useStreaming,
+                onCheckedChange = onUseStreamingChange,
+                modifier = Modifier.fillMaxWidth()
             )
-
-            SettingsRow(
+            SettingsSwitchCard(
                 title = stringResource(Res.string.setting_notification_sound_title),
                 description = stringResource(Res.string.setting_notification_sound_desc),
-                content = {
-                    SettingsCheckbox(
-                        checked = state.notificationSoundEnabled,
-                        onCheckedChange = onNotificationSoundEnabledChange
-                    )
-                }
+                checked = state.notificationSoundEnabled,
+                onCheckedChange = onNotificationSoundEnabledChange,
+                modifier = Modifier.fillMaxWidth()
             )
-
-            SettingsRow(
+            SettingsSwitchCard(
                 title = stringResource(Res.string.setting_voice_input_review_title),
                 description = stringResource(Res.string.setting_voice_input_review_desc),
-                content = {
-                    SettingsCheckbox(
-                        checked = state.voiceInputReviewEnabled,
-                        onCheckedChange = onVoiceInputReviewEnabledChange
-                    )
-                }
+                checked = state.voiceInputReviewEnabled,
+                onCheckedChange = onVoiceInputReviewEnabledChange,
+                modifier = Modifier.fillMaxWidth()
             )
-
-            SettingsRow(
-                title = stringResource(Res.string.setting_language_profile_title),
-                description = stringResource(Res.string.setting_language_profile_desc),
-                content = {
-                    RegionProfileToggle(
-                        useEnglishProfile = state.useEnglishVersion,
-                        onProfileChange = onUseEnglishVersionChange
-                    )
-                }
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                SettingsSwitchCard(
-                    title = stringResource(Res.string.setting_streaming_title),
-                    description = stringResource(Res.string.setting_streaming_desc),
-                    checked = state.useStreaming,
-                    onCheckedChange = onUseStreamingChange,
-                    modifier = Modifier.weight(1f)
-                )
-                SettingsSwitchCard(
-                    title = stringResource(Res.string.setting_notification_sound_title),
-                    description = stringResource(Res.string.setting_notification_sound_desc),
-                    checked = state.notificationSoundEnabled,
-                    onCheckedChange = onNotificationSoundEnabledChange,
-                    modifier = Modifier.weight(1f)
-                )
-            }
 
             Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
                 SettingsHoverTooltip(text = stringResource(Res.string.hint_voice_speed).format(state.voiceSpeed)) {
