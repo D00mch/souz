@@ -59,6 +59,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -177,6 +178,9 @@ fun MainScreen(
         onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
         onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage(it)) },
         onClearContext = { viewModel.send(MainEvent.UserPressStop) },
+        onConsumePendingVoiceInputDraft = { token ->
+            viewModel.send(MainEvent.ConsumePendingVoiceInputDraft(token))
+        },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
         onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
@@ -209,6 +213,7 @@ fun MainScreenContent(
     onRemoveChatAttachment: (String) -> Unit = {},
     onSendChatMessage: (String) -> Unit = {},
     onClearContext: () -> Unit = {},
+    onConsumePendingVoiceInputDraft: (Long) -> Unit = {},
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
     onSelectApprovalCandidate: (Long) -> Unit = {},
@@ -382,6 +387,8 @@ fun MainScreenContent(
                     availableModelAliases = state.availableModelAliases,
                     selectedContextSize = state.selectedContextSize,
                     attachedFiles = state.attachedFiles,
+                    pendingVoiceInputDraft = state.pendingVoiceInputDraft,
+                    pendingVoiceInputDraftToken = state.pendingVoiceInputDraftToken,
                     isProcessing = state.isProcessing,
                     isListening = state.isListening,
                     isOnline = isOnline,
@@ -393,6 +400,7 @@ fun MainScreenContent(
                     onRemoveAttachment = onRemoveChatAttachment,
                     onSendMessage = onSendChatMessage,
                     onCancelProcessing = onClearContext,
+                    onConsumePendingVoiceInputDraft = onConsumePendingVoiceInputDraft,
                     onStartListening = onStartListening,
                     onStopListening = onStopListening,
                     onStopSpeech = onStopSpeech,
@@ -780,6 +788,8 @@ fun ChatModeContent(
     availableModelAliases: List<String>,
     selectedContextSize: Int,
     attachedFiles: List<ChatAttachedFile>,
+    pendingVoiceInputDraft: String?,
+    pendingVoiceInputDraftToken: Long,
     isProcessing: Boolean,
     isListening: Boolean,
     isOnline: Boolean,
@@ -791,6 +801,7 @@ fun ChatModeContent(
     onRemoveAttachment: (String) -> Unit,
     onSendMessage: (String) -> Unit,
     onCancelProcessing: () -> Unit = {},
+    onConsumePendingVoiceInputDraft: (Long) -> Unit,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
     onStopSpeech: () -> Unit,
@@ -821,6 +832,20 @@ fun ChatModeContent(
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
+    }
+
+    LaunchedEffect(pendingVoiceInputDraftToken) {
+        val recognizedText = pendingVoiceInputDraft?.trim().orEmpty()
+        if (recognizedText.isEmpty()) return@LaunchedEffect
+
+        val draftToken = pendingVoiceInputDraftToken
+        val mergedText = mergeVoiceDraftIntoInputText(inputText.text, recognizedText)
+        inputText = TextFieldValue(
+            text = mergedText,
+            selection = TextRange(mergedText.length),
+        )
+        onConsumePendingVoiceInputDraft(draftToken)
+        focusRequester.requestFocus()
     }
 
 

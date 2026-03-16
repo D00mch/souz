@@ -1,5 +1,6 @@
 package agent
 
+import agent.GraphAgentToolScenariosIntegrationTest.Setup.agentType
 import agent.GraphAgentToolScenariosIntegrationTest.Setup.selectedModel
 import agent.GraphAgentToolScenariosIntegrationTest.Setup.spySettings
 import giga.getHttpClient
@@ -20,11 +21,13 @@ import org.kodein.di.bindProvider
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
+import ru.souz.agent.Agent
 import ru.souz.agent.AgentId
 import ru.souz.agent.impl.GraphBasedAgent
 import ru.souz.agent.SystemPromptResolver
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
+import ru.souz.agent.impl.LuaGraphBasedAgent
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
@@ -72,6 +75,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     private object Setup {
         val selectedModel = GigaModel.Lite
+        val agentType = AgentId.GRAPH
 
         val spySettings: SettingsProviderImpl by lazy {
             spyk(SettingsProviderImpl(ConfigStore)) {
@@ -124,16 +128,11 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { testOpenApp.invoke(any()) } returns "Opened"
 
-        val di = DI.invoke(allowSilentOverride = true) {
-            import(mainDiModule)
-            import(testOverrideModule, allowOverride = true)
+        runScenarioWithMocks(userPrompt) {
             bindProvider<DI> { this.di }
             bindSingleton<ToolShowApps> { testGetApps }
             bindSingleton<ToolOpen> { testOpenApp }
         }
-
-        val agent = GraphBasedAgent(di, gigaJsonMapper)
-        runGraphAgent(agent, di, userPrompt)
 
         coVerify(atLeast = 1) {
             testOpenApp.invoke(match { it.target.contains("ru.keepcoder.Telegram", ignoreCase = true) })
@@ -1084,11 +1083,14 @@ class GraphAgentToolScenariosIntegrationTest {
             bindProvider<DI> { this.di }
             overrides()
         }
-        val agent = GraphBasedAgent(di, gigaJsonMapper)
+        val agent = when(agentType) {
+            AgentId.GRAPH -> GraphBasedAgent(di, gigaJsonMapper)
+            AgentId.LUA_GRAPH -> LuaGraphBasedAgent(di, gigaJsonMapper)
+        }
         runGraphAgent(agent, di, userPrompt)
     }
 
-    private suspend fun runGraphAgent(agent: GraphBasedAgent, di: DI, userPrompt: String) {
+    private suspend fun runGraphAgent(agent: Agent, di: DI, userPrompt: String) {
         val settingsProvider: SettingsProvider = di.direct.instance()
         val toolsFactory: ToolsFactory = di.direct.instance()
         val systemPromptResolver: SystemPromptResolver = di.direct.instance()

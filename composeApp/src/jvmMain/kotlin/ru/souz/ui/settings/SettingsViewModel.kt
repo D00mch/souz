@@ -131,6 +131,10 @@ class SettingsViewModel(
                 keysProvider.notificationSoundEnabled = event.enabled
                 setState { copy(notificationSoundEnabled = event.enabled) }
             }
+            is InputVoiceInputReviewEnabled -> {
+                keysProvider.voiceInputReviewEnabled = event.enabled
+                setState { copy(voiceInputReviewEnabled = event.enabled) }
+            }
             is InputUseEnglishVersion -> {
                 val newLanguage = if (event.enabled) REGION_EN else REGION_RU
                 if (keysProvider.regionProfile != newLanguage) {
@@ -430,6 +434,7 @@ class SettingsViewModel(
                 useFewShotExamples = keysProvider.useFewShotExamples,
                 useStreaming = keysProvider.useStreaming,
                 notificationSoundEnabled = keysProvider.notificationSoundEnabled,
+                voiceInputReviewEnabled = keysProvider.voiceInputReviewEnabled,
                 useEnglishVersion = keysProvider.regionProfile == REGION_EN,
                 safeModeEnabled = keysProvider.safeModeEnabled,
                 activeAgentId = activeAgentId,

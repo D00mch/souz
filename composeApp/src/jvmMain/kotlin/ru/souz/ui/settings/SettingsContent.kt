@@ -408,6 +408,7 @@ fun GeneralSettingsContent(
     onDefaultCalendarChange: (String?) -> Unit,
     onUseStreamingChange: (Boolean) -> Unit,
     onNotificationSoundEnabledChange: (Boolean) -> Unit,
+    onVoiceInputReviewEnabledChange: (Boolean) -> Unit,
     onUseEnglishVersionChange: (Boolean) -> Unit,
     onChooseVoice: () -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
@@ -446,6 +447,51 @@ fun GeneralSettingsContent(
                 onCalendarSelected = onDefaultCalendarChange
             )
 
+            SettingsGroupDivider()
+
+            SettingsRow(
+                title = stringResource(Res.string.setting_streaming_title),
+                description = stringResource(Res.string.setting_streaming_desc),
+                content = {
+                    SettingsCheckbox(
+                        checked = state.useStreaming,
+                        onCheckedChange = onUseStreamingChange
+                    )
+                }
+            )
+
+            SettingsRow(
+                title = stringResource(Res.string.setting_notification_sound_title),
+                description = stringResource(Res.string.setting_notification_sound_desc),
+                content = {
+                    SettingsCheckbox(
+                        checked = state.notificationSoundEnabled,
+                        onCheckedChange = onNotificationSoundEnabledChange
+                    )
+                }
+            )
+
+            SettingsRow(
+                title = stringResource(Res.string.setting_voice_input_review_title),
+                description = stringResource(Res.string.setting_voice_input_review_desc),
+                content = {
+                    SettingsCheckbox(
+                        checked = state.voiceInputReviewEnabled,
+                        onCheckedChange = onVoiceInputReviewEnabledChange
+                    )
+                }
+            )
+
+            SettingsRow(
+                title = stringResource(Res.string.setting_language_profile_title),
+                description = stringResource(Res.string.setting_language_profile_desc),
+                content = {
+                    RegionProfileToggle(
+                        useEnglishProfile = state.useEnglishVersion,
+                        onProfileChange = onUseEnglishVersionChange
+                    )
+                }
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -2064,6 +2110,7 @@ private fun GeneralSettingsContentPreview() {
             onDefaultCalendarChange = {},
             onUseStreamingChange = {},
             onNotificationSoundEnabledChange = {},
+            onVoiceInputReviewEnabledChange = {},
             onUseEnglishVersionChange = {},
             onChooseVoice = {},
             onVoiceSpeedInput = {},
