@@ -83,6 +83,11 @@ enum class ConfirmDialogType {
     SUCCESS
 }
 
+enum class DialogVariant {
+    INFO,
+    WARNING
+}
+
 @Composable
 fun ConfirmDialog(
     isOpen: Boolean,

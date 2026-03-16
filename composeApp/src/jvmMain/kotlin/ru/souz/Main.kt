@@ -11,7 +11,6 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowScope
-import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import kotlinx.coroutines.FlowPreview
@@ -28,14 +27,9 @@ import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
 import ru.souz.mcp.McpClientManager
 import ru.souz.telemetry.TelemetryService
+import ru.souz.ui.rememberDockWindowController
 import ru.souz.ui.macos.MacWindowVibrancy
-import java.awt.Desktop
 import java.awt.Dimension
-import java.awt.EventQueue
-import java.awt.desktop.AppForegroundEvent
-import java.awt.desktop.AppForegroundListener
-import java.awt.desktop.AppReopenedEvent
-import java.awt.desktop.AppReopenedListener
 
 import androidx.compose.ui.res.painterResource as jvmPainterResource
 
@@ -175,72 +169,4 @@ private fun logStartupPlatformInfo() {
         System.getProperty("java.version").orEmpty(),
         System.getProperty("java.runtime.version").orEmpty(),
     )
-}
-
-private class DockWindowController(
-    private val windowState: WindowState,
-) {
-    var isWindowVisible by mutableStateOf(true)
-        private set
-
-    fun hideWindow() {
-        isWindowVisible = false
-    }
-
-    fun onDockReopen() {
-        if (!isWindowVisible || windowState.isMinimized) {
-            revealWindow()
-        }
-    }
-
-    private fun revealWindow() {
-        isWindowVisible = true
-        windowState.isMinimized = false
-    }
-}
-
-@Composable
-private fun rememberDockWindowController(
-    windowState: WindowState,
-    enabled: Boolean,
-): DockWindowController {
-    val controller = remember(windowState) { DockWindowController(windowState) }
-
-    DisposableEffect(controller, enabled) {
-        if (!enabled) {
-            onDispose { }
-        } else {
-            val desktop = runCatching {
-                if (Desktop.isDesktopSupported()) Desktop.getDesktop() else null
-            }.getOrNull()
-
-            if (desktop == null) {
-                onDispose { }
-            } else {
-                val listener = object : AppForegroundListener, AppReopenedListener {
-                    override fun appRaisedToForeground(event: AppForegroundEvent) {
-                        EventQueue.invokeLater {
-                            controller.onDockReopen()
-                        }
-                    }
-
-                    override fun appMovedToBackground(event: AppForegroundEvent) = Unit
-
-                    override fun appReopened(event: AppReopenedEvent) {
-                        EventQueue.invokeLater {
-                            controller.onDockReopen()
-                        }
-                    }
-                }
-
-                desktop.addAppEventListener(listener)
-
-                onDispose {
-                    runCatching { desktop.removeAppEventListener(listener) }
-                }
-            }
-        }
-    }
-
-    return controller
 }
