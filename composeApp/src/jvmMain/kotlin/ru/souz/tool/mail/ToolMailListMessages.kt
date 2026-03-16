@@ -14,7 +14,8 @@ class ToolMailListMessages(private val bash: ToolRunBashCommand) : ToolSetup<Too
     )
 
     override val name: String = "MailListMessages"
-    override val description: String = "List the latest messages in the Inbox."
+    override val description: String =
+        "List the latest messages in the Inbox. Output includes Date and AgeDays. For urgent/important checks, treat messages as urgent only when they are relevant to the current date (typically AgeDays <= 3) and never by subject keywords alone."
 
     override val fewShotExamples = listOf(
         FewShotExample(

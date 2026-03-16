@@ -11,6 +11,32 @@
     <!-- Main Screen -->
     <string name="status_processing">Обработка...</string>
     <string name="chat_placeholder_tip">Спроси меня о чем угодно...</string>
+    <string name="welcome_logo_content_desc">Логотип Союз</string>
+    <string name="welcome_quick_actions_subtitle">Спросите что угодно или выберите быстрое действие</string>
+    <string name="quick_action_mail_label">Проверить почту</string>
+    <string name="quick_action_mail_description">Работа с почтой</string>
+    <string name="quick_action_mail_message">Проверить почту</string>
+    <string name="quick_action_calendar_label">Мой день</string>
+    <string name="quick_action_calendar_description">Посмотреть календарь</string>
+    <string name="quick_action_calendar_message">Проверь мой календарь на сегодня</string>
+    <string name="quick_action_telegram_label">Telegram</string>
+    <string name="quick_action_telegram_description">Проверить сообщения</string>
+    <string name="quick_action_telegram_message">Проверь Telegram</string>
+    <string name="quick_action_documents_label">Документы</string>
+    <string name="quick_action_documents_description">Создать или найти файл</string>
+    <string name="quick_action_documents_message">Помоги в работе с файлами на компьютере</string>
+    <string name="quick_action_presentation_label">Презентация</string>
+    <string name="quick_action_presentation_description">Создать презентацию</string>
+    <string name="quick_action_presentation_message">Помоги создать презентацию</string>
+    <string name="quick_action_analytics_label">Аналитика</string>
+    <string name="quick_action_analytics_description">Графики и данные</string>
+    <string name="quick_action_analytics_message">Помоги в работе с данными</string>
+    <string name="quick_action_search_label">Поиск</string>
+    <string name="quick_action_search_description">Найти в интернете</string>
+    <string name="quick_action_search_message">Нужно найти кое-что в интернете</string>
+    <string name="quick_action_browser_label">Браузер</string>
+    <string name="quick_action_browser_description">Работа в браузере</string>
+    <string name="quick_action_browser_message">Нужна помощь в работе с браузером</string>
     
     <!-- Dialogs -->
     <string name="dialog_confirm">Подтвердить</string>
@@ -67,6 +93,8 @@
     <string name="setting_voice_input_review_desc">Вставлять распознанный текст в поле ввода чата вместо немедленной отправки</string>
     <string name="setting_language_profile_title">Региональный профиль</string>
     <string name="setting_language_profile_desc">В России доступны специальные модели</string>
+    <string name="region_profile_ru_label">Русский (RU)</string>
+    <string name="region_profile_en_label">English (EN)</string>
     <string name="label_voice_speed">Скорость речи</string>
     <string name="hint_voice_speed">Текущее значение: %d. Чем больше, тем быстрее речь.</string>
     <string name="label_voice_selection">Выбор голоса</string>

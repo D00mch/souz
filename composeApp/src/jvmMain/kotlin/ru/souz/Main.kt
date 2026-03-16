@@ -23,14 +23,12 @@ import org.slf4j.LoggerFactory
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
 import org.kodein.di.instance
-import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
 import ru.souz.mcp.McpClientManager
 import ru.souz.telemetry.TelemetryService
-import ru.souz.ui.AppTray
+import ru.souz.ui.rememberDockWindowController
 import ru.souz.ui.macos.MacWindowVibrancy
-import ru.souz.ui.rememberTrayWindowController
 import java.awt.Dimension
 
 import androidx.compose.ui.res.painterResource as jvmPainterResource
@@ -39,13 +37,11 @@ val LocalWindowScope = staticCompositionLocalOf<WindowScope?> { null }
 private val startupLog = LoggerFactory.getLogger("AppStartup")
 
 fun main() {
-    //System.setProperty("apple.awt.UIElement", "true") // - Makes the app tray-only on macOS
     logStartupPlatformInfo()
 
     application(exitProcessOnExit = false) {
         withDI(mainDiModule) {
             val di = localDI()
-            val say: Say by di.instance()
             val settingsProvider: SettingsProvider by di.instance()
             val mcpClientManager: McpClientManager by di.instance()
             val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
@@ -77,28 +73,29 @@ fun main() {
                 println("Failed to set dock icon: ${e.message}")
             }
 
-            val initialWidth = settingsProvider.initialWindowWidthDp.dp
-            val initialHeight = settingsProvider.initialWindowHeightDp.dp
+            val minWindowWidthPx = 860
+            val minWindowHeightPx = 680
             val maxWindowWidthPx = 896
             val maxWindowHeightPx = 700
+            val initialWidth = settingsProvider.initialWindowWidthDp
+                .coerceIn(minWindowWidthPx, maxWindowWidthPx)
+                .dp
+            val initialHeight = settingsProvider.initialWindowHeightDp
+                .coerceIn(minWindowHeightPx, maxWindowHeightPx)
+                .dp
 
             val windowState = rememberWindowState(
                 width = initialWidth,
                 height = initialHeight,
                 position = WindowPosition.Aligned(Alignment.BottomEnd)
             )
-
-            val trayController = rememberTrayWindowController(windowState)
-
-            AppTray(
-                controller = trayController,
-                onMute = { say.clearQueue() },
-                onExit = ::exitApplication,
-            )
+            val isMacOs = remember { System.getProperty("os.name").contains("Mac", ignoreCase = true) }
+            val windowController = rememberDockWindowController(windowState, enabled = isMacOs)
+            val onWindowClose = if (isMacOs) windowController::hideWindow else ::exitApplication
 
             Window(
-                onCloseRequest = ::exitApplication,
-                visible = trayController.isWindowVisible,
+                onCloseRequest = onWindowClose,
+                visible = windowController.isWindowVisible,
                 title = org.jetbrains.compose.resources.stringResource(Res.string.app_name),
                 icon = jvmPainterResource("icon-light.png"),
                 state = windowState,
@@ -108,11 +105,14 @@ fun main() {
                 alwaysOnTop = false
             ) {
                 LaunchedEffect(window) {
+                    window.minimumSize = Dimension(minWindowWidthPx, minWindowHeightPx)
                     window.maximumSize = Dimension(maxWindowWidthPx, maxWindowHeightPx)
-                    if (window.width > maxWindowWidthPx || window.height > maxWindowHeightPx) {
+                    if (window.width !in minWindowWidthPx..maxWindowWidthPx ||
+                        window.height !in minWindowHeightPx..maxWindowHeightPx
+                    ) {
                         window.setSize(
-                            window.width.coerceAtMost(maxWindowWidthPx),
-                            window.height.coerceAtMost(maxWindowHeightPx)
+                            window.width.coerceIn(minWindowWidthPx, maxWindowWidthPx),
+                            window.height.coerceIn(minWindowHeightPx, maxWindowHeightPx)
                         )
                     }
 
@@ -143,8 +143,7 @@ fun main() {
                 // Provide WindowScope to nested composables via CompositionLocal
                 CompositionLocalProvider(LocalWindowScope provides this) {
                     App(
-                        onCloseWindow = ::exitApplication,
-                        onHideWindow = trayController::hideToTray,
+                        onCloseWindow = onWindowClose,
                         onMinimizeWindow = { windowState.isMinimized = true },
                         onToggleMaximizeWindow = {
                             windowState.placement = if (windowState.placement == WindowPlacement.Maximized) {

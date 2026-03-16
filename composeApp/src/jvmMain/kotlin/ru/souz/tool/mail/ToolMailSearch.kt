@@ -18,7 +18,8 @@ class ToolMailSearch(private val bash: ToolRunBashCommand) : ToolSetup<ToolMailS
     )
 
     override val name: String = "MailSearch"
-    override val description: String = "Searches emails directly via Mail app (Subject & Sender)."
+    override val description: String =
+        "Searches emails directly via Mail app (Subject & Sender). Output includes Date and AgeDays. For urgent/important checks, treat messages as urgent only when they are relevant to the current date (typically AgeDays <= 3) and never by subject keywords alone."
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -45,6 +46,7 @@ tell application "Mail"
         set output to ""
         set foundCount to 0
         set searchLimit to $limit
+        set nowDate to (current date)
         
         -- Ищем письма, где тема ИЛИ отправитель содержат запрос
         -- Это соответствует тому, как вы тестировали вручную
@@ -67,8 +69,11 @@ tell application "Mail"
             set msgSubject to subject of msg
             set msgSender to extract name from sender of msg
             set msgDate to date received of msg
+            set ageDays to ((nowDate - msgDate) / days)
+            if ageDays < 0 then set ageDays to 0
+            set ageDaysRounded to ageDays div 1
             
-            set output to output & "ID: " & msgId & " | Date: " & (msgDate as string) & " | From: " & msgSender & " | Subject: " & msgSubject & linefeed
+            set output to output & "ID: " & msgId & " | Date: " & (msgDate as string) & " | AgeDays: " & ageDaysRounded & " | From: " & msgSender & " | Subject: " & msgSubject & linefeed
             set foundCount to foundCount + 1
         end repeat
         

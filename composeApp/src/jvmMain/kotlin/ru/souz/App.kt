@@ -41,7 +41,6 @@ import java.net.URI
 @Preview
 fun App(
     onCloseWindow: () -> Unit,
-    onHideWindow: () -> Unit,
     onMinimizeWindow: () -> Unit,
     onToggleMaximizeWindow: () -> Unit,
 ) {
@@ -97,7 +96,6 @@ fun App(
                             Main -> MainScreen(
                                 onOpenSettings = { currentScreen = Settings },
                                 onCloseWindow = onCloseWindow,
-                                onHideWindow = onHideWindow,
                                 onMinimizeWindow = onMinimizeWindow,
                                 onToggleMaximizeWindow = onToggleMaximizeWindow,
                                 onShowSnack = { message ->

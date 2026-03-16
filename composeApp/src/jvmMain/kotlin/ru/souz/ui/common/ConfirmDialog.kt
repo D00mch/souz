@@ -1,32 +1,39 @@
 package ru.souz.ui.common
 
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -37,58 +44,83 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import souz.composeapp.generated.resources.Res
-import souz.composeapp.generated.resources.dialog_confirm
-import souz.composeapp.generated.resources.dialog_cancel
 import org.jetbrains.compose.resources.stringResource
+import souz.composeapp.generated.resources.Res
+import souz.composeapp.generated.resources.dialog_cancel
+import souz.composeapp.generated.resources.dialog_confirm
 
-enum class ConfirmDialogType(
-    val icon: ImageVector,
-    val iconColor: Color,
-    val iconBgColor: Color,
-    val iconBorderColor: Color,
-    val confirmBtnStartColor: Color,
-    val confirmBtnEndColor: Color,
-    val confirmBtnBorderColor: Color,
-    val confirmBtnTextColor: Color,
-    val confirmBtnShadowColor: Color,
-    val confirmBtnHoverShadowColor: Color
+private object ConfirmDialogColors {
+    val backdrop = Color(0x99000000)
+    val dialogBg = Color(0xF21A1A1D)
+    val dialogBorder = Color(0x1FFFFFFF)
+    val iconBg = Color(0x33FFFFFF)
+    val iconBorder = Color(0x26FFFFFF)
+    val iconColorInfo = Color(0xFF38BDF8)
+    val iconColorWarning = Color(0xFFFBBF24)
+    val iconColorSuccess = Color(0xFF4ADE80)
+    val titleColor = Color(0xE6FFFFFF)
+    val descriptionColor = Color(0x80FFFFFF)
+    val detailsBg = Color(0x08FFFFFF)
+    val detailsBorder = Color(0x0FFFFFFF)
+    val detailsText = Color(0x99FFFFFF)
+    val actionsBorder = Color(0x0FFFFFFF)
+    val cancelBg = Color(0x0DFFFFFF)
+    val cancelBorder = Color(0x14FFFFFF)
+    val cancelText = Color(0xB3FFFFFF)
+    val cancelHoverBg = Color(0x14FFFFFF)
+    val cancelHoverBorder = Color(0x1FFFFFFF)
+    val cancelHoverText = Color(0xE6FFFFFF)
+    val confirmBg = Color(0x1FFFFFFF)
+    val confirmBorder = Color(0x26FFFFFF)
+    val confirmText = Color(0xFFFFFFFF)
+    val confirmHoverBg = Color(0x26FFFFFF)
+    val confirmHoverBorder = Color(0x33FFFFFF)
+}
+
+enum class ConfirmDialogType {
+    INFO,
+    WARNING,
+    SUCCESS
+}
+
+enum class DialogVariant {
+    INFO,
+    WARNING
+}
+
+@Composable
+fun ConfirmDialog(
+    isOpen: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    title: String,
+    description: String? = null,
+    confirmText: String = stringResource(Res.string.dialog_confirm),
+    cancelText: String = stringResource(Res.string.dialog_cancel),
+    variant: DialogVariant = DialogVariant.INFO,
+    details: String? = null
 ) {
-    INFO(
-        icon = Icons.Rounded.Info,
-        iconColor = Color(0xFF12E0B5),
-        iconBgColor = Color(0x2612E0B5),
-        iconBorderColor = Color(0x4D12E0B5),
-        confirmBtnStartColor = Color(0x4012E0B5),
-        confirmBtnEndColor = Color(0x2612E0B5),
-        confirmBtnBorderColor = Color(0x6612E0B5),
-        confirmBtnTextColor = Color(0xFF12E0B5),
-        confirmBtnShadowColor = Color(0x3312E0B5),
-        confirmBtnHoverShadowColor = Color(0x4D12E0B5)
-    ),
-    WARNING(
-        icon = Icons.Rounded.Warning,
-        iconColor = Color(0xFFF59E0B),
-        iconBgColor = Color(0x26F59E0B),
-        iconBorderColor = Color(0x4DF59E0B),
-        confirmBtnStartColor = Color(0x40F59E0B),
-        confirmBtnEndColor = Color(0x26F59E0B),
-        confirmBtnBorderColor = Color(0x66F59E0B),
-        confirmBtnTextColor = Color(0xFFF59E0B),
-        confirmBtnShadowColor = Color(0x33F59E0B),
-        confirmBtnHoverShadowColor = Color(0x4DF59E0B)
-    ),
-    SUCCESS(
-        icon = Icons.Rounded.Check,
-        iconColor = Color(0xFF22C55E),
-        iconBgColor = Color(0x2622C55E),
-        iconBorderColor = Color(0x4D22C55E),
-        confirmBtnStartColor = Color(0x4022C55E),
-        confirmBtnEndColor = Color(0x2622C55E),
-        confirmBtnBorderColor = Color(0x6622C55E),
-        confirmBtnTextColor = Color(0xFF22C55E),
-        confirmBtnShadowColor = Color(0x3322C55E),
-        confirmBtnHoverShadowColor = Color(0x4D22C55E)
+    ConfirmDialogInternal(
+        isOpen = isOpen,
+        icon = when (variant) {
+            DialogVariant.INFO -> Icons.Outlined.Info
+            DialogVariant.WARNING -> Icons.Outlined.Warning
+        },
+        iconTint = when (variant) {
+            DialogVariant.INFO -> ConfirmDialogColors.iconColorInfo
+            DialogVariant.WARNING -> ConfirmDialogColors.iconColorWarning
+        },
+        title = title,
+        description = description,
+        detailsText = details,
+        detailsContent = null,
+        confirmText = confirmText,
+        cancelText = cancelText,
+        confirmEnabled = true,
+        dialogMaxWidth = 320.dp,
+        dialogMaxHeightFraction = 0.9f,
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
     )
 }
 
@@ -97,7 +129,7 @@ fun ConfirmDialog(
     type: ConfirmDialogType,
     title: String,
     message: String? = null,
-    details:String? = null,
+    details: String? = null,
     detailsContent: (@Composable ColumnScope.() -> Unit)? = null,
     dialogMaxWidth: Dp = 320.dp,
     dialogMaxHeightFraction: Float = 0.9f,
@@ -107,39 +139,83 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var appeared by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { appeared = true }
-    val contentScrollState = rememberScrollState()
+    val icon = when (type) {
+        ConfirmDialogType.INFO -> Icons.Outlined.Info
+        ConfirmDialogType.WARNING -> Icons.Outlined.Warning
+        ConfirmDialogType.SUCCESS -> Icons.Rounded.Check
+    }
+    val iconTint = when (type) {
+        ConfirmDialogType.INFO -> ConfirmDialogColors.iconColorInfo
+        ConfirmDialogType.WARNING -> ConfirmDialogColors.iconColorWarning
+        ConfirmDialogType.SUCCESS -> ConfirmDialogColors.iconColorSuccess
+    }
 
-    val overlayOpacity by animateFloatAsState(
-        targetValue = if (appeared) 1f else 0f,
-        animationSpec = tween(150, easing = LinearEasing)
+    ConfirmDialogInternal(
+        isOpen = true,
+        icon = icon,
+        iconTint = iconTint,
+        title = title,
+        description = message,
+        detailsText = details,
+        detailsContent = detailsContent,
+        confirmText = confirmText,
+        cancelText = cancelText,
+        confirmEnabled = confirmEnabled,
+        dialogMaxWidth = dialogMaxWidth,
+        dialogMaxHeightFraction = dialogMaxHeightFraction,
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
     )
+}
 
-    val dialogScale by animateFloatAsState(
-        targetValue = if (appeared) 1f else 0.9f,
-        animationSpec = tween(200, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f))
+@Composable
+private fun ConfirmDialogInternal(
+    isOpen: Boolean,
+    icon: ImageVector,
+    iconTint: Color,
+    title: String,
+    description: String?,
+    detailsText: String?,
+    detailsContent: (@Composable ColumnScope.() -> Unit)?,
+    confirmText: String,
+    cancelText: String,
+    confirmEnabled: Boolean,
+    dialogMaxWidth: Dp,
+    dialogMaxHeightFraction: Float,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    if (!isOpen) return
+
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 200),
+        label = "confirm_dialog_alpha"
     )
-    val dialogOpacity by animateFloatAsState(
-        targetValue = if (appeared) 1f else 0f,
-        animationSpec = tween(200, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f))
+    val scale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.95f,
+        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+        label = "confirm_dialog_scale"
     )
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(100f), // Ensure it's on top
+            .zIndex(100f),
         contentAlignment = Alignment.Center
     ) {
-        val effectiveMaxHeightFraction = dialogMaxHeightFraction.coerceIn(0.5f, 1f)
+        val shape = RoundedCornerShape(16.dp)
+        val scrollState = rememberScrollState()
+        val normalizedHeightFraction = dialogMaxHeightFraction.coerceIn(0.5f, 1f)
 
-        // Overlay
         Box(
             modifier = Modifier
-                .matchParentSize()
-                .alpha(overlayOpacity)
-                .background(Color(0xA6000000))
-                .blur(10.dp)
+                .fillMaxSize()
+                .background(ConfirmDialogColors.backdrop)
+                .blur(12.dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -147,130 +223,133 @@ fun ConfirmDialog(
                 )
         )
 
-        // Dialog Container
         Box(
             modifier = Modifier
-                .padding(horizontal = 24.dp, vertical = 24.dp)
+                .padding(24.dp)
                 .widthIn(max = dialogMaxWidth)
-                .fillMaxWidth()
-                .heightIn(max = maxHeight * effectiveMaxHeightFraction)
-                .scale(dialogScale)
-                .alpha(dialogOpacity)
-                .clip(RoundedCornerShape(12.dp))
-                .shadow(
-                    elevation = 40.dp,
-                    shape = RoundedCornerShape(12.dp),
-                    ambientColor = Color(0x80000000),
-                    spotColor = Color(0x80000000)
+                .heightIn(max = maxHeight * normalizedHeightFraction)
+                .graphicsLayer {
+                    this.alpha = alpha
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .clip(shape)
+                .pointerHoverIcon(PointerIcon.Default)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {}
                 )
         ) {
-             // Backdrop Blur for Dialog
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .background(Color(0xF2141820))
-                    .blur(30.dp)
+                    .background(ConfirmDialogColors.dialogBg, shape)
+                    .blur(48.dp)
             )
 
-            // Content
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(12.dp))
-                    .verticalScroll(contentScrollState)
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .background(ConfirmDialogColors.dialogBg, shape)
+                    .border(1.dp, ConfirmDialogColors.dialogBorder, shape)
             ) {
-                // Icon
-                Box(
+                Column(
                     modifier = Modifier
-                        .size(44.dp)
-                        .padding(bottom = 12.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(type.iconBgColor)
-                        .border(1.dp, type.iconBorderColor, RoundedCornerShape(12.dp)),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(scrollState)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Icon(
-                        imageVector = type.icon,
-                        contentDescription = null,
-                        tint = type.iconColor,
-                        modifier = Modifier.size(20.dp)
+                    DialogIcon(
+                        icon = icon,
+                        tint = iconTint
                     )
-                }
 
-                // Title
-                Text(
-                    text = title,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xF2FFFFFF),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-
-                // Message
-                if (!message.isNullOrEmpty()) {
-                    Text(
-                        text = message,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = Color(0x99FFFFFF),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-                }
-
-                // Details
-                if (!details.isNullOrEmpty() || detailsContent != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0x4D000000))
-                            .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(8.dp))
-                            .padding(10.dp)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (detailsContent != null) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                content = detailsContent
-                            )
-                        } else {
+                        Text(
+                            text = title,
+                            fontSize = 16.sp,
+                            lineHeight = 22.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = ConfirmDialogColors.titleColor,
+                            textAlign = TextAlign.Center
+                        )
+
+                        if (!description.isNullOrBlank()) {
                             Text(
-                                text = details.orEmpty(),
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = Color(0x80FFFFFF),
-                                lineHeight = 18.sp, // 1.5 line height (12 * 1.5 = 18)
+                                text = description,
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                color = ConfirmDialogColors.descriptionColor,
+                                textAlign = TextAlign.Center
                             )
+                        }
+                    }
+
+                    if (!detailsText.isNullOrBlank() || detailsContent != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    color = ConfirmDialogColors.detailsBg,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = ConfirmDialogColors.detailsBorder,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .padding(12.dp)
+                        ) {
+                            if (detailsContent != null) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    content = detailsContent
+                                )
+                            } else {
+                                Text(
+                                    text = detailsText.orEmpty(),
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                    color = ConfirmDialogColors.detailsText,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
                         }
                     }
                 }
 
-                // Buttons
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(ConfirmDialogColors.actionsBorder)
+                )
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Cancel Button
                     DialogButton(
                         text = cancelText,
-                        textColor = Color(0xCCFFFFFF),
-                        borderColor = Color(0x26FFFFFF),
-                        backgroundColor = Color(0x14FFFFFF),
-                        hoverBackgroundColor = Color(0x1FFFFFFF),
+                        primary = false,
+                        enabled = true,
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f)
                     )
 
-                    // Confirm Button
-                    ConfirmDialogButton(
+                    DialogButton(
                         text = confirmText,
-                        type = type,
+                        primary = true,
                         enabled = confirmEnabled,
                         onClick = onConfirm,
                         modifier = Modifier.weight(1f)
@@ -282,115 +361,90 @@ fun ConfirmDialog(
 }
 
 @Composable
-private fun DialogButton(
-    text: String,
-    textColor: Color,
-    borderColor: Color,
-    backgroundColor: Color,
-    hoverBackgroundColor: Color,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+private fun DialogIcon(
+    icon: ImageVector,
+    tint: Color
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = when {
-            isPressed -> 0.98f
-            isHovered -> 1.02f
-            else -> 1f
-        },
-        animationSpec = tween(200)
-    )
-
-    val currentBg = if (enabled && isHovered) hoverBackgroundColor else backgroundColor
-    val effectiveTextColor = if (enabled) textColor else textColor.copy(alpha = 0.45f)
-    val effectiveBorderColor = if (enabled) borderColor else borderColor.copy(alpha = 0.45f)
-    val effectiveBackground = if (enabled) currentBg else backgroundColor.copy(alpha = 0.45f)
-
     Box(
-        modifier = modifier
-            .scale(if (enabled) scale else 1f)
-            .clip(RoundedCornerShape(8.dp))
-            .background(effectiveBackground)
-            .border(1.dp, effectiveBorderColor, RoundedCornerShape(8.dp))
-            .pointerHoverIcon(if (enabled) PointerIcon.Hand else PointerIcon.Default)
-            .then(
-                if (enabled) {
-                    Modifier.clickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = onClick
-                    )
-                } else {
-                    Modifier
-                }
-            )
-            .padding(vertical = 8.dp, horizontal = 12.dp),
+        modifier = Modifier
+            .size(48.dp)
+            .background(ConfirmDialogColors.iconBg, CircleShape)
+            .border(1.dp, ConfirmDialogColors.iconBorder, CircleShape),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = text,
-            color = effectiveTextColor,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(20.dp)
         )
     }
 }
 
 @Composable
-private fun ConfirmDialogButton(
+private fun DialogButton(
     text: String,
-    type: ConfirmDialogType,
-    enabled: Boolean = true,
+    primary: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
     val isPressed by interactionSource.collectIsPressedAsState()
 
-    val scale by animateFloatAsState(
+    val background by animateColorAsState(
         targetValue = when {
-            isPressed -> 0.98f
-            isHovered -> 1.02f
-            else -> 1f
+            !enabled && primary -> ConfirmDialogColors.confirmBg.copy(alpha = 0.5f)
+            !enabled -> ConfirmDialogColors.cancelBg.copy(alpha = 0.5f)
+            primary && isHovered -> ConfirmDialogColors.confirmHoverBg
+            primary -> ConfirmDialogColors.confirmBg
+            isHovered -> ConfirmDialogColors.cancelHoverBg
+            else -> ConfirmDialogColors.cancelBg
         },
-        animationSpec = tween(200)
+        animationSpec = tween(150),
+        label = "confirm_dialog_button_bg"
     )
-    
-    val shadowColor = if (enabled && isHovered) type.confirmBtnHoverShadowColor else type.confirmBtnShadowColor
 
-    // Gradient Brush
-    val brush = Brush.linearGradient(
-        colors = if (enabled) {
-            listOf(type.confirmBtnStartColor, type.confirmBtnEndColor)
-        } else {
-            listOf(type.confirmBtnStartColor.copy(alpha = 0.35f), type.confirmBtnEndColor.copy(alpha = 0.35f))
+    val border by animateColorAsState(
+        targetValue = when {
+            !enabled && primary -> ConfirmDialogColors.confirmBorder.copy(alpha = 0.5f)
+            !enabled -> ConfirmDialogColors.cancelBorder.copy(alpha = 0.5f)
+            primary && isHovered -> ConfirmDialogColors.confirmHoverBorder
+            primary -> ConfirmDialogColors.confirmBorder
+            isHovered -> ConfirmDialogColors.cancelHoverBorder
+            else -> ConfirmDialogColors.cancelBorder
         },
-        start = androidx.compose.ui.geometry.Offset.Zero,
-        end = androidx.compose.ui.geometry.Offset.Infinite // Simplified direction 135deg approximation
+        animationSpec = tween(150),
+        label = "confirm_dialog_button_border"
     )
+
+    val textColor by animateColorAsState(
+        targetValue = when {
+            !enabled && primary -> ConfirmDialogColors.confirmText.copy(alpha = 0.5f)
+            !enabled -> ConfirmDialogColors.cancelText.copy(alpha = 0.5f)
+            primary -> ConfirmDialogColors.confirmText
+            isHovered -> ConfirmDialogColors.cancelHoverText
+            else -> ConfirmDialogColors.cancelText
+        },
+        animationSpec = tween(150),
+        label = "confirm_dialog_button_text"
+    )
+
+    val scale by animateFloatAsState(
+        targetValue = if (enabled && isPressed) 0.98f else 1f,
+        animationSpec = tween(120, easing = FastOutSlowInEasing),
+        label = "confirm_dialog_button_scale"
+    )
+
+    val buttonShape = RoundedCornerShape(12.dp)
 
     Box(
         modifier = modifier
-            .scale(if (enabled) scale else 1f)
-            .shadow(
-                elevation = 0.dp, // Manually drawing shadow to control color and opacity precisely if needed, or stick to Box shadow
-                shape = RoundedCornerShape(8.dp),
-                ambientColor = shadowColor,
-                spotColor = shadowColor
-            )
-             // Using manual shadow with colored background for better control
-            .clip(RoundedCornerShape(8.dp))
-            .background(brush)
-            .border(
-                1.dp,
-                if (enabled) type.confirmBtnBorderColor else type.confirmBtnBorderColor.copy(alpha = 0.45f),
-                RoundedCornerShape(8.dp)
-            )
+            .height(40.dp)
+            .scale(scale)
+            .background(background, buttonShape)
+            .border(1.dp, border, buttonShape)
             .pointerHoverIcon(if (enabled) PointerIcon.Hand else PointerIcon.Default)
             .then(
                 if (enabled) {
@@ -402,16 +456,15 @@ private fun ConfirmDialogButton(
                 } else {
                     Modifier
                 }
-            )
-            .padding(vertical = 8.dp, horizontal = 12.dp),
+            ),
         contentAlignment = Alignment.Center
     ) {
-         // Apply shadow effect manually if needed, but for now simple shadow is handled by modifier
         Text(
             text = text,
-            color = if (enabled) type.confirmBtnTextColor else type.confirmBtnTextColor.copy(alpha = 0.45f),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium,
+            color = textColor
         )
     }
 }

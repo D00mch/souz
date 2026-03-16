@@ -11,6 +11,32 @@
     <!-- Main Screen -->
     <string name="status_processing">Processing...</string>
     <string name="chat_placeholder_tip">Ask me anything...</string>
+    <string name="welcome_logo_content_desc">Souz logo</string>
+    <string name="welcome_quick_actions_subtitle">Ask anything or choose a quick action</string>
+    <string name="quick_action_mail_label">Check mail</string>
+    <string name="quick_action_mail_description">Work with mail</string>
+    <string name="quick_action_mail_message">Check my mail</string>
+    <string name="quick_action_calendar_label">My day</string>
+    <string name="quick_action_calendar_description">View calendar</string>
+    <string name="quick_action_calendar_message">Check my calendar for today</string>
+    <string name="quick_action_telegram_label">Telegram</string>
+    <string name="quick_action_telegram_description">Check messages</string>
+    <string name="quick_action_telegram_message">Check Telegram</string>
+    <string name="quick_action_documents_label">Documents</string>
+    <string name="quick_action_documents_description">Create or find a file</string>
+    <string name="quick_action_documents_message">Help me work with files on my computer</string>
+    <string name="quick_action_presentation_label">Presentation</string>
+    <string name="quick_action_presentation_description">Create a presentation</string>
+    <string name="quick_action_presentation_message">Help me create a presentation</string>
+    <string name="quick_action_analytics_label">Analytics</string>
+    <string name="quick_action_analytics_description">Charts and data</string>
+    <string name="quick_action_analytics_message">Help me work with data</string>
+    <string name="quick_action_search_label">Search</string>
+    <string name="quick_action_search_description">Find on the web</string>
+    <string name="quick_action_search_message">I need to find something on the web</string>
+    <string name="quick_action_browser_label">Browser</string>
+    <string name="quick_action_browser_description">Work in browser</string>
+    <string name="quick_action_browser_message">I need help with browser tasks</string>
     
     <!-- Dialogs -->
     <string name="dialog_confirm">Confirm</string>
@@ -71,6 +97,8 @@
     <string name="setting_voice_input_review_desc">Insert recognized speech into chat input instead of sending it immediately</string>
     <string name="setting_language_profile_title">Region profile</string>
     <string name="setting_language_profile_desc">Different models and LLM providers available per region.</string>
+    <string name="region_profile_ru_label">Russian (RU)</string>
+    <string name="region_profile_en_label">English (EN)</string>
     <string name="label_voice_speed">Voice speed</string>
     <string name="hint_voice_speed">Current value: %d. Higher is faster.</string>
     <string name="label_voice_selection">Voice selection</string>

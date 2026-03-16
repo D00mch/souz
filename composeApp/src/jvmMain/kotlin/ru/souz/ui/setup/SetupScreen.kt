@@ -44,16 +44,32 @@ import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.common.ConfirmDialog
-import ru.souz.ui.common.ConfirmDialogType
+import ru.souz.ui.common.DialogVariant
 import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
-import ru.souz.ui.glassColors
 import ru.souz.ui.main.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
+import ru.souz.ui.settings.SettingsUiColors
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 
-private val SetupWindowSize = DpSize(width = 640.dp, height = 760.dp)
+private val SetupWindowSize = DpSize(width = 896.dp, height = 700.dp)
+private val SetupControlHeight = 42.dp
+
+private object SetupSpacing {
+    val screenPaddingHorizontal = 20.dp
+    val screenPaddingTop = 14.dp
+    val screenPaddingBottom = 16.dp
+    val sectionSpacing = 20.dp
+    val elementSpacing = 12.dp
+    val labelToFieldSpacing = 6.dp
+}
+
+private val SetupFieldBackground = SettingsUiColors.inputBackground
+private val SetupBorder = SettingsUiColors.inputBorder
+private val SetupStrongTextColor = SettingsUiColors.inputText
+private val SetupLabelColor = SettingsUiColors.labelText
+private val SetupHintColor = SettingsUiColors.labelTextSecondary
 
 @Composable
 fun SetupScreen(
@@ -124,148 +140,216 @@ fun SetupScreenContent(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(top = 8.dp)
             ) {
                 DraggableWindowArea {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Spacer(Modifier.height(24.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = SetupSpacing.screenPaddingHorizontal,
+                                end = SetupSpacing.screenPaddingHorizontal,
+                                top = SetupSpacing.screenPaddingTop,
+                                bottom = SetupSpacing.screenPaddingTop
+                            ),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Text(
                             text = stringResource(Res.string.setup_title_keys),
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
+                            style = MaterialTheme.typography.headlineSmall.copy(
+                                fontSize = 32.sp,
+                                lineHeight = 38.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = SetupStrongTextColor
+                        )
+                        Text(
+                            text = if (hasNoKeys) {
+                                stringResource(Res.string.setup_hint_add_key)
+                            } else {
+                                stringResource(Res.string.setup_hint_keys_found).format(state.configuredKeysCount)
+                            },
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            ),
+                            color = if (hasNoKeys) MaterialTheme.colorScheme.error else SetupHintColor
                         )
                     }
                 }
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = stringResource(Res.string.setting_language_profile_title),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Color.White.copy(alpha = 0.95f),
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = stringResource(Res.string.setting_language_profile_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.65f)
-                    )
-                    RegionProfileToggle(
-                        useEnglishProfile = state.useEnglishVersion,
-                        onProfileChange = onUseEnglishVersionChange,
-                    )
-                }
-
-                Text(
-                    text = if (hasNoKeys) {
-                        stringResource(Res.string.setup_hint_add_key)
-                    } else {
-                        stringResource(Res.string.setup_hint_keys_found).format(state.configuredKeysCount)
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (hasNoKeys) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onBackground
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(SettingsUiColors.sidebarBorder)
                 )
 
-                Spacer(Modifier.height(4.dp))
-
-                if (ApiKeyField.GIGA_CHAT in state.availableApiKeyFields) {
-                    LabeledTextField(
-                        label = stringResource(Res.string.label_key_gigachat),
-                        value = state.gigaChatKey,
-                        onValueChange = onGigaChatKeyInput,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-
-                if (ApiKeyField.QWEN_CHAT in state.availableApiKeyFields) {
-                    LabeledTextField(
-                        label = stringResource(Res.string.label_key_qwen),
-                        value = state.qwenChatKey,
-                        onValueChange = onQwenChatKeyInput,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-
-                if (ApiKeyField.AI_TUNNEL in state.availableApiKeyFields) {
-                    LabeledTextField(
-                        label = stringResource(Res.string.label_key_aitunnel),
-                        value = state.aiTunnelKey,
-                        onValueChange = onAiTunnelKeyInput,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-
-                if (ApiKeyField.ANTHROPIC in state.availableApiKeyFields) {
-                    LabeledTextField(
-                        label = stringResource(Res.string.label_key_anthropic),
-                        value = state.anthropicKey,
-                        onValueChange = onAnthropicKeyInput,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-
-                if (ApiKeyField.OPENAI in state.availableApiKeyFields) {
-                    LabeledTextField(
-                        label = stringResource(Res.string.label_key_openai),
-                        value = state.openaiKey,
-                        onValueChange = onOpenAiKeyInput,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-
-                if (hasNoKeys) {
-                    KeyProvidersSection(
-                        availableProviders = state.availableApiKeyProviders,
-                        onOpenProviderLink = onOpenProviderLink,
-                    )
-                }
-
-                if (supportsSaluteSpeech) {
-                    LabeledTextField(
-                        label = stringResource(Res.string.label_key_salutespeech),
-                        value = state.saluteSpeechKey,
-                        onValueChange = onSaluteSpeechKeyInput,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-
-                Spacer(Modifier.height(4.dp))
-
-                Text(
-                    text = if (supportsVoiceRecognition) {
-                        stringResource(Res.string.setup_hint_voice_required)
-                    } else {
-                        stringResource(Res.string.setup_hint_voice_unavailable)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.5f)
-                )
-
-                OutlinedButton(
-                    onClick = onChooseVoice,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = stringResource(Res.string.setup_btn_choose_voice),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.glassColors.textPrimary
-                    )
-                }
-                Button(
-                    onClick = onProceed,
-                    enabled = state.canProceed,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = if (state.canProceed) stringResource(Res.string.button_open_souz) else stringResource(Res.string.button_add_key_to_proceed),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontSize = 16.sp,
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(
+                            start = SetupSpacing.screenPaddingHorizontal,
+                            end = SetupSpacing.screenPaddingHorizontal,
+                            top = SetupSpacing.screenPaddingTop,
+                            bottom = SetupSpacing.screenPaddingBottom
                         ),
-                        color = Color.White,
-                        textAlign = TextAlign.Center
-                    )
+                    verticalArrangement = Arrangement.spacedBy(SetupSpacing.sectionSpacing)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(SetupSpacing.labelToFieldSpacing)) {
+                        Text(
+                            text = stringResource(Res.string.setting_language_profile_title),
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            color = SetupLabelColor
+                        )
+                        Text(
+                            text = stringResource(Res.string.setting_language_profile_desc),
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            ),
+                            color = SetupHintColor
+                        )
+                        RegionProfileToggle(
+                            useEnglishProfile = state.useEnglishVersion,
+                            onProfileChange = onUseEnglishVersionChange,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(SetupSpacing.elementSpacing)) {
+                        if (ApiKeyField.GIGA_CHAT in state.availableApiKeyFields) {
+                            LabeledTextField(
+                                label = stringResource(Res.string.label_key_gigachat),
+                                value = state.gigaChatKey,
+                                onValueChange = onGigaChatKeyInput,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+
+                        if (ApiKeyField.QWEN_CHAT in state.availableApiKeyFields) {
+                            LabeledTextField(
+                                label = stringResource(Res.string.label_key_qwen),
+                                value = state.qwenChatKey,
+                                onValueChange = onQwenChatKeyInput,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+
+                        if (ApiKeyField.AI_TUNNEL in state.availableApiKeyFields) {
+                            LabeledTextField(
+                                label = stringResource(Res.string.label_key_aitunnel),
+                                value = state.aiTunnelKey,
+                                onValueChange = onAiTunnelKeyInput,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+
+                        if (ApiKeyField.ANTHROPIC in state.availableApiKeyFields) {
+                            LabeledTextField(
+                                label = stringResource(Res.string.label_key_anthropic),
+                                value = state.anthropicKey,
+                                onValueChange = onAnthropicKeyInput,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+
+                        if (ApiKeyField.OPENAI in state.availableApiKeyFields) {
+                            LabeledTextField(
+                                label = stringResource(Res.string.label_key_openai),
+                                value = state.openaiKey,
+                                onValueChange = onOpenAiKeyInput,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+
+                    if (hasNoKeys) {
+                        KeyProvidersSection(
+                            availableProviders = state.availableApiKeyProviders,
+                            onOpenProviderLink = onOpenProviderLink,
+                        )
+                    }
+
+                    if (supportsSaluteSpeech) {
+                        LabeledTextField(
+                            label = stringResource(Res.string.label_key_salutespeech),
+                            value = state.saluteSpeechKey,
+                            onValueChange = onSaluteSpeechKeyInput,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(SetupSpacing.labelToFieldSpacing)) {
+                        Text(
+                            text = if (supportsVoiceRecognition) {
+                                stringResource(Res.string.setup_hint_voice_required)
+                            } else {
+                                stringResource(Res.string.setup_hint_voice_unavailable)
+                            },
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            ),
+                            color = SetupHintColor
+                        )
+                        OutlinedButton(
+                            onClick = onChooseVoice,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(SetupControlHeight),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = SetupFieldBackground,
+                                contentColor = SetupStrongTextColor
+                            ),
+                            border = BorderStroke(1.dp, SetupBorder),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.setup_btn_choose_voice),
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp,
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                color = SetupStrongTextColor
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = onProceed,
+                        enabled = state.canProceed,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(SetupControlHeight),
+                        border = BorderStroke(1.dp, SettingsUiColors.buttonBorder),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SettingsUiColors.activeItemBackground,
+                            contentColor = SettingsUiColors.activeItemText,
+                            disabledContainerColor = SettingsUiColors.buttonBackground,
+                            disabledContentColor = SettingsUiColors.labelTextSecondary
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = if (state.canProceed) {
+                                stringResource(Res.string.button_open_souz)
+                            } else {
+                                stringResource(Res.string.button_add_key_to_proceed)
+                            },
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         }
@@ -274,9 +358,10 @@ fun SetupScreenContent(
         )
         if (state.showVoiceReminderDialog) {
             ConfirmDialog(
-                type = ConfirmDialogType.INFO,
+                isOpen = true,
+                variant = DialogVariant.INFO,
                 title = stringResource(Res.string.setup_voice_reminder_title),
-                message = stringResource(Res.string.setup_voice_reminder_message),
+                description = stringResource(Res.string.setup_voice_reminder_message),
                 details = stringResource(Res.string.setup_voice_reminder_details),
                 confirmText = stringResource(Res.string.setup_btn_choose_voice),
                 cancelText = stringResource(Res.string.dialog_cancel),
@@ -332,12 +417,15 @@ private fun KeyProvidersSection(
     availableProviders: List<ApiKeyProvider>,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            text = stringResource(Res.string.setup_title_keys),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.glassColors.textPrimary
+            text = stringResource(Res.string.header_where_to_get_keys),
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontSize = 20.sp,
+                lineHeight = 28.sp,
+                fontWeight = FontWeight.SemiBold
+            ),
+            color = SetupStrongTextColor
         )
 
         availableProviders.forEach { provider ->
@@ -356,10 +444,10 @@ private fun ProviderLinkCard(
 ) {
     Surface(
         modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
-        color = Color.White.copy(alpha = 0.04f),
+            .fillMaxWidth(),
+        color = SetupFieldBackground,
         shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, SetupBorder)
     ) {
         Column(
             modifier = Modifier
@@ -371,27 +459,39 @@ private fun ProviderLinkCard(
             Text(
                 text = stringResource(provider.title),
                 style = MaterialTheme.typography.titleSmall,
-                color = Color.White
+                color = SetupStrongTextColor
             )
             Text(
                 text = stringResource(provider.description),
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.7f)
+                color = SetupLabelColor
             )
             Text(
                 text = stringResource(provider.details),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.72f)
+                color = SetupHintColor
             )
             OutlinedButton(
                 onClick = onOpen,
-                modifier = Modifier.fillMaxWidth(),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(SetupControlHeight),
+                border = BorderStroke(1.dp, SetupBorder),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.glassColors.textPrimary
-                )
+                    containerColor = SetupFieldBackground,
+                    contentColor = SetupStrongTextColor
+                ),
+                shape = RoundedCornerShape(10.dp)
             ) {
-                Text(text = provider.url, style = MaterialTheme.typography.labelMedium)
+                Text(
+                    text = provider.url,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = SetupStrongTextColor
+                )
             }
         }
     }

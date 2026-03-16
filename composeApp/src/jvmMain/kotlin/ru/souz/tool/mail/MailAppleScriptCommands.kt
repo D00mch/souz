@@ -21,6 +21,7 @@ tell application "Mail"
     try
         set output to ""
         set requestLimit to $limit
+        set nowDate to (current date)
         set msgList to {}
 
         try
@@ -43,7 +44,10 @@ tell application "Mail"
                 set msgSubject to subject of msg
                 set msgSender to extract name from sender of msg
                 set msgDate to date received of msg
-                set output to output & "ID: " & msgId & " | Date: " & (msgDate as string) & " | From: " & msgSender & " | Subject: " & msgSubject & linefeed
+                set ageDays to ((nowDate - msgDate) / days)
+                if ageDays < 0 then set ageDays to 0
+                set ageDaysRounded to ageDays div 1
+                set output to output & "ID: " & msgId & " | Date: " & (msgDate as string) & " | AgeDays: " & ageDaysRounded & " | From: " & msgSender & " | Subject: " & msgSubject & linefeed
             on error
             end try
         end repeat
