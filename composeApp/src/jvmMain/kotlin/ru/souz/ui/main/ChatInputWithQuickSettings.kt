@@ -1134,7 +1134,7 @@ private fun QuickSettingsPanel(
     ) {
         QuickDropdown(
             label = selectedModelLabel,
-            width = 109.dp,
+            width = 155.dp,
             expanded = isModelDropdownOpen,
             options = modelOptions,
             selectedValue = selectedModel,
