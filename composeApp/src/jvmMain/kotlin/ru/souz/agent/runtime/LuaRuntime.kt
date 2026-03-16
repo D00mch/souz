@@ -14,6 +14,7 @@ import org.luaj.vm2.lib.DebugLib
 import org.luaj.vm2.lib.OneArgFunction
 import org.luaj.vm2.lib.VarArgFunction
 import org.luaj.vm2.lib.jse.JsePlatform
+import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaResponse
@@ -24,6 +25,8 @@ import kotlin.coroutines.CoroutineContext
 class LuaRuntime(
     private val toolExecutor: AgentToolExecutor,
 ) {
+    private val l = LoggerFactory.getLogger(LuaRuntime::class.simpleName)
+
     suspend fun execute(
         code: String,
         settings: AgentSettings,
@@ -37,10 +40,12 @@ class LuaRuntime(
                 parentContext = currentCoroutineContext(),
                 executionDeadlineNanos = executionDeadlineNanos,
             )
+            l.info("About to run code:\n\n$code\n\n")
             val chunk = globals.load(code, "agent.lua")
             val result = chunk.invoke().arg1().takeUnless { it.isnil() } ?: globals.get("result")
             luaResultToString(result)
         } catch (e: LuaError) {
+            l.error("Can't run code. ${e.message}")
             throw LuaExecutionException(message = e.message ?: "Lua execution failed", code, e)
         }
     }
