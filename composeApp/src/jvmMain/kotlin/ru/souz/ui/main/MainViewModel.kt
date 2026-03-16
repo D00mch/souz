@@ -185,25 +185,7 @@ class MainViewModel(
                         send(MainEffect.ShowError(error.message ?: getString(Res.string.error_failed_to_open_path)))
                     }
             }
-            is MainEvent.SendChatMessage -> vmLaunch {
-                val inputText = event.text
-                val attachments = currentState.attachedFiles
-                val composedMessage = attachmentsUseCase.buildChatMessageWithAttachedPaths(
-                    input = inputText,
-                    attachedFiles = attachments,
-                )
-                if (composedMessage.isBlank()) return@vmLaunch
-
-                setState { copy(attachedFiles = emptyList()) }
-                chatUseCase.sendChatMessage(
-                    scope = viewModelScope,
-                    isVoice = false,
-                    chatMessage = composedMessage,
-                    displayMessage = inputText,
-                    attachedFiles = attachments,
-                    requestSource = TelemetryRequestSource.CHAT_UI,
-                )
-            }
+            is MainEvent.SendChatMessage -> handleSendChatMessage(event)
 
             MainEvent.RefreshSettings -> refreshSettings()
             MainEvent.ApproveToolPermission ->
@@ -299,6 +281,28 @@ class MainViewModel(
                 attachedFiles = emptyList(),
                 pendingVoiceInputDraft = null,
                 showNewChatDialog = false,
+            )
+        }
+    }
+
+    private fun handleSendChatMessage(event: MainEvent.SendChatMessage) {
+        vmLaunch {
+            val inputText = event.text
+            val attachments = currentState.attachedFiles
+            val composedMessage = attachmentsUseCase.buildChatMessageWithAttachedPaths(
+                input = inputText,
+                attachedFiles = attachments,
+            )
+            if (composedMessage.isBlank()) return@vmLaunch
+
+            setState { copy(attachedFiles = emptyList()) }
+            chatUseCase.sendChatMessage(
+                scope = viewModelScope,
+                isVoice = false,
+                chatMessage = composedMessage,
+                displayMessage = inputText,
+                attachedFiles = attachments,
+                requestSource = TelemetryRequestSource.CHAT_UI,
             )
         }
     }
