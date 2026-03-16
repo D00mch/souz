@@ -1,5 +1,6 @@
 package agent
 
+import agent.GraphAgentToolScenariosIntegrationTest.Setup.agentType
 import agent.GraphAgentToolScenariosIntegrationTest.Setup.selectedModel
 import agent.GraphAgentToolScenariosIntegrationTest.Setup.spySettings
 import giga.getHttpClient
@@ -26,6 +27,7 @@ import ru.souz.agent.impl.GraphBasedAgent
 import ru.souz.agent.SystemPromptResolver
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
+import ru.souz.agent.impl.LuaGraphBasedAgent
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
@@ -73,6 +75,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     private object Setup {
         val selectedModel = GigaModel.Lite
+        val agentType = AgentId.GRAPH
 
         val spySettings: SettingsProviderImpl by lazy {
             spyk(SettingsProviderImpl(ConfigStore)) {
@@ -1080,7 +1083,10 @@ class GraphAgentToolScenariosIntegrationTest {
             bindProvider<DI> { this.di }
             overrides()
         }
-        val agent = GraphBasedAgent(di, gigaJsonMapper)
+        val agent = when(agentType) {
+            AgentId.GRAPH -> GraphBasedAgent(di, gigaJsonMapper)
+            AgentId.LUA_GRAPH -> LuaGraphBasedAgent(di, gigaJsonMapper)
+        }
         runGraphAgent(agent, di, userPrompt)
     }
 
