@@ -25,7 +25,6 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.CornerRadius
@@ -62,7 +60,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -79,15 +76,12 @@ import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.souz.LocalWindowScope
 import ru.souz.ui.common.*
-import ru.souz.ui.glassColors
 import souz.composeapp.generated.resources.*
 import java.awt.datatransfer.Transferable
 import java.awt.dnd.*
 import java.util.*
 
 
-private val TopButtonSize = 24.dp
-private val TopIconSize = 14.dp
 private val MacTrafficButtonSize = 12.dp
 private val MacTrafficRowSpacing = 8.dp
 private val TopActionButtonSize = 32.dp
@@ -225,7 +219,6 @@ fun MainScreenContent(
     val isFocused = windowInfo.isWindowFocused
 
     val stringAppName = stringResource(Res.string.app_title_short)
-    val stringProcessing = stringResource(Res.string.status_processing)
     val stringNewChatTitle = stringResource(Res.string.dialog_new_chat_title)
     val stringNewChatText = stringResource(Res.string.dialog_new_chat_text)
     val stringNewChatConfirm = stringResource(Res.string.dialog_new_chat_confirm)
@@ -812,11 +805,10 @@ fun ChatModeContent(
 ) {
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
-    val textColor = MaterialTheme.glassColors.textPrimary
     val speakingMessageId = messages.lastOrNull()
         ?.takeIf { isSpeaking && !it.isUser && it.isVoice }
         ?.id
-    val stringProcessing = stringResource(Res.string.status_processing)
+    val stringThinking = stringResource(Res.string.status_thinking)
     var inputText by remember(chatSessionId) { mutableStateOf(TextFieldValue("")) }
     var isFileDragActive by remember { mutableStateOf(false) }
 
@@ -829,9 +821,10 @@ fun ChatModeContent(
         }
     }
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+    LaunchedEffect(messages.size, isProcessing) {
+        if (messages.isNotEmpty() || isProcessing) {
+            val targetIndex = if (isProcessing) messages.size else messages.lastIndex
+            listState.animateScrollToItem(targetIndex)
         }
     }
 
@@ -895,29 +888,19 @@ fun ChatModeContent(
                     )
                 }
 
-                if (isProcessing) {
-                    item {
+                item(key = "thinking-indicator") {
+                    AnimatedVisibility(
+                        visible = isProcessing,
+                        enter = fadeIn(animationSpec = tween(durationMillis = 180)),
+                        exit = fadeOut(animationSpec = tween(durationMillis = 120)),
+                    ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp, horizontal = 8.dp),
                             contentAlignment = Alignment.CenterStart
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(14.dp),
-                                    color = textColor.copy(0.5f),
-                                    strokeWidth = 2.dp
-                                )
-                                Text(
-                                    text = stringProcessing,
-                                    color = textColor.copy(0.5f),
-                                    fontSize = 13.sp
-                                )
-                            }
+                            ThinkingIndicator(text = stringThinking)
                         }
                     }
                 }
@@ -1413,33 +1396,6 @@ private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.L
 
 private fun formatTimestamp(timestamp: Long): String = 
     timestampFormatter.format(java.util.Date(timestamp))
-
-
-
-@Composable
-fun MinimalGlassButton(
-    size: Dp = TopButtonSize,
-    iconSize: Dp = TopIconSize,
-    onClick: () -> Unit,
-    content: @Composable () -> Unit
-) {
-    val backgroundColor = Color(0x12FFFFFF)
-    val borderColor = Color(0x22FFFFFF)
-
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(backgroundColor)
-            .border(0.5.dp, borderColor, CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(modifier = Modifier.size(iconSize), contentAlignment = Alignment.Center) {
-            content()
-        }
-    }
-}
 
 @Composable
 private fun MacTrafficLightButton(
