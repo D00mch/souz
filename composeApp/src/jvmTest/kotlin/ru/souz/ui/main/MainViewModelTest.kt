@@ -32,11 +32,15 @@ import kotlinx.coroutines.yield
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import org.jetbrains.compose.resources.StringArrayResource
+import org.jetbrains.compose.resources.StringResource
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.onboarding_display_text
 import souz.composeapp.generated.resources.onboarding_input_permission_request
+import souz.composeapp.generated.resources.start_tips
 import souz.composeapp.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
@@ -95,6 +99,18 @@ class MainViewModelTest {
             every { GlobalScreen.addNativeKeyListener(any()) } just runs
             every { GlobalScreen.unregisterNativeHook() } just runs
         }.isSuccess
+
+        mockkStatic("org.jetbrains.compose.resources.StringResourcesKt")
+        mockkStatic("org.jetbrains.compose.resources.StringArrayResourcesKt")
+        coEvery { getString(any<StringResource>()) } answers {
+            resolveString(firstArg())
+        }
+        coEvery { getString(any<StringResource>(), *anyVararg()) } answers {
+            resolveString(firstArg())
+        }
+        coEvery { getStringArray(any<StringArrayResource>()) } answers {
+            resolveStringArray(firstArg())
+        }
 
     }
 
@@ -323,12 +339,12 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            emitAudioFlowEvent(viewModel, byteArrayOf(1, 2, 3))
-            val firstState = awaitState(viewModel) { it.pendingVoiceInputDraft == firstDraft }
+            val firstState = awaitVoiceRequestStarted(viewModel, byteArrayOf(1, 2, 3)) {
+                it.pendingVoiceInputDraft == firstDraft
+            }
             val staleToken = firstState.pendingVoiceInputDraftToken
 
-            emitAudioFlowEvent(viewModel, byteArrayOf(4, 5, 6))
-            val secondState = awaitState(viewModel) {
+            val secondState = awaitVoiceRequestStarted(viewModel, byteArrayOf(4, 5, 6)) {
                 it.pendingVoiceInputDraft == secondDraft && it.pendingVoiceInputDraftToken > staleToken
             }
 
@@ -729,6 +745,18 @@ class MainViewModelTest {
             model = GigaModel.Max.alias, temperature = 0f, toolsByCategory = emptyMap()
         ), history = emptyList(), activeTools = emptyList(), systemPrompt = ""
     )
+
+    private fun resolveString(resource: StringResource): String = when (resource) {
+        Res.string.onboarding_display_text -> "onboarding_display_text"
+        Res.string.onboarding_input_permission_request -> "onboarding_input_permission_request"
+        Res.string.voice_status_processing_input -> "voice_status_processing_input"
+        else -> resource.toString()
+    }
+
+    private fun resolveStringArray(resource: StringArrayResource): List<String> = when (resource) {
+        Res.array.start_tips -> listOf("start_tip")
+        else -> emptyList()
+    }
 
     private data class TestHarness(
         val viewModel: MainViewModel,

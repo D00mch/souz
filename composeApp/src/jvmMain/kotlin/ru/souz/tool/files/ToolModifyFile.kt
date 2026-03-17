@@ -73,13 +73,14 @@ class ToolModifyFile(
     override fun invoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         val file = validateInput(input, fixedPath)
+        val patchForCommand = normalizePatchForPatchCommand(input.patch, file)
 
         val workDir = file.parentFile ?: throw BadInputException("File has no parent directory")
         // Dry run first
         val dry = runPatch(
             workDir = workDir,
             strip = input.strip,
-            patchText = input.patch,
+            patchText = patchForCommand,
             dryRun = true
         )
         if (dry.exitCode != 0) {
@@ -94,7 +95,7 @@ class ToolModifyFile(
         val applied = runPatch(
             workDir = workDir,
             strip = input.strip,
-            patchText = input.patch,
+            patchText = patchForCommand,
             dryRun = false
         )
         if (applied.exitCode != 0) {
@@ -116,7 +117,6 @@ class ToolModifyFile(
             add("patch")
             add("--batch")
             add("--forward")
-            if (supportsUnsafePaths()) add("--unsafe-paths")
             if (dryRun) add("--dry-run")
             add("-p$strip")
         }
@@ -135,7 +135,39 @@ class ToolModifyFile(
         return CmdResult(code, out.trim())
     }
 
-    private fun supportsUnsafePaths(): Boolean = gnuPatchSupportsUnsafePaths
+    private fun normalizePatchForPatchCommand(patchText: String, targetFile: File): String {
+        val targetCanonical = targetFile.canonicalFile
+        val normalized = patchText.lineSequence().joinToString("\n") { line ->
+            normalizePatchHeaderPath(line, targetCanonical)
+        }
+        return if (patchText.endsWith("\n")) "$normalized\n" else normalized
+    }
+
+    private fun normalizePatchHeaderPath(line: String, targetCanonical: File): String {
+        val prefix = when {
+            line.startsWith("--- ") -> "--- "
+            line.startsWith("+++ ") -> "+++ "
+            else -> return line
+        }
+
+        val rest = line.removePrefix(prefix)
+        val tabIndex = rest.indexOf('\t')
+        val pathPart = if (tabIndex >= 0) rest.substring(0, tabIndex) else rest
+        val suffix = if (tabIndex >= 0) rest.substring(tabIndex) else ""
+        val trimmedPath = pathPart.trim()
+        if (trimmedPath == "/dev/null") return line
+        if (!isAbsolutePath(trimmedPath)) return line
+
+        val canonicalMatchesTarget = runCatching {
+            File(trimmedPath).canonicalFile == targetCanonical
+        }.getOrDefault(false)
+        if (!canonicalMatchesTarget) return line
+
+        return "$prefix${targetCanonical.name}$suffix"
+    }
+
+    private fun isAbsolutePath(path: String): Boolean =
+        path.startsWith("/") || WINDOWS_ABSOLUTE_PATH.matches(path)
 
     private fun validateInput(input: Input, fixedPath: String): File {
         val file = File(fixedPath)
@@ -155,14 +187,6 @@ class ToolModifyFile(
     }
 
     companion object {
-        private val gnuPatchSupportsUnsafePaths: Boolean by lazy {
-            runCatching {
-                val process = ProcessBuilder("patch", "--version")
-                    .redirectErrorStream(true)
-                    .start()
-                val output = process.inputStream.bufferedReader().use { it.readText() }
-                process.waitFor() == 0 && output.contains("GNU patch", ignoreCase = true)
-            }.getOrDefault(false)
-        }
+        private val WINDOWS_ABSOLUTE_PATH = Regex("^[A-Za-z]:[\\\\/].*")
     }
 }

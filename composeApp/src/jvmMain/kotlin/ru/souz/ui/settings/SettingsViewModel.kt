@@ -38,6 +38,7 @@ import ru.souz.ui.settings.SettingsEvent.*
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.StringResource
 import java.awt.Desktop
 import java.nio.file.Files
 import java.nio.file.Path
@@ -734,7 +735,10 @@ class SettingsViewModel(
         when (currentState.gigaModel.provider) {
             LlmProvider.GIGA -> {
                 if (currentState.gigaChatKey.isBlank()) {
-                    val errorMsg = getString(Res.string.error_gigachat_key_missing)
+                    val errorMsg = getStringSafe(
+                        Res.string.error_gigachat_key_missing,
+                        fallback = "GigaChat key is missing",
+                    )
                     setState {
                         copy(
                             balance = emptyList(),
@@ -746,7 +750,10 @@ class SettingsViewModel(
                 }
             }
             LlmProvider.QWEN -> {
-                val errorMsg = getString(Res.string.error_balance_unavailable_qwen)
+                val errorMsg = getStringSafe(
+                    Res.string.error_balance_unavailable_qwen,
+                    fallback = "Balance unavailable for Qwen provider",
+                )
                 setState {
                     copy(
                         balance = emptyList(),
@@ -757,7 +764,10 @@ class SettingsViewModel(
                 return@launch
             }
             LlmProvider.AI_TUNNEL -> {
-                val errorMsg = getString(Res.string.error_balance_unavailable_aitunnel)
+                val errorMsg = getStringSafe(
+                    Res.string.error_balance_unavailable_aitunnel,
+                    fallback = "Balance unavailable for AiTunnel provider",
+                )
                 setState {
                     copy(
                         balance = emptyList(),
@@ -768,7 +778,10 @@ class SettingsViewModel(
                 return@launch
             }
             LlmProvider.ANTHROPIC -> {
-                val errorMsg = getString(Res.string.error_balance_unavailable_anthropic)
+                val errorMsg = getStringSafe(
+                    Res.string.error_balance_unavailable_anthropic,
+                    fallback = "Balance unavailable for Anthropic provider",
+                )
                 setState {
                     copy(
                         balance = emptyList(),
@@ -779,7 +792,10 @@ class SettingsViewModel(
                 return@launch
             }
             LlmProvider.OPENAI -> {
-                val errorMsg = getString(Res.string.error_balance_unavailable_openai)
+                val errorMsg = getStringSafe(
+                    Res.string.error_balance_unavailable_openai,
+                    fallback = "Balance unavailable for OpenAI provider",
+                )
                 setState {
                     copy(
                         balance = emptyList(),
@@ -812,6 +828,9 @@ class SettingsViewModel(
             }
         }
     }
+
+    private suspend fun getStringSafe(resource: StringResource, fallback: String): String =
+        runCatching { getString(resource) }.getOrDefault(fallback)
 
     private fun submitTelegramPhone() = viewModelScope.launch(Dispatchers.IO) {
         val phone = currentState.telegramPhoneInput.trim()
