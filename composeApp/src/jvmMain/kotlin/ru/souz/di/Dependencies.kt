@@ -201,7 +201,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolPresentationCreate(instance(), instance()) }
     bindSingleton { ToolPresentationRead() }
     bindSingleton { ToolTelegramReadInbox(instance()) }
-    bindSingleton { ToolTelegramGetHistory(instance()) }
+    bindSingleton { ToolTelegramGetHistory(instance(), instance()) }
     bindSingleton { ToolTelegramSetState(instance(), instance(), instance()) }
     bindSingleton { ToolTelegramSend(instance(), instance(), instance()) }
     bindSingleton { ToolTelegramForward(instance(), instance(), instance()) }
