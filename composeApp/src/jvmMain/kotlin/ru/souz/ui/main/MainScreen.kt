@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -1564,7 +1565,7 @@ fun RealLiquidGlassCard(
     preset: LiquidGlassPreset = LiquidGlassPreset.Hero,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val shape = RoundedCornerShape(cornerRadius)
+    val cardShape = RoundedCornerShape(cornerRadius)
     val borderThickness = if (preset == LiquidGlassPreset.Hero) 1.dp else 1.5.dp
 
     val backdropAlpha by animateFloatAsState(
@@ -1575,93 +1576,35 @@ fun RealLiquidGlassCard(
         animationSpec = tween(400)
     )
 
-    val accentAlpha by animateFloatAsState(
-        targetValue = when (preset) {
-            LiquidGlassPreset.Default -> if (isWindowFocused) 1f else 0f
-            LiquidGlassPreset.Hero -> 0.36f
-        },
-        animationSpec = tween(400)
-    )
-
-    Box(modifier = modifier) {
+    Box(
+        modifier = modifier.graphicsLayer {
+            shape = cardShape
+            clip = true
+            compositingStrategy = CompositingStrategy.Offscreen
+        }
+    ) {
         when (preset) {
             LiquidGlassPreset.Default -> {
                 Box(
                     modifier = Modifier
                         .matchParentSize()
-                        .clip(shape)
                         .background(Color.Black.copy(alpha = backdropAlpha))
                 )
             }
 
             LiquidGlassPreset.Hero -> {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .clip(shape)
-                        .background(Color(0xF21B1C20))
-                        .alpha(backdropAlpha)
-                )
-
-                Canvas(modifier = Modifier.matchParentSize().clip(shape).alpha(accentAlpha)) {
+                Canvas(modifier = Modifier.matchParentSize()) {
                     drawRect(
-                        brush = Brush.radialGradient(
-                            colorStops = arrayOf(
-                                0.0f to Color(0x14FFFFFF),
-                                0.30f to Color(0x0AFFFFFF),
-                                0.62f to Color(0x03000000),
-                                1.0f to Color.Transparent
-                            ),
-                            center = Offset(size.width * 0.17f, size.height * 0.08f),
-                            radius = size.maxDimension * 0.98f
-                        )
+                        color = Color(0xF21B1C20),
+                        alpha = backdropAlpha
                     )
 
-                    drawRect(
-                        brush = Brush.linearGradient(
-                            colorStops = arrayOf(
-                                0.0f to Color(0x0AFFFFFF),
-                                0.35f to Color(0x060E0E11),
-                                0.70f to Color(0x100B0B0E),
-                                1.0f to Color(0x2209090B)
-                            ),
-                            start = Offset.Zero,
-                            end = Offset(size.width, size.height)
-                        )
-                    )
-
-                    drawRect(
-                        brush = Brush.radialGradient(
-                            colorStops = arrayOf(
-                                0.0f to Color.Transparent,
-                                0.66f to Color.Transparent,
-                                0.88f to Color(0x30040406),
-                                1.0f to Color(0x64030305)
-                            ),
-                            center = Offset(size.width * 0.50f, size.height * 1.02f),
-                            radius = size.maxDimension * 1.15f
-                        )
-                    )
-
-                    drawRect(
-                        brush = Brush.radialGradient(
-                            colors = listOf(Color.Transparent, Color(0x1A000000)),
-                            center = Offset(size.width * 0.50f, size.height * 0.50f),
-                            radius = size.maxDimension * 0.95f
-                        )
-                    )
+                    drawRect(color = Color(0xB0000000))
                 }
-
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .clip(shape)
-                        .background(Color(0xB0000000))
-                )
             }
         }
 
-        Canvas(modifier = Modifier.matchParentSize().clip(shape)) {
+        Canvas(modifier = Modifier.matchParentSize()) {
             val strokeWidth = borderThickness.toPx()
             when (preset) {
                 LiquidGlassPreset.Default -> {
@@ -1727,24 +1670,7 @@ fun RealLiquidGlassCard(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .clip(shape)
                     .background(Color(0x03FFFFFF))
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(shape)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0x06FFFFFF),
-                                Color(0x03FFFFFF),
-                                Color(0x01FFFFFF)
-                            )
-                        )
-                    )
-                    .alpha(accentAlpha)
             )
         }
 

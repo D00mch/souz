@@ -1,5 +1,7 @@
 package ru.souz.ui.macos
 
+import com.sun.jna.Library
+import com.sun.jna.Native
 import com.sun.jna.NativeLibrary
 import com.sun.jna.Pointer
 import com.sun.jna.Structure
@@ -106,7 +108,7 @@ object MacWindowVibrancy {
         val cls = visualClass ?: glassClass ?: return 0L
         val usesVisualEffect = visualClass != null
         val alloc = ObjC.msgPtr(cls, "alloc") ?: return 0L
-        val view = ObjC.msgPtr(
+        val view = ObjC.msgPtrRect(
             alloc,
             "initWithFrame:",
             NSRect.ByValue(0.0, 0.0, 10_000.0, 10_000.0)
@@ -116,8 +118,8 @@ object MacWindowVibrancy {
         ObjC.msgVoid(view, "setAutoresizingMask:", (NSViewWidthSizable or NSViewHeightSizable).toLong())
         if (usesVisualEffect) {
             ObjC.msgVoid(view, "setBlendingMode:", NSVisualEffectBlendingModeBehindWindow.toLong())
-            ObjC.msgVoid(view, "setState:", NSVisualEffectStateInactive.toLong())
-            ObjC.msgVoid(view, "setMaterial:", NSVisualEffectMaterialHUDWindow.toLong())
+            ObjC.msgVoid(view, "setState:", NSVisualEffectStateFollowsWindowActiveState.toLong())
+            ObjC.msgVoid(view, "setMaterial:", NSVisualEffectMaterialUnderWindowBackground.toLong())
         }
         ObjC.msgVoid(contentView, "addSubview:positioned:relativeTo:", view, NSWindowBelow.toLong(), Pointer.NULL)
 
@@ -129,10 +131,15 @@ object MacWindowVibrancy {
 }
 
 private object ObjC {
+    private interface ObjCStrict : Library {
+        fun objc_msgSend(receiver: Pointer?, selector: Pointer?, rect: NSRect.ByValue): Pointer?
+    }
+
     private val objc = NativeLibrary.getInstance("objc")
     private val fnGetClass = objc.getFunction("objc_getClass")
     private val fnSelRegisterName = objc.getFunction("sel_registerName")
     private val fnMsgSend = objc.getFunction("objc_msgSend")
+    private val strictLib = Native.load("objc", ObjCStrict::class.java)
     private val selectorCache = ConcurrentHashMap<String, Pointer>()
 
     fun cls(name: String): Pointer? =
@@ -140,6 +147,13 @@ private object ObjC {
 
     fun msgPtr(receiver: Pointer?, selector: String, vararg args: Any?): Pointer? =
         fnMsgSend.invoke(Pointer::class.java, buildArgs(receiver, selector, args)) as? Pointer
+
+    fun msgPtrRect(receiver: Pointer?, selector: String, rect: NSRect.ByValue): Pointer? {
+        val selectorPtr = selectorCache.computeIfAbsent(selector) { key ->
+            fnSelRegisterName.invoke(Pointer::class.java, arrayOf(key)) as Pointer
+        }
+        return strictLib.objc_msgSend(receiver ?: Pointer.NULL, selectorPtr, rect)
+    }
 
     fun msgVoid(receiver: Pointer?, selector: String, vararg args: Any?) {
         fnMsgSend.invokeVoid(buildArgs(receiver, selector, args))
@@ -189,5 +203,6 @@ private const val NSWindowBelow = -1
 
 // NSVisualEffect enums
 private const val NSVisualEffectBlendingModeBehindWindow = 0
-private const val NSVisualEffectStateInactive = 2
-private const val NSVisualEffectMaterialHUDWindow = 13
+private const val NSVisualEffectStateFollowsWindowActiveState = 0
+private const val NSVisualEffectMaterialWindowBackground = 12
+private const val NSVisualEffectMaterialUnderWindowBackground = 21
