@@ -10,6 +10,7 @@
 
     <!-- Main Screen -->
     <string name="status_processing">Обработка...</string>
+    <string name="status_thinking">Думаю</string>
     <string name="chat_placeholder_tip">Спроси меня о чем угодно...</string>
     <string name="welcome_logo_content_desc">Логотип Союз</string>
     <string name="welcome_quick_actions_subtitle">Спросите что угодно или выберите быстрое действие</string>

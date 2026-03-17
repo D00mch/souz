@@ -25,7 +25,6 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.CornerRadius
@@ -42,6 +40,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -61,7 +60,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -78,15 +76,12 @@ import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.souz.LocalWindowScope
 import ru.souz.ui.common.*
-import ru.souz.ui.glassColors
 import souz.composeapp.generated.resources.*
 import java.awt.datatransfer.Transferable
 import java.awt.dnd.*
 import java.util.*
 
 
-private val TopButtonSize = 24.dp
-private val TopIconSize = 14.dp
 private val MacTrafficButtonSize = 12.dp
 private val MacTrafficRowSpacing = 8.dp
 private val TopActionButtonSize = 32.dp
@@ -224,7 +219,6 @@ fun MainScreenContent(
     val isFocused = windowInfo.isWindowFocused
 
     val stringAppName = stringResource(Res.string.app_title_short)
-    val stringProcessing = stringResource(Res.string.status_processing)
     val stringNewChatTitle = stringResource(Res.string.dialog_new_chat_title)
     val stringNewChatText = stringResource(Res.string.dialog_new_chat_text)
     val stringNewChatConfirm = stringResource(Res.string.dialog_new_chat_confirm)
@@ -811,11 +805,10 @@ fun ChatModeContent(
 ) {
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
-    val textColor = MaterialTheme.glassColors.textPrimary
     val speakingMessageId = messages.lastOrNull()
         ?.takeIf { isSpeaking && !it.isUser && it.isVoice }
         ?.id
-    val stringProcessing = stringResource(Res.string.status_processing)
+    val stringThinking = stringResource(Res.string.status_thinking)
     var inputText by remember(chatSessionId) { mutableStateOf(TextFieldValue("")) }
     var isFileDragActive by remember { mutableStateOf(false) }
 
@@ -828,9 +821,10 @@ fun ChatModeContent(
         }
     }
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+    LaunchedEffect(messages.size, isProcessing) {
+        if (messages.isNotEmpty() || isProcessing) {
+            val targetIndex = if (isProcessing) messages.size else messages.lastIndex
+            listState.animateScrollToItem(targetIndex)
         }
     }
 
@@ -894,29 +888,19 @@ fun ChatModeContent(
                     )
                 }
 
-                if (isProcessing) {
-                    item {
+                item(key = "thinking-indicator") {
+                    AnimatedVisibility(
+                        visible = isProcessing,
+                        enter = fadeIn(animationSpec = tween(durationMillis = 180)),
+                        exit = fadeOut(animationSpec = tween(durationMillis = 120)),
+                    ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp, horizontal = 8.dp),
                             contentAlignment = Alignment.CenterStart
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(14.dp),
-                                    color = textColor.copy(0.5f),
-                                    strokeWidth = 2.dp
-                                )
-                                Text(
-                                    text = stringProcessing,
-                                    color = textColor.copy(0.5f),
-                                    fontSize = 13.sp
-                                )
-                            }
+                            ThinkingIndicator(text = stringThinking)
                         }
                     }
                 }
@@ -1413,33 +1397,6 @@ private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.L
 private fun formatTimestamp(timestamp: Long): String = 
     timestampFormatter.format(java.util.Date(timestamp))
 
-
-
-@Composable
-fun MinimalGlassButton(
-    size: Dp = TopButtonSize,
-    iconSize: Dp = TopIconSize,
-    onClick: () -> Unit,
-    content: @Composable () -> Unit
-) {
-    val backgroundColor = Color(0x12FFFFFF)
-    val borderColor = Color(0x22FFFFFF)
-
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(backgroundColor)
-            .border(0.5.dp, borderColor, CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(modifier = Modifier.size(iconSize), contentAlignment = Alignment.Center) {
-            content()
-        }
-    }
-}
-
 @Composable
 private fun MacTrafficLightButton(
     color: Color,
@@ -1564,7 +1521,7 @@ fun RealLiquidGlassCard(
     preset: LiquidGlassPreset = LiquidGlassPreset.Hero,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val shape = RoundedCornerShape(cornerRadius)
+    val cardShape = RoundedCornerShape(cornerRadius)
     val borderThickness = if (preset == LiquidGlassPreset.Hero) 1.dp else 1.5.dp
 
     val backdropAlpha by animateFloatAsState(
@@ -1575,93 +1532,35 @@ fun RealLiquidGlassCard(
         animationSpec = tween(400)
     )
 
-    val accentAlpha by animateFloatAsState(
-        targetValue = when (preset) {
-            LiquidGlassPreset.Default -> if (isWindowFocused) 1f else 0f
-            LiquidGlassPreset.Hero -> 0.36f
-        },
-        animationSpec = tween(400)
-    )
-
-    Box(modifier = modifier) {
+    Box(
+        modifier = modifier.graphicsLayer {
+            shape = cardShape
+            clip = true
+            compositingStrategy = CompositingStrategy.Offscreen
+        }
+    ) {
         when (preset) {
             LiquidGlassPreset.Default -> {
                 Box(
                     modifier = Modifier
                         .matchParentSize()
-                        .clip(shape)
                         .background(Color.Black.copy(alpha = backdropAlpha))
                 )
             }
 
             LiquidGlassPreset.Hero -> {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .clip(shape)
-                        .background(Color(0xF21B1C20))
-                        .alpha(backdropAlpha)
-                )
-
-                Canvas(modifier = Modifier.matchParentSize().clip(shape).alpha(accentAlpha)) {
+                Canvas(modifier = Modifier.matchParentSize()) {
                     drawRect(
-                        brush = Brush.radialGradient(
-                            colorStops = arrayOf(
-                                0.0f to Color(0x14FFFFFF),
-                                0.30f to Color(0x0AFFFFFF),
-                                0.62f to Color(0x03000000),
-                                1.0f to Color.Transparent
-                            ),
-                            center = Offset(size.width * 0.17f, size.height * 0.08f),
-                            radius = size.maxDimension * 0.98f
-                        )
+                        color = Color(0xF21B1C20),
+                        alpha = backdropAlpha
                     )
 
-                    drawRect(
-                        brush = Brush.linearGradient(
-                            colorStops = arrayOf(
-                                0.0f to Color(0x0AFFFFFF),
-                                0.35f to Color(0x060E0E11),
-                                0.70f to Color(0x100B0B0E),
-                                1.0f to Color(0x2209090B)
-                            ),
-                            start = Offset.Zero,
-                            end = Offset(size.width, size.height)
-                        )
-                    )
-
-                    drawRect(
-                        brush = Brush.radialGradient(
-                            colorStops = arrayOf(
-                                0.0f to Color.Transparent,
-                                0.66f to Color.Transparent,
-                                0.88f to Color(0x30040406),
-                                1.0f to Color(0x64030305)
-                            ),
-                            center = Offset(size.width * 0.50f, size.height * 1.02f),
-                            radius = size.maxDimension * 1.15f
-                        )
-                    )
-
-                    drawRect(
-                        brush = Brush.radialGradient(
-                            colors = listOf(Color.Transparent, Color(0x1A000000)),
-                            center = Offset(size.width * 0.50f, size.height * 0.50f),
-                            radius = size.maxDimension * 0.95f
-                        )
-                    )
+                    drawRect(color = Color(0xB0000000))
                 }
-
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .clip(shape)
-                        .background(Color(0xB0000000))
-                )
             }
         }
 
-        Canvas(modifier = Modifier.matchParentSize().clip(shape)) {
+        Canvas(modifier = Modifier.matchParentSize()) {
             val strokeWidth = borderThickness.toPx()
             when (preset) {
                 LiquidGlassPreset.Default -> {
@@ -1727,24 +1626,7 @@ fun RealLiquidGlassCard(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .clip(shape)
                     .background(Color(0x03FFFFFF))
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(shape)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0x06FFFFFF),
-                                Color(0x03FFFFFF),
-                                Color(0x01FFFFFF)
-                            )
-                        )
-                    )
-                    .alpha(accentAlpha)
             )
         }
 
