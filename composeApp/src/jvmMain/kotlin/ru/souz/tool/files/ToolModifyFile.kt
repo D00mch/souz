@@ -116,6 +116,7 @@ class ToolModifyFile(
             add("patch")
             add("--batch")
             add("--forward")
+            if (supportsUnsafePaths()) add("--unsafe-paths")
             if (dryRun) add("--dry-run")
             add("-p$strip")
         }
@@ -134,6 +135,8 @@ class ToolModifyFile(
         return CmdResult(code, out.trim())
     }
 
+    private fun supportsUnsafePaths(): Boolean = gnuPatchSupportsUnsafePaths
+
     private fun validateInput(input: Input, fixedPath: String): File {
         val file = File(fixedPath)
 
@@ -149,5 +152,17 @@ class ToolModifyFile(
             strip = input.strip
         )
         return file
+    }
+
+    companion object {
+        private val gnuPatchSupportsUnsafePaths: Boolean by lazy {
+            runCatching {
+                val process = ProcessBuilder("patch", "--version")
+                    .redirectErrorStream(true)
+                    .start()
+                val output = process.inputStream.bufferedReader().use { it.readText() }
+                process.waitFor() == 0 && output.contains("GNU patch", ignoreCase = true)
+            }.getOrDefault(false)
+        }
     }
 }

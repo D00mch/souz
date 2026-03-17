@@ -4,19 +4,14 @@ import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.luaj.vm2.LuaError
-import org.kodein.di.DI
-import org.kodein.di.instance
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.agent.runtime.LuaExecutionException
 import ru.souz.agent.runtime.LuaRuntime
-import ru.souz.db.SettingsProvider
-import ru.souz.di.mainDiModule
-import ru.souz.giga.toGiga
 import ru.souz.telemetry.TelemetryService
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.ToolsFactory
 import ru.souz.tool.math.ToolCalculator
+import ru.souz.giga.toGiga
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -78,26 +73,22 @@ class LuaRuntimeTest {
     @Test
     fun `lua IO is prohibited`() = runTest {
         val code = """
-local path = "/Users/dumch/work/souz/README.md"
+local path = "/tmp/souz-lua-test.txt"
 
 local file = io.open(path, "r")
 return file:read("*a")
     """.trimIndent()
 
-        val di = DI.invoke { import(mainDiModule) }
-        val toolExecutor: AgentToolExecutor by di.instance()
-        val settingsProvider: SettingsProvider by di.instance()
-        val toolsFactory: ToolsFactory by di.instance()
-
-        val runtime = LuaRuntime(toolExecutor)
+        val runtime = LuaRuntime(
+            toolExecutor = AgentToolExecutor(mockk<TelemetryService>(relaxed = true))
+        )
         val error = assertFailsWith<LuaExecutionException> {
             runtime.execute(
                 code = code,
                 settings = AgentSettings(
-                    model = settingsProvider.gigaModel.alias,
-                    temperature = settingsProvider.temperature,
-                    toolsByCategory = toolsFactory.toolsByCategory,
-                    contextSize = settingsProvider.contextSize,
+                    model = "test-model",
+                    temperature = 0f,
+                    toolsByCategory = emptyMap(),
                 ),
                 activeTools = emptyList(),
             )
@@ -114,19 +105,15 @@ local total = 40 + 2
 return "answer=" .. total
     """.trimIndent()
 
-        val di = DI.invoke { import(mainDiModule) }
-        val toolExecutor: AgentToolExecutor by di.instance()
-        val settingsProvider: SettingsProvider by di.instance()
-        val toolsFactory: ToolsFactory by di.instance()
-
-        val runtime = LuaRuntime(toolExecutor)
+        val runtime = LuaRuntime(
+            toolExecutor = AgentToolExecutor(mockk<TelemetryService>(relaxed = true))
+        )
         val result = runtime.execute(
             code = code,
             settings = AgentSettings(
-                model = settingsProvider.gigaModel.alias,
-                temperature = settingsProvider.temperature,
-                toolsByCategory = toolsFactory.toolsByCategory,
-                contextSize = settingsProvider.contextSize,
+                model = "test-model",
+                temperature = 0f,
+                toolsByCategory = emptyMap(),
             ),
             activeTools = emptyList(),
         )

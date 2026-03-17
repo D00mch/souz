@@ -77,6 +77,7 @@ import kotlin.test.assertTrue
 class MainViewModelTest {
 
     private lateinit var mainDispatcher: TestDispatcher
+    private var globalScreenMocked = false
 
     @BeforeTest
     fun setUp() {
@@ -88,10 +89,12 @@ class MainViewModelTest {
         every { anyConstructed<ActiveSoundRecorderImpl>().startRecording() } just runs
         coEvery { anyConstructed<ActiveSoundRecorderImpl>().stopRecording() } returns ByteArray(0)
 
-        mockkStatic(GlobalScreen::class)
-        every { GlobalScreen.registerNativeHook() } just runs
-        every { GlobalScreen.addNativeKeyListener(any()) } just runs
-        every { GlobalScreen.unregisterNativeHook() } just runs
+        globalScreenMocked = runCatching {
+            mockkStatic(GlobalScreen::class)
+            every { GlobalScreen.registerNativeHook() } just runs
+            every { GlobalScreen.addNativeKeyListener(any()) } just runs
+            every { GlobalScreen.unregisterNativeHook() } just runs
+        }.isSuccess
 
     }
 
@@ -411,7 +414,9 @@ class MainViewModelTest {
 
     @Test
     fun `missing input monitoring permission updates status message`() = runTest(mainDispatcher) {
-        every { GlobalScreen.registerNativeHook() } throws RuntimeException("Input monitoring denied")
+        if (globalScreenMocked) {
+            every { GlobalScreen.registerNativeHook() } throws RuntimeException("Input monitoring denied")
+        }
         val harness = createHarness()
 
         try {
