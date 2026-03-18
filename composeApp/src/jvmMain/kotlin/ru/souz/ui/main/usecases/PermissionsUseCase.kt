@@ -27,6 +27,7 @@ import kotlin.math.min
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import java.awt.GraphicsEnvironment
 import java.util.concurrent.ConcurrentHashMap
 
 class PermissionsUseCase(
@@ -145,6 +146,10 @@ class PermissionsUseCase(
             l.info("Skipping global hotkey registration in sandboxed build")
             return false
         }
+        if (GraphicsEnvironment.isHeadless()) {
+            l.info("Skipping global hotkey registration in headless environment")
+            return false
+        }
         MacInputMonitoringAccess.requestAccessPromptIfNeeded()
         return runCatching {
             GlobalScreen.registerNativeHook()
@@ -213,11 +218,14 @@ class PermissionsUseCase(
         permissionWatcherJob?.cancel()
     }
 
-    private fun canRegisterNativeHookNow(): Boolean = runCatching {
-        GlobalScreen.registerNativeHook()
-        GlobalScreen.unregisterNativeHook()
-        true
-    }.getOrElse { false }
+    private fun canRegisterNativeHookNow(): Boolean {
+        if (GraphicsEnvironment.isHeadless()) return false
+        return runCatching {
+            GlobalScreen.registerNativeHook()
+            GlobalScreen.unregisterNativeHook()
+            true
+        }.getOrElse { false }
+    }
 
     private suspend fun emitState(reduce: MainState.() -> MainState) {
         _outputs.send(MainUseCaseOutput.State(reduce))
