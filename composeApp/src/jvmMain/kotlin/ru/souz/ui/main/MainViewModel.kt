@@ -70,11 +70,7 @@ class MainViewModel(
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectUseCaseOutputs() }
 
         viewModelScope.launch {
-            startTips = runCatching { getStringArray(Res.array.start_tips) }
-                .getOrElse {
-                    l.warn("Failed to load start tips resource", it)
-                    emptyList()
-                }
+            startTips = getStringArray(Res.array.start_tips)
             val randomTip = startTips.randomOrNull() ?: ""
             val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
             val selectedModel = pickConfiguredOrDefaultModel(availableModels)

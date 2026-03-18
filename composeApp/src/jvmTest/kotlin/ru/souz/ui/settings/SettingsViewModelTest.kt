@@ -4,8 +4,10 @@ package ru.souz.ui.settings
 
 import io.mockk.every
 import io.mockk.just
+import io.mockk.coEvery
 import io.mockk.mockk
 import io.mockk.mockkObject
+import io.mockk.mockkStatic
 import io.mockk.runs
 import io.mockk.unmockkAll
 import io.mockk.verify
@@ -51,6 +53,8 @@ class SettingsViewModelTest {
     @BeforeTest
     fun setUp() {
         Dispatchers.setMain(dispatcher)
+        mockkStatic("org.jetbrains.compose.resources.StringResourcesKt")
+        coEvery { org.jetbrains.compose.resources.getString(any()) } answers { firstArg<Any>().toString() }
     }
 
     @AfterTest

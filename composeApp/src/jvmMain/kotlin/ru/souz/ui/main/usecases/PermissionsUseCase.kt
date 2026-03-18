@@ -121,9 +121,9 @@ class PermissionsUseCase(
         settingsProvider.needsOnboarding = false
         settingsProvider.onboardingCompleted = true
         val displayText = if (MacAppEnvironment.isSandboxed) {
-            safeGetString(Res.string.onboarding_display_text_sandbox)
+            getString(Res.string.onboarding_display_text_sandbox)
         } else {
-            safeGetString(Res.string.onboarding_display_text)
+            getString(Res.string.onboarding_display_text)
         }
         emitState {
             copy(
@@ -138,7 +138,7 @@ class PermissionsUseCase(
         }
 
         onboardingSpeechStartedAt = System.currentTimeMillis()
-        speechUseCase.queuePrepared(safeGetString(Res.string.onboarding_speech_text))
+        speechUseCase.queuePrepared(getString(Res.string.onboarding_speech_text))
     }
 
     fun registerNativeHook(): Boolean {
@@ -164,7 +164,7 @@ class PermissionsUseCase(
         permissionWatcherJob?.cancel()
         if (MacAppEnvironment.isSandboxed) {
             permissionWatcherJob = scope.launch {
-                val statusMsg = safeGetString(Res.string.onboarding_input_permission_sandbox_limited)
+                val statusMsg = getString(Res.string.onboarding_input_permission_sandbox_limited)
                 emitState { copy(statusMessage = statusMsg) }
             }
             return
@@ -180,7 +180,7 @@ class PermissionsUseCase(
                 }
             }
 
-            val statusMsg = safeGetString(Res.string.onboarding_input_permission_request)
+            val statusMsg = getString(Res.string.onboarding_input_permission_request)
             emitState {
                 copy(
                     statusMessage = statusMsg
@@ -193,7 +193,7 @@ class PermissionsUseCase(
                     l.info("Input monitoring permission granted, relaunching application")
                     if (!relaunchApp()) {
                         l.error("Automatic relaunch failed after input monitoring permission was granted")
-                        val restartFailedMsg = safeGetString(Res.string.onboarding_input_permission_restart_failed)
+                        val restartFailedMsg = getString(Res.string.onboarding_input_permission_restart_failed)
                         emitState { copy(statusMessage = restartFailedMsg) }
                     }
                     return@launch
@@ -230,13 +230,6 @@ class PermissionsUseCase(
     private suspend fun emitState(reduce: MainState.() -> MainState) {
         _outputs.send(MainUseCaseOutput.State(reduce))
     }
-
-    private suspend fun safeGetString(resource: org.jetbrains.compose.resources.StringResource): String =
-        runCatching { getString(resource) }
-            .getOrElse {
-                l.warn("Failed to load string resource {}", resource, it)
-                resource.toString()
-            }
 
     companion object {
         private const val ONBOARDING_PERMISSION_DELAY_MS = 100000

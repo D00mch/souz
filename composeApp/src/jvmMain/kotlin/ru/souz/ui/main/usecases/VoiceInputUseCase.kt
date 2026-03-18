@@ -115,7 +115,7 @@ class VoiceInputUseCase(
                 }
 
                 l.error("Agent flow failed, attempt {}, cause: {}", attempt, cause.message, cause)
-                val errorMsg = safeGetString(Res.string.error_prefix).format(cause.message ?: "")
+                val errorMsg = getString(Res.string.error_prefix).format(cause.message ?: "")
                 emitState { copy(isProcessing = false, statusMessage = errorMsg) }
                 delay(1000L)
                 true
@@ -133,7 +133,7 @@ class VoiceInputUseCase(
     suspend fun startRecording(scope: CoroutineScope, isListening: Boolean) {
         if (isListening) return
         if (isRecognitionInProgress.get()) {
-            val statusMsg = safeGetString(Res.string.voice_status_processing_input)
+            val statusMsg = getString(Res.string.voice_status_processing_input)
             emitState { copy(statusMessage = statusMsg) }
             return
         }
@@ -150,7 +150,7 @@ class VoiceInputUseCase(
         chatUseCase.cancelActiveJob()
         speechUseCase.playMacPingSafely(scope)
 
-        val statusMsg = safeGetString(Res.string.voice_status_recording_started)
+        val statusMsg = getString(Res.string.voice_status_recording_started)
         emitState {
             copy(
                 isListening = true,
@@ -171,7 +171,7 @@ class VoiceInputUseCase(
         if (!isListening) return
 
         audioRecorder.stop()
-        val statusMsg = safeGetString(Res.string.voice_status_processing_input)
+        val statusMsg = getString(Res.string.voice_status_processing_input)
         emitState {
             copy(
                 isListening = false,
@@ -186,30 +186,30 @@ class VoiceInputUseCase(
     private suspend fun onTextRecognizeSideEffects(recognizedText: String) {
         if (recognizedText.isNotBlank()) return
 
-        val msg = safeGetString(Res.string.voice_status_speech_not_recognized)
+        val msg = getString(Res.string.voice_status_speech_not_recognized)
         speechUseCase.queue(msg)
         emitState { copy(statusMessage = msg, isProcessing = false) }
     }
 
     private suspend fun emitVoiceKeyMissing() {
-        val msg = safeGetString(Res.string.voice_error_missing_key)
+        val msg = getString(Res.string.voice_error_missing_key)
         speechUseCase.queue(msg)
         emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }
 
     private suspend fun emitVoiceRecognitionUnavailable() {
-        val msg = safeGetString(Res.string.voice_error_recognition_unavailable)
+        val msg = getString(Res.string.voice_error_recognition_unavailable)
         speechUseCase.queue(msg)
         emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }
 
     private suspend fun emitVoiceCaptureTooShort() {
-        val msg = safeGetString(Res.string.voice_error_empty_audio)
+        val msg = getString(Res.string.voice_error_empty_audio)
         emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }
 
     private suspend fun emitVoiceCaptureFailed() {
-        val msg = safeGetString(Res.string.voice_error_microphone_unavailable)
+        val msg = getString(Res.string.voice_error_microphone_unavailable)
         speechUseCase.queue(msg)
         emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }
@@ -217,13 +217,6 @@ class VoiceInputUseCase(
     private suspend fun emitState(reduce: MainState.() -> MainState) {
         _outputs.send(MainUseCaseOutput.State(reduce))
     }
-
-    private suspend fun safeGetString(resource: org.jetbrains.compose.resources.StringResource): String =
-        runCatching { getString(resource) }
-            .getOrElse {
-                l.warn("Failed to load string resource {}", resource, it)
-                resource.toString()
-            }
 
     private fun isDuplicateRecognition(text: String): Boolean {
         val now = System.currentTimeMillis()
