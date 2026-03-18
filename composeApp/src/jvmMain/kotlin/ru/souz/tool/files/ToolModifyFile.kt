@@ -73,13 +73,14 @@ class ToolModifyFile(
     override fun invoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         val file = validateInput(input, fixedPath)
+        val normalizedPatch = normalizeAbsoluteHeadersForPatch(input.patch, file.name)
 
         val workDir = file.parentFile ?: throw BadInputException("File has no parent directory")
         // Dry run first
         val dry = runPatch(
             workDir = workDir,
             strip = input.strip,
-            patchText = input.patch,
+            patchText = normalizedPatch,
             dryRun = true
         )
         if (dry.exitCode != 0) {
@@ -94,7 +95,7 @@ class ToolModifyFile(
         val applied = runPatch(
             workDir = workDir,
             strip = input.strip,
-            patchText = input.patch,
+            patchText = normalizedPatch,
             dryRun = false
         )
         if (applied.exitCode != 0) {
@@ -149,5 +150,28 @@ class ToolModifyFile(
             strip = input.strip
         )
         return file
+    }
+
+    private fun normalizeAbsoluteHeadersForPatch(patch: String, fileName: String): String {
+        return patch.lineSequence().joinToString("\n") { line ->
+            val prefix = when {
+                line.startsWith("--- ") -> "--- "
+                line.startsWith("+++ ") -> "+++ "
+                else -> return@joinToString line
+            }
+            val raw = line.removePrefix(prefix)
+            if (raw.startsWith("\"")) return@joinToString line
+
+            val headerPath = raw.substringBefore('\t').trim()
+            val isAbsolute = headerPath.startsWith("/") || WINDOWS_ABSOLUTE_PATH.matches(headerPath)
+            if (!isAbsolute || headerPath == "/dev/null") return@joinToString line
+
+            val suffix = raw.removePrefix(headerPath)
+            "$prefix$fileName$suffix"
+        }
+    }
+
+    private companion object {
+        val WINDOWS_ABSOLUTE_PATH = Regex("^[A-Za-z]:[\\\\/].*")
     }
 }
