@@ -2,7 +2,6 @@
 
 package ru.souz.ui.main
 
-import com.github.kwhat.jnativehook.GlobalScreen
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.just
@@ -32,11 +31,13 @@ import kotlinx.coroutines.yield
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.onboarding_display_text
 import souz.composeapp.generated.resources.onboarding_input_permission_request
 import souz.composeapp.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
@@ -80,6 +81,8 @@ class MainViewModelTest {
 
     @BeforeTest
     fun setUp() {
+        assumeTrue(hasOpenGlRuntime(), "MainViewModelTest requires libGL runtime on Linux CI")
+
         mainDispatcher = StandardTestDispatcher()
         Dispatchers.setMain(mainDispatcher)
 
@@ -88,10 +91,10 @@ class MainViewModelTest {
         every { anyConstructed<ActiveSoundRecorderImpl>().startRecording() } just runs
         coEvery { anyConstructed<ActiveSoundRecorderImpl>().stopRecording() } returns ByteArray(0)
 
-        mockkStatic(GlobalScreen::class)
-        every { GlobalScreen.registerNativeHook() } just runs
-        every { GlobalScreen.addNativeKeyListener(any()) } just runs
-        every { GlobalScreen.unregisterNativeHook() } just runs
+        mockkStatic("org.jetbrains.compose.resources.StringResourcesKt")
+        mockkStatic("org.jetbrains.compose.resources.StringArrayResourcesKt")
+        coEvery { getString(any()) } answers { firstArg<Any>().toString() }
+        coEvery { getStringArray(any()) } returns listOf("tip")
 
     }
 
@@ -411,7 +414,8 @@ class MainViewModelTest {
 
     @Test
     fun `missing input monitoring permission updates status message`() = runTest(mainDispatcher) {
-        every { GlobalScreen.registerNativeHook() } throws RuntimeException("Input monitoring denied")
+        val previousHeadless = System.getProperty("java.awt.headless")
+        System.setProperty("java.awt.headless", "true")
         val harness = createHarness()
 
         try {
@@ -424,6 +428,11 @@ class MainViewModelTest {
 
             assertEquals(expectedPermissionMessage, permissionState.statusMessage)
         } finally {
+            if (previousHeadless == null) {
+                System.clearProperty("java.awt.headless")
+            } else {
+                System.setProperty("java.awt.headless", previousHeadless)
+            }
             harness.clear()
         }
     }
@@ -710,6 +719,17 @@ class MainViewModelTest {
 
     private fun isJNativeHookRuntimeAvailable(): Boolean {
         val mapped = System.mapLibraryName("Xtst")
+        val candidates = listOf(
+            File("/usr/lib/x86_64-linux-gnu/$mapped"),
+            File("/lib/x86_64-linux-gnu/$mapped"),
+            File("/usr/lib64/$mapped"),
+            File("/usr/lib/$mapped"),
+        )
+        return candidates.any { it.exists() }
+    }
+
+    private fun hasOpenGlRuntime(): Boolean {
+        val mapped = System.mapLibraryName("GL")
         val candidates = listOf(
             File("/usr/lib/x86_64-linux-gnu/$mapped"),
             File("/lib/x86_64-linux-gnu/$mapped"),
