@@ -30,8 +30,6 @@ Primary stack:
 - **Safer file editing**: `EditFile` now applies unified patches with dry-run validation and feeds patch content directly from memory (no temporary patch files), and in safe mode shows a patch diff preview before apply. On patch errors, tool guidance now explicitly forbids delete+recreate fallback.
 - **Centralized Souz file roots**: `FilesToolUtil` now owns canonical user-home/document roots (`~/Documents|documents/souz`, web assets, Telegram control downloads) plus shared local path normalization logic for attachment path extraction.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
-- **Telegram PC Control bot**: automated bot creation via `@BotFather`, long-polling command listener, and agent-driven responses — all managed from the Telegram settings screen. Bot credentials (`TG_BOT_TOKEN`, `TG_BOT_OWNER_ID`, `TG_BOT_USERNAME`) are stored in `ConfigStore`. The bot can be created/deleted from the UI; on creation it automatically sends `/start` and sets a profile avatar. Telegram integration is runtime-gated on macOS and disabled on versions below macOS 15 (with UI/tool warnings instead of app crash). Telegram tool category is also disabled while Telegram auth state is not `READY`.
-- **Telegram attachments + voice in control flow**: `ToolTelegramSend` and `ToolTelegramSavedMessages` can send local files as message attachments (auto-detecting file paths that come from Finder-attached chat context), while Telegram Control Bot inbound `document` files are downloaded into `~/Documents/souz/telegram` (or `~/documents/souz/telegram` when that root already exists) and appended to the agent request as local paths; inbound `voice` messages are converted to 16kHz mono PCM, transcribed through the configured speech-recognition provider, and processed as regular text commands.
 - **Model-aware speech recognition routing**: voice input recognition can use SaluteSpeech, OpenAI transcription (`/v1/audio/transcriptions`), or AiTunnel transcription (`/v1/audio/transcriptions`, RU profile only), and selects provider based on the chosen voice recognition model and configured keys.
 
 ## Project Structure
@@ -69,6 +67,7 @@ Primary stack:
 │       │   │       ├── permissions/        # Permission/relaunch helpers
 │       │   │       ├── service/            # Service-layer integrations
 │       │   │       │   └── telegram/       # Telegram client (TdLib) + bot polling/controller workflows
+│       │   │       │       └── INFO.md     # Local notes for service/telegram package
 │       │   │       ├── telemetry/
 │       │   │       ├── tool/               # Tool framework and concrete tool implementations
 │       │   │       │   ├── application/    # App launch/list tools
@@ -83,6 +82,8 @@ Primary stack:
 │       │   │       │   ├── math/           # Calculator tool
 │       │   │       │   ├── notes/          # Notes CRUD/search tools
 │       │   │       │   ├── presentation/   # Presentation create/read/style helpers
+│       │   │       │   ├── telegram/       # Telegram messaging/search/inbox tool adapters
+│       │   │       │   │   └── INFO.md     # Local notes for tool/telegram package
 │       │   │       │   └── textReplace/    # Clipboard and selected-text tools
 │       │   │       └── ui/                 # Compose UI layer
 │       │   │           ├── common/         # Shared UI utilities/components
