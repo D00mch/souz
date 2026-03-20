@@ -27,14 +27,18 @@ Primary stack:
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop toolset**: files, browser, calendar, mail, notes, desktop automation, analytics, and presentations.
 - **Presentation workflow upgrades**: `PresentationCreate` now supports `HTML_FIRST` rendering (default), accepts remote image URLs in `imagePath` (auto-downloads), writes an HTML storyboard preview next to `.pptx`, auto-infers theme/design from topic text when not explicitly provided, validates/normalizes downloaded images before PPTX insertion, adapts PPTX title/body sizing so empty image cards are not rendered for unsupported assets, uses palette-aware HTML-first slide variants instead of one fixed PPTX composition skeleton, detects playful decks to switch into a softer `PLAYFUL` layout/palette instead of reusing the business template with neon custom colors, ships 16 distinct HTML-first composition templates (4 consulting, 4 dark-tech, 4 editorial, 4 playful) selected automatically per slide/deck tone, and now renders HTML-first decks without reapplying the old `PresentationDesignSystem` overlay so title slides, text-only slides, and humorous decks get dedicated hero/text-only compositions instead of the same repeating background treatment.
-- **Safer file editing**: `EditFile` now applies unified patches with dry-run validation and feeds patch content directly from memory (no temporary patch files), and in safe mode shows a patch diff preview before apply. On patch errors, tool guidance now explicitly forbids delete+recreate fallback.
-- **Centralized Souz file roots**: `FilesToolUtil` now owns canonical user-home/document roots (`~/Documents|documents/souz`, web assets, Telegram control downloads) plus shared local path normalization logic for attachment path extraction.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
-- **Model-aware speech recognition routing**: voice input recognition can use SaluteSpeech, OpenAI transcription (`/v1/audio/transcriptions`), or AiTunnel transcription (`/v1/audio/transcriptions`, RU profile only), and selects provider based on the chosen voice recognition model and configured keys.
 
 ## Project Structure
+
 ```text
 .
+├── docs/                                   # Project docs extracted from top-level notes
+│   ├── config-store-security.md            # ConfigStore encryption and secret handling
+│   ├── file-tools.md                       # File tool guarantees and path conventions
+│   ├── release.md                          # Release-specific notes
+│   ├── telemetry-backend.md                # Telemetry backend contract
+│   └── voice-transcription.md              # Voice transcription routing and upload behavior
 ├── composeApp/                             # Main desktop application module
 │   ├── build/                              # Build output for composeApp (generated)
 │   ├── composeApp/                         # Auxiliary nested folder with test resource skeleton
@@ -122,8 +126,4 @@ Primary stack:
 
 Notes:
 - Directories like `.gradle/`, `.idea/`, `.kotlin/`, and `*/build/` are generated/local environment folders.
-- Release notes: `docs/release.md`.
-- Telemetry implementation and backend contract: `docs/telemetry-backend.md`.
-- Voice recognition audio upload now sends raw PCM (`audio/x-pcm;bit=16;rate=16000`) directly to Salute Speech, so the app no longer depends on JAVE/embedded FFmpeg binaries for microphone transcription.
-- OpenAI and AiTunnel voice transcription wrap recorded raw PCM (16kHz mono 16-bit) into a WAV container before multipart upload (`capture.wav`, `audio/wav`) because these transcription endpoints do not accept the recorder's raw PCM stream directly.
-- `ConfigStore` now encrypts sensitive values (LLM API keys, Telegram bot token, MCP OAuth state, `MCP_SERVERS_JSON`) before writing to Java Preferences using AES-GCM + PBKDF2. `SOUZ_MASTER_KEY` (env var or JVM system property) can be used as an override; otherwise the app auto-generates and stores a local master key file in the user profile (platform-specific app config directory). Legacy plaintext values are read and transparently migrated to encrypted storage.
+- Implementation details moved to `docs/voice-transcription.md`, `docs/config-store-security.md`, and `docs/file-tools.md`.
