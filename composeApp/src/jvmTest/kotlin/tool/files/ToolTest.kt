@@ -4,6 +4,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
@@ -470,8 +471,8 @@ class ToolTest {
     }
 
     @Test
-    fun `test ToolDeleteFile returns disapproved when user rejects action`() = runTest {
-        if (!hasOpenGlRuntime()) return@runTest
+    fun `test ToolDeleteFile returns disapproved when user rejects action`() = runBlocking {
+        if (!hasOpenGlRuntime()) return@runBlocking
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
