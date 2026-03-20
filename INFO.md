@@ -122,7 +122,3 @@ Primary stack:
 ├── gradle/                                 # Gradle version catalog and wrapper configuration
 │   └── wrapper/                            # Gradle wrapper JAR/properties
 ```
-
-Notes:
-- Directories like `.gradle/`, `.idea/`, `.kotlin/`, and `*/build/` are generated/local environment folders.
-- Implementation details moved to `docs/voice-transcription.md`, `docs/config-store-security.md`, and `docs/file-tools.md`.
