@@ -4,6 +4,7 @@ import giga.getHttpClient
 import giga.getSessionTokenUsage
 import io.ktor.client.plugins.*
 import io.mockk.*
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
 import org.junit.jupiter.api.Assumptions
 import org.kodein.di.DI
@@ -32,6 +33,9 @@ import ru.souz.llms.AiTunnelChatAPI
 import ru.souz.llms.AnthropicChatAPI
 import ru.souz.llms.OpenAIChatAPI
 import ru.souz.llms.QwenChatAPI
+import ru.souz.service.telegram.TelegramAuthState
+import ru.souz.service.telegram.TelegramAuthStep
+import ru.souz.service.telegram.TelegramService
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolsFactory
 import ru.souz.tool.calendar.ToolCalendarCreateEvent
@@ -80,6 +84,13 @@ class AgentScenarioTestSupport(
         DI.Module("TestOverrideModule") {
             bindSingleton<SettingsProvider>(overrides = true) { spySettings }
             bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
+            bindSingleton<TelegramService>(overrides = true) {
+                mockk<TelegramService>(relaxed = true).also { telegramService ->
+                    every { telegramService.authState } returns MutableStateFlow(
+                        TelegramAuthState(step = TelegramAuthStep.READY, isBusy = false)
+                    )
+                }
+            }
 
             // Safe defaults: prevent accidental system mutations if a scenario doesn't explicitly mock these tools.
             bindSingleton<ToolNewFile>(overrides = true) {
