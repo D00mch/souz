@@ -4,15 +4,12 @@ Keep this file updated whenever top level details changes.
 If you are not sure about something, left a note for other developers to review. 
 
 ## General Info
-Souz is a Kotlin Multiplatform desktop AI assistant built with Compose for Desktop.
-The repository is a Gradle project centered around:
 
-- `:composeApp` - main desktop app (UI, agent runtime, tools, integrations).
+Souz is a Kotlin Multiplatform desktop AI assistant built with Compose for Desktop.
 
 Primary stack:
 - Kotlin + Compose Multiplatform
 - Ktor (client)
-- JUnit 5 + MockK for testing
 
 ### UI architecture principles
 
