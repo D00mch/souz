@@ -4,6 +4,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
 import io.mockk.every
+import io.mockk.mockk
 import io.mockk.spyk
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeEach
@@ -12,12 +13,19 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.kodein.di.bindSingleton
 import ru.souz.agent.AgentId
+import ru.souz.agent.engine.Node
+import ru.souz.agent.nodes.NodesClassification
 import ru.souz.giga.GigaModel
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.files.ToolExtractText
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.files.ToolFindFilesByName
 import ru.souz.tool.mail.ToolMailSendNewMessage
+import ru.souz.tool.notes.ToolCreateNote
+import ru.souz.tool.presentation.ToolWebSearch
+import ru.souz.tool.presentation.WebResearchClient
+import ru.souz.tool.telegram.ToolTelegramSearch
+import ru.souz.service.telegram.TelegramService
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentComplexScenarios {
@@ -77,6 +85,133 @@ class GraphAgentComplexScenarios {
                         (it.subject?.contains("Public Note", ignoreCase = true) == true) &&
                         (it.content == safeFileText) &&
                         !it.content.contains("secret", ignoreCase = true)
+                }
+            )
+        }
+    }
+
+    @ParameterizedTest(name = "scenario2_searchAiEventInWebThenTelegramThenCreateNoteIfMentioned[{index}] {0}")
+    @ValueSource(
+        strings = [
+            """
+                Поищи в вебе, какие есть мероприятия по ИИ в Москве. Возьми первое ближайшее. 
+                Поищи в моих ТГ группах, есть ли упоминания об этом мероприятнии. 
+                Если есть, создай заметку с данными о мероприятии + тг события.
+            """,
+        ]
+    )
+    fun scenario2_searchAiEventInWebThenTelegramThenCreateNoteIfMentioned(userPrompt: String) = runTest {
+        val toolWebSearch: ToolWebSearch = spyk(ToolWebSearch(WebResearchClient()))
+        val toolTelegramSearch: ToolTelegramSearch = spyk(ToolTelegramSearch(mockk<TelegramService>()))
+        val toolCreateNote: ToolCreateNote = spyk(ToolCreateNote(ToolRunBashCommand))
+        val forcedNodesClassification = mockk<NodesClassification> {
+            every { node(any()) } answers {
+                Node(firstArg()) { ctx ->
+                    val toolsByName = ctx.settings.tools.byName
+                    ctx.map(
+                        activeTools = listOf(
+                            toolsByName.getValue("WebSearch").fn,
+                            toolsByName.getValue("ToolTelegramSearch").fn,
+                            toolsByName.getValue("CreateNote").fn,
+                        )
+                    ) { it }
+                }
+            }
+        }
+
+        val expectedEventName = "AI Product Day"
+        val expectedAddress = "Ломоносов"
+        val nearestEventTitle = "$expectedEventName Moscow 2026"
+        val nearestEventUrl = "https://events.example.com/ai-product-day-moscow-2026"
+        val nearestEventSnippet = "22 марта 2026, Москва, Кластер $expectedAddress. Конференция по AI-продуктам и LLM."
+        val webSearchResult = """
+            {
+              "query": "мероприятия по ИИ в Москве",
+              "results": [
+                {
+                  "title": "$nearestEventTitle",
+                  "url": "$nearestEventUrl",
+                  "snippet": "$nearestEventSnippet"
+                },
+                {
+                  "title": "Moscow LLM Hack Meetup",
+                  "url": "https://events.example.com/moscow-llm-hack-meetup",
+                  "snippet": "5 апреля 2026, Москва, Технопарк. Митап по агентам и LLM."
+                }
+              ]
+            }
+        """.trimIndent()
+        val telegramSearchResult = """
+            {
+              "count": 2,
+              "matches": [
+                {
+                  "chatId": 101,
+                  "chatTitle": "Moscow AI Community",
+                  "messageId": 501,
+                  "sender": "@alice",
+                  "time": 1774060200,
+                  "text": "Кто идет на $expectedEventName Moscow 2026 22 марта? Встречаемся у входа в Кластере $expectedAddress в 10:30."
+                },
+                {
+                  "chatId": 202,
+                  "chatTitle": "AI Events RU",
+                  "messageId": 502,
+                  "sender": "@bob",
+                  "time": 1774063800,
+                  "text": "На $expectedEventName Moscow 2026 есть промокод COMMUNITY10. Будет сильная секция по LLM."
+                }
+              ]
+            }
+        """.trimIndent()
+
+        every { toolWebSearch.invoke(any()) } returns webSearchResult
+        coEvery { toolWebSearch.suspendInvoke(any()) } returns webSearchResult
+        every { toolTelegramSearch.invoke(any()) } returns telegramSearchResult
+        coEvery { toolTelegramSearch.suspendInvoke(any()) } returns telegramSearchResult
+        every { toolCreateNote.invoke(any()) } returns "Created"
+        coEvery { toolCreateNote.suspendInvoke(any()) } returns "Created"
+
+        runScenarioWithMocks(userPrompt) {
+            bindSingleton<NodesClassification>(overrides = true) { forcedNodesClassification }
+            bindSingleton<ToolWebSearch> { toolWebSearch }
+            bindSingleton<ToolTelegramSearch> { toolTelegramSearch }
+            bindSingleton<ToolCreateNote> { toolCreateNote }
+        }
+
+        coVerifyOrder {
+            toolWebSearch.suspendInvoke(
+                match {
+                    val query = it.query.lowercase()
+                    (query.contains("моск") || query.contains("moscow")) &&
+                        (query.contains("ии") || query.contains("ai") || query.contains("интеллект"))
+                }
+            )
+            toolTelegramSearch.suspendInvoke(
+                match {
+                    val query = it.query.lowercase()
+                    query.contains(expectedEventName, ignoreCase = true) ||
+                        query.contains(expectedAddress, ignoreCase = true) ||
+                        query.contains("22 марта")
+                }
+            )
+            toolCreateNote.suspendInvoke(any())
+        }
+        coVerify(exactly = 1) {
+            toolCreateNote.suspendInvoke(
+                match {
+                    val noteText = it.noteText.lowercase()
+                    noteText.contains(nearestEventTitle.lowercase()) &&
+                        (noteText.contains("22 марта") || noteText.contains("22.03")) &&
+                        noteText.contains(expectedAddress, ignoreCase = true) &&
+                        (
+                            noteText.contains("10:30") ||
+                                noteText.contains("community10") ||
+                                noteText.contains("moscow ai community") ||
+                                noteText.contains("ai events ru") ||
+                                noteText.contains("встречаемся") ||
+                                noteText.contains("промокод")
+                            )
                 }
             )
         }
