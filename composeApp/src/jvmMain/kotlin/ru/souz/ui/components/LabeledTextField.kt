@@ -46,6 +46,7 @@ fun LabeledTextField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     singleLine: Boolean = true,
+    placeholder: String = "",
     isError: Boolean = false,
     visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
@@ -86,6 +87,22 @@ fun LabeledTextField(
                     .background(LabeledFieldBackgroundColor, LabeledFieldShape)
                     .border(1.dp, currentBorderColor, LabeledFieldShape)
             )
+            if (value.isEmpty() && placeholder.isNotEmpty()) {
+                Text(
+                    text = placeholder,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    ),
+                    color = LabeledFieldLabelColor,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 12.dp,
+                            vertical = if (singleLine) 0.dp else 10.dp
+                        )
+                )
+            }
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
