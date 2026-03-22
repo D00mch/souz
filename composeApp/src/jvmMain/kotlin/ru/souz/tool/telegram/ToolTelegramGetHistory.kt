@@ -18,14 +18,14 @@ class ToolTelegramGetHistory(
     data class Input(
         @InputParamDescription("Chat name for fuzzy lookup in Telegram chat cache")
         val chatName: String,
-        @InputParamDescription("How many recent messages to return. If the user asked to inspect/read/analyze a chat but didn't name a count, keep the default 100.")
+        @InputParamDescription("The number of recent messages to return. Defaults to 100.")
         val limit: Int = 100,
         @InputParamDescription("Set true to force reload the latest messages from Telegram and refresh the local history cache")
         val forceRefresh: Boolean = true,
     )
 
     override val name: String = "ToolTelegramGetHistory"
-    override val description: String = "Gets Telegram chat history for a selected chat. Use this when the user explicitly asks to inspect/read/analyze a Telegram chat. If they don't specify how many messages to read, it force-loads and caches the latest 100 messages by default."
+    override val description: String = "ets the message history for a selected Telegram chat. Use this when the user explicitly asks to inspect, read, or analyze a Telegram chat."
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
             request = "Проанализируй историю чата Проект Альфа",
