@@ -22,4 +22,12 @@ Notes:
 - `ToolTelegramSend` and `ToolTelegramSavedMessages` use `TelegramAttachmentPathResolver` so attachment paths can come either from explicit params or path-like lines embedded in the request text.
 - Ambiguous fuzzy matches are routed through `SelectionBroker` instances and surfaced to the UI via `TelegramSelectionApprovalSources` before a tool continues.
 - Destructive operations (`ToolTelegramForward`, `ToolTelegramSetState`) respect SafeMode and require `confirmed=true` after explicit user confirmation.
-- There is currently no package-specific `jvmTest` coverage under `composeApp/src/jvmTest/kotlin/ru/souz/tool/telegram`.
+- `ToolTelegramGetHistory` resolves chat selection through `TelegramChatSelectionBroker` (via `TelegramToolResolvers`) and calls `TelegramService.getHistoryByChatId`.
+- `ToolTelegramGetHistory.Input` defaults:
+  - `limit = 100`
+  - `forceRefresh = true`
+- `ToolTelegramGetHistory` response includes:
+  - `chatId` and `chatTitle` from fetched messages with fallback to selected candidate
+  - `forceRefresh` echo field
+  - `summaryReady` list for downstream summarization
+- Package test coverage includes `composeApp/src/jvmTest/kotlin/ru/souz/tool/telegram/ToolTelegramGetHistoryTest.kt` for default `forceRefresh=true` and explicit `limit`/`forceRefresh` propagation.
