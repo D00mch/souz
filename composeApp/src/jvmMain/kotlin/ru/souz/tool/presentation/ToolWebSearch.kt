@@ -33,7 +33,7 @@ class ToolWebSearch(
 
     override val name: String = "WebSearch"
     override val description: String =
-        "Searches the web for facts and sources. Returns title, URL, and snippet."
+        "Low-level raw web search. Returns title, URL, and snippet only. Prefer `InternetSearch` for end-user answers, simple web questions, or multi-step research."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(

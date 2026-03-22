@@ -32,7 +32,8 @@ class ToolWebPageText(
     )
 
     override val name: String = "WebPageText"
-    override val description: String = "Fetches one web page and extracts normalized plain text."
+    override val description: String =
+        "Low-level helper that fetches one web page and extracts normalized plain text. Prefer `InternetSearch` for user-facing internet answers and research."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(

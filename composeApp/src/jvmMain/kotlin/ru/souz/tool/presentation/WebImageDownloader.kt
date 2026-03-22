@@ -76,7 +76,7 @@ class WebImageDownloader(
         try {
             val request = HttpRequest.newBuilder(uri)
                 .GET()
-                .header("User-Agent", "Mozilla/5.0 (Souz WebTools)")
+                .header("User-Agent", DEFAULT_WEB_USER_AGENT)
                 .timeout(Duration.ofMillis(IMAGE_DOWNLOAD_REQUEST_TIMEOUT_MS))
                 .build()
             val response = sendWithTimeout(
@@ -237,6 +237,8 @@ class WebImageDownloader(
     }
 
     companion object {
+        private const val DEFAULT_WEB_USER_AGENT =
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
         private val supportedImageExtensions = setOf("jpg", "jpeg", "png", "gif", "bmp", "webp", "avif")
     }
 }

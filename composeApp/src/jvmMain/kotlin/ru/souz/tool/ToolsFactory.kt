@@ -19,6 +19,7 @@ import ru.souz.tool.mail.*
 import ru.souz.tool.notes.*
 import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
+import ru.souz.tool.presentation.ToolInternetSearch
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
 import ru.souz.tool.presentation.ToolWebImageSearch
@@ -95,6 +96,7 @@ class ToolsFactory(di: DI) {
     private val excelReport: ExcelReport by di.instance()
 
     // Presentation tools
+    private val toolInternetSearch: ToolInternetSearch by di.instance()
     private val toolWebSearch: ToolWebSearch by di.instance()
     private val toolWebImageSearch: ToolWebImageSearch by di.instance()
     private val toolWebPageText: ToolWebPageText by di.instance()
@@ -132,6 +134,7 @@ class ToolsFactory(di: DI) {
         )
 
         ToolCategory.WEB_SEARCH -> listOf(
+            toolInternetSearch.toGiga(),
             toolWebSearch.toGiga(),
             toolWebImageSearch.toGiga(),
             toolWebPageText.toGiga(),

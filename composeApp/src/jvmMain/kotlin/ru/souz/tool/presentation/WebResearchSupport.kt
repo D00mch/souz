@@ -4,15 +4,25 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.jsoup.Jsoup
 import ru.souz.giga.gigaJsonMapper
 import ru.souz.tool.BadInputException
+import java.io.IOException
 import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.net.http.HttpTimeoutException
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import kotlin.math.min
+
+private const val WEB_RESEARCH_CONNECT_TIMEOUT_SECONDS = 6L
+private const val WEB_RESEARCH_MIN_REQUEST_INTERVAL_MILLIS = 1_200L
+private const val WEB_RESEARCH_INITIAL_RETRY_DELAY_MILLIS = 2_000L
+private const val WEB_RESEARCH_MAX_RETRY_DELAY_MILLIS = 12_000L
+private const val WEB_RESEARCH_MAX_RETRIES = 2
 
 data class WebSearchResult(
     val title: String,
@@ -39,11 +49,16 @@ data class WebImageResult(
  */
 class WebResearchClient(
     private val mapper: ObjectMapper = gigaJsonMapper,
-) {
     private val client: HttpClient = HttpClient.newBuilder()
         .followRedirects(HttpClient.Redirect.ALWAYS)
-        .connectTimeout(Duration.ofSeconds(6))
-        .build()
+        .connectTimeout(Duration.ofSeconds(WEB_RESEARCH_CONNECT_TIMEOUT_SECONDS))
+        .build(),
+    private val currentTimeMillis: () -> Long = System::currentTimeMillis,
+    private val sleepMillis: (Long) -> Unit = Thread::sleep,
+    private val requestSender: ((HttpRequest) -> HttpResponse<String>)? = null,
+) {
+    private val requestPacingLock = Any()
+    private var nextRequestAtMillis: Long = 0L
 
     fun searchWeb(query: String, limit: Int): List<WebSearchResult> {
         val normalizedQuery = query.trim()
@@ -248,6 +263,9 @@ class WebResearchClient(
             rawHref.startsWith("/") -> "https://duckduckgo.com$rawHref"
             else -> rawHref
         }
+        if (normalized.contains("/y.js?", ignoreCase = true) || normalized.contains("ad_domain=", ignoreCase = true)) {
+            return ""
+        }
 
         return runCatching {
             val uri = toSafeUri(normalized)
@@ -263,16 +281,93 @@ class WebResearchClient(
     private fun httpGet(url: String, timeoutSeconds: Long = 6): String {
         val request = HttpRequest.newBuilder(toSafeUri(url))
             .GET()
-            .header("User-Agent", "Mozilla/5.0 (Souz WebTools)")
+            .header("User-Agent", DEFAULT_WEB_USER_AGENT)
             .header("Accept", "text/html,application/json;q=0.9,*/*;q=0.8")
             .timeout(Duration.ofSeconds(timeoutSeconds))
             .build()
-        val response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
-        if (response.statusCode() >= 400) {
+
+        var attempt = 0
+        var retryDelayMillis = WEB_RESEARCH_INITIAL_RETRY_DELAY_MILLIS
+        while (true) {
+            waitForRequestSlot()
+            val response = try {
+                requestSender?.invoke(request)
+                    ?: client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw BadInputException("Web request interrupted for $url")
+            } catch (e: HttpTimeoutException) {
+                if (attempt >= WEB_RESEARCH_MAX_RETRIES) {
+                    throw BadInputException("HTTP request timed out for $url")
+                }
+                sleepForMillis(retryDelayMillis)
+                retryDelayMillis = (retryDelayMillis * 2).coerceAtMost(WEB_RESEARCH_MAX_RETRY_DELAY_MILLIS)
+                attempt += 1
+                continue
+            } catch (e: IOException) {
+                if (attempt >= WEB_RESEARCH_MAX_RETRIES) {
+                    val message = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+                    throw BadInputException("HTTP request failed for $url: $message")
+                }
+                sleepForMillis(retryDelayMillis)
+                retryDelayMillis = (retryDelayMillis * 2).coerceAtMost(WEB_RESEARCH_MAX_RETRY_DELAY_MILLIS)
+                attempt += 1
+                continue
+            }
+
+            if (response.statusCode() < 400) {
+                return response.body()
+            }
+
+            if (response.statusCode() in retryableStatusCodes && attempt < WEB_RESEARCH_MAX_RETRIES) {
+                val retryAfterDelayMillis = parseRetryAfterMillis(
+                    response.headers().firstValue("Retry-After").orElse(null)
+                )
+                val delayMillis = maxOf(retryDelayMillis, retryAfterDelayMillis ?: 0L)
+                    .coerceAtMost(WEB_RESEARCH_MAX_RETRY_DELAY_MILLIS)
+                sleepForMillis(delayMillis)
+                retryDelayMillis = (retryDelayMillis * 2).coerceAtMost(WEB_RESEARCH_MAX_RETRY_DELAY_MILLIS)
+                attempt += 1
+                continue
+            }
+
             val bodyPreview = response.body().take(min(600, response.body().length))
             throw BadInputException("HTTP ${response.statusCode()} for $url: $bodyPreview")
         }
-        return response.body()
+    }
+
+    private fun waitForRequestSlot() {
+        val delayMillis = synchronized(requestPacingLock) {
+            val now = currentTimeMillis()
+            val scheduledAt = maxOf(now, nextRequestAtMillis)
+            nextRequestAtMillis = scheduledAt + WEB_RESEARCH_MIN_REQUEST_INTERVAL_MILLIS
+            scheduledAt - now
+        }
+        sleepForMillis(delayMillis)
+    }
+
+    private fun sleepForMillis(delayMillis: Long) {
+        if (delayMillis <= 0) return
+        try {
+            sleepMillis(delayMillis)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw BadInputException("Interrupted while waiting before next web request")
+        }
+    }
+
+    private fun parseRetryAfterMillis(value: String?): Long? {
+        val normalized = value?.trim().orEmpty()
+        if (normalized.isBlank()) return null
+        normalized.toLongOrNull()?.let { seconds ->
+            return (seconds.coerceAtLeast(0L) * 1_000L)
+        }
+        return runCatching {
+            val retryAtMillis = ZonedDateTime.parse(normalized, DateTimeFormatter.RFC_1123_DATE_TIME)
+                .toInstant()
+                .toEpochMilli()
+            (retryAtMillis - currentTimeMillis()).coerceAtLeast(0L)
+        }.getOrNull()
     }
 
     private fun toSafeUri(url: String): URI = URI.create(url.replace(" ", "%20"))
@@ -330,6 +425,9 @@ class WebResearchClient(
     }
 
     companion object {
+        private const val DEFAULT_WEB_USER_AGENT =
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+        private val retryableStatusCodes = setOf(429, 500, 502, 503, 504)
         private val blockedDocumentExtensions = setOf("pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx")
         private const val MAX_IMAGE_SEED_RESULTS = 6
         private const val MAX_IMAGE_PAGE_FETCHES = 5

@@ -80,6 +80,7 @@ import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
+import ru.souz.tool.presentation.ToolInternetSearch
 import ru.souz.tool.presentation.ToolWebImageSearch
 import ru.souz.tool.presentation.ToolWebPageText
 import ru.souz.tool.presentation.ToolWebSearch
@@ -195,6 +196,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ExcelReport(instance()) }
     bindSingleton { WebResearchClient() }
     bindSingleton { WebImageDownloader(instance()) }
+    bindSingleton { ToolInternetSearch(instance(), instance(), instance(), instance()) }
     bindSingleton { ToolWebSearch(instance()) }
     bindSingleton { ToolWebImageSearch(instance(), instance()) }
     bindSingleton { ToolWebPageText(instance()) }
