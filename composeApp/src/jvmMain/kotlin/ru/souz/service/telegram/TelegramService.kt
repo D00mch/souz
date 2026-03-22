@@ -194,7 +194,7 @@ class TelegramService(
     suspend fun readUnreadInbox(limit: Int = 50): List<TelegramInboxItem> {
         requireReady()
         val cappedLimit = limit.coerceIn(1, TELEGRAM_MAX_CHATS_CACHE)
-        refreshTopChatsCache(limit = cappedLimit)
+        refreshTopChatsCache(limit = maxOf(cappedLimit, TELEGRAM_CHAT_CACHE_WARMUP_LIMIT))
         val ordered = orderedChatIdsRef.get()
         return ordered
             .asSequence()
@@ -433,7 +433,7 @@ class TelegramService(
         val sourceChat = refreshChat(fromChatId)
         val targetChat = refreshChat(toChatId)
         val sourceMessageId = if (messageId.equals("last", ignoreCase = true)) {
-            getHistoryByChatId(sourceChat.chatId, 1).firstOrNull()?.messageId
+            getHistoryByChatId(sourceChat.chatId, 1, forceRefresh = true).firstOrNull()?.messageId
                 ?: throw IllegalStateException("No messages found in source chat")
         } else {
             messageId.toLongOrNull() ?: throw IllegalArgumentException("messageId must be numeric or 'last'")
