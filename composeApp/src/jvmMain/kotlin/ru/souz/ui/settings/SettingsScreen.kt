@@ -225,7 +225,6 @@ fun SettingsScreenMain(
                             onUseEnglishVersionChange = { viewModel.send(SettingsEvent.InputUseEnglishVersion(it)) },
                             onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
                             onVoiceSpeedInput = { viewModel.send(SettingsEvent.InputVoiceSpeed(it)) },
-                            onMcpServersJsonInput = { viewModel.send(SettingsEvent.InputMcpServersJson(it)) },
                             onClose = onClose
                         )
                         SettingsSection.KEYS -> KeysSettingsContent(
@@ -245,6 +244,7 @@ fun SettingsScreenMain(
                             onAgentSelected = { viewModel.send(SettingsEvent.SelectAgent(it)) },
                             onConfirmAgentSwitch = { viewModel.send(SettingsEvent.ConfirmAgentSwitch) },
                             onCancelAgentSwitch = { viewModel.send(SettingsEvent.CancelAgentSwitch) },
+                            onMcpServersJsonInput = { viewModel.send(SettingsEvent.InputMcpServersJson(it)) },
                             onOpenTools = onOpenTools,
                             onOpenTelegramSettings = { viewModel.send(SettingsEvent.OpenTelegramSettings) },
                             onClose = onClose

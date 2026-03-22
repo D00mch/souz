@@ -1,21 +1,20 @@
 ## Project Structure
 ```text
 service/telegram/
-├── TelegramService.kt                 # Main Telegram auth/session service, chat lookup, history fetch, send/forward/search flows
-├── TelegramLookupEngine.kt            # Fuzzy matching and ranking for chats/contacts from cached Telegram data
-├── TelegramModels.kt                  # Auth, cache, lookup, inbox, and message DTOs
-├── TelegramBotController.kt           # Telegram control-bot polling and agent handoff
-├── TelegramBotWorkflow.kt             # BotFather automation flow for creating/deleting the control bot
-├── TelegramInteractiveAuthBridge.kt   # TDLib interactive auth bridge for phone/code/password prompts
-├── TelegramTdlightExtensions.kt       # TDLight async helpers
-├── TelegramPlatformSupport.kt         # Runtime gating and platform support checks
-├── BotFatherReplyParser.kt            # BotFather response parsing helpers
+├── TelegramService.kt                 # TDLib client lifecycle, auth state, caches, and chat/contact operations
+├── TelegramBotController.kt           # Control bot long-polling, inbound updates, file download, and agent handoff
+├── TelegramBotWorkflow.kt             # BotFather-driven create/delete workflow and bot bootstrap steps
+├── TelegramLookupEngine.kt            # Contact/chat lookup scoring, transliteration, and ambiguity handling
+├── TelegramInteractiveAuthBridge.kt   # Bridges TDLib auth prompts with app-provided phone/code/password input
+├── TelegramModels.kt                  # Auth, lookup, inbox, and bot task models/enums
+├── TelegramPlatformSupport.kt         # Platform gating and minimum macOS version checks
+├── TelegramTdlightExtensions.kt       # Coroutine bridge for TDLight `CompletableFuture` APIs
+├── BotFatherReplyParser.kt            # BotFather reply parsing helpers for setup/delete automation
 └── INFO.md                            # This file
 ```
 
 Notes:
-- `TelegramService` owns the in-memory chat/contact caches plus an LRU-like history cache capped at 200 chats; per-chat history windows are capped at 500 messages.
-- `refreshTopChatsCache()` intentionally warms only a bounded top-chat window (default 100 chats with limited parallel `GetChat` fetches), but `readUnreadInbox(limit)` warms `max(limit, 100)` chats so small unread limits do not hide unread chats deeper in the list.
-- Chat resolution is two-stage: local fuzzy cache first, then TDLib `SearchChatsOnServer` fallback for already-known chats that are missing from the warm cache.
-- `getHistoryByChatId()` paginates `GetChatHistory` because TDLib can return fewer messages than requested in one page; explicit history reads can force-refresh and repopulate the local history cache.
-- `forwardMessageByChatIds(..., messageId = "last")` must bypass stale history cache and refresh the latest message from Telegram before resolving the forwarded message ID.
+- `TelegramService` is the main entry point for Telegram auth/session lifecycle, cache refresh, contact/chat lookup, and inbox/message operations.
+- `TelegramBotController` depends on `TelegramService.authState` and only runs bot polling while Telegram auth is `READY`.
+- Bot creation/deletion progress is persisted in `ConfigStore` (`TG_BOT_*`) so pending BotFather workflows can resume after restart.
+- Main regression coverage for this package is in `composeApp/src/jvmTest/kotlin/ru/souz/service/telegram/TelegramBotControllerTest.kt` and `composeApp/src/jvmTest/kotlin/ru/souz/service/telegram/BotFatherReplyParserTest.kt`.

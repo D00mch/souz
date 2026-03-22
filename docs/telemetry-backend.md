@@ -4,6 +4,8 @@ This document describes the backend contract required by the desktop telemetry c
 
 ## Client behavior
 
+- The desktop app captures app usage, conversation lifecycle, request lifecycle, tool usage, and token usage telemetry.
+- The client implementation lives in `composeApp/src/jvmMain/kotlin/ru/souz/telemetry/`, and `TelemetryService` is started from `Main.kt`.
 - The desktop app writes telemetry events into a local SQLite outbox at `~/.local/state/souz/telemetry.db`.
 - Telemetry is always enabled. There is no user-facing toggle or server URL field in Settings.
 - The client auto-generates and persists:
@@ -11,9 +13,12 @@ This document describes the backend contract required by the desktop telemetry c
   - `deviceId`
   - Ed25519 installation keypair
   - `installationId` returned by the backend
+- These values are persisted in `ConfigStore`.
 - The client batches up to `50` events per request.
 - Retry strategy: exponential backoff starting at `5s`, capped at `160s`.
 - Local outbox retention: oldest events are dropped when the queue exceeds `10_000` rows.
+- Tool and request attribution is request-scoped to avoid cross-request mixing during cancellation and retry races.
+- Error fields are sanitized down to safe identifiers instead of raw exception messages.
 
 Important limitation:
 
