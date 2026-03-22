@@ -13,13 +13,16 @@ import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsBytes
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.readAvailable
 import ru.souz.tool.BadInputException
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -30,6 +33,8 @@ private const val WEB_HTTP_CONNECT_TIMEOUT_MILLIS = 6_000L
 private const val WEB_HTTP_INITIAL_RETRY_DELAY_MILLIS = 2_000L
 private const val WEB_HTTP_MAX_RETRY_DELAY_MILLIS = 12_000L
 private const val WEB_HTTP_MAX_RETRIES = 2
+private const val WEB_HTTP_DEFAULT_MAX_BINARY_BYTES = 20 * 1024 * 1024
+private const val WEB_HTTP_BINARY_READ_CHUNK_BYTES = 8_192
 private val WEB_HTTP_RETRY_ENABLED_KEY = AttributeKey<Boolean>("web_http_retry_enabled")
 
 internal data class WebTextResponse(
@@ -98,12 +103,22 @@ private fun HttpClientConfig<*>.webToolDefaults() {
     }
 }
 
-internal fun webDownloadBinary(url: String, timeoutMillis: Long): WebBinaryResponse = runBlocking {
+internal fun webDownloadBinary(
+    url: String,
+    timeoutMillis: Long,
+    maxBytes: Int = WEB_HTTP_DEFAULT_MAX_BINARY_BYTES,
+): WebBinaryResponse = runBlocking {
     executeWebRequest(url, timeoutMillis, accept = null, retry = true) { response ->
+        val headers = response.headers.toMap()
         WebBinaryResponse(
             statusCode = response.status.value,
-            body = response.bodyAsBytes(),
-            headers = response.headers.toMap(),
+            body = readLimitedBinaryBody(
+                channel = response.bodyAsChannel(),
+                maxBytes = maxBytes,
+                declaredLength = headers.firstHeader(HttpHeaders.ContentLength)?.toLongOrNull(),
+                url = url,
+            ),
+            headers = headers,
         )
     }
 }
@@ -151,6 +166,40 @@ private fun isRetryEnabled(attributes: Attributes): Boolean {
     } else {
         true
     }
+}
+
+internal suspend fun readLimitedBinaryBody(
+    channel: ByteReadChannel,
+    maxBytes: Int,
+    declaredLength: Long? = null,
+    url: String = "response body",
+): ByteArray {
+    require(maxBytes > 0) { "maxBytes must be positive" }
+    if (declaredLength != null && declaredLength > maxBytes) {
+        throw oversizeBinaryBodyError(url, maxBytes)
+    }
+
+    val output = ByteArrayOutputStream(minOf(maxBytes, WEB_HTTP_BINARY_READ_CHUNK_BYTES))
+    val buffer = ByteArray(WEB_HTTP_BINARY_READ_CHUNK_BYTES)
+    var totalBytes = 0
+
+    while (!channel.isClosedForRead) {
+        val read = channel.readAvailable(buffer, 0, buffer.size)
+        if (read == -1) break
+        if (read == 0) continue
+        val nextSize = totalBytes + read
+        if (nextSize > maxBytes) {
+            throw oversizeBinaryBodyError(url, maxBytes)
+        }
+        output.write(buffer, 0, read)
+        totalBytes = nextSize
+    }
+    return output.toByteArray()
+}
+
+private fun oversizeBinaryBodyError(url: String, maxBytes: Int): BadInputException {
+    val maxMegabytes = maxBytes / (1024 * 1024)
+    return BadInputException("HTTP response body is larger than ${maxMegabytes}MB for $url")
 }
 
 private fun Headers.toMap(): Map<String, List<String>> = entries().associate { it.key to it.value }

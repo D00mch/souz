@@ -281,6 +281,50 @@ class ToolInternetSearchTest {
     }
 
     @Test
+    fun `english partial fallback is localized by request language`() = runTest {
+        every { settingsProvider.gigaModel } returns GigaModel.OpenAIGpt5Mini
+        coEvery { api.message(any()) } returnsMany listOf(
+            chatOk(
+                """
+                {
+                  "answer": "Tallinn is cloudy.",
+                  "usedSourceIndexes": []
+                }
+                """.trimIndent()
+            ),
+            chatOk(
+                """
+                {
+                  "answer": "Tallinn is cloudy.",
+                  "usedSourceIndexes": []
+                }
+                """.trimIndent()
+            ),
+        )
+        coEvery { webResearchClient.searchWeb(any(), any()) } returns listOf(
+            WebSearchResult(
+                title = "Tallinn weather today",
+                url = "https://example.com/tallinn-weather",
+                snippet = "Cloudy, feels like 4C in Tallinn.",
+            )
+        )
+        coEvery { webResearchClient.extractPageText(any(), any()) } returns "Tallinn weather today is cloudy."
+
+        val raw = tool.suspendInvoke(
+            ToolInternetSearch.Input(
+                query = "What is the weather in Tallinn?",
+                mode = ToolInternetSearch.SearchMode.QUICK_ANSWER,
+            )
+        )
+        val output = gigaJsonMapper.readValue<ToolInternetSearch.Output>(raw)
+
+        assertEquals("PARTIAL", output.status)
+        assertTrue(output.answer.contains("Unable to synthesize a reliable short answer"))
+        assertTrue(output.answer.contains("Key sources are listed below"))
+        assertTrue(!output.answer.contains("Не удалось"))
+    }
+
+    @Test
     fun `provider blocked is not reported as no results`() = runTest {
         every { settingsProvider.gigaModel } returns GigaModel.OpenAIGpt5Mini
         coEvery {

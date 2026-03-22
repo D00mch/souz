@@ -136,17 +136,28 @@ internal fun looksRussianText(text: String): Boolean = text.any { it in '\u0400'
 
 internal fun buildInternetSearchFallbackDraft(
     mode: ToolInternetSearch.SearchMode,
+    query: String,
     sources: List<InternetSearchCollectedSource>,
 ): InternetSearchSynthesisDraft {
+    val isRussianQuery = looksRussianText(query)
     val message = when (mode) {
         ToolInternetSearch.SearchMode.QUICK_ANSWER ->
-            "Не удалось надёжно синтезировать короткий ответ. Ниже ключевые найденные источники."
+            if (isRussianQuery) {
+                "Не удалось надёжно синтезировать короткий ответ. Ниже ключевые найденные источники."
+            } else {
+                "Unable to synthesize a reliable short answer. Key sources are listed below."
+            }
 
         ToolInternetSearch.SearchMode.RESEARCH ->
-            "Не удалось собрать надёжный финальный ресерч-ответ. Ниже черновой digest по найденным источникам для ручной проверки."
+            if (isRussianQuery) {
+                "Не удалось собрать надёжный финальный ресерч-ответ. Ниже черновой digest по найденным источникам для ручной проверки."
+            } else {
+                "Unable to assemble a reliable final research answer. A draft digest of the sources is listed below for manual review."
+            }
     }
+    val noPreviewMessage = if (isRussianQuery) "Нет краткого превью." else "No preview available."
     val preview = sources.joinToString(separator = "\n") { source ->
-        val detail = source.snippet.ifBlank { source.pageText?.take(220).orEmpty() }.ifBlank { "No preview available." }
+        val detail = source.snippet.ifBlank { source.pageText?.take(220).orEmpty() }.ifBlank { noPreviewMessage }
         "[${source.index}] ${source.title}: $detail"
     }
     return InternetSearchSynthesisDraft(

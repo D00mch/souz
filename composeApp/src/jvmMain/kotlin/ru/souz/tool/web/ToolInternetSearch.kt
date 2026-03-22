@@ -268,7 +268,7 @@ class ToolInternetSearch(
 
         return InternetSearchSynthesisResult(
             status = OutputStatus.PARTIAL,
-            draft = buildInternetSearchFallbackDraft(mode, sources),
+            draft = buildInternetSearchFallbackDraft(mode, query, sources),
         )
     }
 
