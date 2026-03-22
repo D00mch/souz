@@ -19,12 +19,8 @@ import ru.souz.tool.mail.*
 import ru.souz.tool.notes.*
 import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
-import ru.souz.tool.presentation.ToolInternetSearch
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
-import ru.souz.tool.presentation.ToolWebImageSearch
-import ru.souz.tool.presentation.ToolWebPageText
-import ru.souz.tool.presentation.ToolWebSearch
 import ru.souz.tool.telegram.ToolTelegramForward
 import ru.souz.tool.telegram.ToolTelegramGetHistory
 import ru.souz.tool.telegram.ToolTelegramReadInbox
@@ -32,6 +28,10 @@ import ru.souz.tool.telegram.ToolTelegramSavedMessages
 import ru.souz.tool.telegram.ToolTelegramSearch
 import ru.souz.tool.telegram.ToolTelegramSend
 import ru.souz.tool.telegram.ToolTelegramSetState
+import ru.souz.tool.web.ToolInternetSearch
+import ru.souz.tool.web.ToolWebImageSearch
+import ru.souz.tool.web.ToolWebPageText
+import ru.souz.tool.web.ToolWebSearch
 
 typealias FunctionName = String
 

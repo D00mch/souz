@@ -16,6 +16,7 @@ import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetupWithAttachments
 import ru.souz.tool.files.FilesToolUtil
+import ru.souz.tool.web.WebImageDownloader
 import java.io.File
 import java.io.FileOutputStream
 import java.io.StringReader

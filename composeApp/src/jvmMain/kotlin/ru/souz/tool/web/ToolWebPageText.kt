@@ -1,8 +1,8 @@
-package ru.souz.tool.presentation
+package ru.souz.tool.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.coroutines.runBlocking
 import ru.souz.giga.gigaJsonMapper
-import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -53,11 +53,10 @@ class ToolWebPageText(
         )
     )
 
-    override fun invoke(input: Input): String {
-        val url = input.url.trim()
-        if (!(url.startsWith("http://") || url.startsWith("https://"))) {
-            throw BadInputException("`url` must start with http:// or https://")
-        }
+    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+
+    override suspend fun suspendInvoke(input: Input): String {
+        val url = requireHttpUrl(input.url)
         val output = WebPageTextOutput(
             url = url,
             pageText = webResearchClient.extractPageText(url = url, maxChars = input.maxChars.coerceIn(500, 20_000))

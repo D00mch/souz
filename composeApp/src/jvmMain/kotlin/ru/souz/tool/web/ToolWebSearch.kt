@@ -1,8 +1,8 @@
-package ru.souz.tool.presentation
+package ru.souz.tool.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.coroutines.runBlocking
 import ru.souz.giga.gigaJsonMapper
-import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -53,9 +53,10 @@ class ToolWebSearch(
         )
     )
 
-    override fun invoke(input: Input): String {
-        val query = input.query.trim()
-        if (query.isBlank()) throw BadInputException("`query` is required")
+    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+
+    override suspend fun suspendInvoke(input: Input): String {
+        val query = requireWebQuery(input.query)
         val output = WebSearchOutput(
             query = query,
             results = webResearchClient.searchWeb(query = query, limit = input.limit.coerceIn(1, 20))

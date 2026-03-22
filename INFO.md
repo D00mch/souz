@@ -83,6 +83,7 @@ Primary stack:
 │       │   │       │   ├── math/           # Calculator tool
 │       │   │       │   ├── notes/          # Notes CRUD/search tools
 │       │   │       │   ├── presentation/   # Presentation create/read/style helpers
+│       │   │       │   ├── web/            # Internet search, page fetch, image search/download helpers
 │       │   │       │   ├── telegram/       # Telegram messaging/search/inbox tool adapters
 │       │   │       │   │   └── INFO.md     # Local notes for tool/telegram package
 │       │   │       │   └── textReplace/    # Clipboard and selected-text tools

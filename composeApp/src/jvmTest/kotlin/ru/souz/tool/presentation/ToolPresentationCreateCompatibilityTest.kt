@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.souz.db.SettingsProvider
 import ru.souz.tool.files.FilesToolUtil
+import ru.souz.tool.web.WebImageDownloader
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.charset.StandardCharsets
