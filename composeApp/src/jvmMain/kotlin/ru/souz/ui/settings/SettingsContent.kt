@@ -87,6 +87,14 @@ private val SettingsSendLogsLoadingBorder = Color(0x14FFFFFF)
 private val SettingsSendLogsText = Color(0xE5FFFFFF)
 private val SettingsSendLogsLoadingText = Color(0x4DFFFFFF)
 private val SettingsControlHeight = 42.dp
+private val SettingsMcpServersPlaceholder = """
+    {
+      "mcpServers": {
+        "name1": {},
+        "name2": {}
+      }
+    }
+""".trimIndent()
 
 private object SettingsSpacing {
     val screenPaddingHorizontal = 20.dp
@@ -412,7 +420,6 @@ fun GeneralSettingsContent(
     onUseEnglishVersionChange: (Boolean) -> Unit,
     onChooseVoice: () -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
-    onMcpServersJsonInput: (String) -> Unit,
     onClose: () -> Unit
 ) {
     SettingsSectionScreen(
@@ -522,24 +529,6 @@ fun GeneralSettingsContent(
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
-                Text(
-                    text = stringResource(Res.string.label_mcp_servers),
-                     style = MaterialTheme.typography.labelMedium.copy(
-                         fontSize = 12.sp,
-                         lineHeight = 16.sp,
-                         fontWeight = FontWeight.Medium
-                     ),
-                     color = SettingsLabelColor
-                )
-                LabeledTextField(
-                    label = "",
-                    value = state.mcpServersJson,
-                    onValueChange = onMcpServersJsonInput,
-                    modifier = Modifier.fillMaxWidth().height(150.dp),
-                    singleLine = false,
-                )
-            }
         }
     }
 }
@@ -731,6 +720,7 @@ fun FunctionsSettingsContent(
     onAgentSelected: (AgentId) -> Unit,
     onConfirmAgentSwitch: () -> Unit,
     onCancelAgentSwitch: () -> Unit,
+    onMcpServersJsonInput: (String) -> Unit,
     onOpenTools: () -> Unit,
     onOpenTelegramSettings: () -> Unit,
     onClose: () -> Unit
@@ -778,6 +768,28 @@ fun FunctionsSettingsContent(
                         fontWeight = FontWeight.Medium
                     ),
                     color = SettingsStrongTextColor,
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
+                Text(
+                    text = stringResource(Res.string.label_mcp_servers),
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = SettingsLabelColor
+                )
+                LabeledTextField(
+                    label = "",
+                    value = state.mcpServersJson,
+                    onValueChange = onMcpServersJsonInput,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp),
+                    singleLine = false,
+                    placeholder = SettingsMcpServersPlaceholder,
                 )
             }
 
@@ -1992,7 +2004,7 @@ private val PreviewSettingsState = SettingsState(
     saluteSpeechKey = "salute-xxxxxxxx",
     mcpServersJson = """
         {
-          "servers": {
+          "mcpServers": {
             "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }
           }
         }
@@ -2071,7 +2083,6 @@ private fun GeneralSettingsContentPreview() {
             onUseEnglishVersionChange = {},
             onChooseVoice = {},
             onVoiceSpeedInput = {},
-            onMcpServersJsonInput = {},
             onClose = {}
         )
     }
@@ -2105,6 +2116,7 @@ private fun FunctionsSettingsContentPreview() {
             onAgentSelected = {},
             onConfirmAgentSwitch = {},
             onCancelAgentSwitch = {},
+            onMcpServersJsonInput = {},
             onOpenTools = {},
             onOpenTelegramSettings = {},
             onClose = {}
