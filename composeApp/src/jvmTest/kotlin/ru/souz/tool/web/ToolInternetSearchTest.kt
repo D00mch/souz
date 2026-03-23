@@ -16,6 +16,10 @@ import ru.souz.giga.GigaResponse.FinishReason
 import ru.souz.giga.GigaResponse.Usage
 import ru.souz.giga.GigaChatAPI
 import ru.souz.tool.files.FilesToolUtil
+import ru.souz.tool.web.internal.WebResearchClient
+import ru.souz.tool.web.internal.WebSearchResult
+import ru.souz.tool.web.internal.WebSearchProviderException
+import ru.souz.tool.web.internal.WebSearchProviderFailureKind
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -1,4 +1,4 @@
-package ru.souz.tool.web
+package ru.souz.tool.web.internal
 
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
@@ -36,6 +36,7 @@ private const val WEB_HTTP_MAX_RETRIES = 2
 private const val WEB_HTTP_DEFAULT_MAX_BINARY_BYTES = 20 * 1024 * 1024
 private const val WEB_HTTP_BINARY_READ_CHUNK_BYTES = 8_192
 private val WEB_HTTP_RETRY_ENABLED_KEY = AttributeKey<Boolean>("web_http_retry_enabled")
+private val defaultWebToolSupport = WebToolSupport()
 
 internal data class WebTextResponse(
     val statusCode: Int,
@@ -64,7 +65,7 @@ private val sharedWebHttpClient by lazy {
 internal suspend fun webGetText(
     url: String,
     timeoutMillis: Long,
-    accept: String = WEB_TOOLS_ACCEPT_HEADER,
+    accept: String = defaultWebToolSupport.acceptHeader,
     retry: Boolean = true,
 ): WebTextResponse {
     return executeWebRequest(url, timeoutMillis, accept, retry) { response ->
@@ -81,7 +82,7 @@ private fun HttpClientConfig<*>.webToolDefaults() {
     followRedirects = true
 
     defaultRequest {
-        header(HttpHeaders.UserAgent, WEB_TOOLS_USER_AGENT)
+        header(HttpHeaders.UserAgent, defaultWebToolSupport.userAgent)
     }
 
     install(HttpTimeout) {
@@ -131,7 +132,7 @@ private suspend fun <T> executeWebRequest(
     bodyReader: suspend (HttpResponse) -> T,
 ): T {
     try {
-        val response = sharedWebHttpClient.get(toSafeHttpUrl(url)) {
+        val response = sharedWebHttpClient.get(defaultWebToolSupport.toSafeHttpUrl(url)) {
             attributes.put(WEB_HTTP_RETRY_ENABLED_KEY, retry)
             if (!accept.isNullOrBlank()) {
                 header(HttpHeaders.Accept, accept)

@@ -1,4 +1,4 @@
-package ru.souz.tool.web
+package ru.souz.tool.web.internal
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CancellationException
@@ -17,21 +17,6 @@ private const val WEB_RESEARCH_MAX_PACED_HOSTS = 64
 private const val WEB_RESEARCH_MAX_SEARCH_VARIANTS = 2
 private const val WEB_RESEARCH_MAX_IMAGE_VARIANTS = 2
 private const val WEB_RESEARCH_MAX_UNAVAILABLE_VARIANTS_BEFORE_ABORT = 2
-
-data class WebSearchResult(
-    val title: String,
-    val url: String,
-    val snippet: String,
-)
-
-data class WebImageResult(
-    val title: String,
-    val imageUrl: String,
-    val pageUrl: String?,
-    val thumbnailUrl: String?,
-    val license: String?,
-    val localPath: String?,
-)
 
 internal enum class WebSearchProviderFailureKind {
     BLOCKED,
@@ -52,13 +37,14 @@ internal class WebSearchProviderException(
  *
  * This keeps search/parsing heuristics and HTTP behavior in one place while tool contracts stay simple.
  */
-class WebResearchClient internal constructor(
+internal class WebResearchClient internal constructor(
     private val mapper: ObjectMapper = gigaJsonMapper,
     private val httpGet: suspend (String, Long, Boolean) -> WebTextResponse = { url, timeoutMillis, retry ->
         webGetText(url, timeoutMillis, retry = retry)
     },
     private val currentTimeMillis: () -> Long = System::currentTimeMillis,
     private val sleepMillis: suspend (Long) -> Unit = { delay(it) },
+    private val webToolSupport: WebToolSupport = WebToolSupport(),
 ) {
     private val logger = LoggerFactory.getLogger(WebResearchClient::class.java)
     private val requestPacingLock = Any()
@@ -69,7 +55,7 @@ class WebResearchClient internal constructor(
     }
 
     suspend fun searchWeb(query: String, limit: Int): List<WebSearchResult> {
-        val normalizedQuery = requireWebQuery(query)
+        val normalizedQuery = webToolSupport.requireWebQuery(query)
         val targetCount = limit.coerceIn(1, 20)
         val aggregated = LinkedHashMap<String, WebSearchResult>()
         var unavailableFailures = 0
@@ -110,7 +96,7 @@ class WebResearchClient internal constructor(
     }
 
     suspend fun searchImages(query: String, limit: Int): List<WebImageResult> {
-        val normalizedQuery = requireWebQuery(query)
+        val normalizedQuery = webToolSupport.requireWebQuery(query)
         val targetCount = limit.coerceIn(1, 20)
         val aggregated = LinkedHashMap<String, WebImageResult>()
         val fetchLimit = min(16, maxOf(targetCount * 2, 8))
@@ -141,7 +127,7 @@ class WebResearchClient internal constructor(
     }
 
     suspend fun extractPageText(url: String, maxChars: Int): String {
-        val normalizedUrl = requireHttpUrl(url)
+        val normalizedUrl = webToolSupport.requireHttpUrl(url)
         val html = pacedGetText(normalizedUrl, timeoutMillis = 6_000L)
         val doc = Jsoup.parse(html)
         doc.select("script, style, noscript, svg").remove()
@@ -349,7 +335,7 @@ class WebResearchClient internal constructor(
         }
 
         return runCatching {
-            val query = java.net.URI.create(toSafeHttpUrl(normalized)).rawQuery ?: return@runCatching normalized
+            val query = java.net.URI.create(webToolSupport.toSafeHttpUrl(normalized)).rawQuery ?: return@runCatching normalized
             query.split('&').asSequence().mapNotNull { part ->
                 val key = part.substringBefore('=', "")
                 val value = part.substringAfter('=', "")
@@ -363,7 +349,7 @@ class WebResearchClient internal constructor(
         timeoutMillis: Long,
         retry: Boolean = true,
     ): String {
-        val normalizedUrl = requireHttpUrl(url)
+        val normalizedUrl = webToolSupport.requireHttpUrl(url)
         awaitRequestSlot(normalizedUrl)
         val response = httpGet(normalizedUrl, timeoutMillis, retry)
         if (response.statusCode < 400) {
@@ -374,7 +360,7 @@ class WebResearchClient internal constructor(
     }
 
     private suspend fun awaitRequestSlot(url: String) {
-        val uri = java.net.URI.create(toSafeHttpUrl(url))
+        val uri = java.net.URI.create(webToolSupport.toSafeHttpUrl(url))
         val hostKey = uri.host?.lowercase().orEmpty()
             .ifBlank { uri.authority?.lowercase().orEmpty() }
             .ifBlank { return }
@@ -470,7 +456,7 @@ class WebResearchClient internal constructor(
 
     private fun extensionFromUrl(url: String): String {
         return runCatching {
-            java.net.URI.create(toSafeHttpUrl(url)).path.substringAfterLast('.', "").lowercase()
+            java.net.URI.create(webToolSupport.toSafeHttpUrl(url)).path.substringAfterLast('.', "").lowercase()
         }.getOrDefault("")
     }
 

@@ -16,9 +16,8 @@ import ru.souz.tool.files.ToolExtractText
 import ru.souz.tool.files.ToolFindFilesByName
 import ru.souz.tool.mail.ToolMailSendNewMessage
 import ru.souz.tool.notes.ToolCreateNote
-import ru.souz.tool.presentation.ToolWebSearch
-import ru.souz.tool.presentation.WebResearchClient
 import ru.souz.tool.telegram.ToolTelegramSearch
+import ru.souz.tool.web.ToolWebSearch
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentComplexScenarios {
@@ -94,7 +93,7 @@ class GraphAgentComplexScenarios {
         ]
     )
     fun scenario2_searchAiEventInWebThenTelegramThenCreateNoteIfMentioned(userPrompt: String) = runTest {
-        val toolWebSearch: ToolWebSearch = spyk(ToolWebSearch(WebResearchClient()))
+        val toolWebSearch: ToolWebSearch = spyk(ToolWebSearch())
         val toolTelegramSearch: ToolTelegramSearch = spyk(ToolTelegramSearch(mockk<TelegramService>()))
         val toolCreateNote: ToolCreateNote = spyk(ToolCreateNote(ToolRunBashCommand))
 

@@ -8,20 +8,45 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
+import ru.souz.tool.web.internal.WebResearchClient
+import ru.souz.tool.web.internal.WebToolSupport
 
 /**
  * Generic web search by query.
  *
- * Tool wrapper over [WebResearchClient.searchWeb].
- * Output always contains only web search results.
+ * Low-level web search tool that returns raw search results.
  */
-class ToolWebSearch(
+class ToolWebSearch internal constructor(
     private val webResearchClient: WebResearchClient,
-    private val mapper: ObjectMapper = gigaJsonMapper,
+    private val mapper: ObjectMapper,
+    private val webToolSupport: WebToolSupport,
 ) : ToolSetup<ToolWebSearch.Input> {
+    constructor(
+        mapper: ObjectMapper = gigaJsonMapper,
+    ) : this(
+        webResearchClient = WebResearchClient(mapper = mapper),
+        mapper = mapper,
+        webToolSupport = WebToolSupport(),
+    )
+
+    internal constructor(
+        webResearchClient: WebResearchClient,
+        mapper: ObjectMapper = gigaJsonMapper,
+    ) : this(
+        webResearchClient = webResearchClient,
+        mapper = mapper,
+        webToolSupport = WebToolSupport(),
+    )
+
     data class WebSearchOutput(
         val query: String,
-        val results: List<WebSearchResult>,
+        val results: List<ResultItem>,
+    )
+
+    data class ResultItem(
+        val title: String,
+        val url: String,
+        val snippet: String,
     )
 
     data class Input(
@@ -56,10 +81,16 @@ class ToolWebSearch(
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 
     override suspend fun suspendInvoke(input: Input): String {
-        val query = requireWebQuery(input.query)
+        val query = webToolSupport.requireWebQuery(input.query)
         val output = WebSearchOutput(
             query = query,
-            results = webResearchClient.searchWeb(query = query, limit = input.limit.coerceIn(1, 20))
+            results = webResearchClient.searchWeb(query = query, limit = input.limit.coerceIn(1, 20)).map { result ->
+                ResultItem(
+                    title = result.title,
+                    url = result.url,
+                    snippet = result.snippet,
+                )
+            }
         )
         return mapper.writeValueAsString(output)
     }

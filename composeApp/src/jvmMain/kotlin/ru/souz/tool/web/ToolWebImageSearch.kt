@@ -8,22 +8,55 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
+import ru.souz.tool.files.FilesToolUtil
+import ru.souz.tool.web.internal.WebImageDownloader
+import ru.souz.tool.web.internal.WebResearchClient
+import ru.souz.tool.web.internal.WebToolSupport
 
 /**
  * Image discovery on the web.
  *
- * Tool wrapper over [WebResearchClient.searchImages] with optional local download.
- * If `downloadImages=true`, local paths are produced via [WebImageDownloader].
- * Output always contains only image results.
+ * Searches for image candidates by topic and optionally downloads them to local files.
  */
-class ToolWebImageSearch(
+class ToolWebImageSearch internal constructor(
     private val webResearchClient: WebResearchClient,
     private val webImageDownloader: WebImageDownloader,
-    private val mapper: ObjectMapper = gigaJsonMapper,
+    private val mapper: ObjectMapper,
+    private val webToolSupport: WebToolSupport,
 ) : ToolSetup<ToolWebImageSearch.Input> {
+    constructor(
+        filesToolUtil: FilesToolUtil,
+        mapper: ObjectMapper = gigaJsonMapper,
+    ) : this(
+        webResearchClient = WebResearchClient(mapper = mapper),
+        webImageDownloader = WebImageDownloader(filesToolUtil = filesToolUtil),
+        mapper = mapper,
+        webToolSupport = WebToolSupport(),
+    )
+
+    internal constructor(
+        webResearchClient: WebResearchClient,
+        webImageDownloader: WebImageDownloader,
+        mapper: ObjectMapper = gigaJsonMapper,
+    ) : this(
+        webResearchClient = webResearchClient,
+        webImageDownloader = webImageDownloader,
+        mapper = mapper,
+        webToolSupport = WebToolSupport(),
+    )
+
     data class WebImageSearchOutput(
         val query: String,
-        val results: List<WebImageResult>,
+        val results: List<ResultItem>,
+    )
+
+    data class ResultItem(
+        val title: String,
+        val imageUrl: String,
+        val pageUrl: String?,
+        val thumbnailUrl: String?,
+        val license: String?,
+        val localPath: String?,
     )
 
     data class Input(
@@ -62,7 +95,7 @@ class ToolWebImageSearch(
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 
     override suspend fun suspendInvoke(input: Input): String {
-        val query = requireWebQuery(input.query)
+        val query = webToolSupport.requireWebQuery(input.query)
         val limit = input.limit.coerceIn(1, 20)
 
         val results = webResearchClient.searchImages(query = query, limit = limit).map { candidate ->
@@ -80,6 +113,20 @@ class ToolWebImageSearch(
             }
         }
 
-        return mapper.writeValueAsString(WebImageSearchOutput(query = query, results = results))
+        return mapper.writeValueAsString(
+            WebImageSearchOutput(
+                query = query,
+                results = results.map { candidate ->
+                    ResultItem(
+                        title = candidate.title,
+                        imageUrl = candidate.imageUrl,
+                        pageUrl = candidate.pageUrl,
+                        thumbnailUrl = candidate.thumbnailUrl,
+                        license = candidate.license,
+                        localPath = candidate.localPath,
+                    )
+                },
+            )
+        )
     }
 }

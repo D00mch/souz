@@ -95,8 +95,8 @@ import ru.souz.tool.web.ToolInternetSearch
 import ru.souz.tool.web.ToolWebImageSearch
 import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.ToolWebSearch
-import ru.souz.tool.web.WebImageDownloader
-import ru.souz.tool.web.WebResearchClient
+import ru.souz.tool.web.internal.WebImageDownloader
+import ru.souz.tool.web.internal.WebResearchClient
 import java.nio.file.Path
 
 private object DiTags {
@@ -196,11 +196,11 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ExcelReport(instance()) }
     bindSingleton { WebResearchClient() }
     bindSingleton { WebImageDownloader(instance()) }
-    bindSingleton { ToolInternetSearch(instance(), instance(), instance(), instance()) }
-    bindSingleton { ToolWebSearch(instance()) }
-    bindSingleton { ToolWebImageSearch(instance(), instance()) }
-    bindSingleton { ToolWebPageText(instance()) }
-    bindSingleton { ToolPresentationCreate(instance(), instance()) }
+    bindSingleton { ToolInternetSearch(api = instance(), settingsProvider = instance(), webResearchClient = instance(), filesToolUtil = instance()) }
+    bindSingleton { ToolWebSearch(webResearchClient = instance()) }
+    bindSingleton { ToolWebImageSearch(webResearchClient = instance(), webImageDownloader = instance()) }
+    bindSingleton { ToolWebPageText(webResearchClient = instance()) }
+    bindSingleton { ToolPresentationCreate(filesToolUtil = instance(), webImageDownloader = instance()) }
     bindSingleton { ToolPresentationRead() }
     bindSingleton { ToolTelegramReadInbox(instance()) }
     bindSingleton { ToolTelegramGetHistory(instance(), instance()) }

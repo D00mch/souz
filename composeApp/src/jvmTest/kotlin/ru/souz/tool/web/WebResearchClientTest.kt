@@ -3,6 +3,10 @@ package ru.souz.tool.web
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import ru.souz.tool.BadInputException
+import ru.souz.tool.web.internal.WebResearchClient
+import ru.souz.tool.web.internal.WebSearchProviderException
+import ru.souz.tool.web.internal.WebSearchProviderFailureKind
+import ru.souz.tool.web.internal.WebTextResponse
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith

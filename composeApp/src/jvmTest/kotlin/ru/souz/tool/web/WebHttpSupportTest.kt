@@ -3,6 +3,7 @@ package ru.souz.tool.web
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
 import ru.souz.tool.BadInputException
+import ru.souz.tool.web.internal.readLimitedBinaryBody
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertFailsWith

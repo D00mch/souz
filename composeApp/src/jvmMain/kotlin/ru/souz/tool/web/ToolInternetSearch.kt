@@ -16,19 +16,58 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ToolSetup
 import ru.souz.tool.files.FilesToolUtil
+import ru.souz.tool.web.internal.InternetSearchCollectedSource
+import ru.souz.tool.web.internal.InternetSearchCollectionResult
+import ru.souz.tool.web.internal.InternetSearchInternals
+import ru.souz.tool.web.internal.InternetSearchResearchStrategy
+import ru.souz.tool.web.internal.InternetSearchSynthesisResult
+import ru.souz.tool.web.internal.WebResearchClient
+import ru.souz.tool.web.internal.WebSearchProviderException
+import ru.souz.tool.web.internal.WebSearchProviderFailureKind
 import java.io.File
 import java.nio.charset.StandardCharsets
 
-class ToolInternetSearch(
+class ToolInternetSearch internal constructor(
     private val api: GigaChatAPI,
     private val settingsProvider: SettingsProvider,
     private val webResearchClient: WebResearchClient,
     private val filesToolUtil: FilesToolUtil,
-    private val mapper: ObjectMapper = gigaJsonMapper,
+    private val mapper: ObjectMapper,
+    private val internals: InternetSearchInternals,
 ) : ToolSetup<ToolInternetSearch.Input> {
     private val l = LoggerFactory.getLogger(ToolInternetSearch::class.java)
-    private val draftParser = InternetSearchDraftParser(
-        mapper.copy().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+
+    constructor(
+        api: GigaChatAPI,
+        settingsProvider: SettingsProvider,
+        filesToolUtil: FilesToolUtil,
+        mapper: ObjectMapper = gigaJsonMapper,
+    ) : this(
+        api = api,
+        settingsProvider = settingsProvider,
+        webResearchClient = WebResearchClient(mapper = mapper),
+        filesToolUtil = filesToolUtil,
+        mapper = mapper,
+        internals = InternetSearchInternals(
+            mapper.copy().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        ),
+    )
+
+    internal constructor(
+        api: GigaChatAPI,
+        settingsProvider: SettingsProvider,
+        webResearchClient: WebResearchClient,
+        filesToolUtil: FilesToolUtil,
+        mapper: ObjectMapper = gigaJsonMapper,
+    ) : this(
+        api = api,
+        settingsProvider = settingsProvider,
+        webResearchClient = webResearchClient,
+        filesToolUtil = filesToolUtil,
+        mapper = mapper,
+        internals = InternetSearchInternals(
+            mapper.copy().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        ),
     )
 
     enum class OutputStatus {
@@ -80,15 +119,15 @@ class ToolInternetSearch(
     )
 
     override val name: String = "InternetSearch"
-    override val description: String = INTERNET_SEARCH_DESCRIPTION
-    override val fewShotExamples: List<FewShotExample> = INTERNET_SEARCH_FEW_SHOTS
-    override val returnParameters: ReturnParameters = INTERNET_SEARCH_RETURN_PARAMETERS
+    override val description: String = internals.description
+    override val fewShotExamples: List<FewShotExample> = internals.fewShotExamples
+    override val returnParameters: ReturnParameters = internals.returnParameters
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 
     override suspend fun suspendInvoke(input: Input): String {
-        val query = requireWebQuery(input.query)
-        val mode = input.mode ?: inferInternetSearchMode(query)
+        val query = internals.requireWebQuery(input.query)
+        val mode = input.mode ?: internals.inferMode(query)
         val output = when (mode) {
             SearchMode.QUICK_ANSWER -> runQuickAnswer(query, input.maxSources)
             SearchMode.RESEARCH -> runResearch(query, input.maxSources)
@@ -101,7 +140,7 @@ class ToolInternetSearch(
             searchQueries = listOf(query),
             maxSources = maxSources.coerceIn(1, 3),
             resultsPerQuery = 5,
-            pageCharLimit = INTERNET_SEARCH_QUICK_PAGE_TEXT_LIMIT,
+            pageCharLimit = internals.quickPageTextLimit,
         )
         if (collection.sources.isEmpty()) {
             return buildEmptySourcesOutput(
@@ -114,13 +153,13 @@ class ToolInternetSearch(
         val sources = collection.sources
 
         val synthesis = synthesizeAnswer(query, SearchMode.QUICK_ANSWER, sources, null)
-        return buildInternetSearchOutput(
+        return internals.buildOutput(
             query = query,
             mode = SearchMode.QUICK_ANSWER,
             status = synthesis.status,
             answer = synthesis.draft.answer.orEmpty(),
             reportBody = synthesis.draft.reportMarkdown ?: synthesis.draft.answer.orEmpty(),
-            sources = selectUsedSources(sources, synthesis.draft.usedSourceIndexes),
+            sources = internals.selectUsedSources(sources, synthesis.draft.usedSourceIndexes),
             strategy = null,
             saveLongReport = { saveResearchReport(query, it) },
         )
@@ -130,9 +169,9 @@ class ToolInternetSearch(
         val strategy = buildResearchStrategy(query)
         val collection = collectSources(
             searchQueries = strategy.searchQueries,
-            maxSources = maxSources.coerceIn(1, INTERNET_SEARCH_MAX_RESEARCH_SOURCES),
-            resultsPerQuery = INTERNET_SEARCH_RESEARCH_RESULTS_PER_QUERY,
-            pageCharLimit = INTERNET_SEARCH_RESEARCH_PAGE_TEXT_LIMIT,
+            maxSources = maxSources.coerceIn(1, internals.maxResearchSources),
+            resultsPerQuery = internals.researchResultsPerQuery,
+            pageCharLimit = internals.researchPageTextLimit,
         )
         if (collection.sources.isEmpty()) {
             return buildEmptySourcesOutput(
@@ -145,38 +184,38 @@ class ToolInternetSearch(
         val sources = collection.sources
 
         val synthesis = synthesizeAnswer(query, SearchMode.RESEARCH, sources, strategy)
-        return buildInternetSearchOutput(
+        return internals.buildOutput(
             query = query,
             mode = SearchMode.RESEARCH,
             status = synthesis.status,
             answer = synthesis.draft.answer.orEmpty(),
             reportBody = synthesis.draft.reportMarkdown ?: synthesis.draft.answer.orEmpty(),
-            sources = selectUsedSources(sources, synthesis.draft.usedSourceIndexes),
+            sources = internals.selectUsedSources(sources, synthesis.draft.usedSourceIndexes),
             strategy = strategy,
             saveLongReport = { saveResearchReport(query, it) },
         )
     }
 
     private suspend fun buildResearchStrategy(query: String): InternetSearchResearchStrategy {
-        val fallback = fallbackResearchStrategy(query)
+        val fallback = internals.fallbackResearchStrategy(query)
         val responseText = callLlm(
-            systemPrompt = internetSearchStrategySystemPrompt,
-            userPrompt = buildInternetSearchStrategyPrompt(query),
+            systemPrompt = internals.strategySystemPrompt,
+            userPrompt = internals.buildStrategyPrompt(query),
             temperature = 0.2f,
             maxTokens = 900,
         ) ?: return fallback
 
-        val draft = draftParser.readStrategyDraft(responseText) ?: return fallback
+        val draft = internals.readStrategyDraft(responseText) ?: return fallback
         return InternetSearchResearchStrategy(
             goal = draft.goal?.trim().orEmpty().ifBlank { fallback.goal },
-            searchQueries = sanitizeSearchStrings(
+            searchQueries = internals.sanitizeSearchStrings(
                 values = draft.searchQueries,
                 fallback = fallback.searchQueries,
                 minItems = 4,
-                maxItems = INTERNET_SEARCH_MAX_SEARCH_QUERIES,
+                maxItems = internals.maxSearchQueries,
             ),
-            subQuestions = sanitizeSearchStrings(draft.subQuestions, emptyList(), 0, 5),
-            answerSections = sanitizeSearchStrings(draft.answerSections, emptyList(), 0, 5),
+            subQuestions = internals.sanitizeSearchStrings(draft.subQuestions, emptyList(), 0, 5),
+            answerSections = internals.sanitizeSearchStrings(draft.answerSections, emptyList(), 0, 5),
         )
     }
 
@@ -189,7 +228,7 @@ class ToolInternetSearch(
         val aggregated = LinkedHashMap<String, InternetSearchCollectedSource>()
         var providerStatus: OutputStatus? = null
 
-        searchLoop@ for (searchQuery in searchQueries.take(INTERNET_SEARCH_MAX_SEARCH_QUERIES)) {
+        searchLoop@ for (searchQuery in searchQueries.take(internals.maxSearchQueries)) {
             val results = try {
                 webResearchClient.searchWeb(searchQuery, resultsPerQuery)
             } catch (e: CancellationException) {
@@ -245,30 +284,30 @@ class ToolInternetSearch(
         sources: List<InternetSearchCollectedSource>,
         strategy: InternetSearchResearchStrategy?,
     ): InternetSearchSynthesisResult {
-        val promptSpec = internetSearchPromptSpec(mode)
+        val promptSpec = internals.promptSpec(mode)
         val primary = callLlm(
             systemPrompt = promptSpec.systemPrompt,
-            userPrompt = buildInternetSearchSynthesisPrompt(query, mode, sources, strategy),
+            userPrompt = internals.buildSynthesisPrompt(query, mode, sources, strategy),
             temperature = 0.15f,
             maxTokens = promptSpec.maxTokens,
         )
-        draftParser.recoverSynthesisDraft(primary.orEmpty(), mode, sources)
-            ?.takeIf { it.isGrounded() }
+        internals.recoverSynthesisDraft(primary.orEmpty(), mode, sources)
+            ?.takeIf(internals::isGrounded)
             ?.let { return InternetSearchSynthesisResult(OutputStatus.COMPLETE, it) }
 
         val rescue = callLlm(
             systemPrompt = promptSpec.rescueSystemPrompt,
-            userPrompt = buildInternetSearchRescuePrompt(query, mode, sources, strategy, primary),
+            userPrompt = internals.buildRescuePrompt(query, mode, sources, strategy, primary),
             temperature = 0.1f,
             maxTokens = promptSpec.rescueMaxTokens,
         )
-        draftParser.recoverSynthesisDraft(rescue.orEmpty(), mode, sources)
-            ?.takeIf { it.isGrounded() }
+        internals.recoverSynthesisDraft(rescue.orEmpty(), mode, sources)
+            ?.takeIf(internals::isGrounded)
             ?.let { return InternetSearchSynthesisResult(OutputStatus.COMPLETE, it) }
 
         return InternetSearchSynthesisResult(
             status = OutputStatus.PARTIAL,
-            draft = buildInternetSearchFallbackDraft(mode, query, sources),
+            draft = internals.buildFallbackDraft(mode, query, sources),
         )
     }
 
@@ -278,8 +317,8 @@ class ToolInternetSearch(
         strategy: InternetSearchResearchStrategy?,
         status: OutputStatus,
     ): Output {
-        val message = buildInternetSearchEmptySourcesMessage(query, status)
-        return buildInternetSearchOutput(
+        val message = internals.buildEmptySourcesMessage(query, status)
+        return internals.buildOutput(
             query = query,
             mode = mode,
             status = status,

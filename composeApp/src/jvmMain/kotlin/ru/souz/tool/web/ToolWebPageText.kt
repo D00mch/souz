@@ -8,17 +8,36 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
+import ru.souz.tool.web.internal.WebResearchClient
+import ru.souz.tool.web.internal.WebToolSupport
 
 /**
  * Plain text extraction from a single web page.
  *
- * Tool wrapper over [WebResearchClient.extractPageText].
- * Output always contains only extracted page text.
+ * Low-level helper that fetches one web page and extracts normalized plain text.
  */
-class ToolWebPageText(
+class ToolWebPageText internal constructor(
     private val webResearchClient: WebResearchClient,
-    private val mapper: ObjectMapper = gigaJsonMapper,
+    private val mapper: ObjectMapper,
+    private val webToolSupport: WebToolSupport,
 ) : ToolSetup<ToolWebPageText.Input> {
+    constructor(
+        mapper: ObjectMapper = gigaJsonMapper,
+    ) : this(
+        webResearchClient = WebResearchClient(mapper = mapper),
+        mapper = mapper,
+        webToolSupport = WebToolSupport(),
+    )
+
+    internal constructor(
+        webResearchClient: WebResearchClient,
+        mapper: ObjectMapper = gigaJsonMapper,
+    ) : this(
+        webResearchClient = webResearchClient,
+        mapper = mapper,
+        webToolSupport = WebToolSupport(),
+    )
+
     data class WebPageTextOutput(
         val url: String,
         val pageText: String,
@@ -56,7 +75,7 @@ class ToolWebPageText(
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 
     override suspend fun suspendInvoke(input: Input): String {
-        val url = requireHttpUrl(input.url)
+        val url = webToolSupport.requireHttpUrl(input.url)
         val output = WebPageTextOutput(
             url = url,
             pageText = webResearchClient.extractPageText(url = url, maxChars = input.maxChars.coerceIn(500, 20_000))

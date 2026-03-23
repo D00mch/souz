@@ -1,4 +1,4 @@
-package ru.souz.tool.web
+package ru.souz.tool.web.internal
 
 import org.apache.tika.Tika
 import ru.souz.tool.BadInputException
@@ -22,6 +22,7 @@ class WebImageDownloader internal constructor(
     private val filesToolUtil: FilesToolUtil,
     private val downloadBinary: (String, Long) -> WebBinaryResponse = ::webDownloadBinary,
     private val tika: Tika = Tika(),
+    private val webToolSupport: WebToolSupport = WebToolSupport(),
 ) {
     fun downloadToDirectory(
         imageUrl: String,
@@ -60,7 +61,7 @@ class WebImageDownloader internal constructor(
     )
 
     private fun downloadAndDetectExtension(imageUrl: String): DownloadedTemp {
-        val normalizedUrl = requireHttpUrl(imageUrl)
+        val normalizedUrl = webToolSupport.requireHttpUrl(imageUrl)
         val tempFile = Files.createTempFile("souz_img_", ".bin").toFile()
         try {
             val response = downloadBinary(normalizedUrl, IMAGE_DOWNLOAD_REQUEST_TIMEOUT_MS)
@@ -134,7 +135,7 @@ class WebImageDownloader internal constructor(
 
     private fun extensionFromUrl(url: String): String {
         return runCatching {
-            URI.create(toSafeHttpUrl(url)).path.substringAfterLast('.', "").lowercase()
+            URI.create(webToolSupport.toSafeHttpUrl(url)).path.substringAfterLast('.', "").lowercase()
         }.getOrDefault("")
     }
 
