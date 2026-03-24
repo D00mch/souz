@@ -49,6 +49,11 @@ File must not exist. For reading use ExcelRead."""
         properties = mapOf("result" to ReturnProperty("string", "Result"))
     )
 
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.CREATE_SPREADSHEET,
+        primary = ToolActionValueFormatter.fileName(input.path),
+    )
+
     override fun invoke(input: Input): String {
         val file = File(filesToolUtil.applyDefaultEnvs(input.path))
         if (!filesToolUtil.isPathSafe(file)) throw ForbiddenFolder(file.path)

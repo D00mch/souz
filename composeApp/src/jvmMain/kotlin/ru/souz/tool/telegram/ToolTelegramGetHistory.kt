@@ -8,6 +8,9 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetup
 
 class ToolTelegramGetHistory(
@@ -56,6 +59,11 @@ class ToolTelegramGetHistory(
         properties = mapOf(
             "result" to ReturnProperty("string", "JSON with messages suitable for summarization"),
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.READ_TELEGRAM_CHAT,
+        primary = ToolActionValueFormatter.compactText(input.chatName),
     )
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }

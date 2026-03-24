@@ -3,6 +3,8 @@ package ru.souz.tool.notes
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 
@@ -24,6 +26,10 @@ class ToolListNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolListNo
         properties = mapOf(
             "result" to ReturnProperty("string", "Comma separated list of note names")
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.LIST_NOTES,
     )
 
     override fun invoke(input: Input): String {

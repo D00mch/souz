@@ -5,6 +5,9 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 
@@ -28,6 +31,11 @@ class ToolSearchNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolSear
         properties = mapOf(
             "result" to ReturnProperty("string", "Comma separated list of matching note names")
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.SEARCH_NOTES,
+        primary = ToolActionValueFormatter.compactText(input.query),
     )
 
     override fun invoke(input: Input): String {

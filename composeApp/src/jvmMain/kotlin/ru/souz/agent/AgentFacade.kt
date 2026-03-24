@@ -15,6 +15,7 @@ import ru.souz.agent.session.GraphSessionService
 import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
 import ru.souz.tool.ToolsFactory
+import ru.souz.tool.ToolActionListener
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AgentFacade(
@@ -97,9 +98,12 @@ class AgentFacade(
         agentById(_activeAgentId.value).cancelActiveJob()
     }
 
-    suspend fun execute(input: String): String {
+    suspend fun execute(input: String, toolActionListener: ToolActionListener? = null): String {
         cancelActiveJob()
-        val seed = _currentContext.value.copy(input = input)
+        val seed = _currentContext.value.copy(
+            input = input,
+            settings = _currentContext.value.settings.copy(toolActionListener = toolActionListener),
+        )
         val agent = agentById(_activeAgentId.value)
 
         sessionService.startTask(input)
@@ -107,7 +111,11 @@ class AgentFacade(
             val result = agent.executeWithTrace(seed) { step, node, from, to ->
                 sessionService.onStep(step, node, from, to)
             }
-            _currentContext.emit(result.context)
+            _currentContext.emit(
+                result.context.copy(
+                    settings = result.context.settings.copy(toolActionListener = null)
+                )
+            )
             result.output
         } finally {
             runCatching { sessionService.finishTask() }

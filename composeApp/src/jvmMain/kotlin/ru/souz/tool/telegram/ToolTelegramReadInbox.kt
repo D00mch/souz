@@ -8,6 +8,8 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
 import ru.souz.tool.ToolSetup
 
 class ToolTelegramReadInbox(
@@ -31,6 +33,10 @@ class ToolTelegramReadInbox(
         properties = mapOf(
             "result" to ReturnProperty("string", "JSON with unread chat lines"),
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.READ_TELEGRAM_INBOX,
     )
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }

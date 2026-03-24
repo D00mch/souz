@@ -20,6 +20,12 @@ class ToolOpenNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenNot
             "result" to ReturnProperty("string", "Operation status")
         )
     )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.OPEN_NOTE,
+        primary = ToolActionValueFormatter.compactText(input.noteName),
+    )
+
     override fun invoke(input: Input): String {
         if (input.noteName.isBlank()) throw BadInputException("Note name cannot be empty")
         bash.apple(

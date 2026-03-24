@@ -29,6 +29,18 @@ class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewF
         )
     )
 
+    override fun describeAction(input: Input): ToolActionDescriptor? {
+        val isDirectoryRequest = input.path.endsWith("/") || input.path.endsWith(File.separator)
+        return ToolActionDescriptor(
+            kind = if (isDirectoryRequest) ToolActionKind.CREATE_FOLDER else ToolActionKind.CREATE_FILE,
+            primary = if (isDirectoryRequest) {
+                ToolActionValueFormatter.folderName(input.path)
+            } else {
+                ToolActionValueFormatter.fileName(input.path)
+            },
+        )
+    }
+
     override fun invoke(input: Input): String {
         val isDirectoryRequest = input.path.endsWith("/") || input.path.endsWith(File.separator)
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)

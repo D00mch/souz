@@ -7,6 +7,9 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolRunBashCommand
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetup
 import java.io.File
 import ru.souz.db.SettingsProviderImpl
@@ -42,6 +45,11 @@ class ToolFindFolders(
         properties = mapOf(
             "result" to ReturnProperty("array", "JSON list of folder paths")
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.FIND_FOLDER,
+        primary = ToolActionValueFormatter.compactText(input.name),
     )
 
     override fun invoke(input: Input): String {

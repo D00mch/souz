@@ -32,6 +32,10 @@ class ToolStartScreenRecording(
         )
     )
 
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.START_SCREEN_RECORDING,
+    )
+
     override fun invoke(input: Input): String {
         bash.sh("open -a Screenshot")
         return "Screen recording utility launched. User must click 'Record' to start."

@@ -103,6 +103,15 @@ class ExcelRead(
         properties = mapOf("result" to ReturnProperty("string", "Operation result"))
     )
 
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = if (input.operation == ReadOperation.QUERY) {
+            ToolActionKind.ANALYZE_SPREADSHEET
+        } else {
+            ToolActionKind.READ_SPREADSHEET
+        },
+        primary = ToolActionValueFormatter.fileName(input.path),
+    )
+
     override fun invoke(input: Input): String {
         val file = File(filesToolUtil.applyDefaultEnvs(input.path))
         if (!filesToolUtil.isPathSafe(file)) throw ForbiddenFolder(file.path)

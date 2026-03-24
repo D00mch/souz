@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -1141,6 +1142,10 @@ private fun ChatBubble(
                     .padding(start = 17.dp, end = 70.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if (message.agentActions.isNotEmpty()) {
+                    AgentActionList(actions = message.agentActions)
+                }
+
                 if (message.text.isNotBlank()) {
                     val parts = remember(message.text) { parseMarkdownContent(message.text) }
                     val baseFontSize = 14.sp
@@ -1262,6 +1267,76 @@ private fun ChatBubble(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AgentActionList(actions: List<ChatAgentAction>) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        actions.forEach { action ->
+            AgentActionRow(action = action)
+        }
+    }
+}
+
+@Composable
+private fun AgentActionRow(action: ChatAgentAction) {
+    val text = formatToolAction(action.descriptor)
+    val tint = when (action.status) {
+        ChatAgentActionStatus.IN_PROGRESS -> Color.White.copy(alpha = 0.82f)
+        ChatAgentActionStatus.COMPLETED -> Color.White.copy(alpha = 0.66f)
+        ChatAgentActionStatus.FAILED -> Color(0xFFFFB4A8)
+    }
+    val containerColor = when (action.status) {
+        ChatAgentActionStatus.IN_PROGRESS -> Color.White.copy(alpha = 0.07f)
+        ChatAgentActionStatus.COMPLETED -> Color.White.copy(alpha = 0.05f)
+        ChatAgentActionStatus.FAILED -> Color(0x33FF8A80)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(containerColor)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        when (action.status) {
+            ChatAgentActionStatus.IN_PROGRESS -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 1.8.dp,
+                    color = tint
+                )
+            }
+
+            ChatAgentActionStatus.COMPLETED -> {
+                Icon(
+                    imageVector = Icons.Rounded.CheckCircleOutline,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+
+            ChatAgentActionStatus.FAILED -> {
+                Icon(
+                    imageVector = Icons.Rounded.ErrorOutline,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+
+        Text(
+            text = text,
+            color = tint,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 

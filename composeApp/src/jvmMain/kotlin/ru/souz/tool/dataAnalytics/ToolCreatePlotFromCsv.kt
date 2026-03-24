@@ -79,6 +79,11 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
         )
     )
 
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.CREATE_PLOT,
+        primary = ToolActionValueFormatter.fileName(input.path),
+    )
+
     override fun invoke(input: Input): String {
         val rawPath = filesToolUtil.applyDefaultEnvs(input.path)
         val inputFile = File(rawPath)

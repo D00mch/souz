@@ -9,6 +9,9 @@ import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolPermissionResult
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
@@ -36,6 +39,11 @@ class ToolDeleteNote(
         properties = mapOf(
             "result" to ReturnProperty("string", "Operation status")
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.DELETE_NOTE,
+        primary = ToolActionValueFormatter.compactText(input.noteName),
     )
 
     override suspend fun suspendInvoke(input: Input): String {

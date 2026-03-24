@@ -5,6 +5,9 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 
@@ -34,6 +37,11 @@ class ToolCalendarDeleteEvent(private val bash: ToolRunBashCommand) : ToolSetup<
         properties = mapOf(
             "result" to ReturnProperty("string", "Operation status")
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.DELETE_CALENDAR_EVENT,
+        primary = ToolActionValueFormatter.compactText(input.title),
     )
 
     override fun invoke(input: Input): String {

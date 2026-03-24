@@ -10,6 +10,9 @@ import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolPermissionResult
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetup
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
@@ -53,6 +56,15 @@ class ToolTelegramSend(
         properties = mapOf(
             "result" to ReturnProperty("string", "JSON with sent message details"),
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = if (input.attachmentPath.isNullOrBlank()) {
+            ToolActionKind.SEND_TELEGRAM_MESSAGE
+        } else {
+            ToolActionKind.SEND_TELEGRAM_ATTACHMENT
+        },
+        primary = ToolActionValueFormatter.compactText(input.targetName),
     )
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }

@@ -7,6 +7,7 @@ import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaModel
+import ru.souz.tool.ToolActionDescriptor
 
 /**
  * Chat message for the chat mode.
@@ -36,12 +37,25 @@ data class ChatAttachedFile(
     val thumbnailBytes: ByteArray? = null,
 )
 
+enum class ChatAgentActionStatus {
+    IN_PROGRESS,
+    COMPLETED,
+    FAILED,
+}
+
+data class ChatAgentAction(
+    val id: String,
+    val descriptor: ToolActionDescriptor,
+    val status: ChatAgentActionStatus,
+)
+
 data class ChatMessage(
     val text: String,
     val isUser: Boolean,
     val isVoice: Boolean = false,
     val attachedFiles: List<ChatAttachedFile> = emptyList(),
     val finderPaths: List<FinderPathItem> = emptyList(),
+    val agentActions: List<ChatAgentAction> = emptyList(),
     val timestamp: Long = System.currentTimeMillis(),
     val id: String = java.util.UUID.randomUUID().toString()
 )

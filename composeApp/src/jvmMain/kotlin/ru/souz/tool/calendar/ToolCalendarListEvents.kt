@@ -4,6 +4,9 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetup
 import ru.souz.tool.calendar.CalendarAppleScriptCommands.listEventsCommand
 import java.time.format.DateTimeFormatter
@@ -42,6 +45,11 @@ class ToolCalendarListEvents : ToolSetup<ToolCalendarListEvents.Input> {
         properties = mapOf(
             "result" to ReturnProperty("string", "List of events with times")
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.LIST_CALENDAR_EVENTS,
+        primary = ToolActionValueFormatter.compactText(input.date),
     )
 
     override fun invoke(input: Input): String {

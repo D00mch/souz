@@ -8,6 +8,9 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetup
 
 class ToolTelegramSearch(
@@ -46,6 +49,16 @@ class ToolTelegramSearch(
         properties = mapOf(
             "result" to ReturnProperty("string", "JSON with found Telegram messages"),
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = if (input.chatName.isNullOrBlank()) {
+            ToolActionKind.SEARCH_TELEGRAM
+        } else {
+            ToolActionKind.SEARCH_TELEGRAM_CHAT
+        },
+        primary = ToolActionValueFormatter.compactText(input.chatName ?: input.query),
+        secondary = ToolActionValueFormatter.compactText(input.query),
     )
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }

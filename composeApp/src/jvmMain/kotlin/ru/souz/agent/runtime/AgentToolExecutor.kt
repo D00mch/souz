@@ -1,6 +1,7 @@
 package ru.souz.agent.runtime
 
 import org.slf4j.LoggerFactory
+import java.util.UUID
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.giga.GigaMessageRole
 import ru.souz.giga.GigaRequest
@@ -25,8 +26,16 @@ class AgentToolExecutor(
         l.info("Executing tool: ${fn.fn.name}, arguments: ${functionCall.arguments}")
         val startedAtMs = System.currentTimeMillis()
         val toolCategory = settings.tools.categoryByName[functionCall.name]
+        val actionId = UUID.randomUUID().toString()
+        val actionDescriptor = fn.describeAction(functionCall)
+        if (actionDescriptor != null) {
+            settings.toolActionListener?.onToolStarted(actionId, actionDescriptor)
+        }
         return try {
             fn.invoke(functionCall).also {
+                if (actionDescriptor != null) {
+                    settings.toolActionListener?.onToolFinished(actionId, success = true)
+                }
                 telemetryService.recordToolExecution(
                     functionName = functionCall.name,
                     functionArguments = functionCall.arguments,
@@ -37,6 +46,9 @@ class AgentToolExecutor(
                 )
             }
         } catch (e: Exception) {
+            if (actionDescriptor != null) {
+                settings.toolActionListener?.onToolFinished(actionId, success = false)
+            }
             l.error("Tool execution failure: ${fn.fn.name}, arguments: ${functionCall.arguments}", e)
             telemetryService.recordToolExecution(
                 functionName = functionCall.name,

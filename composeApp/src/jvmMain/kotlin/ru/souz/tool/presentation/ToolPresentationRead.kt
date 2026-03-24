@@ -4,6 +4,9 @@ import org.apache.poi.xslf.usermodel.XMLSlideShow
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetupWithAttachments
 import java.io.File
 import java.io.FileInputStream
@@ -35,6 +38,11 @@ class ToolPresentationRead : ToolSetupWithAttachments<PresentationReadInput> {
     )
 
     override val attachments: List<String> = emptyList()
+
+    override fun describeAction(input: PresentationReadInput): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.READ_PRESENTATION,
+        primary = ToolActionValueFormatter.fileName(input.filePath),
+    )
 
     override fun invoke(input: PresentationReadInput): String {
         val file = File(input.filePath)

@@ -7,6 +7,9 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetup
 
 /**
@@ -57,6 +60,15 @@ class ToolWebImageSearch(
             "query" to ReturnProperty("string", "Original query"),
             "results" to ReturnProperty("array", "Image results with remote URLs and optional local paths"),
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = if (input.downloadImages) {
+            ToolActionKind.SEARCH_IMAGES_AND_DOWNLOAD
+        } else {
+            ToolActionKind.SEARCH_IMAGES
+        },
+        primary = ToolActionValueFormatter.compactText(input.query),
     )
 
     override fun invoke(input: Input): String {

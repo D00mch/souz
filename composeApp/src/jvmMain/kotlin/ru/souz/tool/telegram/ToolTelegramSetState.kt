@@ -14,6 +14,9 @@ import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolPermissionResult
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetup
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
@@ -58,6 +61,16 @@ class ToolTelegramSetState(
         properties = mapOf(
             "result" to ReturnProperty("string", "JSON with updated chat state"),
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = when (input.action) {
+            Action.Mute -> ToolActionKind.MUTE_TELEGRAM_CHAT
+            Action.Archive -> ToolActionKind.ARCHIVE_TELEGRAM_CHAT
+            Action.MarkRead -> ToolActionKind.MARK_READ_TELEGRAM_CHAT
+            Action.Delete -> ToolActionKind.DELETE_TELEGRAM_CHAT
+        },
+        primary = ToolActionValueFormatter.compactText(input.chatName),
     )
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }

@@ -17,6 +17,7 @@ import kotlin.reflect.full.primaryConstructor
 interface GigaToolSetup {
     val fn: GigaRequest.Function
     suspend operator fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message
+    fun describeAction(functionCall: GigaResponse.FunctionCall): ToolActionDescriptor? = null
 }
 
 val gigaJsonMapper = jacksonObjectMapper()
@@ -88,6 +89,11 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
                 e.toGigaToolMessage(functionCall.name)
             }
         }
+
+        override fun describeAction(functionCall: GigaResponse.FunctionCall): ToolActionDescriptor? = runCatching {
+            val input: Input = gigaJsonMapper.convertValue(functionCall.arguments, Input::class.java)
+            toolSetup.describeAction(input)
+        }.getOrNull()
     }
 }
 
@@ -114,6 +120,11 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): GigaT
                 e.toGigaToolMessage(functionCall.name)
             }
         }
+
+        override fun describeAction(functionCall: GigaResponse.FunctionCall): ToolActionDescriptor? = runCatching {
+            val input: Input = gigaJsonMapper.convertValue(functionCall.arguments, Input::class.java)
+            toolSetup.describeAction(input)
+        }.getOrNull()
     }
 }
 

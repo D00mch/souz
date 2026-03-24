@@ -7,6 +7,9 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetup
 
 /**
@@ -51,6 +54,11 @@ class ToolWebSearch(
             "query" to ReturnProperty("string", "Original query"),
             "results" to ReturnProperty("array", "List of web results with title/url/snippet"),
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.SEARCH_WEB,
+        primary = ToolActionValueFormatter.compactText(input.query),
     )
 
     override fun invoke(input: Input): String {

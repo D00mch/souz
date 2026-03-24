@@ -3,6 +3,7 @@ package ru.souz.agent.engine
 import ru.souz.giga.DEFAULT_MAX_TOKENS
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaToolSetup
+import ru.souz.tool.ToolActionListener
 import ru.souz.tool.ToolCategory
 
 // Immutable context threaded through the graph
@@ -39,11 +40,13 @@ data class AgentSettings(
     val temperature: Float,
     val tools: AgentTools,
     val contextSize: Int = DEFAULT_MAX_TOKENS,
+    val toolActionListener: ToolActionListener? = null,
 ) {
     constructor(
         model: String,
         temperature: Float,
         toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
         contextSize: Int = DEFAULT_MAX_TOKENS,
-    ): this(model, temperature, AgentTools(toolsByCategory), contextSize)
+        toolActionListener: ToolActionListener? = null,
+    ): this(model, temperature, AgentTools(toolsByCategory), contextSize, toolActionListener)
 }

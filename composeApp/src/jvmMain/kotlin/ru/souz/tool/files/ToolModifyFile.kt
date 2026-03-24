@@ -55,6 +55,11 @@ class ToolModifyFile(
         )
     )
 
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.EDIT_FILE,
+        primary = ToolActionValueFormatter.fileName(input.path),
+    )
+
     override suspend fun suspendInvoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         validateInput(input, fixedPath)

@@ -6,6 +6,9 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetup
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
@@ -38,6 +41,11 @@ class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<Too
             "text" to ReturnProperty("string", "Extracted content"),
             "info" to ReturnProperty("string", "Debug info if text is empty")
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.READ_PDF,
+        primary = ToolActionValueFormatter.fileName(input.filePath),
     )
 
     override fun invoke(input: Input): String {

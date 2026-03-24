@@ -5,6 +5,8 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 
@@ -31,6 +33,10 @@ class ToolMailReplyMessage(private val bash: ToolRunBashCommand) : ToolSetup<Too
         properties = mapOf(
             "result" to ReturnProperty("string", "Mail operation result")
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.REPLY_MAIL,
     )
 
     override fun invoke(input: Input): String {

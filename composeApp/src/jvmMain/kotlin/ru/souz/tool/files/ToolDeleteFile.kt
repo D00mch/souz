@@ -35,6 +35,20 @@ class ToolDeleteFile(
         )
     )
 
+    override fun describeAction(input: Input): ToolActionDescriptor? {
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
+        val file = File(fixedPath)
+        val isDirectory = file.isDirectory || input.path.endsWith("/") || input.path.endsWith(File.separator)
+        return ToolActionDescriptor(
+            kind = if (isDirectory) ToolActionKind.DELETE_FOLDER else ToolActionKind.DELETE_FILE,
+            primary = if (isDirectory) {
+                ToolActionValueFormatter.folderName(input.path)
+            } else {
+                ToolActionValueFormatter.fileName(input.path)
+            },
+        )
+    }
+
     override suspend fun suspendInvoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         val result = permissionBroker?.requestPermission(

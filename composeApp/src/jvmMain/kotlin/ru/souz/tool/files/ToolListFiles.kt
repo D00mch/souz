@@ -27,6 +27,11 @@ class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolLi
         )
     )
 
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.LIST_FOLDER,
+        primary = ToolActionValueFormatter.folderName(input.path),
+    )
+
     override fun invoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         val base = File(fixedPath)

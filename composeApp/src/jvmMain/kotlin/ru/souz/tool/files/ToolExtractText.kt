@@ -12,6 +12,9 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetup
 import java.io.File
 import java.io.FileInputStream
@@ -42,6 +45,11 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         properties = mapOf(
             "result" to ReturnProperty("string", "Extracted text content")
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.EXTRACT_TEXT_FROM_FILE,
+        primary = ToolActionValueFormatter.fileName(input.filePath),
     )
 
     override suspend fun suspendInvoke(input: Input): String {

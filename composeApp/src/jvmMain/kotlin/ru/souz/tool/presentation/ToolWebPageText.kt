@@ -7,6 +7,9 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetup
 
 /**
@@ -50,6 +53,11 @@ class ToolWebPageText(
             "url" to ReturnProperty("string", "Original URL"),
             "pageText" to ReturnProperty("string", "Extracted page text"),
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.READ_WEB_PAGE,
+        primary = ToolActionValueFormatter.host(input.url),
     )
 
     override fun invoke(input: Input): String {

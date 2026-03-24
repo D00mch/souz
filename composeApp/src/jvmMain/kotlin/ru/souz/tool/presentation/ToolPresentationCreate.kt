@@ -14,6 +14,9 @@ import ru.souz.tool.BadInputException
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetupWithAttachments
 import ru.souz.tool.files.FilesToolUtil
 import java.io.File
@@ -218,6 +221,11 @@ class ToolPresentationCreate(
             "\n- **DO NOT INVENT DATA**: If you need specific metrics, images, or details that the user hasn't provided, **ASK THE USER** first. Do not make up fake numbers." +
             "\n- **Ask Questions**: If the user says 'Make a presentation about X', ask 'Who is the audience?', 'What is the goal?', 'Do you have specific data points?' before generating." +
             "\n- **Placeholders**: If forced to generate without data, use placeholders like '[INSERT REVENUE HERE]' instead of fake numbers."
+
+    override fun describeAction(input: PresentationCreateInput): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.CREATE_PRESENTATION,
+        primary = ToolActionValueFormatter.compactText(input.title),
+    )
 
     override val fewShotExamples = listOf(
         ru.souz.tool.FewShotExample(

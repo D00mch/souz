@@ -8,6 +8,9 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolRunBashCommand
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.tool.ToolSetup
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
@@ -54,6 +57,11 @@ class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<
 ```""".trimMargin()
             )
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.FIND_FILE,
+        primary = ToolActionValueFormatter.compactText(input.fileName),
     )
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }

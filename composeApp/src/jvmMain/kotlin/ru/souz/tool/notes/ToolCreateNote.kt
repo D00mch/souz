@@ -9,6 +9,8 @@ import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolPermissionResult
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
@@ -33,6 +35,10 @@ class ToolCreateNote(
         properties = mapOf(
             "result" to ReturnProperty("string", "Operation status")
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.CREATE_NOTE,
     )
 
     override suspend fun suspendInvoke(input: Input): String {

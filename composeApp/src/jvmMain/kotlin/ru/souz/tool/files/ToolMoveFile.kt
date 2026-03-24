@@ -9,6 +9,9 @@ import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolPermissionResult
 import ru.souz.tool.ToolSetup
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionValueFormatter
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
 import souz.composeapp.generated.resources.Res
@@ -43,6 +46,11 @@ class ToolMoveFile(
         properties = mapOf(
             "result" to ReturnProperty("string", "Move status")
         )
+    )
+
+    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
+        kind = ToolActionKind.MOVE_FILE,
+        primary = ToolActionValueFormatter.fileName(input.sourcePath),
     )
 
     override suspend fun suspendInvoke(input: Input): String {
