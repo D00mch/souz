@@ -56,6 +56,9 @@ import ru.souz.telemetry.TelemetryRequestContext
 import ru.souz.telemetry.TelemetryRequestSource
 import ru.souz.telemetry.TelemetryService
 import ru.souz.tool.SelectionApprovalSource
+import ru.souz.tool.ToolActionDescriptor
+import ru.souz.tool.ToolActionKind
+import ru.souz.tool.ToolActionListener
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.ui.main.usecases.FinderPathExtractor
@@ -108,7 +111,7 @@ class MainViewModelTest {
     fun `send stop, send drops, canceled first message, and keeps processing state`() = runTest(mainDispatcher) {
         val firstResponse = CompletableDeferred<String>()
         val secondResponse = CompletableDeferred<String>()
-        val harness = createHarness(executeBehavior = { input ->
+        val harness = createHarness(executeBehavior = { input, _ ->
             when (input) {
                 "first request" -> firstResponse.await()
                 "second request" -> secondResponse.await()
@@ -154,7 +157,7 @@ class MainViewModelTest {
         val firstResponse = CompletableDeferred<String>()
         val secondResponse = CompletableDeferred<String>()
         val harness = createHarness(
-            executeBehavior = { input ->
+            executeBehavior = { input, _ ->
                 when (input) {
                     "first request" -> firstResponse.await()
                     "second request" -> secondResponse.await()
@@ -206,11 +209,63 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `late tool action callback does not recreate cancelled assistant message`() = runTest(mainDispatcher) {
+        val firstResponse = CompletableDeferred<String>()
+        val capturedListener = CompletableDeferred<ToolActionListener?>()
+        val harness = createHarness(
+            executeBehavior = { input, listener ->
+                when (input) {
+                    "first request" -> {
+                        capturedListener.complete(listener)
+                        firstResponse.await()
+                    }
+
+                    else -> error("Unexpected input: $input")
+                }
+            },
+            onCancelActiveJob = { /* Simulate stuck execution; callback may still arrive after stop. */ },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
+
+            awaitState(viewModel) { state ->
+                state.isProcessing && state.chatMessages.any { it.isUser && it.text == "first request" }
+            }
+            val listener = capturedListener.await() ?: error("Expected tool action listener")
+
+            viewModel.handleEvent(MainEvent.UserPressStop)
+
+            val afterStop = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.none { it.text == "first request" }
+            }
+            assertTrue(afterStop.chatMessages.isEmpty())
+
+            listener.onToolStarted(
+                actionId = "late-action",
+                descriptor = ToolActionDescriptor(
+                    kind = ToolActionKind.SEARCH_WEB,
+                    primary = "late query",
+                )
+            )
+            advanceUntilIdle()
+
+            assertTrue(viewModel.uiState.value.chatMessages.isEmpty())
+        } finally {
+            firstResponse.completeExceptionally(CancellationException("cleanup"))
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `audio flow event cancels first message and runs second request`() = runTest(mainDispatcher) {
         val firstResponse = CompletableDeferred<String>()
         val secondResponse = CompletableDeferred<String>()
         val harness: TestHarness = createHarness(
-            executeBehavior = { input ->
+            executeBehavior = { input, _ ->
                 when (input) {
                     "first request" -> firstResponse.await()
                     "second request" -> secondResponse.await()
@@ -381,7 +436,7 @@ class MainViewModelTest {
         runTest(mainDispatcher) {
             val response = CompletableDeferred<String>()
             val harness = createHarness(
-                executeBehavior = { input ->
+                executeBehavior = { input, _ ->
                     if (input != "hello") error("Unexpected input: $input")
                     response.await()
                 },
@@ -525,7 +580,7 @@ class MainViewModelTest {
     @Test
     fun `sending message with attachments composes payload and clears pending attachments`() = runTest(mainDispatcher) {
         var executedInput: String? = null
-        val harness = createHarness(executeBehavior = { input ->
+        val harness = createHarness(executeBehavior = { input, _ ->
             executedInput = input
             "assistant reply"
         })
@@ -603,7 +658,7 @@ class MainViewModelTest {
     }
 
     private fun createHarness(
-        executeBehavior: suspend (String) -> String = { "stub response" },
+        executeBehavior: suspend (String, ToolActionListener?) -> String = { _, _ -> "stub response" },
         onCancelActiveJob: () -> Unit = {},
         needsOnboarding: Boolean = false,
         voiceInputReviewEnabled: Boolean = false,
@@ -616,8 +671,8 @@ class MainViewModelTest {
         every { agentFacade.sideEffects } returns sideEffects
         every { agentFacade.currentContext } returns MutableStateFlow(emptyAgentContext())
         every { agentFacade.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
-        coEvery { agentFacade.execute(any()) } coAnswers {
-            executeBehavior.invoke(firstArg())
+        coEvery { agentFacade.execute(any(), any()) } coAnswers {
+            executeBehavior.invoke(firstArg(), secondArg())
         }
         every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.LUA_GRAPH)
         every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.LUA_GRAPH, ru.souz.agent.AgentId.GRAPH)

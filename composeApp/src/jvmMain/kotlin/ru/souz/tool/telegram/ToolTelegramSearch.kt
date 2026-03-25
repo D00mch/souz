@@ -58,7 +58,6 @@ class ToolTelegramSearch(
             ToolActionKind.SEARCH_TELEGRAM_CHAT
         },
         primary = ToolActionValueFormatter.compactText(input.chatName ?: input.query),
-        secondary = ToolActionValueFormatter.compactText(input.query),
     )
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }

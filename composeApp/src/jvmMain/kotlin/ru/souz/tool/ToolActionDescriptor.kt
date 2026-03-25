@@ -6,7 +6,6 @@ import java.net.URI
 data class ToolActionDescriptor(
     val kind: ToolActionKind,
     val primary: String? = null,
-    val secondary: String? = null,
 )
 
 enum class ToolActionKind {
@@ -70,8 +69,8 @@ enum class ToolActionKind {
 }
 
 interface ToolActionListener {
-    suspend fun onToolStarted(actionId: String, descriptor: ToolActionDescriptor)
-    suspend fun onToolFinished(actionId: String, success: Boolean)
+    fun onToolStarted(actionId: String, descriptor: ToolActionDescriptor)
+    fun onToolFinished(actionId: String, success: Boolean)
 }
 
 object ToolActionValueFormatter {
@@ -84,12 +83,11 @@ object ToolActionValueFormatter {
         return if (normalized.length <= maxLength) normalized else normalized.take(maxLength - 1).trimEnd() + "..."
     }
 
-    fun fileName(path: String?): String? {
-        val normalized = normalizedPath(path) ?: return null
-        return compactText(File(normalized).name.ifBlank { normalized })
-    }
+    fun fileName(path: String?): String? = pathLeaf(path)
 
-    fun folderName(path: String?): String? {
+    fun folderName(path: String?): String? = pathLeaf(path)
+
+    private fun pathLeaf(path: String?): String? {
         val normalized = normalizedPath(path) ?: return null
         return compactText(File(normalized).name.ifBlank { normalized })
     }

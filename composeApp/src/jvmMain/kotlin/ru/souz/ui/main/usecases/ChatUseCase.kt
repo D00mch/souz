@@ -109,6 +109,10 @@ class ChatUseCase(
             isUser = false,
             isVoice = isVoice,
         )
+        val pendingBot = PendingBotMessageHandle(
+            requestId = requestId,
+            message = pendingBotMessage,
+        )
         activeRequestMessages.set(
             ActiveRequestMessages(
                 requestId = requestId,
@@ -131,7 +135,7 @@ class ChatUseCase(
                 )
             }
 
-            sideEffectsJob = subscribeOnTaskSideEffects(scope, pendingBotMessage, actionTracker)
+            sideEffectsJob = subscribeOnTaskSideEffects(scope, pendingBot, actionTracker)
             l.info("About to execute agent with user input {}", userText)
 
             val response = withContext(
@@ -141,35 +145,11 @@ class ChatUseCase(
             ) {
                 agentFacade.execute(
                     input = userText,
-                    toolActionListener = object : ToolActionListener {
-                        override suspend fun onToolStarted(actionId: String, descriptor: ToolActionDescriptor) {
-                            val updatedActions = actionTracker.start(actionId, descriptor)
-                            emitState {
-                                copy(
-                                    chatMessages = chatMessages.upsertMessage(
-                                        messageId = pendingBotMessage.id,
-                                        fallback = pendingBotMessage.copy(agentActions = updatedActions)
-                                    ) { current ->
-                                        current.copy(agentActions = updatedActions)
-                                    }
-                                )
-                            }
-                        }
-
-                        override suspend fun onToolFinished(actionId: String, success: Boolean) {
-                            val updatedActions = actionTracker.finish(actionId, success)
-                            emitState {
-                                copy(
-                                    chatMessages = chatMessages.upsertMessage(
-                                        messageId = pendingBotMessage.id,
-                                        fallback = pendingBotMessage.copy(agentActions = updatedActions)
-                                    ) { current ->
-                                        current.copy(agentActions = updatedActions)
-                                    }
-                                )
-                            }
-                        }
-                    }
+                    toolActionListener = createToolActionListener(
+                        scope = scope,
+                        pendingBot = pendingBot,
+                        actionTracker = actionTracker,
+                    )
                 )
             }
 
@@ -366,7 +346,7 @@ class ChatUseCase(
 
     private fun subscribeOnTaskSideEffects(
         scope: CoroutineScope,
-        msg: ChatMessage,
+        pendingBot: PendingBotMessageHandle,
         actionTracker: RequestToolActionTracker,
     ): Job {
         val job = scope.launch {
@@ -374,24 +354,20 @@ class ChatUseCase(
             var accumulatedText = ""
             agentFacade.sideEffects.collect { text ->
                 accumulatedText += text
-                emitState {
-                    copy(
-                        chatMessages = chatMessages.upsertMessage(
-                            messageId = msg.id,
-                            fallback = msg.copy(
-                                text = accumulatedText,
-                                agentActions = actionTracker.snapshot(),
-                            )
-                        ) { current ->
-                            current.copy(
-                                text = accumulatedText,
-                                agentActions = actionTracker.snapshot(),
-                            )
-                        }
+                emitPendingBotMessageUpdate(
+                    pendingBot = pendingBot,
+                    fallback = pendingBot.message.copy(
+                        text = accumulatedText,
+                        agentActions = actionTracker.snapshot(),
+                    )
+                ) { current ->
+                    current.copy(
+                        text = accumulatedText,
+                        agentActions = actionTracker.snapshot(),
                     )
                 }
 
-                if (!msg.isVoice) return@collect
+                if (!pendingBot.message.isVoice) return@collect
 
                 if (text.contains(CODE_BLOCK)) {
                     isCodeBlockStarted.set(!isCodeBlockStarted.get())
@@ -419,6 +395,56 @@ class ChatUseCase(
         _outputs.emit(MainUseCaseOutput.State(reduce))
     }
 
+    private fun createToolActionListener(
+        scope: CoroutineScope,
+        pendingBot: PendingBotMessageHandle,
+        actionTracker: RequestToolActionTracker,
+    ): ToolActionListener = object : ToolActionListener {
+        override fun onToolStarted(actionId: String, descriptor: ToolActionDescriptor) {
+            publishToolActions(scope, pendingBot, actionTracker.start(actionId, descriptor))
+        }
+
+        override fun onToolFinished(actionId: String, success: Boolean) {
+            publishToolActions(scope, pendingBot, actionTracker.finish(actionId, success))
+        }
+    }
+
+    private fun publishToolActions(
+        scope: CoroutineScope,
+        pendingBot: PendingBotMessageHandle,
+        actions: List<ChatAgentAction>,
+    ) {
+        scope.launch {
+            emitPendingBotMessageUpdate(
+                pendingBot = pendingBot,
+                fallback = pendingBot.message.copy(agentActions = actions),
+            ) { current ->
+                current.copy(agentActions = actions)
+            }
+        }
+    }
+
+    private suspend fun emitPendingBotMessageUpdate(
+        pendingBot: PendingBotMessageHandle,
+        fallback: ChatMessage,
+        transform: (ChatMessage) -> ChatMessage,
+    ) {
+        if (!isActivePendingMessage(pendingBot)) return
+        emitState {
+            copy(
+                chatMessages = chatMessages.upsertMessage(
+                    messageId = pendingBot.message.id,
+                    fallback = fallback,
+                    transform = transform,
+                )
+            )
+        }
+    }
+
+    private fun isActivePendingMessage(pendingBot: PendingBotMessageHandle): Boolean {
+        val active = activeRequestMessages.get() ?: return false
+        return active.requestId == pendingBot.requestId && active.pendingMessageId == pendingBot.message.id
+    }
 
     private suspend fun extractFinderPaths(text: String) =
         withContext(ioDispatcher) {
@@ -456,6 +482,11 @@ class ChatUseCase(
         val requestId: Long,
         val userMessageId: String,
         val pendingMessageId: String,
+    )
+
+    private data class PendingBotMessageHandle(
+        val requestId: Long,
+        val message: ChatMessage,
     )
 
     private class RequestToolActionTracker {

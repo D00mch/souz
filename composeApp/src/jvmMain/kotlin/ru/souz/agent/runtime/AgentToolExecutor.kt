@@ -8,6 +8,7 @@ import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.GigaToolSetup
 import ru.souz.telemetry.TelemetryService
+import ru.souz.tool.ToolActionDescriptor
 
 class AgentToolExecutor(
     private val telemetryService: TelemetryService,
@@ -28,14 +29,10 @@ class AgentToolExecutor(
         val toolCategory = settings.tools.categoryByName[functionCall.name]
         val actionId = UUID.randomUUID().toString()
         val actionDescriptor = fn.describeAction(functionCall)
-        if (actionDescriptor != null) {
-            settings.toolActionListener?.onToolStarted(actionId, actionDescriptor)
-        }
+        notifyToolAction(settings, actionId, actionDescriptor)
         return try {
             fn.invoke(functionCall).also {
-                if (actionDescriptor != null) {
-                    settings.toolActionListener?.onToolFinished(actionId, success = true)
-                }
+                notifyToolAction(settings, actionId, actionDescriptor, success = true)
                 telemetryService.recordToolExecution(
                     functionName = functionCall.name,
                     functionArguments = functionCall.arguments,
@@ -46,9 +43,7 @@ class AgentToolExecutor(
                 )
             }
         } catch (e: Exception) {
-            if (actionDescriptor != null) {
-                settings.toolActionListener?.onToolFinished(actionId, success = false)
-            }
+            notifyToolAction(settings, actionId, actionDescriptor, success = false)
             l.error("Tool execution failure: ${fn.fn.name}, arguments: ${functionCall.arguments}", e)
             telemetryService.recordToolExecution(
                 functionName = functionCall.name,
@@ -59,6 +54,23 @@ class AgentToolExecutor(
                 errorMessage = e::class.simpleName ?: "UnknownError",
             )
             throw e
+        }
+    }
+
+    private fun notifyToolAction(
+        settings: AgentSettings,
+        actionId: String,
+        actionDescriptor: ToolActionDescriptor?,
+        success: Boolean? = null,
+    ) {
+        if (actionDescriptor == null) return
+        runCatching {
+            when (success) {
+                null -> settings.toolActionListener?.onToolStarted(actionId, actionDescriptor)
+                else -> settings.toolActionListener?.onToolFinished(actionId, success)
+            }
+        }.onFailure { e ->
+            l.warn("Tool action listener failed for actionId={}, success={}", actionId, success, e)
         }
     }
 }
