@@ -44,9 +44,8 @@ class ToolTelegramSavedMessages(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.SAVE_TELEGRAM_SAVED_MESSAGES,
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.SAVE_TELEGRAM_SAVED_MESSAGES.action()
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 

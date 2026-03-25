@@ -24,7 +24,6 @@ import ru.souz.telemetry.TelemetryRequestStatus
 import ru.souz.telemetry.TelemetryService
 import ru.souz.ui.main.ChatAttachedFile
 import ru.souz.ui.main.ChatAgentAction
-import ru.souz.ui.main.ChatAgentActionStatus
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainState
 import ru.souz.tool.ToolActionDescriptor
@@ -104,25 +103,16 @@ class ChatUseCase(
             attachedFiles = attachedFiles,
         )
 
-        val pendingBotMessage = ChatMessage(
-            text = "",
-            isUser = false,
-            isVoice = isVoice,
-        )
-        val pendingBot = PendingBotMessageHandle(
-            requestId = requestId,
-            message = pendingBotMessage,
-        )
+        val pendingBot = PendingBotMessageState(requestId = requestId, isVoice = isVoice)
         activeRequestMessages.set(
             ActiveRequestMessages(
                 requestId = requestId,
                 userMessageId = userMessage.id,
-                pendingMessageId = pendingBotMessage.id,
+                pendingMessageId = pendingBot.messageId,
             )
         )
 
         var sideEffectsJob: Job? = null
-        val actionTracker = RequestToolActionTracker()
 
         try {
             emitState {
@@ -135,7 +125,7 @@ class ChatUseCase(
                 )
             }
 
-            sideEffectsJob = subscribeOnTaskSideEffects(scope, pendingBot, actionTracker)
+            sideEffectsJob = subscribeOnTaskSideEffects(scope, pendingBot)
             l.info("About to execute agent with user input {}", userText)
 
             val response = withContext(
@@ -148,7 +138,6 @@ class ChatUseCase(
                     toolActionListener = createToolActionListener(
                         scope = scope,
                         pendingBot = pendingBot,
-                        actionTracker = actionTracker,
                     )
                 )
             }
@@ -157,11 +146,10 @@ class ChatUseCase(
             val botAttachments = chatAttachmentsUseCase.buildAttachmentsFromPaths(
                 extractedFinderPaths.map { it.path }
             )
-            val botMessage = pendingBotMessage.copy(
+            val botMessage = pendingBot.buildMessage(
                 text = response,
                 finderPaths = extractedFinderPaths,
                 attachedFiles = botAttachments,
-                agentActions = actionTracker.snapshot(),
             )
             if (activeChatRequestId.get() != requestId) {
                 l.info("Skipping stale chat response for request {}", requestId)
@@ -198,7 +186,7 @@ class ChatUseCase(
             val isCurrentRequest = activeChatRequestId.get() == requestId
             withContext(NonCancellable) {
                 emitState {
-                    val idsToDrop = arrayOf(userMessage.id, pendingBotMessage.id)
+                    val idsToDrop = arrayOf(userMessage.id, pendingBot.messageId)
                     copy(
                         chatMessages = chatMessages.filterNot { it.id in idsToDrop },
                         isProcessing = if (isCurrentRequest) false else isProcessing,
@@ -346,8 +334,7 @@ class ChatUseCase(
 
     private fun subscribeOnTaskSideEffects(
         scope: CoroutineScope,
-        pendingBot: PendingBotMessageHandle,
-        actionTracker: RequestToolActionTracker,
+        pendingBot: PendingBotMessageState,
     ): Job {
         val job = scope.launch {
             val isCodeBlockStarted = AtomicBoolean(false)
@@ -356,18 +343,15 @@ class ChatUseCase(
                 accumulatedText += text
                 emitPendingBotMessageUpdate(
                     pendingBot = pendingBot,
-                    fallback = pendingBot.message.copy(
-                        text = accumulatedText,
-                        agentActions = actionTracker.snapshot(),
-                    )
+                    fallback = pendingBot.buildMessage(text = accumulatedText)
                 ) { current ->
                     current.copy(
                         text = accumulatedText,
-                        agentActions = actionTracker.snapshot(),
+                        agentActions = pendingBot.snapshotActions(),
                     )
                 }
 
-                if (!pendingBot.message.isVoice) return@collect
+                if (!pendingBot.isVoice) return@collect
 
                 if (text.contains(CODE_BLOCK)) {
                     isCodeBlockStarted.set(!isCodeBlockStarted.get())
@@ -397,27 +381,26 @@ class ChatUseCase(
 
     private fun createToolActionListener(
         scope: CoroutineScope,
-        pendingBot: PendingBotMessageHandle,
-        actionTracker: RequestToolActionTracker,
+        pendingBot: PendingBotMessageState,
     ): ToolActionListener = object : ToolActionListener {
         override fun onToolStarted(actionId: String, descriptor: ToolActionDescriptor) {
-            publishToolActions(scope, pendingBot, actionTracker.start(actionId, descriptor))
+            publishToolActions(scope, pendingBot, pendingBot.startAction(actionId, descriptor))
         }
 
         override fun onToolFinished(actionId: String, success: Boolean) {
-            publishToolActions(scope, pendingBot, actionTracker.finish(actionId, success))
+            publishToolActions(scope, pendingBot, pendingBot.finishAction(actionId, success))
         }
     }
 
     private fun publishToolActions(
         scope: CoroutineScope,
-        pendingBot: PendingBotMessageHandle,
+        pendingBot: PendingBotMessageState,
         actions: List<ChatAgentAction>,
     ) {
         scope.launch {
             emitPendingBotMessageUpdate(
                 pendingBot = pendingBot,
-                fallback = pendingBot.message.copy(agentActions = actions),
+                fallback = pendingBot.buildMessage(),
             ) { current ->
                 current.copy(agentActions = actions)
             }
@@ -425,25 +408,21 @@ class ChatUseCase(
     }
 
     private suspend fun emitPendingBotMessageUpdate(
-        pendingBot: PendingBotMessageHandle,
+        pendingBot: PendingBotMessageState,
         fallback: ChatMessage,
         transform: (ChatMessage) -> ChatMessage,
     ) {
         if (!isActivePendingMessage(pendingBot)) return
         emitState {
             copy(
-                chatMessages = chatMessages.upsertMessage(
-                    messageId = pendingBot.message.id,
-                    fallback = fallback,
-                    transform = transform,
-                )
+                chatMessages = pendingBot.updateMessages(chatMessages, fallback, transform)
             )
         }
     }
 
-    private fun isActivePendingMessage(pendingBot: PendingBotMessageHandle): Boolean {
+    private fun isActivePendingMessage(pendingBot: PendingBotMessageState): Boolean {
         val active = activeRequestMessages.get() ?: return false
-        return active.requestId == pendingBot.requestId && active.pendingMessageId == pendingBot.message.id
+        return active.requestId == pendingBot.requestId && active.pendingMessageId == pendingBot.messageId
     }
 
     private suspend fun extractFinderPaths(text: String) =
@@ -453,21 +432,6 @@ class ChatUseCase(
 
     private inline fun <T> List<T>.mapLast(transform: (T) -> T): List<T> =
         mapIndexed { index, value -> if (index == lastIndex) transform(value) else value }
-
-    private fun List<ChatMessage>.upsertMessage(
-        messageId: String,
-        fallback: ChatMessage,
-        transform: (ChatMessage) -> ChatMessage,
-    ): List<ChatMessage> {
-        val index = indexOfLast { it.id == messageId }
-        return if (index >= 0) {
-            mapIndexed { currentIndex, value ->
-                if (currentIndex == index) transform(value) else value
-            }
-        } else {
-            this + transform(fallback)
-        }
-    }
 
     private fun telemetryErrorLabel(error: Throwable): String =
         error::class.simpleName
@@ -483,35 +447,4 @@ class ChatUseCase(
         val userMessageId: String,
         val pendingMessageId: String,
     )
-
-    private data class PendingBotMessageHandle(
-        val requestId: Long,
-        val message: ChatMessage,
-    )
-
-    private class RequestToolActionTracker {
-        private val actions = LinkedHashMap<String, ChatAgentAction>()
-
-        @Synchronized
-        fun start(actionId: String, descriptor: ToolActionDescriptor): List<ChatAgentAction> {
-            actions[actionId] = ChatAgentAction(
-                id = actionId,
-                descriptor = descriptor,
-                status = ChatAgentActionStatus.IN_PROGRESS,
-            )
-            return snapshot()
-        }
-
-        @Synchronized
-        fun finish(actionId: String, success: Boolean): List<ChatAgentAction> {
-            val current = actions[actionId] ?: return snapshot()
-            actions[actionId] = current.copy(
-                status = if (success) ChatAgentActionStatus.COMPLETED else ChatAgentActionStatus.FAILED
-            )
-            return snapshot()
-        }
-
-        @Synchronized
-        fun snapshot(): List<ChatAgentAction> = actions.values.toList()
-    }
 }

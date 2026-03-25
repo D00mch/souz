@@ -11,7 +11,12 @@ interface Node<IN, OUT> {
 fun <IN, OUT> Node(
     name: String,
     op: suspend (AgentContext<IN>) -> AgentContext<OUT>,
+): Node<IN, OUT> = Node(name) { ctx, _ -> op(ctx) }
+
+fun <IN, OUT> Node(
+    name: String,
+    op: suspend (AgentContext<IN>, GraphRuntime) -> AgentContext<OUT>,
 ): Node<IN, OUT> = object : Node<IN, OUT> {
     override val name: String = "Node $name; ${Integer.toHexString(hashCode())}"
-    override suspend fun execute(ctx: AgentContext<IN>, runtime: GraphRuntime) = op(ctx)
+    override suspend fun execute(ctx: AgentContext<IN>, runtime: GraphRuntime) = op(ctx, runtime)
 }

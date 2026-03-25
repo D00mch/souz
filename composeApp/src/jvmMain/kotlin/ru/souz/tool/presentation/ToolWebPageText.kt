@@ -55,10 +55,8 @@ class ToolWebPageText(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.READ_WEB_PAGE,
-        primary = ToolActionValueFormatter.host(input.url),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.READ_WEB_PAGE.hostAction(input.url)
 
     override fun invoke(input: Input): String {
         val url = input.url.trim()

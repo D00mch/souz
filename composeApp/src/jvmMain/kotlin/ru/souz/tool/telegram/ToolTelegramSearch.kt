@@ -51,14 +51,11 @@ class ToolTelegramSearch(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = if (input.chatName.isNullOrBlank()) {
+    override fun describeAction(input: Input): ToolActionDescriptor? = if (input.chatName.isNullOrBlank()) {
             ToolActionKind.SEARCH_TELEGRAM
         } else {
             ToolActionKind.SEARCH_TELEGRAM_CHAT
-        },
-        primary = ToolActionValueFormatter.compactText(input.chatName ?: input.query),
-    )
+        }.textAction(input.chatName ?: input.query)
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 

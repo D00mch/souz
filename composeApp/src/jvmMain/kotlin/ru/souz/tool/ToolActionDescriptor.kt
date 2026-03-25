@@ -66,6 +66,26 @@ enum class ToolActionKind {
     ARCHIVE_TELEGRAM_CHAT,
     MARK_READ_TELEGRAM_CHAT,
     DELETE_TELEGRAM_CHAT,
+
+    ;
+
+    fun action(primary: String? = null): ToolActionDescriptor =
+        ToolActionDescriptor(kind = this, primary = primary)
+
+    fun textAction(value: String?): ToolActionDescriptor =
+        action(ToolActionValueFormatter.compactText(value))
+
+    fun fileAction(path: String?): ToolActionDescriptor =
+        action(ToolActionValueFormatter.fileName(path))
+
+    fun folderAction(path: String?): ToolActionDescriptor =
+        action(ToolActionValueFormatter.folderName(path))
+
+    fun hostAction(url: String?): ToolActionDescriptor =
+        action(ToolActionValueFormatter.host(url))
+
+    fun appTargetAction(target: String?): ToolActionDescriptor =
+        action(ToolActionValueFormatter.appTarget(target))
 }
 
 interface ToolActionListener {

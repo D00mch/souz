@@ -33,10 +33,8 @@ class ToolSearchNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolSear
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.SEARCH_NOTES,
-        primary = ToolActionValueFormatter.compactText(input.query),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.SEARCH_NOTES.textAction(input.query)
 
     override fun invoke(input: Input): String {
         if (input.query.isBlank()) throw BadInputException("Search query cannot be empty")

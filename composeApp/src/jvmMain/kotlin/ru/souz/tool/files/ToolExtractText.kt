@@ -47,10 +47,8 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.EXTRACT_TEXT_FROM_FILE,
-        primary = ToolActionValueFormatter.fileName(input.filePath),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.EXTRACT_TEXT_FROM_FILE.fileAction(input.filePath)
 
     override suspend fun suspendInvoke(input: Input): String {
         return try {

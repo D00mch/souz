@@ -56,9 +56,8 @@ class ToolTelegramForward(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.FORWARD_TELEGRAM_MESSAGE,
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.FORWARD_TELEGRAM_MESSAGE.action()
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 

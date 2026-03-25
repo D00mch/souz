@@ -20,6 +20,7 @@ import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.giga.GigaResponse
+import ru.souz.tool.ToolActionListener
 
 class GraphBasedAgent(
     di: DI,
@@ -76,7 +77,13 @@ class GraphBasedAgent(
     override suspend fun executeWithTrace(
         ctx: AgentContext<String>,
         onStep: GraphStepCallback?,
-    ): AgentExecutionResult = executionDelegate.executeWithTrace(graph = graph, ctx = ctx, onStep = onStep)
+        toolActionListener: ToolActionListener?,
+    ): AgentExecutionResult = executionDelegate.executeWithTrace(
+        graph = graph,
+        ctx = ctx,
+        onStep = onStep,
+        toolActionListener = toolActionListener,
+    )
 
     private val GigaResponse.Chat.Ok.isToolUse get() = choices.any { it.message.functionCall != null }
 }

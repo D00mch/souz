@@ -21,6 +21,7 @@ import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.giga.GigaMessageRole
 import ru.souz.giga.GigaResponse
+import ru.souz.tool.ToolActionListener
 
 class LuaGraphBasedAgent(
     di: DI,
@@ -119,5 +120,11 @@ class LuaGraphBasedAgent(
     override suspend fun executeWithTrace(
         ctx: AgentContext<String>,
         onStep: GraphStepCallback?,
-    ): AgentExecutionResult = executionDelegate.executeWithTrace(graph = graph, ctx = ctx, onStep = onStep)
+        toolActionListener: ToolActionListener?,
+    ): AgentExecutionResult = executionDelegate.executeWithTrace(
+        graph = graph,
+        ctx = ctx,
+        onStep = onStep,
+        toolActionListener = toolActionListener,
+    )
 }

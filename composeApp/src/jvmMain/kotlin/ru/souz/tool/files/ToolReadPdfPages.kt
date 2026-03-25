@@ -43,10 +43,8 @@ class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<Too
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.READ_PDF,
-        primary = ToolActionValueFormatter.fileName(input.filePath),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.READ_PDF.fileAction(input.filePath)
 
     override fun invoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.filePath)

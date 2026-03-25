@@ -100,22 +100,19 @@ class AgentFacade(
 
     suspend fun execute(input: String, toolActionListener: ToolActionListener? = null): String {
         cancelActiveJob()
-        val seed = _currentContext.value.copy(
-            input = input,
-            settings = _currentContext.value.settings.copy(toolActionListener = toolActionListener),
-        )
+        val seed = _currentContext.value.copy(input = input)
         val agent = agentById(_activeAgentId.value)
 
         sessionService.startTask(input)
         return try {
-            val result = agent.executeWithTrace(seed) { step, node, from, to ->
-                sessionService.onStep(step, node, from, to)
-            }
-            _currentContext.emit(
-                result.context.copy(
-                    settings = result.context.settings.copy(toolActionListener = null)
-                )
+            val result = agent.executeWithTrace(
+                ctx = seed,
+                onStep = { step, node, from, to ->
+                    sessionService.onStep(step, node, from, to)
+                },
+                toolActionListener = toolActionListener,
             )
+            _currentContext.emit(result.context)
             result.output
         } finally {
             runCatching { sessionService.finishTask() }

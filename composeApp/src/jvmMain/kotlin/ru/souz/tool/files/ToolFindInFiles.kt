@@ -52,10 +52,8 @@ class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.SEARCH_FILE_CONTENT,
-        primary = ToolActionValueFormatter.compactText(input.query),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.SEARCH_FILE_CONTENT.textAction(input.query)
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 

@@ -32,9 +32,8 @@ class ToolMailListMessages(private val bash: ToolRunBashCommand) : ToolSetup<Too
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.LIST_MAIL,
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.LIST_MAIL.action()
 
     override fun invoke(input: Input): String {
         return bash.sh(MailAppleScriptCommands.listMessagesCommand(input.count ?: 10))

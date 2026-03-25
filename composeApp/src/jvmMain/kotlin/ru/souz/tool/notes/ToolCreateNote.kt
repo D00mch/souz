@@ -37,9 +37,8 @@ class ToolCreateNote(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.CREATE_NOTE,
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.CREATE_NOTE.action()
 
     override suspend fun suspendInvoke(input: Input): String {
         val result = permissionBroker?.requestPermission(

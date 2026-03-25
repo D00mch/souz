@@ -35,9 +35,8 @@ class ToolTelegramReadInbox(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.READ_TELEGRAM_INBOX,
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.READ_TELEGRAM_INBOX.action()
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 

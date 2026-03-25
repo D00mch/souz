@@ -47,10 +47,8 @@ class ToolFindFolders(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.FIND_FOLDER,
-        primary = ToolActionValueFormatter.compactText(input.name),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.FIND_FOLDER.textAction(input.name)
 
     override fun invoke(input: Input): String {
         l.info("Searching for folder: ${input.name}")

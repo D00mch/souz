@@ -47,10 +47,8 @@ class ToolMailSendNewMessage(private val bash: ToolRunBashCommand) : ToolSetup<T
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.SEND_MAIL,
-        primary = ToolActionValueFormatter.compactText(input.recipientName ?: input.recipientAddress),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.SEND_MAIL.textAction(input.recipientName ?: input.recipientAddress)
 
     override fun invoke(input: Input): String {
         if (input.recipientAddress.isBlank()) throw BadInputException("recipientAddress is required for new email")

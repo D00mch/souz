@@ -35,9 +35,8 @@ class ToolMailReplyMessage(private val bash: ToolRunBashCommand) : ToolSetup<Too
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.REPLY_MAIL,
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.REPLY_MAIL.action()
 
     override fun invoke(input: Input): String {
         if (input.messageId <= 0) throw BadInputException("messageId must be a positive integer")

@@ -479,6 +479,7 @@
     <string name="chat_action_mute_telegram_chat">Отключаю уведомления для чата %1$s</string>
     <string name="chat_action_archive_telegram_chat">Архивирую чат %1$s</string>
     <string name="chat_action_mark_read_telegram_chat">Помечаю чат %1$s как прочитанный</string>
+    <string name="chat_action_mark_read_telegram_chat_generic">Помечаю чат как прочитанный</string>
     <string name="chat_action_delete_telegram_chat">Удаляю чат %1$s</string>
 
 </resources>

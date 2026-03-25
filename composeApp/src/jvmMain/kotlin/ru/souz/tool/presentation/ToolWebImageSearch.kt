@@ -62,14 +62,11 @@ class ToolWebImageSearch(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = if (input.downloadImages) {
+    override fun describeAction(input: Input): ToolActionDescriptor? = if (input.downloadImages) {
             ToolActionKind.SEARCH_IMAGES_AND_DOWNLOAD
         } else {
             ToolActionKind.SEARCH_IMAGES
-        },
-        primary = ToolActionValueFormatter.compactText(input.query),
-    )
+        }.textAction(input.query)
 
     override fun invoke(input: Input): String {
         val query = input.query.trim()

@@ -23,10 +23,8 @@ class ToolReadFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolRea
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.READ_FILE,
-        primary = ToolActionValueFormatter.fileName(input.path),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.READ_FILE.fileAction(input.path)
 
     override fun invoke(input: Input): String {
         val path = input.path

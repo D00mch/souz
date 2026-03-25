@@ -37,10 +37,8 @@ class ToolMailSearch(private val bash: ToolRunBashCommand) : ToolSetup<ToolMailS
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.SEARCH_MAIL,
-        primary = ToolActionValueFormatter.compactText(input.query),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.SEARCH_MAIL.textAction(input.query)
 
     override fun invoke(input: Input): String {
         val safeQuery = input.query.replace("\"", "\\\"")

@@ -32,9 +32,8 @@ class ToolMailReadMessage(private val bash: ToolRunBashCommand) : ToolSetup<Tool
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.READ_MAIL,
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.READ_MAIL.action()
 
     override fun invoke(input: Input): String {
         if (input.messageId <= 0) throw BadInputException("messageId must be a positive integer")

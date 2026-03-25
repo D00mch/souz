@@ -48,10 +48,8 @@ class ToolMoveFile(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.MOVE_FILE,
-        primary = ToolActionValueFormatter.fileName(input.sourcePath),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.MOVE_FILE.fileAction(input.sourcePath)
 
     override suspend fun suspendInvoke(input: Input): String {
         val fixedSourcePath = filesToolUtil.applyDefaultEnvs(input.sourcePath)

@@ -61,10 +61,8 @@ class ToolTelegramGetHistory(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.READ_TELEGRAM_CHAT,
-        primary = ToolActionValueFormatter.compactText(input.chatName),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.READ_TELEGRAM_CHAT.textAction(input.chatName)
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 

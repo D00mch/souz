@@ -75,8 +75,8 @@ class NodesCommon(
      *
      * Updates [AgentContext.history] and [AgentContext.input] with tool call results.
      */
-    fun toolUse(name: String = "toolUse"): Node<GigaResponse.Chat.Ok, String> = Node(name) { ctx ->
-        val fnCallMessages = fnCallMessages(ctx)
+    fun toolUse(name: String = "toolUse"): Node<GigaResponse.Chat.Ok, String> = Node(name) { ctx, runtime ->
+        val fnCallMessages = fnCallMessages(ctx, runtime)
         val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
         ctx.map(history = history) { ctx.history.last().content }
     }
@@ -203,11 +203,15 @@ class NodesCommon(
         null
     }
 
-    private suspend fun fnCallMessages(ctx: AgentContext<GigaResponse.Chat.Ok>): List<GigaRequest.Message> {
+    private suspend fun fnCallMessages(
+        ctx: AgentContext<GigaResponse.Chat.Ok>,
+        runtime: ru.souz.agent.engine.GraphRuntime,
+    ): List<GigaRequest.Message> {
         val fnCallMessages = ctx.input.choices.mapNotNull { choice ->
             val msg = choice.message
             if (msg.functionCall != null && msg.functionsStateId != null) {
-                executeTool(ctx.settings, msg.functionCall).copy(functionsStateId = msg.functionsStateId)
+                executeTool(ctx.settings, msg.functionCall, runtime.toolActionListener)
+                    .copy(functionsStateId = msg.functionsStateId)
             } else null
         }
         return fnCallMessages
@@ -216,7 +220,8 @@ class NodesCommon(
     private suspend fun executeTool(
         settings: AgentSettings,
         functionCall: GigaResponse.FunctionCall,
-    ): GigaRequest.Message = agentToolExecutor.execute(settings, functionCall)
+        toolActionListener: ru.souz.tool.ToolActionListener?,
+    ): GigaRequest.Message = agentToolExecutor.execute(settings, functionCall, toolActionListener)
 }
 
 fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaRequest.Chat {

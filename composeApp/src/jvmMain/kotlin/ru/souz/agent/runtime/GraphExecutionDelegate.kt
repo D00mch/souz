@@ -11,6 +11,7 @@ import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.GraphStepCallback
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Graph
+import ru.souz.tool.ToolActionListener
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
@@ -22,6 +23,7 @@ internal interface GraphExecutionDelegate {
         graph: Graph<String, String>,
         ctx: AgentContext<String>,
         onStep: GraphStepCallback? = null,
+        toolActionListener: ToolActionListener? = null,
     ): AgentExecutionResult
 }
 
@@ -40,17 +42,22 @@ internal class GraphExecutionDelegateImpl(
         graph: Graph<String, String>,
         ctx: AgentContext<String>,
         onStep: GraphStepCallback?,
+        toolActionListener: ToolActionListener?,
     ): AgentExecutionResult {
         cancelActiveJob()
         val newContext = coroutineScope {
             val result: Deferred<AgentContext<String>> = async {
-                graph.start(ctx) { step, node, from, to ->
+                graph.start(
+                    seed = ctx,
+                    onStep = { step, node, from, to ->
                     val prettyInput = runCatching {
                         logObjectMapper.writeValueAsString(from.input)
                     }.getOrElse { from.input.toString() }
                     logger.debug("Step: {}, node: {}, input: {}", step.index, node.name, prettyInput)
                     onStep?.invoke(step, node, from, to)
-                }
+                    },
+                    toolActionListener = toolActionListener,
+                )
             }
             runningJob.store(result)
             try {

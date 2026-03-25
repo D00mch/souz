@@ -222,10 +222,8 @@ class ToolPresentationCreate(
             "\n- **Ask Questions**: If the user says 'Make a presentation about X', ask 'Who is the audience?', 'What is the goal?', 'Do you have specific data points?' before generating." +
             "\n- **Placeholders**: If forced to generate without data, use placeholders like '[INSERT REVENUE HERE]' instead of fake numbers."
 
-    override fun describeAction(input: PresentationCreateInput): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.CREATE_PRESENTATION,
-        primary = ToolActionValueFormatter.compactText(input.title),
-    )
+    override fun describeAction(input: PresentationCreateInput): ToolActionDescriptor? =
+        ToolActionKind.CREATE_PRESENTATION.textAction(input.title)
 
     override val fewShotExamples = listOf(
         ru.souz.tool.FewShotExample(

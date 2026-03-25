@@ -39,10 +39,8 @@ class ToolPresentationRead : ToolSetupWithAttachments<PresentationReadInput> {
 
     override val attachments: List<String> = emptyList()
 
-    override fun describeAction(input: PresentationReadInput): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.READ_PRESENTATION,
-        primary = ToolActionValueFormatter.fileName(input.filePath),
-    )
+    override fun describeAction(input: PresentationReadInput): ToolActionDescriptor? =
+        ToolActionKind.READ_PRESENTATION.fileAction(input.filePath)
 
     override fun invoke(input: PresentationReadInput): String {
         val file = File(input.filePath)

@@ -5,6 +5,7 @@ import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Graph
 import ru.souz.agent.engine.Node
 import ru.souz.agent.engine.StepInfo
+import ru.souz.tool.ToolActionListener
 
 interface Agent {
     val sideEffects: Flow<String>
@@ -25,5 +26,6 @@ internal interface TraceableAgent : Agent {
     suspend fun executeWithTrace(
         ctx: AgentContext<String>,
         onStep: GraphStepCallback? = null,
+        toolActionListener: ToolActionListener? = null,
     ): AgentExecutionResult
 }

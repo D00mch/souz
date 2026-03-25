@@ -41,10 +41,8 @@ class ToolDeleteNote(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.DELETE_NOTE,
-        primary = ToolActionValueFormatter.compactText(input.noteName),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.DELETE_NOTE.textAction(input.noteName)
 
     override suspend fun suspendInvoke(input: Input): String {
         val result = permissionBroker?.requestPermission(

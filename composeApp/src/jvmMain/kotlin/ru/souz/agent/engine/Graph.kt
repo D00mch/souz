@@ -1,6 +1,7 @@
 package ru.souz.agent.engine
 
 import org.slf4j.LoggerFactory
+import ru.souz.tool.ToolActionListener
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 
@@ -34,11 +35,13 @@ class Graph<IN, OUT> internal constructor(
         seed: AgentContext<IN>,
         maxSteps: Int = 1000,
         onStep: ((step: StepInfo, node: Node<Any?, Any?>, from: AgentContext<Any?>, to: AgentContext<Any?>) -> Unit)? = null,
+        toolActionListener: ToolActionListener? = null,
     ): AgentContext<OUT> {
         val runtime = GraphRuntime(
             retryPolicy = retryPolicy,
             maxSteps = maxSteps,
             onStep = onStep,
+            toolActionListener = toolActionListener,
         )
         return execute(seed, runtime)
     }

@@ -28,9 +28,8 @@ class ToolListNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolListNo
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.LIST_NOTES,
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.LIST_NOTES.action()
 
     override fun invoke(input: Input): String {
         val result = bash.apple(

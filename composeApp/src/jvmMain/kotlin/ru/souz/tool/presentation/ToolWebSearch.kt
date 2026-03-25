@@ -56,10 +56,8 @@ class ToolWebSearch(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.SEARCH_WEB,
-        primary = ToolActionValueFormatter.compactText(input.query),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.SEARCH_WEB.textAction(input.query)
 
     override fun invoke(input: Input): String {
         val query = input.query.trim()

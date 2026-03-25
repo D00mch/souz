@@ -35,9 +35,8 @@ class ToolTakeScreenshot(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.TAKE_SCREENSHOT,
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.TAKE_SCREENSHOT.action()
 
     override fun invoke(input: Input): String {
         val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(Date())

@@ -32,9 +32,8 @@ class ToolStartScreenRecording(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.START_SCREEN_RECORDING,
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.START_SCREEN_RECORDING.action()
 
     override fun invoke(input: Input): String {
         bash.sh("open -a Screenshot")

@@ -47,10 +47,8 @@ class ToolCalendarListEvents : ToolSetup<ToolCalendarListEvents.Input> {
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.LIST_CALENDAR_EVENTS,
-        primary = ToolActionValueFormatter.compactText(input.date),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.LIST_CALENDAR_EVENTS.textAction(input.date)
 
     override fun invoke(input: Input): String {
         val calName = input.calendarName.ifBlank { "Calendar" }

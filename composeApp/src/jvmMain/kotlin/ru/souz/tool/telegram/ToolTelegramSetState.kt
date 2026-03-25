@@ -63,15 +63,12 @@ class ToolTelegramSetState(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = when (input.action) {
+    override fun describeAction(input: Input): ToolActionDescriptor? = when (input.action) {
             Action.Mute -> ToolActionKind.MUTE_TELEGRAM_CHAT
             Action.Archive -> ToolActionKind.ARCHIVE_TELEGRAM_CHAT
             Action.MarkRead -> ToolActionKind.MARK_READ_TELEGRAM_CHAT
             Action.Delete -> ToolActionKind.DELETE_TELEGRAM_CHAT
-        },
-        primary = ToolActionValueFormatter.compactText(input.chatName),
-    )
+        }.textAction(input.chatName)
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 

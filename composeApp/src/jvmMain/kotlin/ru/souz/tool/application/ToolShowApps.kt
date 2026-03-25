@@ -47,12 +47,10 @@ The "app-pid" only returned for running apps with `${AppState.running}` input.
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = when (input.state) {
+    override fun describeAction(input: Input): ToolActionDescriptor? = when (input.state) {
             AppState.installed -> ToolActionKind.SHOW_INSTALLED_APPS
             AppState.running -> ToolActionKind.SHOW_RUNNING_APPS
-        }
-    )
+        }.action()
 
     override fun invoke(input: Input): String = when (input.state) {
         AppState.installed -> {

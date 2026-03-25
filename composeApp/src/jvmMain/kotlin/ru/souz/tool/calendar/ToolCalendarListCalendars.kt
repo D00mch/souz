@@ -39,10 +39,8 @@ class ToolCalendarListCalendars(private val bash: ToolRunBashCommand) : ToolSetu
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.LIST_CALENDARS,
-        primary = ToolActionValueFormatter.compactText(input.nameFilter),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.LIST_CALENDARS.textAction(input.nameFilter)
 
     override fun invoke(input: Input): String {
         return bash.sh(CalendarAppleScriptCommands.listCalendarsCommand(input.nameFilter))

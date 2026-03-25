@@ -8,8 +8,6 @@ import ru.souz.tool.ToolActionKind
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 
-private val formatTokenRegex = Regex("\\s*%((\\d+)\\$)?[a-zA-Z]")
-
 @Composable
 fun formatToolAction(descriptor: ToolActionDescriptor): String {
     val primary = descriptor.primary
@@ -69,19 +67,31 @@ fun formatToolAction(descriptor: ToolActionDescriptor): String {
         ToolActionKind.SAVE_TELEGRAM_SAVED_MESSAGES -> stringResource(Res.string.chat_action_save_telegram_saved_messages)
         ToolActionKind.MUTE_TELEGRAM_CHAT -> format(Res.string.chat_action_mute_telegram_chat, primary)
         ToolActionKind.ARCHIVE_TELEGRAM_CHAT -> format(Res.string.chat_action_archive_telegram_chat, primary)
-        ToolActionKind.MARK_READ_TELEGRAM_CHAT -> format(Res.string.chat_action_mark_read_telegram_chat, primary)
+        ToolActionKind.MARK_READ_TELEGRAM_CHAT -> format(
+            Res.string.chat_action_mark_read_telegram_chat,
+            primary,
+            Res.string.chat_action_mark_read_telegram_chat_generic,
+        )
         ToolActionKind.DELETE_TELEGRAM_CHAT -> format(Res.string.chat_action_delete_telegram_chat, primary)
     }
 }
 
 @Composable
-private fun format(resource: StringResource, value: String?): String =
-    if (value.isNullOrBlank()) {
-        stringResource(resource)
-            .replace(formatTokenRegex, "")
-            .replace(Regex("\\s{2,}"), " ")
-            .trim()
-            .trimEnd(':', ' ')
-    } else {
-        stringResource(resource, value)
+private fun format(
+    resource: StringResource,
+    value: String?,
+    fallbackResource: StringResource? = null,
+): String {
+    if (!value.isNullOrBlank()) {
+        return stringResource(resource, value)
     }
+
+    fallbackResource?.let { return stringResource(it) }
+
+    val template = stringResource(resource)
+    val withoutIndexedArg = template.substringBefore("%1\$s", missingDelimiterValue = template)
+    return withoutIndexedArg
+        .substringBefore("%s", missingDelimiterValue = withoutIndexedArg)
+        .trim()
+        .trimEnd(':', ' ')
+}

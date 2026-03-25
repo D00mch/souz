@@ -48,23 +48,24 @@ class AgentToolExecutorTest {
             toolsByCategory = mapOf(
                 ToolCategory.WEB_SEARCH to mapOf(tool.fn.name to tool)
             ),
-            toolActionListener = object : ToolActionListener {
-                override fun onToolStarted(actionId: String, descriptor: ToolActionDescriptor) {
-                    error("start listener failure")
-                }
-
-                override fun onToolFinished(actionId: String, success: Boolean) {
-                    error("finish listener failure")
-                }
-            }
         )
+        val toolActionListener = object : ToolActionListener {
+            override fun onToolStarted(actionId: String, descriptor: ToolActionDescriptor) {
+                error("start listener failure")
+            }
+
+            override fun onToolFinished(actionId: String, success: Boolean) {
+                error("finish listener failure")
+            }
+        }
 
         val result = AgentToolExecutor(telemetryService).execute(
             settings = settings,
             functionCall = GigaResponse.FunctionCall(
                 name = tool.fn.name,
                 arguments = emptyMap(),
-            )
+            ),
+            toolActionListener = toolActionListener,
         )
 
         assertEquals("""{"result":"ok"}""", result.content)

@@ -55,29 +55,15 @@ class ToolOpen(
     override fun describeAction(input: Input): ToolActionDescriptor? {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.target).trim()
         if (fixedPath.startsWith("http://") || fixedPath.startsWith("https://")) {
-            return ToolActionDescriptor(kind = ToolActionKind.OPEN_LINK)
+            return ToolActionKind.OPEN_LINK.action()
         }
 
         val file = File(fixedPath)
         return when {
-            file.exists() && file.isDirectory -> ToolActionDescriptor(
-                kind = ToolActionKind.OPEN_FOLDER,
-                primary = ToolActionValueFormatter.folderName(fixedPath),
-            )
-
-            file.exists() -> ToolActionDescriptor(
-                kind = ToolActionKind.OPEN_FILE,
-                primary = ToolActionValueFormatter.fileName(fixedPath),
-            )
-
-            fixedPath.endsWith(".app") || fixedPath.contains('.') -> ToolActionDescriptor(
-                kind = ToolActionKind.OPEN_APPLICATION,
-            )
-
-            else -> ToolActionDescriptor(
-                kind = ToolActionKind.OPEN_FOLDER,
-                primary = ToolActionValueFormatter.appTarget(input.target),
-            )
+            file.exists() && file.isDirectory -> ToolActionKind.OPEN_FOLDER.folderAction(fixedPath)
+            file.exists() -> ToolActionKind.OPEN_FILE.fileAction(fixedPath)
+            fixedPath.endsWith(".app") || fixedPath.contains('.') -> ToolActionKind.OPEN_APPLICATION.action()
+            else -> ToolActionKind.OPEN_FOLDER.appTargetAction(input.target)
         }
     }
 

@@ -2,6 +2,7 @@ package ru.souz.agent.engine
 
 import ru.souz.giga.GigaException
 import kotlinx.coroutines.CancellationException
+import ru.souz.tool.ToolActionListener
 import java.util.concurrent.atomic.AtomicInteger
 
 class GraphCancellation(
@@ -40,6 +41,7 @@ class GraphRuntime private constructor(
     val retryPolicy: RetryPolicy,
     val maxSteps: Int,
     val onStep: ((step: StepInfo, node: Node<Any?, Any?>, from: AgentContext<Any?>, to: AgentContext<Any?>) -> Unit)? = null,
+    val toolActionListener: ToolActionListener? = null,
     val counter: AtomicInteger,
     val graphStack: ArrayDeque<String>
 ) {
@@ -47,7 +49,15 @@ class GraphRuntime private constructor(
         retryPolicy: RetryPolicy,
         maxSteps: Int,
         onStep: ((step: StepInfo, node: Node<Any?, Any?>, from: AgentContext<Any?>, to: AgentContext<Any?>) -> Unit)? = null,
-    ): this(retryPolicy, maxSteps, onStep, counter = AtomicInteger(), graphStack = ArrayDeque())
+        toolActionListener: ToolActionListener? = null,
+    ): this(
+        retryPolicy,
+        maxSteps,
+        onStep,
+        toolActionListener,
+        counter = AtomicInteger(),
+        graphStack = ArrayDeque(),
+    )
 
     fun graphPathSnapshot(): List<String> = graphStack.toList()
 

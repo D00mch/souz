@@ -18,7 +18,17 @@ interface GigaToolSetup {
     val fn: GigaRequest.Function
     suspend operator fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message
     fun describeAction(functionCall: GigaResponse.FunctionCall): ToolActionDescriptor? = null
+    fun prepare(functionCall: GigaResponse.FunctionCall): PreparedGigaToolCall =
+        PreparedGigaToolCall(
+            actionDescriptor = describeAction(functionCall),
+            execute = { invoke(functionCall) },
+        )
 }
+
+data class PreparedGigaToolCall(
+    val actionDescriptor: ToolActionDescriptor?,
+    val execute: suspend () -> GigaRequest.Message,
+)
 
 val gigaJsonMapper = jacksonObjectMapper()
 
@@ -71,23 +81,30 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
 
         override suspend fun invoke(
             functionCall: GigaResponse.FunctionCall,
-        ): GigaRequest.Message {
-            return try {
-                val input: Input = gigaJsonMapper.convertValue(functionCall.arguments, Input::class.java)
-                val toolResult = toolSetup.suspendInvoke(input)
-                val gigaResult = gigaJsonMapper.writeValueAsString(toolResult)
-                GigaRequest.Message(
-                    role = GigaMessageRole.function,
-                    content = gigaResult,
-                    name = functionCall.name,
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                e.toGigaToolMessage(functionCall.name)
-            } catch (e: LinkageError) {
-                e.toGigaToolMessage(functionCall.name)
-            }
+        ): GigaRequest.Message = prepare(functionCall).execute()
+
+        override fun prepare(functionCall: GigaResponse.FunctionCall): PreparedGigaToolCall {
+            val input: Input = gigaJsonMapper.convertValue(functionCall.arguments, Input::class.java)
+            return PreparedGigaToolCall(
+                actionDescriptor = toolSetup.describeAction(input),
+                execute = {
+                    try {
+                        val toolResult = toolSetup.suspendInvoke(input)
+                        val gigaResult = gigaJsonMapper.writeValueAsString(toolResult)
+                        GigaRequest.Message(
+                            role = GigaMessageRole.function,
+                            content = gigaResult,
+                            name = functionCall.name,
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        e.toGigaToolMessage(functionCall.name)
+                    } catch (e: LinkageError) {
+                        e.toGigaToolMessage(functionCall.name)
+                    }
+                },
+            )
         }
 
         override fun describeAction(functionCall: GigaResponse.FunctionCall): ToolActionDescriptor? = runCatching {
@@ -101,30 +118,33 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): GigaT
     val toolSetup = this
     val gigaToolSetup = (toolSetup as ToolSetup<Input>).toGiga()
     return object : GigaToolSetup by gigaToolSetup {
-        override suspend fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
-            return try {
-                val input: Input = gigaJsonMapper.convertValue(functionCall.arguments, Input::class.java)
-                val toolResult = toolSetup.suspendInvoke(input)
-                val gigaResult = gigaJsonMapper.writeValueAsString(toolResult)
-                GigaRequest.Message(
-                    role = GigaMessageRole.function,
-                    content = gigaResult,
-                    attachments = toolSetup.attachments,
-                    name = functionCall.name
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                e.toGigaToolMessage(functionCall.name)
-            } catch (e: LinkageError) {
-                e.toGigaToolMessage(functionCall.name)
-            }
-        }
+        override suspend fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message =
+            prepare(functionCall).execute()
 
-        override fun describeAction(functionCall: GigaResponse.FunctionCall): ToolActionDescriptor? = runCatching {
+        override fun prepare(functionCall: GigaResponse.FunctionCall): PreparedGigaToolCall {
             val input: Input = gigaJsonMapper.convertValue(functionCall.arguments, Input::class.java)
-            toolSetup.describeAction(input)
-        }.getOrNull()
+            return PreparedGigaToolCall(
+                actionDescriptor = toolSetup.describeAction(input),
+                execute = {
+                    try {
+                        val toolResult = toolSetup.suspendInvoke(input)
+                        val gigaResult = gigaJsonMapper.writeValueAsString(toolResult)
+                        GigaRequest.Message(
+                            role = GigaMessageRole.function,
+                            content = gigaResult,
+                            attachments = toolSetup.attachments,
+                            name = functionCall.name
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        e.toGigaToolMessage(functionCall.name)
+                    } catch (e: LinkageError) {
+                        e.toGigaToolMessage(functionCall.name)
+                    }
+                },
+            )
+        }
     }
 }
 

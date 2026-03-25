@@ -477,5 +477,6 @@
     <string name="chat_action_mute_telegram_chat">Muting Telegram chat %1$s</string>
     <string name="chat_action_archive_telegram_chat">Archiving Telegram chat %1$s</string>
     <string name="chat_action_mark_read_telegram_chat">Marking Telegram chat %1$s as read</string>
+    <string name="chat_action_mark_read_telegram_chat_generic">Marking Telegram chat as read</string>
     <string name="chat_action_delete_telegram_chat">Deleting Telegram chat %1$s</string>
 </resources>

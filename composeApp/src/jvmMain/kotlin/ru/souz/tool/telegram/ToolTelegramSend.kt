@@ -58,14 +58,11 @@ class ToolTelegramSend(
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = if (input.attachmentPath.isNullOrBlank()) {
+    override fun describeAction(input: Input): ToolActionDescriptor? = if (input.attachmentPath.isNullOrBlank()) {
             ToolActionKind.SEND_TELEGRAM_MESSAGE
         } else {
             ToolActionKind.SEND_TELEGRAM_ATTACHMENT
-        },
-        primary = ToolActionValueFormatter.compactText(input.targetName),
-    )
+        }.textAction(input.targetName)
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 

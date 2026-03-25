@@ -39,10 +39,8 @@ class ToolCalendarDeleteEvent(private val bash: ToolRunBashCommand) : ToolSetup<
         )
     )
 
-    override fun describeAction(input: Input): ToolActionDescriptor? = ToolActionDescriptor(
-        kind = ToolActionKind.DELETE_CALENDAR_EVENT,
-        primary = ToolActionValueFormatter.compactText(input.title),
-    )
+    override fun describeAction(input: Input): ToolActionDescriptor? =
+        ToolActionKind.DELETE_CALENDAR_EVENT.textAction(input.title)
 
     override fun invoke(input: Input): String {
         if (input.title.isBlank()) throw BadInputException("'title' is required to delete an event.")
