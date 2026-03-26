@@ -33,6 +33,7 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import souz.composeapp.generated.resources.Res
+import souz.composeapp.generated.resources.chat_action_web_search
 import souz.composeapp.generated.resources.onboarding_display_text
 import souz.composeapp.generated.resources.onboarding_input_permission_request
 import souz.composeapp.generated.resources.voice_status_processing_input
@@ -96,6 +97,7 @@ class MainViewModelTest {
         mockkStatic("org.jetbrains.compose.resources.StringResourcesKt")
         mockkStatic("org.jetbrains.compose.resources.StringArrayResourcesKt")
         coEvery { getString(any()) } answers { firstArg<Any>().toString() }
+        coEvery { getString(Res.string.chat_action_web_search) } returns "Ищу в интернете: %1\$s"
         coEvery { getStringArray(any()) } returns listOf("tip")
 
     }

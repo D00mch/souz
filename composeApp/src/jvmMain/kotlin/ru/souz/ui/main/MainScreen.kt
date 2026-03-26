@@ -99,10 +99,6 @@ private val ChatHoverIconHoverColor = Color(0x80FFFFFF)
 private val ChatHoverButtonBackground = Color(0x0FFFFFFF)
 private val ChatSelectionHandleColor = Color(0xFFFFFFFF)
 private val ChatSelectionBackgroundColor = Color(0x66FFFFFF)
-private val AgentActionBackground = Color(0x1AFFFFFF)
-private val AgentActionBorder = Color(0x12FFFFFF)
-private val AgentActionIconTint = Color(0xBFFFFFFF)
-private val AgentActionTextColor = Color(0xD9FFFFFF)
 private val FinderPathChipBackground = Color(0x2625CAB0)
 private val FinderPathChipBorder = Color(0x8812E0B5)
 private val FinderPathChipTextColor = Color(0xFF12E0B5)
@@ -900,9 +896,6 @@ fun ChatModeContent(
                         enter = fadeIn(animationSpec = tween(durationMillis = 180)),
                         exit = fadeOut(animationSpec = tween(durationMillis = 120)),
                     ) {
-                        val actionsTimestamp = remember(agentActions.size) {
-                            if (agentActions.isEmpty()) null else formatTimestamp(System.currentTimeMillis())
-                        }
                         if (agentActions.isEmpty()) {
                             Box(
                                 modifier = Modifier
@@ -913,12 +906,13 @@ fun ChatModeContent(
                                 ThinkingIndicator(text = stringThinking)
                             }
                         } else {
-                            AgentActionsBlock(
+                            AgentActionList(
                                 actions = agentActions,
-                                timestamp = actionsTimestamp,
+                                inProgress = true,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                                    .padding(vertical = 4.dp)
+                                    .padding(start = 17.dp, end = 70.dp),
                             )
                         }
                     }
@@ -1161,9 +1155,9 @@ private fun ChatBubble(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (message.agentActions.isNotEmpty()) {
-                    AgentActionsBlock(
+                    AgentActionList(
                         actions = message.agentActions,
-                        timestamp = formatTimestamp(message.timestamp),
+                        inProgress = false,
                     )
                 }
 
@@ -1292,49 +1286,71 @@ private fun ChatBubble(
 }
 
 @Composable
-private fun AgentActionsBlock(
+private fun AgentActionList(
     actions: List<String>,
-    timestamp: String?,
+    inProgress: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         actions.forEach { action ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(AgentActionBackground)
-                    .border(1.dp, AgentActionBorder, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.CheckCircleOutline,
-                    contentDescription = null,
-                    tint = AgentActionIconTint,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = action,
-                    color = AgentActionTextColor,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    modifier = Modifier.weight(1f)
-                )
-                if (!timestamp.isNullOrBlank()) {
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = timestamp,
-                        color = ChatAssistantTimestampColor,
-                        fontSize = 11.sp,
-                    )
-                }
-            }
+            AgentActionRow(
+                text = action,
+                inProgress = inProgress,
+            )
         }
+    }
+}
+
+@Composable
+private fun AgentActionRow(
+    text: String,
+    inProgress: Boolean,
+) {
+    val tint = if (inProgress) {
+        Color.White.copy(alpha = 0.82f)
+    } else {
+        Color.White.copy(alpha = 0.66f)
+    }
+    val containerColor = if (inProgress) {
+        Color.White.copy(alpha = 0.07f)
+    } else {
+        Color.White.copy(alpha = 0.05f)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(containerColor)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (inProgress) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 1.8.dp,
+                color = tint
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Rounded.CheckCircleOutline,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+
+        Text(
+            text = text,
+            color = tint,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 

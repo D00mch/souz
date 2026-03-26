@@ -25,9 +25,9 @@ import ru.souz.telemetry.TelemetryRequestSource
 import ru.souz.telemetry.TelemetryRequestStatus
 import ru.souz.telemetry.TelemetryService
 import ru.souz.ui.main.ChatAttachedFile
+import ru.souz.ui.main.formatChatAgentAction
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainState
-import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -65,7 +65,7 @@ class ChatUseCase(
         scope.launch {
             agentToolExecutor.toolInvocations.collect { functionCall ->
                 if (activeRequestMessages.get() == null) return@collect
-                val action = formatToolAction(functionCall)
+                val action = formatChatAgentAction(functionCall)
                 emitState {
                     copy(agentActions = (agentActions + action).takeLast(MAX_AGENT_ACTIONS))
                 }
@@ -405,86 +405,6 @@ class ChatUseCase(
         error::class.simpleName
             ?: error::class.qualifiedName?.substringAfterLast('.')
             ?: "UnknownError"
-
-    private fun formatToolAction(functionCall: GigaResponse.FunctionCall): String {
-        val ru = settingsProvider.regionProfile.equals("ru", ignoreCase = true)
-        return when (functionCall.name) {
-            "WebSearch" -> {
-                val query = displayValue(functionCall.arguments["query"])
-                if (ru) "Ищу в интернете: $query" else "Searching the web: $query"
-            }
-
-            "WebPageText" -> {
-                val url = displayValue(functionCall.arguments["url"])
-                if (ru) "Читаю страницу: $url" else "Reading page: $url"
-            }
-
-            "WebImageSearch" -> {
-                val query = displayValue(functionCall.arguments["query"])
-                if (ru) "Ищу изображения: $query" else "Searching images: $query"
-            }
-
-            "ReadFile", "ReadPdfPages" -> {
-                val path = displayPath(functionCall.arguments["path"])
-                if (ru) "Читаю файл: $path" else "Reading file: $path"
-            }
-
-            "EditFile" -> {
-                val path = displayPath(functionCall.arguments["path"])
-                if (ru) "Вношу изменения в файл: $path" else "Editing file: $path"
-            }
-
-            "NewFile" -> {
-                val path = displayPath(functionCall.arguments["path"])
-                if (ru) "Создаю: $path" else "Creating: $path"
-            }
-
-            "DeleteFile" -> {
-                val path = displayPath(functionCall.arguments["path"])
-                if (ru) "Удаляю: $path" else "Deleting: $path"
-            }
-
-            "MoveFile" -> {
-                val source = displayPath(functionCall.arguments["sourcePath"])
-                val destination = displayPath(functionCall.arguments["destinationPath"])
-                if (ru) "Перемещаю: $source -> $destination" else "Moving: $source -> $destination"
-            }
-
-            "FindFilesByName" -> {
-                val fileName = displayValue(functionCall.arguments["fileName"])
-                if (ru) "Ищу файл: $fileName" else "Searching for file: $fileName"
-            }
-
-            "SearchFileContent" -> {
-                val query = displayValue(functionCall.arguments["query"])
-                if (ru) "Ищу по содержимому файлов: $query" else "Searching file contents: $query"
-            }
-
-            "ListFiles" -> {
-                val path = displayPath(functionCall.arguments["path"])
-                if (ru) "Просматриваю папку: $path" else "Listing files in: $path"
-            }
-
-            else -> if (ru) {
-                "Запускаю инструмент: ${functionCall.name}"
-            } else {
-                "Running tool: ${functionCall.name}"
-            }
-        }
-    }
-
-    private fun displayPath(value: Any?): String {
-        val raw = value?.toString()?.trim().orEmpty()
-        if (raw.isEmpty()) return "?"
-        val fileName = File(raw).name.takeIf { it.isNotBlank() }
-        return ellipsize(fileName ?: raw)
-    }
-
-    private fun displayValue(value: Any?): String =
-        ellipsize(value?.toString()?.trim().takeUnless { it.isNullOrEmpty() } ?: "?")
-
-    private fun ellipsize(value: String, maxLength: Int = 80): String =
-        if (value.length <= maxLength) value else value.take(maxLength - 1) + "..."
 
     private companion object {
         const val CODE_BLOCK = "```"
