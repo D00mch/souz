@@ -13,9 +13,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.engine.AgentContext
 import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
+import ru.souz.giga.GigaResponse
 import ru.souz.giga.TokenLogging
 import ru.souz.telemetry.TelemetryConversationEndReason
 import ru.souz.telemetry.TelemetryConversationStartReason
@@ -25,6 +27,7 @@ import ru.souz.telemetry.TelemetryService
 import ru.souz.ui.main.ChatAttachedFile
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainState
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -36,6 +39,7 @@ class ChatUseCase(
     private val speechUseCase: SpeechUseCase,
     private val finderPathExtractor: FinderPathExtractor,
     private val chatAttachmentsUseCase: ChatAttachmentsUseCase,
+    private val agentToolExecutor: AgentToolExecutor,
     private val tokenLogging: TokenLogging,
     private val telemetryService: TelemetryService,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -56,6 +60,15 @@ class ChatUseCase(
         scope.launch {
             agentFacade.currentContext.collect { ctx ->
                 emitState { copy(agentHistory = ctx.history) }
+            }
+        }
+        scope.launch {
+            agentToolExecutor.toolInvocations.collect { functionCall ->
+                if (activeRequestMessages.get() == null) return@collect
+                val action = formatToolAction(functionCall)
+                emitState {
+                    copy(agentActions = (agentActions + action).takeLast(MAX_AGENT_ACTIONS))
+                }
             }
         }
     }
@@ -123,6 +136,7 @@ class ChatUseCase(
 
                     isProcessing = true,
                     statusMessage = "",
+                    agentActions = emptyList(),
                 )
             }
 
@@ -159,13 +173,15 @@ class ChatUseCase(
             }
 
             emitState {
+                val completedBotMessage = botMessage.copy(agentActions = agentActions)
                 copy(
-                    chatMessages = if (chatMessages.lastOrNull()?.id == botMessage.id) {
-                        chatMessages.mapLast { botMessage }
+                    chatMessages = if (chatMessages.lastOrNull()?.id == completedBotMessage.id) {
+                        chatMessages.mapLast { completedBotMessage }
                     } else {
-                        chatMessages + botMessage
+                        chatMessages + completedBotMessage
                     },
                     isProcessing = false,
+                    agentActions = emptyList(),
                 )
             }
 
@@ -185,6 +201,7 @@ class ChatUseCase(
                     copy(
                         chatMessages = chatMessages.filterNot { it.id in idsToDrop },
                         isProcessing = if (isCurrentRequest) false else isProcessing,
+                        agentActions = if (isCurrentRequest) emptyList() else agentActions,
                     )
                 }
             }
@@ -209,6 +226,7 @@ class ChatUseCase(
                 copy(
                     chatMessages = chatMessages + errorMessage,
                     isProcessing = false,
+                    agentActions = emptyList(),
                 )
             }
             onResult?.invoke(Result.failure(e))
@@ -248,6 +266,7 @@ class ChatUseCase(
             copy(
                 chatMessages = if (idsToDrop.isEmpty()) chatMessages else chatMessages.filterNot { it.id in idsToDrop },
                 isProcessing = false,
+                agentActions = emptyList(),
             )
         }
         l.info("Stop requested: invalidated request {}", nextRequestId)
@@ -387,8 +406,89 @@ class ChatUseCase(
             ?: error::class.qualifiedName?.substringAfterLast('.')
             ?: "UnknownError"
 
+    private fun formatToolAction(functionCall: GigaResponse.FunctionCall): String {
+        val ru = settingsProvider.regionProfile.equals("ru", ignoreCase = true)
+        return when (functionCall.name) {
+            "WebSearch" -> {
+                val query = displayValue(functionCall.arguments["query"])
+                if (ru) "Ищу в интернете: $query" else "Searching the web: $query"
+            }
+
+            "WebPageText" -> {
+                val url = displayValue(functionCall.arguments["url"])
+                if (ru) "Читаю страницу: $url" else "Reading page: $url"
+            }
+
+            "WebImageSearch" -> {
+                val query = displayValue(functionCall.arguments["query"])
+                if (ru) "Ищу изображения: $query" else "Searching images: $query"
+            }
+
+            "ReadFile", "ReadPdfPages" -> {
+                val path = displayPath(functionCall.arguments["path"])
+                if (ru) "Читаю файл: $path" else "Reading file: $path"
+            }
+
+            "EditFile" -> {
+                val path = displayPath(functionCall.arguments["path"])
+                if (ru) "Вношу изменения в файл: $path" else "Editing file: $path"
+            }
+
+            "NewFile" -> {
+                val path = displayPath(functionCall.arguments["path"])
+                if (ru) "Создаю: $path" else "Creating: $path"
+            }
+
+            "DeleteFile" -> {
+                val path = displayPath(functionCall.arguments["path"])
+                if (ru) "Удаляю: $path" else "Deleting: $path"
+            }
+
+            "MoveFile" -> {
+                val source = displayPath(functionCall.arguments["sourcePath"])
+                val destination = displayPath(functionCall.arguments["destinationPath"])
+                if (ru) "Перемещаю: $source -> $destination" else "Moving: $source -> $destination"
+            }
+
+            "FindFilesByName" -> {
+                val fileName = displayValue(functionCall.arguments["fileName"])
+                if (ru) "Ищу файл: $fileName" else "Searching for file: $fileName"
+            }
+
+            "SearchFileContent" -> {
+                val query = displayValue(functionCall.arguments["query"])
+                if (ru) "Ищу по содержимому файлов: $query" else "Searching file contents: $query"
+            }
+
+            "ListFiles" -> {
+                val path = displayPath(functionCall.arguments["path"])
+                if (ru) "Просматриваю папку: $path" else "Listing files in: $path"
+            }
+
+            else -> if (ru) {
+                "Запускаю инструмент: ${functionCall.name}"
+            } else {
+                "Running tool: ${functionCall.name}"
+            }
+        }
+    }
+
+    private fun displayPath(value: Any?): String {
+        val raw = value?.toString()?.trim().orEmpty()
+        if (raw.isEmpty()) return "?"
+        val fileName = File(raw).name.takeIf { it.isNotBlank() }
+        return ellipsize(fileName ?: raw)
+    }
+
+    private fun displayValue(value: Any?): String =
+        ellipsize(value?.toString()?.trim().takeUnless { it.isNullOrEmpty() } ?: "?")
+
+    private fun ellipsize(value: String, maxLength: Int = 80): String =
+        if (value.length <= maxLength) value else value.take(maxLength - 1) + "..."
+
     private companion object {
         const val CODE_BLOCK = "```"
+        const val MAX_AGENT_ACTIONS = 8
     }
 
     private data class ActiveRequestMessages(

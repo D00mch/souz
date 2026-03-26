@@ -2,6 +2,7 @@ package ru.souz.ui.main.usecases
 
 import kotlinx.coroutines.CoroutineDispatcher
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
@@ -27,6 +28,7 @@ class MainUseCasesFactory(
     private val toolPermissionBroker: ToolPermissionBroker,
     private val selectionApprovalSources: Set<SelectionApprovalSource>,
     private val finderPathExtractor: FinderPathExtractor,
+    private val agentToolExecutor: AgentToolExecutor,
     private val tokenLogging: TokenLogging,
     private val telemetryService: TelemetryService,
 ) {
@@ -40,6 +42,7 @@ class MainUseCasesFactory(
             speechUseCase = speechUseCase,
             finderPathExtractor = finderPathExtractor,
             chatAttachmentsUseCase = attachmentsUseCase,
+            agentToolExecutor = agentToolExecutor,
             tokenLogging = tokenLogging,
             telemetryService = telemetryService,
             ioDispatcher = ioDispatcher,

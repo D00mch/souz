@@ -41,6 +41,7 @@ import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.audio.ActiveSoundRecorderImpl
 import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.audio.Say
@@ -50,6 +51,7 @@ import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.TokenLogging
 import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
+import ru.souz.giga.GigaResponse.FunctionCall
 import ru.souz.giga.GigaVoiceAPI
 import ru.souz.service.telegram.TelegramBotController
 import ru.souz.telemetry.TelemetryRequestContext
@@ -438,6 +440,43 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `tool invocation adds transient agent action during processing`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val harness = createHarness(
+            executeBehavior = { input ->
+                if (input != "hello") error("Unexpected input: $input")
+                response.await()
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("hello"))
+            awaitState(viewModel) { it.isProcessing }
+
+            harness.toolInvocations.emit(FunctionCall("WebSearch", mapOf("query" to "котлин корутины")))
+
+            val inProgress = awaitState(viewModel) {
+                it.agentActions.contains("Ищу в интернете: котлин корутины")
+            }
+            assertEquals(listOf("Ищу в интернете: котлин корутины"), inProgress.agentActions)
+
+            response.complete("done")
+
+            val finalState = awaitState(viewModel) { !it.isProcessing }
+            assertEquals(
+                listOf("Ищу в интернете: котлин корутины"),
+                finalState.chatMessages.last { !it.isUser }.agentActions
+            )
+            assertTrue(finalState.agentActions.isEmpty())
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `onboarding shows welcome text and marks onboarding as completed`() = runTest(mainDispatcher) {
         val harness = createHarness(needsOnboarding = true)
 
@@ -613,6 +652,8 @@ class MainViewModelTest {
     ): TestHarness {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         val sideEffects = MutableSharedFlow<String>()
+        val toolInvocations = MutableSharedFlow<FunctionCall>()
+        val agentToolExecutor = mockk<AgentToolExecutor>(relaxed = true)
         every { agentFacade.sideEffects } returns sideEffects
         every { agentFacade.currentContext } returns MutableStateFlow(emptyAgentContext())
         every { agentFacade.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
@@ -621,6 +662,7 @@ class MainViewModelTest {
         }
         every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.LUA_GRAPH)
         every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.LUA_GRAPH, ru.souz.agent.AgentId.GRAPH)
+        every { agentToolExecutor.toolInvocations } returns toolInvocations
 
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.gigaModel } returns GigaModel.Max
@@ -699,10 +741,11 @@ class MainViewModelTest {
             bindSingleton { FilesToolUtil(instance()) }
             bindSingleton { FinderPathExtractor(instance()) }
             bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
+            bindSingleton { agentToolExecutor }
             bindSingleton<TokenLogging> { tokenLogging }
             bindSingleton { telemetryService }
             bindSingleton {
-                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance())
+                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance())
             }
         }
 
@@ -713,7 +756,8 @@ class MainViewModelTest {
             isSpeakingFlow = speakingFlow,
             settingsProvider = settingsProvider,
             say = say,
-            incomingMessages = incomingMessages
+            incomingMessages = incomingMessages,
+            toolInvocations = toolInvocations,
         )
     }
 
@@ -751,6 +795,7 @@ class MainViewModelTest {
         val settingsProvider: SettingsProvider,
         val say: Say,
         val incomingMessages: MutableSharedFlow<TelegramBotController.IncomingMessage>,
+        val toolInvocations: MutableSharedFlow<FunctionCall>,
     ) {
         fun clear() {
             val onCleared = MainViewModel::class.java.getDeclaredMethod("onCleared")

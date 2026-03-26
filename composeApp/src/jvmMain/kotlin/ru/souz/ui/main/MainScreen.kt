@@ -99,6 +99,10 @@ private val ChatHoverIconHoverColor = Color(0x80FFFFFF)
 private val ChatHoverButtonBackground = Color(0x0FFFFFFF)
 private val ChatSelectionHandleColor = Color(0xFFFFFFFF)
 private val ChatSelectionBackgroundColor = Color(0x66FFFFFF)
+private val AgentActionBackground = Color(0x1AFFFFFF)
+private val AgentActionBorder = Color(0x12FFFFFF)
+private val AgentActionIconTint = Color(0xBFFFFFFF)
+private val AgentActionTextColor = Color(0xD9FFFFFF)
 private val FinderPathChipBackground = Color(0x2625CAB0)
 private val FinderPathChipBorder = Color(0x8812E0B5)
 private val FinderPathChipTextColor = Color(0xFF12E0B5)
@@ -375,6 +379,7 @@ fun MainScreenContent(
 
                 ChatModeContent(
                     messages = state.chatMessages,
+                    agentActions = state.agentActions,
                     chatPlaceholder = state.chatStartTip,
                     chatSessionId = state.chatSessionId,
                     selectedModel = state.selectedModel,
@@ -776,6 +781,7 @@ private enum class HeadingScale { LARGE, SMALL }
 @Composable
 fun ChatModeContent(
     messages: List<ChatMessage>,
+    agentActions: List<String>,
     chatPlaceholder: String,
     chatSessionId: Long,
     selectedModel: String,
@@ -894,13 +900,26 @@ fun ChatModeContent(
                         enter = fadeIn(animationSpec = tween(durationMillis = 180)),
                         exit = fadeOut(animationSpec = tween(durationMillis = 120)),
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp, horizontal = 8.dp),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            ThinkingIndicator(text = stringThinking)
+                        val actionsTimestamp = remember(agentActions.size) {
+                            if (agentActions.isEmpty()) null else formatTimestamp(System.currentTimeMillis())
+                        }
+                        if (agentActions.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                ThinkingIndicator(text = stringThinking)
+                            }
+                        } else {
+                            AgentActionsBlock(
+                                actions = agentActions,
+                                timestamp = actionsTimestamp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                            )
                         }
                     }
                 }
@@ -1141,6 +1160,13 @@ private fun ChatBubble(
                     .padding(start = 17.dp, end = 70.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if (message.agentActions.isNotEmpty()) {
+                    AgentActionsBlock(
+                        actions = message.agentActions,
+                        timestamp = formatTimestamp(message.timestamp),
+                    )
+                }
+
                 if (message.text.isNotBlank()) {
                     val parts = remember(message.text) { parseMarkdownContent(message.text) }
                     val baseFontSize = 14.sp
@@ -1259,6 +1285,53 @@ private fun ChatBubble(
                             modifier = Modifier.size(14.dp)
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgentActionsBlock(
+    actions: List<String>,
+    timestamp: String?,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        actions.forEach { action ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(AgentActionBackground)
+                    .border(1.dp, AgentActionBorder, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.CheckCircleOutline,
+                    contentDescription = null,
+                    tint = AgentActionIconTint,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = action,
+                    color = AgentActionTextColor,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                if (!timestamp.isNullOrBlank()) {
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = timestamp,
+                        color = ChatAssistantTimestampColor,
+                        fontSize = 11.sp,
+                    )
                 }
             }
         }
