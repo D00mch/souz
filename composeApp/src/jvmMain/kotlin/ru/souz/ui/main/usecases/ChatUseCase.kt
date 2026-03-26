@@ -13,19 +13,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
-import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.engine.AgentContext
 import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
-import ru.souz.giga.GigaResponse
 import ru.souz.giga.TokenLogging
 import ru.souz.telemetry.TelemetryConversationEndReason
 import ru.souz.telemetry.TelemetryConversationStartReason
 import ru.souz.telemetry.TelemetryRequestSource
 import ru.souz.telemetry.TelemetryRequestStatus
 import ru.souz.telemetry.TelemetryService
+import ru.souz.ui.main.ChatAgentActionFormatter
 import ru.souz.ui.main.ChatAttachedFile
-import ru.souz.ui.main.formatChatAgentAction
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainState
 import java.util.concurrent.atomic.AtomicBoolean
@@ -39,12 +37,12 @@ class ChatUseCase(
     private val speechUseCase: SpeechUseCase,
     private val finderPathExtractor: FinderPathExtractor,
     private val chatAttachmentsUseCase: ChatAttachmentsUseCase,
-    private val agentToolExecutor: AgentToolExecutor,
     private val tokenLogging: TokenLogging,
     private val telemetryService: TelemetryService,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val l = LoggerFactory.getLogger(ChatUseCase::class.java)
+    private val chatAgentActionFormatter = ChatAgentActionFormatter()
     private val taskSideEffectJobs = ArrayList<Job>()
     private val activeChatRequestId = AtomicLong(0L)
     private val activeRequestMessages = AtomicReference<ActiveRequestMessages?>(null)
@@ -63,9 +61,10 @@ class ChatUseCase(
             }
         }
         scope.launch {
-            agentToolExecutor.toolInvocations.collect { functionCall ->
-                if (activeRequestMessages.get() == null) return@collect
-                val action = formatChatAgentAction(functionCall)
+            agentFacade.toolInvocations.collect { invocation ->
+                val activeRequest = activeRequestMessages.get() ?: return@collect
+                if (activeRequest.requestId.toString() != invocation.requestId) return@collect
+                val action = chatAgentActionFormatter.format(invocation.functionCall)
                 emitState {
                     copy(agentActions = (agentActions + action).takeLast(MAX_AGENT_ACTIONS))
                 }
@@ -148,7 +147,7 @@ class ChatUseCase(
                     telemetryService.requestContextElement(requestContext) +
                     tokenLogging.requestContextElement(requestContext.requestId)
             ) {
-                agentFacade.execute(userText)
+                agentFacade.execute(userText, requestId.toString())
             }
 
             val extractedFinderPaths = extractFinderPaths(response)

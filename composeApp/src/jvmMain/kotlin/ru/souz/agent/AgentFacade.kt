@@ -6,7 +6,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.agent.impl.GraphBasedAgent
@@ -16,12 +18,18 @@ import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
 import ru.souz.tool.ToolsFactory
 
+data class AgentToolInvocation(
+    val requestId: String,
+    val functionCall: ru.souz.giga.GigaResponse.FunctionCall,
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class AgentFacade(
     private val settingsProvider: SettingsProvider,
     private val systemPromptResolver: SystemPromptResolver,
     private val sessionService: GraphSessionService,
     private val toolsFactory: ToolsFactory,
+    private val agentToolExecutor: AgentToolExecutor,
     private val graphBasedAgent: GraphBasedAgent,
     private val luaGraphBasedAgent: LuaGraphBasedAgent,
 ) {
@@ -36,6 +44,7 @@ class AgentFacade(
     val currentContext: StateFlow<AgentContext<String>> = _currentContext.asStateFlow()
 
     val sideEffects: Flow<String> = _activeAgentId.flatMapLatest { id -> agentById(id).sideEffects }
+    val toolInvocations: Flow<AgentToolInvocation> = agentToolExecutor.toolInvocations
 
     fun setActiveAgent(agentId: AgentId) {
         val normalized = normalizedActiveAgent(agentId)
@@ -97,15 +106,23 @@ class AgentFacade(
         agentById(_activeAgentId.value).cancelActiveJob()
     }
 
-    suspend fun execute(input: String): String {
+    suspend fun execute(input: String, requestId: String? = null): String {
         cancelActiveJob()
         val seed = _currentContext.value.copy(input = input)
         val agent = agentById(_activeAgentId.value)
 
         sessionService.startTask(input)
         return try {
-            val result = agent.executeWithTrace(seed) { step, node, from, to ->
-                sessionService.onStep(step, node, from, to)
+            val result = if (requestId.isNullOrBlank()) {
+                agent.executeWithTrace(seed) { step, node, from, to ->
+                    sessionService.onStep(step, node, from, to)
+                }
+            } else {
+                withContext(agentToolExecutor.requestContextElement(requestId)) {
+                    agent.executeWithTrace(seed) { step, node, from, to ->
+                        sessionService.onStep(step, node, from, to)
+                    }
+                }
             }
             _currentContext.emit(result.context)
             result.output

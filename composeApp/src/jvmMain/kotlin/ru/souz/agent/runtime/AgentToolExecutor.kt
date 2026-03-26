@@ -1,23 +1,30 @@
 package ru.souz.agent.runtime
 
+import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentSettings
+import ru.souz.agent.AgentToolInvocation
 import ru.souz.giga.GigaMessageRole
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.GigaToolSetup
 import ru.souz.telemetry.TelemetryService
+import kotlin.coroutines.CoroutineContext
 
 class AgentToolExecutor(
     private val telemetryService: TelemetryService,
 ) {
     private val l = LoggerFactory.getLogger(AgentToolExecutor::class.java)
-    private val _toolInvocations = MutableSharedFlow<GigaResponse.FunctionCall>(extraBufferCapacity = 32)
+    private val _toolInvocations = MutableSharedFlow<AgentToolInvocation>(extraBufferCapacity = 32)
+    private val currentRequestId = ThreadLocal<String?>()
 
-    val toolInvocations: Flow<GigaResponse.FunctionCall> = _toolInvocations.asSharedFlow()
+    val toolInvocations: Flow<AgentToolInvocation> = _toolInvocations.asSharedFlow()
+
+    fun requestContextElement(requestId: String): CoroutineContext =
+        currentRequestId.asContextElement(requestId)
 
     suspend fun execute(
         settings: AgentSettings,
@@ -28,7 +35,9 @@ class AgentToolExecutor(
             content = """{"result":"no such function ${functionCall.name}"}""",
         )
 
-        _toolInvocations.tryEmit(functionCall)
+        currentRequestId.get()?.let { requestId ->
+            _toolInvocations.tryEmit(AgentToolInvocation(requestId = requestId, functionCall = functionCall))
+        }
         l.info("Executing tool: ${fn.fn.name}, arguments: ${functionCall.arguments}")
         val startedAtMs = System.currentTimeMillis()
         val toolCategory = settings.tools.categoryByName[functionCall.name]
