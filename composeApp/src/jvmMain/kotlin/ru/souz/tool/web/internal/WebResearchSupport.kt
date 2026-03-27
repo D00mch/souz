@@ -31,16 +31,16 @@ internal class WebSearchProviderException(
 
 /**
  * Shared web research engine used by:
- * - [ToolWebSearch]
+ * - [ToolInternetSearch]
+ * - [ToolInternetResearch]
  * - [ToolWebImageSearch]
- * - [ToolWebPageText]
  *
  * This keeps search/parsing heuristics and HTTP behavior in one place while tool contracts stay simple.
  */
-internal class WebResearchClient internal constructor(
+internal class WebResearchClient(
     private val mapper: ObjectMapper = gigaJsonMapper,
     private val httpGet: suspend (String, Long, Boolean) -> WebTextResponse = { url, timeoutMillis, retry ->
-        webGetText(url, timeoutMillis, retry = retry)
+        WebHttpSupport().getText(url, timeoutMillis, retry = retry)
     },
     private val currentTimeMillis: () -> Long = System::currentTimeMillis,
     private val sleepMillis: suspend (Long) -> Unit = { delay(it) },

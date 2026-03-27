@@ -2,7 +2,6 @@ package ru.souz.tool.web.internal
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
-import ru.souz.tool.web.ToolInternetSearch
 
 internal class InternetSearchDraftParser(
     private val mapper: ObjectMapper,
@@ -11,11 +10,11 @@ internal class InternetSearchDraftParser(
 
     fun recoverSynthesisDraft(
         raw: String,
-        mode: ToolInternetSearch.SearchMode,
+        kind: InternetSearchKind,
         sources: List<InternetSearchCollectedSource>,
     ): InternetSearchSynthesisDraft? {
-        val draft = readJsonOrNull<InternetSearchSynthesisDraft>(raw)?.normalize(mode)
-            ?: normalizeFreeformDraft(raw, mode, sources)
+        val draft = readJsonOrNull<InternetSearchSynthesisDraft>(raw)?.normalize(kind)
+            ?: normalizeFreeformDraft(raw, kind, sources)
             ?: return null
         return finalizeSynthesisDraft(draft, sources)
     }
@@ -25,20 +24,20 @@ internal class InternetSearchDraftParser(
 
     private fun normalizeFreeformDraft(
         raw: String,
-        mode: ToolInternetSearch.SearchMode,
+        kind: InternetSearchKind,
         sources: List<InternetSearchCollectedSource>,
     ): InternetSearchSynthesisDraft? {
         val cleaned = stripCodeFences(raw).trim()
         if (cleaned.isBlank()) return null
 
-        return when (mode) {
-            ToolInternetSearch.SearchMode.QUICK_ANSWER -> InternetSearchSynthesisDraft(
+        return when (kind) {
+            InternetSearchKind.QUICK -> InternetSearchSynthesisDraft(
                 answer = cleaned,
                 reportMarkdown = cleaned,
                 usedSourceIndexes = parseInlineSourceIndexes(cleaned, sources),
             )
 
-            ToolInternetSearch.SearchMode.RESEARCH -> {
+            InternetSearchKind.RESEARCH -> {
                 val paragraphs = cleaned
                     .split(Regex("\\n\\s*\\n"))
                     .map { it.trim() }
@@ -107,13 +106,13 @@ internal class InternetSearchDraftParser(
     }
 
     private fun InternetSearchSynthesisDraft.normalize(
-        mode: ToolInternetSearch.SearchMode,
+        kind: InternetSearchKind,
     ): InternetSearchSynthesisDraft? {
         val normalizedAnswer = answer?.trim().takeIf { !it.isNullOrBlank() }
         val normalizedReport = reportMarkdown?.trim().takeIf { !it.isNullOrBlank() }
-        val resolvedAnswer = normalizedAnswer ?: when (mode) {
-            ToolInternetSearch.SearchMode.QUICK_ANSWER -> normalizedReport
-            ToolInternetSearch.SearchMode.RESEARCH -> normalizedReport?.let(::extractExecutiveSummary)
+        val resolvedAnswer = normalizedAnswer ?: when (kind) {
+            InternetSearchKind.QUICK -> normalizedReport
+            InternetSearchKind.RESEARCH -> normalizedReport?.let(::extractExecutiveSummary)
         }
         val resolvedReport = normalizedReport ?: resolvedAnswer
         if (resolvedAnswer.isNullOrBlank() && resolvedReport.isNullOrBlank()) return null

@@ -1,6 +1,7 @@
 package ru.souz.tool.web.internal
 
 import org.apache.tika.Tika
+import kotlinx.coroutines.runBlocking
 import ru.souz.tool.BadInputException
 import ru.souz.tool.files.FilesToolUtil
 import java.io.File
@@ -18,12 +19,15 @@ private const val IMAGE_DOWNLOAD_MAX_BYTES = 20 * 1024 * 1024
  *
  * The downloader stores only assets that are detected as supported raster image formats.
  */
-class WebImageDownloader internal constructor(
+class WebImageDownloader(
     private val filesToolUtil: FilesToolUtil,
-    private val downloadBinary: (String, Long) -> WebBinaryResponse = ::webDownloadBinary,
-    private val tika: Tika = Tika(),
-    private val webToolSupport: WebToolSupport = WebToolSupport(),
 ) {
+    private val downloadBinary: suspend (String, Long) -> WebBinaryResponse = { url, timeoutMillis ->
+        WebHttpSupport().downloadBinary(url, timeoutMillis)
+    }
+    private val tika = Tika()
+    private val webToolSupport = WebToolSupport()
+
     fun downloadToDirectory(
         imageUrl: String,
         preferredName: String,
@@ -64,7 +68,9 @@ class WebImageDownloader internal constructor(
         val normalizedUrl = webToolSupport.requireHttpUrl(imageUrl)
         val tempFile = Files.createTempFile("souz_img_", ".bin").toFile()
         try {
-            val response = downloadBinary(normalizedUrl, IMAGE_DOWNLOAD_REQUEST_TIMEOUT_MS)
+            val response = runBlocking {
+                downloadBinary(normalizedUrl, IMAGE_DOWNLOAD_REQUEST_TIMEOUT_MS)
+            }
             if (response.statusCode >= 400) {
                 throw BadInputException("Image download failed: HTTP ${response.statusCode} for $normalizedUrl")
             }

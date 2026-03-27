@@ -1,23 +1,15 @@
 package ru.souz.tool.web.internal
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import ru.souz.tool.FewShotExample
-import ru.souz.tool.ReturnParameters
-import ru.souz.tool.web.ToolInternetSearch
 
 internal class InternetSearchInternals(
     mapper: ObjectMapper,
 ) {
     private val webToolSupport = WebToolSupport()
     private val support = InternetSearchSupport()
-    private val metadata = InternetSearchMetadata()
     private val prompts = InternetSearchPrompts(support)
     private val formatter = InternetSearchReportFormatter(support)
     private val draftParser = InternetSearchDraftParser(mapper)
-
-    val description: String = metadata.description
-    val fewShotExamples: List<FewShotExample> = metadata.fewShotExamples
-    val returnParameters: ReturnParameters = metadata.returnParameters
 
     val maxSearchQueries: Int = support.maxSearchQueries
     val maxResearchSources: Int = support.maxResearchSources
@@ -27,8 +19,6 @@ internal class InternetSearchInternals(
     val strategySystemPrompt: String = prompts.strategySystemPrompt
 
     fun requireWebQuery(raw: String): String = webToolSupport.requireWebQuery(raw)
-
-    fun inferMode(query: String): ToolInternetSearch.SearchMode = support.inferMode(query)
 
     fun fallbackResearchStrategy(query: String): InternetSearchResearchStrategy =
         support.fallbackResearchStrategy(query)
@@ -46,23 +36,23 @@ internal class InternetSearchInternals(
     ): List<InternetSearchCollectedSource> = support.selectUsedSources(sources, usedIndexes)
 
     fun buildFallbackDraft(
-        mode: ToolInternetSearch.SearchMode,
+        kind: InternetSearchKind,
         query: String,
         sources: List<InternetSearchCollectedSource>,
-    ): InternetSearchSynthesisDraft = support.buildFallbackDraft(mode, query, sources)
+    ): InternetSearchSynthesisDraft = support.buildFallbackDraft(kind, query, sources)
 
     fun buildEmptySourcesMessage(
         query: String,
-        status: ToolInternetSearch.OutputStatus,
+        status: InternetSearchOutputStatus,
     ): String = support.buildEmptySourcesMessage(query, status)
 
     fun readStrategyDraft(raw: String): InternetSearchStrategyDraft? = draftParser.readStrategyDraft(raw)
 
     fun recoverSynthesisDraft(
         raw: String,
-        mode: ToolInternetSearch.SearchMode,
+        kind: InternetSearchKind,
         sources: List<InternetSearchCollectedSource>,
-    ): InternetSearchSynthesisDraft? = draftParser.recoverSynthesisDraft(raw, mode, sources)
+    ): InternetSearchSynthesisDraft? = draftParser.recoverSynthesisDraft(raw, kind, sources)
 
     fun isGrounded(draft: InternetSearchSynthesisDraft): Boolean = draftParser.isGrounded(draft)
 
@@ -70,36 +60,38 @@ internal class InternetSearchInternals(
 
     fun buildSynthesisPrompt(
         query: String,
-        mode: ToolInternetSearch.SearchMode,
+        kind: InternetSearchKind,
         sources: List<InternetSearchCollectedSource>,
         strategy: InternetSearchResearchStrategy?,
-    ): String = prompts.buildSynthesisPrompt(query, mode, sources, strategy)
+    ): String = prompts.buildSynthesisPrompt(query, kind, sources, strategy)
 
     fun buildRescuePrompt(
         query: String,
-        mode: ToolInternetSearch.SearchMode,
+        kind: InternetSearchKind,
         sources: List<InternetSearchCollectedSource>,
         strategy: InternetSearchResearchStrategy?,
         failedDraft: String?,
-    ): String = prompts.buildRescuePrompt(query, mode, sources, strategy, failedDraft)
+    ): String = prompts.buildRescuePrompt(query, kind, sources, strategy, failedDraft)
 
-    fun promptSpec(mode: ToolInternetSearch.SearchMode): InternetSearchPromptSpec = prompts.promptSpec(mode)
+    fun promptSpec(kind: InternetSearchKind): InternetSearchPromptSpec = prompts.promptSpec(kind)
 
     fun buildOutput(
         query: String,
-        mode: ToolInternetSearch.SearchMode,
-        status: ToolInternetSearch.OutputStatus,
+        kind: InternetSearchKind,
+        status: InternetSearchOutputStatus,
         answer: String,
         reportBody: String,
+        results: List<InternetSearchCollectedSource>,
         sources: List<InternetSearchCollectedSource>,
         strategy: InternetSearchResearchStrategy?,
         saveLongReport: (String) -> String?,
-    ): ToolInternetSearch.Output = formatter.buildOutput(
+    ): InternetSearchToolOutput = formatter.buildOutput(
         query = query,
-        mode = mode,
+        kind = kind,
         status = status,
         answer = answer,
         reportBody = reportBody,
+        results = results,
         sources = sources,
         strategy = strategy,
         saveLongReport = saveLongReport,

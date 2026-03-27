@@ -18,33 +18,13 @@ import ru.souz.tool.web.internal.WebToolSupport
  *
  * Searches for image candidates by topic and optionally downloads them to local files.
  */
-class ToolWebImageSearch internal constructor(
-    private val webResearchClient: WebResearchClient,
-    private val webImageDownloader: WebImageDownloader,
-    private val mapper: ObjectMapper,
-    private val webToolSupport: WebToolSupport,
+internal class ToolWebImageSearch(
+    private val filesToolUtil: FilesToolUtil,
+    private val webResearchClient: WebResearchClient = WebResearchClient(),
+    private val webImageDownloader: WebImageDownloader = WebImageDownloader(filesToolUtil),
+    private val mapper: ObjectMapper = gigaJsonMapper,
+    private val webToolSupport: WebToolSupport = WebToolSupport(),
 ) : ToolSetup<ToolWebImageSearch.Input> {
-    constructor(
-        filesToolUtil: FilesToolUtil,
-        mapper: ObjectMapper = gigaJsonMapper,
-    ) : this(
-        webResearchClient = WebResearchClient(mapper = mapper),
-        webImageDownloader = WebImageDownloader(filesToolUtil = filesToolUtil),
-        mapper = mapper,
-        webToolSupport = WebToolSupport(),
-    )
-
-    internal constructor(
-        webResearchClient: WebResearchClient,
-        webImageDownloader: WebImageDownloader,
-        mapper: ObjectMapper = gigaJsonMapper,
-    ) : this(
-        webResearchClient = webResearchClient,
-        webImageDownloader = webImageDownloader,
-        mapper = mapper,
-        webToolSupport = WebToolSupport(),
-    )
-
     data class WebImageSearchOutput(
         val query: String,
         val results: List<ResultItem>,

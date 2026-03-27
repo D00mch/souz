@@ -28,10 +28,9 @@ import ru.souz.tool.telegram.ToolTelegramSavedMessages
 import ru.souz.tool.telegram.ToolTelegramSearch
 import ru.souz.tool.telegram.ToolTelegramSend
 import ru.souz.tool.telegram.ToolTelegramSetState
+import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolInternetSearch
 import ru.souz.tool.web.ToolWebImageSearch
-import ru.souz.tool.web.ToolWebPageText
-import ru.souz.tool.web.ToolWebSearch
 
 typealias FunctionName = String
 
@@ -97,9 +96,8 @@ class ToolsFactory(di: DI) {
 
     // Presentation tools
     private val toolInternetSearch: ToolInternetSearch by di.instance()
-    private val toolWebSearch: ToolWebSearch by di.instance()
+    private val toolInternetResearch: ToolInternetResearch by di.instance()
     private val toolWebImageSearch: ToolWebImageSearch by di.instance()
-    private val toolWebPageText: ToolWebPageText by di.instance()
     private val toolPresentationCreate: ToolPresentationCreate by di.instance()
     private val toolPresentationRead: ToolPresentationRead by di.instance()
 
@@ -135,9 +133,8 @@ class ToolsFactory(di: DI) {
 
         ToolCategory.WEB_SEARCH -> listOf(
             toolInternetSearch.toGiga(),
-            toolWebSearch.toGiga(),
+            toolInternetResearch.toGiga(),
             toolWebImageSearch.toGiga(),
-            toolWebPageText.toGiga(),
         )
 
         ToolCategory.CONFIG -> listOf(

@@ -17,7 +17,7 @@ import ru.souz.tool.files.ToolFindFilesByName
 import ru.souz.tool.mail.ToolMailSendNewMessage
 import ru.souz.tool.notes.ToolCreateNote
 import ru.souz.tool.telegram.ToolTelegramSearch
-import ru.souz.tool.web.ToolWebSearch
+import ru.souz.tool.web.ToolInternetSearch
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentComplexScenarios {
@@ -93,7 +93,13 @@ class GraphAgentComplexScenarios {
         ]
     )
     fun scenario2_searchAiEventInWebThenTelegramThenCreateNoteIfMentioned(userPrompt: String) = runTest {
-        val toolWebSearch: ToolWebSearch = spyk(ToolWebSearch())
+        val toolInternetSearch: ToolInternetSearch = spyk(
+            ToolInternetSearch(
+                api = mockk(),
+                settingsProvider = mockk(),
+                filesToolUtil = filesUtil,
+            )
+        )
         val toolTelegramSearch: ToolTelegramSearch = spyk(ToolTelegramSearch(mockk<TelegramService>()))
         val toolCreateNote: ToolCreateNote = spyk(ToolCreateNote(ToolRunBashCommand))
 
@@ -102,21 +108,32 @@ class GraphAgentComplexScenarios {
         val nearestEventTitle = "$expectedEventName Moscow 2026"
         val nearestEventUrl = "https://events.example.com/ai-product-day-moscow-2026"
         val nearestEventSnippet = "22 марта 2026, Москва, Кластер $expectedAddress. Конференция по AI-продуктам и LLM."
-        val webSearchResult = """
+        val internetSearchResult = """
             {
+              "status": "COMPLETE",
               "query": "мероприятия по ИИ в Москве",
+              "answer": "$nearestEventTitle пройдет 22 марта 2026 в Москве, Кластер $expectedAddress [1].",
+              "reportMarkdown": "$nearestEventTitle пройдет 22 марта 2026 в Москве, Кластер $expectedAddress [1].\n\n## Источники\n[1] $nearestEventTitle - $nearestEventUrl",
+              "reportFilePath": null,
               "results": [
                 {
+                  "index": 1,
                   "title": "$nearestEventTitle",
                   "url": "$nearestEventUrl",
+                  "foundByQuery": "мероприятия по ИИ в Москве",
                   "snippet": "$nearestEventSnippet"
-                },
-                {
-                  "title": "Moscow LLM Hack Meetup",
-                  "url": "https://events.example.com/moscow-llm-hack-meetup",
-                  "snippet": "5 апреля 2026, Москва, Технопарк. Митап по агентам и LLM."
                 }
-              ]
+              ],
+              "sources": [
+                {
+                  "index": 1,
+                  "title": "$nearestEventTitle",
+                  "url": "$nearestEventUrl",
+                  "foundByQuery": "мероприятия по ИИ в Москве",
+                  "snippet": "$nearestEventSnippet"
+                }
+              ],
+              "strategy": null
             }
         """.trimIndent()
         val telegramSearchResult = """
@@ -143,21 +160,21 @@ class GraphAgentComplexScenarios {
             }
         """.trimIndent()
 
-        every { toolWebSearch.invoke(any()) } returns webSearchResult
-        coEvery { toolWebSearch.suspendInvoke(any()) } returns webSearchResult
+        every { toolInternetSearch.invoke(any()) } returns internetSearchResult
+        coEvery { toolInternetSearch.suspendInvoke(any()) } returns internetSearchResult
         every { toolTelegramSearch.invoke(any()) } returns telegramSearchResult
         coEvery { toolTelegramSearch.suspendInvoke(any()) } returns telegramSearchResult
         every { toolCreateNote.invoke(any()) } returns "Created"
         coEvery { toolCreateNote.suspendInvoke(any()) } returns "Created"
 
         runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolWebSearch> { toolWebSearch }
+            bindSingleton<ToolInternetSearch> { toolInternetSearch }
             bindSingleton<ToolTelegramSearch> { toolTelegramSearch }
             bindSingleton<ToolCreateNote> { toolCreateNote }
         }
 
         coVerifyOrder {
-            toolWebSearch.suspendInvoke(
+            toolInternetSearch.suspendInvoke(
                 match {
                     val query = it.query.lowercase()
                     (query.contains("моск") || query.contains("moscow")) &&

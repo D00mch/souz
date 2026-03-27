@@ -1,7 +1,5 @@
 package ru.souz.tool.web.internal
 
-import ru.souz.tool.web.ToolInternetSearch
-
 internal class InternetSearchPrompts(
     private val support: InternetSearchSupport,
 ) {
@@ -14,7 +12,7 @@ internal class InternetSearchPrompts(
 
     fun buildSynthesisPrompt(
         query: String,
-        mode: ToolInternetSearch.SearchMode,
+        kind: InternetSearchKind,
         sources: List<InternetSearchCollectedSource>,
         strategy: InternetSearchResearchStrategy?,
     ): String = buildString {
@@ -22,7 +20,7 @@ internal class InternetSearchPrompts(
         appendLine(query)
         appendLine()
 
-        if (mode == ToolInternetSearch.SearchMode.RESEARCH && strategy != null) {
+        if (kind == InternetSearchKind.RESEARCH && strategy != null) {
             appendLine("Research strategy:")
             appendLine("Goal: ${strategy.goal}")
             if (strategy.subQuestions.isNotEmpty()) {
@@ -42,7 +40,7 @@ internal class InternetSearchPrompts(
 
     fun buildRescuePrompt(
         query: String,
-        mode: ToolInternetSearch.SearchMode,
+        kind: InternetSearchKind,
         sources: List<InternetSearchCollectedSource>,
         strategy: InternetSearchResearchStrategy?,
         failedDraft: String?,
@@ -51,7 +49,7 @@ internal class InternetSearchPrompts(
         appendLine(query)
         appendLine()
 
-        if (mode == ToolInternetSearch.SearchMode.RESEARCH && strategy != null) {
+        if (kind == InternetSearchKind.RESEARCH && strategy != null) {
             appendLine("Original research strategy:")
             appendLine("Goal: ${strategy.goal}")
             strategy.searchQueries.forEach { appendLine("- $it") }
@@ -68,15 +66,15 @@ internal class InternetSearchPrompts(
         appendSourceDigest(sources, MAX_SOURCE_TEXT_FOR_RESCUE_PROMPT)
     }.trim()
 
-    fun promptSpec(mode: ToolInternetSearch.SearchMode): InternetSearchPromptSpec = when (mode) {
-        ToolInternetSearch.SearchMode.QUICK_ANSWER -> InternetSearchPromptSpec(
+    fun promptSpec(kind: InternetSearchKind): InternetSearchPromptSpec = when (kind) {
+        InternetSearchKind.QUICK -> InternetSearchPromptSpec(
             systemPrompt = QUICK_ANSWER_SYSTEM_PROMPT,
             rescueSystemPrompt = QUICK_ANSWER_RESCUE_SYSTEM_PROMPT,
             maxTokens = 900,
             rescueMaxTokens = 1_100,
         )
 
-        ToolInternetSearch.SearchMode.RESEARCH -> InternetSearchPromptSpec(
+        InternetSearchKind.RESEARCH -> InternetSearchPromptSpec(
             systemPrompt = RESEARCH_SYSTEM_PROMPT,
             rescueSystemPrompt = RESEARCH_RESCUE_SYSTEM_PROMPT,
             maxTokens = 3_200,

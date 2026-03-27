@@ -1,25 +1,24 @@
 package ru.souz.tool.web.internal
 
-import ru.souz.tool.web.ToolInternetSearch
-
 internal class InternetSearchReportFormatter(
     private val support: InternetSearchSupport,
 ) {
     fun buildOutput(
         query: String,
-        mode: ToolInternetSearch.SearchMode,
-        status: ToolInternetSearch.OutputStatus,
+        kind: InternetSearchKind,
+        status: InternetSearchOutputStatus,
         answer: String,
         reportBody: String,
+        results: List<InternetSearchCollectedSource>,
         sources: List<InternetSearchCollectedSource>,
         strategy: InternetSearchResearchStrategy?,
         saveLongReport: (String) -> String?,
-    ): ToolInternetSearch.Output {
+    ): InternetSearchToolOutput {
         val localizedSourcesHeading = if (support.looksRussianText(query)) "Источники" else "Sources"
         val localizedStrategyHeading = if (support.looksRussianText(query)) "Стратегия поиска" else "Search strategy"
         val fullReportMarkdown = buildReportMarkdown(
             query = query,
-            mode = mode,
+            kind = kind,
             answer = answer.trim(),
             reportBody = reportBody.trim(),
             sources = sources,
@@ -28,8 +27,8 @@ internal class InternetSearchReportFormatter(
             localizedSourcesHeading = localizedSourcesHeading,
         )
         val reportFilePath = if (
-            status == ToolInternetSearch.OutputStatus.COMPLETE &&
-            mode == ToolInternetSearch.SearchMode.RESEARCH &&
+            status == InternetSearchOutputStatus.COMPLETE &&
+            kind == InternetSearchKind.RESEARCH &&
             fullReportMarkdown.length >= support.maxInlineReportChars
         ) {
             saveLongReport(fullReportMarkdown)
@@ -55,24 +54,16 @@ internal class InternetSearchReportFormatter(
             fullReportMarkdown
         }
 
-        return ToolInternetSearch.Output(
+        return InternetSearchToolOutput(
             status = status.name,
-            mode = mode.name,
             query = query,
             answer = finalAnswer,
             reportMarkdown = finalReportMarkdown,
             reportFilePath = reportFilePath,
-            sources = sources.map { source ->
-                ToolInternetSearch.OutputSource(
-                    index = source.index,
-                    title = source.title,
-                    url = source.url,
-                    foundByQuery = source.foundByQuery,
-                    snippet = source.snippet,
-                )
-            },
+            results = results.toOutputSources(),
+            sources = sources.toOutputSources(),
             strategy = strategy?.let {
-                ToolInternetSearch.OutputStrategy(
+                InternetSearchToolOutputStrategy(
                     goal = it.goal,
                     searchQueries = it.searchQueries,
                     subQuestions = it.subQuestions,
@@ -84,7 +75,7 @@ internal class InternetSearchReportFormatter(
 
     private fun buildReportMarkdown(
         query: String,
-        mode: ToolInternetSearch.SearchMode,
+        kind: InternetSearchKind,
         answer: String,
         reportBody: String,
         sources: List<InternetSearchCollectedSource>,
@@ -92,7 +83,7 @@ internal class InternetSearchReportFormatter(
         localizedStrategyHeading: String,
         localizedSourcesHeading: String,
     ): String = buildString {
-        if (mode == ToolInternetSearch.SearchMode.RESEARCH) {
+        if (kind == InternetSearchKind.RESEARCH) {
             appendLine("# ${query.trim()}")
             appendLine()
             appendLine("## ${if (support.looksRussianText(query)) "Краткий вывод" else "Executive summary"}")
@@ -173,4 +164,15 @@ internal class InternetSearchReportFormatter(
             append(note)
         }.trim()
     }
+
+    private fun List<InternetSearchCollectedSource>.toOutputSources(): List<InternetSearchToolOutputSource> =
+        map { source ->
+            InternetSearchToolOutputSource(
+                index = source.index,
+                title = source.title,
+                url = source.url,
+                foundByQuery = source.foundByQuery,
+                snippet = source.snippet,
+            )
+        }
 }

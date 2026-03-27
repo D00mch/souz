@@ -1,6 +1,43 @@
 package ru.souz.tool.web.internal
 
-import ru.souz.tool.web.ToolInternetSearch
+internal enum class InternetSearchKind {
+    QUICK,
+    RESEARCH,
+}
+
+internal enum class InternetSearchOutputStatus {
+    COMPLETE,
+    PARTIAL,
+    NO_RESULTS,
+    PROVIDER_BLOCKED,
+    PROVIDER_UNAVAILABLE,
+}
+
+internal data class InternetSearchToolOutput(
+    val status: String,
+    val query: String,
+    val answer: String,
+    val reportMarkdown: String,
+    val reportFilePath: String?,
+    val results: List<InternetSearchToolOutputSource>,
+    val sources: List<InternetSearchToolOutputSource>,
+    val strategy: InternetSearchToolOutputStrategy?,
+)
+
+internal data class InternetSearchToolOutputSource(
+    val index: Int,
+    val title: String,
+    val url: String,
+    val foundByQuery: String,
+    val snippet: String,
+)
+
+internal data class InternetSearchToolOutputStrategy(
+    val goal: String,
+    val searchQueries: List<String>,
+    val subQuestions: List<String>,
+    val answerSections: List<String>,
+)
 
 internal data class InternetSearchResearchStrategy(
     val goal: String,
@@ -33,11 +70,11 @@ internal data class InternetSearchCollectedSource(
 
 internal data class InternetSearchCollectionResult(
     val sources: List<InternetSearchCollectedSource>,
-    val providerStatus: ToolInternetSearch.OutputStatus? = null,
+    val providerStatus: InternetSearchOutputStatus? = null,
 )
 
 internal data class InternetSearchSynthesisResult(
-    val status: ToolInternetSearch.OutputStatus,
+    val status: InternetSearchOutputStatus,
     val draft: InternetSearchSynthesisDraft,
 )
 
@@ -91,67 +128,23 @@ internal class InternetSearchSupport {
         return sources.filter { it.index in usedIndexes }
     }
 
-    fun inferMode(query: String): ToolInternetSearch.SearchMode {
-        val normalized = query.lowercase()
-        val researchSignals = listOf(
-            "исслед",
-            "ресерч",
-            "research",
-            "обзор",
-            "сравн",
-            "подбери",
-            "подходящ",
-            "выбери",
-            "library",
-            "framework",
-            "tooling",
-            "рынок",
-            "тренд",
-            "анализ",
-            "проанализ",
-        )
-        if (researchSignals.any { normalized.contains(it) }) return ToolInternetSearch.SearchMode.RESEARCH
-
-        val quickSignals = listOf(
-            "погод",
-            "weather",
-            "какая",
-            "какой",
-            "какое",
-            "кто",
-            "что",
-            "сколько",
-            "где",
-            "когда",
-        )
-        if (quickSignals.any { normalized.startsWith(it) || normalized.contains(" $it") }) {
-            return ToolInternetSearch.SearchMode.QUICK_ANSWER
-        }
-
-        return if (query.length <= 80 && '?' in query) {
-            ToolInternetSearch.SearchMode.QUICK_ANSWER
-        } else {
-            ToolInternetSearch.SearchMode.RESEARCH
-        }
-    }
-
     fun looksRussianText(text: String): Boolean = text.any { it in '\u0400'..'\u04FF' }
 
     fun buildFallbackDraft(
-        mode: ToolInternetSearch.SearchMode,
+        kind: InternetSearchKind,
         query: String,
         sources: List<InternetSearchCollectedSource>,
     ): InternetSearchSynthesisDraft {
         val isRussianQuery = looksRussianText(query)
-        val message = when (mode) {
-            ToolInternetSearch.SearchMode.QUICK_ANSWER ->
+        val message = when (kind) {
+            InternetSearchKind.QUICK ->
                 if (isRussianQuery) {
                     "Не удалось надёжно синтезировать короткий ответ. Ниже ключевые найденные источники."
                 } else {
                     "Unable to synthesize a reliable short answer. Key sources are listed below."
                 }
 
-            ToolInternetSearch.SearchMode.RESEARCH ->
+            InternetSearchKind.RESEARCH ->
                 if (isRussianQuery) {
                     "Не удалось собрать надёжный финальный ресерч-ответ. Ниже черновой digest по найденным источникам для ручной проверки."
                 } else {
@@ -172,23 +165,23 @@ internal class InternetSearchSupport {
 
     fun buildEmptySourcesMessage(
         query: String,
-        status: ToolInternetSearch.OutputStatus,
+        status: InternetSearchOutputStatus,
     ): String = when (status) {
-        ToolInternetSearch.OutputStatus.PROVIDER_BLOCKED ->
+        InternetSearchOutputStatus.PROVIDER_BLOCKED ->
             if (looksRussianText(query)) {
                 "Интернет-поиск временно недоступен: поисковый провайдер заблокировал автоматические запросы. Это не означает, что по теме нет источников."
             } else {
                 "Internet search is temporarily unavailable because the search provider blocked automated requests. This does not mean the topic has no sources."
             }
 
-        ToolInternetSearch.OutputStatus.PROVIDER_UNAVAILABLE ->
+        InternetSearchOutputStatus.PROVIDER_UNAVAILABLE ->
             if (looksRussianText(query)) {
                 "Интернет-поиск временно недоступен: поисковый провайдер не отвечает или возвращает ошибки. Это не означает, что по теме нет источников."
             } else {
                 "Internet search is temporarily unavailable because the search provider is timing out or returning errors. This does not mean the topic has no sources."
             }
 
-        ToolInternetSearch.OutputStatus.NO_RESULTS ->
+        InternetSearchOutputStatus.NO_RESULTS ->
             if (looksRussianText(query)) {
                 "Не удалось найти релевантные интернет-источники по этому запросу."
             } else {

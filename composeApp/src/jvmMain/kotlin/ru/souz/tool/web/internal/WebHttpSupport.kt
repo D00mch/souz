@@ -18,7 +18,6 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.runBlocking
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
 import ru.souz.tool.BadInputException
@@ -36,7 +35,10 @@ private const val WEB_HTTP_MAX_RETRIES = 2
 private const val WEB_HTTP_DEFAULT_MAX_BINARY_BYTES = 20 * 1024 * 1024
 private const val WEB_HTTP_BINARY_READ_CHUNK_BYTES = 8_192
 private val WEB_HTTP_RETRY_ENABLED_KEY = AttributeKey<Boolean>("web_http_retry_enabled")
-private val defaultWebToolSupport = WebToolSupport()
+private val defaultSharedWebHttpClient by lazy {
+    val webToolSupport = WebToolSupport()
+    HttpClient(CIO) { WebHttpSupport.applyDefaults(this, webToolSupport) }
+}
 
 internal data class WebTextResponse(
     val statusCode: Int,
@@ -58,102 +60,137 @@ internal fun Map<String, List<String>>.firstHeader(name: String): String? {
     return entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value?.firstOrNull()
 }
 
-private val sharedWebHttpClient by lazy {
-    HttpClient(CIO) { webToolDefaults() }
-}
-
-internal suspend fun webGetText(
-    url: String,
-    timeoutMillis: Long,
-    accept: String = defaultWebToolSupport.acceptHeader,
-    retry: Boolean = true,
-): WebTextResponse {
-    return executeWebRequest(url, timeoutMillis, accept, retry) { response ->
-        WebTextResponse(
-            statusCode = response.status.value,
-            body = response.bodyAsText(),
-            headers = response.headers.toMap(),
-        )
-    }
-}
-
-private fun HttpClientConfig<*>.webToolDefaults() {
-    expectSuccess = false
-    followRedirects = true
-
-    defaultRequest {
-        header(HttpHeaders.UserAgent, defaultWebToolSupport.userAgent)
-    }
-
-    install(HttpTimeout) {
-        connectTimeoutMillis = WEB_HTTP_CONNECT_TIMEOUT_MILLIS
-    }
-
-    install(HttpRequestRetry) {
-        maxRetries = WEB_HTTP_MAX_RETRIES
-        retryIf { request, response ->
-            isRetryEnabled(request) && response.status.value in retryableStatusCodes
-        }
-        retryOnExceptionIf { request, cause ->
-            isRetryEnabled(request) && (cause is HttpRequestTimeoutException || cause is IOException)
-        }
-        delayMillis { retry ->
-            val retryAfterDelay = response?.headers?.get(HttpHeaders.RetryAfter)?.let(::parseRetryAfterMillis) ?: 0L
-            maxOf(exponentialRetryDelayMillis(retry), retryAfterDelay)
+internal class WebHttpSupport(
+    private val webToolSupport: WebToolSupport = WebToolSupport(),
+    private val sharedWebHttpClient: HttpClient = defaultSharedWebHttpClient,
+) {
+    suspend fun getText(
+        url: String,
+        timeoutMillis: Long,
+        accept: String = webToolSupport.acceptHeader,
+        retry: Boolean = true,
+    ): WebTextResponse {
+        return executeWebRequest(url, timeoutMillis, accept, retry) { response ->
+            WebTextResponse(
+                statusCode = response.status.value,
+                body = response.bodyAsText(),
+                headers = response.headers.toMap(),
+            )
         }
     }
-}
 
-internal fun webDownloadBinary(
-    url: String,
-    timeoutMillis: Long,
-    maxBytes: Int = WEB_HTTP_DEFAULT_MAX_BINARY_BYTES,
-): WebBinaryResponse = runBlocking {
-    executeWebRequest(url, timeoutMillis, accept = null, retry = true) { response ->
-        val headers = response.headers.toMap()
-        WebBinaryResponse(
-            statusCode = response.status.value,
-            body = readLimitedBinaryBody(
-                channel = response.bodyAsChannel(),
-                maxBytes = maxBytes,
-                declaredLength = headers.firstHeader(HttpHeaders.ContentLength)?.toLongOrNull(),
-                url = url,
-            ),
-            headers = headers,
-        )
+    suspend fun downloadBinary(
+        url: String,
+        timeoutMillis: Long,
+        maxBytes: Int = WEB_HTTP_DEFAULT_MAX_BINARY_BYTES,
+    ): WebBinaryResponse {
+        return executeWebRequest(url, timeoutMillis, accept = null, retry = true) { response ->
+            val headers = response.headers.toMap()
+            WebBinaryResponse(
+                statusCode = response.status.value,
+                body = readLimitedBinaryBody(
+                    channel = response.bodyAsChannel(),
+                    maxBytes = maxBytes,
+                    declaredLength = headers.firstHeader(HttpHeaders.ContentLength)?.toLongOrNull(),
+                    url = url,
+                ),
+                headers = headers,
+            )
+        }
     }
-}
 
-private suspend fun <T> executeWebRequest(
-    url: String,
-    timeoutMillis: Long,
-    accept: String?,
-    retry: Boolean,
-    bodyReader: suspend (HttpResponse) -> T,
-): T {
-    try {
-        val response = sharedWebHttpClient.get(defaultWebToolSupport.toSafeHttpUrl(url)) {
-            attributes.put(WEB_HTTP_RETRY_ENABLED_KEY, retry)
-            if (!accept.isNullOrBlank()) {
-                header(HttpHeaders.Accept, accept)
+    suspend fun readLimitedBinaryBody(
+        channel: ByteReadChannel,
+        maxBytes: Int,
+        declaredLength: Long? = null,
+        url: String = "response body",
+    ): ByteArray {
+        require(maxBytes > 0) { "maxBytes must be positive" }
+        if (declaredLength != null && declaredLength > maxBytes) {
+            throw oversizeBinaryBodyError(url, maxBytes)
+        }
+
+        val output = ByteArrayOutputStream(minOf(maxBytes, WEB_HTTP_BINARY_READ_CHUNK_BYTES))
+        val buffer = ByteArray(WEB_HTTP_BINARY_READ_CHUNK_BYTES)
+        var totalBytes = 0
+
+        while (!channel.isClosedForRead) {
+            val read = channel.readAvailable(buffer, 0, buffer.size)
+            if (read == -1) break
+            if (read == 0) continue
+            val nextSize = totalBytes + read
+            if (nextSize > maxBytes) {
+                throw oversizeBinaryBodyError(url, maxBytes)
             }
-            timeout {
-                requestTimeoutMillis = timeoutMillis
-                socketTimeoutMillis = timeoutMillis
-                connectTimeoutMillis = minOf(timeoutMillis, WEB_HTTP_CONNECT_TIMEOUT_MILLIS)
+            output.write(buffer, 0, read)
+            totalBytes = nextSize
+        }
+        return output.toByteArray()
+    }
+
+    private suspend fun <T> executeWebRequest(
+        url: String,
+        timeoutMillis: Long,
+        accept: String?,
+        retry: Boolean,
+        bodyReader: suspend (HttpResponse) -> T,
+    ): T {
+        try {
+            val response = sharedWebHttpClient.get(webToolSupport.toSafeHttpUrl(url)) {
+                attributes.put(WEB_HTTP_RETRY_ENABLED_KEY, retry)
+                if (!accept.isNullOrBlank()) {
+                    header(HttpHeaders.Accept, accept)
+                }
+                timeout {
+                    requestTimeoutMillis = timeoutMillis
+                    socketTimeoutMillis = timeoutMillis
+                    connectTimeoutMillis = minOf(timeoutMillis, WEB_HTTP_CONNECT_TIMEOUT_MILLIS)
+                }
+            }
+            return bodyReader(response)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: HttpRequestTimeoutException) {
+            throw BadInputException("HTTP request timed out for $url")
+        } catch (e: IOException) {
+            val message = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+            throw BadInputException("HTTP request failed for $url: $message")
+        } catch (e: IllegalArgumentException) {
+            val message = e.message?.takeIf { it.isNotBlank() } ?: "invalid URL"
+            throw BadInputException("HTTP request failed for $url: $message")
+        }
+    }
+
+    companion object {
+        internal fun applyDefaults(
+            config: HttpClientConfig<*>,
+            webToolSupport: WebToolSupport,
+        ) = with(config) {
+            expectSuccess = false
+            followRedirects = true
+
+            defaultRequest {
+                header(HttpHeaders.UserAgent, webToolSupport.userAgent)
+            }
+
+            install(HttpTimeout) {
+                connectTimeoutMillis = WEB_HTTP_CONNECT_TIMEOUT_MILLIS
+            }
+
+            install(HttpRequestRetry) {
+                maxRetries = WEB_HTTP_MAX_RETRIES
+                retryIf { request, response ->
+                    isRetryEnabled(request) && response.status.value in retryableStatusCodes
+                }
+                retryOnExceptionIf { request, cause ->
+                    isRetryEnabled(request) && (cause is HttpRequestTimeoutException || cause is IOException)
+                }
+                delayMillis { retry ->
+                    val retryAfterDelay = response?.headers?.get(HttpHeaders.RetryAfter)?.let(::parseRetryAfterMillis) ?: 0L
+                    maxOf(exponentialRetryDelayMillis(retry), retryAfterDelay)
+                }
             }
         }
-        return bodyReader(response)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: HttpRequestTimeoutException) {
-        throw BadInputException("HTTP request timed out for $url")
-    } catch (e: IOException) {
-        val message = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
-        throw BadInputException("HTTP request failed for $url: $message")
-    } catch (e: IllegalArgumentException) {
-        val message = e.message?.takeIf { it.isNotBlank() } ?: "invalid URL"
-        throw BadInputException("HTTP request failed for $url: $message")
     }
 }
 
@@ -167,35 +204,6 @@ private fun isRetryEnabled(attributes: Attributes): Boolean {
     } else {
         true
     }
-}
-
-internal suspend fun readLimitedBinaryBody(
-    channel: ByteReadChannel,
-    maxBytes: Int,
-    declaredLength: Long? = null,
-    url: String = "response body",
-): ByteArray {
-    require(maxBytes > 0) { "maxBytes must be positive" }
-    if (declaredLength != null && declaredLength > maxBytes) {
-        throw oversizeBinaryBodyError(url, maxBytes)
-    }
-
-    val output = ByteArrayOutputStream(minOf(maxBytes, WEB_HTTP_BINARY_READ_CHUNK_BYTES))
-    val buffer = ByteArray(WEB_HTTP_BINARY_READ_CHUNK_BYTES)
-    var totalBytes = 0
-
-    while (!channel.isClosedForRead) {
-        val read = channel.readAvailable(buffer, 0, buffer.size)
-        if (read == -1) break
-        if (read == 0) continue
-        val nextSize = totalBytes + read
-        if (nextSize > maxBytes) {
-            throw oversizeBinaryBodyError(url, maxBytes)
-        }
-        output.write(buffer, 0, read)
-        totalBytes = nextSize
-    }
-    return output.toByteArray()
 }
 
 private fun oversizeBinaryBodyError(url: String, maxBytes: Int): BadInputException {

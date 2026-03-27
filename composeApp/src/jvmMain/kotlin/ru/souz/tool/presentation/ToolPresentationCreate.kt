@@ -183,17 +183,10 @@ data class PresentationCreateInput(
     val saveHtmlPreview: Boolean = true
 )
 
-class ToolPresentationCreate internal constructor(
+class ToolPresentationCreate(
     private val filesToolUtil: FilesToolUtil,
-    private val webImageDownloader: WebImageDownloader,
+    private val webImageDownloader: WebImageDownloader = WebImageDownloader(filesToolUtil),
 ) : ToolSetupWithAttachments<PresentationCreateInput> {
-    constructor(
-        filesToolUtil: FilesToolUtil,
-    ) : this(
-        filesToolUtil = filesToolUtil,
-        webImageDownloader = WebImageDownloader(filesToolUtil),
-    )
-
     companion object {
         private const val SPEAKER_NOTES_PPTX_PROPERTY = "souz.presentation.enableSpeakerNotesPptx"
     }
