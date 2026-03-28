@@ -5,6 +5,14 @@ import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Graph
 import ru.souz.agent.engine.Node
 import ru.souz.agent.engine.StepInfo
+import ru.souz.giga.GigaResponse
+
+sealed interface AgentSideEffect {
+    @JvmInline
+    value class Text(val v: String) : AgentSideEffect
+
+    data class Fn(val call: GigaResponse.FunctionCall) : AgentSideEffect
+}
 
 interface Agent {
     val sideEffects: Flow<String>

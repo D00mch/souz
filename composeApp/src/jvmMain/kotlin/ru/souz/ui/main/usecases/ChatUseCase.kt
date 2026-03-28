@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.AgentSideEffect
 import ru.souz.agent.engine.AgentContext
 import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
@@ -22,6 +23,7 @@ import ru.souz.telemetry.TelemetryConversationStartReason
 import ru.souz.telemetry.TelemetryRequestSource
 import ru.souz.telemetry.TelemetryRequestStatus
 import ru.souz.telemetry.TelemetryService
+import ru.souz.ui.main.ChatAgentActionFormatter
 import ru.souz.ui.main.ChatAttachedFile
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainState
@@ -41,6 +43,7 @@ class ChatUseCase(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val l = LoggerFactory.getLogger(ChatUseCase::class.java)
+    private val chatAgentActionFormatter = ChatAgentActionFormatter()
     private val taskSideEffectJobs = ArrayList<Job>()
     private val activeChatRequestId = AtomicLong(0L)
     private val activeRequestMessages = AtomicReference<ActiveRequestMessages?>(null)
@@ -123,6 +126,7 @@ class ChatUseCase(
 
                     isProcessing = true,
                     statusMessage = "",
+                    agentActions = emptyList(),
                 )
             }
 
@@ -159,13 +163,15 @@ class ChatUseCase(
             }
 
             emitState {
+                val completedBotMessage = botMessage.copy(agentActions = agentActions)
                 copy(
-                    chatMessages = if (chatMessages.lastOrNull()?.id == botMessage.id) {
-                        chatMessages.mapLast { botMessage }
+                    chatMessages = if (chatMessages.lastOrNull()?.id == completedBotMessage.id) {
+                        chatMessages.mapLast { completedBotMessage }
                     } else {
-                        chatMessages + botMessage
+                        chatMessages + completedBotMessage
                     },
                     isProcessing = false,
+                    agentActions = emptyList(),
                 )
             }
 
@@ -185,6 +191,7 @@ class ChatUseCase(
                     copy(
                         chatMessages = chatMessages.filterNot { it.id in idsToDrop },
                         isProcessing = if (isCurrentRequest) false else isProcessing,
+                        agentActions = if (isCurrentRequest) emptyList() else agentActions,
                     )
                 }
             }
@@ -209,6 +216,7 @@ class ChatUseCase(
                 copy(
                     chatMessages = chatMessages + errorMessage,
                     isProcessing = false,
+                    agentActions = emptyList(),
                 )
             }
             onResult?.invoke(Result.failure(e))
@@ -248,6 +256,7 @@ class ChatUseCase(
             copy(
                 chatMessages = if (idsToDrop.isEmpty()) chatMessages else chatMessages.filterNot { it.id in idsToDrop },
                 isProcessing = false,
+                agentActions = emptyList(),
             )
         }
         l.info("Stop requested: invalidated request {}", nextRequestId)
@@ -331,31 +340,42 @@ class ChatUseCase(
         val job = scope.launch {
             val isCodeBlockStarted = AtomicBoolean(false)
             var accumulatedText = ""
-            agentFacade.sideEffects.collect { text ->
-                accumulatedText += text
-                emitState {
-                    val updatedMessage = msg.copy(
-                        text = accumulatedText,
-                    )
-                    val updatedMessages = if (msg.id == chatMessages.lastOrNull()?.id) {
-                        chatMessages.mapLast { updatedMessage }
-                    } else {
-                        chatMessages + updatedMessage
+            agentFacade.sideEffects.collect { effect ->
+                when (effect) {
+                    is AgentSideEffect.Text -> {
+                        val text = effect.v
+                        accumulatedText += text
+                        emitState {
+                            val updatedMessage = msg.copy(
+                                text = accumulatedText,
+                            )
+                            val updatedMessages = if (msg.id == chatMessages.lastOrNull()?.id) {
+                                chatMessages.mapLast { updatedMessage }
+                            } else {
+                                chatMessages + updatedMessage
+                            }
+                            copy(chatMessages = updatedMessages)
+                        }
+
+                        if (!msg.isVoice) return@collect
+
+                        if (text.contains(CODE_BLOCK)) {
+                            isCodeBlockStarted.set(!isCodeBlockStarted.get())
+                            if (isCodeBlockStarted.get()) {
+                                speechUseCase.queuePrepared(text.substringBefore(CODE_BLOCK))
+                            }
+                        }
+
+                        if (!isCodeBlockStarted.get()) {
+                            speechUseCase.queuePrepared(text.substringAfter(CODE_BLOCK))
+                        }
                     }
-                    copy(chatMessages = updatedMessages)
-                }
-
-                if (!msg.isVoice) return@collect
-
-                if (text.contains(CODE_BLOCK)) {
-                    isCodeBlockStarted.set(!isCodeBlockStarted.get())
-                    if (isCodeBlockStarted.get()) {
-                        speechUseCase.queuePrepared(text.substringBefore(CODE_BLOCK))
+                    is AgentSideEffect.Fn -> {
+                        val action = chatAgentActionFormatter.format(effect.call)
+                        emitState {
+                            copy(agentActions = (agentActions + action).takeLast(MAX_AGENT_ACTIONS))
+                        }
                     }
-                }
-
-                if (!isCodeBlockStarted.get()) {
-                    speechUseCase.queuePrepared(text.substringAfter(CODE_BLOCK))
                 }
             }
         }
@@ -389,6 +409,7 @@ class ChatUseCase(
 
     private companion object {
         const val CODE_BLOCK = "```"
+        const val MAX_AGENT_ACTIONS = 8
     }
 
     private data class ActiveRequestMessages(

@@ -289,6 +289,7 @@ class MainViewModel(
             copy(
                 displayedText = startTips.randomOrNull() ?: "",
                 statusMessage = "",
+                agentActions = emptyList(),
                 lastText = null,
                 lastKnownAgentContext = null,
                 userExpectCloseOnX = false,
@@ -402,6 +403,7 @@ class MainViewModel(
                         lastKnownAgentContext = lastKnownAgentContext ?: currentState.lastKnownAgentContext,
                         userExpectCloseOnX = true,
                         chatMessages = emptyList(),
+                        agentActions = emptyList(),
                         chatStartTip = startTips.randomOrNull() ?: "",
                         attachedFiles = emptyList(),
                         pendingVoiceInputDraft = null,
@@ -417,6 +419,7 @@ class MainViewModel(
                         displayedText = clearedText,
                         userExpectCloseOnX = false,
                         chatMessages = emptyList(),
+                        agentActions = emptyList(),
                         chatStartTip = startTips.randomOrNull() ?: "",
                         attachedFiles = emptyList(),
                         pendingVoiceInputDraft = null,

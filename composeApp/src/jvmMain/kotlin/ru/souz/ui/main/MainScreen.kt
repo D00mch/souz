@@ -375,6 +375,7 @@ fun MainScreenContent(
 
                 ChatModeContent(
                     messages = state.chatMessages,
+                    agentActions = state.agentActions,
                     chatPlaceholder = state.chatStartTip,
                     chatSessionId = state.chatSessionId,
                     selectedModel = state.selectedModel,
@@ -776,6 +777,7 @@ private enum class HeadingScale { LARGE, SMALL }
 @Composable
 fun ChatModeContent(
     messages: List<ChatMessage>,
+    agentActions: List<String>,
     chatPlaceholder: String,
     chatSessionId: Long,
     selectedModel: String,
@@ -894,13 +896,24 @@ fun ChatModeContent(
                         enter = fadeIn(animationSpec = tween(durationMillis = 180)),
                         exit = fadeOut(animationSpec = tween(durationMillis = 120)),
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp, horizontal = 8.dp),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            ThinkingIndicator(text = stringThinking)
+                        if (agentActions.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                ThinkingIndicator(text = stringThinking)
+                            }
+                        } else {
+                            AgentActionList(
+                                actions = agentActions,
+                                inProgress = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .padding(start = 17.dp, end = 70.dp),
+                            )
                         }
                     }
                 }
@@ -1141,6 +1154,13 @@ private fun ChatBubble(
                     .padding(start = 17.dp, end = 70.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if (message.agentActions.isNotEmpty()) {
+                    AgentActionList(
+                        actions = message.agentActions,
+                        inProgress = false,
+                    )
+                }
+
                 if (message.text.isNotBlank()) {
                     val parts = remember(message.text) { parseMarkdownContent(message.text) }
                     val baseFontSize = 14.sp
@@ -1262,6 +1282,75 @@ private fun ChatBubble(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AgentActionList(
+    actions: List<String>,
+    inProgress: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        actions.forEach { action ->
+            AgentActionRow(
+                text = action,
+                inProgress = inProgress,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AgentActionRow(
+    text: String,
+    inProgress: Boolean,
+) {
+    val tint = if (inProgress) {
+        Color.White.copy(alpha = 0.82f)
+    } else {
+        Color.White.copy(alpha = 0.66f)
+    }
+    val containerColor = if (inProgress) {
+        Color.White.copy(alpha = 0.07f)
+    } else {
+        Color.White.copy(alpha = 0.05f)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(containerColor)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (inProgress) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 1.8.dp,
+                color = tint
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Rounded.CheckCircleOutline,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+
+        Text(
+            text = text,
+            color = tint,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 

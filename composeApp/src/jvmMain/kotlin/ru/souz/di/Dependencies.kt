@@ -272,7 +272,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { SystemPromptResolver() }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
     bindSingleton { LuaGraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
-    bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }
     bindSingleton { FinderPathExtractor(instance()) }
     bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }

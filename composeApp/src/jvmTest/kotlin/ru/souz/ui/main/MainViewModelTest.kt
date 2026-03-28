@@ -33,12 +33,14 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import souz.composeapp.generated.resources.Res
+import souz.composeapp.generated.resources.chat_action_web_search
 import souz.composeapp.generated.resources.onboarding_display_text
 import souz.composeapp.generated.resources.onboarding_input_permission_request
 import souz.composeapp.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.AgentSideEffect
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.audio.ActiveSoundRecorderImpl
@@ -50,6 +52,7 @@ import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.TokenLogging
 import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
+import ru.souz.giga.GigaResponse.FunctionCall
 import ru.souz.giga.GigaVoiceAPI
 import ru.souz.service.telegram.TelegramBotController
 import ru.souz.telemetry.TelemetryRequestContext
@@ -94,6 +97,7 @@ class MainViewModelTest {
         mockkStatic("org.jetbrains.compose.resources.StringResourcesKt")
         mockkStatic("org.jetbrains.compose.resources.StringArrayResourcesKt")
         coEvery { getString(any()) } answers { firstArg<Any>().toString() }
+        coEvery { getString(Res.string.chat_action_web_search) } returns "Ищу в интернете: %1\$s"
         coEvery { getStringArray(any()) } returns listOf("tip")
 
     }
@@ -438,6 +442,105 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `tool invocation adds transient agent action during processing`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val harness = createHarness(
+            executeBehavior = { input ->
+                if (input != "hello") error("Unexpected input: $input")
+                response.await()
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("hello"))
+            awaitState(viewModel) { it.isProcessing }
+
+            harness.sideEffects.emit(
+                AgentSideEffect.Fn(
+                    FunctionCall("WebSearch", mapOf("query" to "котлин корутины"))
+                )
+            )
+
+            val inProgress = awaitState(viewModel) {
+                it.agentActions.contains("Ищу в интернете: котлин корутины")
+            }
+            assertEquals(listOf("Ищу в интернете: котлин корутины"), inProgress.agentActions)
+
+            response.complete("done")
+
+            val finalState = awaitState(viewModel) { !it.isProcessing }
+            assertEquals(
+                listOf("Ищу в интернете: котлин корутины"),
+                finalState.chatMessages.last { !it.isUser }.agentActions
+            )
+            assertTrue(finalState.agentActions.isEmpty())
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `tool invocation after stop is ignored until next request starts`() = runTest(mainDispatcher) {
+        val firstResponse = CompletableDeferred<String>()
+        val secondResponse = CompletableDeferred<String>()
+        val harness = createHarness(
+            executeBehavior = { input ->
+                when (input) {
+                    "first" -> firstResponse.await()
+                    "second" -> secondResponse.await()
+                    else -> error("Unexpected input: $input")
+                }
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("first"))
+            awaitState(viewModel) { it.isProcessing }
+
+            viewModel.handleEvent(MainEvent.UserPressStop)
+            awaitState(viewModel) { !it.isProcessing }
+
+            harness.sideEffects.emit(
+                AgentSideEffect.Fn(
+                    FunctionCall("WebSearch", mapOf("query" to "устаревший запрос"))
+                )
+            )
+            runCurrent()
+            assertTrue(viewModel.uiState.value.agentActions.isEmpty())
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("second"))
+            awaitState(viewModel) { it.isProcessing }
+
+            harness.sideEffects.emit(
+                AgentSideEffect.Fn(
+                    FunctionCall("WebSearch", mapOf("query" to "актуальный запрос"))
+                )
+            )
+
+            val inProgress = awaitState(viewModel) {
+                it.agentActions.contains("Ищу в интернете: актуальный запрос")
+            }
+            assertEquals(listOf("Ищу в интернете: актуальный запрос"), inProgress.agentActions)
+
+            secondResponse.complete("done")
+            val finalState = awaitState(viewModel) { !it.isProcessing }
+            assertEquals(
+                listOf("Ищу в интернете: актуальный запрос"),
+                finalState.chatMessages.last { !it.isUser }.agentActions,
+            )
+        } finally {
+            firstResponse.completeExceptionally(CancellationException("Stopped"))
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `onboarding shows welcome text and marks onboarding as completed`() = runTest(mainDispatcher) {
         val harness = createHarness(needsOnboarding = true)
 
@@ -612,7 +715,7 @@ class MainViewModelTest {
         },
     ): TestHarness {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
-        val sideEffects = MutableSharedFlow<String>()
+        val sideEffects = MutableSharedFlow<AgentSideEffect>()
         every { agentFacade.sideEffects } returns sideEffects
         every { agentFacade.currentContext } returns MutableStateFlow(emptyAgentContext())
         every { agentFacade.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
@@ -713,7 +816,8 @@ class MainViewModelTest {
             isSpeakingFlow = speakingFlow,
             settingsProvider = settingsProvider,
             say = say,
-            incomingMessages = incomingMessages
+            incomingMessages = incomingMessages,
+            sideEffects = sideEffects,
         )
     }
 
@@ -751,6 +855,7 @@ class MainViewModelTest {
         val settingsProvider: SettingsProvider,
         val say: Say,
         val incomingMessages: MutableSharedFlow<TelegramBotController.IncomingMessage>,
+        val sideEffects: MutableSharedFlow<AgentSideEffect>,
     ) {
         fun clear() {
             val onCleared = MainViewModel::class.java.getDeclaredMethod("onCleared")

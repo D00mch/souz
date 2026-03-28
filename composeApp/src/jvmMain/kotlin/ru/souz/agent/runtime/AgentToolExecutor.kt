@@ -1,5 +1,8 @@
 package ru.souz.agent.runtime
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.giga.GigaMessageRole
@@ -12,6 +15,9 @@ class AgentToolExecutor(
     private val telemetryService: TelemetryService,
 ) {
     private val l = LoggerFactory.getLogger(AgentToolExecutor::class.java)
+    private val _toolInvocations = MutableSharedFlow<GigaResponse.FunctionCall>(extraBufferCapacity = 32)
+
+    val toolInvocations: Flow<GigaResponse.FunctionCall> = _toolInvocations.asSharedFlow()
 
     suspend fun execute(
         settings: AgentSettings,
@@ -22,6 +28,7 @@ class AgentToolExecutor(
             content = """{"result":"no such function ${functionCall.name}"}""",
         )
 
+        _toolInvocations.tryEmit(functionCall)
         l.info("Executing tool: ${fn.fn.name}, arguments: ${functionCall.arguments}")
         val startedAtMs = System.currentTimeMillis()
         val toolCategory = settings.tools.categoryByName[functionCall.name]
