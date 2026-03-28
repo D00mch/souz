@@ -2,10 +2,15 @@ package ru.souz.giga
 
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.BuildEdition
+import ru.souz.local.LocalBridgeLoader
+import ru.souz.local.LocalHostInfoProvider
+import ru.souz.local.LocalModelStore
+import ru.souz.local.LocalProviderAvailability
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 
 class LlmBuildProfile(
     private val settingsProvider: SettingsProvider,
+    private val localProviderAvailability: LocalProviderAvailability = defaultLocalProviderAvailability(),
 ) {
 
     private fun currentEdition(): BuildEdition =
@@ -15,10 +20,12 @@ class LlmBuildProfile(
         defaultsForEdition(currentEdition())
 
     val availableProviders: Set<LlmProvider>
-        get() = currentDefaults().keys
+        get() = currentDefaults().keys.filterTo(linkedSetOf()) { provider ->
+            provider != LlmProvider.LOCAL || localProviderAvailability.isProviderAvailable()
+        }
 
     val availableModels: List<GigaModel>
-        get() = GigaModel.entries.filter { it.provider in availableProviders }
+        get() = GigaModel.entries.filter(::isModelAvailable)
 
     val defaultModel: GigaModel
         get() = currentDefaults().values.first()
@@ -28,16 +35,19 @@ class LlmBuildProfile(
 
     fun normalizeModel(model: GigaModel): GigaModel = if (isModelAvailable(model)) model else defaultModel
 
-    fun isModelAvailable(model: GigaModel): Boolean = model.provider in availableProviders
+    fun isModelAvailable(model: GigaModel): Boolean = when (model.provider) {
+        LlmProvider.LOCAL -> model in localProviderAvailability.availableGigaModels()
+        else -> model.provider in availableProviders
+    }
 
     fun findModelByAlias(alias: String): GigaModel? = availableModels.firstOrNull { it.alias == alias }
 
-    fun defaultModelForProvider(provider: LlmProvider): GigaModel? = currentDefaults()[provider]
-
-    fun providerPriorities(): List<LlmProvider> = when (currentEdition()) {
-        BuildEdition.RU -> listOf(LlmProvider.AI_TUNNEL, LlmProvider.GIGA, LlmProvider.QWEN)
-        BuildEdition.EN -> listOf(LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.QWEN)
+    fun defaultModelForProvider(provider: LlmProvider): GigaModel? = when (provider) {
+        LlmProvider.LOCAL -> localProviderAvailability.defaultGigaModel()
+        else -> currentDefaults()[provider]
     }
+
+    fun providerPriorities(): List<LlmProvider> = providerPrioritiesForEdition(currentEdition())
 
     companion object {
         private val providerDefaultsByEdition: Map<BuildEdition, Map<LlmProvider, GigaModel>> = mapOf(
@@ -45,11 +55,13 @@ class LlmBuildProfile(
                 LlmProvider.GIGA to GigaModel.Max,
                 LlmProvider.QWEN to GigaModel.QwenMax,
                 LlmProvider.AI_TUNNEL to GigaModel.AiTunnelClaudeHaiku,
+                LlmProvider.LOCAL to GigaModel.LocalQwen3_4B_Instruct_2507,
             ),
             BuildEdition.EN to mapOf(
                 LlmProvider.OPENAI to GigaModel.OpenAIGpt5Nano,
                 LlmProvider.QWEN to GigaModel.QwenMax,
                 LlmProvider.ANTHROPIC to GigaModel.AnthropicHaiku45,
+                LlmProvider.LOCAL to GigaModel.LocalQwen3_4B_Instruct_2507,
             ),
         )
 
@@ -58,5 +70,24 @@ class LlmBuildProfile(
 
         fun defaultsForLanguage(language: String): Map<LlmProvider, GigaModel> =
             defaultsForEdition(if (language.equals(REGION_EN, ignoreCase = true)) BuildEdition.EN else BuildEdition.RU)
+
+        fun providerPrioritiesForEdition(edition: BuildEdition): List<LlmProvider> = when (edition) {
+            BuildEdition.RU -> listOf(LlmProvider.AI_TUNNEL, LlmProvider.GIGA, LlmProvider.QWEN, LlmProvider.LOCAL)
+            BuildEdition.EN -> listOf(LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.QWEN, LlmProvider.LOCAL)
+        }
+
+        fun providerPrioritiesForLanguage(language: String): List<LlmProvider> =
+            providerPrioritiesForEdition(
+                if (language.equals(REGION_EN, ignoreCase = true)) BuildEdition.EN else BuildEdition.RU
+            )
     }
+}
+
+private fun defaultLocalProviderAvailability(): LocalProviderAvailability {
+    val hostInfoProvider = LocalHostInfoProvider()
+    return LocalProviderAvailability(
+        hostInfoProvider = hostInfoProvider,
+        modelStore = LocalModelStore(),
+        bridgeLoader = LocalBridgeLoader(hostInfoProvider),
+    )
 }

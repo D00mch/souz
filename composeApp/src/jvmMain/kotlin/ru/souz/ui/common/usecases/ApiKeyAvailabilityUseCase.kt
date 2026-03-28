@@ -18,6 +18,7 @@ data class ApiKeyAvailability(
     val fields: Set<ApiKeyField>,
     val providers: List<ApiKeyProvider>,
     val supportsVoiceRecognitionApiKeys: Boolean,
+    val supportsLocalInference: Boolean,
 )
 
 class ApiKeyAvailabilityUseCase(
@@ -29,6 +30,7 @@ class ApiKeyAvailabilityUseCase(
             fields = availableFields,
             providers = availableProviders(availableFields),
             supportsVoiceRecognitionApiKeys = supportsVoiceRecognitionApiKeys(availableFields),
+            supportsLocalInference = LlmProvider.LOCAL in llmBuildProfile.availableProviders,
         )
     }
 

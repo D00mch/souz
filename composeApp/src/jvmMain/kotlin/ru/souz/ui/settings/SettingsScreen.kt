@@ -81,6 +81,14 @@ fun SettingsScreen(
             .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    if (state.currentScreen == SettingsSubScreen.MAIN && state.localModelDownloadState != null) {
+                        viewModel.send(SettingsEvent.CancelLocalModelDownload)
+                        return@onPreviewKeyEvent true
+                    }
+                    if (state.currentScreen == SettingsSubScreen.MAIN && state.localModelDownloadPrompt != null) {
+                        viewModel.send(SettingsEvent.CancelLocalModelDownload)
+                        return@onPreviewKeyEvent true
+                    }
                     if (state.currentScreen == SettingsSubScreen.MAIN && state.showAgentSwitchConfirmation) {
                         viewModel.send(SettingsEvent.CancelAgentSwitch)
                         return@onPreviewKeyEvent true
@@ -266,6 +274,21 @@ fun SettingsScreenMain(
                             onClose = onClose
                         )
                     }
+                }
+
+                state.localModelDownloadPrompt?.let { prompt ->
+                    ru.souz.ui.common.LocalModelDownloadPromptDialog(
+                        prompt = prompt,
+                        onConfirm = { viewModel.send(SettingsEvent.ConfirmLocalModelDownload) },
+                        onDismiss = { viewModel.send(SettingsEvent.CancelLocalModelDownload) },
+                    )
+                }
+
+                state.localModelDownloadState?.let { downloadState ->
+                    ru.souz.ui.common.LocalModelDownloadProgressDialog(
+                        state = downloadState,
+                        onCancel = { viewModel.send(SettingsEvent.CancelLocalModelDownload) },
+                    )
                 }
             }
         }

@@ -232,6 +232,23 @@
     <string name="content_desc_select_agent">Выбрать агента</string>
     <string name="label_embeddings_model">Модель эмбеддингов</string>
     <string name="label_voice_recognition_model">Модель распознавания речи</string>
+    <string name="local_model_download_dialog_title">Скачать локальную модель</string>
+    <string name="local_model_download_dialog_message">Чтобы использовать %1$s локально, Souz должен сначала скачать веса модели.</string>
+    <string name="local_model_download_dialog_confirm">Скачать</string>
+    <string name="local_model_download_dialog_cancel">Позже</string>
+    <string name="local_model_download_progress_title">Загрузка локальной модели</string>
+    <string name="local_model_download_progress_message">Souz скачивает %1$s в локальную папку моделей.</string>
+    <string name="local_model_download_progress_action">Загрузка</string>
+    <string name="local_model_download_cancel">Отменить загрузку</string>
+    <string name="local_model_download_progress_known">%1$s из %2$s</string>
+    <string name="local_model_download_progress_unknown">Скачано %1$s</string>
+    <string name="local_model_download_detail_repo">Репозиторий: %1$s</string>
+    <string name="local_model_download_detail_quantization">Квантизация: %1$s</string>
+    <string name="local_model_download_detail_storage">Хранение: %1$s</string>
+    <string name="local_model_download_detail_license">Лицензия: %1$s</string>
+    <string name="local_model_download_detail_manual_license">Перед скачиванием может потребоваться ручное подтверждение лицензии на Hugging Face.</string>
+    <string name="local_model_download_cancelled">Загрузка локальной модели отменена.</string>
+    <string name="local_model_download_failed">Не удалось скачать локальную модель.</string>
 
     <!-- Finder Service -->
     <string name="error_empty_path">Пустой путь</string>

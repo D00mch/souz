@@ -141,7 +141,7 @@ fun MainScreen(
         viewModel.effects.collect { effect ->
             when (effect) {
                 MainEffect.Hide -> onCloseWindow()
-                is MainEffect.ShowError -> Unit
+                is MainEffect.ShowError -> onShowSnack(effect.message)
             }
         }
     }
@@ -167,6 +167,8 @@ fun MainScreen(
         onToggleThinkingPanel = { viewModel.send(MainEvent.ToggleThinkingPanel) },
         onShowSnack = onShowSnack,
         onChatModelChange = { viewModel.send(MainEvent.UpdateChatModel(it)) },
+        onConfirmLocalModelDownload = { viewModel.send(MainEvent.ConfirmLocalModelDownload) },
+        onCancelLocalModelDownload = { viewModel.send(MainEvent.CancelLocalModelDownload) },
         onChatContextSizeChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
         onPickChatAttachments = { viewModel.send(MainEvent.PickChatAttachments) },
         onAttachDroppedTransferable = { viewModel.onAttachDroppedTransferable(it) },
@@ -202,6 +204,8 @@ fun MainScreenContent(
     onToggleThinkingPanel: () -> Unit = {},
     onShowSnack: (String) -> Unit = {},
     onChatModelChange: (String) -> Unit = {},
+    onConfirmLocalModelDownload: () -> Unit = {},
+    onCancelLocalModelDownload: () -> Unit = {},
     onChatContextSizeChange: (Int) -> Unit = {},
     onPickChatAttachments: () -> Unit = {},
     onAttachDroppedTransferable: (Transferable) -> Unit = {},
@@ -488,6 +492,21 @@ fun MainScreenContent(
                     cancelText = dialog.cancelText,
                     onConfirmSelection = onSelectApprovalCandidate,
                     onDismiss = onCancelSelectionDialog,
+                )
+            }
+
+            state.localModelDownloadPrompt?.let { prompt ->
+                LocalModelDownloadPromptDialog(
+                    prompt = prompt,
+                    onConfirm = onConfirmLocalModelDownload,
+                    onDismiss = onCancelLocalModelDownload,
+                )
+            }
+
+            state.localModelDownloadState?.let { downloadState ->
+                LocalModelDownloadProgressDialog(
+                    state = downloadState,
+                    onCancel = onCancelLocalModelDownload,
                 )
             }
         }

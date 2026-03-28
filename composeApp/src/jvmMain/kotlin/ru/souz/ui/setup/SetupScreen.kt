@@ -165,7 +165,15 @@ fun SetupScreenContent(
                         )
                         Text(
                             text = if (hasNoKeys) {
-                                stringResource(Res.string.setup_hint_add_key)
+                                when {
+                                    state.supportsLocalInference && state.useEnglishVersion ->
+                                        "No API key configured. Local inference is available."
+
+                                    state.supportsLocalInference ->
+                                        "API-ключ не настроен. Локальный inference доступен."
+
+                                    else -> stringResource(Res.string.setup_hint_add_key)
+                                }
                             } else {
                                 stringResource(Res.string.setup_hint_keys_found).format(state.configuredKeysCount)
                             },
@@ -173,7 +181,11 @@ fun SetupScreenContent(
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
                             ),
-                            color = if (hasNoKeys) MaterialTheme.colorScheme.error else SetupHintColor
+                            color = if (hasNoKeys && !state.supportsLocalInference) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                SetupHintColor
+                            }
                         )
                     }
                 }

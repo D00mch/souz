@@ -7,6 +7,7 @@ import ru.souz.agent.engine.Node
 import ru.souz.giga.GigaMessageRole
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaToolSetup
+import ru.souz.giga.LlmProvider
 import ru.souz.giga.gigaJsonMapper
 import ru.souz.db.SettingsProvider
 import ru.souz.tool.ToolCategory
@@ -55,11 +56,12 @@ class NodesClassification(
         l.debug("Classifying user message: {}, \nbody: \n{}", userText, logObjectMapper.writeValueAsString(body))
         try {
             val localResult: UserMessageClassifier.Reply = localClassifier.classify(bodyJson)
-            if (retriesCount <= 0) return localResult.categories
+            if (retriesCount <= 0 || settingsProvider.gigaModel.provider == LlmProvider.LOCAL) {
+                return localResult.categories
+            }
 
             val apiResult: UserMessageClassifier.Reply = apiClassifier.classify(bodyJson)
-            val (localCategories, _) = localClassifier.classify(bodyJson)
-            if (apiResult.confidence > 50 || apiResult.categories.firstOrNull() == localCategories.firstOrNull()) {
+            if (apiResult.confidence > 50 || apiResult.categories.firstOrNull() == localResult.categories.firstOrNull()) {
                 return apiResult.categories
             } else {
                 l.info("Categories mismatch: Local: ${localResult}, API: ${apiResult}.")

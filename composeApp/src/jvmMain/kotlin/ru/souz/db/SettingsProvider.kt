@@ -8,6 +8,10 @@ import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.LlmProvider
 import ru.souz.giga.VoiceRecognitionModel
 import ru.souz.giga.VoiceRecognitionProvider
+import ru.souz.local.LocalBridgeLoader
+import ru.souz.local.LocalHostInfoProvider
+import ru.souz.local.LocalModelStore
+import ru.souz.local.LocalProviderAvailability
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
@@ -45,7 +49,10 @@ interface SettingsProvider {
     var mcpServersFile: String?
 }
 
-class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvider {
+class SettingsProviderImpl(
+    private val configStore: ConfigStore,
+    private val localProviderAvailability: LocalProviderAvailability = defaultLocalProviderAvailability(),
+) : SettingsProvider {
 
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _appLanguageDelegate: String?
@@ -292,12 +299,36 @@ class SettingsProviderImpl(private val configStore: ConfigStore) : SettingsProvi
         envKey = MCP_SERVERS_FILE
     )
 
-    private fun defaultLlmModel(): GigaModel =
-        LlmBuildProfile.defaultsForLanguage(regionProfile).values.first()
+    private fun defaultLlmModel(): GigaModel {
+        val defaults = LlmBuildProfile.defaultsForLanguage(regionProfile)
+        val availableLocalDefault = localProviderAvailability.defaultGigaModel()
+        return LlmBuildProfile.providerPrioritiesForLanguage(regionProfile)
+            .firstNotNullOfOrNull { provider ->
+                when (provider) {
+                    LlmProvider.LOCAL -> availableLocalDefault
+                    else -> defaults[provider]?.takeIf { hasConfiguredAccess(it.provider) }
+                }
+            }
+            ?: availableLocalDefault
+            ?: defaults.values.first()
+    }
 
     private fun normalizeGigaModel(model: GigaModel): GigaModel {
         val availableProviders = LlmBuildProfile.defaultsForLanguage(regionProfile).keys
-        return if (model.provider in availableProviders) model else defaultLlmModel()
+        return when {
+            model.provider == LlmProvider.LOCAL && model !in localProviderAvailability.availableGigaModels() -> defaultLlmModel()
+            model.provider !in availableProviders -> defaultLlmModel()
+            else -> model
+        }
+    }
+
+    private fun hasConfiguredAccess(provider: LlmProvider): Boolean = when (provider) {
+        LlmProvider.GIGA -> !gigaChatKey.isNullOrBlank()
+        LlmProvider.QWEN -> !qwenChatKey.isNullOrBlank()
+        LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
+        LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
+        LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
+        LlmProvider.LOCAL -> localProviderAvailability.isProviderAvailable()
     }
 
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
@@ -367,6 +398,7 @@ fun SettingsProvider.hasKey(provider: LlmProvider): Boolean = when (provider) {
     LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
     LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
     LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
+    LlmProvider.LOCAL -> true
 }
 
 fun SettingsProvider.hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
@@ -379,4 +411,13 @@ fun main() {
     val s: SettingsProviderImpl = SettingsProviderImpl(ConfigStore)
     s.needsOnboarding = false
     s.onboardingCompleted = false
+}
+
+private fun defaultLocalProviderAvailability(): LocalProviderAvailability {
+    val hostInfoProvider = LocalHostInfoProvider()
+    return LocalProviderAvailability(
+        hostInfoProvider = hostInfoProvider,
+        modelStore = LocalModelStore(),
+        bridgeLoader = LocalBridgeLoader(hostInfoProvider),
+    )
 }

@@ -1,10 +1,16 @@
 package classification
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.unmockkAll
 import org.junit.jupiter.api.AfterEach
+import ru.souz.agent.engine.AgentContext
+import ru.souz.agent.engine.AgentSettings
+import ru.souz.agent.engine.GraphRuntime
+import ru.souz.agent.engine.RetryPolicy
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
@@ -16,6 +22,7 @@ import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolsFactory
 import ru.souz.tool.ToolsSettings
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -80,6 +87,56 @@ class NodesClassificationPromptTest {
         val filtered = toolsSettings.applyFilter(toolsFactory.toolsByCategory)
 
         assertTrue(filtered.containsKey(ToolCategory.TELEGRAM))
+    }
+
+    @Test
+    fun `local provider classification skips api classifier and narrows tools`() {
+        val localTools = mapOf(
+            ToolCategory.FILES to mapOf("Read" to dummySetup("Read")),
+            ToolCategory.MAIL to mapOf("MailRead" to dummySetup("MailRead")),
+        )
+        val settingsProvider = mockk<SettingsProvider> {
+            every { gigaModel } returns GigaModel.LocalLlama_3_1_8B_Instruct
+        }
+        val localClassifier = mockk<ru.souz.tool.UserMessageClassifier> {
+            coEvery { classify(any()) } returns ru.souz.tool.UserMessageClassifier.Reply(
+                categories = listOf(ToolCategory.MAIL),
+                confidence = 50.0,
+            )
+        }
+        val apiClassifier = mockk<ru.souz.tool.UserMessageClassifier>(relaxed = true)
+        val toolsFactory = mockk<ToolsFactory> { every { toolsByCategory } returns localTools }
+        val toolsSettings = mockk<ToolsSettings> {
+            every { applyFilter(any()) } answers { firstArg() }
+        }
+        val classification = NodesClassification(
+            settingsProvider = settingsProvider,
+            logObjectMapper = ObjectMapper(),
+            apiClassifier = apiClassifier,
+            localClassifier = localClassifier,
+            toolsFactory = toolsFactory,
+            toolsSettings = toolsSettings,
+        )
+
+        val result = kotlinx.coroutines.runBlocking {
+            classification.node().execute(
+                ctx = AgentContext(
+                    input = "Проверить почту",
+                    settings = AgentSettings(
+                        model = GigaModel.LocalLlama_3_1_8B_Instruct.alias,
+                        temperature = 0.2f,
+                        toolsByCategory = localTools,
+                    ),
+                    history = emptyList(),
+                    activeTools = emptyList(),
+                    systemPrompt = "",
+                ),
+                runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
+            )
+        }
+
+        assertEquals(listOf("MailRead"), result.activeTools.map { it.name })
+        coVerify(exactly = 0) { apiClassifier.classify(any()) }
     }
 
     private fun mockTelegramFilteredToolsSettings(telegramConnected: Boolean): ToolsSettings {

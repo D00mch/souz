@@ -64,10 +64,11 @@ class SetupViewModel(
                 saluteSpeechKey = saluteSpeechKey,
                 ),
             )
+            val supportsLocalInference = apiKeyAvailabilityUseCase.availability().supportsLocalInference
             setState {
-                copy(shouldProceed = hasAnyConfiguredKey)
+                copy(shouldProceed = hasAnyConfiguredKey || supportsLocalInference)
             }
-            markOnboardingIfNeeded(hasAnyConfiguredKey)
+            markOnboardingIfNeeded(hasAnyConfiguredKey || supportsLocalInference)
         }
     }
 
@@ -250,7 +251,7 @@ class SetupViewModel(
                         }
                         return
                     }
-                    markOnboardingIfNeeded(hasAnyConfiguredKey = true)
+                    markOnboardingIfNeeded(canProceed = true)
                     send(SetupEffect.OpenMain)
                 }
             }
@@ -289,15 +290,16 @@ class SetupViewModel(
                 availableApiKeyFields = availability.fields,
                 availableApiKeyProviders = availability.providers,
                 supportsVoiceRecognitionApiKeys = availability.supportsVoiceRecognitionApiKeys,
+                supportsLocalInference = availability.supportsLocalInference,
                 useEnglishVersion = settingsProvider.regionProfile == REGION_EN,
                 configuredKeysCount = configuredKeysCount,
-                canProceed = configuredKeysCount > 0
+                canProceed = configuredKeysCount > 0 || availability.supportsLocalInference
             )
         }
     }
 
-    private fun markOnboardingIfNeeded(hasAnyConfiguredKey: Boolean) {
-        if (hasAnyConfiguredKey && !settingsProvider.onboardingCompleted) {
+    private fun markOnboardingIfNeeded(canProceed: Boolean) {
+        if (canProceed && !settingsProvider.onboardingCompleted) {
             settingsProvider.needsOnboarding = true
         }
     }

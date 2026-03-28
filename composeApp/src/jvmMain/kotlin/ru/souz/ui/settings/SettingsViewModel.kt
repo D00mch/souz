@@ -4,6 +4,7 @@ import androidx.lifecycle.viewModelScope
 import io.ktor.util.logging.debug
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -21,9 +22,15 @@ import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.db.VectorDB
 import ru.souz.giga.GigaChatAPI
+import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.LlmBuildProfile
 import ru.souz.giga.LlmProvider
+import ru.souz.local.LocalModelDownloadState
+import ru.souz.local.LocalLlamaRuntime
+import ru.souz.local.LocalModelProfiles
+import ru.souz.local.LocalModelStore
+import ru.souz.local.downloadPromptFor
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.service.telegram.TelegramService
@@ -50,6 +57,8 @@ class SettingsViewModel(
     private val l = LoggerFactory.getLogger(SettingsViewModel::class.java)
     private val keysProvider: SettingsProvider by di.instance()
     private val llmBuildProfile: LlmBuildProfile by di.instance()
+    private val localModelStore: LocalModelStore by di.instance()
+    private val localLlamaRuntime: LocalLlamaRuntime by di.instance()
     private val apiKeyAvailabilityUseCase: ApiKeyAvailabilityUseCase by di.instance()
     private val chatApi: GigaChatAPI by di.instance()
     private val agentFacade: AgentFacade by di.instance()
@@ -62,6 +71,8 @@ class SettingsViewModel(
     private val pendingKeySaveJobs = mutableMapOf<DeferredSettingsKey, Job>()
     private val pendingTextSettingDrafts = mutableMapOf<DeferredTextSetting, String>()
     private val pendingTextSettingSaveJobs = mutableMapOf<DeferredTextSetting, Job>()
+    private var localModelDownloadJob: Job? = null
+    private var localModelPreloadJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -179,11 +190,20 @@ class SettingsViewModel(
             }
             is SelectModel -> {
                 if (event.model !in currentState.availableLlmModels) return
-                flushPendingSystemPromptSave()
-                val newPrompt = agentFacade.setModel(event.model)
-                setState { copy(gigaModel = event.model, systemPrompt = newPrompt) }
-                fetchBalance()
+                val downloadPrompt = localModelStore.downloadPromptFor(event.model)
+                if (downloadPrompt != null) {
+                    setState {
+                        copy(
+                            localModelDownloadPrompt = downloadPrompt,
+                            localModelDownloadState = null,
+                        )
+                    }
+                    return
+                }
+                applySelectedModel(event.model)
             }
+            ConfirmLocalModelDownload -> confirmLocalModelDownload()
+            CancelLocalModelDownload -> cancelLocalModelDownload()
             is SelectEmbeddingsModel -> {
                 if (event.model !in currentState.availableEmbeddingsModels) return
                 val currentModel = keysProvider.embeddingsModel
@@ -361,6 +381,78 @@ class SettingsViewModel(
         SettingsEffect.CloseScreen,
         SettingsEffect.NotifyOnSystemPrompt,
         is SettingsEffect.ShowSnackbar -> l.debug { "ignore effect: $effect" }
+    }
+
+    private suspend fun applySelectedModel(model: ru.souz.giga.GigaModel) {
+        flushPendingSystemPromptSave()
+        val newPrompt = agentFacade.setModel(model)
+        setState { copy(gigaModel = model, systemPrompt = newPrompt) }
+        fetchBalance()
+        scheduleLocalModelPreload(model)
+    }
+
+    private suspend fun confirmLocalModelDownload() {
+        val prompt = currentState.localModelDownloadPrompt ?: return
+        localModelDownloadJob?.cancelAndJoin()
+        localModelDownloadJob = viewModelScope.launch(ioDispatchers) {
+            setState {
+                copy(
+                    localModelDownloadPrompt = null,
+                    localModelDownloadState = LocalModelDownloadState(prompt),
+                )
+            }
+
+            runCatching {
+                localModelStore.download(prompt.profile) { progress ->
+                    setState {
+                        copy(localModelDownloadState = LocalModelDownloadState(prompt, progress))
+                    }
+                }
+            }.onSuccess {
+                applySelectedModel(prompt.model)
+                setState { copy(localModelDownloadState = null) }
+            }.onFailure { error ->
+                setState { copy(localModelDownloadState = null) }
+                if (error is CancellationException) {
+                    return@onFailure
+                }
+                send(SettingsEffect.ShowSnackbar(error.message ?: getString(Res.string.local_model_download_failed)))
+            }
+
+            localModelDownloadJob = null
+        }
+    }
+
+    private suspend fun cancelLocalModelDownload() {
+        val hadActiveDownload = currentState.localModelDownloadState != null
+        localModelDownloadJob?.cancelAndJoin()
+        localModelDownloadJob = null
+        setState {
+            copy(
+                localModelDownloadPrompt = null,
+                localModelDownloadState = null,
+            )
+        }
+        if (hadActiveDownload) {
+            send(SettingsEffect.ShowSnackbar(getString(Res.string.local_model_download_cancelled)))
+        }
+    }
+
+    private fun scheduleLocalModelPreload(model: GigaModel) {
+        if (!LocalModelProfiles.isLocalModelAlias(model.alias)) {
+            localModelPreloadJob?.cancel()
+            localModelPreloadJob = null
+            return
+        }
+        localModelPreloadJob?.cancel()
+        localModelPreloadJob = viewModelScope.launch(ioDispatchers) {
+            runCatching { localLlamaRuntime.preload(model.alias) }
+                .onFailure { error ->
+                    if (error !is CancellationException) {
+                        l.warn("Local model preload failed for {}: {}", model.alias, error.message)
+                    }
+                }
+        }
     }
 
     private suspend fun refreshFromProvider() {
@@ -789,6 +881,16 @@ class SettingsViewModel(
                 }
                 return@launch
             }
+            LlmProvider.LOCAL -> {
+                setState {
+                    copy(
+                        balance = emptyList(),
+                        balanceError = "Balance is not available for the local provider.",
+                        isBalanceLoading = false
+                    )
+                }
+                return@launch
+            }
 
         }
 
@@ -864,6 +966,11 @@ class SettingsViewModel(
                 val errorMsg = error.message ?: getString(Res.string.error_failed_logout)
                 setState { copy(telegramAuthError = errorMsg) }
             }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        localModelPreloadJob?.cancel()
     }
 
     private enum class DeferredSettingsKey {

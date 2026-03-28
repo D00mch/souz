@@ -33,6 +33,7 @@ import ru.souz.llms.AiTunnelChatAPI
 import ru.souz.llms.AnthropicChatAPI
 import ru.souz.llms.OpenAIChatAPI
 import ru.souz.llms.QwenChatAPI
+import ru.souz.local.LocalChatAPI
 import ru.souz.service.telegram.TelegramAuthState
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.service.telegram.TelegramService
@@ -231,6 +232,7 @@ class AgentScenarioTestSupport(
                     LlmProvider.AI_TUNNEL -> instance<AiTunnelChatAPI>()
                     LlmProvider.ANTHROPIC -> instance<AnthropicChatAPI>()
                     LlmProvider.OPENAI -> instance<OpenAIChatAPI>()
+                    LlmProvider.LOCAL -> instance<LocalChatAPI>()
                 }
             }
             bindSingleton<DesktopInfoRepository>(overrides = true) {
@@ -255,7 +257,9 @@ class AgentScenarioTestSupport(
             LlmProvider.AI_TUNNEL -> "AITUNNEL_KEY"
             LlmProvider.ANTHROPIC -> "ANTHROPIC_API_KEY"
             LlmProvider.OPENAI -> "OPENAI_API_KEY"
+            LlmProvider.LOCAL -> null
         }
+        if (apiKeyName == null) return
         val apiKey = readEnvironment(apiKeyName) ?: readSystemProperty(apiKeyName)
         Assumptions.assumeTrue(
             !apiKey.isNullOrBlank(),
@@ -287,6 +291,7 @@ class AgentScenarioTestSupport(
             LlmProvider.AI_TUNNEL -> println("Spent: ${aiTunnelChatAPI?.getSessionTokenUsage() ?: "n/a"}")
             LlmProvider.ANTHROPIC -> println("Spent: ${anthropicChatAPI?.getSessionTokenUsage() ?: "n/a"}")
             LlmProvider.OPENAI -> println("Spent: ${openAiChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+            LlmProvider.LOCAL -> println("Spent: local provider")
         }
         val requestCount = httpRequestCount.get()
         if (requestCount == 0L) {

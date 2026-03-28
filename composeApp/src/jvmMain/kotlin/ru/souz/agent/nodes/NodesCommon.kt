@@ -10,6 +10,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.db.StorredData
 import ru.souz.db.StorredType
 import ru.souz.giga.*
+import ru.souz.local.LocalModelProfiles
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.browser.detectDefaultBrowser
 import ru.souz.tool.browser.prettyName
@@ -89,7 +90,13 @@ class NodesCommon(
      * Modifies [AgentContext.history] when new data is added.
      */
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
-        val additionalMessage: GigaRequest.Message? = appendActualInformation(ctx.input)
+        if (!shouldAppendAdditionalData(ctx.settings.model)) {
+            return@Node ctx.map()
+        }
+        val additionalMessage: GigaRequest.Message? = appendActualInformation(
+            userText = ctx.input,
+            includeDesktopSearch = shouldSearchAdditionalData(ctx.settings.model),
+        )
 
         val newHistory = ArrayList<GigaRequest.Message>()
         ctx.history.forEach { msg ->
@@ -100,7 +107,7 @@ class NodesCommon(
         if (additionalMessage == null) {
             ctx.map(history = newHistory)
         } else {
-            l.info("Injecting RAG context (${additionalMessage.content.length} chars)")
+            l.info("Injecting additional context (${additionalMessage.content.length} chars)")
 
             if (newHistory.isNotEmpty()) {
                 newHistory.add(newHistory.size - 1, additionalMessage)
@@ -112,15 +119,20 @@ class NodesCommon(
         }
     }
 
-    private suspend fun appendActualInformation(userText: String): GigaRequest.Message? {
+    private suspend fun appendActualInformation(
+        userText: String,
+        includeDesktopSearch: Boolean,
+    ): GigaRequest.Message? {
         if (userText.isBlank()) return null
 
         val additionalData = ArrayList<StorredData>()
 
-        try {
-            additionalData.addAll(desktopInfoRepository.search(userText))
-        } catch (e: Exception) {
-            l.error("Error searching desktop info: ${e.message}")
+        if (includeDesktopSearch) {
+            try {
+                additionalData.addAll(desktopInfoRepository.search(userText))
+            } catch (e: Exception) {
+                l.error("Error searching desktop info: ${e.message}")
+            }
         }
 
         try {
@@ -217,6 +229,11 @@ class NodesCommon(
         settings: AgentSettings,
         functionCall: GigaResponse.FunctionCall,
     ): GigaRequest.Message = agentToolExecutor.execute(settings, functionCall)
+
+    internal fun shouldAppendAdditionalData(modelAlias: String): Boolean = true
+
+    internal fun shouldSearchAdditionalData(modelAlias: String): Boolean =
+        !LocalModelProfiles.isLocalModelAlias(modelAlias)
 }
 
 fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaRequest.Chat {

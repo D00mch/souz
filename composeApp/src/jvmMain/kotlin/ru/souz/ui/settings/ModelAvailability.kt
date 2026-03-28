@@ -66,6 +66,7 @@ private fun LlmProvider.toVoiceRecognitionProviderOrNull(): VoiceRecognitionProv
     LlmProvider.OPENAI -> VoiceRecognitionProvider.OPENAI
     LlmProvider.QWEN -> VoiceRecognitionProvider.OPENAI
     LlmProvider.ANTHROPIC -> VoiceRecognitionProvider.OPENAI
+    LlmProvider.LOCAL -> null
 }
 
 private fun VoiceRecognitionProvider.isEnabledInBuild(llmBuildProfile: LlmBuildProfile): Boolean = when (this) {

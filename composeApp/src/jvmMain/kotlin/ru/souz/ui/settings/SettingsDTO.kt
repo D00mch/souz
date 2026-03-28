@@ -12,6 +12,8 @@ import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
+import ru.souz.local.LocalModelDownloadPrompt
+import ru.souz.local.LocalModelDownloadState
 import org.jetbrains.compose.resources.StringResource
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
@@ -105,6 +107,8 @@ data class SettingsState(
     val botNameToDelete: String? = null,
     val showAgentSwitchConfirmation: Boolean = false,
     val pendingAgentId: AgentId? = null,
+    val localModelDownloadPrompt: LocalModelDownloadPrompt? = null,
+    val localModelDownloadState: LocalModelDownloadState? = null,
     
     // Graph Logs
     val currentScreen: SettingsSubScreen = SettingsSubScreen.MAIN,
@@ -134,6 +138,8 @@ sealed interface SettingsEvent : VMEvent {
     object ConfirmAgentSwitch : SettingsEvent
     object CancelAgentSwitch : SettingsEvent
     data class SelectModel(val model: GigaModel): SettingsEvent
+    object ConfirmLocalModelDownload : SettingsEvent
+    object CancelLocalModelDownload : SettingsEvent
     data class SelectEmbeddingsModel(val model: EmbeddingsModel): SettingsEvent
     data class SelectVoiceRecognitionModel(val model: VoiceRecognitionModel): SettingsEvent
     data class InputRequestTimeoutMillis(val millis: String) : SettingsEvent

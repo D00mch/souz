@@ -10,6 +10,7 @@ import ru.souz.llms.AiTunnelChatAPI
 import ru.souz.llms.AnthropicChatAPI
 import ru.souz.llms.OpenAIChatAPI
 import ru.souz.llms.QwenChatAPI
+import ru.souz.local.LocalChatAPI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -25,6 +26,7 @@ class LLMFactoryEmbeddingsTest {
         val aiTunnelApi = mockk<AiTunnelChatAPI>()
         val anthropicApi = mockk<AnthropicChatAPI>()
         val openAiApi = mockk<OpenAIChatAPI>()
+        val localApi = mockk<LocalChatAPI>()
 
         val requestSlot = slot<GigaRequest.Embeddings>()
         coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns GigaResponse.Embeddings.Ok(
@@ -40,6 +42,7 @@ class LLMFactoryEmbeddingsTest {
             aiTunnelApi = aiTunnelApi,
             anthropicApi = anthropicApi,
             openAiApi = openAiApi,
+            localApi = localApi,
         )
 
         factory.embeddings(
@@ -61,6 +64,7 @@ class LLMFactoryEmbeddingsTest {
         val aiTunnelApi = mockk<AiTunnelChatAPI>()
         val anthropicApi = mockk<AnthropicChatAPI>()
         val openAiApi = mockk<OpenAIChatAPI>()
+        val localApi = mockk<LocalChatAPI>()
 
         val requestSlot = slot<GigaRequest.Embeddings>()
         coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns GigaResponse.Embeddings.Ok(
@@ -76,6 +80,7 @@ class LLMFactoryEmbeddingsTest {
             aiTunnelApi = aiTunnelApi,
             anthropicApi = anthropicApi,
             openAiApi = openAiApi,
+            localApi = localApi,
         )
 
         factory.embeddings(

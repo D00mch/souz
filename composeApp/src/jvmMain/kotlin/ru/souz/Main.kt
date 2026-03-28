@@ -25,6 +25,7 @@ import org.kodein.di.compose.withDI
 import org.kodein.di.instance
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
+import ru.souz.local.LocalLlamaRuntime
 import ru.souz.mcp.McpClientManager
 import ru.souz.telemetry.TelemetryService
 import ru.souz.ui.rememberDockWindowController
@@ -46,6 +47,7 @@ fun main() {
             val mcpClientManager: McpClientManager by di.instance()
             val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
             val telemetryService: TelemetryService by di.instance()
+            val localLlamaRuntime: LocalLlamaRuntime by di.instance()
 
             DisposableEffect(Unit) {
                 telegramBotController.start()
@@ -53,6 +55,8 @@ fun main() {
 
                 onDispose {
                     println("Shutting down services...")
+                    runCatching { localLlamaRuntime.close() }
+                        .onFailure { println("Failed to close local runtime: ${it.message}") }
                     runCatching { mcpClientManager.close() }
                         .onFailure { println("Failed to close MCP manager: ${it.message}") }
                     runCatching { telegramBotController.close() }

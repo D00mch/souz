@@ -236,6 +236,23 @@
     <string name="content_desc_select_agent">Select agent</string>
     <string name="label_embeddings_model">Embeddings model</string>
     <string name="label_voice_recognition_model">Voice recognition model</string>
+    <string name="local_model_download_dialog_title">Download local model</string>
+    <string name="local_model_download_dialog_message">Souz needs to download %1$s before it can be used locally.</string>
+    <string name="local_model_download_dialog_confirm">Download</string>
+    <string name="local_model_download_dialog_cancel">Not now</string>
+    <string name="local_model_download_progress_title">Downloading local model</string>
+    <string name="local_model_download_progress_message">Souz is downloading %1$s to the local models folder.</string>
+    <string name="local_model_download_progress_action">Downloading</string>
+    <string name="local_model_download_cancel">Cancel download</string>
+    <string name="local_model_download_progress_known">%1$s of %2$s</string>
+    <string name="local_model_download_progress_unknown">%1$s downloaded</string>
+    <string name="local_model_download_detail_repo">Repo: %1$s</string>
+    <string name="local_model_download_detail_quantization">Quantization: %1$s</string>
+    <string name="local_model_download_detail_storage">Storage: %1$s</string>
+    <string name="local_model_download_detail_license">License: %1$s</string>
+    <string name="local_model_download_detail_manual_license">Manual license review may be required on Hugging Face before download.</string>
+    <string name="local_model_download_cancelled">Local model download cancelled.</string>
+    <string name="local_model_download_failed">Failed to download the local model.</string>
 
     <!-- Finder Service -->
     <string name="error_empty_path">Empty path</string>

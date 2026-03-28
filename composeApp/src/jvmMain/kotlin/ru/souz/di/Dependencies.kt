@@ -46,6 +46,15 @@ import ru.souz.llms.AnthropicChatAPI
 import ru.souz.llms.OpenAIChatAPI
 import ru.souz.llms.OpenAIVoiceAPI
 import ru.souz.llms.QwenChatAPI
+import ru.souz.local.LocalBridgeLoader
+import ru.souz.local.LocalChatAPI
+import ru.souz.local.LocalHostInfoProvider
+import ru.souz.local.LocalLlamaRuntime
+import ru.souz.local.LocalModelStore
+import ru.souz.local.LocalNativeBridge
+import ru.souz.local.LocalPromptRenderer
+import ru.souz.local.LocalProviderAvailability
+import ru.souz.local.LocalStrictJsonParser
 import ru.souz.mcp.McpClientManager
 import ru.souz.mcp.McpConfigProvider
 import ru.souz.service.telegram.TelegramService
@@ -124,9 +133,16 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ConfigStore }
     bindSingleton { VectorDB }
     bindSingleton { TelegramPlatformSupport }
-    bindSingleton { SettingsProviderImpl(instance()) }
+    bindSingleton { LocalHostInfoProvider() }
+    bindSingleton { LocalModelStore() }
+    bindSingleton { LocalBridgeLoader(instance()) }
+    bindSingleton { LocalNativeBridge(instance()) }
+    bindSingleton { LocalPromptRenderer() }
+    bindSingleton { LocalStrictJsonParser() }
+    bindSingleton { LocalProviderAvailability(instance(), instance(), instance()) }
+    bindSingleton { SettingsProviderImpl(instance(), instance()) }
     bindSingleton<SettingsProvider> { instance<SettingsProviderImpl>() }
-    bindSingleton { LlmBuildProfile(instance()) }
+    bindSingleton { LlmBuildProfile(instance(), instance()) }
     bindSingleton { ApiKeyAvailabilityUseCase(instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
     bindSingleton { ToolsSettings(instance(), instance(), instance(), instance()) }
@@ -236,7 +252,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<AiTunnelChatAPI> { AiTunnelChatAPI(instance(), instance()) }
     bindSingleton<AnthropicChatAPI> { AnthropicChatAPI(instance(), instance()) }
     bindSingleton<OpenAIChatAPI> { OpenAIChatAPI(instance(), instance()) }
-    bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { LocalLlamaRuntime(instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton<LocalChatAPI> { LocalChatAPI(instance()) }
+    bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton<GigaChatAPI> { instance<LLMFactory>() }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton { OpenAIVoiceAPI(instance()) }

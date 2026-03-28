@@ -17,6 +17,7 @@ data class SetupState(
     val availableApiKeyFields: Set<ApiKeyField> = emptySet(),
     val availableApiKeyProviders: List<ApiKeyProvider> = emptyList(),
     val supportsVoiceRecognitionApiKeys: Boolean = false,
+    val supportsLocalInference: Boolean = false,
     val configuredKeysCount: Int = 0,
     val canProceed: Boolean = false,
     val shouldProceed: Boolean = false,

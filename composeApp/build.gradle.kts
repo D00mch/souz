@@ -76,6 +76,12 @@ val prepareMacAppResources by tasks.registering(Sync::class) {
     from(sourceAppResourcesDir.file("darwin-x64/libJNativeHook.dylib")) {
         into("common/darwin-x64")
     }
+    from(sourceAppResourcesDir.file("darwin-arm64/libsouz_llama_bridge.dylib")) {
+        into("common/darwin-arm64")
+    }
+    from(sourceAppResourcesDir.file("darwin-x64/libsouz_llama_bridge.dylib")) {
+        into("common/darwin-x64")
+    }
 }
 
 kotlin {
