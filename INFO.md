@@ -1,22 +1,24 @@
 # Souz
 
-Keep this file updated whenever top level details changes.
-If you are not sure about something, left a note for other developers to review. 
-
-## General Info
-
 Souz is a Kotlin Multiplatform desktop AI assistant built with Compose for Desktop.
 
-Primary stack:
-- Kotlin + Compose Multiplatform
-- Ktor (client)
+## Note for LLM
+
+Keep this file updated whenever top level details changes.
+If you are not sure about something, left a note for other developers to review.
 
 ### UI architecture principles
 
 - UI layers (Screens and Composables) should not do neither business logic, nor IO operations.
 - UI-logic should be coordinated from ViewModels. ViewModel may delegate business logic to UseCases.
 
-### Features
+### Development principles
+
+- Prefer composition to inheritance. 
+- Do not mix coroutines with the JVM low level concurrency (volatile, synchronize, Threads, ThreadLocal, etc).
+- Utilize open closed.
+
+## Features
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Runtime EN/RU profile toggle** with one packaged build: profile is switched via a shared segmented RU/EN toggle in Setup and Settings and controls provider/model availability.

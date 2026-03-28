@@ -1,6 +1,10 @@
 # MCP integration
 
-souz can load external tools from MCP servers over:
+We should probably rewrite this with [kotlin-sdk](https://github.com/modelcontextprotocol/kotlin-sdk).
+
+ ---
+
+Souz can load external tools from MCP servers over:
 - `stdio`
 - `http` (streamable HTTP / JSON-RPC)
 

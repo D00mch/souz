@@ -1,18 +1,21 @@
-# souz 
+# Souz 
 
-A desktop Agent app to help with routines.
+[Website](https://souz.app)
 
-# Documentation
+A desktop AI Agent with focus on security. The principles are described in:
 
-- [Agent engine](composeApp/src/jvmMain/kotlin/ru/souz/agent/engine/README.md)
-- [MCP Integration](composeApp/src/jvmMain/kotlin/ru/souz/mcp/README.md)
+- [How to Build AI Agents You Can Actually Trust](https://medium.com/@liverm0r/building-ai-agents-for-non-technical-users-50d24c3184a8)
+- [The same article in Russian](https://habr.com/ru/articles/1010236/)
 
 # Developers notes
  
-For Intellij IDEA you need next plugins:
+Take a look at [contributing page](docs/CONTRIBUTING.md).
+
+Recommendd IntelliJ IDEA plugins:
+
 - Kotlin Multiplatform;
 - Compose Multiplatform;
-- Compose Multiplatform for Desktop IDE support;
+- Compose Multiplatform (optional for additional Desktop IDE support);
 
 To launch preview rendering, press the desktop preview button near the composable.
        
@@ -21,36 +24,15 @@ Run tests with:
 ./gradlew :composeApp:cleanJvmTest :composeApp:jvmTest
 ```
 
-# Compose builds
-
-## Test build to simulate App Store release build
-
+Run integration tests with:
 ```bash
-# Package sandbox DMG
-./gradlew :composeApp:packageReleaseDmg -PmacOsAppStoreRelease=true -Pmac.signing.enabled=true -Pmac.signing.identity="$APPLE_SIGNING_ID"
-
-# Verify entitlements on built app
-codesign -d --entitlements :- "composeApp/build/compose/binaries/main-release/app/Souz AI.app"
-
-# reset permission
-tccutil reset All ru.souz
-
-# open it
-open -a "$(pwd)/composeApp/build/compose/binaries/main-release/app/Souz AI.app"
+export SOUZ_AGENT_INTEGRATION_TESTS_ON=true && ./gradlew :composeApp:cleanJvmTest :composeApp:jvmTest --tests "agent.GraphAgentComplexScenarios"
 ```
 
-## Runtime profile (EN/RU)
-- Build is now single-profile at packaging time (no `-Pedition` split).
-- Active EN/RU profile is selected at runtime from Settings (`General` section toggle) and persisted in `ConfigStore.APP_LANGUAGE`.
-- Runtime profile controls model/provider availability in:
-  - `composeApp/src/jvmMain/kotlin/ru/souz/giga/LlmBuildProfile.kt`
-  - `composeApp/src/jvmMain/kotlin/ru/souz/ui/common/ApiKeyProviders.kt`
-  - `composeApp/src/jvmMain/kotlin/ru/souz/ui/settings/ModelAvailability.kt`
-- Default DMG task:
-  - `./gradlew :composeApp:packageReleaseDmg`
+# Compose builds
 
 ## Release builds
 
-- Take a look at the [KMP release documentation](https://github.com/JetBrains/compose-multiplatform/blob/master/tutorials/Signing_and_notarization_on_macOS/README.md).
+- [KMP release documentation](https://github.com/JetBrains/compose-multiplatform/blob/master/tutorials/Signing_and_notarization_on_macOS/README.md).
 - Use [kmp-build-macos-universal.sh](build-logic/kmp-build-macos-universal.sh) script to prepare app bundles.
 - Use [kmp-build-macos-dev.sh](build-logic/kmp-build-macos-dev.sh) script for publishing outside the App Store.
