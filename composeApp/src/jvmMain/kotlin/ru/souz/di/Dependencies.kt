@@ -94,6 +94,7 @@ import ru.souz.tool.telegram.ToolTelegramSetState
 import ru.souz.tool.web.ToolInternetSearch
 import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolWebImageSearch
+import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebImageDownloader
 import ru.souz.tool.web.internal.WebResearchClient
 import java.nio.file.Path
@@ -198,6 +199,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolInternetSearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
     bindSingleton { ToolInternetResearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
     bindSingleton { ToolWebImageSearch(filesToolUtil = instance(), webResearchClient = instance(), webImageDownloader = instance()) }
+    bindSingleton { ToolWebPageText(webResearchClient = instance()) }
     bindSingleton { ToolPresentationCreate(filesToolUtil = instance(), webImageDownloader = instance()) }
     bindSingleton { ToolPresentationRead() }
     bindSingleton { ToolTelegramReadInbox(instance()) }

@@ -34,6 +34,7 @@ internal class WebSearchProviderException(
  * - [ToolInternetSearch]
  * - [ToolInternetResearch]
  * - [ToolWebImageSearch]
+ * - [ToolWebPageText]
  *
  * This keeps search/parsing heuristics and HTTP behavior in one place while tool contracts stay simple.
  */

@@ -31,7 +31,7 @@ internal class InternetSearchExecutor(
         maxSources: Int,
     ): InternetSearchToolOutput {
         val query = internals.requireWebQuery(queryRaw)
-        val requestedMaxSources = maxSources.coerceIn(2, 3)
+        val requestedMaxSources = maxSources.coerceIn(2, 5)
         val collection = collectSources(
             searchQueries = listOf(query),
             maxSources = requestedMaxSources,
