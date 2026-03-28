@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="союз ИИ local run" type="GradleRunConfiguration" factoryName="Gradle">
+  <configuration default="false" name="souz local run" type="GradleRunConfiguration" factoryName="Gradle">
     <ExternalSystemSettings>
       <option name="executionName" />
       <option name="externalProjectPath" value="$PROJECT_DIR$/composeApp" />
@@ -13,7 +13,7 @@
           <option value="jvmRun" />
         </list>
       </option>
-      <option name="vmOptions" value="-Dorg.gradle.project.edition=ru" />
+      <option name="vmOptions" value="" />
     </ExternalSystemSettings>
     <ExternalSystemDebugServerProcess>false</ExternalSystemDebugServerProcess>
     <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
