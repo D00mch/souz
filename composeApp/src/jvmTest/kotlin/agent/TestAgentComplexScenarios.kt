@@ -20,6 +20,10 @@ import ru.souz.tool.presentation.ToolWebSearch
 import ru.souz.tool.presentation.WebResearchClient
 import ru.souz.tool.telegram.ToolTelegramSearch
 
+/**
+ * Integration scenarios that make real LLM calls.
+ * Set [SOUZ_AGENT_INTEGRATION_TESTS_ON] to `true` before running these integration tests.
+ */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentComplexScenarios {
 

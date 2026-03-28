@@ -245,6 +245,10 @@ class AgentScenarioTestSupport(
     ) = kotlinx.coroutines.test.runTest(timeout = DEFAULT_TEST_TIMEOUT, testBody = block)
 
     fun checkEnvironment() {
+        Assumptions.assumeTrue(
+            isAgentScenarioIntegrationTestsEnabled(readEnvironment(SOUZ_AGENT_INTEGRATION_TESTS_ON)),
+            "Skipping agent scenario integration tests: set $SOUZ_AGENT_INTEGRATION_TESTS_ON=true",
+        )
         val apiKeyName = when (selectedModel.provider) {
             LlmProvider.GIGA -> "GIGA_KEY"
             LlmProvider.QWEN -> "QWEN_KEY"
@@ -252,7 +256,7 @@ class AgentScenarioTestSupport(
             LlmProvider.ANTHROPIC -> "ANTHROPIC_API_KEY"
             LlmProvider.OPENAI -> "OPENAI_API_KEY"
         }
-        val apiKey = System.getenv(apiKeyName) ?: System.getProperty(apiKeyName)
+        val apiKey = readEnvironment(apiKeyName) ?: readSystemProperty(apiKeyName)
         Assumptions.assumeTrue(
             !apiKey.isNullOrBlank(),
             "Skipping integration tests: $apiKeyName is not set (selected model=${selectedModel.alias})"
@@ -322,5 +326,14 @@ class AgentScenarioTestSupport(
         agent.execute(ctx)
     }
 }
+
+const val SOUZ_AGENT_INTEGRATION_TESTS_ON = "SOUZ_AGENT_INTEGRATION_TESTS_ON"
+
+private fun isAgentScenarioIntegrationTestsEnabled(envValue: String?): Boolean =
+    envValue.equals("true", ignoreCase = true)
+
+private fun readSystemProperty(name: String): String? = System.getProperty(name)?.takeIf { it.isNotBlank() }
+
+private fun readEnvironment(name: String): String? = System.getenv(name)?.takeIf { it.isNotBlank() }
 
 private val DEFAULT_TEST_TIMEOUT: Duration = 5.minutes

@@ -5,7 +5,6 @@ import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -41,6 +40,7 @@ import ru.souz.tool.textReplace.ToolGetClipboard
  * Integration tests for tool invocation scenarios via [GraphBasedAgent.execute].
  * Tools are mocked: we verify that LLM calls the required tools with the expected parameters.
  * All scenarios are run via graphAgent.execute(input).
+ * Set [SOUZ_AGENT_INTEGRATION_TESTS_ON] to `true` before running these integration tests.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentToolScenariosIntegrationTest {
