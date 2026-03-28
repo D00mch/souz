@@ -138,4 +138,18 @@ class LocalRegexClassifierTest {
         val categories = classifier.classify(body("What can you do?")).categories
         assertEquals(ToolCategory.HELP, categories.first())
     }
+
+    @Test
+    fun `classifies weather question as web search`() = runBlocking {
+        val classifier = LocalRegexClassifier
+        val categories = classifier.classify(body("Какая погода в Таллине")).categories
+        assertEquals(ToolCategory.WEB_SEARCH, categories.first())
+    }
+
+    @Test
+    fun `classifies library selection as web search`() = runBlocking {
+        val classifier = LocalRegexClassifier
+        val categories = classifier.classify(body("Нужно найти подходящую библиотеку для создания презентаций")).categories
+        assertEquals(ToolCategory.WEB_SEARCH, categories.first())
+    }
 }

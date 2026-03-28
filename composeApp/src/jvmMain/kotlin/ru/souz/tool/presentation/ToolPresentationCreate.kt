@@ -16,6 +16,7 @@ import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetupWithAttachments
 import ru.souz.tool.files.FilesToolUtil
+import ru.souz.tool.web.internal.WebImageDownloader
 import java.io.File
 import java.io.FileOutputStream
 import java.io.StringReader
@@ -184,7 +185,7 @@ data class PresentationCreateInput(
 
 class ToolPresentationCreate(
     private val filesToolUtil: FilesToolUtil,
-    private val webImageDownloader: WebImageDownloader,
+    private val webImageDownloader: WebImageDownloader = WebImageDownloader(filesToolUtil),
 ) : ToolSetupWithAttachments<PresentationCreateInput> {
     companion object {
         private const val SPEAKER_NOTES_PPTX_PROPERTY = "souz.presentation.enableSpeakerNotesPptx"

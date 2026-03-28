@@ -1,29 +1,42 @@
-package ru.souz.tool.presentation
+package ru.souz.tool.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.coroutines.runBlocking
 import ru.souz.giga.gigaJsonMapper
-import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
+import ru.souz.tool.files.FilesToolUtil
+import ru.souz.tool.web.internal.WebImageDownloader
+import ru.souz.tool.web.internal.WebResearchClient
+import ru.souz.tool.web.internal.WebToolSupport
 
 /**
  * Image discovery on the web.
  *
- * Tool wrapper over [WebResearchClient.searchImages] with optional local download.
- * If `downloadImages=true`, local paths are produced via [WebImageDownloader].
- * Output always contains only image results.
+ * Searches for image candidates by topic and optionally downloads them to local files.
  */
-class ToolWebImageSearch(
-    private val webResearchClient: WebResearchClient,
-    private val webImageDownloader: WebImageDownloader,
+internal class ToolWebImageSearch(
+    private val filesToolUtil: FilesToolUtil,
+    private val webResearchClient: WebResearchClient = WebResearchClient(),
+    private val webImageDownloader: WebImageDownloader = WebImageDownloader(filesToolUtil),
     private val mapper: ObjectMapper = gigaJsonMapper,
+    private val webToolSupport: WebToolSupport = WebToolSupport(),
 ) : ToolSetup<ToolWebImageSearch.Input> {
     data class WebImageSearchOutput(
         val query: String,
-        val results: List<WebImageResult>,
+        val results: List<ResultItem>,
+    )
+
+    data class ResultItem(
+        val title: String,
+        val imageUrl: String,
+        val pageUrl: String?,
+        val thumbnailUrl: String?,
+        val license: String?,
+        val localPath: String?,
     )
 
     data class Input(
@@ -59,9 +72,10 @@ class ToolWebImageSearch(
         )
     )
 
-    override fun invoke(input: Input): String {
-        val query = input.query.trim()
-        if (query.isBlank()) throw BadInputException("`query` is required")
+    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+
+    override suspend fun suspendInvoke(input: Input): String {
+        val query = webToolSupport.requireWebQuery(input.query)
         val limit = input.limit.coerceIn(1, 20)
 
         val results = webResearchClient.searchImages(query = query, limit = limit).map { candidate ->
@@ -79,6 +93,20 @@ class ToolWebImageSearch(
             }
         }
 
-        return mapper.writeValueAsString(WebImageSearchOutput(query = query, results = results))
+        return mapper.writeValueAsString(
+            WebImageSearchOutput(
+                query = query,
+                results = results.map { candidate ->
+                    ResultItem(
+                        title = candidate.title,
+                        imageUrl = candidate.imageUrl,
+                        pageUrl = candidate.pageUrl,
+                        thumbnailUrl = candidate.thumbnailUrl,
+                        license = candidate.license,
+                        localPath = candidate.localPath,
+                    )
+                },
+            )
+        )
     }
 }

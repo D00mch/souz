@@ -64,6 +64,8 @@ object LocalRegexClassifier : UserMessageClassifier {
         ToolCategory.WEB_SEARCH -> listOf(
             WeightedRegex(Regex("найди в интернете|поищи в интернете|search web|web search|google|загугли"), 2.0),
             WeightedRegex(Regex("найди (новост|факт|источник|источники|статьи|материал)"), 1.8),
+            WeightedRegex(Regex("какая .*погода|какой .*курс|погода в|weather|temperature in"), 2.0),
+            WeightedRegex(Regex("проведи исследован|сделай ресерч|исследуй|обзор по теме|сравни .*библиотек|подбери .*библиотек|подходящ.*библиотек|выбери .*инструмент"), 2.1),
             WeightedRegex(Regex("посмотри погоду|какие последние новости|свежие новости|тренды"), 1.6),
             WeightedRegex(Regex("найди изображени|подбери изображени|картинки по теме"), 1.8),
             WeightedRegex(Regex("извлеки текст со страницы|прочитай страницу|extract page text"), 1.8),

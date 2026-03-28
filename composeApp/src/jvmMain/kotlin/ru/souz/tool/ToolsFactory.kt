@@ -21,9 +21,6 @@ import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
-import ru.souz.tool.presentation.ToolWebImageSearch
-import ru.souz.tool.presentation.ToolWebPageText
-import ru.souz.tool.presentation.ToolWebSearch
 import ru.souz.tool.telegram.ToolTelegramForward
 import ru.souz.tool.telegram.ToolTelegramGetHistory
 import ru.souz.tool.telegram.ToolTelegramReadInbox
@@ -31,6 +28,10 @@ import ru.souz.tool.telegram.ToolTelegramSavedMessages
 import ru.souz.tool.telegram.ToolTelegramSearch
 import ru.souz.tool.telegram.ToolTelegramSend
 import ru.souz.tool.telegram.ToolTelegramSetState
+import ru.souz.tool.web.ToolInternetResearch
+import ru.souz.tool.web.ToolInternetSearch
+import ru.souz.tool.web.ToolWebImageSearch
+import ru.souz.tool.web.ToolWebPageText
 
 typealias FunctionName = String
 
@@ -95,7 +96,8 @@ class ToolsFactory(di: DI) {
     private val excelReport: ExcelReport by di.instance()
 
     // Presentation tools
-    private val toolWebSearch: ToolWebSearch by di.instance()
+    private val toolInternetSearch: ToolInternetSearch by di.instance()
+    private val toolInternetResearch: ToolInternetResearch by di.instance()
     private val toolWebImageSearch: ToolWebImageSearch by di.instance()
     private val toolWebPageText: ToolWebPageText by di.instance()
     private val toolPresentationCreate: ToolPresentationCreate by di.instance()
@@ -132,7 +134,8 @@ class ToolsFactory(di: DI) {
         )
 
         ToolCategory.WEB_SEARCH -> listOf(
-            toolWebSearch.toGiga(),
+            toolInternetSearch.toGiga(),
+            toolInternetResearch.toGiga(),
             toolWebImageSearch.toGiga(),
             toolWebPageText.toGiga(),
         )

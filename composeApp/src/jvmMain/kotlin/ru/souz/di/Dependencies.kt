@@ -80,11 +80,6 @@ import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
-import ru.souz.tool.presentation.ToolWebImageSearch
-import ru.souz.tool.presentation.ToolWebPageText
-import ru.souz.tool.presentation.ToolWebSearch
-import ru.souz.tool.presentation.WebImageDownloader
-import ru.souz.tool.presentation.WebResearchClient
 import ru.souz.tool.telegram.ToolTelegramForward
 import ru.souz.tool.telegram.TelegramChatSelectionBroker
 import ru.souz.tool.telegram.TelegramContactSelectionBroker
@@ -96,6 +91,12 @@ import ru.souz.tool.telegram.ToolTelegramSavedMessages
 import ru.souz.tool.telegram.ToolTelegramSearch
 import ru.souz.tool.telegram.ToolTelegramSend
 import ru.souz.tool.telegram.ToolTelegramSetState
+import ru.souz.tool.web.ToolInternetSearch
+import ru.souz.tool.web.ToolInternetResearch
+import ru.souz.tool.web.ToolWebImageSearch
+import ru.souz.tool.web.ToolWebPageText
+import ru.souz.tool.web.internal.WebImageDownloader
+import ru.souz.tool.web.internal.WebResearchClient
 import java.nio.file.Path
 
 private object DiTags {
@@ -195,10 +196,11 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ExcelReport(instance()) }
     bindSingleton { WebResearchClient() }
     bindSingleton { WebImageDownloader(instance()) }
-    bindSingleton { ToolWebSearch(instance()) }
-    bindSingleton { ToolWebImageSearch(instance(), instance()) }
-    bindSingleton { ToolWebPageText(instance()) }
-    bindSingleton { ToolPresentationCreate(instance(), instance()) }
+    bindSingleton { ToolInternetSearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
+    bindSingleton { ToolInternetResearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
+    bindSingleton { ToolWebImageSearch(filesToolUtil = instance(), webResearchClient = instance(), webImageDownloader = instance()) }
+    bindSingleton { ToolWebPageText(webResearchClient = instance()) }
+    bindSingleton { ToolPresentationCreate(filesToolUtil = instance(), webImageDownloader = instance()) }
     bindSingleton { ToolPresentationRead() }
     bindSingleton { ToolTelegramReadInbox(instance()) }
     bindSingleton { ToolTelegramGetHistory(instance(), instance()) }
