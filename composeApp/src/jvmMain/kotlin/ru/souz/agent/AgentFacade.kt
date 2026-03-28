@@ -6,22 +6,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import org.slf4j.LoggerFactory
-import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.agent.impl.GraphBasedAgent
 import ru.souz.agent.impl.LuaGraphBasedAgent
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
 import ru.souz.tool.ToolsFactory
-
-data class AgentToolInvocation(
-    val requestId: String,
-    val functionCall: ru.souz.giga.GigaResponse.FunctionCall,
-)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AgentFacade(
@@ -43,8 +39,12 @@ class AgentFacade(
     private val _currentContext = MutableStateFlow(createInitialContext(_activeAgentId.value))
     val currentContext: StateFlow<AgentContext<String>> = _currentContext.asStateFlow()
 
-    val sideEffects: Flow<String> = _activeAgentId.flatMapLatest { id -> agentById(id).sideEffects }
-    val toolInvocations: Flow<AgentToolInvocation> = agentToolExecutor.toolInvocations
+    val sideEffects: Flow<AgentSideEffect> = _activeAgentId.flatMapLatest { id ->
+        merge(
+            agentById(id).sideEffects.map { AgentSideEffect.Text(it) },
+            agentToolExecutor.toolInvocations.map { AgentSideEffect.Fn(it) },
+        )
+    }
 
     fun setActiveAgent(agentId: AgentId) {
         val normalized = normalizedActiveAgent(agentId)
@@ -106,23 +106,15 @@ class AgentFacade(
         agentById(_activeAgentId.value).cancelActiveJob()
     }
 
-    suspend fun execute(input: String, requestId: String? = null): String {
+    suspend fun execute(input: String): String {
         cancelActiveJob()
         val seed = _currentContext.value.copy(input = input)
         val agent = agentById(_activeAgentId.value)
 
         sessionService.startTask(input)
         return try {
-            val result = if (requestId.isNullOrBlank()) {
-                agent.executeWithTrace(seed) { step, node, from, to ->
+            val result = agent.executeWithTrace(seed) { step, node, from, to ->
                     sessionService.onStep(step, node, from, to)
-                }
-            } else {
-                withContext(agentToolExecutor.requestContextElement(requestId)) {
-                    agent.executeWithTrace(seed) { step, node, from, to ->
-                        sessionService.onStep(step, node, from, to)
-                    }
-                }
             }
             _currentContext.emit(result.context)
             result.output

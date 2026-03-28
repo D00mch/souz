@@ -40,7 +40,7 @@ import souz.composeapp.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentFacade
-import ru.souz.agent.AgentToolInvocation
+import ru.souz.agent.AgentSideEffect
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.audio.ActiveSoundRecorderImpl
@@ -458,10 +458,9 @@ class MainViewModelTest {
             viewModel.handleEvent(MainEvent.SendChatMessage("hello"))
             awaitState(viewModel) { it.isProcessing }
 
-            harness.toolInvocations.emit(
-                AgentToolInvocation(
-                    requestId = "1",
-                    functionCall = FunctionCall("WebSearch", mapOf("query" to "котлин корутины")),
+            harness.sideEffects.emit(
+                AgentSideEffect.Fn(
+                    FunctionCall("WebSearch", mapOf("query" to "котлин корутины"))
                 )
             )
 
@@ -484,7 +483,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `stale tool invocation is ignored for next request`() = runTest(mainDispatcher) {
+    fun `tool invocation after stop is ignored until next request starts`() = runTest(mainDispatcher) {
         val firstResponse = CompletableDeferred<String>()
         val secondResponse = CompletableDeferred<String>()
         val harness = createHarness(
@@ -507,22 +506,20 @@ class MainViewModelTest {
             viewModel.handleEvent(MainEvent.UserPressStop)
             awaitState(viewModel) { !it.isProcessing }
 
-            viewModel.handleEvent(MainEvent.SendChatMessage("second"))
-            awaitState(viewModel) { it.isProcessing }
-
-            harness.toolInvocations.emit(
-                AgentToolInvocation(
-                    requestId = "1",
-                    functionCall = FunctionCall("WebSearch", mapOf("query" to "устаревший запрос")),
+            harness.sideEffects.emit(
+                AgentSideEffect.Fn(
+                    FunctionCall("WebSearch", mapOf("query" to "устаревший запрос"))
                 )
             )
             runCurrent()
             assertTrue(viewModel.uiState.value.agentActions.isEmpty())
 
-            harness.toolInvocations.emit(
-                AgentToolInvocation(
-                    requestId = "2",
-                    functionCall = FunctionCall("WebSearch", mapOf("query" to "актуальный запрос")),
+            viewModel.handleEvent(MainEvent.SendChatMessage("second"))
+            awaitState(viewModel) { it.isProcessing }
+
+            harness.sideEffects.emit(
+                AgentSideEffect.Fn(
+                    FunctionCall("WebSearch", mapOf("query" to "актуальный запрос"))
                 )
             )
 
@@ -718,10 +715,8 @@ class MainViewModelTest {
         },
     ): TestHarness {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
-        val sideEffects = MutableSharedFlow<String>()
-        val toolInvocations = MutableSharedFlow<AgentToolInvocation>()
+        val sideEffects = MutableSharedFlow<AgentSideEffect>()
         every { agentFacade.sideEffects } returns sideEffects
-        every { agentFacade.toolInvocations } returns toolInvocations
         every { agentFacade.currentContext } returns MutableStateFlow(emptyAgentContext())
         every { agentFacade.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
         coEvery { agentFacade.execute(any()) } coAnswers {
@@ -822,7 +817,7 @@ class MainViewModelTest {
             settingsProvider = settingsProvider,
             say = say,
             incomingMessages = incomingMessages,
-            toolInvocations = toolInvocations,
+            sideEffects = sideEffects,
         )
     }
 
@@ -860,7 +855,7 @@ class MainViewModelTest {
         val settingsProvider: SettingsProvider,
         val say: Say,
         val incomingMessages: MutableSharedFlow<TelegramBotController.IncomingMessage>,
-        val toolInvocations: MutableSharedFlow<AgentToolInvocation>,
+        val sideEffects: MutableSharedFlow<AgentSideEffect>,
     ) {
         fun clear() {
             val onCleared = MainViewModel::class.java.getDeclaredMethod("onCleared")

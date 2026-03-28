@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.AgentSideEffect
 import ru.souz.agent.engine.AgentContext
 import ru.souz.db.SettingsProvider
 import ru.souz.giga.GigaModel
@@ -58,16 +59,6 @@ class ChatUseCase(
         scope.launch {
             agentFacade.currentContext.collect { ctx ->
                 emitState { copy(agentHistory = ctx.history) }
-            }
-        }
-        scope.launch {
-            agentFacade.toolInvocations.collect { invocation ->
-                val activeRequest = activeRequestMessages.get() ?: return@collect
-                if (activeRequest.requestId.toString() != invocation.requestId) return@collect
-                val action = chatAgentActionFormatter.format(invocation.functionCall)
-                emitState {
-                    copy(agentActions = (agentActions + action).takeLast(MAX_AGENT_ACTIONS))
-                }
             }
         }
     }
@@ -147,7 +138,7 @@ class ChatUseCase(
                     telemetryService.requestContextElement(requestContext) +
                     tokenLogging.requestContextElement(requestContext.requestId)
             ) {
-                agentFacade.execute(userText, requestId.toString())
+                agentFacade.execute(userText)
             }
 
             val extractedFinderPaths = extractFinderPaths(response)
@@ -349,31 +340,42 @@ class ChatUseCase(
         val job = scope.launch {
             val isCodeBlockStarted = AtomicBoolean(false)
             var accumulatedText = ""
-            agentFacade.sideEffects.collect { text ->
-                accumulatedText += text
-                emitState {
-                    val updatedMessage = msg.copy(
-                        text = accumulatedText,
-                    )
-                    val updatedMessages = if (msg.id == chatMessages.lastOrNull()?.id) {
-                        chatMessages.mapLast { updatedMessage }
-                    } else {
-                        chatMessages + updatedMessage
+            agentFacade.sideEffects.collect { effect ->
+                when (effect) {
+                    is AgentSideEffect.Text -> {
+                        val text = effect.v
+                        accumulatedText += text
+                        emitState {
+                            val updatedMessage = msg.copy(
+                                text = accumulatedText,
+                            )
+                            val updatedMessages = if (msg.id == chatMessages.lastOrNull()?.id) {
+                                chatMessages.mapLast { updatedMessage }
+                            } else {
+                                chatMessages + updatedMessage
+                            }
+                            copy(chatMessages = updatedMessages)
+                        }
+
+                        if (!msg.isVoice) return@collect
+
+                        if (text.contains(CODE_BLOCK)) {
+                            isCodeBlockStarted.set(!isCodeBlockStarted.get())
+                            if (isCodeBlockStarted.get()) {
+                                speechUseCase.queuePrepared(text.substringBefore(CODE_BLOCK))
+                            }
+                        }
+
+                        if (!isCodeBlockStarted.get()) {
+                            speechUseCase.queuePrepared(text.substringAfter(CODE_BLOCK))
+                        }
                     }
-                    copy(chatMessages = updatedMessages)
-                }
-
-                if (!msg.isVoice) return@collect
-
-                if (text.contains(CODE_BLOCK)) {
-                    isCodeBlockStarted.set(!isCodeBlockStarted.get())
-                    if (isCodeBlockStarted.get()) {
-                        speechUseCase.queuePrepared(text.substringBefore(CODE_BLOCK))
+                    is AgentSideEffect.Fn -> {
+                        val action = chatAgentActionFormatter.format(effect.call)
+                        emitState {
+                            copy(agentActions = (agentActions + action).takeLast(MAX_AGENT_ACTIONS))
+                        }
                     }
-                }
-
-                if (!isCodeBlockStarted.get()) {
-                    speechUseCase.queuePrepared(text.substringAfter(CODE_BLOCK))
                 }
             }
         }
