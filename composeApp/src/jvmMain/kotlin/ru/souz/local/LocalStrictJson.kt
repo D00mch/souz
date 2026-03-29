@@ -7,6 +7,10 @@ import ru.souz.giga.GigaMessageRole
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.gigaJsonMapper
 
+/**
+ * Contract metadata for local-model JSON responses. Jackson still parses the JSON;
+ * this object only defines the constrained shape we ask the model/native grammar to follow.
+ */
 object LocalStrictJsonContract {
     val grammar: String = """
         root ::= ws response ws
@@ -51,6 +55,10 @@ object LocalStrictJsonContract {
     }
 }
 
+/**
+ * Normalizes imperfect local-model output before delegating JSON parsing to Jackson and
+ * mapping the normalized payload into the shared chat DTOs.
+ */
 class LocalStrictJsonParser {
     fun parse(
         rawText: String,

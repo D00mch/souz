@@ -5,12 +5,6 @@ import java.lang.management.ManagementFactory
 import org.slf4j.LoggerFactory
 import ru.souz.giga.GigaModel
 
-enum class LocalTemplateFamily {
-    QWEN3,
-    LLAMA_3_1,
-    GIGACHAT_3_1,
-}
-
 data class LocalLicenseRequirements(
     val summary: String,
     val requiresManualAcceptance: Boolean = false,
@@ -24,7 +18,6 @@ data class LocalModelProfile(
     val ggufFilename: String,
     val quantization: String,
     val minRamGb: Int,
-    val templateFamily: LocalTemplateFamily,
     val defaultContextSize: Int,
     val maxContextSize: Int = defaultContextSize,
     val useNativeGrammar: Boolean = false,
@@ -99,7 +92,6 @@ object LocalModelProfiles {
         ggufFilename = "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         quantization = "Q4_K_M",
         minRamGb = 8,
-        templateFamily = LocalTemplateFamily.QWEN3,
         defaultContextSize = 8192,
         maxContextSize = 8192,
         licenseRequirements = LocalLicenseRequirements(
@@ -108,44 +100,8 @@ object LocalModelProfiles {
         ),
     )
 
-    val LLAMA_3_1_8B_INSTRUCT = LocalModelProfile(
-        gigaModel = GigaModel.LocalLlama_3_1_8B_Instruct,
-        id = "local-llama-3.1-8b-instruct",
-        displayName = "Local Llama 3.1 8B Instruct",
-        huggingFaceRepoId = "unsloth/Llama-3.1-8B-Instruct-GGUF",
-        ggufFilename = "Llama-3.1-8B-Instruct-Q4_K_M.gguf",
-        quantization = "Q4_K_M",
-        minRamGb = 16,
-        templateFamily = LocalTemplateFamily.LLAMA_3_1,
-        defaultContextSize = 8192,
-        maxContextSize = 16384,
-        licenseRequirements = LocalLicenseRequirements(
-            summary = "Llama 3.1 community license",
-            requiresManualAcceptance = true,
-        ),
-    )
-
-    val GIGACHAT_3_1_10B_A1_8B = LocalModelProfile(
-        gigaModel = GigaModel.LocalGigaChat_3_1_10B_A1_8B,
-        id = "local-gigachat-3.1-10b-a1.8b",
-        displayName = "Local GigaChat 3.1 10B A1.8B",
-        huggingFaceRepoId = "ai-sage/GigaChat3.1-10B-A1.8B-GGUF",
-        ggufFilename = "GigaChat3.1-10B-A1.8B-q4_K_M.gguf",
-        quantization = "Q4_K_M",
-        minRamGb = 16,
-        templateFamily = LocalTemplateFamily.GIGACHAT_3_1,
-        defaultContextSize = 8192,
-        maxContextSize = 16384,
-        licenseRequirements = LocalLicenseRequirements(
-            summary = "MIT",
-            requiresManualAcceptance = false,
-        ),
-    )
-
     val all: List<LocalModelProfile> = listOf(
         QWEN3_4B_INSTRUCT_2507,
-        LLAMA_3_1_8B_INSTRUCT,
-        GIGACHAT_3_1_10B_A1_8B,
     )
 
     fun forAlias(alias: String): LocalModelProfile? = all.firstOrNull { profile ->
@@ -158,11 +114,9 @@ object LocalModelProfiles {
         error("Local inference requires at least ${QWEN3_4B_INSTRUCT_2507.minRamGb} GB RAM")
     }
 
-    fun selectForRam(totalRamGb: Int): LocalModelProfile = when {
-        totalRamGb >= LLAMA_3_1_8B_INSTRUCT.minRamGb -> LLAMA_3_1_8B_INSTRUCT
-        totalRamGb >= QWEN3_4B_INSTRUCT_2507.minRamGb -> QWEN3_4B_INSTRUCT_2507
-        else -> error("Local inference requires at least ${QWEN3_4B_INSTRUCT_2507.minRamGb} GB RAM")
-    }
+    fun selectForRam(totalRamGb: Int): LocalModelProfile =
+        availableForRam(totalRamGb).firstOrNull()
+            ?: error("Local inference requires at least ${QWEN3_4B_INSTRUCT_2507.minRamGb} GB RAM")
 
     fun isLocalModelAlias(alias: String): Boolean = forAlias(alias) != null
 }

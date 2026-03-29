@@ -11,6 +11,7 @@ import java.nio.file.StandardCopyOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -82,12 +83,12 @@ class LocalModelStore(
             runCatching { Files.deleteIfExists(tempFile) }
             try {
                 onProgress(LocalModelDownloadProgress(bytesDownloaded = 0, totalBytes = totalBytes))
+                val coroutineContext = currentCoroutineContext()
                 response.body().use { input ->
                     Files.newOutputStream(tempFile).use { output ->
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                         var downloadedBytes = 0L
-                        while (true) {
-                            currentCoroutineContext().ensureActive()
+                        while (coroutineContext.isActive) {
                             val read = input.read(buffer)
                             if (read < 0) break
                             output.write(buffer, 0, read)
@@ -99,6 +100,7 @@ class LocalModelStore(
                                 )
                             )
                         }
+                        coroutineContext.ensureActive()
                     }
                 }
                 Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)

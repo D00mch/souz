@@ -27,6 +27,13 @@ struct log_filter_state {
     std::atomic<int> last_level = GGML_LOG_LEVEL_NONE;
 };
 
+struct backend_lifecycle_state {
+    std::mutex mutex;
+    size_t runtime_count = 0;
+    bool initialized = false;
+    std::vector<ggml_backend_reg_t> loaded_backends;
+};
+
 struct souz_model {
     llama_model * model = nullptr;
     std::string model_path;
@@ -62,6 +69,11 @@ constexpr int DEFAULT_PROMPT_BATCH_SIZE = 512;
 
 log_filter_state & native_log_state() {
     static log_filter_state state;
+    return state;
+}
+
+backend_lifecycle_state & backend_lifecycle() {
+    static backend_lifecycle_state state;
     return state;
 }
 
@@ -106,6 +118,65 @@ void clear_cached_context(runtime_ptr runtime) {
     runtime->cached_context.model = nullptr;
     runtime->cached_context.context_size = 0;
     runtime->cached_context.tokens.clear();
+}
+
+void configure_backend_environment() {
+#if defined(__APPLE__)
+    const char * explicit_no_residency = std::getenv("GGML_METAL_NO_RESIDENCY");
+    const char * explicit_residency = std::getenv("SOUZ_LLAMA_METAL_RESIDENCY");
+    const bool should_keep_residency =
+        explicit_residency != nullptr &&
+        (std::strcmp(explicit_residency, "1") == 0 || std::strcmp(explicit_residency, "true") == 0);
+
+    if (explicit_no_residency == nullptr && !should_keep_residency) {
+        setenv("GGML_METAL_NO_RESIDENCY", "1", 0);
+    }
+#endif
+}
+
+void retain_backend_lifecycle() {
+    auto & state = backend_lifecycle();
+    std::lock_guard<std::mutex> lock(state.mutex);
+
+    if (!state.initialized) {
+        configure_backend_environment();
+        llama_backend_init();
+
+        const size_t before_count = ggml_backend_reg_count();
+        ggml_backend_load_all();
+        const size_t after_count = ggml_backend_reg_count();
+
+        state.loaded_backends.clear();
+        for (size_t index = before_count; index < after_count; ++index) {
+            state.loaded_backends.push_back(ggml_backend_reg_get(index));
+        }
+        state.initialized = true;
+    }
+
+    state.runtime_count += 1;
+}
+
+void release_backend_lifecycle() {
+    auto & state = backend_lifecycle();
+    std::lock_guard<std::mutex> lock(state.mutex);
+
+    if (state.runtime_count == 0) {
+        return;
+    }
+
+    state.runtime_count -= 1;
+    if (state.runtime_count > 0 || !state.initialized) {
+        return;
+    }
+
+    for (auto it = state.loaded_backends.rbegin(); it != state.loaded_backends.rend(); ++it) {
+        if (*it != nullptr) {
+            ggml_backend_unload(*it);
+        }
+    }
+    state.loaded_backends.clear();
+    llama_backend_free();
+    state.initialized = false;
 }
 
 bool can_reuse_cached_context(
@@ -441,9 +512,10 @@ void * souz_llama_runtime_create(const char *, char * error_buffer, size_t error
         log_state.min_level.store(parse_log_level(std::getenv("SOUZ_LLAMA_LOG_LEVEL")));
         log_state.last_level.store(GGML_LOG_LEVEL_NONE);
         llama_log_set(llama_log_callback_filtered, &log_state);
-        ggml_backend_load_all();
+        retain_backend_lifecycle();
         return new souz_runtime();
     } catch (const std::exception & error) {
+        release_backend_lifecycle();
         write_error(error_buffer, error_buffer_size, error.what());
         return nullptr;
     }
@@ -451,8 +523,12 @@ void * souz_llama_runtime_create(const char *, char * error_buffer, size_t error
 
 void souz_llama_runtime_destroy(void * runtime) {
     auto * runtime_handle = static_cast<runtime_ptr>(runtime);
+    if (runtime_handle == nullptr) {
+        return;
+    }
     clear_cached_context(runtime_handle);
     delete runtime_handle;
+    release_backend_lifecycle();
 }
 
 void * souz_llama_model_load(void * runtime, const char * request_json, char * error_buffer, size_t error_buffer_size) {

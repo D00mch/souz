@@ -90,13 +90,13 @@ class NodesClassificationPromptTest {
     }
 
     @Test
-    fun `local provider classification skips api classifier and narrows tools`() {
+    fun `local provider classification still uses api classifier and narrows tools`() {
         val localTools = mapOf(
             ToolCategory.FILES to mapOf("Read" to dummySetup("Read")),
             ToolCategory.MAIL to mapOf("MailRead" to dummySetup("MailRead")),
         )
         val settingsProvider = mockk<SettingsProvider> {
-            every { gigaModel } returns GigaModel.LocalLlama_3_1_8B_Instruct
+            every { gigaModel } returns GigaModel.LocalQwen3_4B_Instruct_2507
         }
         val localClassifier = mockk<ru.souz.tool.UserMessageClassifier> {
             coEvery { classify(any()) } returns ru.souz.tool.UserMessageClassifier.Reply(
@@ -104,7 +104,12 @@ class NodesClassificationPromptTest {
                 confidence = 50.0,
             )
         }
-        val apiClassifier = mockk<ru.souz.tool.UserMessageClassifier>(relaxed = true)
+        val apiClassifier = mockk<ru.souz.tool.UserMessageClassifier> {
+            coEvery { classify(any()) } returns ru.souz.tool.UserMessageClassifier.Reply(
+                categories = listOf(ToolCategory.FILES),
+                confidence = 90.0,
+            )
+        }
         val toolsFactory = mockk<ToolsFactory> { every { toolsByCategory } returns localTools }
         val toolsSettings = mockk<ToolsSettings> {
             every { applyFilter(any()) } answers { firstArg() }
@@ -121,9 +126,9 @@ class NodesClassificationPromptTest {
         val result = kotlinx.coroutines.runBlocking {
             classification.node().execute(
                 ctx = AgentContext(
-                    input = "Проверить почту",
+                    input = "Прочитай файл",
                     settings = AgentSettings(
-                        model = GigaModel.LocalLlama_3_1_8B_Instruct.alias,
+                        model = GigaModel.LocalQwen3_4B_Instruct_2507.alias,
                         temperature = 0.2f,
                         toolsByCategory = localTools,
                     ),
@@ -135,8 +140,8 @@ class NodesClassificationPromptTest {
             )
         }
 
-        assertEquals(listOf("MailRead"), result.activeTools.map { it.name })
-        coVerify(exactly = 0) { apiClassifier.classify(any()) }
+        assertEquals(listOf("Read"), result.activeTools.map { it.name })
+        coVerify(exactly = 1) { apiClassifier.classify(any()) }
     }
 
     private fun mockTelegramFilteredToolsSettings(telegramConnected: Boolean): ToolsSettings {

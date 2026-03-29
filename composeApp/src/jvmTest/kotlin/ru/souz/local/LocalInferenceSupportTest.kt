@@ -8,7 +8,10 @@ import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
 import io.mockk.verify
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import java.nio.file.Files
 import java.nio.file.Path
 import org.junit.jupiter.api.AfterEach
@@ -28,9 +31,12 @@ import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
+import ru.souz.db.StorredData
+import ru.souz.db.StorredType
 import ru.souz.giga.GigaMessageRole
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaResponse
+import ru.souz.giga.gigaJsonMapper
 import ru.souz.giga.toGiga
 import ru.souz.giga.toSystemPromptMessage
 import ru.souz.tool.ToolRunBashCommand
@@ -44,42 +50,69 @@ class LocalInferenceSupportTest {
     }
 
     @Test
-    fun `selectForRam chooses Qwen on 8gb and Llama on 16gb`() {
+    fun `selectForRam chooses Qwen for supported local hosts`() {
         assertEquals(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507, LocalModelProfiles.selectForRam(8))
-        assertEquals(LocalModelProfiles.LLAMA_3_1_8B_INSTRUCT, LocalModelProfiles.selectForRam(16))
+        assertEquals(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507, LocalModelProfiles.selectForRam(16))
     }
 
     @Test
-    fun `availableForRam exposes all eligible local models including Gigachat on 16gb`() {
+    fun `availableForRam exposes only supported local profiles`() {
         assertEquals(
-            listOf(
-                LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
-                LocalModelProfiles.LLAMA_3_1_8B_INSTRUCT,
-                LocalModelProfiles.GIGACHAT_3_1_10B_A1_8B,
-            ),
+            listOf(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507),
             LocalModelProfiles.availableForRam(16),
         )
     }
 
     @Test
-    fun `gigachat prompt renderer uses gigachat separators`() {
+    fun `qwen prompt renderer uses qwen separators`() {
         val renderer = LocalPromptRenderer()
-
-        val prompt = renderer.render(
-            body = GigaRequest.Chat(
-                model = LocalModelProfiles.GIGACHAT_3_1_10B_A1_8B.gigaModel.alias,
-                messages = listOf(
-                    GigaRequest.Message(GigaMessageRole.system, "System"),
-                    GigaRequest.Message(GigaMessageRole.user, "Проверь календарь"),
-                ),
+        val chat = GigaRequest.Chat(
+            model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            messages = listOf(
+                GigaRequest.Message(GigaMessageRole.system, "System"),
+                GigaRequest.Message(GigaMessageRole.user, "Проверь календарь"),
             ),
-            profile = LocalModelProfiles.GIGACHAT_3_1_10B_A1_8B,
         )
 
-        assertTrue(prompt.startsWith("<s>"))
-        assertTrue(prompt.contains("user<|role_sep|>Проверь календарь<|message_sep|>"))
-        assertTrue(prompt.contains("available functions<|role_sep|>[]<|message_sep|>"))
-        assertTrue(prompt.endsWith("assistant<|role_sep|>"))
+        val prompt = renderer.render(
+            body = chat,
+            profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+        )
+
+        assertFalse(chat.prefersPlainTextLocalOutput())
+        assertTrue(prompt.startsWith("<|im_start|>system"))
+        assertTrue(prompt.contains("Return exactly one JSON object and nothing else."))
+        assertTrue(prompt.contains("<|im_start|>user\nПроверь календарь\n<|im_end|>"))
+        assertTrue(prompt.endsWith("<|im_start|>assistant\n"))
+    }
+
+    @Test
+    fun `classification prompts use plain text local output mode`() {
+        val renderer = LocalPromptRenderer()
+        val chat = GigaRequest.Chat(
+            model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            messages = listOf(
+                GigaRequest.Message(
+                    GigaMessageRole.system,
+                    """
+                        Выбери категории.
+
+                        Формат ответа:
+                        CATEGORY1,CATEGORY2 0-100
+                    """.trimIndent(),
+                ),
+                GigaRequest.Message(GigaMessageRole.user, "New message:\nнайди файл"),
+            ),
+        )
+
+        val prompt = renderer.render(
+            body = chat,
+            profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+        )
+
+        assertTrue(chat.prefersPlainTextLocalOutput())
+        assertTrue(prompt.contains("CATEGORY1,CATEGORY2 0-100"))
+        assertFalse(prompt.contains("Return exactly one JSON object and nothing else."))
     }
 
     @Test
@@ -133,7 +166,7 @@ class LocalInferenceSupportTest {
 
         val result = parser.parse(
             rawText = """{"result":"Список сообщений в почте: 7 штук."}""",
-            requestModel = LocalModelProfiles.GIGACHAT_3_1_10B_A1_8B.gigaModel.alias,
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
             usage = GigaResponse.Usage(10, 5, 15, 0),
         )
 
@@ -147,7 +180,7 @@ class LocalInferenceSupportTest {
 
         val result = parser.parse(
             rawText = """{"type":"final","content":"{\"result\":\"Список сообщений в почте: 7 штук.\"}"}""",
-            requestModel = LocalModelProfiles.GIGACHAT_3_1_10B_A1_8B.gigaModel.alias,
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
             usage = GigaResponse.Usage(10, 5, 15, 0),
         )
 
@@ -303,6 +336,55 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `local prompt renderer switches to minimal tool signatures for large local toolsets`() {
+        val renderer = LocalPromptRenderer()
+        val functions = (1..60).map { index ->
+            GigaRequest.Function(
+                name = "Tool$index",
+                description = "Tool number $index with verbose instructions that should not be copied into the local prompt when too many tools are active.",
+                parameters = GigaRequest.Parameters(
+                    type = "object",
+                    properties = mapOf(
+                        "query" to GigaRequest.Property(
+                            type = "string",
+                            description = "Search query for tool $index",
+                        ),
+                        "limit" to GigaRequest.Property(
+                            type = "integer",
+                            description = "Optional result limit for tool $index",
+                        ),
+                    ),
+                    required = listOf("query"),
+                ),
+                fewShotExamples = listOf(
+                    GigaRequest.FewShotExample(
+                        request = "Use tool $index",
+                        params = mapOf("query" to "Arthur", "limit" to 10),
+                    )
+                ),
+            )
+        }
+
+        val prompt = renderer.render(
+            body = GigaRequest.Chat(
+                model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+                messages = listOf(
+                    GigaRequest.Message(GigaMessageRole.user, "Продолжи прошлое действие"),
+                ),
+                functions = functions,
+            ),
+            profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+        )
+
+        assertTrue(prompt.contains("Tool signatures: `!` required, `?` optional."))
+        assertTrue(prompt.contains("- Tool1(query!, limit:integer?)"))
+        assertTrue(prompt.contains("- Tool60(query!, limit:integer?)"))
+        assertFalse(prompt.contains("Example arguments JSON:"))
+        assertFalse(prompt.contains("Tool number 1 with verbose instructions"))
+        assertTrue(prompt.length < 8_000)
+    }
+
+    @Test
     fun `close unloads model and destroys runtime after local preload`() = runTest {
         val profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
         val availability = mockk<LocalProviderAvailability>()
@@ -345,6 +427,81 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `local chatStream completes after final response`() = runBlocking {
+        val profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "OK",
+            selectedProfile = profile,
+            availableModels = listOf(profile.gigaModel),
+        )
+
+        val modelStore = mockk<LocalModelStore>()
+        every { modelStore.requireAvailable(profile) } returns Path.of("/tmp/${profile.ggufFilename}")
+
+        val promptRenderer = mockk<LocalPromptRenderer>()
+        every { promptRenderer.render(any(), profile) } returns "prompt"
+
+        val bridge = mockk<LocalNativeBridge>()
+        val runtimePointer = Pointer(21)
+        val modelPointer = Pointer(22)
+        every { bridge.createRuntime() } returns runtimePointer
+        every { bridge.loadModel(runtimePointer, any()) } returns modelPointer
+        every { bridge.generateStream(runtimePointer, modelPointer, any(), any()) } returns """
+            {"text":"{\"type\":\"final\",\"content\":\"stream done\"}","finish_reason":"stop","prompt_tokens":4,"completion_tokens":2,"total_tokens":6,"precached_prompt_tokens":0}
+        """.trimIndent()
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = modelStore,
+            promptRenderer = promptRenderer,
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = bridge,
+        )
+
+        val responses = withTimeout(1_000) {
+            runtime.chatStream(
+                GigaRequest.Chat(
+                    model = profile.gigaModel.alias,
+                    messages = listOf(GigaRequest.Message(GigaMessageRole.user, "hello")),
+                )
+            ).toList()
+        }
+
+        val ok = assertIs<GigaResponse.Chat.Ok>(responses.single())
+        assertEquals("stream done", ok.choices.single().message.content)
+        verify(exactly = 1) { bridge.generateStream(runtimePointer, modelPointer, any(), any()) }
+    }
+
+    @Test
+    fun `local prompt renderer truncates oversized tool results for small context models`() {
+        val renderer = LocalPromptRenderer()
+        val oversizedResult = gigaJsonMapper.writeValueAsString(
+            "{\"items\":[\"${"x".repeat(5_000)}\"]}"
+        )
+
+        val prompt = renderer.render(
+            body = GigaRequest.Chat(
+                model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+                messages = listOf(
+                    GigaRequest.Message(
+                        role = GigaMessageRole.function,
+                        content = oversizedResult,
+                        functionsStateId = "call_1",
+                        name = "ToolTelegramReadInbox",
+                    ),
+                ),
+            ),
+            profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+        )
+
+        assertTrue(prompt.contains("\"truncated\":true"))
+        assertTrue(prompt.contains("truncated for local context window"))
+        assertFalse(prompt.contains("x".repeat(4_500)))
+    }
+
+    @Test
     fun `local runtime resolves context size dynamically within requested window and model cap`() {
         val runtime = LocalLlamaRuntime(
             availability = mockk(relaxed = true),
@@ -358,23 +515,23 @@ class LocalInferenceSupportTest {
             2048,
             runtime.resolveContextSize(
                 body = GigaRequest.Chat(
-                    model = LocalModelProfiles.LLAMA_3_1_8B_INSTRUCT.gigaModel.alias,
+                    model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
                     messages = emptyList(),
                     maxTokens = 4096,
                 ),
-                profile = LocalModelProfiles.LLAMA_3_1_8B_INSTRUCT,
+                profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
                 prompt = "Короткий prompt",
             )
         )
         assertEquals(
-            16384,
+            8192,
             runtime.resolveContextSize(
                 body = GigaRequest.Chat(
-                    model = LocalModelProfiles.LLAMA_3_1_8B_INSTRUCT.gigaModel.alias,
+                    model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
                     messages = emptyList(),
                     maxTokens = 32000,
                 ),
-                profile = LocalModelProfiles.LLAMA_3_1_8B_INSTRUCT,
+                profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
                 prompt = "x".repeat(60_000),
             )
         )
@@ -382,12 +539,24 @@ class LocalInferenceSupportTest {
             8192,
             runtime.resolveContextSize(
                 body = GigaRequest.Chat(
-                    model = LocalModelProfiles.LLAMA_3_1_8B_INSTRUCT.gigaModel.alias,
+                    model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
                     messages = emptyList(),
                     maxTokens = 16000,
                 ),
-                profile = LocalModelProfiles.LLAMA_3_1_8B_INSTRUCT,
+                profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
                 prompt = "x".repeat(20_000),
+            )
+        )
+        assertEquals(
+            8192,
+            runtime.resolveContextSize(
+                body = GigaRequest.Chat(
+                    model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+                    messages = emptyList(),
+                    maxTokens = 900,
+                ),
+                profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+                prompt = "x".repeat(24_000),
             )
         )
     }
@@ -427,12 +596,51 @@ class LocalInferenceSupportTest {
         )
         val injectedContext = assertNotNull(result.history.firstOrNull { it.content.contains("<context>") })
 
-        assertTrue(nodesCommon.shouldAppendAdditionalData(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias))
-        assertFalse(nodesCommon.shouldSearchAdditionalData(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias))
-        assertTrue(nodesCommon.shouldSearchAdditionalData("gpt-5-nano"))
         assertTrue(injectedContext.content.contains("Календарь по умолчанию: Work"))
         assertTrue(injectedContext.content.contains("Текущие дата и время:"))
         coVerify(exactly = 0) { desktopInfoRepository.search(any(), any()) }
+    }
+
+    @Test
+    fun `cloud model includes desktop search in additional context`() = runTest {
+        mockkObject(ToolRunBashCommand)
+        every { ToolRunBashCommand.sh(any()) } returns ""
+
+        val desktopInfoRepository = mockk<DesktopInfoRepository>()
+        coEvery { desktopInfoRepository.search(any(), any()) } returns listOf(
+            StorredData("Найден локальный факт", StorredType.GENERAL_FACT)
+        )
+        val settingsProvider = mockk<SettingsProvider> {
+            every { defaultCalendar } returns null
+        }
+        val nodesCommon = NodesCommon(
+            desktopInfoRepository = desktopInfoRepository,
+            settingsProvider = settingsProvider,
+            agentToolExecutor = mockk<AgentToolExecutor>(relaxed = true),
+        )
+        val context = AgentContext(
+            input = "Найди локальные данные",
+            settings = AgentSettings(
+                model = "gpt-5-nano",
+                temperature = 0.2f,
+                toolsByCategory = emptyMap(),
+            ),
+            history = listOf(
+                "system".toSystemPromptMessage(),
+                GigaRequest.Message(GigaMessageRole.user, "Найди локальные данные"),
+            ),
+            activeTools = emptyList(),
+            systemPrompt = "system",
+        )
+
+        val result = nodesCommon.nodeAppendAdditionalData().execute(
+            ctx = context,
+            runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
+        )
+        val injectedContext = assertNotNull(result.history.firstOrNull { it.content.contains("<context>") })
+
+        assertTrue(injectedContext.content.contains("Найден локальный факт"))
+        coVerify(exactly = 1) { desktopInfoRepository.search(any(), any()) }
     }
 
     @Test

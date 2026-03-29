@@ -7,7 +7,6 @@ import ru.souz.agent.engine.Node
 import ru.souz.giga.GigaMessageRole
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaToolSetup
-import ru.souz.giga.LlmProvider
 import ru.souz.giga.gigaJsonMapper
 import ru.souz.db.SettingsProvider
 import ru.souz.tool.ToolCategory
@@ -56,7 +55,7 @@ class NodesClassification(
         l.debug("Classifying user message: {}, \nbody: \n{}", userText, logObjectMapper.writeValueAsString(body))
         try {
             val localResult: UserMessageClassifier.Reply = localClassifier.classify(bodyJson)
-            if (retriesCount <= 0 || settingsProvider.gigaModel.provider == LlmProvider.LOCAL) {
+            if (retriesCount <= 0) {
                 return localResult.categories
             }
 

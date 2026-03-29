@@ -460,6 +460,7 @@
     <string name="chat_action_open_default_browser">Открываю браузер по умолчанию</string>
     <string name="chat_action_run_bash_command">Запускаю команду: %1$s</string>
     <string name="chat_action_web_search">Ищу в интернете: %1$s</string>
+    <string name="chat_action_internet_research">Провожу исследование в интернете: %1$s</string>
     <string name="chat_action_web_image_search">Ищу изображения: %1$s</string>
     <string name="chat_action_web_page_text">Читаю страницу: %1$s</string>
     <string name="chat_action_sound_config">Меняю скорость озвучки: %1$s</string>

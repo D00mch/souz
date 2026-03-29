@@ -90,12 +90,9 @@ class NodesCommon(
      * Modifies [AgentContext.history] when new data is added.
      */
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
-        if (!shouldAppendAdditionalData(ctx.settings.model)) {
-            return@Node ctx.map()
-        }
         val additionalMessage: GigaRequest.Message? = appendActualInformation(
             userText = ctx.input,
-            includeDesktopSearch = shouldSearchAdditionalData(ctx.settings.model),
+            modelAlias = ctx.settings.model,
         )
 
         val newHistory = ArrayList<GigaRequest.Message>()
@@ -121,13 +118,13 @@ class NodesCommon(
 
     private suspend fun appendActualInformation(
         userText: String,
-        includeDesktopSearch: Boolean,
+        modelAlias: String,
     ): GigaRequest.Message? {
         if (userText.isBlank()) return null
 
         val additionalData = ArrayList<StorredData>()
 
-        if (includeDesktopSearch) {
+        if (!LocalModelProfiles.isLocalModelAlias(modelAlias)) {
             try {
                 additionalData.addAll(desktopInfoRepository.search(userText))
             } catch (e: Exception) {
@@ -229,11 +226,6 @@ class NodesCommon(
         settings: AgentSettings,
         functionCall: GigaResponse.FunctionCall,
     ): GigaRequest.Message = agentToolExecutor.execute(settings, functionCall)
-
-    internal fun shouldAppendAdditionalData(modelAlias: String): Boolean = true
-
-    internal fun shouldSearchAdditionalData(modelAlias: String): Boolean =
-        !LocalModelProfiles.isLocalModelAlias(modelAlias)
 }
 
 fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaRequest.Chat {

@@ -2,6 +2,7 @@ package ru.souz.local
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.sun.jna.Pointer
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.ceil
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -10,14 +11,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.giga.GigaMessageRole
 import ru.souz.giga.GigaRequest
@@ -36,14 +37,9 @@ class LocalLlamaRuntime(
     private val loadMutex = Mutex()
     private val runtimeOperationMutex = Mutex()
 
-    @Volatile
-    private var runtimeHandle: Pointer? = null
-
-    @Volatile
-    private var loadedModel: LoadedModel? = null
-
-    @Volatile
-    private var warmedModelId: String? = null
+    private val runtimeHandle = AtomicReference<Pointer?>(null)
+    private val loadedModel = AtomicReference<LoadedModel?>(null)
+    private val warmedModelId = AtomicReference<String?>(null)
 
     suspend fun chat(body: GigaRequest.Chat): GigaResponse.Chat {
         val nativeResult = runCatching { generate(body, stream = false) }
@@ -60,32 +56,31 @@ class LocalLlamaRuntime(
         )
     }
 
-    fun chatStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
-        val job = scope.launch {
-            val result = runCatching { generate(body, stream = true) }
-                .getOrElse { error ->
-                    NativeGenerationResult.error("Local inference failed: ${error.message ?: error::class.simpleName.orEmpty()}")
+    fun chatStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = flow {
+        val response = withContext(Dispatchers.IO) {
+            runCatching {
+                val result = generate(body, stream = true)
+                result.error?.let { message ->
+                    return@runCatching GigaResponse.Chat.Error(-1, message)
                 }
-            result.error?.let { message ->
-                send(GigaResponse.Chat.Error(-1, message))
-                return@launch
-            }
-            send(
                 strictJsonParser.parse(
                     rawText = result.text,
                     requestModel = body.model,
                     usage = result.toUsage(),
                 )
-            )
+            }.getOrElse { error ->
+                GigaResponse.Chat.Error(
+                    -1,
+                    "Local inference failed: ${error.message ?: error::class.simpleName.orEmpty()}",
+                )
+            }
         }
-        awaitClose {
-            cancelActiveRequest()
-            job.cancel()
-        }
+
+        emit(response)
     }
 
     fun cancelActiveRequest() {
-        runtimeHandle?.let { runtime ->
+        runtimeHandle.get()?.let { runtime ->
             runCatching { bridge.cancel(runtime) }
                 .onFailure { error -> l.debug("Local cancel failed: {}", error.message) }
         }
@@ -107,7 +102,7 @@ class LocalLlamaRuntime(
 
         val runtime = ensureRuntime()
         val modelHandle = ensureModel(profile)
-        if (warmedModelId == profile.id) {
+        if (warmedModelId.get() == profile.id) {
             return
         }
 
@@ -119,7 +114,7 @@ class LocalLlamaRuntime(
                 stream = false,
             )
         }.onSuccess {
-            warmedModelId = profile.id
+            warmedModelId.set(profile.id)
         }.onFailure { error ->
             if (error !is CancellationException) {
                 l.warn("Local model preload warmup failed for {}: {}", profile.id, error.message)
@@ -142,6 +137,7 @@ class LocalLlamaRuntime(
         val prompt = promptRenderer.render(body, profile)
         val completionBudget = resolveCompletionBudget(body)
         val contextSize = resolveContextSize(body, profile, prompt, completionBudget)
+        val useStructuredOutput = !body.prefersPlainTextLocalOutput()
         val generationRequest = LocalGenerationRequest(
             prompt = prompt,
             contextSize = contextSize,
@@ -151,7 +147,7 @@ class LocalLlamaRuntime(
             topK = DEFAULT_TOP_K,
             seed = DEFAULT_SEED,
             stop = emptyList(),
-            grammar = if (profile.useNativeGrammar) LocalStrictJsonContract.grammar else "",
+            grammar = if (profile.useNativeGrammar && useStructuredOutput) LocalStrictJsonContract.grammar else "",
         )
 
         val requestVariants = buildRequestVariants(generationRequest, profile)
@@ -168,7 +164,7 @@ class LocalLlamaRuntime(
             }
 
             result.getOrNull()?.let { nativeResult ->
-                warmedModelId = profile.id
+                warmedModelId.set(profile.id)
                 return nativeResult
             }
 
@@ -296,13 +292,11 @@ class LocalLlamaRuntime(
         prompt: String,
         completionBudget: Int = resolveCompletionBudget(body),
     ): Int {
-        val configuredLimit = (body.maxTokens.takeIf { it > 0 } ?: profile.maxContextSize)
-            .coerceAtMost(profile.maxContextSize)
         val promptEstimate = prompt.estimateTokenCount()
         val desired = promptEstimate + completionBudget + CONTEXT_SAFETY_MARGIN_TOKENS
         return nextContextBucket(desired)
             .coerceAtLeast(MIN_CONTEXT_SIZE)
-            .coerceAtMost(configuredLimit)
+            .coerceAtMost(profile.maxContextSize)
     }
 
     private fun nextContextBucket(tokens: Int): Int {
@@ -311,22 +305,22 @@ class LocalLlamaRuntime(
     }
 
     private suspend fun ensureRuntime(): Pointer = loadMutex.withLock {
-        runtimeHandle ?: runtimeOperationMutex.withLock {
-            runtimeHandle ?: bridge.createRuntime().also { runtimeHandle = it }
+        runtimeHandle.get() ?: runtimeOperationMutex.withLock {
+            runtimeHandle.get() ?: bridge.createRuntime().also(runtimeHandle::set)
         }
     }
 
     private suspend fun ensureModel(profile: LocalModelProfile): Pointer = loadMutex.withLock {
-        val runtime = runtimeHandle ?: runtimeOperationMutex.withLock {
-            runtimeHandle ?: bridge.createRuntime().also { runtimeHandle = it }
+        val runtime = runtimeHandle.get() ?: runtimeOperationMutex.withLock {
+            runtimeHandle.get() ?: bridge.createRuntime().also(runtimeHandle::set)
         }
-        loadedModel?.takeIf { it.profile.id == profile.id }?.pointer?.let { return@withLock it }
+        loadedModel.get()?.takeIf { it.profile.id == profile.id }?.pointer?.let { return@withLock it }
 
         runtimeOperationMutex.withLock {
-            loadedModel?.let { current ->
+            loadedModel.get()?.let { current ->
                 bridge.unloadModel(runtime, current.pointer)
-                loadedModel = null
-                warmedModelId = null
+                loadedModel.set(null)
+                warmedModelId.set(null)
             }
 
             val modelPath = modelStore.requireAvailable(profile)
@@ -339,41 +333,43 @@ class LocalLlamaRuntime(
                 )
             )
             val pointer = bridge.loadModel(runtime, requestJson)
-            loadedModel = LoadedModel(profile = profile, pointer = pointer)
+            loadedModel.set(LoadedModel(profile = profile, pointer = pointer))
             return@withLock pointer
         }
     }
 
-    override fun close() {
+    suspend fun shutdown() {
         cancelActiveRequest()
-        runBlocking {
-            loadMutex.withLock {
-                runtimeOperationMutex.withLock {
-                    val runtime = runtimeHandle
-                    val currentModel = loadedModel
+        loadMutex.withLock {
+            runtimeOperationMutex.withLock {
+                val runtime = runtimeHandle.get()
+                val currentModel = loadedModel.get()
 
-                    if (runtime != null && currentModel != null) {
-                        runCatching { bridge.unloadModel(runtime, currentModel.pointer) }
-                            .onFailure { error ->
-                                l.warn("Failed to unload local model during shutdown: {}", error.message)
-                            }
-                    }
-
-                    loadedModel = null
-                    warmedModelId = null
-
-                    if (runtime != null) {
-                        runCatching { bridge.destroyRuntime(runtime) }
-                            .onFailure { error ->
-                                l.warn("Failed to destroy local runtime during shutdown: {}", error.message)
-                            }
-                    }
-
-                    runtimeHandle = null
+                if (runtime != null && currentModel != null) {
+                    runCatching { bridge.unloadModel(runtime, currentModel.pointer) }
+                        .onFailure { error ->
+                            l.warn("Failed to unload local model during shutdown: {}", error.message)
+                        }
                 }
+
+                loadedModel.set(null)
+                warmedModelId.set(null)
+
+                if (runtime != null) {
+                    runCatching { bridge.destroyRuntime(runtime) }
+                        .onFailure { error ->
+                            l.warn("Failed to destroy local runtime during shutdown: {}", error.message)
+                        }
+                }
+
+                runtimeHandle.set(null)
             }
         }
         scope.cancel()
+    }
+
+    override fun close() {
+        runBlocking { shutdown() }
     }
 
     private data class LoadedModel(

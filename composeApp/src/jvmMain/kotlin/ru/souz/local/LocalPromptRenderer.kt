@@ -5,89 +5,201 @@ import ru.souz.giga.GigaMessageRole
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.gigaJsonMapper
 
+private const val CLASSIFICATION_RESPONSE_FORMAT_MARKER = "CATEGORY1,CATEGORY2 0-100"
+
+internal fun GigaRequest.Chat.prefersPlainTextLocalOutput(): Boolean {
+    if (functions.isNotEmpty()) return false
+
+    return messages.any { message ->
+        message.role == GigaMessageRole.system &&
+            message.content.contains(CLASSIFICATION_RESPONSE_FORMAT_MARKER)
+    }
+}
+
 class LocalPromptRenderer {
     fun render(body: GigaRequest.Chat, profile: LocalModelProfile): String {
-        val systemPrompt = buildSystemPrompt(body)
+        val systemPrompt = buildSystemPrompt(body, profile)
         val messages = body.messages.filterNot { it.role == GigaMessageRole.system }
-            .map(::toRenderedMessage)
+            .map { toRenderedMessage(it, profile) }
 
-        return when (profile.templateFamily) {
-            LocalTemplateFamily.QWEN3 -> renderQwen(systemPrompt, messages)
-            LocalTemplateFamily.LLAMA_3_1 -> renderLlama(systemPrompt, messages)
-            LocalTemplateFamily.GIGACHAT_3_1 -> renderGigaChat(systemPrompt, messages)
-        }
+        return renderQwen(systemPrompt, messages)
     }
 
-    private fun buildSystemPrompt(body: GigaRequest.Chat): String {
+    private fun buildSystemPrompt(body: GigaRequest.Chat, profile: LocalModelProfile): String {
         val explicitSystem = body.messages
             .filter { it.role == GigaMessageRole.system }
             .joinToString("\n\n") { it.content.trim() }
             .trim()
 
-        val contract = LocalStrictJsonContract.instructions(renderToolGuidance(body.functions))
+        val contract = if (body.prefersPlainTextLocalOutput()) {
+            ""
+        } else {
+            LocalStrictJsonContract.instructions(renderToolGuidance(body.functions, profile))
+        }
         return listOf(explicitSystem, contract)
             .filter { it.isNotBlank() }
             .joinToString("\n\n")
     }
 
-    private fun renderToolGuidance(functions: List<GigaRequest.Function>): String {
+    private fun renderToolGuidance(
+        functions: List<GigaRequest.Function>,
+        profile: LocalModelProfile,
+    ): String {
         if (functions.isEmpty()) {
             return ""
         }
 
-        return buildString {
-            functions.forEach { fn ->
-                append("- ")
-                append(fn.name)
-                append(": ")
-                append(fn.description.trim())
-                appendLine()
+        val maxChars = when {
+            profile.maxContextSize <= 8192 -> SMALL_CONTEXT_TOOL_GUIDANCE_CHARS
+            else -> LARGE_CONTEXT_TOOL_GUIDANCE_CHARS
+        }
+        val preferredModes = when {
+            profile.maxContextSize <= 8192 && functions.size > SMALL_CONTEXT_COMPACT_GUIDANCE_LIMIT ->
+                listOf(ToolGuidanceMode.MINIMAL)
 
-                val sortedArguments = fn.parameters.properties.entries.sortedBy { (name, _) ->
-                    if (name in fn.parameters.required) 0 else 1
-                }
-                if (sortedArguments.isNotEmpty()) {
-                    appendLine("  Arguments:")
-                    sortedArguments.forEach { (name, property) ->
-                        append("  - ")
-                        append(name)
-                        append(" (")
-                        append(property.type)
-                        append(", ")
-                        append(if (name in fn.parameters.required) "required" else "optional")
-                        append(")")
-                        property.description
-                            ?.trim()
-                            ?.takeIf(String::isNotBlank)
-                            ?.let { description ->
-                                append(": ")
-                                append(description)
-                            }
-                        property.enum
-                            ?.takeIf { it.isNotEmpty() }
-                            ?.let { enumValues ->
-                                append(" Allowed values: ")
-                                append(enumValues.joinToString(", "))
-                                append(".")
-                            }
-                        appendLine()
-                    }
-                }
+            profile.maxContextSize <= 8192 && functions.size > FULL_GUIDANCE_LIMIT ->
+                listOf(ToolGuidanceMode.COMPACT, ToolGuidanceMode.MINIMAL)
 
-                fn.fewShotExamples
-                    ?.firstOrNull()
-                    ?.let { example ->
-                        append("  Example arguments JSON: ")
-                        append(gigaJsonMapper.writeValueAsString(example.params))
-                        appendLine()
-                    }
+            functions.size > COMPACT_GUIDANCE_LIMIT ->
+                listOf(ToolGuidanceMode.MINIMAL)
 
-                appendLine()
-            }
-        }.trim()
+            functions.size > FULL_GUIDANCE_LIMIT ->
+                listOf(ToolGuidanceMode.COMPACT, ToolGuidanceMode.MINIMAL)
+
+            else ->
+                listOf(ToolGuidanceMode.FULL, ToolGuidanceMode.COMPACT, ToolGuidanceMode.MINIMAL)
+        }
+
+        return preferredModes.asSequence()
+            .map { mode -> renderToolGuidance(functions, mode) }
+            .firstOrNull { rendered -> rendered.length <= maxChars }
+            ?: renderToolGuidance(functions, ToolGuidanceMode.MINIMAL)
     }
 
-    private fun toRenderedMessage(message: GigaRequest.Message): RenderedMessage = when (message.role) {
+    private fun renderToolGuidance(
+        functions: List<GigaRequest.Function>,
+        mode: ToolGuidanceMode,
+    ): String = buildString {
+        if (mode == ToolGuidanceMode.MINIMAL) {
+            appendLine("Tool signatures: `!` required, `?` optional.")
+        }
+
+        functions.forEach { fn ->
+            append("- ")
+            append(fn.name)
+
+            when (mode) {
+                ToolGuidanceMode.FULL -> {
+                    append(": ")
+                    append(fn.description.trim())
+                    appendLine()
+
+                    val sortedArguments = sortArguments(fn)
+                    if (sortedArguments.isNotEmpty()) {
+                        appendLine("  Arguments:")
+                        sortedArguments.forEach { (name, property) ->
+                            append("  - ")
+                            append(name)
+                            append(" (")
+                            append(property.type)
+                            append(", ")
+                            append(if (name in fn.parameters.required) "required" else "optional")
+                            append(")")
+                            property.description
+                                ?.trim()
+                                ?.takeIf(String::isNotBlank)
+                                ?.let { description ->
+                                    append(": ")
+                                    append(description)
+                                }
+                            property.enum
+                                ?.takeIf { it.isNotEmpty() }
+                                ?.let { enumValues ->
+                                    append(" Allowed values: ")
+                                    append(enumValues.joinToString(", "))
+                                    append(".")
+                                }
+                            appendLine()
+                        }
+                    }
+
+                    fn.fewShotExamples
+                        ?.firstOrNull()
+                        ?.let { example ->
+                            append("  Example arguments JSON: ")
+                            append(gigaJsonMapper.writeValueAsString(example.params))
+                            appendLine()
+                        }
+                }
+
+                ToolGuidanceMode.COMPACT -> {
+                    append(renderCompactSignature(fn))
+                    fn.description
+                        .trim()
+                        .takeIf(String::isNotBlank)
+                        ?.let { description ->
+                            append(": ")
+                            append(description)
+                        }
+                    appendLine()
+                }
+
+                ToolGuidanceMode.MINIMAL -> {
+                    append(renderMinimalSignature(fn))
+                    appendLine()
+                }
+            }
+
+            appendLine()
+        }
+    }.trim()
+
+    private fun sortArguments(fn: GigaRequest.Function): List<Map.Entry<String, GigaRequest.Property>> =
+        fn.parameters.properties.entries.sortedBy { (name, _) ->
+            if (name in fn.parameters.required) 0 else 1
+        }
+
+    private fun renderCompactSignature(fn: GigaRequest.Function): String {
+        val args = sortArguments(fn).joinToString(", ") { (name, property) ->
+            buildString {
+                append(name)
+                append(":")
+                append(renderPropertyType(property))
+                append(if (name in fn.parameters.required) "!" else "?")
+            }
+        }
+        return if (args.isBlank()) "()" else "($args)"
+    }
+
+    private fun renderMinimalSignature(fn: GigaRequest.Function): String {
+        val args = sortArguments(fn).joinToString(", ") { (name, property) ->
+            buildString {
+                append(name)
+                property.enum
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { enumValues ->
+                        append("=")
+                        append(enumValues.joinToString("|"))
+                    }
+                    ?: property.type
+                        .takeIf { it.isNotBlank() && !it.equals("string", ignoreCase = true) }
+                        ?.let { type ->
+                            append(":")
+                            append(type)
+                        }
+                append(if (name in fn.parameters.required) "!" else "?")
+            }
+        }
+        return if (args.isBlank()) "()" else "($args)"
+    }
+
+    private fun renderPropertyType(property: GigaRequest.Property): String =
+        property.enum
+            ?.takeIf { it.isNotEmpty() }
+            ?.joinToString("|")
+            ?: property.type
+
+    private fun toRenderedMessage(message: GigaRequest.Message, profile: LocalModelProfile): RenderedMessage = when (message.role) {
         GigaMessageRole.user -> RenderedMessage(role = "user", content = message.content.trim())
         GigaMessageRole.assistant -> RenderedMessage(
             role = "assistant",
@@ -101,7 +213,7 @@ class LocalPromptRenderer {
                     "tool_result" to mapOf(
                         "tool_name" to message.name.orEmpty(),
                         "tool_call_id" to message.functionsStateId.orEmpty(),
-                        "content" to message.content,
+                        "content" to normalizeToolResultContent(message.content, profile),
                     )
                 )
             ),
@@ -148,58 +260,43 @@ class LocalPromptRenderer {
         append("<|im_start|>assistant\n")
     }
 
-    private fun renderLlama(systemPrompt: String, messages: List<RenderedMessage>): String = buildString {
-        append("<|begin_of_text|>")
-        if (systemPrompt.isNotBlank()) {
-            append(header("system"))
-            append(systemPrompt)
-            append("<|eot_id|>")
+    private fun normalizeToolResultContent(rawContent: String, profile: LocalModelProfile): Any {
+        val decoded = runCatching { gigaJsonMapper.readValue<String>(rawContent) }.getOrDefault(rawContent)
+        val budget = when {
+            profile.maxContextSize <= 8192 -> LOCAL_SMALL_CONTEXT_TOOL_PREVIEW_CHARS
+            else -> LOCAL_LARGE_CONTEXT_TOOL_PREVIEW_CHARS
         }
-        messages.forEach { message ->
-            append(header(message.role))
-            append(message.content)
-            append("<|eot_id|>")
+
+        if (decoded.length > budget) {
+            return mapOf(
+                "truncated" to true,
+                "original_length" to decoded.length,
+                "preview" to decoded.take(budget).trimEnd() + TRUNCATION_SUFFIX,
+            )
         }
-        append(header("assistant"))
+
+        return runCatching { gigaJsonMapper.readValue<Any>(decoded) }.getOrDefault(decoded)
     }
-
-    private fun renderGigaChat(systemPrompt: String, messages: List<RenderedMessage>): String = buildString {
-        append("<s>")
-        if (systemPrompt.isNotBlank()) {
-            append(systemPrompt)
-            append("<|message_sep|>")
-        }
-        messages.forEach { message ->
-            when (message.role) {
-                "user" -> {
-                    append("user<|role_sep|>")
-                    append(message.content)
-                    append("<|message_sep|>")
-                    append("available functions<|role_sep|>[]<|message_sep|>")
-                }
-
-                "assistant" -> {
-                    append("assistant<|role_sep|>")
-                    append(message.content)
-                    append("<|message_sep|>")
-                }
-
-                else -> {
-                    append(message.role)
-                    append("<|role_sep|>")
-                    append(message.content)
-                    append("<|message_sep|>")
-                }
-            }
-        }
-        append("assistant<|role_sep|>")
-    }
-
-    private fun header(role: String): String =
-        "<|start_header_id|>$role<|end_header_id|>\n\n"
 
     private data class RenderedMessage(
         val role: String,
         val content: String,
     )
+
+    private enum class ToolGuidanceMode {
+        FULL,
+        COMPACT,
+        MINIMAL,
+    }
+
+    private companion object {
+        const val FULL_GUIDANCE_LIMIT = 4
+        const val SMALL_CONTEXT_COMPACT_GUIDANCE_LIMIT = 8
+        const val COMPACT_GUIDANCE_LIMIT = 12
+        const val SMALL_CONTEXT_TOOL_GUIDANCE_CHARS = 3_500
+        const val LARGE_CONTEXT_TOOL_GUIDANCE_CHARS = 7_000
+        const val LOCAL_SMALL_CONTEXT_TOOL_PREVIEW_CHARS = 3_500
+        const val LOCAL_LARGE_CONTEXT_TOOL_PREVIEW_CHARS = 7_000
+        const val TRUNCATION_SUFFIX = "\n...[truncated for local context window]..."
+    }
 }

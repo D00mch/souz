@@ -458,6 +458,7 @@
     <string name="chat_action_open_default_browser">Opening default browser</string>
     <string name="chat_action_run_bash_command">Running command: %1$s</string>
     <string name="chat_action_web_search">Searching the web: %1$s</string>
+    <string name="chat_action_internet_research">Researching the web: %1$s</string>
     <string name="chat_action_web_image_search">Searching images: %1$s</string>
     <string name="chat_action_web_page_text">Reading page: %1$s</string>
     <string name="chat_action_sound_config">Updating speech speed: %1$s</string>
