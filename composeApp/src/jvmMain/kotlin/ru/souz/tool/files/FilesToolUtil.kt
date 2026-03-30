@@ -53,12 +53,17 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
     fun resourceAsText(path: String): String = Companion.resourceAsText(path)
 
     override fun applyDefaultEnvs(path: String): String {
-        if (path.startsWith("~")) {
-            return path.replace("~", homeStr)
+        val newPath = when {
+            path.startsWith("~") -> path.replace("~", homeStr)
+            path.startsWith("\$HOME") -> path.replace("\$HOME", homeStr)
+            path == "home" -> homeStr
+            else -> path
         }
-        if (path == "home") return homeStr
-        return path.replace("\$HOME", homeStr)
-            .replace("HOME", homeStr)
+        return when {
+            newPath.contains(homeStr) -> newPath
+            File(newPath).exists() -> newPath
+            else -> "$homeStr/$path"
+        }
     }
 
     /**
