@@ -34,6 +34,7 @@ import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.qwen.QwenChatAPI
 import ru.souz.llms.local.LocalChatAPI
+import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.service.telegram.TelegramAuthState
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.service.telegram.TelegramService
@@ -78,6 +79,8 @@ class AgentScenarioTestSupport(
     private var aiTunnelChatAPI: AiTunnelChatAPI? = null
     private var anthropicChatAPI: AnthropicChatAPI? = null
     private var openAiChatAPI: OpenAIChatAPI? = null
+    private var localLlamaRuntime: LocalLlamaRuntime? = null
+    private var localChatAPI: LocalChatAPI? = null
     private val httpRequestCount = AtomicLong(0)
     private val httpRequestTotalNanos = AtomicLong(0)
 
@@ -225,6 +228,18 @@ class AgentScenarioTestSupport(
                 }
                 openAiChatAPI!!
             }
+            bindSingleton<LocalLlamaRuntime>(overrides = true) {
+                localLlamaRuntime
+                    ?: LocalLlamaRuntime(instance(), instance(), instance(), instance(), instance()).also {
+                        localLlamaRuntime = it
+                    }
+            }
+            bindSingleton<LocalChatAPI>(overrides = true) {
+                localChatAPI
+                    ?: LocalChatAPI(instance()).also {
+                        localChatAPI = it
+                    }
+            }
             bindSingleton<GigaChatAPI>(overrides = true) {
                 when (selectedModel.provider) {
                     LlmProvider.GIGA -> instance<GigaRestChatAPI>()
@@ -291,7 +306,12 @@ class AgentScenarioTestSupport(
             LlmProvider.AI_TUNNEL -> println("Spent: ${aiTunnelChatAPI?.getSessionTokenUsage() ?: "n/a"}")
             LlmProvider.ANTHROPIC -> println("Spent: ${anthropicChatAPI?.getSessionTokenUsage() ?: "n/a"}")
             LlmProvider.OPENAI -> println("Spent: ${openAiChatAPI?.getSessionTokenUsage() ?: "n/a"}")
-            LlmProvider.LOCAL -> println("Spent: local provider")
+            LlmProvider.LOCAL -> {
+                println("Spent: local provider")
+                runCatching { localLlamaRuntime?.close() }
+                localChatAPI = null
+                localLlamaRuntime = null
+            }
         }
         val requestCount = httpRequestCount.get()
         if (requestCount == 0L) {
