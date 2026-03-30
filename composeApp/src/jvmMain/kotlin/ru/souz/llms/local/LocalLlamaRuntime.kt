@@ -1,4 +1,4 @@
-package ru.souz.local
+package ru.souz.llms.local
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.sun.jna.Pointer
@@ -20,10 +20,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.giga.gigaJsonMapper
 
 class LocalLlamaRuntime(
     private val availability: LocalProviderAvailability,

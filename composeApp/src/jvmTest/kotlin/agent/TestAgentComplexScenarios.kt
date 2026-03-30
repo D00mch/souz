@@ -8,7 +8,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.kodein.di.bindSingleton
 import ru.souz.agent.AgentId
-import ru.souz.giga.GigaModel
+import ru.souz.llms.GigaModel
 import ru.souz.service.telegram.TelegramService
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.files.FilesToolUtil

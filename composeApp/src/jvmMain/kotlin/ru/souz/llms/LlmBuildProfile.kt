@@ -1,11 +1,10 @@
-package ru.souz.giga
+package ru.souz.llms
 
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.BuildEdition
-import ru.souz.local.LocalBridgeLoader
-import ru.souz.local.LocalHostInfoProvider
-import ru.souz.local.LocalModelStore
-import ru.souz.local.LocalProviderAvailability
+import ru.souz.llms.local.LocalBridgeLoader
+import ru.souz.llms.local.LocalHostInfoProvider
+import ru.souz.llms.local.LocalModelStore
+import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 
 class LlmBuildProfile(

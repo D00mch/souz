@@ -1,4 +1,4 @@
-package ru.souz.giga
+package ru.souz.llms.giga
 
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -13,6 +13,7 @@ import java.io.File
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
+import ru.souz.llms.GigaResponse
 
 private val l = LoggerFactory.getLogger("GigaVoiceAPI")
 

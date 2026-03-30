@@ -3,7 +3,7 @@ package giga
 import kotlinx.coroutines.runBlocking
 import org.kodein.di.DI
 import org.kodein.di.instance
-import ru.souz.giga.GigaVoiceAPI
+import ru.souz.llms.giga.GigaVoiceAPI
 import java.io.File
 import kotlin.test.assertTrue
 import ru.souz.di.mainDiModule

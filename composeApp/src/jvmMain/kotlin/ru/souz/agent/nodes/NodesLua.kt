@@ -8,11 +8,11 @@ import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Node
 import ru.souz.agent.runtime.LuaExecutionException
 import ru.souz.agent.runtime.LuaRuntime
-import ru.souz.giga.GigaChatAPI
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.toMessage
+import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.toMessage
 
 // TODO: review after agent
 class NodesLua(

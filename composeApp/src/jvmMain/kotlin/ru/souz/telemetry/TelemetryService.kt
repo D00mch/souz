@@ -29,8 +29,8 @@ import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.plus
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.plus
 import ru.souz.tool.ToolCategory
 import java.net.URI
 import java.util.UUID

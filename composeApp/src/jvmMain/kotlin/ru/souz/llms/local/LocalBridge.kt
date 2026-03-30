@@ -1,4 +1,4 @@
-package ru.souz.local
+package ru.souz.llms.local
 
 import com.sun.jna.Callback
 import com.sun.jna.Library

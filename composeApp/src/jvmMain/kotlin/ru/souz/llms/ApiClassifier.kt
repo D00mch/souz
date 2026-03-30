@@ -1,4 +1,4 @@
-package ru.souz.giga
+package ru.souz.llms
 
 import ru.souz.tool.UserMessageClassifier
 import ru.souz.tool.ToolCategory
@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
+import ru.souz.llms.giga.gigaJsonMapper
 
 class ApiClassifier(
     private val api: LLMFactory,

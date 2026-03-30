@@ -1,10 +1,10 @@
-package ru.souz.local
+package ru.souz.llms.local
 
 import java.io.File
 import kotlinx.coroutines.flow.Flow
-import ru.souz.giga.GigaChatAPI
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaResponse
+import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
 
 class LocalChatAPI(
     private val runtime: LocalLlamaRuntime,

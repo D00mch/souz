@@ -1,9 +1,9 @@
-package ru.souz.local
+package ru.souz.llms.local
 
 import com.sun.management.OperatingSystemMXBean
 import java.lang.management.ManagementFactory
 import org.slf4j.LoggerFactory
-import ru.souz.giga.GigaModel
+import ru.souz.llms.GigaModel
 
 data class LocalLicenseRequirements(
     val summary: String,

@@ -11,7 +11,7 @@ import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import java.io.File
 
 class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindFilesByName.Input> {

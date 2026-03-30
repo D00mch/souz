@@ -25,7 +25,7 @@ import org.kodein.di.compose.withDI
 import org.kodein.di.instance
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
-import ru.souz.local.LocalLlamaRuntime
+import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.mcp.McpClientManager
 import ru.souz.telemetry.TelemetryService
 import ru.souz.ui.rememberDockWindowController

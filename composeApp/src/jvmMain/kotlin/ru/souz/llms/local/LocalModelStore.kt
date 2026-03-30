@@ -1,4 +1,4 @@
-package ru.souz.local
+package ru.souz.llms.local
 
 import java.io.InputStream
 import java.net.URI

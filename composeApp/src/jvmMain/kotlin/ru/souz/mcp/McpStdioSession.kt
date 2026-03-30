@@ -7,7 +7,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.EOFException

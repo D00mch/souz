@@ -1,4 +1,4 @@
-package ru.souz.llms
+package ru.souz.llms.anthropic
 
 import com.fasterxml.jackson.databind.DeserializationFeature
 import io.ktor.client.HttpClientConfig

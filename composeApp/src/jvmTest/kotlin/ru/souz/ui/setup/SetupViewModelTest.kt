@@ -19,9 +19,9 @@ import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.llms.BuildEdition
-import ru.souz.giga.GigaModel
-import ru.souz.giga.LlmBuildProfile
-import ru.souz.giga.LlmProvider
+import ru.souz.llms.GigaModel
+import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LlmProvider
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest

@@ -5,8 +5,8 @@ import org.jetbrains.compose.resources.getString
 import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Node
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.giga.gigaJsonMapper
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 

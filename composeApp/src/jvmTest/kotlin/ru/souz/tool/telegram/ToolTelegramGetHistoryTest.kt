@@ -5,7 +5,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.service.telegram.TelegramChatCandidate
 import ru.souz.service.telegram.TelegramChatLookupResult
 import ru.souz.service.telegram.TelegramMessageView

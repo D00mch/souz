@@ -1,4 +1,4 @@
-package ru.souz.llms
+package ru.souz.llms.anthropic
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.readValue
@@ -29,19 +29,18 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
-import ru.souz.giga.GigaChatAPI
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaModel
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.LlmProvider
-import ru.souz.giga.TokenLogging
-import ru.souz.giga.gigaJsonMapper
-import ru.souz.giga.toFinishReason
-import ru.souz.giga.toSystemPromptMessage
+import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaModel
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.LlmProvider
+import ru.souz.llms.TokenLogging
+import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.toFinishReason
+import ru.souz.llms.toSystemPromptMessage
 import java.io.File
 import java.nio.file.Files
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
 

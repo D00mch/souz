@@ -10,7 +10,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.GigaResponse
+import ru.souz.llms.GigaResponse
 import ru.souz.tool.ToolCategory
 import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets

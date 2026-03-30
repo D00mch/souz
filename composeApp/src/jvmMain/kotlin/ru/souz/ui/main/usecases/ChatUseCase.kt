@@ -16,8 +16,8 @@ import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentSideEffect
 import ru.souz.agent.engine.AgentContext
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.GigaModel
-import ru.souz.giga.TokenLogging
+import ru.souz.llms.GigaModel
+import ru.souz.llms.TokenLogging
 import ru.souz.telemetry.TelemetryConversationEndReason
 import ru.souz.telemetry.TelemetryConversationStartReason
 import ru.souz.telemetry.TelemetryRequestSource

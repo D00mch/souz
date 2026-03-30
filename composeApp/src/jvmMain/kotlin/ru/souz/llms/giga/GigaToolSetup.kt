@@ -1,8 +1,11 @@
-package ru.souz.giga
+package ru.souz.llms.giga
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlinx.coroutines.CancellationException
 import ru.souz.keys.Keys
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
 import ru.souz.tool.*
 import ru.souz.tool.desktop.ToolHotkeyMac
 import ru.souz.tool.desktop.ToolMouseClickMac

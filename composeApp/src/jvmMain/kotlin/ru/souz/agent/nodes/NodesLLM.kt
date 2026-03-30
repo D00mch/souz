@@ -12,7 +12,11 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Node
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.*
+import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.toMessage
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi

@@ -1,6 +1,6 @@
 package ru.souz.telemetry
 
-import ru.souz.giga.GigaResponse
+import ru.souz.llms.GigaResponse
 
 data class TelemetryEvent(
     val eventId: String,

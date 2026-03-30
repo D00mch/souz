@@ -3,9 +3,9 @@ package ru.souz.tool
 import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaToolSetup
-import ru.souz.giga.toGiga
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.giga.GigaToolSetup
+import ru.souz.llms.giga.toGiga
 import ru.souz.tool.application.*
 import ru.souz.tool.browser.*
 import ru.souz.tool.calendar.*

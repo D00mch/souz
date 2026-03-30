@@ -3,7 +3,7 @@ package ru.souz.mcp
 import com.fasterxml.jackson.databind.JsonNode
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import java.io.File
 
 class McpConfigProvider(

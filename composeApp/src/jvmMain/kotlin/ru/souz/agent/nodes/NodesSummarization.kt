@@ -6,14 +6,14 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Node
 import ru.souz.agent.engine.buildGraph
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaException
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.GigaChatAPI
-import ru.souz.giga.GigaResponse.FinishReason
-import ru.souz.giga.toMessage
-import ru.souz.giga.toSystemPromptMessage
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaException
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.GigaResponse.FinishReason
+import ru.souz.llms.toMessage
+import ru.souz.llms.toSystemPromptMessage
 import kotlin.math.ceil
 
 /**

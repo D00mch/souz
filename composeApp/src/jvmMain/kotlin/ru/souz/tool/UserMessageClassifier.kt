@@ -1,8 +1,8 @@
 package ru.souz.tool
 
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.giga.gigaJsonMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 
 fun interface UserMessageClassifier {

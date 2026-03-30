@@ -1,4 +1,4 @@
-package ru.souz.llms
+package ru.souz.llms.tunnel
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -13,8 +13,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.VoiceRecognitionProvider
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.VoiceRecognitionProvider
+import ru.souz.llms.giga.gigaJsonMapper
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder

@@ -27,8 +27,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaRequest
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
 import java.text.SimpleDateFormat
 import java.util.*
 import souz.composeapp.generated.resources.Res

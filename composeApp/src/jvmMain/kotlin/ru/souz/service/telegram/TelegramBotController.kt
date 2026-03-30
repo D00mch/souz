@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
 import ru.souz.db.ConfigStore
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import java.nio.file.Files

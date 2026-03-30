@@ -1,19 +1,19 @@
 package ru.souz.ui.settings
 
 import ru.souz.agent.AgentId
-import ru.souz.giga.EmbeddingsModel
-import ru.souz.giga.DEFAULT_MAX_TOKENS
-import ru.souz.giga.GigaModel
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.VoiceRecognitionModel
+import ru.souz.llms.EmbeddingsModel
+import ru.souz.llms.DEFAULT_MAX_TOKENS
+import ru.souz.llms.GigaModel
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.tool.config.ToolSoundConfig
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
-import ru.souz.local.LocalModelDownloadPrompt
-import ru.souz.local.LocalModelDownloadState
+import ru.souz.llms.local.LocalModelDownloadPrompt
+import ru.souz.llms.local.LocalModelDownloadState
 import org.jetbrains.compose.resources.StringResource
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*

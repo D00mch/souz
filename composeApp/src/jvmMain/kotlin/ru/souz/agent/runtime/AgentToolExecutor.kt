@@ -5,10 +5,10 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentSettings
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.GigaToolSetup
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.giga.GigaToolSetup
 import ru.souz.telemetry.TelemetryService
 
 class AgentToolExecutor(

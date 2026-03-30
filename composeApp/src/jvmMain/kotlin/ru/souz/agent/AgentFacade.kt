@@ -16,7 +16,7 @@ import ru.souz.agent.impl.LuaGraphBasedAgent
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.GigaModel
+import ru.souz.llms.GigaModel
 import ru.souz.tool.ToolsFactory
 
 @OptIn(ExperimentalCoroutinesApi::class)

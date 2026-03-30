@@ -13,7 +13,7 @@ import org.kodein.di.bindProvider
 import org.kodein.di.bindSingleton
 import ru.souz.agent.AgentId
 import ru.souz.agent.impl.GraphBasedAgent
-import ru.souz.giga.GigaModel
+import ru.souz.llms.GigaModel
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.application.ToolOpen
 import ru.souz.tool.application.ToolShowApps

@@ -3,8 +3,8 @@
 package ru.souz.tool
 
 import ru.souz.db.ConfigStore
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaToolSetup
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.giga.GigaToolSetup
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.service.telegram.TelegramService

@@ -1,8 +1,8 @@
 package tool
 
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.tool.LocalRegexClassifier
 import ru.souz.tool.ToolCategory
 import kotlinx.coroutines.runBlocking

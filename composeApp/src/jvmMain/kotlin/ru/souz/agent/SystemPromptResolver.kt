@@ -1,7 +1,7 @@
 package ru.souz.agent
 
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
-import ru.souz.giga.GigaModel
+import ru.souz.llms.GigaModel
 
 class SystemPromptResolver {
     fun defaultPrompt(agentId: AgentId, model: GigaModel, regionProfile: String): String {

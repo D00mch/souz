@@ -1,6 +1,7 @@
 package ru.souz.tool.presentation
 
 import org.apache.poi.xslf.usermodel.XMLSlideShow
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
@@ -70,7 +71,7 @@ class ToolPresentationRead : ToolSetupWithAttachments<PresentationReadInput> {
                 )
             }
 
-            return ru.souz.giga.gigaJsonMapper.writeValueAsString(
+            return gigaJsonMapper.writeValueAsString(
                 mapOf(
                     "totalSlides" to slidesData.size,
                     "slides" to slidesData

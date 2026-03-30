@@ -1,4 +1,4 @@
-package ru.souz.giga
+package ru.souz.llms.giga
 
 import com.fasterxml.jackson.databind.DeserializationFeature
 import io.ktor.client.*

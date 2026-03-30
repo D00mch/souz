@@ -4,10 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Node
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaToolSetup
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.giga.GigaToolSetup
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.db.SettingsProvider
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolCategory.*

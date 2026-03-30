@@ -13,11 +13,11 @@ import ru.souz.agent.engine.GraphRuntime
 import ru.souz.agent.engine.RetryPolicy
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.GigaModel
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.GigaToolSetup
+import ru.souz.llms.GigaModel
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.giga.GigaToolSetup
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolsFactory
 import ru.souz.tool.ToolsSettings

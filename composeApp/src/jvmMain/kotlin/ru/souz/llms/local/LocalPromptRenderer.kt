@@ -1,9 +1,9 @@
-package ru.souz.local
+package ru.souz.llms.local
 
 import com.fasterxml.jackson.module.kotlin.readValue
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.giga.gigaJsonMapper
 
 private const val CLASSIFICATION_RESPONSE_FORMAT_MARKER = "CATEGORY1,CATEGORY2 0-100"
 

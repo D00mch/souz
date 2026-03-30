@@ -5,7 +5,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
-import ru.souz.giga.*
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.giga.GigaToolSetup
+import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.giga.toGigaToolMessage
 import java.util.concurrent.ConcurrentHashMap
 
 

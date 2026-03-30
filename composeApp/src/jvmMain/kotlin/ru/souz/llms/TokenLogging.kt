@@ -1,4 +1,4 @@
-package ru.souz.giga
+package ru.souz.llms
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.asContextElement

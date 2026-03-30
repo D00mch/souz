@@ -3,8 +3,8 @@ package ru.souz.tool.web
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.runBlocking
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.GigaChatAPI
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters

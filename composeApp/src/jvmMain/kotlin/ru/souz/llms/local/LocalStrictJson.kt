@@ -1,11 +1,11 @@
-package ru.souz.local
+package ru.souz.llms.local
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.convertValue
 import java.util.UUID
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.giga.gigaJsonMapper
 
 /**
  * Contract metadata for local-model JSON responses. Jackson still parses the JSON;

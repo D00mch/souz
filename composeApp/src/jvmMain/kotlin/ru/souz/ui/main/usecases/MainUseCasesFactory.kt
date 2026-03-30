@@ -5,7 +5,7 @@ import ru.souz.agent.AgentFacade
 import ru.souz.audio.InMemoryAudioRecorder
 import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.TokenLogging
+import ru.souz.llms.TokenLogging
 import ru.souz.telemetry.TelemetryService
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker

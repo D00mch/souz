@@ -10,9 +10,9 @@ import ru.souz.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
-import ru.souz.giga.GigaModel
-import ru.souz.giga.LlmBuildProfile
-import ru.souz.giga.LlmProvider
+import ru.souz.llms.GigaModel
+import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LlmProvider
 import ru.souz.ui.BaseViewModel
 import ru.souz.ui.common.openProviderLink
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase

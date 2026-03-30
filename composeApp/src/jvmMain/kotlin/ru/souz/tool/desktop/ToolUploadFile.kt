@@ -1,6 +1,6 @@
 package ru.souz.tool.desktop
 
-import ru.souz.giga.GigaChatAPI
+import ru.souz.llms.giga.GigaChatAPI
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters

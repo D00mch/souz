@@ -20,7 +20,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import org.slf4j.LoggerFactory
 import ru.souz.db.ConfigStore
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import java.awt.Desktop
 import java.net.InetSocketAddress
 import java.net.URI

@@ -4,9 +4,9 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.di.mainDiModule
-import ru.souz.giga.GigaChatAPI
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaResponse
+import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
 import java.time.LocalDate
 import kotlin.random.Random
 

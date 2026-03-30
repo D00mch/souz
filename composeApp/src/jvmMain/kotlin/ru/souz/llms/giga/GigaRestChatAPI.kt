@@ -1,4 +1,4 @@
-package ru.souz.giga
+package ru.souz.llms.giga
 
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.application.ToolOpen
@@ -22,6 +22,12 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaModel
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.TokenLogging
+import ru.souz.llms.toFinishReason
 import java.io.File
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds

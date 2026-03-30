@@ -5,7 +5,7 @@ import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Graph
 import ru.souz.agent.engine.Node
 import ru.souz.agent.engine.StepInfo
-import ru.souz.giga.GigaResponse
+import ru.souz.llms.GigaResponse
 
 sealed interface AgentSideEffect {
     @JvmInline

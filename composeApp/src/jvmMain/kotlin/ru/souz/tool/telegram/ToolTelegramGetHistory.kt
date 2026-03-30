@@ -1,7 +1,7 @@
 package ru.souz.tool.telegram
 
 import kotlinx.coroutines.runBlocking
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.service.telegram.TelegramService
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample

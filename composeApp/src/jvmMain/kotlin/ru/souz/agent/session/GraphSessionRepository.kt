@@ -2,7 +2,7 @@ package ru.souz.agent.session
 
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.tool.files.FilesToolUtil
 import java.io.File
 

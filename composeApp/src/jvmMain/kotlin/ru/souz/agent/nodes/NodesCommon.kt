@@ -9,8 +9,11 @@ import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.db.StorredData
 import ru.souz.db.StorredType
-import ru.souz.giga.*
-import ru.souz.local.LocalModelProfiles
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.toSystemPromptMessage
+import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.browser.detectDefaultBrowser
 import ru.souz.tool.browser.prettyName

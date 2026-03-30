@@ -1,12 +1,14 @@
-package ru.souz.giga
+package ru.souz.llms
 
 import kotlinx.coroutines.flow.Flow
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.AiTunnelChatAPI
-import ru.souz.llms.AnthropicChatAPI
-import ru.souz.llms.OpenAIChatAPI
-import ru.souz.llms.QwenChatAPI
-import ru.souz.local.LocalChatAPI
+import ru.souz.llms.tunnel.AiTunnelChatAPI
+import ru.souz.llms.anthropic.AnthropicChatAPI
+import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.giga.GigaRestChatAPI
+import ru.souz.llms.openai.OpenAIChatAPI
+import ru.souz.llms.qwen.QwenChatAPI
+import ru.souz.llms.local.LocalChatAPI
 import java.io.File
 
 class LLMFactory(

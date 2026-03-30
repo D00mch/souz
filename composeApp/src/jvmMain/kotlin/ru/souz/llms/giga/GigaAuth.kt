@@ -1,4 +1,4 @@
-package ru.souz.giga
+package ru.souz.llms.giga
 
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -8,6 +8,7 @@ import io.ktor.client.request.forms.*
 import io.ktor.http.*
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.GigaResponse
 
 class GigaAuth(
     private val settingsProvider: SettingsProvider,

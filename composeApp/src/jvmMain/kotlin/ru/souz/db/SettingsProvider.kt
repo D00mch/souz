@@ -1,17 +1,17 @@
 package ru.souz.db
 
 import ru.souz.agent.AgentId
-import ru.souz.giga.EmbeddingsModel
-import ru.souz.giga.DEFAULT_MAX_TOKENS
-import ru.souz.giga.GigaModel
-import ru.souz.giga.LlmBuildProfile
-import ru.souz.giga.LlmProvider
-import ru.souz.giga.VoiceRecognitionModel
-import ru.souz.giga.VoiceRecognitionProvider
-import ru.souz.local.LocalBridgeLoader
-import ru.souz.local.LocalHostInfoProvider
-import ru.souz.local.LocalModelStore
-import ru.souz.local.LocalProviderAvailability
+import ru.souz.llms.EmbeddingsModel
+import ru.souz.llms.DEFAULT_MAX_TOKENS
+import ru.souz.llms.GigaModel
+import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LlmProvider
+import ru.souz.llms.VoiceRecognitionModel
+import ru.souz.llms.VoiceRecognitionProvider
+import ru.souz.llms.local.LocalBridgeLoader
+import ru.souz.llms.local.LocalHostInfoProvider
+import ru.souz.llms.local.LocalModelStore
+import ru.souz.llms.local.LocalProviderAvailability
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 

@@ -1,6 +1,7 @@
-package ru.souz.giga
+package ru.souz.llms
 
 import com.fasterxml.jackson.annotation.JsonProperty
+import ru.souz.llms.giga.gigaJsonMapper
 import java.util.*
 
 object GigaResponse {

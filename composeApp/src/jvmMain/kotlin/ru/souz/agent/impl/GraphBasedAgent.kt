@@ -19,7 +19,7 @@ import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.session.GraphSessionService
-import ru.souz.giga.GigaResponse
+import ru.souz.llms.GigaResponse
 
 class GraphBasedAgent(
     di: DI,

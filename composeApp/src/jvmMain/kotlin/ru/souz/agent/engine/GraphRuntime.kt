@@ -1,6 +1,6 @@
 package ru.souz.agent.engine
 
-import ru.souz.giga.GigaException
+import ru.souz.llms.GigaException
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.atomic.AtomicInteger
 

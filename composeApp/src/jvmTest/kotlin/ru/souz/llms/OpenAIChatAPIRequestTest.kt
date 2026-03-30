@@ -3,12 +3,8 @@ package ru.souz.llms
 import io.mockk.every
 import io.mockk.mockk
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaModel
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.TokenLogging
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.openai.OpenAIChatAPI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -385,7 +381,7 @@ class OpenAIChatAPIRequestTest {
     @Test
     fun `stream accumulator emits distinct indexes for multiple tool calls in one choice`() {
         val classLoader = OpenAIChatAPI::class.java.classLoader
-        val clazz = Class.forName("ru.souz.llms.OpenAiStreamAccumulator", true, classLoader)
+        val clazz = Class.forName("ru.souz.llms.openai.OpenAiStreamAccumulator", true, classLoader)
         val ctor = clazz.getDeclaredConstructor()
         ctor.isAccessible = true
         val accumulator = ctor.newInstance()

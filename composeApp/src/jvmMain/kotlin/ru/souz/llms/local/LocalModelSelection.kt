@@ -1,7 +1,7 @@
-package ru.souz.local
+package ru.souz.llms.local
 
-import ru.souz.giga.GigaModel
-import ru.souz.giga.LlmProvider
+import ru.souz.llms.GigaModel
+import ru.souz.llms.LlmProvider
 
 data class LocalModelDownloadPrompt(
     val model: GigaModel,

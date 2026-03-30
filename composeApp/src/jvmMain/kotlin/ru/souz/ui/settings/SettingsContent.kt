@@ -46,10 +46,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.souz.agent.AgentId
-import ru.souz.giga.EmbeddingsModel
-import ru.souz.giga.GigaModel
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.VoiceRecognitionModel
+import ru.souz.llms.EmbeddingsModel
+import ru.souz.llms.GigaModel
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider

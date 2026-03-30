@@ -17,10 +17,10 @@ import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.audio.InMemoryAudioRecorder
-import ru.souz.giga.MissingVoiceKeyException
+import ru.souz.llms.giga.MissingVoiceKeyException
 import ru.souz.keys.HotkeyListener
-import ru.souz.llms.MissingAiTunnelVoiceKeyException
-import ru.souz.llms.MissingOpenAiVoiceKeyException
+import ru.souz.llms.tunnel.MissingAiTunnelVoiceKeyException
+import ru.souz.llms.openai.MissingOpenAiVoiceKeyException
 import ru.souz.ui.main.MainState
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*

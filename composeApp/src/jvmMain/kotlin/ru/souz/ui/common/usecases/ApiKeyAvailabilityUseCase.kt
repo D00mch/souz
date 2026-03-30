@@ -1,7 +1,7 @@
 package ru.souz.ui.common.usecases
 
-import ru.souz.giga.LlmBuildProfile
-import ru.souz.giga.LlmProvider
+import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LlmProvider
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 

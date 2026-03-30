@@ -16,9 +16,9 @@ import org.luaj.vm2.lib.VarArgFunction
 import org.luaj.vm2.lib.jse.JsePlatform
 import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentSettings
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.giga.gigaJsonMapper
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.CoroutineContext
 

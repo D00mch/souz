@@ -1,8 +1,8 @@
 package ru.souz.agent.engine
 
-import ru.souz.giga.DEFAULT_MAX_TOKENS
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaToolSetup
+import ru.souz.llms.DEFAULT_MAX_TOKENS
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.giga.GigaToolSetup
 import ru.souz.tool.ToolCategory
 
 // Immutable context threaded through the graph
