@@ -82,12 +82,10 @@ class TelegramService(
         extractMessageText = { message -> extractMessageText(message) },
     )
 
-    @Volatile
-    private var clientFactory: SimpleTelegramClientFactory? = null
+    private val clientFactoryRef = AtomicReference<SimpleTelegramClientFactory?>(null)
     private val clientMutex = Mutex()
 
-    @Volatile
-    private var client: SimpleTelegramClient? = null
+    private val clientRef = AtomicReference<SimpleTelegramClient?>(null)
 
     init {
         applyTdlightLogLevel(isTelegramDebugLogsEnabled())
@@ -161,7 +159,7 @@ class TelegramService(
 
     suspend fun logout() {
         ensureSupported()
-        val currentClient = client ?: return
+        val currentClient = clientRef.get() ?: return
         authStateFlow.update {
             it.copy(
                 step = TelegramAuthStep.LOGGING_OUT,
@@ -568,14 +566,14 @@ class TelegramService(
     private suspend fun requireClient(): SimpleTelegramClient {
         startClientIfNeeded()
         requireReady()
-        return client ?: throw IllegalStateException("Telegram client is not initialized")
+        return clientRef.get() ?: throw IllegalStateException("Telegram client is not initialized")
     }
 
     private suspend fun startClientIfNeeded() {
         ensureSupported()
         clientMutex.withLock {
             ensureSupported()
-            if (client != null) {
+            if (clientRef.get() != null) {
                 return
             }
 
@@ -622,9 +620,9 @@ class TelegramService(
                 onUnhandledError(throwable)
             }
 
-            client = runCatching {
+            clientRef.set(runCatching {
                 builder.build(authBridge)
-            }.onFailure(::onUnhandledError).getOrElse { throw it }
+            }.onFailure(::onUnhandledError).getOrElse { throw it })
 
             authStateFlow.update {
                 it.copy(
@@ -639,8 +637,7 @@ class TelegramService(
     private suspend fun restartClient() {
         ensureSupported()
         clientMutex.withLock {
-            val oldClient = client
-            client = null
+            val oldClient = clientRef.getAndSet(null)
             authBridge.reset()
             clearCaches()
 
@@ -655,9 +652,12 @@ class TelegramService(
     }
 
     private fun resolveClientFactory(): SimpleTelegramClientFactory {
-        clientFactory?.let { return it }
-        return SimpleTelegramClientFactory().also { created ->
-            clientFactory = created
+        clientFactoryRef.get()?.let { return it }
+        val created = SimpleTelegramClientFactory()
+        return if (clientFactoryRef.compareAndSet(null, created)) {
+            created
+        } else {
+            clientFactoryRef.get() ?: created
         }
     }
 
@@ -766,7 +766,7 @@ class TelegramService(
     }
 
     private suspend fun refreshMeAndCaches() {
-        val tdClient = client ?: return
+        val tdClient = clientRef.get() ?: return
 
         val me = tdClient.send(TdApi.GetMe()).awaitResult()
         meUserIdRef.set(me.id)
@@ -781,7 +781,7 @@ class TelegramService(
     }
 
     private suspend fun refreshContactsCache() {
-        val tdClient = client ?: return
+        val tdClient = clientRef.get() ?: return
 
         val contacts = tdClient.send(TdApi.GetContacts()).awaitResult().userIds?.toList().orEmpty()
         if (contacts.isEmpty()) {
@@ -804,7 +804,7 @@ class TelegramService(
     }
 
     private suspend fun refreshTopChatsCache(limit: Int = TELEGRAM_CHAT_CACHE_WARMUP_LIMIT) {
-        val tdClient = client ?: return
+        val tdClient = clientRef.get() ?: return
         val cappedLimit = limit.coerceIn(1, TELEGRAM_MAX_CHATS_CACHE)
         val chatFetchSemaphore = Semaphore(TELEGRAM_CHAT_FETCH_CONCURRENCY)
 

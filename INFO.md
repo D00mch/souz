@@ -15,8 +15,8 @@ If you are not sure about something, left a note for other developers to review.
 ### Development principles
 
 - Prefer composition to inheritance. 
-- Do not mix coroutines with the JVM low level concurrency (volatile, synchronize, Threads, ThreadLocal, etc).
-- Utilize open closed.
+- Do not mix coroutines with the JVM low level concurrency primitives such as: Volatile, Synchronize, ThreadLocal, etc).
+- Utilize open closed principle.
 
 ## Features
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
@@ -29,15 +29,6 @@ If you are not sure about something, left a note for other developers to review.
 - **Two-mode internet search**: quick-answer web lookup for simple factual questions and multi-step research mode with LLM-built strategy, broader source coverage, cited long-form synthesis, and automatic `.md` export for oversized reports.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
 
-## Local Native Bridge
-
-- `third_party/llama.cpp` and `native/llama-bridge/build-*` are local-only paths and should stay untracked.
-- Treat those paths as out of scope unless the task is explicitly about updating upstream `llama.cpp` or debugging the native bridge build.
-- Packaged bridge binaries live in `composeApp/src/jvmMain/resources/darwin-*`.
-- Rebuild the packaged bridge binaries with `composeApp/src/jvmMain/resources/scripts/build-llama-bridge.sh`.
-- The rebuild script uses `LLAMA_CPP_SOURCE_DIR` when set, otherwise a local `third_party/llama.cpp` checkout, otherwise it clones the pinned `llama.cpp` ref `968189729f71bf1dbe109556986ddf2e2cf3e534` into `${XDG_CACHE_HOME:-~/.cache}/souz/vendor/llama.cpp`.
-- On macOS the bridge now disables ggml Metal residency sets by default (`GGML_METAL_NO_RESIDENCY=1`) to avoid shutdown aborts; set `SOUZ_LLAMA_METAL_RESIDENCY=1` only if you need to opt back in for debugging.
-
 ## Project Structure
 
 ```text
@@ -48,6 +39,9 @@ If you are not sure about something, left a note for other developers to review.
 │   ├── release.md                          # Release-specific notes
 │   ├── telemetry-backend.md                # Telemetry backend contract
 │   └── voice-transcription.md              # Voice transcription routing and upload behavior
+├── native/                                 # Native bridge sources and local notes
+│   ├── INFO.md                             # Local native bridge notes
+│   └── llama-bridge/                       # JNI bridge sources and local-only build-* dirs
 ├── composeApp/                             # Main desktop application module
 │   ├── build/                              # Build output for composeApp (generated)
 │   ├── composeApp/                         # Auxiliary nested folder with test resource skeleton

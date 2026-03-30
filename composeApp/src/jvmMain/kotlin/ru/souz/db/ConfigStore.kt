@@ -16,6 +16,7 @@ import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.util.concurrent.atomic.AtomicReference
 import java.util.prefs.Preferences
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
@@ -84,7 +85,7 @@ internal object SecretPrefsCodec {
     private const val LOCAL_APP_DIR_NAME = "Souz"
     private const val LOCAL_MASTER_KEY_FILE = "master.key"
     private val secureRandom = SecureRandom()
-    @Volatile private var cachedLocalMasterSecret: String? = null
+    private val cachedLocalMasterSecret = AtomicReference<String?>(null)
     private val localMasterSecretLock = Any()
 
     private val exactSensitiveKeys = setOf(
@@ -195,11 +196,11 @@ internal object SecretPrefsCodec {
                 ?: localMasterSecret()
 
     private fun localMasterSecret(): String {
-        cachedLocalMasterSecret?.let { return it }
+        cachedLocalMasterSecret.get()?.let { return it }
         return synchronized(localMasterSecretLock) {
-            cachedLocalMasterSecret?.let { return@synchronized it }
+            cachedLocalMasterSecret.get()?.let { return@synchronized it }
             val loaded = loadOrCreateLocalMasterSecret()
-            cachedLocalMasterSecret = loaded
+            cachedLocalMasterSecret.set(loaded)
             loaded
         }
     }

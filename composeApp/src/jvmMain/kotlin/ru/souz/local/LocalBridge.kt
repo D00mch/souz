@@ -7,6 +7,7 @@ import com.sun.jna.Pointer
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.concurrent.atomic.AtomicReference
 import org.slf4j.LoggerFactory
 
 internal interface SouzLlamaBridgeLibrary : Library {
@@ -39,8 +40,7 @@ class LocalBridgeLoader(
 ) {
     private val l = LoggerFactory.getLogger(LocalBridgeLoader::class.java)
 
-    @Volatile
-    private var cached: LoadedBridge? = null
+    private val cached = AtomicReference<LoadedBridge?>(null)
 
     fun healthcheck(): String {
         val library = loadLibrary()
@@ -55,14 +55,14 @@ class LocalBridgeLoader(
         val platform = host.platform
             ?: error("Unsupported platform for local inference: ${host.osName} (${host.osArch})")
 
-        cached?.takeIf { it.platform == platform }?.let { return it.library }
+        cached.get()?.takeIf { it.platform == platform }?.let { return it.library }
 
         synchronized(this) {
-            cached?.takeIf { it.platform == platform }?.let { return it.library }
+            cached.get()?.takeIf { it.platform == platform }?.let { return it.library }
             val extracted = extractLibrary(platform)
             l.info("Loading local bridge from {}", extracted)
             val library = Native.load(extracted.toAbsolutePath().toString(), SouzLlamaBridgeLibrary::class.java)
-            cached = LoadedBridge(platform = platform, path = extracted, library = library)
+            cached.set(LoadedBridge(platform = platform, path = extracted, library = library))
             return library
         }
     }
