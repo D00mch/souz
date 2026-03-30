@@ -42,6 +42,26 @@ If you are not sure about something, left a note for other developers to review.
 ├── native/                                 # Native bridge sources and local notes
 │   ├── INFO.md                             # Local native bridge notes
 │   └── llama-bridge/                       # JNI bridge sources and local-only build-* dirs
+├── agent/                                  # Standalone JVM module for the agent runtime and shared agent-facing types
+│   ├── build.gradle.kts                    # Agent module build
+│   ├── INFO.md                             # Agent notes
+│   └── src/
+│       └── main/
+│           └── kotlin/
+│               └── ru/souz/
+│                   ├── agent/              # Graph-based agent runtime, nodes, execution, sessions, and SPI
+│                   │   ├── README.md       # Agent package overview and host boundary notes
+│                   │   ├── INFO.md         # Local notes for the agent package
+│                   │   ├── engine/         # Graph primitives and runner/runtime contracts
+│                   │   ├── impl/           # Agent implementations (standard and Lua-backed)
+│                   │   ├── nodes/          # LLM, MCP, classification, summarization, and error nodes
+│                   │   ├── runtime/        # Lua runtime and tool execution delegation
+│                   │   ├── session/        # Persisted graph session models and services
+│                   │   └── spi/            # Interfaces implemented by composeApp services and factories
+│                   ├── db/                 # Shared stored-data models used by agent and desktop indexing
+│                   ├── llms/               # Shared LLM DTOs and chat/tool contracts
+│                   │   └── giga/           # Giga provider interfaces and tool setup contract
+│                   └── tool/               # Shared tool categories and message classifier contract
 ├── composeApp/                             # Main desktop application module
 │   ├── build/                              # Build output for composeApp (generated)
 │   ├── composeApp/                         # Auxiliary nested folder with test resource skeleton
@@ -55,55 +75,61 @@ If you are not sure about something, left a note for other developers to review.
 │       │   │   └── drawable/               # Application icons and drawable assets
 │       │   ├── kotlin/
 │       │   │   └── ru/souz/                # Application Kotlin code
-│       │   │       ├── agent/              # Graph-based agent assembly. The main agent related logic is here
-│       │   │       │   ├── engine/         # Core graph primitives (Node, Graph, runner/runtime)
-│       │   │       │   ├── impl/           # Agent implementations: Lua scripts and Function calling
-│       │   │       │   ├── runtime/        # LuaRuntime, ToolExecution
-│       │   │       │   ├── nodes/          # Graph node implementations (LLM, MCP, classification, etc.)
-│       │   │       │   └── session/        # Graph session models, repository, and service
-│       │   │       ├── audio/              # Audio capture/playback utilities
-│       │   │       ├── db/                 # Local config/data extraction/vector DB layer
-│       │   │       ├── di/                 # Dependency wiring (DI container setup)
-│       │   │       ├── edition/            # Runtime build edition parsing/config (RU/EN)
-│       │   │       ├── giga/               # GigaChat auth/chat/voice clients and edition-aware model profile
-│       │   │       ├── image/              # Image utility helpers
-│       │   │       ├── keys/               # Keyboard listeners and key automation
-│       │   │       ├── libs/               # Native library bridge wrappers
-│       │   │       ├── llms/               # Additional LLM provider clients (Qwen, AiTunnel, Anthropic)
-│       │   │       ├── mcp/                # MCP sessions, transport, config, OAuth, protocol adapter
-│       │   │       ├── permissions/        # Permission/relaunch helpers
-│       │   │       ├── service/            # Service-layer integrations
-│       │   │       │   └── telegram/       # Telegram client (TdLib) + bot polling/controller workflows
-│       │   │       │       └── INFO.md     # Local notes for service/telegram package
-│       │   │       ├── telemetry/
-│       │   │       ├── tool/               # Tool framework and concrete tool implementations
-│       │   │       │   ├── application/    # App launch/list tools
-│       │   │       │   ├── browser/        # Browser operations/hotkeys/tab control
+│       │   │       ├── App.kt              # Compose desktop app shell
+│       │   │       ├── Main.kt             # JVM entry point
+│       │   │       ├── TextMain.kt         # Text-mode/dev entry point
+│       │   │       ├── db/                 # Settings, config store, desktop info, and vector DB layer
+│       │   │       ├── di/                 # Dependency wiring
+│       │   │       ├── llms/               # Provider implementations, profiles, and provider factory
+│       │   │       │   ├── anthropic/      # Anthropic chat client and Ktor defaults
+│       │   │       │   ├── giga/           # GigaChat auth, REST chat, tools, and voice clients
+│       │   │       │   ├── local/          # Local llama.cpp bridge, model store/catalog, strict JSON support
+│       │   │       │   │   └── INFO.md     # Local notes for the local provider
+│       │   │       │   ├── openai/         # OpenAI chat and voice clients
+│       │   │       │   ├── qwen/           # Qwen chat client
+│       │   │       │   └── tunnel/         # AiTunnel chat and voice clients
+│       │   │       ├── service/            # Runtime integrations and OS-facing helpers
+│       │   │       │   ├── audio/          # Audio recording and playback services
+│       │   │       │   ├── files/          # File access service helpers
+│       │   │       │   ├── image/          # Image utility service helpers
+│       │   │       │   ├── keys/           # Key listener, native, and robot input helpers
+│       │   │       │   ├── mcp/            # MCP client/session/config/OAuth/protocol services
+│       │   │       │   ├── permissions/    # Relaunch and macOS permission helpers
+│       │   │       │   ├── telegram/       # Telegram service, auth bridge, bot workflows, and lookup
+│       │   │       │   │   └── INFO.md     # Local notes for service/telegram package
+│       │   │       │   └── telemetry/      # Telemetry crypto, outbox storage, runtime config, and delivery
+│       │   │       │       └── INFO.md     # Local notes for service/telemetry package
+│       │   │       ├── tool/               # Tool registry, permissions, classifiers, and implementations
+│       │   │       │   ├── application/    # App launch and listing tools
+│       │   │       │   ├── browser/        # Browser control, hotkeys, and tab/page tools
 │       │   │       │   ├── calendar/       # Calendar list/create/delete tools
-│       │   │       │   ├── config/         # Runtime sound/instruction config tools
-│       │   │       │   ├── dataAnalytics/  # CSV analytics and plotting
-│       │   │       │   │   └── excel/      # Excel read/report helpers
+│       │   │       │   ├── config/         # Runtime sound and instruction config tools
+│       │   │       │   ├── dataAnalytics/  # CSV analytics and plotting tools
+│       │   │       │   │   └── excel/      # Excel ingestion/report helpers
 │       │   │       │   ├── desktop/        # Desktop automation (windows, mouse, screenshots, media)
 │       │   │       │   ├── files/          # File discovery/read/modify/extract tools
 │       │   │       │   ├── mail/           # Mail search/read/send/reply tools
 │       │   │       │   ├── math/           # Calculator tool
 │       │   │       │   ├── notes/          # Notes CRUD/search tools
-│       │   │       │   ├── presentation/   # Presentation create/read/style helpers
-│       │   │       │   ├── web/            # Internet search, page fetch, image search/download helpers
-│       │   │       │   ├── telegram/       # Telegram messaging/search/inbox tool adapters
+│       │   │       │   ├── presentation/   # Presentation create/read/theme helpers
+│       │   │       │   ├── telegram/       # Telegram messaging, inbox, history, selection, and approval
 │       │   │       │   │   └── INFO.md     # Local notes for tool/telegram package
-│       │   │       │   └── textReplace/    # Clipboard and selected-text tools
-│       │   │       └── ui/                 # Compose UI layer
-│       │   │           ├── common/         # Shared UI utilities/components
-│       │   │           ├── components/     # Reusable UI widgets
-│       │   │           ├── graphlog/       # Graph sessions visualization screens
-│       │   │           ├── main/           # Main chat screen/view-model. Agent interaction happens here
-│       │   │           │   ├── usecases/   # Main flow use cases (chat, speech, onboarding)
+│       │   │       │   ├── textReplace/    # Clipboard and selected-text tools
+│       │   │       │   └── web/            # Internet search, research, page text, and image search tools
+│       │   │       │       └── internal/   # Web execution, parsing, and report-formatting internals
+│       │   │       └── ui/                 # Compose UI screens, view-model base classes, and components
+│       │   │           ├── common/         # Shared UI helpers, dialogs, links, and profile toggle
+│       │   │           │   └── usecases/   # Shared UI use cases
+│       │   │           ├── components/     # Reusable Compose widgets
+│       │   │           ├── graphlog/       # Graph sessions and visualization screens
+│       │   │           ├── macos/          # macOS-specific window presentation helpers
+│       │   │           ├── main/           # Main chat screen, view-model, thinking panel, and attachments
+│       │   │           │   ├── usecases/   # Main chat, speech, permissions, and attachments use cases
 │       │   │           │   └── INFO.md     # Local notes for ui/main package
-│       │   │           ├── settings/       # Settings screens and view-models
+│       │   │           ├── settings/       # Settings screens, model availability, and support flows
 │       │   │           │   └── INFO.md     # Local notes for ui/settings package
 │       │   │           ├── setup/          # First-run setup flow
-│       │   │           └── tools/          # Tool management/detail screens
+│       │   │           └── tools/          # Tool catalog, detail, and settings screens
 │       │   ├── resources/                  # Runtime resources
 │       │   │   ├── bot_avatar.png          # Default avatar image for the Telegram PC Control bot
 │       │   │   ├── certs/                  # Trusted certificate bundles

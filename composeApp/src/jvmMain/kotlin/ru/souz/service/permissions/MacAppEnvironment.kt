@@ -1,0 +1,45 @@
+package ru.souz.service.permissions
+
+import java.io.File
+
+object MacAppEnvironment {
+    private const val SANDBOX_HOME_MARKER = "/Library/Containers/"
+    private val osName: String = System.getProperty("os.name", "")
+    private val processHomeCandidates: List<String>
+        get() = listOf(System.getProperty("user.home"), System.getenv("HOME"))
+            .map { it?.trim().orEmpty() }
+            .filter { it.isNotBlank() }
+
+    private val processHome: String
+        get() = processHomeCandidates.firstOrNull().orEmpty()
+
+    val isMac: Boolean = osName.contains("mac", ignoreCase = true)
+
+    val isSandboxed: Boolean by lazy {
+        if (!isMac) return@lazy false
+        val sandboxContainerId = System.getenv("APP_SANDBOX_CONTAINER_ID")
+        if (!sandboxContainerId.isNullOrBlank()) return@lazy true
+
+        processHomeCandidates.any { it.contains(SANDBOX_HOME_MARKER) }
+    }
+
+    /**
+     * Filesystem root for app-private data (config/cache/db/logs).
+     * In sandbox this should stay inside the container.
+     */
+    val appDataHome: String by lazy {
+        when {
+            isSandboxed -> processHomeCandidates.firstOrNull { it.contains(SANDBOX_HOME_MARKER) }
+                ?: processHome.ifBlank { resolveRealHomeFromUserName().orEmpty() }
+
+            else -> processHome.ifBlank { resolveRealHomeFromUserName().orEmpty() }
+        }
+    }
+
+    private fun resolveRealHomeFromUserName(): String? {
+        val user = System.getProperty("user.name").orEmpty().trim()
+        if (user.isBlank()) return null
+        val candidate = "/Users/$user"
+        return candidate.takeIf { File(it).isDirectory }
+    }
+}

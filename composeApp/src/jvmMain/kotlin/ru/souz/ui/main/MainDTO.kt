@@ -1,14 +1,14 @@
 package ru.souz.ui.main
 
 import ru.souz.agent.engine.AgentContext
-import ru.souz.giga.DEFAULT_MAX_TOKENS
+import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaModel
-import ru.souz.local.LocalModelDownloadPrompt
-import ru.souz.local.LocalModelDownloadState
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaModel
+import ru.souz.llms.local.LocalModelDownloadPrompt
+import ru.souz.llms.local.LocalModelDownloadState
 
 /**
  * Chat message for the chat mode.

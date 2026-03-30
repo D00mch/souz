@@ -2,7 +2,7 @@ package ru.souz.ui.main
 
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
-import ru.souz.giga.GigaResponse
+import ru.souz.llms.GigaResponse
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 

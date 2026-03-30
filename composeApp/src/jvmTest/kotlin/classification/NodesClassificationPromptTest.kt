@@ -12,15 +12,15 @@ import ru.souz.agent.engine.AgentSettings
 import ru.souz.agent.engine.GraphRuntime
 import ru.souz.agent.engine.RetryPolicy
 import ru.souz.agent.nodes.NodesClassification
+import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.GigaModel
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.GigaToolSetup
+import ru.souz.llms.GigaModel
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.giga.GigaToolSetup
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.ToolsFactory
-import ru.souz.tool.ToolsSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -70,7 +70,7 @@ class NodesClassificationPromptTest {
     @Test
     fun `applyFilter disables telegram tools when telegram is not connected`() {
         val toolsWithTelegram = defaultTools + (ToolCategory.TELEGRAM to mapOf("TgRead" to dummySetup("TgRead")))
-        val toolsFactory = mockk<ToolsFactory> { every { toolsByCategory } returns toolsWithTelegram }
+        val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns toolsWithTelegram }
         val toolsSettings = mockTelegramFilteredToolsSettings(telegramConnected = false)
 
         val filtered = toolsSettings.applyFilter(toolsFactory.toolsByCategory)
@@ -81,7 +81,7 @@ class NodesClassificationPromptTest {
     @Test
     fun `applyFilter keeps telegram tools when telegram is connected`() {
         val toolsWithTelegram = defaultTools + (ToolCategory.TELEGRAM to mapOf("TgRead" to dummySetup("TgRead")))
-        val toolsFactory = mockk<ToolsFactory> { every { toolsByCategory } returns toolsWithTelegram }
+        val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns toolsWithTelegram }
         val toolsSettings = mockTelegramFilteredToolsSettings(telegramConnected = true)
 
         val filtered = toolsSettings.applyFilter(toolsFactory.toolsByCategory)
@@ -110,8 +110,8 @@ class NodesClassificationPromptTest {
                 confidence = 90.0,
             )
         }
-        val toolsFactory = mockk<ToolsFactory> { every { toolsByCategory } returns localTools }
-        val toolsSettings = mockk<ToolsSettings> {
+        val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns localTools }
+        val toolsSettings = mockk<AgentToolsFilter> {
             every { applyFilter(any()) } answers { firstArg() }
         }
         val classification = NodesClassification(
@@ -119,8 +119,8 @@ class NodesClassificationPromptTest {
             logObjectMapper = ObjectMapper(),
             apiClassifier = apiClassifier,
             localClassifier = localClassifier,
-            toolsFactory = toolsFactory,
-            toolsSettings = toolsSettings,
+            toolCatalog = toolsFactory,
+            toolsFilter = toolsSettings,
         )
 
         val result = kotlinx.coroutines.runBlocking {
@@ -144,8 +144,8 @@ class NodesClassificationPromptTest {
         coVerify(exactly = 1) { apiClassifier.classify(any()) }
     }
 
-    private fun mockTelegramFilteredToolsSettings(telegramConnected: Boolean): ToolsSettings {
-        return mockk<ToolsSettings>().also { toolsSettings ->
+    private fun mockTelegramFilteredToolsSettings(telegramConnected: Boolean): AgentToolsFilter {
+        return mockk<AgentToolsFilter>().also { toolsSettings ->
             every { toolsSettings.applyFilter(any()) } answers {
                 val input = firstArg<Map<ToolCategory, Map<String, GigaToolSetup>>>()
                 if (telegramConnected) input else input - ToolCategory.TELEGRAM
@@ -162,8 +162,8 @@ class NodesClassificationPromptTest {
             logObjectMapper = ObjectMapper(),
             apiClassifier = mockk(relaxed = true),
             localClassifier = mockk(relaxed = true),
-            toolsFactory = mockk(relaxed = true),
-            toolsSettings = mockk(relaxed = true),
+            toolCatalog = mockk<AgentToolCatalog>(relaxed = true),
+            toolsFilter = mockk<AgentToolsFilter>(relaxed = true),
         )
 
         return classification.buildPrompt(filteredTools)

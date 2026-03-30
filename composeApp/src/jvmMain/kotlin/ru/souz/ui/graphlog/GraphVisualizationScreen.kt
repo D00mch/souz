@@ -1170,10 +1170,13 @@ fun ExpandableStepItem(
                         }
                     }
 
-                    if (!isClassifyStep && !step.outputSummary.isNullOrEmpty() && step.inputSummary != step.outputSummary) {
+                    val outputSummary = step.outputSummary
+                    val addedHistory = step.addedHistory
+
+                    if (!isClassifyStep && !outputSummary.isNullOrEmpty() && step.inputSummary != outputSummary) {
                         Text("IO DIFF", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
-                        DiffContent(original = step.inputSummary, revised = step.outputSummary)
-                    } else if (!isClassifyStep || step.outputSummary.isNullOrEmpty()) {
+                        DiffContent(original = step.inputSummary, revised = outputSummary)
+                    } else if (!isClassifyStep || outputSummary.isNullOrEmpty()) {
                         // Input
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                              Text("INPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
@@ -1187,11 +1190,11 @@ fun ExpandableStepItem(
                              )
                         }
 
-                        if (!step.outputSummary.isNullOrEmpty() && !isClassifyStep) {
+                        if (!outputSummary.isNullOrEmpty() && !isClassifyStep) {
                              Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                  Text("OUTPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
                                  Text(
-                                     text = step.outputSummary.trim(), 
+                                     text = outputSummary.trim(), 
                                      style = TextStyle(
                                          fontFamily = FontFamily.Monospace, 
                                          fontSize = 11.sp, 
@@ -1202,7 +1205,7 @@ fun ExpandableStepItem(
                         }
                     }
 
-                    if (!step.addedHistory.isNullOrEmpty()) {
+                    if (!addedHistory.isNullOrEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text("SAVED TO HISTORY", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
                             Box(
@@ -1213,7 +1216,7 @@ fun ExpandableStepItem(
                                     .padding(8.dp)
                             ) {
                                 Text(
-                                    text = step.addedHistory,
+                                    text = addedHistory,
                                     style = TextStyle(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 10.sp,

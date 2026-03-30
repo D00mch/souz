@@ -1,11 +1,15 @@
 package giga
 
-import ru.souz.giga.*
 import ru.souz.tool.files.ToolListFiles
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.giga.GigaToolSetup
+import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.giga.toGiga
 import ru.souz.tool.files.FilesToolUtil
 import java.io.File
 import java.nio.file.Files

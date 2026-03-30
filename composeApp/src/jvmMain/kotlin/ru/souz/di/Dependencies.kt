@@ -9,8 +9,8 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.AgentFacade
-import ru.souz.agent.impl.GraphBasedAgent
-import ru.souz.agent.impl.LuaGraphBasedAgent
+import ru.souz.GraphBasedAgent
+import ru.souz.LuaGraphBasedAgent
 import ru.souz.agent.SystemPromptResolver
 import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.agent.nodes.NodesErrorHandling
@@ -22,49 +22,57 @@ import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.session.GraphSessionService
-import ru.souz.audio.ActiveSoundRecorderImpl
-import ru.souz.audio.InMemoryAudioRecorder
-import ru.souz.audio.Say
+import ru.souz.agent.spi.AgentDesktopInfoRepository
+import ru.souz.agent.spi.AgentErrorMessages
+import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.AgentTelemetry
+import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.agent.spi.DefaultBrowserProvider
+import ru.souz.agent.spi.McpToolProvider
+import ru.souz.service.audio.ActiveSoundRecorderImpl
+import ru.souz.service.audio.InMemoryAudioRecorder
+import ru.souz.service.audio.Say
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopDataExtractor
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
-import ru.souz.giga.ApiClassifier
-import ru.souz.giga.GigaAuth
-import ru.souz.giga.GigaChatAPI
-import ru.souz.giga.LLMFactory
-import ru.souz.giga.GigaRestChatAPI
-import ru.souz.giga.GigaVoiceAPI
-import ru.souz.giga.LlmBuildProfile
-import ru.souz.giga.SessionTokenLogging
-import ru.souz.giga.TokenLogging
-import ru.souz.keys.Keys
-import ru.souz.llms.AiTunnelChatAPI
-import ru.souz.llms.AiTunnelVoiceAPI
-import ru.souz.llms.AnthropicChatAPI
-import ru.souz.llms.OpenAIChatAPI
-import ru.souz.llms.OpenAIVoiceAPI
-import ru.souz.llms.QwenChatAPI
-import ru.souz.local.LocalBridgeLoader
-import ru.souz.local.LocalChatAPI
-import ru.souz.local.LocalHostInfoProvider
-import ru.souz.local.LocalLlamaRuntime
-import ru.souz.local.LocalModelStore
-import ru.souz.local.LocalNativeBridge
-import ru.souz.local.LocalPromptRenderer
-import ru.souz.local.LocalProviderAvailability
-import ru.souz.local.LocalStrictJsonParser
-import ru.souz.mcp.McpClientManager
-import ru.souz.mcp.McpConfigProvider
+import ru.souz.llms.ApiClassifier
+import ru.souz.llms.giga.GigaAuth
+import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.LLMFactory
+import ru.souz.llms.giga.GigaRestChatAPI
+import ru.souz.llms.giga.GigaVoiceAPI
+import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.SessionTokenLogging
+import ru.souz.llms.TokenLogging
+import ru.souz.service.keys.Keys
+import ru.souz.llms.tunnel.AiTunnelChatAPI
+import ru.souz.llms.tunnel.AiTunnelVoiceAPI
+import ru.souz.llms.anthropic.AnthropicChatAPI
+import ru.souz.llms.openai.OpenAIChatAPI
+import ru.souz.llms.openai.OpenAIVoiceAPI
+import ru.souz.llms.qwen.QwenChatAPI
+import ru.souz.llms.local.LocalBridgeLoader
+import ru.souz.llms.local.LocalChatAPI
+import ru.souz.llms.local.LocalHostInfoProvider
+import ru.souz.llms.local.LocalLlamaRuntime
+import ru.souz.llms.local.LocalModelStore
+import ru.souz.llms.local.LocalNativeBridge
+import ru.souz.llms.local.LocalPromptRenderer
+import ru.souz.llms.local.LocalProviderAvailability
+import ru.souz.llms.local.LocalStrictJsonParser
+import ru.souz.service.mcp.McpClientManager
+import ru.souz.service.mcp.McpConfigProvider
 import ru.souz.service.telegram.TelegramService
 import ru.souz.service.telegram.TelegramBotController
 import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.service.files.FilesService
-import ru.souz.telemetry.TelemetryOutboxRepository
-import ru.souz.telemetry.TelemetryCryptoService
-import ru.souz.telemetry.TelemetryRuntimeConfig
-import ru.souz.telemetry.TelemetryService
+import ru.souz.service.telemetry.TelemetryOutboxRepository
+import ru.souz.service.telemetry.TelemetryCryptoService
+import ru.souz.service.telemetry.TelemetryRuntimeConfig
+import ru.souz.service.telemetry.TelemetryService
 import ru.souz.tool.*
 import ru.souz.tool.application.*
 import ru.souz.tool.browser.*
@@ -142,10 +150,13 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { LocalProviderAvailability(instance(), instance(), instance()) }
     bindSingleton { SettingsProviderImpl(instance(), instance()) }
     bindSingleton<SettingsProvider> { instance<SettingsProviderImpl>() }
+    bindSingleton<AgentSettingsProvider> { instance<SettingsProviderImpl>() }
     bindSingleton { LlmBuildProfile(instance(), instance()) }
     bindSingleton { ApiKeyAvailabilityUseCase(instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
+    bindSingleton<AgentDesktopInfoRepository> { instance<DesktopInfoRepository>() }
     bindSingleton { ToolsSettings(instance(), instance(), instance(), instance()) }
+    bindSingleton<AgentToolsFilter> { instance<ToolsSettings>() }
     bindSingleton { FilesToolUtil(instance()) }
     bindSingleton<FilesService> { instance<FilesToolUtil>() }
     bindSingleton { ToolPermissionBroker(instance()) }
@@ -160,6 +171,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         )
     }
     bindSingleton { TelegramService(instance()) }
+    bindSingleton<DefaultBrowserProvider> { DefaultBrowserProviderImpl }
+    bindSingleton<AgentErrorMessages> { ComposeAgentErrorMessages() }
 
     // Tools
     bindSingleton { ToolRunBashCommand }
@@ -238,6 +251,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { TelemetryCryptoService() }
     bindSingleton { TelemetryRuntimeConfig.production() }
     bindSingleton { TelemetryService(instance(), instance(), instance(), instance()) }
+    bindSingleton<AgentTelemetry> { instance<TelemetryService>() }
     bindSingleton { AgentToolExecutor(instance()) }
 
     // API
@@ -269,8 +283,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
 
     // LLM
-    bindSingleton { NodesErrorHandling() }
-    bindSingleton { NodesCommon(instance(), instance(), instance()) }
+    bindSingleton { NodesErrorHandling(instance()) }
+    bindSingleton { NodesCommon(instance(), instance(), instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { LuaRuntime(instance()) }
     bindSingleton { NodesLua(instance(), instance()) }
@@ -287,6 +301,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         )
     }
     bindSingleton { ToolsFactory(di) }
+    bindSingleton<AgentToolCatalog> { instance<ToolsFactory>() }
     bindSingleton { SystemPromptResolver() }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
     bindSingleton { LuaGraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
@@ -296,5 +311,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { McpConfigProvider(instance()) }
     bindSingleton { McpClientManager(instance()) }
+    bindSingleton<McpToolProvider> { instance<McpClientManager>() }
 
 }

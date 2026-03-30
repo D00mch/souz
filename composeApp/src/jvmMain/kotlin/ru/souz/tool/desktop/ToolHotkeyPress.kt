@@ -1,7 +1,7 @@
 package ru.souz.tool.desktop
 
-import ru.souz.keys.HotKey
-import ru.souz.keys.Keys
+import ru.souz.service.keys.HotKey
+import ru.souz.service.keys.Keys
 import ru.souz.tool.*
 
 class ToolHotkeyMac(private val keys: Keys) : ToolSetup<ToolHotkeyMac.Input> {

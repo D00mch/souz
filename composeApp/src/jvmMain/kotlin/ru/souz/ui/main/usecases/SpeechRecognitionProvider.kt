@@ -3,10 +3,10 @@ package ru.souz.ui.main.usecases
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
-import ru.souz.giga.GigaVoiceAPI
-import ru.souz.giga.VoiceRecognitionProvider
-import ru.souz.llms.AiTunnelVoiceAPI
-import ru.souz.llms.OpenAIVoiceAPI
+import ru.souz.llms.giga.GigaVoiceAPI
+import ru.souz.llms.VoiceRecognitionProvider
+import ru.souz.llms.tunnel.AiTunnelVoiceAPI
+import ru.souz.llms.openai.OpenAIVoiceAPI
 
 /** Provide locality specific Voice recognition, e.g. SaluteSpeech for Ru. */
 interface SpeechRecognitionProvider {

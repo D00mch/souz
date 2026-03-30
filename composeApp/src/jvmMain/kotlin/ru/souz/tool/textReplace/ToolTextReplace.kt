@@ -1,6 +1,6 @@
 package ru.souz.tool.textReplace
 
-import ru.souz.keys.MrRobot
+import ru.souz.service.keys.MrRobot
 import ru.souz.tool.*
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection

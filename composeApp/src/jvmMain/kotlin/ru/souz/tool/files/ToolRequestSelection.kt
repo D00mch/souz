@@ -1,6 +1,6 @@
 package ru.souz.tool.files
 
-import ru.souz.keys.MrRobot
+import ru.souz.service.keys.MrRobot
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters

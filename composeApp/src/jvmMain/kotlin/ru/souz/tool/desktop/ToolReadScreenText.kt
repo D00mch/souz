@@ -1,6 +1,6 @@
 package ru.souz.tool.desktop
 
-import ru.souz.image.ImageUtils
+import ru.souz.service.image.ImageUtils
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -8,7 +8,6 @@ import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 import org.slf4j.LoggerFactory
-import ru.souz.audio.Say
 import java.io.File
 
 class ToolReadScreenText(

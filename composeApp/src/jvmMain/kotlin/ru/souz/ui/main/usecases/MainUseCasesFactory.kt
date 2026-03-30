@@ -2,11 +2,11 @@ package ru.souz.ui.main.usecases
 
 import kotlinx.coroutines.CoroutineDispatcher
 import ru.souz.agent.AgentFacade
-import ru.souz.audio.InMemoryAudioRecorder
-import ru.souz.audio.Say
+import ru.souz.service.audio.InMemoryAudioRecorder
+import ru.souz.service.audio.Say
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.TokenLogging
-import ru.souz.telemetry.TelemetryService
+import ru.souz.llms.TokenLogging
+import ru.souz.service.telemetry.TelemetryService
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 

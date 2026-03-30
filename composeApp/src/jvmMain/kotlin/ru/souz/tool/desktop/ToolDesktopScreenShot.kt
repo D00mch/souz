@@ -1,7 +1,7 @@
 package ru.souz.tool.desktop
 
-import ru.souz.giga.GigaChatAPI
-import ru.souz.image.ImageUtils
+import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.service.image.ImageUtils
 import ru.souz.tool.*
 import kotlinx.coroutines.runBlocking
 import org.kodein.di.DI

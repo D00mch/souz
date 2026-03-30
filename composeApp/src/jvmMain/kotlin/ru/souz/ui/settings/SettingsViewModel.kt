@@ -15,22 +15,22 @@ import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
-import ru.souz.audio.Say
+import ru.souz.service.audio.Say
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.db.VectorDB
-import ru.souz.giga.GigaChatAPI
-import ru.souz.giga.GigaModel
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.LlmBuildProfile
-import ru.souz.giga.LlmProvider
-import ru.souz.local.LocalModelDownloadState
-import ru.souz.local.LocalLlamaRuntime
-import ru.souz.local.LocalModelProfiles
-import ru.souz.local.LocalModelStore
-import ru.souz.local.downloadPromptFor
+import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.GigaModel
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LlmProvider
+import ru.souz.llms.local.LocalModelDownloadState
+import ru.souz.llms.local.LocalLlamaRuntime
+import ru.souz.llms.local.LocalModelProfiles
+import ru.souz.llms.local.LocalModelStore
+import ru.souz.llms.local.downloadPromptFor
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.service.telegram.TelegramService
@@ -383,7 +383,7 @@ class SettingsViewModel(
         is SettingsEffect.ShowSnackbar -> l.debug { "ignore effect: $effect" }
     }
 
-    private suspend fun applySelectedModel(model: ru.souz.giga.GigaModel) {
+    private suspend fun applySelectedModel(model: GigaModel) {
         flushPendingSystemPromptSave()
         val newPrompt = agentFacade.setModel(model)
         setState { copy(gigaModel = model, systemPrompt = newPrompt) }

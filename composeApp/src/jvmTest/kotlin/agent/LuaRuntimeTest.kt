@@ -10,8 +10,8 @@ import ru.souz.agent.runtime.LuaExecutionException
 import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.math.ToolCalculator
-import ru.souz.giga.toGiga
-import ru.souz.telemetry.TelemetryService
+import ru.souz.llms.giga.toGiga
+import ru.souz.service.telemetry.TelemetryService
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith

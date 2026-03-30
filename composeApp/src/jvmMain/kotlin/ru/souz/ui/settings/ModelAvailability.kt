@@ -2,12 +2,12 @@ package ru.souz.ui.settings
 
 import ru.souz.db.SettingsProvider
 import ru.souz.db.hasKey
-import ru.souz.giga.EmbeddingsModel
-import ru.souz.giga.GigaModel
-import ru.souz.giga.LlmBuildProfile
-import ru.souz.giga.LlmProvider
-import ru.souz.giga.VoiceRecognitionModel
-import ru.souz.giga.VoiceRecognitionProvider
+import ru.souz.llms.EmbeddingsModel
+import ru.souz.llms.GigaModel
+import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LlmProvider
+import ru.souz.llms.VoiceRecognitionModel
+import ru.souz.llms.VoiceRecognitionProvider
 
 fun SettingsProvider.availableLlmModels(llmBuildProfile: LlmBuildProfile): List<GigaModel> =
     llmBuildProfile.availableModels.filter { model -> this.hasKey(model.provider) }

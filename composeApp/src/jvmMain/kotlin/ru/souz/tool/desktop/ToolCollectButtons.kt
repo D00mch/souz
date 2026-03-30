@@ -1,12 +1,12 @@
 package ru.souz.tool.desktop
 
-import ru.souz.giga.toGiga
-import ru.souz.image.ImageUtils
+import ru.souz.llms.giga.toGiga
+import ru.souz.service.image.ImageUtils
 import ru.souz.tool.*
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 
 
 class ToolCollectButtons(

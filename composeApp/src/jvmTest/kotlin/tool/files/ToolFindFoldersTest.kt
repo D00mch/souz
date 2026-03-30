@@ -4,7 +4,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.files.ToolFindFolders
 import ru.souz.tool.files.FilesToolUtil

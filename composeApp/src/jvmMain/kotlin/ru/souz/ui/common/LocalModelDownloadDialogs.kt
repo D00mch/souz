@@ -65,8 +65,8 @@ import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 import java.util.Locale
 import org.jetbrains.compose.resources.stringResource
-import ru.souz.local.LocalModelDownloadPrompt
-import ru.souz.local.LocalModelDownloadState
+import ru.souz.llms.local.LocalModelDownloadPrompt
+import ru.souz.llms.local.LocalModelDownloadState
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.local_model_download_cancel
 import souz.composeapp.generated.resources.local_model_download_detail_license

@@ -3,7 +3,7 @@ package tool.files
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.mockk.every
 import io.mockk.mockk
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.files.ToolFindInFiles
 import java.io.File

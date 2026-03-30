@@ -1,6 +1,6 @@
 package ru.souz.db
 
-import ru.souz.mcp.OAUTH_STORE_PREFIX
+import ru.souz.service.mcp.OAUTH_STORE_PREFIX
 import java.util.UUID
 import java.util.prefs.Preferences
 import kotlin.test.AfterTest

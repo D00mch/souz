@@ -1,6 +1,6 @@
 package ru.souz.tool.textReplace
 
-import ru.souz.keys.MrRobot
+import ru.souz.service.keys.MrRobot
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty

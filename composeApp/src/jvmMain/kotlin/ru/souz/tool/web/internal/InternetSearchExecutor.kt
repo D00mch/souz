@@ -5,11 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.GigaChatAPI
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaResponse
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.tool.files.FilesToolUtil
 import java.io.File
 import java.nio.charset.StandardCharsets

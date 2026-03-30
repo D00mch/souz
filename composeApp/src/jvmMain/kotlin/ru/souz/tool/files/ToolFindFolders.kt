@@ -10,7 +10,7 @@ import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 import java.io.File
 import ru.souz.db.SettingsProviderImpl
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 
 class ToolFindFolders(
     private val bash: ToolRunBashCommand,

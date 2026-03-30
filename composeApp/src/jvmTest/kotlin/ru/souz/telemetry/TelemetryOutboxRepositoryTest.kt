@@ -1,6 +1,9 @@
 package ru.souz.telemetry
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import ru.souz.service.telemetry.TelemetryEvent
+import ru.souz.service.telemetry.TelemetryEventType
+import ru.souz.service.telemetry.TelemetryOutboxRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

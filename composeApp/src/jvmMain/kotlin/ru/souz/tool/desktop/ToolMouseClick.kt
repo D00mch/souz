@@ -1,7 +1,9 @@
 package ru.souz.tool.desktop
 
-import ru.souz.image.ImageUtils
-import ru.souz.keys.*
+import ru.souz.service.image.ImageUtils
+import ru.souz.service.keys.CGPoint
+import ru.souz.service.keys.CoreFoundation
+import ru.souz.service.keys.CoreGraphics
 import ru.souz.tool.*
 
 private object CG {

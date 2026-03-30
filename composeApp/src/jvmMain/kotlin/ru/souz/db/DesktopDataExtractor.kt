@@ -6,7 +6,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.souz.di.mainDiModule
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.tool.browser.ToolChromeInfo
 import ru.souz.tool.browser.detectDefaultBrowser
 import ru.souz.tool.config.ToolInstructionStore

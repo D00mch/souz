@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
-import ru.souz.audio.Say
+import ru.souz.service.audio.Say
 import ru.souz.ui.main.MainState
 
 class SpeechUseCase(

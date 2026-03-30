@@ -12,9 +12,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
-import ru.souz.permissions.AppRelauncher
-import ru.souz.permissions.MacAppEnvironment
-import ru.souz.permissions.MacInputMonitoringAccess
+import ru.souz.service.permissions.AppRelauncher
+import ru.souz.service.permissions.MacAppEnvironment
+import ru.souz.service.permissions.MacInputMonitoringAccess
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.ui.main.ChatMessage
@@ -28,7 +28,6 @@ import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import java.awt.GraphicsEnvironment
-import java.util.concurrent.ConcurrentHashMap
 
 class PermissionsUseCase(
     private val settingsProvider: SettingsProvider,

@@ -3,10 +3,7 @@ package ru.souz.llms
 import io.mockk.every
 import io.mockk.mockk
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.GigaMessageRole
-import ru.souz.giga.GigaModel
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.TokenLogging
+import ru.souz.llms.anthropic.AnthropicChatAPI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

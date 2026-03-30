@@ -5,7 +5,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.tool.BadInputException
 import java.net.URLDecoder
 import java.net.URLEncoder

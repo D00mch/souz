@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import org.slf4j.Logger
 import ru.souz.db.ConfigStore
+import ru.souz.llms.giga.gigaJsonMapper
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -542,7 +543,7 @@ internal class TelegramBotWorkflow(
             botLookupHttpClient.send(request, HttpResponse.BodyHandlers.ofString()).body()
         }.getOrNull() ?: return null
 
-        val json = runCatching { ru.souz.giga.gigaJsonMapper.readTree(body) }.getOrNull() ?: return null
+        val json = runCatching { gigaJsonMapper.readTree(body) }.getOrNull() ?: return null
         if (!json.path("ok").asBoolean(false)) {
             return null
         }

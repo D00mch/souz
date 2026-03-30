@@ -2,10 +2,11 @@ package ru.souz.tool
 
 import org.kodein.di.DI
 import org.kodein.di.instance
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.db.SettingsProvider
-import ru.souz.giga.GigaRequest
-import ru.souz.giga.GigaToolSetup
-import ru.souz.giga.toGiga
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.giga.GigaToolSetup
+import ru.souz.llms.giga.toGiga
 import ru.souz.tool.application.*
 import ru.souz.tool.browser.*
 import ru.souz.tool.calendar.*
@@ -35,7 +36,7 @@ import ru.souz.tool.web.ToolWebPageText
 
 typealias FunctionName = String
 
-class ToolsFactory(di: DI) {
+class ToolsFactory(di: DI) : AgentToolCatalog {
     private val settingsProvider: SettingsProvider by di.instance()
 
     private val toolListFiles: ToolListFiles by di.instance()
@@ -103,7 +104,7 @@ class ToolsFactory(di: DI) {
     private val toolPresentationCreate: ToolPresentationCreate by di.instance()
     private val toolPresentationRead: ToolPresentationRead by di.instance()
 
-    val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
+    override val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
             category.tools().associateBy { it.fn.name }
         }

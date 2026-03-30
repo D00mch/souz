@@ -6,11 +6,16 @@ import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.AiTunnelChatAPI
-import ru.souz.llms.AnthropicChatAPI
-import ru.souz.llms.OpenAIChatAPI
-import ru.souz.llms.QwenChatAPI
-import ru.souz.local.LocalChatAPI
+import ru.souz.llms.tunnel.AiTunnelChatAPI
+import ru.souz.llms.anthropic.AnthropicChatAPI
+import ru.souz.llms.EmbeddingsModel
+import ru.souz.llms.GigaRequest
+import ru.souz.llms.GigaResponse
+import ru.souz.llms.giga.GigaRestChatAPI
+import ru.souz.llms.LLMFactory
+import ru.souz.llms.openai.OpenAIChatAPI
+import ru.souz.llms.qwen.QwenChatAPI
+import ru.souz.llms.local.LocalChatAPI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

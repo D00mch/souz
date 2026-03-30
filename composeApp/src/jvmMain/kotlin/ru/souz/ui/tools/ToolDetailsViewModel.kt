@@ -7,7 +7,7 @@ import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolCategorySettings

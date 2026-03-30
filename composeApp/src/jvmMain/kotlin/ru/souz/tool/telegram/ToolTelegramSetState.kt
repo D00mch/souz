@@ -4,7 +4,7 @@ import kotlinx.coroutines.runBlocking
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.service.telegram.TelegramChatAction
 import ru.souz.service.telegram.TelegramService
 import ru.souz.tool.BadInputException

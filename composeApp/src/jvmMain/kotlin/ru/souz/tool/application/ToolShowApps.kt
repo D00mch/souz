@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.souz.di.mainDiModule
-import ru.souz.giga.gigaJsonMapper
+import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.tool.*
 import ru.souz.tool.files.FilesToolUtil
 

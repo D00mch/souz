@@ -25,12 +25,13 @@ import org.kodein.di.compose.withDI
 import org.kodein.di.instance
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
-import ru.souz.local.LocalLlamaRuntime
-import ru.souz.mcp.McpClientManager
-import ru.souz.telemetry.TelemetryService
+import ru.souz.llms.local.LocalLlamaRuntime
+import ru.souz.service.mcp.McpClientManager
+import ru.souz.service.telemetry.TelemetryService
 import ru.souz.ui.rememberDockWindowController
 import ru.souz.ui.macos.MacWindowVibrancy
 import java.awt.Dimension
+import java.awt.SystemColor.window
 import java.util.concurrent.atomic.AtomicBoolean
 
 import androidx.compose.ui.res.painterResource as jvmPainterResource
