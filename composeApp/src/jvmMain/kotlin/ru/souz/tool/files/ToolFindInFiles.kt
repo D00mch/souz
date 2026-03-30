@@ -11,7 +11,7 @@ import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import java.io.File
 
 class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindInFiles.Input> {
@@ -70,7 +70,7 @@ class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
                 }
             }
             .toList()
-        return gigaJsonMapper.writeValueAsString(result)
+        return restJsonMapper.writeValueAsString(result)
     }
 }
 
@@ -79,7 +79,7 @@ fun main() {
     val tool = ToolFindInFiles(filesToolUtil)
     val result = tool.invoke(ToolFindInFiles.Input("~/wiki", " vr "))
     println("result: $result")
-    val results: List<List<String>> = gigaJsonMapper.readValue(result)
+    val results: List<List<String>> = restJsonMapper.readValue(result)
     results.forEach { (path, _) ->
         val safe = filesToolUtil.isPathSafe(File(path))
         if (safe) {

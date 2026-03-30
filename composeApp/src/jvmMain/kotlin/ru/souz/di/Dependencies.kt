@@ -40,7 +40,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
 import ru.souz.llms.ApiClassifier
 import ru.souz.llms.giga.GigaAuth
-import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMFactory
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.giga.GigaVoiceAPI
@@ -269,7 +269,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { LocalLlamaRuntime(instance(), instance(), instance(), instance(), instance()) }
     bindSingleton<LocalChatAPI> { LocalChatAPI(instance()) }
     bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
-    bindSingleton<GigaChatAPI> { instance<LLMFactory>() }
+    bindSingleton<LLMChatAPI> { instance<LLMFactory>() }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton { OpenAIVoiceAPI(instance()) }
     bindSingleton { AiTunnelVoiceAPI(instance()) }

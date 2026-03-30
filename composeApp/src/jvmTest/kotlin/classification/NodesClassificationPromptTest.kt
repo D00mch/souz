@@ -15,11 +15,11 @@ import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.GigaModel
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
-import ru.souz.llms.giga.GigaToolSetup
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,7 +27,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class NodesClassificationPromptTest {
-    private val defaultTools: Map<ToolCategory, Map<String, GigaToolSetup>> = mapOf(
+    private val defaultTools: Map<ToolCategory, Map<String, LLMToolSetup>> = mapOf(
         ToolCategory.FILES to mapOf("Read" to dummySetup("Read")),
         ToolCategory.BROWSER to mapOf("Open" to dummySetup("Open")),
     )
@@ -96,7 +96,7 @@ class NodesClassificationPromptTest {
             ToolCategory.MAIL to mapOf("MailRead" to dummySetup("MailRead")),
         )
         val settingsProvider = mockk<SettingsProvider> {
-            every { gigaModel } returns GigaModel.LocalQwen3_4B_Instruct_2507
+            every { gigaModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
         }
         val localClassifier = mockk<ru.souz.tool.UserMessageClassifier> {
             coEvery { classify(any()) } returns ru.souz.tool.UserMessageClassifier.Reply(
@@ -128,7 +128,7 @@ class NodesClassificationPromptTest {
                 ctx = AgentContext(
                     input = "Прочитай файл",
                     settings = AgentSettings(
-                        model = GigaModel.LocalQwen3_4B_Instruct_2507.alias,
+                        model = LLMModel.LocalQwen3_4B_Instruct_2507.alias,
                         temperature = 0.2f,
                         toolsByCategory = localTools,
                     ),
@@ -147,15 +147,15 @@ class NodesClassificationPromptTest {
     private fun mockTelegramFilteredToolsSettings(telegramConnected: Boolean): AgentToolsFilter {
         return mockk<AgentToolsFilter>().also { toolsSettings ->
             every { toolsSettings.applyFilter(any()) } answers {
-                val input = firstArg<Map<ToolCategory, Map<String, GigaToolSetup>>>()
+                val input = firstArg<Map<ToolCategory, Map<String, LLMToolSetup>>>()
                 if (telegramConnected) input else input - ToolCategory.TELEGRAM
             }
         }
     }
 
-    private fun buildPromptWith(filteredTools: Map<ToolCategory, Map<String, GigaToolSetup>>): String {
+    private fun buildPromptWith(filteredTools: Map<ToolCategory, Map<String, LLMToolSetup>>): String {
         val settingsProvider = mockk<SettingsProvider>()
-        every { settingsProvider.gigaModel } returns GigaModel.Max
+        every { settingsProvider.gigaModel } returns LLMModel.Max
 
         val classification = NodesClassification(
             settingsProvider = settingsProvider,
@@ -169,16 +169,16 @@ class NodesClassificationPromptTest {
         return classification.buildPrompt(filteredTools)
     }
 
-    private fun dummySetup(name: String): GigaToolSetup = object : GigaToolSetup {
-        override val fn: GigaRequest.Function = GigaRequest.Function(
+    private fun dummySetup(name: String): LLMToolSetup = object : LLMToolSetup {
+        override val fn: LLMRequest.Function = LLMRequest.Function(
             name = name,
             description = "$name description",
-            parameters = GigaRequest.Parameters(type = "object", properties = emptyMap()),
-            returnParameters = GigaRequest.Parameters(type = "object", properties = emptyMap()),
+            parameters = LLMRequest.Parameters(type = "object", properties = emptyMap()),
+            returnParameters = LLMRequest.Parameters(type = "object", properties = emptyMap()),
         )
 
-        override suspend fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
-            return GigaRequest.Message(role = GigaMessageRole.function, content = "")
+        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message {
+            return LLMRequest.Message(role = LLMMessageRole.function, content = "")
         }
     }
 }

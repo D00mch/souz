@@ -10,7 +10,7 @@ import ru.souz.service.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.ui.BaseViewModel
@@ -328,7 +328,7 @@ class SetupViewModel(
         settingsProvider.gigaModel = defaultSetupModelForProvider(preferredProvider)
     }
 
-    private fun defaultSetupModelForProvider(provider: LlmProvider): GigaModel =
+    private fun defaultSetupModelForProvider(provider: LlmProvider): LLMModel =
         llmBuildProfile.defaultModelForProvider(provider)
             ?: error("Default setup model is not configured for provider: $provider")
 }

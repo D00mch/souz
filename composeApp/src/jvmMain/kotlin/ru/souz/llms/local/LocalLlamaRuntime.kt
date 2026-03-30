@@ -20,10 +20,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.restJsonMapper
 
 class LocalLlamaRuntime(
     private val availability: LocalProviderAvailability,
@@ -41,13 +41,13 @@ class LocalLlamaRuntime(
     private val loadedModel = AtomicReference<LoadedModel?>(null)
     private val warmedModelId = AtomicReference<String?>(null)
 
-    suspend fun chat(body: GigaRequest.Chat): GigaResponse.Chat {
+    suspend fun chat(body: LLMRequest.Chat): LLMResponse.Chat {
         val nativeResult = runCatching { generate(body, stream = false) }
             .getOrElse { error ->
                 NativeGenerationResult.error("Local inference failed: ${error.message ?: error::class.simpleName.orEmpty()}")
             }
         nativeResult.error?.let { message ->
-            return GigaResponse.Chat.Error(-1, message)
+            return LLMResponse.Chat.Error(-1, message)
         }
         return strictJsonParser.parse(
             rawText = nativeResult.text,
@@ -56,12 +56,12 @@ class LocalLlamaRuntime(
         )
     }
 
-    fun chatStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = flow {
+    fun chatStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
         val response = withContext(Dispatchers.IO) {
             runCatching {
                 val result = generate(body, stream = true)
                 result.error?.let { message ->
-                    return@runCatching GigaResponse.Chat.Error(-1, message)
+                    return@runCatching LLMResponse.Chat.Error(-1, message)
                 }
                 strictJsonParser.parse(
                     rawText = result.text,
@@ -69,7 +69,7 @@ class LocalLlamaRuntime(
                     usage = result.toUsage(),
                 )
             }.getOrElse { error ->
-                GigaResponse.Chat.Error(
+                LLMResponse.Chat.Error(
                     -1,
                     "Local inference failed: ${error.message ?: error::class.simpleName.orEmpty()}",
                 )
@@ -122,7 +122,7 @@ class LocalLlamaRuntime(
         }
     }
 
-    private suspend fun generate(body: GigaRequest.Chat, stream: Boolean): NativeGenerationResult {
+    private suspend fun generate(body: LLMRequest.Chat, stream: Boolean): NativeGenerationResult {
         val availabilityStatus = availability.status()
         if (!availabilityStatus.available) {
             return NativeGenerationResult.error(availabilityStatus.message)
@@ -190,7 +190,7 @@ class LocalLlamaRuntime(
         generationRequest: LocalGenerationRequest,
         stream: Boolean,
     ): NativeGenerationResult {
-        val requestJson = gigaJsonMapper.writeValueAsString(generationRequest)
+        val requestJson = restJsonMapper.writeValueAsString(generationRequest)
         return suspendCancellableCoroutine { cont ->
             val job = scope.launch {
                 runCatching {
@@ -204,7 +204,7 @@ class LocalLlamaRuntime(
                         }
                     }
                 }.onSuccess { json ->
-                    val parsed = gigaJsonMapper.readValue(json, NativeGenerationResult::class.java)
+                    val parsed = restJsonMapper.readValue(json, NativeGenerationResult::class.java)
                     if (cont.isActive) {
                         cont.resume(parsed)
                     }
@@ -255,11 +255,11 @@ class LocalLlamaRuntime(
 
     internal fun buildWarmupRequest(profile: LocalModelProfile): LocalGenerationRequest {
         val prompt = promptRenderer.render(
-            body = GigaRequest.Chat(
+            body = LLMRequest.Chat(
                 model = profile.gigaModel.alias,
                 messages = listOf(
-                    GigaRequest.Message(
-                        role = GigaMessageRole.user,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.user,
                         content = WARMUP_PROMPT,
                     )
                 ),
@@ -280,14 +280,14 @@ class LocalLlamaRuntime(
         )
     }
 
-    internal fun resolveCompletionBudget(body: GigaRequest.Chat): Int =
+    internal fun resolveCompletionBudget(body: LLMRequest.Chat): Int =
         body.maxTokens
             .takeIf { it > 0 }
             ?.let { minOf(MAX_COMPLETION_TOKENS, it) }
             ?: MAX_COMPLETION_TOKENS
 
     internal fun resolveContextSize(
-        body: GigaRequest.Chat,
+        body: LLMRequest.Chat,
         profile: LocalModelProfile,
         prompt: String,
         completionBudget: Int = resolveCompletionBudget(body),
@@ -324,7 +324,7 @@ class LocalLlamaRuntime(
             }
 
             val modelPath = modelStore.requireAvailable(profile)
-            val requestJson = gigaJsonMapper.writeValueAsString(
+            val requestJson = restJsonMapper.writeValueAsString(
                 LocalModelLoadRequest(
                     modelPath = modelPath.toAbsolutePath().toString(),
                     gpuLayers = profile.defaultGpuLayers,
@@ -405,7 +405,7 @@ class LocalLlamaRuntime(
         @field:JsonProperty("precached_prompt_tokens") val precachedTokens: Int = 0,
         val error: String? = null,
     ) {
-        fun toUsage(): GigaResponse.Usage = GigaResponse.Usage(
+        fun toUsage(): LLMResponse.Usage = LLMResponse.Usage(
             promptTokens = promptTokens,
             completionTokens = completionTokens,
             totalTokens = totalTokens,

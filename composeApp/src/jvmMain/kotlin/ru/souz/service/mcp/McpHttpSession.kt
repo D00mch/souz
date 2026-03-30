@@ -13,7 +13,7 @@ import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import java.util.concurrent.atomic.AtomicLong
 
 private const val JSON_RPC_VERSION = "2.0"
@@ -173,7 +173,7 @@ class McpHttpSession(
                 header(name, value)
             }
             token?.takeIf { it.isNotBlank() }?.let { header(HttpHeaders.Authorization, "Bearer $it") }
-            setBody(gigaJsonMapper.writeValueAsString(payload))
+            setBody(restJsonMapper.writeValueAsString(payload))
         }
 
         response.headers[MCP_SESSION_HEADER]
@@ -253,7 +253,7 @@ class McpHttpSession(
     }
 
     private fun parseJsonBody(body: String): List<JsonNode> {
-        val root = runCatching { gigaJsonMapper.readTree(body) }.getOrElse { e ->
+        val root = runCatching { restJsonMapper.readTree(body) }.getOrElse { e ->
             throw IllegalStateException("Invalid MCP JSON response for ${config.name}: ${e.message}")
         }
         if (root.isArray) return root.toList()
@@ -269,7 +269,7 @@ class McpHttpSession(
             val payload = dataLines.joinToString("\n").trim()
             dataLines.clear()
             if (payload.isBlank() || payload == "[DONE]") return
-            runCatching { gigaJsonMapper.readTree(payload) }
+            runCatching { restJsonMapper.readTree(payload) }
                 .onSuccess { node -> nodes.add(node) }
                 .onFailure { e -> l.debug("Skipping non-JSON SSE event from {}: {}", config.name, e.message) }
         }

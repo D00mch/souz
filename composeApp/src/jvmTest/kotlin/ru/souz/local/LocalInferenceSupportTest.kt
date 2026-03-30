@@ -34,10 +34,10 @@ import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.db.StorredData
 import ru.souz.db.StorredType
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.restJsonMapper
 import ru.souz.llms.giga.toGiga
 import ru.souz.llms.toSystemPromptMessage
 import ru.souz.llms.local.LocalChatAPI
@@ -78,11 +78,11 @@ class LocalInferenceSupportTest {
     @Test
     fun `qwen prompt renderer uses qwen separators`() {
         val renderer = LocalPromptRenderer()
-        val chat = GigaRequest.Chat(
+        val chat = LLMRequest.Chat(
             model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
             messages = listOf(
-                GigaRequest.Message(GigaMessageRole.system, "System"),
-                GigaRequest.Message(GigaMessageRole.user, "Проверь календарь"),
+                LLMRequest.Message(LLMMessageRole.system, "System"),
+                LLMRequest.Message(LLMMessageRole.user, "Проверь календарь"),
             ),
         )
 
@@ -101,11 +101,11 @@ class LocalInferenceSupportTest {
     @Test
     fun `classification prompts use plain text local output mode`() {
         val renderer = LocalPromptRenderer()
-        val chat = GigaRequest.Chat(
+        val chat = LLMRequest.Chat(
             model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
             messages = listOf(
-                GigaRequest.Message(
-                    GigaMessageRole.system,
+                LLMRequest.Message(
+                    LLMMessageRole.system,
                     """
                         Выбери категории.
 
@@ -113,7 +113,7 @@ class LocalInferenceSupportTest {
                         CATEGORY1,CATEGORY2 0-100
                     """.trimIndent(),
                 ),
-                GigaRequest.Message(GigaMessageRole.user, "New message:\nнайди файл"),
+                LLMRequest.Message(LLMMessageRole.user, "New message:\nнайди файл"),
             ),
         )
 
@@ -134,12 +134,12 @@ class LocalInferenceSupportTest {
         val result = parser.parse(
             rawText = """{"type":"final","content":"hello"}""",
             requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
-            usage = GigaResponse.Usage(10, 5, 15, 0),
+            usage = LLMResponse.Usage(10, 5, 15, 0),
         )
 
-        val ok = assertIs<GigaResponse.Chat.Ok>(result)
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
         assertEquals("hello", ok.choices.single().message.content)
-        assertEquals(GigaMessageRole.assistant, ok.choices.single().message.role)
+        assertEquals(LLMMessageRole.assistant, ok.choices.single().message.role)
     }
 
     @Test
@@ -151,10 +151,10 @@ class LocalInferenceSupportTest {
 
 {"type":"final","content":"hello"}<|eot_id|>""",
             requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
-            usage = GigaResponse.Usage(10, 5, 15, 0),
+            usage = LLMResponse.Usage(10, 5, 15, 0),
         )
 
-        val ok = assertIs<GigaResponse.Chat.Ok>(result)
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
         assertEquals("hello", ok.choices.single().message.content)
     }
 
@@ -165,10 +165,10 @@ class LocalInferenceSupportTest {
         val result = parser.parse(
             rawText = """В календаре "Семья" на сегодня нет событий.""",
             requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
-            usage = GigaResponse.Usage(10, 5, 15, 0),
+            usage = LLMResponse.Usage(10, 5, 15, 0),
         )
 
-        val ok = assertIs<GigaResponse.Chat.Ok>(result)
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
         assertEquals("""В календаре "Семья" на сегодня нет событий.""", ok.choices.single().message.content)
     }
 
@@ -179,10 +179,10 @@ class LocalInferenceSupportTest {
         val result = parser.parse(
             rawText = """{"result":"Список сообщений в почте: 7 штук."}""",
             requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
-            usage = GigaResponse.Usage(10, 5, 15, 0),
+            usage = LLMResponse.Usage(10, 5, 15, 0),
         )
 
-        val ok = assertIs<GigaResponse.Chat.Ok>(result)
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
         assertEquals("Список сообщений в почте: 7 штук.", ok.choices.single().message.content)
     }
 
@@ -193,10 +193,10 @@ class LocalInferenceSupportTest {
         val result = parser.parse(
             rawText = """{"type":"final","content":"{\"result\":\"Список сообщений в почте: 7 штук.\"}"}""",
             requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
-            usage = GigaResponse.Usage(10, 5, 15, 0),
+            usage = LLMResponse.Usage(10, 5, 15, 0),
         )
 
-        val ok = assertIs<GigaResponse.Chat.Ok>(result)
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
         assertEquals("Список сообщений в почте: 7 штук.", ok.choices.single().message.content)
     }
 
@@ -214,14 +214,14 @@ class LocalInferenceSupportTest {
                 }
             """.trimIndent(),
             requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
-            usage = GigaResponse.Usage(10, 5, 15, 0),
+            usage = LLMResponse.Usage(10, 5, 15, 0),
         )
 
-        val ok = assertIs<GigaResponse.Chat.Ok>(result)
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
         val choice = ok.choices.single()
         assertEquals("ToolListFiles", choice.message.functionCall?.name)
         assertEquals("call_1", choice.message.functionsStateId)
-        assertEquals(GigaResponse.FinishReason.function_call, choice.finishReason)
+        assertEquals(LLMResponse.FinishReason.function_call, choice.finishReason)
     }
 
     @Test
@@ -233,10 +233,10 @@ class LocalInferenceSupportTest {
                 {"type":"tool_calls","calls":[{"id":"call_1","name":"CalendarListEvents","arguments":{"date":"2026-03-29","calendarName":"Calendar"}],"required":["date","calendarName"]}
             """.trimIndent(),
             requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
-            usage = GigaResponse.Usage(10, 5, 15, 0),
+            usage = LLMResponse.Usage(10, 5, 15, 0),
         )
 
-        val ok = assertIs<GigaResponse.Chat.Ok>(result)
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
         val choice = ok.choices.single()
         assertEquals("CalendarListEvents", choice.message.functionCall?.name)
         assertEquals("2026-03-29", choice.message.functionCall?.arguments?.get("date"))
@@ -255,10 +255,10 @@ class LocalInferenceSupportTest {
                 </tool_call>
             """.trimIndent(),
             requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
-            usage = GigaResponse.Usage(10, 5, 15, 0),
+            usage = LLMResponse.Usage(10, 5, 15, 0),
         )
 
-        val ok = assertIs<GigaResponse.Chat.Ok>(result)
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
         val choice = ok.choices.single()
         assertEquals("ToolListFiles", choice.message.functionCall?.name)
         assertEquals("call_1", choice.message.functionsStateId)
@@ -330,10 +330,10 @@ class LocalInferenceSupportTest {
         val renderer = LocalPromptRenderer()
 
         val prompt = renderer.render(
-            body = GigaRequest.Chat(
+            body = LLMRequest.Chat(
                 model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
                 messages = listOf(
-                    GigaRequest.Message(GigaMessageRole.user, "Какие встречи у меня сегодня?")
+                    LLMRequest.Message(LLMMessageRole.user, "Какие встречи у меня сегодня?")
                 ),
                 functions = listOf(ToolCalendarListEvents().toGiga().fn),
             ),
@@ -351,17 +351,17 @@ class LocalInferenceSupportTest {
     fun `local prompt renderer switches to minimal tool signatures for large local toolsets`() {
         val renderer = LocalPromptRenderer()
         val functions = (1..60).map { index ->
-            GigaRequest.Function(
+            LLMRequest.Function(
                 name = "Tool$index",
                 description = "Tool number $index with verbose instructions that should not be copied into the local prompt when too many tools are active.",
-                parameters = GigaRequest.Parameters(
+                parameters = LLMRequest.Parameters(
                     type = "object",
                     properties = mapOf(
-                        "query" to GigaRequest.Property(
+                        "query" to LLMRequest.Property(
                             type = "string",
                             description = "Search query for tool $index",
                         ),
-                        "limit" to GigaRequest.Property(
+                        "limit" to LLMRequest.Property(
                             type = "integer",
                             description = "Optional result limit for tool $index",
                         ),
@@ -369,7 +369,7 @@ class LocalInferenceSupportTest {
                     required = listOf("query"),
                 ),
                 fewShotExamples = listOf(
-                    GigaRequest.FewShotExample(
+                    LLMRequest.FewShotExample(
                         request = "Use tool $index",
                         params = mapOf("query" to "Arthur", "limit" to 10),
                     )
@@ -378,10 +378,10 @@ class LocalInferenceSupportTest {
         }
 
         val prompt = renderer.render(
-            body = GigaRequest.Chat(
+            body = LLMRequest.Chat(
                 model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
                 messages = listOf(
-                    GigaRequest.Message(GigaMessageRole.user, "Продолжи прошлое действие"),
+                    LLMRequest.Message(LLMMessageRole.user, "Продолжи прошлое действие"),
                 ),
                 functions = functions,
             ),
@@ -474,14 +474,14 @@ class LocalInferenceSupportTest {
 
         val responses = withTimeout(1_000) {
             runtime.chatStream(
-                GigaRequest.Chat(
+                LLMRequest.Chat(
                     model = profile.gigaModel.alias,
-                    messages = listOf(GigaRequest.Message(GigaMessageRole.user, "hello")),
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
                 )
             ).toList()
         }
 
-        val ok = assertIs<GigaResponse.Chat.Ok>(responses.single())
+        val ok = assertIs<LLMResponse.Chat.Ok>(responses.single())
         assertEquals("stream done", ok.choices.single().message.content)
         verify(exactly = 1) { bridge.generateStream(runtimePointer, modelPointer, any(), any()) }
     }
@@ -489,16 +489,16 @@ class LocalInferenceSupportTest {
     @Test
     fun `local prompt renderer truncates oversized tool results for small context models`() {
         val renderer = LocalPromptRenderer()
-        val oversizedResult = gigaJsonMapper.writeValueAsString(
+        val oversizedResult = restJsonMapper.writeValueAsString(
             "{\"items\":[\"${"x".repeat(5_000)}\"]}"
         )
 
         val prompt = renderer.render(
-            body = GigaRequest.Chat(
+            body = LLMRequest.Chat(
                 model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
                 messages = listOf(
-                    GigaRequest.Message(
-                        role = GigaMessageRole.function,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.function,
                         content = oversizedResult,
                         functionsStateId = "call_1",
                         name = "ToolTelegramReadInbox",
@@ -526,7 +526,7 @@ class LocalInferenceSupportTest {
         assertEquals(
             2048,
             runtime.resolveContextSize(
-                body = GigaRequest.Chat(
+                body = LLMRequest.Chat(
                     model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
                     messages = emptyList(),
                     maxTokens = 4096,
@@ -538,7 +538,7 @@ class LocalInferenceSupportTest {
         assertEquals(
             8192,
             runtime.resolveContextSize(
-                body = GigaRequest.Chat(
+                body = LLMRequest.Chat(
                     model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
                     messages = emptyList(),
                     maxTokens = 32000,
@@ -550,7 +550,7 @@ class LocalInferenceSupportTest {
         assertEquals(
             8192,
             runtime.resolveContextSize(
-                body = GigaRequest.Chat(
+                body = LLMRequest.Chat(
                     model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
                     messages = emptyList(),
                     maxTokens = 16000,
@@ -562,7 +562,7 @@ class LocalInferenceSupportTest {
         assertEquals(
             8192,
             runtime.resolveContextSize(
-                body = GigaRequest.Chat(
+                body = LLMRequest.Chat(
                     model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
                     messages = emptyList(),
                     maxTokens = 900,
@@ -600,7 +600,7 @@ class LocalInferenceSupportTest {
             ),
             history = listOf(
                 "system".toSystemPromptMessage(),
-                GigaRequest.Message(GigaMessageRole.user, "Проверь Telegram"),
+                LLMRequest.Message(LLMMessageRole.user, "Проверь Telegram"),
             ),
             activeTools = emptyList(),
             systemPrompt = "system",
@@ -645,7 +645,7 @@ class LocalInferenceSupportTest {
             ),
             history = listOf(
                 "system".toSystemPromptMessage(),
-                GigaRequest.Message(GigaMessageRole.user, "Найди локальные данные"),
+                LLMRequest.Message(LLMMessageRole.user, "Найди локальные данные"),
             ),
             activeTools = emptyList(),
             systemPrompt = "system",
@@ -665,11 +665,11 @@ class LocalInferenceSupportTest {
     fun `local chat api reports unsupported features`() = runTest {
         val api = LocalChatAPI(runtime = mockk(relaxed = true))
 
-        val embeddings = api.embeddings(GigaRequest.Embeddings(input = listOf("hello")))
+        val embeddings = api.embeddings(LLMRequest.Embeddings(input = listOf("hello")))
         val balance = api.balance()
 
-        assertIs<GigaResponse.Embeddings.Error>(embeddings)
-        assertIs<GigaResponse.Balance.Error>(balance)
+        assertIs<LLMResponse.Embeddings.Error>(embeddings)
+        assertIs<LLMResponse.Balance.Error>(balance)
         assertFailsWith<UnsupportedOperationException> { api.uploadFile(createTempFile()) }
         assertFailsWith<UnsupportedOperationException> { api.downloadFile("file_1") }
     }

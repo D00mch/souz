@@ -6,25 +6,25 @@ import kotlinx.coroutines.flow.asSharedFlow
 import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.agent.spi.AgentTelemetry
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
-import ru.souz.llms.giga.GigaToolSetup
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
 
 class AgentToolExecutor(
     private val telemetryService: AgentTelemetry,
 ) {
     private val l = LoggerFactory.getLogger(AgentToolExecutor::class.java)
-    private val _toolInvocations = MutableSharedFlow<GigaResponse.FunctionCall>(extraBufferCapacity = 32)
+    private val _toolInvocations = MutableSharedFlow<LLMResponse.FunctionCall>(extraBufferCapacity = 32)
 
-    val toolInvocations: Flow<GigaResponse.FunctionCall> = _toolInvocations.asSharedFlow()
+    val toolInvocations: Flow<LLMResponse.FunctionCall> = _toolInvocations.asSharedFlow()
 
     suspend fun execute(
         settings: AgentSettings,
-        functionCall: GigaResponse.FunctionCall,
-    ): GigaRequest.Message {
-        val fn: GigaToolSetup = settings.tools.byName[functionCall.name] ?: return GigaRequest.Message(
-            role = GigaMessageRole.function,
+        functionCall: LLMResponse.FunctionCall,
+    ): LLMRequest.Message {
+        val fn: LLMToolSetup = settings.tools.byName[functionCall.name] ?: return LLMRequest.Message(
+            role = LLMMessageRole.function,
             content = """{"result":"no such function ${functionCall.name}"}""",
         )
 

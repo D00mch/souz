@@ -5,8 +5,8 @@ import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMModel
 import ru.souz.llms.local.LocalModelDownloadPrompt
 import ru.souz.llms.local.LocalModelDownloadState
 
@@ -85,13 +85,13 @@ data class MainState(
     val lastKnownAgentContext: AgentContext<String>? = null,
     val userExpectCloseOnX: Boolean = false,
     val isProcessing: Boolean = false,
-    val agentHistory: List<GigaRequest.Message> = emptyList(),
+    val agentHistory: List<LLMRequest.Message> = emptyList(),
     val isThinkingPanelOpen: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
     val chatStartTip: String = "",
     val chatSessionId: Long = 0L, // need this so local draft resets reliably when conversation resets.
-    val selectedModel: String = GigaModel.Max.alias,
-    val availableModelAliases: List<String> = listOf(GigaModel.Max.alias),
+    val selectedModel: String = LLMModel.Max.alias,
+    val availableModelAliases: List<String> = listOf(LLMModel.Max.alias),
     val selectedContextSize: Int = DEFAULT_MAX_TOKENS,
     val isSpeaking: Boolean = false,
     val showNewChatDialog: Boolean = false,

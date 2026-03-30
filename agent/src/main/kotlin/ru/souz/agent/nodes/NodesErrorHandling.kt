@@ -5,8 +5,8 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Node
 import ru.souz.agent.spi.AgentErrorMessages
-import ru.souz.llms.GigaResponse
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.restJsonMapper
 
 /**
  * Nodes for handling LLM chat errors.
@@ -17,13 +17,13 @@ class NodesErrorHandling(
     private val l = LoggerFactory.getLogger(NodesErrorHandling::class.java)
 
     /**
-     * Converts [GigaResponse.Chat.Error] to a user-facing response string.
+     * Converts [LLMResponse.Chat.Error] to a user-facing response string.
      *
      * Resets history when the error indicates the context was too large.
      */
-    fun chatErrorToFinish(name: String = "Chat.Error"): Node<GigaResponse.Chat, String> =
-        Node(name) { ctx: AgentContext<GigaResponse.Chat> ->
-            val error = ctx.input as GigaResponse.Chat.Error
+    fun chatErrorToFinish(name: String = "Chat.Error"): Node<LLMResponse.Chat, String> =
+        Node(name) { ctx: AgentContext<LLMResponse.Chat> ->
+            val error = ctx.input as LLMResponse.Chat.Error
             if (error.status == PAYLOAD_TOO_LARGE_STATUS) {
                 l.info("Resetting history due to a large object in it")
                 val message = errorMessages.contextReset()
@@ -41,12 +41,12 @@ class NodesErrorHandling(
         }
 
     private suspend fun showPaymentError(
-        error: GigaResponse.Chat.Error,
-        ctx: AgentContext<GigaResponse.Chat>
+        error: LLMResponse.Chat.Error,
+        ctx: AgentContext<LLMResponse.Chat>
     ): AgentContext<String> {
         l.info("No money left, ${error.message}")
         val isMessageJson: Boolean = try {
-            gigaJsonMapper.readValue<Map<String, Any>>(error.message)
+            restJsonMapper.readValue<Map<String, Any>>(error.message)
             true
         } catch (_: Exception) {
             false

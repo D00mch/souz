@@ -29,15 +29,15 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.giga.GigaChatAPI
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.toFinishReason
 import ru.souz.llms.giga.toGiga
 import ru.souz.di.mainDiModule
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.files.ToolListFiles
 import java.io.File
@@ -48,7 +48,7 @@ import kotlin.time.measureTime
 class QwenChatAPI(
     private val settingsProvider: SettingsProvider,
     private val tokenLogging: TokenLogging,
-) : GigaChatAPI {
+) : LLMChatAPI {
     private val l = LoggerFactory.getLogger(QwenChatAPI::class.java)
 
     private val apiKey: String
@@ -96,7 +96,7 @@ class QwenChatAPI(
         }
     }
 
-    override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val body = body.rmFnIds()
         val response = client.post(CHAT_COMPLETIONS_URL) {
             setBody(buildChatRequest(body))
@@ -104,23 +104,23 @@ class QwenChatAPI(
         val text = response.bodyAsText()
         if (response.status.isSuccess()) {
             parseCompletionsResponse(text, resolveChatModel(body.model)).also { result ->
-                if (result is GigaResponse.Chat.Ok) {
+                if (result is LLMResponse.Chat.Ok) {
                     l.info("Chat response: ")
                     tokenLogging.logTokenUsage(result, body)
                 }
             }
         } else {
-            GigaResponse.Chat.Error(response.status.value, text)
+            LLMResponse.Chat.Error(response.status.value, text)
         }
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
-        GigaResponse.Chat.Error(e.response.status.value, text)
+        LLMResponse.Chat.Error(e.response.status.value, text)
     } catch (t: Throwable) {
         l.error("Error in Qwen chat", t)
-        GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")
+        LLMResponse.Chat.Error(-1, "Connection error: ${t.message}")
     }
 
-    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = channelFlow {
         val body = body.rmFnIds()
         try {
             val model = resolveChatModel(body.model)
@@ -154,32 +154,32 @@ class QwenChatAPI(
             }
         } catch (e: ClientRequestException) {
             val text = e.response.bodyAsText()
-            send(GigaResponse.Chat.Error(e.response.status.value, text))
+            send(LLMResponse.Chat.Error(e.response.status.value, text))
         } catch (t: Throwable) {
             l.error("Error in Qwen stream chat", t)
-            send(GigaResponse.Chat.Error(-1, "Connection error: ${t.message}"))
+            send(LLMResponse.Chat.Error(-1, "Connection error: ${t.message}"))
         }
     }
 
-    override suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings = try {
+    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings = try {
         val response = client.post(EMBEDDINGS_URL) {
             setBody(buildEmbeddingsRequest(body))
         }
         val text = response.bodyAsText()
         if (!response.status.isSuccess()) {
-            GigaResponse.Embeddings.Error(response.status.value, text)
+            LLMResponse.Embeddings.Error(response.status.value, text)
         } else {
             parseEmbeddingsResponse(text)
         }
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
-        GigaResponse.Embeddings.Error(e.response.status.value, text)
+        LLMResponse.Embeddings.Error(e.response.status.value, text)
     } catch (t: Throwable) {
         l.error("Error in Qwen embeddings", t)
-        GigaResponse.Embeddings.Error(-1, "Connection error: ${t.message}")
+        LLMResponse.Embeddings.Error(-1, "Connection error: ${t.message}")
     }
 
-    override suspend fun uploadFile(file: File): GigaResponse.UploadFile {
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile {
         throw UnsupportedOperationException("Qwen file upload is not supported")
     }
 
@@ -187,11 +187,11 @@ class QwenChatAPI(
         return null
     }
 
-    override suspend fun balance(): GigaResponse.Balance {
-        return GigaResponse.Balance.Error(-1, "Qwen doesn't have billing API")
+    override suspend fun balance(): LLMResponse.Balance {
+        return LLMResponse.Balance.Error(-1, "Qwen doesn't have billing API")
     }
 
-    private fun buildChatRequest(body: GigaRequest.Chat): Map<String, Any> {
+    private fun buildChatRequest(body: LLMRequest.Chat): Map<String, Any> {
         val tools = buildTools(body.functions)
         return buildMap {
             put("model", resolveChatModel(body.model))
@@ -208,7 +208,7 @@ class QwenChatAPI(
         }
     }
 
-    private fun buildGenerationRequest(body: GigaRequest.Chat): Map<String, Any> {
+    private fun buildGenerationRequest(body: LLMRequest.Chat): Map<String, Any> {
         val tools = buildTools(body.functions)
         val parameters = HashMap<String, Any>().apply {
             put("result_format", "message")
@@ -231,7 +231,7 @@ class QwenChatAPI(
         }
     }
 
-    private fun buildEmbeddingsRequest(body: GigaRequest.Embeddings): Map<String, Any> = buildMap {
+    private fun buildEmbeddingsRequest(body: LLMRequest.Embeddings): Map<String, Any> = buildMap {
         put("model", resolveEmbeddingsModel(body.model))
         if (body.input.size == 1) {
             put("input", body.input.first())
@@ -240,10 +240,10 @@ class QwenChatAPI(
         }
     }
 
-    private fun buildMessages(messages: List<GigaRequest.Message>): List<Map<String, Any>> =
+    private fun buildMessages(messages: List<LLMRequest.Message>): List<Map<String, Any>> =
         messages.map { msg ->
             when (msg.role) {
-                GigaMessageRole.function -> {
+                LLMMessageRole.function -> {
                     val role = if (msg.functionsStateId != null) "tool" else "function"
                     buildMap {
                         put("role", role)
@@ -261,7 +261,7 @@ class QwenChatAPI(
             }
         }
 
-    private fun buildTools(functions: List<GigaRequest.Function>): List<Map<String, Any>> {
+    private fun buildTools(functions: List<LLMRequest.Function>): List<Map<String, Any>> {
         return functions.map { fn ->
             val properties = fn.parameters.properties.mapValues { (_, prop) ->
                 buildMap {
@@ -293,11 +293,11 @@ class QwenChatAPI(
         }
     }
 
-    private fun parseCompletionsResponse(text: String, model: String): GigaResponse.Chat {
-        val node = gigaJsonMapper.readTree(text)
+    private fun parseCompletionsResponse(text: String, model: String): LLMResponse.Chat {
+        val node = restJsonMapper.readTree(text)
         val choices = parseChoices(node["choices"])
         val usage = parseUsage(node["usage"])
-        return GigaResponse.Chat.Ok(
+        return LLMResponse.Chat.Ok(
             choices = choices,
             created = node["created"]?.asLong() ?: (System.currentTimeMillis() / 1000),
             model = node["model"]?.asText() ?: model,
@@ -309,11 +309,11 @@ class QwenChatAPI(
         text: String,
         model: String,
         streamAccumulator: QwenStreamAccumulator,
-    ): GigaResponse.Chat.Ok {
-        val node: JsonNode = gigaJsonMapper.readTree(text)
+    ): LLMResponse.Chat.Ok {
+        val node: JsonNode = restJsonMapper.readTree(text)
         val choices = streamAccumulator.processChunk(node)
         val usage = parseUsage(node["usage"])
-        return GigaResponse.Chat.Ok(
+        return LLMResponse.Chat.Ok(
             choices = choices,
             created = System.currentTimeMillis() / 1000,
             model = model,
@@ -324,12 +324,12 @@ class QwenChatAPI(
     private fun parseChoices(
         choicesNode: JsonNode?,
         nestedMessageField: String = "message",
-    ): List<GigaResponse.Choice> {
+    ): List<LLMResponse.Choice> {
         if (choicesNode == null || !choicesNode.isArray) {
             return emptyList()
         }
 
-        val choices = mutableListOf<GigaResponse.Choice>()
+        val choices = mutableListOf<LLMResponse.Choice>()
         choicesNode.forEachIndexed { idx, choiceNode ->
             val messageNode = choiceNode[nestedMessageField]
             val messageContent = messageNode?.get("content")?.asText().orEmpty()
@@ -346,22 +346,22 @@ class QwenChatAPI(
                     val args = parseFunctionArguments(argsText)
                     val functionsStateId = toolCallNode["id"]?.asText()
                     val toolIndex = toolCallNode["index"]?.asInt() ?: choiceIndex
-                    choices += GigaResponse.Choice(
-                        message = GigaResponse.Message(
+                    choices += LLMResponse.Choice(
+                        message = LLMResponse.Message(
                             content = "",
                             role = role,
-                            functionCall = GigaResponse.FunctionCall(name, args),
+                            functionCall = LLMResponse.FunctionCall(name, args),
                             functionsStateId = functionsStateId,
                         ),
                         index = toolIndex,
-                        finishReason = GigaResponse.FinishReason.function_call,
+                        finishReason = LLMResponse.FinishReason.function_call,
                     )
                 }
             }
 
             if (messageContent.isNotEmpty() || toolCallsNode == null || toolCallsNode.size() == 0) {
-                choices += GigaResponse.Choice(
-                    message = GigaResponse.Message(
+                choices += LLMResponse.Choice(
+                    message = LLMResponse.Message(
                         content = messageContent,
                         role = role,
                         functionCall = null,
@@ -381,25 +381,25 @@ class QwenChatAPI(
         return choices
     }
 
-    private fun parseUsage(node: JsonNode?): GigaResponse.Usage {
+    private fun parseUsage(node: JsonNode?): LLMResponse.Usage {
         val prompt = node?.get("prompt_tokens")?.asInt() ?: node?.get("input_tokens")?.asInt() ?: 0
         val completion = node?.get("completion_tokens")?.asInt() ?: node?.get("output_tokens")?.asInt() ?: 0
         val total = node?.get("total_tokens")?.asInt() ?: (prompt + completion)
         val cached = node?.get("prompt_tokens_details")?.get("cached_tokens")?.asInt() ?: 0
-        return GigaResponse.Usage(prompt, completion, total, cached)
+        return LLMResponse.Usage(prompt, completion, total, cached)
     }
 
-    private fun parseEmbeddingsResponse(text: String): GigaResponse.Embeddings {
-        val node = gigaJsonMapper.readTree(text)
+    private fun parseEmbeddingsResponse(text: String): LLMResponse.Embeddings {
+        val node = restJsonMapper.readTree(text)
         val data = node["data"]?.mapIndexed { index, item ->
-            GigaResponse.Embedding(
+            LLMResponse.Embedding(
                 embedding = item["embedding"]?.map { it.asDouble() } ?: emptyList(),
                 index = item["index"]?.asInt() ?: index,
                 objectType = item["object"]?.asText(),
             )
         } ?: emptyList()
 
-        return GigaResponse.Embeddings.Ok(
+        return LLMResponse.Embeddings.Ok(
             data = data,
             model = node["model"]?.asText() ?: "",
             objectType = node["object"]?.asText() ?: "list",
@@ -408,27 +408,27 @@ class QwenChatAPI(
 
     private fun parseFunctionArguments(argsText: String): Map<String, Any> {
         if (argsText.isBlank()) return emptyMap()
-        return runCatching { gigaJsonMapper.readValue<Map<String, Any>>(argsText) }
+        return runCatching { restJsonMapper.readValue<Map<String, Any>>(argsText) }
             .getOrElse {
                 l.warn("Failed to parse Qwen tool arguments: $argsText")
                 mapOf("raw" to argsText)
             }
     }
 
-    private fun String?.toQwenFinishReason(): GigaResponse.FinishReason? {
+    private fun String?.toQwenFinishReason(): LLMResponse.FinishReason? {
         if (this == null || this.equals("null", ignoreCase = true) || this.isBlank()) {
             return null
         }
         return when (this) {
-            "tool_calls" -> GigaResponse.FinishReason.function_call
-            "max_tokens" -> GigaResponse.FinishReason.length
+            "tool_calls" -> LLMResponse.FinishReason.function_call
+            "max_tokens" -> LLMResponse.FinishReason.length
             else -> this.toFinishReason()
         }
     }
 
-    private fun String?.toGigaRole(): GigaMessageRole {
-        return runCatching { GigaMessageRole.valueOf(this ?: "") }
-            .getOrDefault(GigaMessageRole.assistant)
+    private fun String?.toGigaRole(): LLMMessageRole {
+        return runCatching { LLMMessageRole.valueOf(this ?: "") }
+            .getOrDefault(LLMMessageRole.assistant)
     }
 
     private fun resolveChatModel(model: String): String {
@@ -450,13 +450,13 @@ class QwenChatAPI(
 
     private class QwenStreamAccumulator(
         private val parseFunctionArguments: (String) -> Map<String, Any>,
-        private val finishReasonResolver: (String?) -> GigaResponse.FinishReason?,
-        private val roleResolver: (String?) -> GigaMessageRole,
+        private val finishReasonResolver: (String?) -> LLMResponse.FinishReason?,
+        private val roleResolver: (String?) -> LLMMessageRole,
     ) {
         private val choicesState = ConcurrentHashMap<Int, ChoiceState>()
 
         data class ChoiceState(
-            var role: GigaMessageRole = GigaMessageRole.assistant,
+            var role: LLMMessageRole = LLMMessageRole.assistant,
             val toolCalls: MutableMap<Int, ToolCallState> = mutableMapOf(),
         )
 
@@ -466,11 +466,11 @@ class QwenChatAPI(
             val arguments: StringBuilder = StringBuilder(),
         )
 
-        fun processChunk(chunkNode: JsonNode): List<GigaResponse.Choice> {
+        fun processChunk(chunkNode: JsonNode): List<LLMResponse.Choice> {
             val choicesNode = chunkNode["output"]?.get("choices") ?: return emptyList()
             if (!choicesNode.isArray) return emptyList()
 
-            val resultChoices = mutableListOf<GigaResponse.Choice>()
+            val resultChoices = mutableListOf<LLMResponse.Choice>()
 
             choicesNode.forEach { choiceNode ->
                 val choiceIndex = choiceNode["index"]?.asInt() ?: 0
@@ -485,8 +485,8 @@ class QwenChatAPI(
 
                 val contentChunk = messageNode?.get("content")?.asText()
                 if (!contentChunk.isNullOrEmpty()) {
-                    resultChoices += GigaResponse.Choice(
-                        message = GigaResponse.Message(
+                    resultChoices += LLMResponse.Choice(
+                        message = LLMResponse.Message(
                             content = contentChunk,
                             role = state.role,
                             functionCall = null,
@@ -518,21 +518,21 @@ class QwenChatAPI(
                         state.toolCalls.entries.sortedBy { it.key }.forEach { (toolIndex, toolState) ->
                             val name = toolState.name ?: return@forEach
                             val argsText = toolState.arguments.toString()
-                            resultChoices += GigaResponse.Choice(
-                                message = GigaResponse.Message(
+                            resultChoices += LLMResponse.Choice(
+                                message = LLMResponse.Message(
                                     content = "",
                                     role = state.role,
-                                    functionCall = GigaResponse.FunctionCall(name, parseFunctionArguments(argsText)),
+                                    functionCall = LLMResponse.FunctionCall(name, parseFunctionArguments(argsText)),
                                     functionsStateId = toolState.id,
                                 ),
                                 index = toolIndex,
-                                finishReason = GigaResponse.FinishReason.function_call,
+                                finishReason = LLMResponse.FinishReason.function_call,
                             )
                         }
                         state.toolCalls.clear()
-                    } else if (finishReason != GigaResponse.FinishReason.function_call) {
-                        resultChoices += GigaResponse.Choice(
-                            message = GigaResponse.Message(
+                    } else if (finishReason != LLMResponse.FinishReason.function_call) {
+                        resultChoices += LLMResponse.Choice(
+                            message = LLMResponse.Message(
                                 content = "",
                                 role = state.role,
                                 functionCall = null,
@@ -556,18 +556,18 @@ suspend fun main() {
     val api: QwenChatAPI by di.instance()
 
     val model = "qwen-plus"
-    val request = GigaRequest.Chat(
+    val request = LLMRequest.Chat(
         model = model,
         stream = true,
         messages = listOf(
-            GigaRequest.Message(
-                role = GigaMessageRole.system,
+            LLMRequest.Message(
+                role = LLMMessageRole.system,
                 content = """
                     Ты помощник, который при необходимости вызывает функции и отвечает по-русски.
                 """.trimIndent()
             ),
-            GigaRequest.Message(
-                role = GigaMessageRole.user,
+            LLMRequest.Message(
+                role = LLMMessageRole.user,
                 content = "Расскажи сказку",
             ),
         ),

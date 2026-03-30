@@ -5,9 +5,9 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.di.mainDiModule
-import ru.souz.llms.giga.GigaChatAPI
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
 import java.time.LocalDate
 import kotlin.random.Random
 
@@ -16,7 +16,7 @@ import kotlin.random.Random
  * into a Lucene index for similarity search.
  */
 class DesktopInfoRepository(
-    private val api: GigaChatAPI,
+    private val api: LLMChatAPI,
     private val db: VectorDB,
     private val extractor: DesktopDataExtractor,
     private val settingsProvider: SettingsProvider,
@@ -56,9 +56,9 @@ class DesktopInfoRepository(
 
     suspend fun storeDesktopInfo(data: List<StorredData>) {
         val shortened = data.map { it.copy(text = it.text.take(500)) } // get 500 symbols of long texts
-        val embeddings = when (val resp = api.embeddings(GigaRequest.Embeddings(input = shortened.map { it.text }))) {
-            is GigaResponse.Embeddings.Ok -> resp.data.map { it.embedding }
-            is GigaResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
+        val embeddings = when (val resp = api.embeddings(LLMRequest.Embeddings(input = shortened.map { it.text }))) {
+            is LLMResponse.Embeddings.Ok -> resp.data.map { it.embedding }
+            is LLMResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
         }
         try {
             db.insert(shortened, embeddings)
@@ -76,9 +76,9 @@ class DesktopInfoRepository(
      */
     override suspend fun search(query: String, limit: Int): List<StorredData> {
         if (!hasEmbeddingsKeyConfigured()) return emptyList()
-        val emb = when (val resp = api.embeddings(GigaRequest.Embeddings(input = listOf(query)))) {
-            is GigaResponse.Embeddings.Ok -> resp.data.first().embedding
-            is GigaResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
+        val emb = when (val resp = api.embeddings(LLMRequest.Embeddings(input = listOf(query)))) {
+            is LLMResponse.Embeddings.Ok -> resp.data.first().embedding
+            is LLMResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
         }
         return db.searchSimilar(emb, limit)
     }
@@ -89,7 +89,7 @@ class DesktopInfoRepository(
 suspend fun main() {
  //   ConfigStore.rm("rag_repo_last_run") // to reset
     val di = DI.invoke { import(mainDiModule) }
-    val api: GigaChatAPI by di.instance()
+    val api: LLMChatAPI by di.instance()
     val vectorDB: VectorDB by di.instance()
     val extractor: DesktopDataExtractor by di.instance()
     val settingsProvider: SettingsProvider by di.instance()

@@ -4,8 +4,8 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.giga.GigaToolSetup
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
 import ru.souz.tool.application.*
 import ru.souz.tool.browser.*
@@ -104,13 +104,13 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
     private val toolPresentationCreate: ToolPresentationCreate by di.instance()
     private val toolPresentationRead: ToolPresentationRead by di.instance()
 
-    override val toolsByCategory: Map<ToolCategory, Map<FunctionName, GigaToolSetup>> by lazy {
+    override val toolsByCategory: Map<ToolCategory, Map<FunctionName, LLMToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
             category.tools().associateBy { it.fn.name }
         }
     }
 
-    private fun ToolCategory.tools(): List<GigaToolSetup> = when (this) {
+    private fun ToolCategory.tools(): List<LLMToolSetup> = when (this) {
         ToolCategory.FILES -> listOf(
             toolListFiles.toGiga(),
             toolFindInFiles.toGiga(),
@@ -219,8 +219,8 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
             toolFindFilesByName.toGiga(),
         )
     }.map {
-        object : GigaToolSetup by it {
-            override val fn: GigaRequest.Function =
+        object : LLMToolSetup by it {
+            override val fn: LLMRequest.Function =
                 it.fn.copy(
                     fewShotExamples = when {
                         settingsProvider.useFewShotExamples -> it.fn.fewShotExamples

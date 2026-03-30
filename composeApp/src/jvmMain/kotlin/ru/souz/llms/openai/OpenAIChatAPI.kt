@@ -30,14 +30,14 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
-import ru.souz.llms.giga.GigaChatAPI
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaModel
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.TokenLogging
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toFinishReason
 import ru.souz.llms.giga.toGiga
 import ru.souz.tool.files.FilesToolUtil
@@ -50,7 +50,7 @@ import kotlin.time.measureTime
 class OpenAIChatAPI(
     private val settingsProvider: SettingsProvider,
     private val tokenLogging: TokenLogging,
-) : GigaChatAPI {
+) : LLMChatAPI {
     private val l = LoggerFactory.getLogger(OpenAIChatAPI::class.java)
 
     private val apiKey: String
@@ -94,30 +94,30 @@ class OpenAIChatAPI(
         }
     }
 
-    override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val response = client.post(CHAT_COMPLETIONS_URL) {
             setBody(buildChatRequest(body, stream = false))
         }
         val text = response.bodyAsText()
         if (response.status.isSuccess()) {
             parseCompletionsResponse(text, body.model).also { result ->
-                if (result is GigaResponse.Chat.Ok) {
+                if (result is LLMResponse.Chat.Ok) {
                     l.info("Model: ${body.model}. Response received")
                     tokenLogging.logTokenUsage(result, body)
                 }
             }
         } else {
-            GigaResponse.Chat.Error(response.status.value, text)
+            LLMResponse.Chat.Error(response.status.value, text)
         }
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
-        GigaResponse.Chat.Error(e.response.status.value, text)
+        LLMResponse.Chat.Error(e.response.status.value, text)
     } catch (t: Throwable) {
         l.error("Model: ${body.model}. Error in chat", t)
-        GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")
+        LLMResponse.Chat.Error(-1, "Connection error: ${t.message}")
     }
 
-    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = channelFlow {
         try {
             val accumulator = OpenAiStreamAccumulator()
 
@@ -126,7 +126,7 @@ class OpenAIChatAPI(
             }.execute { response ->
                 if (!response.status.isSuccess()) {
                     val text = response.bodyAsText()
-                    send(GigaResponse.Chat.Error(response.status.value, text))
+                    send(LLMResponse.Chat.Error(response.status.value, text))
                     return@execute
                 }
 
@@ -138,7 +138,7 @@ class OpenAIChatAPI(
                         if (data == "[DONE]") break
 
                         try {
-                            val chunkNode: JsonNode = gigaJsonMapper.readTree(data)
+                            val chunkNode: JsonNode = restJsonMapper.readTree(data)
                             val model = chunkNode["model"]?.asText() ?: body.model
                             val created = chunkNode["created"]?.asLong() ?: (System.currentTimeMillis() / 1000)
 
@@ -148,7 +148,7 @@ class OpenAIChatAPI(
                                 // Usage is typically null in chunks until the end, or never sent
                                 val usage = parseUsage(chunkNode["usage"])
                                 val chunks = prepareChoices(chunks)
-                                send(GigaResponse.Chat.Ok(chunks, created, model, usage))
+                                send(LLMResponse.Chat.Ok(chunks, created, model, usage))
                             }
                         } catch (e: Exception) {
                             l.warn("Model: ${body.model}. Failed to parse stream chunk: $data", e)
@@ -158,14 +158,14 @@ class OpenAIChatAPI(
             }
         } catch (e: ClientRequestException) {
             val text = e.response.bodyAsText()
-            send(GigaResponse.Chat.Error(e.response.status.value, text))
+            send(LLMResponse.Chat.Error(e.response.status.value, text))
         } catch (t: Throwable) {
             l.error("Model: ${body.model}. Error in OpenAI stream chat", t)
-            send(GigaResponse.Chat.Error(-1, "Connection error: ${t.message}"))
+            send(LLMResponse.Chat.Error(-1, "Connection error: ${t.message}"))
         }
     }
 
-    override suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings = try {
+    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings = try {
         val response = client.post(EMBEDDINGS_URL) {
             setBody(buildEmbeddingsRequest(body))
         }
@@ -173,17 +173,17 @@ class OpenAIChatAPI(
         if (response.status.isSuccess()) {
             parseEmbeddingsResponse(text)
         } else {
-            GigaResponse.Embeddings.Error(response.status.value, text)
+            LLMResponse.Embeddings.Error(response.status.value, text)
         }
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
-        GigaResponse.Embeddings.Error(e.response.status.value, text)
+        LLMResponse.Embeddings.Error(e.response.status.value, text)
     } catch (t: Throwable) {
         l.error("Model: ${body.model}. Error in OpenAI embeddings", t)
-        GigaResponse.Embeddings.Error(-1, "Connection error: ${t.message}")
+        LLMResponse.Embeddings.Error(-1, "Connection error: ${t.message}")
     }
 
-    override suspend fun uploadFile(file: File): GigaResponse.UploadFile {
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile {
         throw UnsupportedOperationException("OpenAI file upload is not supported in this implementation")
     }
 
@@ -191,11 +191,11 @@ class OpenAIChatAPI(
         return null
     }
 
-    override suspend fun balance(): GigaResponse.Balance {
-        return GigaResponse.Balance.Error(-1, "Balance check not implemented for OpenAI")
+    override suspend fun balance(): LLMResponse.Balance {
+        return LLMResponse.Balance.Error(-1, "Balance check not implemented for OpenAI")
     }
 
-    private fun buildChatRequest(body: GigaRequest.Chat, stream: Boolean): Map<String, Any> {
+    private fun buildChatRequest(body: LLMRequest.Chat, stream: Boolean): Map<String, Any> {
         val tools = buildTools(body.functions)
         return buildMap {
             val model = resolveChatModel(body.model)
@@ -215,7 +215,7 @@ class OpenAIChatAPI(
         }
     }
 
-    private fun buildEmbeddingsRequest(body: GigaRequest.Embeddings): Map<String, Any> = buildMap {
+    private fun buildEmbeddingsRequest(body: LLMRequest.Embeddings): Map<String, Any> = buildMap {
         put("model", resolveEmbeddingsModel(body.model))
         if (body.input.size == 1) {
             put("input", body.input.first())
@@ -225,7 +225,7 @@ class OpenAIChatAPI(
         put("encoding_format", "float")
     }
 
-    private fun buildMessages(messages: List<GigaRequest.Message>): List<Map<String, Any?>> {
+    private fun buildMessages(messages: List<LLMRequest.Message>): List<Map<String, Any?>> {
         val pendingToolCallIdsByName = mutableMapOf<String, ArrayDeque<String>>()
         val remainingToolResultIds = mutableMapOf<String, Int>()
         val remainingToolResultNames = mutableMapOf<String, Int>()
@@ -235,7 +235,7 @@ class OpenAIChatAPI(
         var currentToolCallAssistant: MutableMap<String, Any?>? = null
 
         messages.forEach { msg ->
-            if (msg.role != GigaMessageRole.function) return@forEach
+            if (msg.role != LLMMessageRole.function) return@forEach
             when {
                 !msg.functionsStateId.isNullOrBlank() -> {
                     val id = msg.functionsStateId ?: return@forEach
@@ -262,10 +262,10 @@ class OpenAIChatAPI(
             delayed.clear()
         }
 
-        fun parseAssistantToolCall(msg: GigaRequest.Message): Map<String, Any?>? {
+        fun parseAssistantToolCall(msg: LLMRequest.Message): Map<String, Any?>? {
             val functionsStateId = msg.functionsStateId ?: return null
             return try {
-                val contentJson = gigaJsonMapper.readTree(msg.content)
+                val contentJson = restJsonMapper.readTree(msg.content)
                 val name = contentJson["name"]?.asText()
                 val argumentsNode = contentJson["arguments"]
                 if (name != null && argumentsNode != null) {
@@ -279,7 +279,7 @@ class OpenAIChatAPI(
                     } else {
                         remainingToolResultNames[name] = nameBudget - 1
                     }
-                    val arguments = gigaJsonMapper.writeValueAsString(argumentsNode)
+                    val arguments = restJsonMapper.writeValueAsString(argumentsNode)
                     pendingToolCallIdsByName.getOrPut(name) { ArrayDeque() }.addLast(functionsStateId)
                     buildMap {
                         put("id", functionsStateId)
@@ -304,7 +304,7 @@ class OpenAIChatAPI(
 
         messages.forEach { msg ->
             when (msg.role) {
-                GigaMessageRole.function -> {
+                LLMMessageRole.function -> {
                     val toolCallId = msg.functionsStateId ?: msg.name?.let { name ->
                         pendingToolCallIdsByName[name]?.removeFirstOrNull()
                     }
@@ -333,7 +333,7 @@ class OpenAIChatAPI(
                     }
                 }
 
-                GigaMessageRole.assistant -> {
+                LLMMessageRole.assistant -> {
                     val toolCall = parseAssistantToolCall(msg)
                     if (toolCall != null) {
                         val assistantMessage = currentToolCallAssistant?.takeIf { pendingToolCallIds.isNotEmpty() }
@@ -393,7 +393,7 @@ class OpenAIChatAPI(
         return result
     }
 
-    private fun buildTools(functions: List<GigaRequest.Function>): List<Map<String, Any>> {
+    private fun buildTools(functions: List<LLMRequest.Function>): List<Map<String, Any>> {
         return functions.map { fn ->
             val properties = fn.parameters.properties.mapValues { (_, prop) ->
                 buildMap {
@@ -430,11 +430,11 @@ class OpenAIChatAPI(
         }
     }
 
-    private fun parseCompletionsResponse(text: String, requestModel: String): GigaResponse.Chat {
-        val node = gigaJsonMapper.readTree(text)
+    private fun parseCompletionsResponse(text: String, requestModel: String): LLMResponse.Chat {
+        val node = restJsonMapper.readTree(text)
         val choices = prepareChoices(parseChoices(node["choices"], isStream = false))
         val usage = parseUsage(node["usage"])
-        return GigaResponse.Chat.Ok(
+        return LLMResponse.Chat.Ok(
             choices = choices,
             created = node["created"]?.asLong() ?: (System.currentTimeMillis() / 1000),
             model = node["model"]?.asText() ?: requestModel,
@@ -442,7 +442,7 @@ class OpenAIChatAPI(
         )
     }
 
-    private fun prepareChoices(chunks: List<GigaResponse.Choice>): List<GigaResponse.Choice> = chunks.map { msg ->
+    private fun prepareChoices(chunks: List<LLMResponse.Choice>): List<LLMResponse.Choice> = chunks.map { msg ->
         when (msg.message.content) {
             "null" -> msg.copy(message = msg.message.copy(content = ""))
             else -> msg
@@ -452,12 +452,12 @@ class OpenAIChatAPI(
     private fun parseChoices(
         choicesNode: JsonNode?,
         isStream: Boolean
-    ): List<GigaResponse.Choice> {
+    ): List<LLMResponse.Choice> {
         if (choicesNode == null || !choicesNode.isArray) {
             return emptyList()
         }
 
-        val choices = mutableListOf<GigaResponse.Choice>()
+        val choices = mutableListOf<LLMResponse.Choice>()
         choicesNode.forEachIndexed { idx, choiceNode ->
             val messageField = if (isStream) "delta" else "message"
             val messageNode = choiceNode[messageField]
@@ -479,22 +479,22 @@ class OpenAIChatAPI(
                     val functionsStateId = toolCallNode["id"]?.asText()
                     val toolIndex = toolCallNode["index"]?.asInt() ?: choiceIndex
 
-                    choices += GigaResponse.Choice(
-                        message = GigaResponse.Message(
+                    choices += LLMResponse.Choice(
+                        message = LLMResponse.Message(
                             content = "",
                             role = role,
-                            functionCall = GigaResponse.FunctionCall(name, args),
+                            functionCall = LLMResponse.FunctionCall(name, args),
                             functionsStateId = functionsStateId,
                         ),
                         index = toolIndex,
-                        finishReason = GigaResponse.FinishReason.function_call,
+                        finishReason = LLMResponse.FinishReason.function_call,
                     )
                 }
             }
 
             if (messageContent.isNotEmpty()) {
-                choices += GigaResponse.Choice(
-                    message = GigaResponse.Message(
+                choices += LLMResponse.Choice(
+                    message = LLMResponse.Message(
                         content = messageContent,
                         role = role,
                         functionCall = null,
@@ -504,8 +504,8 @@ class OpenAIChatAPI(
                     finishReason = if (toolCallsNode != null && toolCallsNode.size() > 0) null else finishReason,
                 )
             } else if (toolCallsNode == null || toolCallsNode.size() == 0) {
-                choices += GigaResponse.Choice(
-                    message = GigaResponse.Message(
+                choices += LLMResponse.Choice(
+                    message = LLMResponse.Message(
                         content = "",
                         role = role,
                         functionCall = null,
@@ -520,24 +520,24 @@ class OpenAIChatAPI(
         return choices
     }
 
-    private fun parseUsage(node: JsonNode?): GigaResponse.Usage {
+    private fun parseUsage(node: JsonNode?): LLMResponse.Usage {
         val prompt = node?.get("prompt_tokens")?.asInt() ?: 0
         val completion = node?.get("completion_tokens")?.asInt() ?: 0
         val total = node?.get("total_tokens")?.asInt() ?: (prompt + completion)
-        return GigaResponse.Usage(prompt, completion, total, 0)
+        return LLMResponse.Usage(prompt, completion, total, 0)
     }
 
-    private fun parseEmbeddingsResponse(text: String): GigaResponse.Embeddings {
-        val node = gigaJsonMapper.readTree(text)
+    private fun parseEmbeddingsResponse(text: String): LLMResponse.Embeddings {
+        val node = restJsonMapper.readTree(text)
         val data = node["data"]?.mapIndexed { index, item ->
-            GigaResponse.Embedding(
+            LLMResponse.Embedding(
                 embedding = item["embedding"]?.map { it.asDouble() } ?: emptyList(),
                 index = item["index"]?.asInt() ?: index,
                 objectType = item["object"]?.asText(),
             )
         } ?: emptyList()
 
-        return GigaResponse.Embeddings.Ok(
+        return LLMResponse.Embeddings.Ok(
             data = data,
             model = node["model"]?.asText() ?: "",
             objectType = node["object"]?.asText() ?: "list",
@@ -546,7 +546,7 @@ class OpenAIChatAPI(
 
     private fun parseFunctionArguments(argsText: String): Map<String, Any> {
         if (argsText.isBlank()) return emptyMap()
-        return runCatching { gigaJsonMapper.readValue<Map<String, Any>>(argsText) }
+        return runCatching { restJsonMapper.readValue<Map<String, Any>>(argsText) }
             .getOrElse {
                 l.warn("Failed to parse OpenAI tool arguments: $argsText")
                 emptyMap()
@@ -611,12 +611,12 @@ class OpenAIChatAPI(
         val name = function["name"]?.toString().orEmpty()
         val rawArguments = function["arguments"]?.toString().orEmpty()
         val parsedArguments: Any = runCatching {
-            gigaJsonMapper.readTree(rawArguments)
+            restJsonMapper.readTree(rawArguments)
         }.getOrElse {
             if (rawArguments.isBlank()) emptyMap<String, Any>() else rawArguments
         }
         return runCatching {
-            gigaJsonMapper.writeValueAsString(
+            restJsonMapper.writeValueAsString(
                 mapOf(
                     "name" to name,
                     "arguments" to parsedArguments,
@@ -652,7 +652,7 @@ class OpenAIChatAPI(
         if (normalized.startsWith("gpt-", ignoreCase = true)) {
             return normalized
         }
-        val model = GigaModel.entries.firstOrNull {
+        val model = LLMModel.entries.firstOrNull {
             it.alias.equals(normalized, ignoreCase = true) || it.name.equals(normalized, ignoreCase = true)
         } ?: return null
         if (model.provider == LlmProvider.OPENAI) {
@@ -681,21 +681,21 @@ private fun JsonNode?.toOpenAiMessageContent(): String {
 }
 
 
-private fun String?.toOpenAiFinishReasonValue(): GigaResponse.FinishReason? {
+private fun String?.toOpenAiFinishReasonValue(): LLMResponse.FinishReason? {
     if (this == null || this.equals("null", ignoreCase = true) || this.isBlank()) {
         return null
     }
     return when (this) {
-        "tool_calls" -> GigaResponse.FinishReason.function_call
-        "stop" -> GigaResponse.FinishReason.stop
-        "length" -> GigaResponse.FinishReason.length
+        "tool_calls" -> LLMResponse.FinishReason.function_call
+        "stop" -> LLMResponse.FinishReason.stop
+        "length" -> LLMResponse.FinishReason.length
         else -> this.toFinishReason()
     }
 }
 
-private fun String?.toOpenAiRole(): GigaMessageRole {
-    return runCatching { GigaMessageRole.valueOf(this ?: "") }
-        .getOrDefault(GigaMessageRole.assistant)
+private fun String?.toOpenAiRole(): LLMMessageRole {
+    return runCatching { LLMMessageRole.valueOf(this ?: "") }
+        .getOrDefault(LLMMessageRole.assistant)
 }
 
 // Helper class to buffer tool call arguments in streaming
@@ -705,10 +705,10 @@ private class OpenAiStreamAccumulator {
     private var nextToolChoiceIndex = -1
 
     data class ChoiceState(
-        var role: GigaMessageRole? = null,
+        var role: LLMMessageRole? = null,
         val content: StringBuilder = StringBuilder(),
         val toolCalls: MutableMap<Int, ToolCallState> = mutableMapOf(),
-        var finishReason: GigaResponse.FinishReason? = null
+        var finishReason: LLMResponse.FinishReason? = null
     )
 
     data class ToolCallState(
@@ -717,11 +717,11 @@ private class OpenAiStreamAccumulator {
         val arguments: StringBuilder = StringBuilder()
     )
 
-    fun processChunk(chunkNode: JsonNode): List<GigaResponse.Choice> {
+    fun processChunk(chunkNode: JsonNode): List<LLMResponse.Choice> {
         val choicesNode = chunkNode["choices"] ?: return emptyList()
         if (!choicesNode.isArray) return emptyList()
 
-        val resultChoices = mutableListOf<GigaResponse.Choice>()
+        val resultChoices = mutableListOf<LLMResponse.Choice>()
 
         choicesNode.forEach { choiceNode ->
             val index = choiceNode["index"]?.asInt() ?: 0
@@ -733,7 +733,7 @@ private class OpenAiStreamAccumulator {
 
             // Update Role
             delta?.get("role")?.asText()?.let {
-                if (it.isNotBlank()) state.role = GigaMessageRole.valueOf(it)
+                if (it.isNotBlank()) state.role = LLMMessageRole.valueOf(it)
             }
 
             // Append Content
@@ -741,10 +741,10 @@ private class OpenAiStreamAccumulator {
             if (!contentOrNull.isNullOrEmpty()) {
                 // Emit content immediately as stream
                 resultChoices.add(
-                    GigaResponse.Choice(
-                        message = GigaResponse.Message(
+                    LLMResponse.Choice(
+                        message = LLMResponse.Message(
                             content = contentOrNull,
-                            role = state.role ?: GigaMessageRole.assistant,
+                            role = state.role ?: LLMMessageRole.assistant,
                             functionCall = null,
                             functionsStateId = null
                         ),
@@ -778,11 +778,11 @@ private class OpenAiStreamAccumulator {
                         if (tcState.name != null) {
                             val syntheticChoiceIndex = syntheticToolChoiceIndex(index, toolCallIndex)
                             resultChoices.add(
-                                GigaResponse.Choice(
-                                    message = GigaResponse.Message(
+                                LLMResponse.Choice(
+                                    message = LLMResponse.Message(
                                         content = "",
-                                        role = state.role ?: GigaMessageRole.assistant,
-                                        functionCall = GigaResponse.FunctionCall(
+                                        role = state.role ?: LLMMessageRole.assistant,
+                                        functionCall = LLMResponse.FunctionCall(
                                             name = tcState.name!!,
                                             arguments = argsMap
                                         ),
@@ -796,13 +796,13 @@ private class OpenAiStreamAccumulator {
                     }
                     // Clear tool calls after emitting to avoid duplicate emissions if multiple finish reasons (unlikely)
                     state.toolCalls.clear()
-                } else if (finishReason != GigaResponse.FinishReason.function_call) {
+                } else if (finishReason != LLMResponse.FinishReason.function_call) {
                     // Signal end of stream
                     resultChoices.add(
-                        GigaResponse.Choice(
-                            message = GigaResponse.Message(
+                        LLMResponse.Choice(
+                            message = LLMResponse.Message(
                                 content = "",
-                                role = state.role ?: GigaMessageRole.assistant,
+                                role = state.role ?: LLMMessageRole.assistant,
                                 functionCall = null,
                                 functionsStateId = null
                             ),
@@ -818,7 +818,7 @@ private class OpenAiStreamAccumulator {
 
     private fun parseFunctionArguments(argsText: String): Map<String, Any> {
         if (argsText.isBlank()) return emptyMap()
-        return runCatching { gigaJsonMapper.readValue<Map<String, Any>>(argsText) }
+        return runCatching { restJsonMapper.readValue<Map<String, Any>>(argsText) }
             .getOrElse {
                 emptyMap()
             }
@@ -843,16 +843,16 @@ suspend fun main() {
         ?: System.getProperty("OPENAI_MODEL")
         ?: "gpt-5-nano"
 
-    val request = GigaRequest.Chat(
+    val request = LLMRequest.Chat(
         model = model,
         stream = true,
         messages = listOf(
-            GigaRequest.Message(
-                role = GigaMessageRole.system,
+            LLMRequest.Message(
+                role = LLMMessageRole.system,
                 content = "Ты помощник, который при необходимости вызывает функции. Отвечай кратко."
             ),
-            GigaRequest.Message(
-                role = GigaMessageRole.user,
+            LLMRequest.Message(
+                role = LLMMessageRole.user,
                 content = "Перечисли файлы в текущей папке.",
             ),
         ),
@@ -872,7 +872,7 @@ suspend fun main() {
                 firstPrinted = true
             }
             when (response) {
-                is GigaResponse.Chat.Ok -> {
+                is LLMResponse.Chat.Ok -> {
                     response.choices.forEach { choice ->
                         val content = choice.message.content
                         if (content.isNotEmpty()) print(content)
@@ -883,7 +883,7 @@ suspend fun main() {
                     }
                 }
 
-                is GigaResponse.Chat.Error -> {
+                is LLMResponse.Chat.Error -> {
                     println("Error: ${response.message}")
                 }
             }

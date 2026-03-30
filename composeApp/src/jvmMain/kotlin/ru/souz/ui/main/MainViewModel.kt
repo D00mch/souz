@@ -24,7 +24,7 @@ import ru.souz.agent.AgentFacade
 import ru.souz.agent.engine.AgentContext
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.local.LocalModelDownloadState
 import ru.souz.llms.local.LocalLlamaRuntime
@@ -435,13 +435,13 @@ class MainViewModel(
         }
     }
 
-    private fun pickConfiguredOrDefaultModel(availableModels: List<GigaModel>) = when {
+    private fun pickConfiguredOrDefaultModel(availableModels: List<LLMModel>) = when {
         availableModels.isEmpty() -> settingsProvider.gigaModel
         settingsProvider.gigaModel in availableModels -> settingsProvider.gigaModel
         else -> settingsProvider.defaultLlmModel(llmBuildProfile) ?: availableModels.first()
     }
 
-    private fun applySelectedModel(model: GigaModel) {
+    private fun applySelectedModel(model: LLMModel) {
         if (settingsProvider.gigaModel != model) {
             settingsProvider.gigaModel = model
             chatUseCase.updateModel(model)
@@ -449,7 +449,7 @@ class MainViewModel(
         scheduleLocalModelPreload(model)
     }
 
-    private fun scheduleLocalModelPreload(model: GigaModel) {
+    private fun scheduleLocalModelPreload(model: LLMModel) {
         if (!LocalModelProfiles.isLocalModelAlias(model.alias)) {
             localModelPreloadJob?.cancel()
             localModelPreloadJob = null

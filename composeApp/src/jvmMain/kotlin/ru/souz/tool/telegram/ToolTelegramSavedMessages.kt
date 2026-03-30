@@ -1,7 +1,7 @@
 package ru.souz.tool.telegram
 
 import kotlinx.coroutines.runBlocking
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.service.telegram.TelegramService
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
@@ -64,7 +64,7 @@ class ToolTelegramSavedMessages(
             throw BadInputException(error.message ?: "Failed to write to Telegram Saved Messages")
         }
 
-        return gigaJsonMapper.writeValueAsString(
+        return restJsonMapper.writeValueAsString(
             mapOf(
                 "status" to "saved",
                 "chatId" to sent.chatId,

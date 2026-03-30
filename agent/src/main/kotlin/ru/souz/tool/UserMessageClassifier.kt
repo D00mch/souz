@@ -1,8 +1,8 @@
 package ru.souz.tool
 
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.restJsonMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 
 fun interface UserMessageClassifier {
@@ -18,12 +18,12 @@ object LocalRegexClassifier : UserMessageClassifier {
     private val defaultUnknown = UserMessageClassifier.Reply(emptyList(), 0.0)
 
     override suspend fun classify(body: String): UserMessageClassifier.Reply {
-        val chat: GigaRequest.Chat = try {
-            gigaJsonMapper.readValue(body)
+        val chat: LLMRequest.Chat = try {
+            restJsonMapper.readValue(body)
         } catch (_: Exception) {
             return defaultUnknown
         }
-        val lastUser = chat.messages.lastOrNull { it.role == GigaMessageRole.user }
+        val lastUser = chat.messages.lastOrNull { it.role == LLMMessageRole.user }
             ?: return defaultUnknown
 
         val text = lastUser.content

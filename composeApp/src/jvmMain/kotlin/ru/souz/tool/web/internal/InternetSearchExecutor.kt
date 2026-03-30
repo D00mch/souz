@@ -5,21 +5,21 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.giga.GigaChatAPI
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.files.FilesToolUtil
 import java.io.File
 import java.nio.charset.StandardCharsets
 
 internal class InternetSearchExecutor(
-    private val api: GigaChatAPI,
+    private val api: LLMChatAPI,
     private val settingsProvider: SettingsProvider,
     private val filesToolUtil: FilesToolUtil,
     private val webResearchClient: WebResearchClient = WebResearchClient(),
-    mapper: ObjectMapper = gigaJsonMapper,
+    mapper: ObjectMapper = restJsonMapper,
     private val internals: InternetSearchInternals = InternetSearchInternals(
         mapper.copy().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
     ),
@@ -241,11 +241,11 @@ internal class InternetSearchExecutor(
     ): String? {
         val response = try {
             api.message(
-                GigaRequest.Chat(
+                LLMRequest.Chat(
                     model = settingsProvider.gigaModel.alias,
                     messages = listOf(
-                        GigaRequest.Message(role = GigaMessageRole.system, content = systemPrompt),
-                        GigaRequest.Message(role = GigaMessageRole.user, content = userPrompt),
+                        LLMRequest.Message(role = LLMMessageRole.system, content = systemPrompt),
+                        LLMRequest.Message(role = LLMMessageRole.user, content = userPrompt),
                     ),
                     functions = emptyList(),
                     temperature = temperature,
@@ -260,12 +260,12 @@ internal class InternetSearchExecutor(
         }
 
         return when (response) {
-            is GigaResponse.Chat.Error -> {
+            is LLMResponse.Chat.Error -> {
                 logger.warn("InternetSearch LLM error {}: {}", response.status, response.message)
                 null
             }
 
-            is GigaResponse.Chat.Ok -> response.choices
+            is LLMResponse.Chat.Ok -> response.choices
                 .asReversed()
                 .firstOrNull { it.message.content.isNotBlank() }
                 ?.message

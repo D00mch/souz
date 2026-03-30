@@ -6,7 +6,7 @@ import ru.souz.tool.*
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 
 
 class ToolCollectButtons(
@@ -137,7 +137,7 @@ class ToolCollectButtons(
             )
         )
 
-        val outButtons = gigaJsonMapper.readValue<List<OsxButton>>(result)
+        val outButtons = restJsonMapper.readValue<List<OsxButton>>(result)
             .take(count)
             .map { osxBtn ->
                 val width = osxBtn.size[0]
@@ -146,7 +146,7 @@ class ToolCollectButtons(
                 val y = (osxBtn.position[1] + height / 2) * ImageUtils.DESKTOP_SCREENSHOT_QUALITY
                 OutButton(x.toInt(), y.toInt(), osxBtn.name)
             }
-        return gigaJsonMapper.writeValueAsString(outButtons)
+        return restJsonMapper.writeValueAsString(outButtons)
     }
 
     data class OsxButton(

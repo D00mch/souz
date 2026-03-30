@@ -15,7 +15,7 @@ class LlmBuildProfile(
     private fun currentEdition(): BuildEdition =
         if (settingsProvider.regionProfile == REGION_EN) BuildEdition.EN else BuildEdition.RU
 
-    private fun currentDefaults(): Map<LlmProvider, GigaModel> =
+    private fun currentDefaults(): Map<LlmProvider, LLMModel> =
         defaultsForEdition(currentEdition())
 
     val availableProviders: Set<LlmProvider>
@@ -23,25 +23,25 @@ class LlmBuildProfile(
             provider != LlmProvider.LOCAL || localProviderAvailability.isProviderAvailable()
         }
 
-    val availableModels: List<GigaModel>
-        get() = GigaModel.entries.filter(::isModelAvailable)
+    val availableModels: List<LLMModel>
+        get() = LLMModel.entries.filter(::isModelAvailable)
 
-    val defaultModel: GigaModel
+    val defaultModel: LLMModel
         get() = currentDefaults().values.first()
 
     val supportsSaluteSpeechRecognition: Boolean
         get() = currentEdition() == BuildEdition.RU
 
-    fun normalizeModel(model: GigaModel): GigaModel = if (isModelAvailable(model)) model else defaultModel
+    fun normalizeModel(model: LLMModel): LLMModel = if (isModelAvailable(model)) model else defaultModel
 
-    fun isModelAvailable(model: GigaModel): Boolean = when (model.provider) {
+    fun isModelAvailable(model: LLMModel): Boolean = when (model.provider) {
         LlmProvider.LOCAL -> model in localProviderAvailability.availableGigaModels()
         else -> model.provider in availableProviders
     }
 
-    fun findModelByAlias(alias: String): GigaModel? = availableModels.firstOrNull { it.alias == alias }
+    fun findModelByAlias(alias: String): LLMModel? = availableModels.firstOrNull { it.alias == alias }
 
-    fun defaultModelForProvider(provider: LlmProvider): GigaModel? = when (provider) {
+    fun defaultModelForProvider(provider: LlmProvider): LLMModel? = when (provider) {
         LlmProvider.LOCAL -> localProviderAvailability.defaultGigaModel()
         else -> currentDefaults()[provider]
     }
@@ -49,25 +49,25 @@ class LlmBuildProfile(
     fun providerPriorities(): List<LlmProvider> = providerPrioritiesForEdition(currentEdition())
 
     companion object {
-        private val providerDefaultsByEdition: Map<BuildEdition, Map<LlmProvider, GigaModel>> = mapOf(
+        private val providerDefaultsByEdition: Map<BuildEdition, Map<LlmProvider, LLMModel>> = mapOf(
             BuildEdition.RU to mapOf(
-                LlmProvider.GIGA to GigaModel.Max,
-                LlmProvider.QWEN to GigaModel.QwenMax,
-                LlmProvider.AI_TUNNEL to GigaModel.AiTunnelClaudeHaiku,
-                LlmProvider.LOCAL to GigaModel.LocalQwen3_4B_Instruct_2507,
+                LlmProvider.GIGA to LLMModel.Max,
+                LlmProvider.QWEN to LLMModel.QwenMax,
+                LlmProvider.AI_TUNNEL to LLMModel.AiTunnelClaudeHaiku,
+                LlmProvider.LOCAL to LLMModel.LocalQwen3_4B_Instruct_2507,
             ),
             BuildEdition.EN to mapOf(
-                LlmProvider.OPENAI to GigaModel.OpenAIGpt5Nano,
-                LlmProvider.QWEN to GigaModel.QwenMax,
-                LlmProvider.ANTHROPIC to GigaModel.AnthropicHaiku45,
-                LlmProvider.LOCAL to GigaModel.LocalQwen3_4B_Instruct_2507,
+                LlmProvider.OPENAI to LLMModel.OpenAIGpt5Nano,
+                LlmProvider.QWEN to LLMModel.QwenMax,
+                LlmProvider.ANTHROPIC to LLMModel.AnthropicHaiku45,
+                LlmProvider.LOCAL to LLMModel.LocalQwen3_4B_Instruct_2507,
             ),
         )
 
-        fun defaultsForEdition(edition: BuildEdition): Map<LlmProvider, GigaModel> =
+        fun defaultsForEdition(edition: BuildEdition): Map<LlmProvider, LLMModel> =
             providerDefaultsByEdition.getValue(edition)
 
-        fun defaultsForLanguage(language: String): Map<LlmProvider, GigaModel> =
+        fun defaultsForLanguage(language: String): Map<LlmProvider, LLMModel> =
             defaultsForEdition(if (language.equals(REGION_EN, ignoreCase = true)) BuildEdition.EN else BuildEdition.RU)
 
         fun providerPrioritiesForEdition(edition: BuildEdition): List<LlmProvider> = when (edition) {

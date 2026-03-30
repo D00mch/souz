@@ -1,10 +1,10 @@
 package ru.souz.llms.local
 
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
 
 data class LocalModelDownloadPrompt(
-    val model: GigaModel,
+    val model: LLMModel,
     val profile: LocalModelProfile,
     val targetPath: String,
 )
@@ -20,7 +20,7 @@ data class LocalModelDownloadState(
         get() = progress.fraction
 }
 
-fun LocalModelStore.downloadPromptFor(model: GigaModel): LocalModelDownloadPrompt? {
+fun LocalModelStore.downloadPromptFor(model: LLMModel): LocalModelDownloadPrompt? {
     if (model.provider != LlmProvider.LOCAL) return null
     val profile = LocalModelProfiles.forAlias(model.alias) ?: return null
     if (isPresent(profile)) return null

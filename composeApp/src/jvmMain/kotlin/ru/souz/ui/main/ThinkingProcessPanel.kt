@@ -8,7 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,8 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
 import java.text.SimpleDateFormat
 import java.util.*
 import souz.composeapp.generated.resources.Res
@@ -37,13 +36,13 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun ThinkingProcessPanel(
-    history: List<GigaRequest.Message>,
+    history: List<LLMRequest.Message>,
     isProcessing: Boolean,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Identify the start of the current session (last user request)
-    val lastUserIndex = history.indexOfLast { it.role == GigaMessageRole.user }
+    val lastUserIndex = history.indexOfLast { it.role == LLMMessageRole.user }
     val userRequest = if (lastUserIndex >= 0) history[lastUserIndex] else null
     
     // Filter messages after the user request
@@ -55,7 +54,7 @@ fun ThinkingProcessPanel(
 
     // Filter: Assistant messages with content (only text reasoning)
     val assistantMessages = relevantMessages.filter {
-        it.role == GigaMessageRole.assistant &&
+        it.role == LLMMessageRole.assistant &&
         it.content.isNotBlank()
     }
     

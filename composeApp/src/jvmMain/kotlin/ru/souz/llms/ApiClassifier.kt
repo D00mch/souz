@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
-import ru.souz.llms.giga.gigaJsonMapper
 
 class ApiClassifier(
     private val api: LLMFactory,
@@ -19,14 +18,14 @@ class ApiClassifier(
     private val spaceRegex = Regex("\\s+")
 
     override suspend fun classify(body: String): UserMessageClassifier.Reply {
-        val req: GigaRequest.Chat = gigaJsonMapper.readValue(body)
+        val req: LLMRequest.Chat = restJsonMapper.readValue(body)
         l.debug("Classifying via API, body:\n{}", logObjectMapper.writeValueAsString(req))
         return when (val resp = api.message(req)) {
-            is GigaResponse.Chat.Error -> {
+            is LLMResponse.Chat.Error -> {
                 l.error("Classification error: {}", resp.message)
                 unknown
             }
-            is GigaResponse.Chat.Ok -> {
+            is LLMResponse.Chat.Ok -> {
                 val rawContent = resp.choices.firstOrNull()?.message?.content?.trim()?.uppercase()
                     ?: return unknown
                 val cleanedContent = rawContent.replace(noiceRegex, "").trim()

@@ -21,7 +21,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import org.slf4j.LoggerFactory
 import ru.souz.db.ConfigStore
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import java.awt.Desktop
 import java.net.InetSocketAddress
 import java.net.URI
@@ -321,7 +321,7 @@ class McpOAuthManager(
                 "MCP OAuth dynamic client registration failed (${response.status.value}): ${text.take(500)}",
             )
         }
-        val node = runCatching { gigaJsonMapper.readTree(text) }
+        val node = runCatching { restJsonMapper.readTree(text) }
             .getOrElse { e -> throw IllegalStateException("Invalid registration response: ${e.message}") }
         val registeredClientId = node.path("client_id").asText("").trim()
         if (registeredClientId.isBlank()) {
@@ -359,7 +359,7 @@ class McpOAuthManager(
                 "MCP OAuth token request failed (${response.status.value}): ${text.take(500)}",
             )
         }
-        return runCatching { gigaJsonMapper.readTree(text) }
+        return runCatching { restJsonMapper.readTree(text) }
             .getOrElse { e -> throw IllegalStateException("Invalid token response: ${e.message}") }
     }
 
@@ -369,7 +369,7 @@ class McpOAuthManager(
         }
         if (!response.status.isSuccess()) return null
         val text = response.bodyAsText()
-        return runCatching { gigaJsonMapper.readTree(text) }.getOrNull()
+        return runCatching { restJsonMapper.readTree(text) }.getOrNull()
     }
 
     private fun buildAuthorizeUrl(
@@ -614,7 +614,7 @@ private data class OAuthClient(
 )
 
 private fun HttpRequestBuilder.setBodyFromJson(payload: Any) {
-    setBody(gigaJsonMapper.writeValueAsString(payload))
+    setBody(restJsonMapper.writeValueAsString(payload))
 }
 
 fun main() {

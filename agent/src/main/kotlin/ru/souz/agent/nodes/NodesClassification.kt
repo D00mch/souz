@@ -7,10 +7,10 @@ import ru.souz.agent.engine.Node
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.giga.GigaToolSetup
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolCategory.*
 import ru.souz.tool.UserMessageClassifier
@@ -31,7 +31,7 @@ class NodesClassification(
      * Modifies [AgentContext.activeTools] based on the classification algorithm and [ToolsSettings].
      */
     fun node(name: String = "select categories"): Node<String, String> = Node(name) { ctx: AgentContext<String> ->
-        val categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>> =
+        val categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>> =
             toolsFilter.applyFilter(toolCatalog.toolsByCategory)
         val categories: List<ToolCategory> = classify(ctx.input, ctx.history, categoryStates)
 
@@ -40,18 +40,18 @@ class NodesClassification(
         } else {
             categoryStates.filter { categories.contains(it.key) }
         }
-        val functions: List<GigaRequest.Function> = categoriesToChoseFrom.flatMap { it.value.values }.map { it.fn }
+        val functions: List<LLMRequest.Function> = categoriesToChoseFrom.flatMap { it.value.values }.map { it.fn }
         ctx.map(activeTools = functions) { it }
     }
 
     private suspend fun classify(
         userText: String,
-        history: List<GigaRequest.Message>,
-        categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>>,
+        history: List<LLMRequest.Message>,
+        categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>>,
         retriesCount: Int = 2
     ): List<ToolCategory> {
         val body = buildClassifierBody(userText, history, categoryStates)
-        val bodyJson = gigaJsonMapper.writeValueAsString(body)
+        val bodyJson = restJsonMapper.writeValueAsString(body)
         l.debug("Classifying user message: {}, \nbody: \n{}", userText, logObjectMapper.writeValueAsString(body))
         try {
             val localResult: UserMessageClassifier.Reply = localClassifier.classify(bodyJson)
@@ -74,23 +74,23 @@ class NodesClassification(
 
     private fun buildClassifierBody(
         userText: String,
-        history: List<GigaRequest.Message>,
-        categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>>
-    ): GigaRequest.Chat {
+        history: List<LLMRequest.Message>,
+        categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>>
+    ): LLMRequest.Chat {
         val smallHistory = history.takeLast(if (history.size > 3) 2 else 0).joinToString("\n") { it.content }
         val messages = listOf(
-            GigaRequest.Message(GigaMessageRole.system, buildPrompt(categoryStates)),
-            GigaRequest.Message(GigaMessageRole.user, "History:\n$smallHistory\n"),
-            GigaRequest.Message(GigaMessageRole.user, "New message:\n$userText"),
+            LLMRequest.Message(LLMMessageRole.system, buildPrompt(categoryStates)),
+            LLMRequest.Message(LLMMessageRole.user, "History:\n$smallHistory\n"),
+            LLMRequest.Message(LLMMessageRole.user, "New message:\n$userText"),
         )
-        return GigaRequest.Chat(
+        return LLMRequest.Chat(
             model = settingsProvider.gigaModel.alias,
             messages = messages,
             functions = emptyList(),
         )
     }
 
-    fun buildPrompt(toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>): String {
+    fun buildPrompt(toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>): String {
         val allowedCategories: Set<ToolCategory> = toolsByCategory.keys
         val categoriesInfoSection = allowedCategories.joinToString(
             prefix = "Категории:\n", separator = ";\n"

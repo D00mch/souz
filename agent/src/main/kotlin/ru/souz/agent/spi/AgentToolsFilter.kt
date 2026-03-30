@@ -1,6 +1,6 @@
 package ru.souz.agent.spi
 
-import ru.souz.llms.giga.GigaToolSetup
+import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
 
 /**
@@ -14,6 +14,6 @@ interface AgentToolsFilter {
      * Returns the tool catalog visible to the current agent step.
      */
     fun applyFilter(
-        toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
-    ): Map<ToolCategory, Map<String, GigaToolSetup>>
+        toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
+    ): Map<ToolCategory, Map<String, LLMToolSetup>>
 }

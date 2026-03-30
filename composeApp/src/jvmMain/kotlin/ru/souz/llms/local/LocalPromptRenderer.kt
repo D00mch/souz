@@ -1,33 +1,33 @@
 package ru.souz.llms.local
 
 import com.fasterxml.jackson.module.kotlin.readValue
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.restJsonMapper
 
 private const val CLASSIFICATION_RESPONSE_FORMAT_MARKER = "CATEGORY1,CATEGORY2 0-100"
 
-internal fun GigaRequest.Chat.prefersPlainTextLocalOutput(): Boolean {
+internal fun LLMRequest.Chat.prefersPlainTextLocalOutput(): Boolean {
     if (functions.isNotEmpty()) return false
 
     return messages.any { message ->
-        message.role == GigaMessageRole.system &&
+        message.role == LLMMessageRole.system &&
             message.content.contains(CLASSIFICATION_RESPONSE_FORMAT_MARKER)
     }
 }
 
 class LocalPromptRenderer {
-    fun render(body: GigaRequest.Chat, profile: LocalModelProfile): String {
+    fun render(body: LLMRequest.Chat, profile: LocalModelProfile): String {
         val systemPrompt = buildSystemPrompt(body, profile)
-        val messages = body.messages.filterNot { it.role == GigaMessageRole.system }
+        val messages = body.messages.filterNot { it.role == LLMMessageRole.system }
             .map { toRenderedMessage(it, profile) }
 
         return renderQwen(systemPrompt, messages)
     }
 
-    private fun buildSystemPrompt(body: GigaRequest.Chat, profile: LocalModelProfile): String {
+    private fun buildSystemPrompt(body: LLMRequest.Chat, profile: LocalModelProfile): String {
         val explicitSystem = body.messages
-            .filter { it.role == GigaMessageRole.system }
+            .filter { it.role == LLMMessageRole.system }
             .joinToString("\n\n") { it.content.trim() }
             .trim()
 
@@ -42,7 +42,7 @@ class LocalPromptRenderer {
     }
 
     private fun renderToolGuidance(
-        functions: List<GigaRequest.Function>,
+        functions: List<LLMRequest.Function>,
         profile: LocalModelProfile,
     ): String {
         if (functions.isEmpty()) {
@@ -77,7 +77,7 @@ class LocalPromptRenderer {
     }
 
     private fun renderToolGuidance(
-        functions: List<GigaRequest.Function>,
+        functions: List<LLMRequest.Function>,
         mode: ToolGuidanceMode,
     ): String = buildString {
         if (mode == ToolGuidanceMode.MINIMAL) {
@@ -127,7 +127,7 @@ class LocalPromptRenderer {
                         ?.firstOrNull()
                         ?.let { example ->
                             append("  Example arguments JSON: ")
-                            append(gigaJsonMapper.writeValueAsString(example.params))
+                            append(restJsonMapper.writeValueAsString(example.params))
                             appendLine()
                         }
                 }
@@ -154,12 +154,12 @@ class LocalPromptRenderer {
         }
     }.trim()
 
-    private fun sortArguments(fn: GigaRequest.Function): List<Map.Entry<String, GigaRequest.Property>> =
+    private fun sortArguments(fn: LLMRequest.Function): List<Map.Entry<String, LLMRequest.Property>> =
         fn.parameters.properties.entries.sortedBy { (name, _) ->
             if (name in fn.parameters.required) 0 else 1
         }
 
-    private fun renderCompactSignature(fn: GigaRequest.Function): String {
+    private fun renderCompactSignature(fn: LLMRequest.Function): String {
         val args = sortArguments(fn).joinToString(", ") { (name, property) ->
             buildString {
                 append(name)
@@ -171,7 +171,7 @@ class LocalPromptRenderer {
         return if (args.isBlank()) "()" else "($args)"
     }
 
-    private fun renderMinimalSignature(fn: GigaRequest.Function): String {
+    private fun renderMinimalSignature(fn: LLMRequest.Function): String {
         val args = sortArguments(fn).joinToString(", ") { (name, property) ->
             buildString {
                 append(name)
@@ -193,22 +193,22 @@ class LocalPromptRenderer {
         return if (args.isBlank()) "()" else "($args)"
     }
 
-    private fun renderPropertyType(property: GigaRequest.Property): String =
+    private fun renderPropertyType(property: LLMRequest.Property): String =
         property.enum
             ?.takeIf { it.isNotEmpty() }
             ?.joinToString("|")
             ?: property.type
 
-    private fun toRenderedMessage(message: GigaRequest.Message, profile: LocalModelProfile): RenderedMessage = when (message.role) {
-        GigaMessageRole.user -> RenderedMessage(role = "user", content = message.content.trim())
-        GigaMessageRole.assistant -> RenderedMessage(
+    private fun toRenderedMessage(message: LLMRequest.Message, profile: LocalModelProfile): RenderedMessage = when (message.role) {
+        LLMMessageRole.user -> RenderedMessage(role = "user", content = message.content.trim())
+        LLMMessageRole.assistant -> RenderedMessage(
             role = "assistant",
             content = renderAssistantMessage(message),
         )
 
-        GigaMessageRole.function -> RenderedMessage(
+        LLMMessageRole.function -> RenderedMessage(
             role = "user",
-            content = gigaJsonMapper.writeValueAsString(
+            content = restJsonMapper.writeValueAsString(
                 mapOf(
                     "tool_result" to mapOf(
                         "tool_name" to message.name.orEmpty(),
@@ -219,12 +219,12 @@ class LocalPromptRenderer {
             ),
         )
 
-        GigaMessageRole.system -> error("System messages must be handled separately before rendering.")
+        LLMMessageRole.system -> error("System messages must be handled separately before rendering.")
     }
 
-    private fun renderAssistantMessage(message: GigaRequest.Message): String {
+    private fun renderAssistantMessage(message: LLMRequest.Message): String {
         val toolCallJson = message.functionsStateId?.let {
-            runCatching { gigaJsonMapper.readValue<Map<String, Any>>(message.content) }.getOrNull()
+            runCatching { restJsonMapper.readValue<Map<String, Any>>(message.content) }.getOrNull()
         }
         if (toolCallJson == null) {
             return message.content.trim()
@@ -232,7 +232,7 @@ class LocalPromptRenderer {
 
         val toolName = toolCallJson["name"]?.toString().orEmpty()
         val arguments = toolCallJson["arguments"]
-        return gigaJsonMapper.writeValueAsString(
+        return restJsonMapper.writeValueAsString(
             mapOf(
                 "type" to "tool_calls",
                 "calls" to listOf(
@@ -261,7 +261,7 @@ class LocalPromptRenderer {
     }
 
     private fun normalizeToolResultContent(rawContent: String, profile: LocalModelProfile): Any {
-        val decoded = runCatching { gigaJsonMapper.readValue<String>(rawContent) }.getOrDefault(rawContent)
+        val decoded = runCatching { restJsonMapper.readValue<String>(rawContent) }.getOrDefault(rawContent)
         val budget = when {
             profile.maxContextSize <= 8192 -> LOCAL_SMALL_CONTEXT_TOOL_PREVIEW_CHARS
             else -> LOCAL_LARGE_CONTEXT_TOOL_PREVIEW_CHARS
@@ -275,7 +275,7 @@ class LocalPromptRenderer {
             )
         }
 
-        return runCatching { gigaJsonMapper.readValue<Any>(decoded) }.getOrDefault(decoded)
+        return runCatching { restJsonMapper.readValue<Any>(decoded) }.getOrDefault(decoded)
     }
 
     private data class RenderedMessage(

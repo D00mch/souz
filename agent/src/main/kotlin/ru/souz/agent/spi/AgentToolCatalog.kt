@@ -1,6 +1,6 @@
 package ru.souz.agent.spi
 
-import ru.souz.llms.giga.GigaToolSetup
+import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
 
 /**
@@ -11,5 +11,5 @@ import ru.souz.tool.ToolCategory
  */
 interface AgentToolCatalog {
     /** Tools grouped by category, before per-session filtering is applied. */
-    val toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>
+    val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>
 }

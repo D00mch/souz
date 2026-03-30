@@ -30,7 +30,7 @@ import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.plus
 import ru.souz.tool.ToolCategory
 import java.net.URI
@@ -161,8 +161,8 @@ class TelemetryService(
         status: TelemetryRequestStatus,
         responseLengthChars: Int?,
         errorMessage: String?,
-        requestTokenUsage: GigaResponse.Usage,
-        sessionTokenUsage: GigaResponse.Usage,
+        requestTokenUsage: LLMResponse.Usage,
+        sessionTokenUsage: LLMResponse.Usage,
     ) {
         val durationMs = System.currentTimeMillis() - context.startedAtMs
         val toolCallCount = activeRequests.remove(context.requestId)?.toolCallCount ?: 0
@@ -636,7 +636,7 @@ class TelemetryService(
             ?.takeIf { it.isNotEmpty() }
             ?.take(MAX_ERROR_MESSAGE_CHARS)
 
-    private fun usagePayload(usage: GigaResponse.Usage): Map<String, Int> = mapOf(
+    private fun usagePayload(usage: LLMResponse.Usage): Map<String, Int> = mapOf(
         "promptTokens" to usage.promptTokens,
         "completionTokens" to usage.completionTokens,
         "totalTokens" to usage.totalTokens,

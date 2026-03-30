@@ -5,10 +5,10 @@ import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaResponse
-import ru.souz.llms.giga.GigaToolSetup
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.restJsonMapper
 import ru.souz.llms.giga.toGiga
 import ru.souz.tool.files.FilesToolUtil
 import java.io.File
@@ -33,7 +33,7 @@ class GigaToolTest {
     fun `test function name and parameters setup`() {
         val fn = listFiles.toGiga().fn
         assertEquals(fn.name, "ListFiles")
-        val jsonParams = gigaJsonMapper.writeValueAsString(fn.parameters)
+        val jsonParams = restJsonMapper.writeValueAsString(fn.parameters)
         assertEquals(
             """
 {"type":"object","properties":{"path":{"type":"string","description":"Relative path to list files from","enum":null},"depth":{"type":"number","description":"Max depth to traverse (1 = direct children only; <=0 = unlimited)","enum":null}},"required":[]}
@@ -47,9 +47,9 @@ class GigaToolTest {
         val tempDir = createTempDirectory()
         try {
             createSampleFiles(tempDir)
-            val toolsMap: Map<String, GigaToolSetup> = listOf(listFiles.toGiga()).associateBy { it.fn.name }
+            val toolsMap: Map<String, LLMToolSetup> = listOf(listFiles.toGiga()).associateBy { it.fn.name }
 
-            val functionCall = GigaResponse.FunctionCall(
+            val functionCall = LLMResponse.FunctionCall(
                 name = "ListFiles",
                 arguments = mapOf("path" to tempDir.absolutePath),
             )
@@ -57,8 +57,8 @@ class GigaToolTest {
             val l = LoggerFactory.getLogger(GigaToolTest::class.java)
             val result = toolsMap[functionCall.name]!!.invoke(functionCall)
             l.info("$result")
-            assertEquals(GigaMessageRole.function, result.role)
-            val actual = gigaJsonMapper.readTree(result.content).let { nodes ->
+            assertEquals(LLMMessageRole.function, result.role)
+            val actual = restJsonMapper.readTree(result.content).let { nodes ->
                 if (nodes.has("result")) {
                     nodes.get("result").asText()
                 } else {

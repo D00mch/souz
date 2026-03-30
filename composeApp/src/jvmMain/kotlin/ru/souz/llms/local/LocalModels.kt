@@ -3,7 +3,7 @@ package ru.souz.llms.local
 import com.sun.management.OperatingSystemMXBean
 import java.lang.management.ManagementFactory
 import org.slf4j.LoggerFactory
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 
 data class LocalLicenseRequirements(
     val summary: String,
@@ -11,7 +11,7 @@ data class LocalLicenseRequirements(
 )
 
 data class LocalModelProfile(
-    val gigaModel: GigaModel,
+    val gigaModel: LLMModel,
     val id: String,
     val displayName: String,
     val huggingFaceRepoId: String,
@@ -85,7 +85,7 @@ class LocalHostInfoProvider {
 
 object LocalModelProfiles {
     val QWEN3_4B_INSTRUCT_2507 = LocalModelProfile(
-        gigaModel = GigaModel.LocalQwen3_4B_Instruct_2507,
+        gigaModel = LLMModel.LocalQwen3_4B_Instruct_2507,
         id = "local-qwen3-4b-instruct-2507",
         displayName = "Local Qwen3 4B Instruct 2507",
         huggingFaceRepoId = "unsloth/Qwen3-4B-Instruct-2507-GGUF",
@@ -125,7 +125,7 @@ data class LocalProviderStatus(
     val available: Boolean,
     val message: String,
     val selectedProfile: LocalModelProfile?,
-    val availableModels: List<GigaModel>,
+    val availableModels: List<LLMModel>,
 )
 
 class LocalProviderAvailability(
@@ -195,9 +195,9 @@ class LocalProviderAvailability(
         )
     }
 
-    fun availableGigaModels(): List<GigaModel> = status().availableModels
+    fun availableGigaModels(): List<LLMModel> = status().availableModels
 
-    fun defaultGigaModel(): GigaModel? = status().selectedProfile?.gigaModel
+    fun defaultGigaModel(): LLMModel? = status().selectedProfile?.gigaModel
 
     fun selectedProfile(): LocalModelProfile? = status().selectedProfile
 

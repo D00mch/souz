@@ -5,13 +5,13 @@ import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Graph
 import ru.souz.agent.engine.Node
 import ru.souz.agent.engine.StepInfo
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMResponse
 
 sealed interface AgentSideEffect {
     @JvmInline
     value class Text(val v: String) : AgentSideEffect
 
-    data class Fn(val call: GigaResponse.FunctionCall) : AgentSideEffect
+    data class Fn(val call: LLMResponse.FunctionCall) : AgentSideEffect
 }
 
 interface Agent {

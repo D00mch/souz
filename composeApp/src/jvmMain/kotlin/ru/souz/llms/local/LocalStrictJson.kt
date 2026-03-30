@@ -3,9 +3,9 @@ package ru.souz.llms.local
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.convertValue
 import java.util.UUID
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaResponse
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.restJsonMapper
 
 /**
  * Contract metadata for local-model JSON responses. Jackson still parses the JSON;
@@ -63,11 +63,11 @@ class LocalStrictJsonParser {
     fun parse(
         rawText: String,
         requestModel: String,
-        usage: GigaResponse.Usage,
+        usage: LLMResponse.Usage,
         created: Long = System.currentTimeMillis(),
-    ): GigaResponse.Chat {
+    ): LLMResponse.Chat {
         val trimmed = normalizeRawText(rawText)
-        val node = runCatching { gigaJsonMapper.readTree(trimmed) }
+        val node = runCatching { restJsonMapper.readTree(trimmed) }
             .getOrElse { error ->
                 tryRecoverMalformedToolCalls(trimmed)?.let { recovered ->
                     return parseToolCalls(recovered, requestModel, usage, created)
@@ -80,7 +80,7 @@ class LocalStrictJsonParser {
                         created = created,
                     )
                 }
-                return GigaResponse.Chat.Error(
+                return LLMResponse.Chat.Error(
                     status = -1,
                     message = "Local provider returned invalid JSON: ${error.message}. Raw preview: ${preview(trimmed)}",
                 )
@@ -90,8 +90,8 @@ class LocalStrictJsonParser {
         if (type == null) {
             if (looksLikeSingleToolCall(node)) {
                 return parseToolCalls(
-                    node = gigaJsonMapper.readTree(
-                        gigaJsonMapper.writeValueAsString(
+                    node = restJsonMapper.readTree(
+                        restJsonMapper.writeValueAsString(
                             mapOf(
                                 "type" to "tool_calls",
                                 "calls" to listOf(node),
@@ -111,7 +111,7 @@ class LocalStrictJsonParser {
                     created = created,
                 )
             }
-            return GigaResponse.Chat.Error(
+            return LLMResponse.Chat.Error(
                 -1,
                 "Local provider JSON does not contain the required \"type\" field. Raw preview: ${preview(trimmed)}",
             )
@@ -120,7 +120,7 @@ class LocalStrictJsonParser {
         return when (type) {
             "final" -> parseFinal(node, requestModel, usage, created)
             "tool_calls" -> parseToolCalls(node, requestModel, usage, created)
-            else -> GigaResponse.Chat.Error(-1, "Local provider JSON has unsupported type: $type")
+            else -> LLMResponse.Chat.Error(-1, "Local provider JSON has unsupported type: $type")
         }
     }
 
@@ -217,7 +217,7 @@ class LocalStrictJsonParser {
                 continue
             }
 
-            val argumentsNode = runCatching { gigaJsonMapper.readTree(argumentsJson) }.getOrNull()
+            val argumentsNode = runCatching { restJsonMapper.readTree(argumentsJson) }.getOrNull()
             if (argumentsNode == null || !argumentsNode.isObject) {
                 searchFrom = argumentsStart + 1
                 continue
@@ -226,7 +226,7 @@ class LocalStrictJsonParser {
             recoveredCalls += mapOf(
                 "id" to id,
                 "name" to name,
-                "arguments" to gigaJsonMapper.convertValue(argumentsNode),
+                "arguments" to restJsonMapper.convertValue(argumentsNode),
             )
             searchFrom = argumentsStart + argumentsJson.length
         }
@@ -239,7 +239,7 @@ class LocalStrictJsonParser {
             "type" to "tool_calls",
             "calls" to recoveredCalls,
         )
-        return runCatching { gigaJsonMapper.readTree(gigaJsonMapper.writeValueAsString(recovered)) }.getOrNull()
+        return runCatching { restJsonMapper.readTree(restJsonMapper.writeValueAsString(recovered)) }.getOrNull()
     }
 
     private fun extractQuotedField(text: String, fieldName: String, startIndex: Int): String? {
@@ -308,19 +308,19 @@ class LocalStrictJsonParser {
     private fun plainTextFinal(
         text: String,
         requestModel: String,
-        usage: GigaResponse.Usage,
+        usage: LLMResponse.Usage,
         created: Long,
-    ): GigaResponse.Chat = GigaResponse.Chat.Ok(
+    ): LLMResponse.Chat = LLMResponse.Chat.Ok(
         choices = listOf(
-            GigaResponse.Choice(
-                message = GigaResponse.Message(
+            LLMResponse.Choice(
+                message = LLMResponse.Message(
                     content = text.trim(),
-                    role = GigaMessageRole.assistant,
+                    role = LLMMessageRole.assistant,
                     functionCall = null,
                     functionsStateId = null,
                 ),
                 index = 0,
-                finishReason = GigaResponse.FinishReason.stop,
+                finishReason = LLMResponse.FinishReason.stop,
             )
         ),
         created = created,
@@ -335,23 +335,23 @@ class LocalStrictJsonParser {
     private fun parseFinal(
         node: JsonNode,
         requestModel: String,
-        usage: GigaResponse.Usage,
+        usage: LLMResponse.Usage,
         created: Long,
-    ): GigaResponse.Chat {
+    ): LLMResponse.Chat {
         val content = node["content"]?.takeIf(JsonNode::isTextual)?.asText()
-            ?: return GigaResponse.Chat.Error(-1, "Local provider final JSON must contain string field \"content\".")
+            ?: return LLMResponse.Chat.Error(-1, "Local provider final JSON must contain string field \"content\".")
 
-        return GigaResponse.Chat.Ok(
+        return LLMResponse.Chat.Ok(
             choices = listOf(
-                GigaResponse.Choice(
-                    message = GigaResponse.Message(
+                LLMResponse.Choice(
+                    message = LLMResponse.Message(
                         content = unwrapEmbeddedResultObject(content),
-                        role = GigaMessageRole.assistant,
+                        role = LLMMessageRole.assistant,
                         functionCall = null,
                         functionsStateId = null,
                     ),
                     index = 0,
-                    finishReason = GigaResponse.FinishReason.stop,
+                    finishReason = LLMResponse.FinishReason.stop,
                 )
             ),
             created = created,
@@ -362,7 +362,7 @@ class LocalStrictJsonParser {
 
     private fun unwrapEmbeddedResultObject(content: String): String {
         val trimmed = content.trim()
-        val embeddedNode = runCatching { gigaJsonMapper.readTree(trimmed) }.getOrNull()
+        val embeddedNode = runCatching { restJsonMapper.readTree(trimmed) }.getOrNull()
             ?: return content
         return if (looksLikeResultObject(embeddedNode)) {
             embeddedNode["result"].asText()
@@ -374,41 +374,41 @@ class LocalStrictJsonParser {
     private fun parseToolCalls(
         node: JsonNode,
         requestModel: String,
-        usage: GigaResponse.Usage,
+        usage: LLMResponse.Usage,
         created: Long,
-    ): GigaResponse.Chat {
+    ): LLMResponse.Chat {
         val callsNode = node["calls"]
         if (callsNode == null || !callsNode.isArray || callsNode.isEmpty) {
-            return GigaResponse.Chat.Error(-1, "Local provider tool_calls JSON must contain a non-empty array in \"calls\".")
+            return LLMResponse.Chat.Error(-1, "Local provider tool_calls JSON must contain a non-empty array in \"calls\".")
         }
 
         val choices = callsNode.mapIndexed { index, callNode ->
             val name = callNode["name"]?.takeIf(JsonNode::isTextual)?.asText()
-                ?: return GigaResponse.Chat.Error(-1, "Local provider tool call #$index is missing string field \"name\".")
+                ?: return LLMResponse.Chat.Error(-1, "Local provider tool call #$index is missing string field \"name\".")
             val id = callNode["id"]?.takeIf(JsonNode::isTextual)?.asText()
-                ?: return GigaResponse.Chat.Error(-1, "Local provider tool call #$index is missing string field \"id\".")
+                ?: return LLMResponse.Chat.Error(-1, "Local provider tool call #$index is missing string field \"id\".")
             val argumentsNode = callNode["arguments"]
-                ?: return GigaResponse.Chat.Error(-1, "Local provider tool call #$index is missing field \"arguments\".")
+                ?: return LLMResponse.Chat.Error(-1, "Local provider tool call #$index is missing field \"arguments\".")
             if (!argumentsNode.isObject) {
-                return GigaResponse.Chat.Error(-1, "Local provider tool call #$index must use an object in \"arguments\".")
+                return LLMResponse.Chat.Error(-1, "Local provider tool call #$index must use an object in \"arguments\".")
             }
 
-            GigaResponse.Choice(
-                message = GigaResponse.Message(
+            LLMResponse.Choice(
+                message = LLMResponse.Message(
                     content = "",
-                    role = GigaMessageRole.assistant,
-                    functionCall = GigaResponse.FunctionCall(
+                    role = LLMMessageRole.assistant,
+                    functionCall = LLMResponse.FunctionCall(
                         name = name,
-                        arguments = gigaJsonMapper.convertValue(argumentsNode),
+                        arguments = restJsonMapper.convertValue(argumentsNode),
                     ),
                     functionsStateId = id.ifBlank { "call_${UUID.randomUUID()}" },
                 ),
                 index = index,
-                finishReason = GigaResponse.FinishReason.function_call,
+                finishReason = LLMResponse.FinishReason.function_call,
             )
         }
 
-        return GigaResponse.Chat.Ok(
+        return LLMResponse.Chat.Ok(
             choices = choices,
             created = created,
             model = requestModel,

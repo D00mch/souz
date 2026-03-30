@@ -1,10 +1,9 @@
 package ru.souz.llms
 
 import com.fasterxml.jackson.annotation.JsonProperty
-import ru.souz.llms.giga.gigaJsonMapper
 import java.util.*
 
-object GigaResponse {
+object LLMResponse {
 
     data class Token(
         @field:JsonProperty("access_token") val accessToken: String,
@@ -31,7 +30,7 @@ object GigaResponse {
 
     data class Message(
         val content: String,
-        val role: GigaMessageRole,
+        val role: LLMMessageRole,
         @field:JsonProperty("function_call") val functionCall: FunctionCall? = null,
         @field:JsonProperty("functions_state_id") val functionsStateId: String?,
     )
@@ -101,9 +100,9 @@ object GigaResponse {
     enum class FinishReason { stop, length, function_call, blacklist, error }
 }
 
-fun String.toFinishReason(): GigaResponse.FinishReason? {
+fun String.toFinishReason(): LLMResponse.FinishReason? {
     if (this.isEmpty()) return null
-    return runCatching { GigaResponse.FinishReason.valueOf(this) }.getOrNull()
+    return runCatching { LLMResponse.FinishReason.valueOf(this) }.getOrNull()
 }
 
 const val DEFAULT_MAX_TOKENS = 16_000
@@ -123,7 +122,7 @@ enum class VoiceRecognitionProvider {
     OPENAI,
 }
 
-enum class GigaModel(
+enum class LLMModel(
     val displayName: String,
     val alias: String,
     val provider: LlmProvider,
@@ -177,9 +176,9 @@ enum class VoiceRecognitionModel(
     OpenAIGpt4oMiniTranscribe("OpenAI: gpt-4o-mini-transcribe", "gpt-4o-mini-transcribe", VoiceRecognitionProvider.OPENAI),
 }
 
-object GigaRequest {
+object LLMRequest {
     data class Chat(
-        val model: String = GigaModel.Max.alias,
+        val model: String = LLMModel.Max.alias,
         val messages: List<Message>,
         @field:JsonProperty("function_call")
         val functionCall: String = "auto",
@@ -195,7 +194,7 @@ object GigaRequest {
         fun rmFnIds(): Chat = copy(
             messages = messages.map { m ->
                 when (m.role) {
-                    GigaMessageRole.function -> m.copy(functionsStateId = null)
+                    LLMMessageRole.function -> m.copy(functionsStateId = null)
                     else -> m
                 }
             }
@@ -203,7 +202,7 @@ object GigaRequest {
     }
 
     data class Message(
-        val role: GigaMessageRole,
+        val role: LLMMessageRole,
         val content: String, // Could be String or FunctionCall object
         @field:JsonProperty("functions_state_id") val functionsStateId: String? = null,
         val attachments: List<String>? = null,
@@ -242,33 +241,33 @@ object GigaRequest {
 }
 
 @Suppress("EnumEntryName")
-enum class GigaMessageRole { system, user, assistant, function }
+enum class LLMMessageRole { system, user, assistant, function }
 
 @Suppress("unused")
-class GigaException(body: GigaResponse.Chat.Error, override val cause: Throwable? = null) : Exception(cause)
+class LLMException(body: LLMResponse.Chat.Error, override val cause: Throwable? = null) : Exception(cause)
 
-fun String.toSystemPromptMessage() = GigaRequest.Message(
-    role = GigaMessageRole.system,
+fun String.toSystemPromptMessage() = LLMRequest.Message(
+    role = LLMMessageRole.system,
     content = this
 )
 
-operator fun GigaResponse.Usage.plus(usage: GigaResponse.Usage): GigaResponse.Usage = GigaResponse.Usage(
+operator fun LLMResponse.Usage.plus(usage: LLMResponse.Usage): LLMResponse.Usage = LLMResponse.Usage(
     promptTokens = this.promptTokens + usage.promptTokens,
     completionTokens = this.completionTokens + usage.completionTokens,
     totalTokens = this.totalTokens + usage.totalTokens,
     precachedTokens = this.precachedTokens + usage.precachedTokens
 )
 
-fun GigaResponse.Choice.toMessage(): GigaRequest.Message? {
+fun LLMResponse.Choice.toMessage(): LLMRequest.Message? {
     val msg = this.message
     val content: String = when {
-        msg.functionCall != null -> gigaJsonMapper.writeValueAsString(
+        msg.functionCall != null -> restJsonMapper.writeValueAsString(
             mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
         )
         msg.content.isNotBlank() -> msg.content
         else -> return null
     }
-    return GigaRequest.Message(
+    return LLMRequest.Message(
         role = msg.role,
         content = content,
         functionsStateId = msg.functionsStateId

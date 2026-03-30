@@ -14,14 +14,14 @@ class AnthropicChatAPICacheTest {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
-            body = GigaRequest.Chat(
-                model = GigaModel.AnthropicHaiku45.alias,
+            body = LLMRequest.Chat(
+                model = LLMModel.AnthropicHaiku45.alias,
                 maxTokens = 256,
                 messages = listOf(
-                    GigaRequest.Message(role = GigaMessageRole.system, content = "System prompt"),
-                    GigaRequest.Message(role = GigaMessageRole.user, content = "Hello"),
-                    GigaRequest.Message(role = GigaMessageRole.assistant, content = "Hi"),
-                    GigaRequest.Message(role = GigaMessageRole.user, content = "Tell me more"),
+                    LLMRequest.Message(role = LLMMessageRole.system, content = "System prompt"),
+                    LLMRequest.Message(role = LLMMessageRole.user, content = "Hello"),
+                    LLMRequest.Message(role = LLMMessageRole.assistant, content = "Hi"),
+                    LLMRequest.Message(role = LLMMessageRole.user, content = "Tell me more"),
                 ),
             ),
         )
@@ -39,12 +39,12 @@ class AnthropicChatAPICacheTest {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
-            body = GigaRequest.Chat(
-                model = GigaModel.AnthropicHaiku45.alias,
+            body = LLMRequest.Chat(
+                model = LLMModel.AnthropicHaiku45.alias,
                 maxTokens = 256,
                 messages = listOf(
-                    GigaRequest.Message(role = GigaMessageRole.system, content = "System prompt"),
-                    GigaRequest.Message(role = GigaMessageRole.user, content = "Use tools"),
+                    LLMRequest.Message(role = LLMMessageRole.system, content = "System prompt"),
+                    LLMRequest.Message(role = LLMMessageRole.user, content = "Use tools"),
                 ),
                 functions = listOf(function("search"), function("read")),
             ),
@@ -63,7 +63,7 @@ class AnthropicChatAPICacheTest {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.anthropicKey } returns "test-key"
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
-        every { settingsProvider.gigaModel } returns GigaModel.AnthropicHaiku45
+        every { settingsProvider.gigaModel } returns LLMModel.AnthropicHaiku45
 
         val tokenLogging = mockk<TokenLogging>(relaxed = true)
         return AnthropicChatAPI(settingsProvider, tokenLogging)
@@ -72,25 +72,25 @@ class AnthropicChatAPICacheTest {
     @Suppress("UNCHECKED_CAST")
     private fun invokeBuildChatRequest(
         api: AnthropicChatAPI,
-        body: GigaRequest.Chat,
+        body: LLMRequest.Chat,
     ): Map<String, Any> {
         val method = AnthropicChatAPI::class.java.getDeclaredMethod(
             "buildChatRequest",
-            GigaRequest.Chat::class.java,
+            LLMRequest.Chat::class.java,
             String::class.java,
             Boolean::class.javaPrimitiveType,
         )
         method.isAccessible = true
-        return method.invoke(api, body, GigaModel.AnthropicHaiku45.alias, false) as Map<String, Any>
+        return method.invoke(api, body, LLMModel.AnthropicHaiku45.alias, false) as Map<String, Any>
     }
 
-    private fun function(name: String): GigaRequest.Function = GigaRequest.Function(
+    private fun function(name: String): LLMRequest.Function = LLMRequest.Function(
         name = name,
         description = "$name description",
-        parameters = GigaRequest.Parameters(
+        parameters = LLMRequest.Parameters(
             type = "object",
             properties = mapOf(
-                "query" to GigaRequest.Property(type = "string", description = "Query"),
+                "query" to LLMRequest.Property(type = "string", description = "Query"),
             ),
             required = listOf("query"),
         ),

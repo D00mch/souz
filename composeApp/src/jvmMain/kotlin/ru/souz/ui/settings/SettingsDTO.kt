@@ -3,8 +3,8 @@ package ru.souz.ui.settings
 import ru.souz.agent.AgentId
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.DEFAULT_MAX_TOKENS
-import ru.souz.llms.GigaModel
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.tool.config.ToolSoundConfig
 import ru.souz.ui.VMEvent
@@ -65,10 +65,10 @@ data class SettingsState(
     val safeModeEnabled: Boolean = false,
     val activeAgentId: AgentId = AgentId.default,
     val availableAgents: List<AgentId> = AgentId.entries,
-    val gigaModel: GigaModel = GigaModel.Max,
+    val gigaModel: LLMModel = LLMModel.Max,
     val embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
     val voiceRecognitionModel: VoiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech,
-    val availableLlmModels: List<GigaModel> = emptyList(),
+    val availableLlmModels: List<LLMModel> = emptyList(),
     val availableEmbeddingsModels: List<EmbeddingsModel> = emptyList(),
     val availableVoiceRecognitionModels: List<VoiceRecognitionModel> = emptyList(),
     val systemPrompt: String = "",
@@ -83,7 +83,7 @@ data class SettingsState(
     val sendLogsMessage: String? = null,
     val sendLogsPath: String? = null,
     val isBalanceLoading: Boolean = false,
-    val balance: List<GigaResponse.BalanceItem> = emptyList(),
+    val balance: List<LLMResponse.BalanceItem> = emptyList(),
     val balanceError: String? = null,
     val defaultCalendar: String? = null,
     val availableCalendars: List<String> = emptyList(),
@@ -113,7 +113,7 @@ data class SettingsState(
     // Graph Logs
     val currentScreen: SettingsSubScreen = SettingsSubScreen.MAIN,
     val selectedSessionId: String? = null,
-    
+
     val activeSection: SettingsSection = SettingsSection.MODELS,
 ): VMState
 
@@ -137,7 +137,7 @@ sealed interface SettingsEvent : VMEvent {
     data class SelectAgent(val agentId: AgentId): SettingsEvent
     object ConfirmAgentSwitch : SettingsEvent
     object CancelAgentSwitch : SettingsEvent
-    data class SelectModel(val model: GigaModel): SettingsEvent
+    data class SelectModel(val model: LLMModel): SettingsEvent
     object ConfirmLocalModelDownload : SettingsEvent
     object CancelLocalModelDownload : SettingsEvent
     data class SelectEmbeddingsModel(val model: EmbeddingsModel): SettingsEvent

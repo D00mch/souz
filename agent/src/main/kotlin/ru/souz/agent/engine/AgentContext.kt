@@ -1,22 +1,22 @@
 package ru.souz.agent.engine
 
 import ru.souz.llms.DEFAULT_MAX_TOKENS
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.giga.GigaToolSetup
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
 
 // Immutable context threaded through the graph
 data class AgentContext<I>(
     val input: I,
     val settings: AgentSettings,
-    val history: List<GigaRequest.Message>,
-    val activeTools: List<GigaRequest.Function>,
+    val history: List<LLMRequest.Message>,
+    val activeTools: List<LLMRequest.Function>,
     val systemPrompt: String,
 ) {
     inline fun <reified O> map(
         settings: AgentSettings = this.settings,
-        history: List<GigaRequest.Message> = this.history,
-        activeTools: List<GigaRequest.Function> = this.activeTools,
+        history: List<LLMRequest.Message> = this.history,
+        activeTools: List<LLMRequest.Function> = this.activeTools,
         systemPrompt: String = this.systemPrompt,
         transform: (I) -> O = { it as O },
     ): AgentContext<O> = AgentContext(input = transform(input), settings, history, activeTools, systemPrompt)
@@ -24,8 +24,8 @@ data class AgentContext<I>(
 
 /** Wrapper to simplify accessing tools related data */
 data class AgentTools(
-    val byCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
-    val byName: Map<String, GigaToolSetup> = byCategory.values.flatMap { it.entries }
+    val byCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
+    val byName: Map<String, LLMToolSetup> = byCategory.values.flatMap { it.entries }
         .associate { it.key to it.value },
     val categoryByName: Map<String, ToolCategory> = buildMap {
         byCategory.forEach { (category, name2tool) ->
@@ -43,7 +43,7 @@ data class AgentSettings(
     constructor(
         model: String,
         temperature: Float,
-        toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
+        toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
         contextSize: Int = DEFAULT_MAX_TOKENS,
     ): this(model, temperature, AgentTools(toolsByCategory), contextSize)
 }

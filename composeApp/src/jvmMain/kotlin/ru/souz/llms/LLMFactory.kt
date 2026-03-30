@@ -4,7 +4,6 @@ import kotlinx.coroutines.flow.Flow
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.llms.anthropic.AnthropicChatAPI
-import ru.souz.llms.giga.GigaChatAPI
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.qwen.QwenChatAPI
@@ -19,9 +18,9 @@ class LLMFactory(
     private val anthropicApi: AnthropicChatAPI,
     private val openAiApi: OpenAIChatAPI,
     private val localApi: LocalChatAPI,
-) : GigaChatAPI {
+) : LLMChatAPI {
 
-    private fun chatApiFor(provider: LlmProvider): GigaChatAPI = when (provider) {
+    private fun chatApiFor(provider: LlmProvider): LLMChatAPI = when (provider) {
         LlmProvider.QWEN -> qwenApi
         LlmProvider.AI_TUNNEL -> aiTunnelApi
         LlmProvider.ANTHROPIC -> anthropicApi
@@ -30,20 +29,20 @@ class LLMFactory(
         LlmProvider.LOCAL -> localApi
     }
 
-    fun current(): GigaChatAPI {
+    fun current(): LLMChatAPI {
         val model = settingsProvider.gigaModel
         return chatApiFor(model.provider)
     }
 
-    private fun currentEmbeddings(): GigaChatAPI {
+    private fun currentEmbeddings(): LLMChatAPI {
         return chatApiFor(settingsProvider.embeddingsModel.provider)
     }
 
-    override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = current().message(body)
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = current().message(body)
 
-    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = current().messageStream(body)
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = current().messageStream(body)
 
-    override suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings {
+    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
         val request = if (body.model.equals(EmbeddingsModel.GigaEmbeddings.alias, ignoreCase = true)) {
             body.copy(model = settingsProvider.embeddingsModel.alias)
         } else {
@@ -52,9 +51,9 @@ class LLMFactory(
         return currentEmbeddings().embeddings(request)
     }
 
-    override suspend fun uploadFile(file: File): GigaResponse.UploadFile = current().uploadFile(file)
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile = current().uploadFile(file)
 
     override suspend fun downloadFile(fileId: String): String? = current().downloadFile(fileId)
 
-    override suspend fun balance(): GigaResponse.Balance = current().balance()
+    override suspend fun balance(): LLMResponse.Balance = current().balance()
 }

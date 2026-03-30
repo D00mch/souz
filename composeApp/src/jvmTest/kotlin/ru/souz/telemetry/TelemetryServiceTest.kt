@@ -10,7 +10,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMResponse
 import ru.souz.service.telemetry.TelemetryConversationEndReason
 import ru.souz.service.telemetry.TelemetryConversationStartReason
 import ru.souz.service.telemetry.TelemetryCryptoService
@@ -141,8 +141,8 @@ class TelemetryServiceTest {
                 status = TelemetryRequestStatus.SUCCESS,
                 responseLengthChars = 128,
                 errorMessage = null,
-                requestTokenUsage = GigaResponse.Usage(10, 20, 30, 0),
-                sessionTokenUsage = GigaResponse.Usage(10, 20, 30, 0),
+                requestTokenUsage = LLMResponse.Usage(10, 20, 30, 0),
+                sessionTokenUsage = LLMResponse.Usage(10, 20, 30, 0),
             )
             service.finishConversation(conversationId, TelemetryConversationEndReason.NEW_CONVERSATION)
 
@@ -244,16 +244,16 @@ class TelemetryServiceTest {
                 status = TelemetryRequestStatus.SUCCESS,
                 responseLengthChars = 42,
                 errorMessage = null,
-                requestTokenUsage = GigaResponse.Usage(1, 2, 3, 0),
-                sessionTokenUsage = GigaResponse.Usage(7, 8, 15, 0),
+                requestTokenUsage = LLMResponse.Usage(1, 2, 3, 0),
+                sessionTokenUsage = LLMResponse.Usage(7, 8, 15, 0),
             )
             service.finishRequest(
                 context = requestA,
                 status = TelemetryRequestStatus.ERROR,
                 responseLengthChars = null,
                 errorMessage = "java.io.FileNotFoundException: /Users/duxx/secret.txt",
-                requestTokenUsage = GigaResponse.Usage(4, 5, 9, 0),
-                sessionTokenUsage = GigaResponse.Usage(7, 8, 15, 0),
+                requestTokenUsage = LLMResponse.Usage(4, 5, 9, 0),
+                sessionTokenUsage = LLMResponse.Usage(7, 8, 15, 0),
             )
             service.finishConversation(conversationId, TelemetryConversationEndReason.CLEAR_CONTEXT)
 

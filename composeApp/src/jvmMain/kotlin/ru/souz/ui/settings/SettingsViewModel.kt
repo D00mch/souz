@@ -21,9 +21,9 @@ import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.db.VectorDB
-import ru.souz.llms.giga.GigaChatAPI
-import ru.souz.llms.GigaModel
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.local.LocalModelDownloadState
@@ -60,7 +60,7 @@ class SettingsViewModel(
     private val localModelStore: LocalModelStore by di.instance()
     private val localLlamaRuntime: LocalLlamaRuntime by di.instance()
     private val apiKeyAvailabilityUseCase: ApiKeyAvailabilityUseCase by di.instance()
-    private val chatApi: GigaChatAPI by di.instance()
+    private val chatApi: LLMChatAPI by di.instance()
     private val agentFacade: AgentFacade by di.instance()
     private val telegramPlatformSupport: TelegramPlatformSupport by di.instance()
     private val telegramService: TelegramService by di.instance()
@@ -383,7 +383,7 @@ class SettingsViewModel(
         is SettingsEffect.ShowSnackbar -> l.debug { "ignore effect: $effect" }
     }
 
-    private suspend fun applySelectedModel(model: GigaModel) {
+    private suspend fun applySelectedModel(model: LLMModel) {
         flushPendingSystemPromptSave()
         val newPrompt = agentFacade.setModel(model)
         setState { copy(gigaModel = model, systemPrompt = newPrompt) }
@@ -438,7 +438,7 @@ class SettingsViewModel(
         }
     }
 
-    private fun scheduleLocalModelPreload(model: GigaModel) {
+    private fun scheduleLocalModelPreload(model: LLMModel) {
         if (!LocalModelProfiles.isLocalModelAlias(model.alias)) {
             localModelPreloadJob?.cancel()
             localModelPreloadJob = null
@@ -897,7 +897,7 @@ class SettingsViewModel(
         setState { copy(isBalanceLoading = true, balanceError = null) }
 
         when (val result = chatApi.balance()) {
-            is GigaResponse.Balance.Ok -> setState {
+            is LLMResponse.Balance.Ok -> setState {
                 copy(
                     balance = result.balance,
                     isBalanceLoading = false,
@@ -905,7 +905,7 @@ class SettingsViewModel(
                 )
             }
 
-            is GigaResponse.Balance.Error -> setState {
+            is LLMResponse.Balance.Error -> setState {
                 copy(
                     balance = emptyList(),
                     isBalanceLoading = false,

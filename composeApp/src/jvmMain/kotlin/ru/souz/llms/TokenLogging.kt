@@ -11,10 +11,10 @@ interface TokenLogging {
     fun startRequest(requestId: String) = Unit
     fun finishRequest(requestId: String) = Unit
     fun requestContextElement(requestId: String): CoroutineContext = EmptyCoroutineContext
-    fun logTokenUsage(result: GigaResponse.Chat.Ok, body: GigaRequest.Chat)
+    fun logTokenUsage(result: LLMResponse.Chat.Ok, body: LLMRequest.Chat)
 
-    fun currentRequestTokenUsage(requestId: String): GigaResponse.Usage = GigaResponse.Usage(0, 0, 0, 0)
-    fun sessionTokenUsage(): GigaResponse.Usage = GigaResponse.Usage(0, 0, 0, 0)
+    fun currentRequestTokenUsage(requestId: String): LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0)
+    fun sessionTokenUsage(): LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0)
 }
 
 class SessionTokenLogging(
@@ -22,7 +22,7 @@ class SessionTokenLogging(
 ) : TokenLogging {
     private val activeRequestId = ThreadLocal<String?>()
     private val currentSessionTokensUsage = AtomicReference(ZERO_USAGE)
-    private val requestTokenUsage = ConcurrentHashMap<String, GigaResponse.Usage>()
+    private val requestTokenUsage = ConcurrentHashMap<String, LLMResponse.Usage>()
 
     override fun startRequest(requestId: String) {
         requestTokenUsage[requestId] = ZERO_USAGE
@@ -31,7 +31,7 @@ class SessionTokenLogging(
     override fun requestContextElement(requestId: String): CoroutineContext =
         activeRequestId.asContextElement(requestId)
 
-    override fun logTokenUsage(result: GigaResponse.Chat.Ok, body: GigaRequest.Chat) {
+    override fun logTokenUsage(result: LLMResponse.Chat.Ok, body: LLMRequest.Chat) {
         val requestId = activeRequestId.get()
         val newCurrentTokensUsage = currentSessionTokensUsage.updateAndGet { it + result.usage }
         requestId?.let { id ->
@@ -56,13 +56,13 @@ class SessionTokenLogging(
         requestTokenUsage.remove(requestId)
     }
 
-    override fun currentRequestTokenUsage(requestId: String): GigaResponse.Usage =
+    override fun currentRequestTokenUsage(requestId: String): LLMResponse.Usage =
         requestTokenUsage[requestId] ?: ZERO_USAGE
 
-    override fun sessionTokenUsage(): GigaResponse.Usage =
+    override fun sessionTokenUsage(): LLMResponse.Usage =
         currentSessionTokensUsage.get()
 
     private companion object {
-        val ZERO_USAGE = GigaResponse.Usage(0, 0, 0, 0)
+        val ZERO_USAGE = LLMResponse.Usage(0, 0, 0, 0)
     }
 }

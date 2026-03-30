@@ -5,7 +5,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.BadInputException
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -39,7 +39,7 @@ internal class WebSearchProviderException(
  * This keeps search/parsing heuristics and HTTP behavior in one place while tool contracts stay simple.
  */
 internal class WebResearchClient(
-    private val mapper: ObjectMapper = gigaJsonMapper,
+    private val mapper: ObjectMapper = restJsonMapper,
     private val httpGet: suspend (String, Long, Boolean) -> WebTextResponse = { url, timeoutMillis, retry ->
         WebHttpSupport().getText(url, timeoutMillis, retry = retry)
     },

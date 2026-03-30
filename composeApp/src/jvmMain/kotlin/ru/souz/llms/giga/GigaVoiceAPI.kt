@@ -13,7 +13,7 @@ import java.io.File
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMResponse
 
 private val l = LoggerFactory.getLogger("GigaVoiceAPI")
 
@@ -49,7 +49,7 @@ class GigaVoiceAPI(
         return response.body()
     }
 
-    suspend fun recognize(audio: ByteArray): GigaResponse.RecognizeResponse {
+    suspend fun recognize(audio: ByteArray): LLMResponse.RecognizeResponse {
         val response = client.post("https://smartspeech.sber.ru/rest/v1/speech:recognize") {
             header(HttpHeaders.ContentType, "audio/x-pcm;bit=16;rate=16000")
             header(HttpHeaders.Accept, "application/json")

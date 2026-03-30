@@ -10,7 +10,7 @@ import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 import java.io.File
 import ru.souz.db.SettingsProviderImpl
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 
 class ToolFindFolders(
     private val bash: ToolRunBashCommand,
@@ -62,7 +62,7 @@ class ToolFindFolders(
         }
 
         val resultList = paths.take(20)
-        return gigaJsonMapper.writeValueAsString(resultList)
+        return restJsonMapper.writeValueAsString(resultList)
     }
 
     private fun executeAndFilter(rawSpotlightQuery: String, limit: Int): List<String> {

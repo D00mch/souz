@@ -1,6 +1,6 @@
 package ru.souz.tool.desktop
 
-import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.LLMChatAPI
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -15,7 +15,7 @@ import java.awt.Desktop
 import java.io.File
 
 class ToolDownloadFile(
-    private val api: GigaChatAPI,
+    private val api: LLMChatAPI,
 ) : ToolSetup<ToolDownloadFile.Input> {
     private val l = LoggerFactory.getLogger(ToolDownloadFile::class.java)
 
@@ -63,7 +63,7 @@ class ToolDownloadFile(
 
 fun main() {
     val di = DI.invoke { import(mainDiModule) }
-    val api: GigaChatAPI by di.instance()
+    val api: LLMChatAPI by di.instance()
     val path = ToolDownloadFile(api).invoke(ToolDownloadFile.Input("file_id"))
     println(path)
 }

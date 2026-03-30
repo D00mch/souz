@@ -17,7 +17,7 @@ import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.session.GraphSessionService
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AgentFacade(
@@ -79,7 +79,7 @@ class AgentFacade(
         return _currentContext.tryEmit(ctx)
     }
 
-    fun setModel(model: GigaModel): String {
+    fun setModel(model: LLMModel): String {
         settingsProvider.gigaModel = model
         val prompt = settingsProvider.getSystemPromptForAgentModel(_activeAgentId.value, model)
             ?: defaultPromptFor(_activeAgentId.value, model)
@@ -145,7 +145,7 @@ class AgentFacade(
         )
     }
 
-    private fun defaultPromptFor(agentId: AgentId, model: GigaModel): String =
+    private fun defaultPromptFor(agentId: AgentId, model: LLMModel): String =
         systemPromptResolver.defaultPrompt(
             agentId = agentId,
             model = model,

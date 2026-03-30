@@ -1,6 +1,6 @@
 package ru.souz.agent.engine
 
-import ru.souz.llms.GigaException
+import ru.souz.llms.LLMException
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -68,5 +68,5 @@ data class RetryPolicy(
         ctx: AgentContext<*>,
         node: Node<*, *>?,
         attempt: Int
-    ) -> Boolean = { error, _, _, _ -> error is GigaException }
+    ) -> Boolean = { error, _, _, _ -> error is LLMException }
 )

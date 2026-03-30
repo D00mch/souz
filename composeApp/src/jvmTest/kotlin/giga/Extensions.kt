@@ -1,7 +1,7 @@
 package giga
 
 import io.ktor.client.HttpClient
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.llms.anthropic.AnthropicChatAPI
@@ -15,7 +15,7 @@ fun GigaRestChatAPI.getHttpClient(): HttpClient {
     return field.get(this) as HttpClient
 }
 
-fun GigaRestChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
+fun GigaRestChatAPI.getSessionTokenUsage(): LLMResponse.Usage {
     val tokenLoggingField = GigaRestChatAPI::class.java.getDeclaredField("tokenLogging")
     tokenLoggingField.isAccessible = true
     val tokenLogging = tokenLoggingField.get(this) as? TokenLogging ?: return zeroUsage()
@@ -28,7 +28,7 @@ fun QwenChatAPI.getHttpClient(): HttpClient {
     return field.get(this) as HttpClient
 }
 
-fun QwenChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
+fun QwenChatAPI.getSessionTokenUsage(): LLMResponse.Usage {
     val tokenLoggingField = QwenChatAPI::class.java.getDeclaredField("tokenLogging")
     tokenLoggingField.isAccessible = true
     val tokenLogging = tokenLoggingField.get(this) as? TokenLogging ?: return zeroUsage()
@@ -41,7 +41,7 @@ fun AiTunnelChatAPI.getHttpClient(): HttpClient {
     return field.get(this) as HttpClient
 }
 
-fun AiTunnelChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
+fun AiTunnelChatAPI.getSessionTokenUsage(): LLMResponse.Usage {
     val tokenLoggingField = AiTunnelChatAPI::class.java.getDeclaredField("tokenLogging")
     tokenLoggingField.isAccessible = true
     val tokenLogging = tokenLoggingField.get(this) as? TokenLogging ?: return zeroUsage()
@@ -54,7 +54,7 @@ fun AnthropicChatAPI.getHttpClient(): HttpClient {
     return field.get(this) as HttpClient
 }
 
-fun AnthropicChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
+fun AnthropicChatAPI.getSessionTokenUsage(): LLMResponse.Usage {
     val tokenLoggingField = AnthropicChatAPI::class.java.getDeclaredField("tokenLogging")
     tokenLoggingField.isAccessible = true
     val tokenLogging = tokenLoggingField.get(this) as? TokenLogging ?: return zeroUsage()
@@ -67,7 +67,7 @@ fun OpenAIChatAPI.getHttpClient(): HttpClient {
     return field.get(this) as HttpClient
 }
 
-fun OpenAIChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
+fun OpenAIChatAPI.getSessionTokenUsage(): LLMResponse.Usage {
     val tokenLoggingField = OpenAIChatAPI::class.java.getDeclaredField("tokenLogging")
     tokenLoggingField.isAccessible = true
     val tokenLogging = tokenLoggingField.get(this) as? TokenLogging ?: return zeroUsage()
@@ -75,4 +75,4 @@ fun OpenAIChatAPI.getSessionTokenUsage(): GigaResponse.Usage {
 }
 
 
-private fun zeroUsage() = GigaResponse.Usage(0, 0, 0, 0)
+private fun zeroUsage() = LLMResponse.Usage(0, 0, 0, 0)

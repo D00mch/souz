@@ -1,8 +1,8 @@
 package tool
 
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.LocalRegexClassifier
 import ru.souz.tool.ToolCategory
 import kotlinx.coroutines.runBlocking
@@ -11,17 +11,17 @@ import kotlin.test.assertEquals
 
 class LocalRegexClassifierTest {
     private fun body(text: String): String {
-        val messages = ArrayDeque<GigaRequest.Message>().apply {
-            add(GigaRequest.Message(GigaMessageRole.system, ""))
-            add(GigaRequest.Message(GigaMessageRole.user, "History:\n"))
-            add(GigaRequest.Message(GigaMessageRole.user, "New message:\n$text"))
+        val messages = ArrayDeque<LLMRequest.Message>().apply {
+            add(LLMRequest.Message(LLMMessageRole.system, ""))
+            add(LLMRequest.Message(LLMMessageRole.user, "History:\n"))
+            add(LLMRequest.Message(LLMMessageRole.user, "New message:\n$text"))
         }
-        val chat = GigaRequest.Chat(
+        val chat = LLMRequest.Chat(
             model = "m",
             messages = messages,
             functions = emptyList(),
         )
-        return gigaJsonMapper.writeValueAsString(chat)
+        return restJsonMapper.writeValueAsString(chat)
     }
 
     @Test

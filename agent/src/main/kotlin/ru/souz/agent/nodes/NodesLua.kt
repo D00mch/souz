@@ -8,15 +8,15 @@ import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Node
 import ru.souz.agent.runtime.LuaExecutionException
 import ru.souz.agent.runtime.LuaRuntime
-import ru.souz.llms.giga.GigaChatAPI
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.toMessage
 
 // TODO: review after agent
 class NodesLua(
-    private val llmApi: GigaChatAPI,
+    private val llmApi: LLMChatAPI,
     private val luaRuntime: LuaRuntime,
 ) {
     sealed interface LuaExecutionResult {
@@ -32,13 +32,13 @@ class NodesLua(
     private val systemPrompt: String =
         LUA_AGENT_SYSTEM_PROMPT.format(LuaRuntime.forbidden.joinToString(", ") { "`$it`" })
 
-    fun plan(name: String = "Lua LLM"): Node<String, GigaResponse.Chat> = Node(name) { ctx ->
+    fun plan(name: String = "Lua LLM"): Node<String, LLMResponse.Chat> = Node(name) { ctx ->
         val response = withContext(Dispatchers.IO) {
             llmApi.message(buildRequest(ctx))
         }
         val history = when (response) {
-            is GigaResponse.Chat.Error -> ctx.history
-            is GigaResponse.Chat.Ok -> ArrayList(ctx.history).apply {
+            is LLMResponse.Chat.Error -> ctx.history
+            is LLMResponse.Chat.Ok -> ArrayList(ctx.history).apply {
                 addAll(response.choices.mapNotNull { it.toMessage() })
             }
         }
@@ -58,8 +58,8 @@ class NodesLua(
             )
             val history = ArrayList(ctx.history).apply {
                 add(
-                    GigaRequest.Message(
-                        role = GigaMessageRole.assistant,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.assistant,
                         content = result,
                     )
                 )
@@ -82,26 +82,26 @@ class NodesLua(
 
     fun repair(
         name: String = "Lua Repair",
-    ): Node<LuaExecutionResult.Failure, GigaResponse.Chat> = Node(name) { ctx ->
+    ): Node<LuaExecutionResult.Failure, LLMResponse.Chat> = Node(name) { ctx ->
         val latestUserRequest = ctx.history
-            .lastOrNull { it.role == GigaMessageRole.user && !it.content.contains("<context>") }
+            .lastOrNull { it.role == LLMMessageRole.user && !it.content.contains("<context>") }
             ?.content
             .orEmpty()
 
         val response = withContext(Dispatchers.IO) {
             llmApi.message(
-                GigaRequest.Chat(
+                LLMRequest.Chat(
                     model = ctx.settings.model,
                     messages = listOf(
-                        GigaRequest.Message(
-                            role = GigaMessageRole.system,
+                        LLMRequest.Message(
+                            role = LLMMessageRole.system,
                             content = buildRepairSystemPrompt(
                                 basePrompt = ctx.systemPrompt,
                                 tools = ctx.activeTools,
                             ),
                         ),
-                        GigaRequest.Message(
-                            role = GigaMessageRole.user,
+                        LLMRequest.Message(
+                            role = LLMMessageRole.user,
                             content = buildString {
                                 appendLine("Original user request:")
                                 appendLine(latestUserRequest)
@@ -124,19 +124,19 @@ class NodesLua(
         }
 
         val history = when (response) {
-            is GigaResponse.Chat.Error -> ctx.history
-            is GigaResponse.Chat.Ok -> ArrayList(ctx.history).apply {
+            is LLMResponse.Chat.Error -> ctx.history
+            is LLMResponse.Chat.Ok -> ArrayList(ctx.history).apply {
                 addAll(response.choices.mapNotNull { it.toMessage() })
             }
         }
         ctx.map(history = history) { response }
     }
 
-    private fun buildRequest(ctx: AgentContext<String>): GigaRequest.Chat {
-        val conversation = ctx.history.filterNot { it.role == GigaMessageRole.system }
+    private fun buildRequest(ctx: AgentContext<String>): LLMRequest.Chat {
+        val conversation = ctx.history.filterNot { it.role == LLMMessageRole.system }
         val messages = listOf(
-            GigaRequest.Message(
-                role = GigaMessageRole.system,
+            LLMRequest.Message(
+                role = LLMMessageRole.system,
                 content = buildSystemPrompt(
                     basePrompt = ctx.systemPrompt,
                     tools = ctx.activeTools,
@@ -144,7 +144,7 @@ class NodesLua(
             )
         ) + conversation
 
-        return GigaRequest.Chat(
+        return LLMRequest.Chat(
             model = ctx.settings.model,
             messages = messages,
             functions = emptyList(),
@@ -155,7 +155,7 @@ class NodesLua(
 
     private fun buildSystemPrompt(
         basePrompt: String,
-        tools: List<GigaRequest.Function>,
+        tools: List<LLMRequest.Function>,
     ): String = buildString {
         appendLine(systemPrompt)
         appendLine()
@@ -166,7 +166,7 @@ class NodesLua(
         appendLine(buildToolCatalog(tools))
     }.trim()
 
-    private fun buildToolCatalog(tools: List<GigaRequest.Function>): String {
+    private fun buildToolCatalog(tools: List<LLMRequest.Function>): String {
         if (tools.isEmpty()) return "- No tools available for this turn."
 
         return tools.joinToString(separator = "\n\n") { function ->
@@ -203,7 +203,7 @@ class NodesLua(
 
     private fun StringBuilder.appendProperties(
         name: String,
-        property: GigaRequest.Property,
+        property: LLMRequest.Property,
         required: List<String>
     ) {
         append("\n  - ")
@@ -229,7 +229,7 @@ class NodesLua(
 
     private fun buildRepairSystemPrompt(
         basePrompt: String,
-        tools: List<GigaRequest.Function>,
+        tools: List<LLMRequest.Function>,
     ): String = buildString {
         appendLine(systemPrompt)
         appendLine()

@@ -6,7 +6,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.souz.di.mainDiModule
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.browser.ToolChromeInfo
 import ru.souz.tool.browser.detectDefaultBrowser
 import ru.souz.tool.config.ToolInstructionStore
@@ -31,7 +31,7 @@ class DesktopDataExtractor(
     fun all(): List<StorredData> {
         val installed = runCatching {
             val json = toolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
-            val arr: List<Map<String, String>> = gigaJsonMapper.readValue(json)
+            val arr: List<Map<String, String>> = restJsonMapper.readValue(json)
             arr.map {
                 val (appName, appBundleId) = it["app-name"] to it["app-bundle-id"]
                 val text = "Приложение: $appName, bundleId: $appBundleId"
