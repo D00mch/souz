@@ -21,12 +21,22 @@ If you are not sure about something, left a note for other developers to review.
 ## Features
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
+- **Local llama.cpp provider** with a thin native bridge, strict JSON tool contract, a RAM-gated local model catalog (currently Qwen profile), background preload/warmup on local model selection, prompt-prefix/KV reuse inside the native runtime, and model storage under `~/.local/state/souz/models/`.
 - **Runtime EN/RU profile toggle** with one packaged build: profile is switched via a shared segmented RU/EN toggle in Setup and Settings and controls provider/model availability.
 - **Key-aware model selection in Settings**: chat, embeddings, and voice recognition model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop toolset**: files, browser, calendar, mail, notes, desktop automation, analytics, and presentations.
 - **Two-mode internet search**: quick-answer web lookup for simple factual questions and multi-step research mode with LLM-built strategy, broader source coverage, cited long-form synthesis, and automatic `.md` export for oversized reports.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
+
+## Local Native Bridge
+
+- `third_party/llama.cpp` and `native/llama-bridge/build-*` are local-only paths and should stay untracked.
+- Treat those paths as out of scope unless the task is explicitly about updating upstream `llama.cpp` or debugging the native bridge build.
+- Packaged bridge binaries live in `composeApp/src/jvmMain/resources/darwin-*`.
+- Rebuild the packaged bridge binaries with `composeApp/src/jvmMain/resources/scripts/build-llama-bridge.sh`.
+- The rebuild script uses `LLAMA_CPP_SOURCE_DIR` when set, otherwise a local `third_party/llama.cpp` checkout, otherwise it clones the pinned `llama.cpp` ref `968189729f71bf1dbe109556986ddf2e2cf3e534` into `${XDG_CACHE_HOME:-~/.cache}/souz/vendor/llama.cpp`.
+- On macOS the bridge now disables ggml Metal residency sets by default (`GGML_METAL_NO_RESIDENCY=1`) to avoid shutdown aborts; set `SOUZ_LLAMA_METAL_RESIDENCY=1` only if you need to opt back in for debugging.
 
 ## Project Structure
 

@@ -25,11 +25,13 @@ import org.kodein.di.compose.withDI
 import org.kodein.di.instance
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
+import ru.souz.local.LocalLlamaRuntime
 import ru.souz.mcp.McpClientManager
 import ru.souz.telemetry.TelemetryService
 import ru.souz.ui.rememberDockWindowController
 import ru.souz.ui.macos.MacWindowVibrancy
 import java.awt.Dimension
+import java.util.concurrent.atomic.AtomicBoolean
 
 import androidx.compose.ui.res.painterResource as jvmPainterResource
 
@@ -46,19 +48,45 @@ fun main() {
             val mcpClientManager: McpClientManager by di.instance()
             val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
             val telemetryService: TelemetryService by di.instance()
+            val localLlamaRuntime: LocalLlamaRuntime by di.instance()
+            val closeServices: () -> Unit = remember(
+                localLlamaRuntime,
+                mcpClientManager,
+                telegramBotController,
+                telemetryService,
+            ) {
+                val closed = AtomicBoolean(false)
+                ({
+                    if (!closed.compareAndSet(false, true)) {
+                        Unit
+                    } else {
+                        startupLog.info("Shutting down services")
+                        runCatching { localLlamaRuntime.close() }
+                            .onFailure { startupLog.warn("Failed to close local runtime: {}", it.message) }
+                        runCatching { mcpClientManager.close() }
+                            .onFailure { startupLog.warn("Failed to close MCP manager: {}", it.message) }
+                        runCatching { telegramBotController.close() }
+                            .onFailure { startupLog.warn("Failed to close Telegram bot controller: {}", it.message) }
+                        runCatching { telemetryService.close() }
+                            .onFailure { startupLog.warn("Failed to close telemetry service: {}", it.message) }
+                    }
+                })
+            }
 
             DisposableEffect(Unit) {
                 telegramBotController.start()
                 telemetryService.start()
+                val shutdownHook = Thread(Runnable { closeServices() }, "souz-shutdown-hook")
+                Runtime.getRuntime().addShutdownHook(shutdownHook)
 
                 onDispose {
-                    println("Shutting down services...")
-                    runCatching { mcpClientManager.close() }
-                        .onFailure { println("Failed to close MCP manager: ${it.message}") }
-                    runCatching { telegramBotController.close() }
-                        .onFailure { println("Failed to close Telegram bot controller: ${it.message}") }
-                    runCatching { telemetryService.close() }
-                        .onFailure { println("Failed to close telemetry service: ${it.message}") }
+                    runCatching { Runtime.getRuntime().removeShutdownHook(shutdownHook) }
+                        .onFailure { error ->
+                            if (error !is IllegalStateException) {
+                                startupLog.warn("Failed to remove shutdown hook: {}", error.message)
+                            }
+                        }
+                    closeServices()
                 }
             }
             

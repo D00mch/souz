@@ -54,6 +54,10 @@ import ru.souz.giga.GigaModel
 import ru.souz.giga.GigaResponse
 import ru.souz.giga.GigaResponse.FunctionCall
 import ru.souz.giga.GigaVoiceAPI
+import ru.souz.local.LocalLlamaRuntime
+import ru.souz.local.LocalModelProfiles
+import ru.souz.local.LocalModelStore
+import ru.souz.local.LocalProviderAvailability
 import ru.souz.service.telegram.TelegramBotController
 import ru.souz.telemetry.TelemetryRequestContext
 import ru.souz.telemetry.TelemetryRequestSource
@@ -563,6 +567,28 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `selecting missing local model opens download prompt in main chat`() = runTest(mainDispatcher) {
+        val harness = createHarness(
+            qwenChatKey = "qwen-key",
+            localAvailableModel = GigaModel.LocalQwen3_4B_Instruct_2507,
+            localModelDownloaded = false,
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.UpdateChatModel(GigaModel.LocalQwen3_4B_Instruct_2507.alias))
+
+            val state = awaitState(viewModel) { it.localModelDownloadPrompt?.model == GigaModel.LocalQwen3_4B_Instruct_2507 }
+            assertEquals(GigaModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
+            assertFalse(state.selectedModel == GigaModel.LocalQwen3_4B_Instruct_2507.alias)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `pick attachments adds files to state`() = runTest(mainDispatcher) {
         val harness = createHarness()
         val tempFile = File.createTempFile("souz-attachment", ".txt").apply {
@@ -710,6 +736,9 @@ class MainViewModelTest {
         onCancelActiveJob: () -> Unit = {},
         needsOnboarding: Boolean = false,
         voiceInputReviewEnabled: Boolean = false,
+        qwenChatKey: String = "",
+        localAvailableModel: GigaModel? = null,
+        localModelDownloaded: Boolean = true,
         recognizeBehavior: suspend (ByteArray) -> GigaResponse.RecognizeResponse = {
             GigaResponse.RecognizeResponse()
         },
@@ -730,8 +759,20 @@ class MainViewModelTest {
         every { settingsProvider.contextSize } returns 16_000
         every { settingsProvider.useStreaming } returns false
         every { settingsProvider.regionProfile } returns "ru"
+        every { settingsProvider.qwenChatKey } returns qwenChatKey
         every { settingsProvider.regionProfile = any() } just runs
-        val llmBuildProfile = LlmBuildProfile(settingsProvider)
+        val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
+        every { localProviderAvailability.isProviderAvailable() } returns (localAvailableModel != null)
+        every { localProviderAvailability.availableGigaModels() } returns listOfNotNull(localAvailableModel)
+        every { localProviderAvailability.defaultGigaModel() } returns localAvailableModel
+        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
+        val localModelStore = mockk<LocalModelStore>(relaxed = true)
+        val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
+        localAvailableModel?.let { model ->
+            val profile = LocalModelProfiles.forAlias(model.alias) ?: error("Missing local profile for ${model.alias}")
+            every { localModelStore.isPresent(profile) } returns localModelDownloaded
+            every { localModelStore.modelPath(profile) } returns File(System.getProperty("java.io.tmpdir"), profile.ggufFilename).toPath()
+        }
         var needsOnboardingState = needsOnboarding
         every { settingsProvider.needsOnboarding } answers { needsOnboardingState }
         every { settingsProvider.needsOnboarding = any() } answers { needsOnboardingState = firstArg<Boolean>() }
@@ -795,6 +836,8 @@ class MainViewModelTest {
             bindSingleton { desktopInfoRepository }
             bindSingleton<SettingsProvider> { settingsProvider }
             bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton { localModelStore }
+            bindSingleton { localLlamaRuntime }
             bindSingleton { say }
             bindSingleton { toolPermissionBroker }
             bindSingleton { telegramBotController }

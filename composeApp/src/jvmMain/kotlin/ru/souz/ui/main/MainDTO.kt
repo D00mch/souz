@@ -7,6 +7,8 @@ import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
 import ru.souz.giga.GigaRequest
 import ru.souz.giga.GigaModel
+import ru.souz.local.LocalModelDownloadPrompt
+import ru.souz.local.LocalModelDownloadState
 
 /**
  * Chat message for the chat mode.
@@ -95,6 +97,8 @@ data class MainState(
     val showNewChatDialog: Boolean = false,
     val toolPermissionDialog: ToolPermissionDialogData? = null,
     val selectionDialog: SelectionDialogData? = null,
+    val localModelDownloadPrompt: LocalModelDownloadPrompt? = null,
+    val localModelDownloadState: LocalModelDownloadState? = null,
     val attachedFiles: List<ChatAttachedFile> = emptyList(),
     val pendingVoiceInputDraft: String? = null,
     val pendingVoiceInputDraftToken: Long = 0L,
@@ -118,6 +122,8 @@ sealed interface MainEvent : VMEvent {
     data object ShowLastText : MainEvent
     data object ToggleThinkingPanel : MainEvent
     data class UpdateChatModel(val model: String) : MainEvent
+    data object ConfirmLocalModelDownload : MainEvent
+    data object CancelLocalModelDownload : MainEvent
     data class UpdateChatContextSize(val size: Int) : MainEvent
     data object PickChatAttachments : MainEvent
     data class AttachDroppedFiles(val paths: List<String>) : MainEvent

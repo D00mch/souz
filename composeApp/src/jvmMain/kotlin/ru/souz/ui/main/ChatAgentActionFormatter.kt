@@ -33,7 +33,10 @@ class ChatAgentActionFormatter {
             "ChromeInfo" -> format(Res.string.chat_action_chrome_info, browserInfoTypeLabel(textArg(args, "type")))
             "OpenDefaultBrowser" -> getString(Res.string.chat_action_open_default_browser)
             "RunBashCommand" -> format(Res.string.chat_action_run_bash_command, snippetArg(args, "command"))
-            "WebSearch" -> format(Res.string.chat_action_web_search, textArg(args, "query"))
+            "WebSearch", "InternetSearch", "internetSearch" ->
+                format(Res.string.chat_action_web_search, textArg(args, "query"))
+            "InternetResearch", "internetResearch" ->
+                format(Res.string.chat_action_internet_research, textArg(args, "query"))
             "WebImageSearch" -> format(Res.string.chat_action_web_image_search, textArg(args, "query"))
             "WebPageText" -> format(Res.string.chat_action_web_page_text, textArg(args, "url"))
             "SoundConfig" -> format(Res.string.chat_action_sound_config, textArg(args, "speed"))

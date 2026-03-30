@@ -6,6 +6,7 @@ import ru.souz.llms.AiTunnelChatAPI
 import ru.souz.llms.AnthropicChatAPI
 import ru.souz.llms.OpenAIChatAPI
 import ru.souz.llms.QwenChatAPI
+import ru.souz.local.LocalChatAPI
 import java.io.File
 
 class LLMFactory(
@@ -15,6 +16,7 @@ class LLMFactory(
     private val aiTunnelApi: AiTunnelChatAPI,
     private val anthropicApi: AnthropicChatAPI,
     private val openAiApi: OpenAIChatAPI,
+    private val localApi: LocalChatAPI,
 ) : GigaChatAPI {
 
     private fun chatApiFor(provider: LlmProvider): GigaChatAPI = when (provider) {
@@ -23,6 +25,7 @@ class LLMFactory(
         LlmProvider.ANTHROPIC -> anthropicApi
         LlmProvider.OPENAI -> openAiApi
         LlmProvider.GIGA -> restApi
+        LlmProvider.LOCAL -> localApi
     }
 
     fun current(): GigaChatAPI {

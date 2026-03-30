@@ -113,6 +113,7 @@ enum class LlmProvider {
     AI_TUNNEL,
     ANTHROPIC,
     OPENAI,
+    LOCAL,
 }
 
 enum class VoiceRecognitionProvider {
@@ -147,6 +148,7 @@ enum class GigaModel(
     AnthropicOpus46("Claude Opus 4.6", "claude-opus-4-6", LlmProvider.ANTHROPIC),
     AnthropicSonnet45("Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", LlmProvider.ANTHROPIC),
     AnthropicHaiku45("Claude Haiku 4.5", "claude-haiku-4-5-20251001", LlmProvider.ANTHROPIC),
+    LocalQwen3_4B_Instruct_2507("Local Qwen3 4B Instruct", "local-qwen3-4b-instruct-2507", LlmProvider.LOCAL),
 }
 
 enum class EmbeddingsModel(
