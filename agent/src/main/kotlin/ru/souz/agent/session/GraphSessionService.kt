@@ -1,9 +1,9 @@
 package ru.souz.agent.session
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.Node
-import ru.souz.agent.engine.StepInfo
+import ru.souz.agent.graph.StepInfo
+import ru.souz.agent.state.AgentContext
+import ru.souz.graph.Node
 import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Thread safe, but only one task at a time.
  * Use [NODE_NAME_CLASSIFY] to support chosen categories visualization
  */
-class GraphSessionService(
+internal class GraphSessionService(
     private val repository: GraphSessionRepository, private val logObjectMapper: ObjectMapper
 ) {
     companion object {

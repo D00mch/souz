@@ -5,7 +5,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.luaj.vm2.LuaError
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.engine.AgentSettings
+import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.runtime.LuaExecutionException
 import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.tool.ToolCategory

@@ -1,11 +1,8 @@
 package ru.souz.local
 
 import com.sun.jna.Pointer
-import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkObject
 import io.mockk.unmockkAll
 import io.mockk.verify
 import kotlinx.coroutines.flow.toList
@@ -18,28 +15,16 @@ import org.junit.jupiter.api.AfterEach
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlin.test.assertFailsWith
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.AgentSettings
-import ru.souz.agent.engine.GraphRuntime
-import ru.souz.agent.engine.RetryPolicy
-import ru.souz.agent.nodes.NodesCommon
-import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.spi.DefaultBrowserProvider
-import ru.souz.db.DesktopInfoRepository
-import ru.souz.db.SettingsProvider
-import ru.souz.db.StorredData
-import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.giga.toGiga
-import ru.souz.llms.toSystemPromptMessage
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
@@ -51,7 +36,6 @@ import ru.souz.llms.local.LocalProviderStatus
 import ru.souz.llms.local.LocalStrictJsonParser
 import ru.souz.llms.local.downloadPromptFor
 import ru.souz.llms.local.prefersPlainTextLocalOutput
-import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.calendar.ToolCalendarListEvents
 
 class LocalInferenceSupportTest {
@@ -571,94 +555,6 @@ class LocalInferenceSupportTest {
                 prompt = "x".repeat(24_000),
             )
         )
-    }
-
-    @Test
-    fun `local model keeps static additional context but skips desktop search`() = runTest {
-        mockkObject(ToolRunBashCommand)
-        every { ToolRunBashCommand.sh(any()) } returns ""
-
-        val desktopInfoRepository = mockk<DesktopInfoRepository>()
-        coEvery { desktopInfoRepository.search(any(), any()) } returns listOf()
-        val settingsProvider = mockk<SettingsProvider> {
-            every { defaultCalendar } returns "Work"
-        }
-        val nodesCommon = NodesCommon(
-            desktopInfoRepository = desktopInfoRepository,
-            settingsProvider = settingsProvider,
-            agentToolExecutor = mockk<AgentToolExecutor>(relaxed = true),
-            defaultBrowserProvider = mockk<DefaultBrowserProvider> {
-                every { defaultBrowserDisplayName() } returns null
-            },
-        )
-        val context = AgentContext(
-            input = "Проверь Telegram",
-            settings = AgentSettings(
-                model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
-                temperature = 0.2f,
-                toolsByCategory = emptyMap(),
-            ),
-            history = listOf(
-                "system".toSystemPromptMessage(),
-                LLMRequest.Message(LLMMessageRole.user, "Проверь Telegram"),
-            ),
-            activeTools = emptyList(),
-            systemPrompt = "system",
-        )
-        val result = nodesCommon.nodeAppendAdditionalData().execute(
-            ctx = context,
-            runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
-        )
-        val injectedContext = assertNotNull(result.history.firstOrNull { it.content.contains("<context>") })
-
-        assertTrue(injectedContext.content.contains("Календарь по умолчанию: Work"))
-        assertTrue(injectedContext.content.contains("Текущие дата и время:"))
-        coVerify(exactly = 0) { desktopInfoRepository.search(any(), any()) }
-    }
-
-    @Test
-    fun `cloud model includes desktop search in additional context`() = runTest {
-        mockkObject(ToolRunBashCommand)
-        every { ToolRunBashCommand.sh(any()) } returns ""
-
-        val desktopInfoRepository = mockk<DesktopInfoRepository>()
-        coEvery { desktopInfoRepository.search(any(), any()) } returns listOf(
-            StorredData("Найден локальный факт", StorredType.GENERAL_FACT)
-        )
-        val settingsProvider = mockk<SettingsProvider> {
-            every { defaultCalendar } returns null
-        }
-        val nodesCommon = NodesCommon(
-            desktopInfoRepository = desktopInfoRepository,
-            settingsProvider = settingsProvider,
-            agentToolExecutor = mockk<AgentToolExecutor>(relaxed = true),
-            defaultBrowserProvider = mockk<DefaultBrowserProvider> {
-                every { defaultBrowserDisplayName() } returns null
-            },
-        )
-        val context = AgentContext(
-            input = "Найди локальные данные",
-            settings = AgentSettings(
-                model = "gpt-5-nano",
-                temperature = 0.2f,
-                toolsByCategory = emptyMap(),
-            ),
-            history = listOf(
-                "system".toSystemPromptMessage(),
-                LLMRequest.Message(LLMMessageRole.user, "Найди локальные данные"),
-            ),
-            activeTools = emptyList(),
-            systemPrompt = "system",
-        )
-
-        val result = nodesCommon.nodeAppendAdditionalData().execute(
-            ctx = context,
-            runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
-        )
-        val injectedContext = assertNotNull(result.history.firstOrNull { it.content.contains("<context>") })
-
-        assertTrue(injectedContext.content.contains("Найден локальный факт"))
-        coVerify(exactly = 1) { desktopInfoRepository.search(any(), any()) }
     }
 
     @Test

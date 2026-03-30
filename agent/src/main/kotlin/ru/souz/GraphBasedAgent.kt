@@ -7,16 +7,16 @@ import org.kodein.di.instance
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.GraphStepCallback
 import ru.souz.agent.TraceableAgent
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.Graph
-import ru.souz.agent.engine.Node
-import ru.souz.agent.engine.buildGraph
+import ru.souz.agent.graph.Graph
+import ru.souz.agent.graph.Node
+import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.state.AgentContext
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.LLMResponse
@@ -36,7 +36,7 @@ class GraphBasedAgent(
 
     override val sideEffects: Flow<String> = nodesLLM.sideEffects
 
-    override val graph: Graph<String, String> = buildGraph(name = "Agent") {
+    private val graph: Graph<String, String> = buildGraph(name = "Agent") {
         val chatSubgraph: Node<String, LLMResponse.Chat> = nodesLLM.chat("LLM")
         val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
             ctx.map { ctx.input as LLMResponse.Chat.Ok }

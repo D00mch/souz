@@ -3,9 +3,9 @@ package ru.souz.agent.nodes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.Node
-import ru.souz.agent.engine.buildGraph
+import ru.souz.agent.graph.Node
+import ru.souz.agent.graph.buildGraph
+import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMRequest
@@ -19,7 +19,7 @@ import kotlin.math.ceil
 /**
  * Nodes responsible for summarizing conversation history.
  */
-class NodesSummarization(
+internal class NodesSummarization(
     private val llmApi: LLMChatAPI,
     private val nodesCommon: NodesCommon,
 ) {

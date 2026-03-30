@@ -8,8 +8,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.Node
+import ru.souz.agent.graph.Node
+import ru.souz.agent.state.AgentContext
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
@@ -23,7 +23,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 /**
  * Nodes with calls to LLM
  */
-class NodesLLM(
+internal class NodesLLM(
     private val llmApi: LLMChatAPI,
     private val settingsProvider: AgentSettingsProvider,
 ) {

@@ -1,14 +1,14 @@
 package ru.souz.agent.nodes
 
 import org.slf4j.LoggerFactory
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.AgentSettings
-import ru.souz.agent.engine.Node
+import ru.souz.agent.graph.Node
+import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.llms.LLMToolSetup
 import kotlin.jvm.java
 
-class NodesMCP(private val mcpToolProvider: McpToolProvider) {
+internal class NodesMCP(private val mcpToolProvider: McpToolProvider) {
     private val l = LoggerFactory.getLogger(NodesMCP::class.java)
 
     /**

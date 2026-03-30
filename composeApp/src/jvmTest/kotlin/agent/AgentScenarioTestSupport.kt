@@ -15,8 +15,8 @@ import org.kodein.di.instance
 import ru.souz.agent.Agent
 import ru.souz.agent.AgentId
 import ru.souz.agent.SystemPromptResolver
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.AgentSettings
+import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentSettings
 import ru.souz.GraphBasedAgent
 import ru.souz.LuaGraphBasedAgent
 import ru.souz.db.ConfigStore
@@ -292,7 +292,7 @@ class AgentScenarioTestSupport(
             bindProvider<DI> { this.di }
             overrides()
         }
-        val agent = when (agentType) {
+        val agent: Agent = when (agentType) {
             AgentId.GRAPH -> GraphBasedAgent(di, restJsonMapper)
             AgentId.LUA_GRAPH -> LuaGraphBasedAgent(di, restJsonMapper)
         }

@@ -1,8 +1,8 @@
-package ru.souz.agent.engine
+package ru.souz.graph
 
 interface Node<IN, OUT> {
     val name: String
-    suspend fun execute(ctx: AgentContext<IN>, runtime: GraphRuntime): AgentContext<OUT>
+    suspend fun execute(ctx: IN, runtime: GraphRuntime): OUT
 }
 
 /**
@@ -10,8 +10,8 @@ interface Node<IN, OUT> {
  */
 fun <IN, OUT> Node(
     name: String,
-    op: suspend (AgentContext<IN>) -> AgentContext<OUT>,
+    op: suspend (IN) -> OUT,
 ): Node<IN, OUT> = object : Node<IN, OUT> {
     override val name: String = "Node $name; ${Integer.toHexString(hashCode())}"
-    override suspend fun execute(ctx: AgentContext<IN>, runtime: GraphRuntime) = op(ctx)
+    override suspend fun execute(ctx: IN, runtime: GraphRuntime) = op(ctx)
 }

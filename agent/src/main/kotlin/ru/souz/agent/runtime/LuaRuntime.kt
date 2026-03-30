@@ -15,7 +15,7 @@ import org.luaj.vm2.lib.OneArgFunction
 import org.luaj.vm2.lib.VarArgFunction
 import org.luaj.vm2.lib.jse.JsePlatform
 import org.slf4j.LoggerFactory
-import ru.souz.agent.engine.AgentSettings
+import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper

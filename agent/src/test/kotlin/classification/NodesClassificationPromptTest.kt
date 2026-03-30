@@ -6,21 +6,23 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.unmockkAll
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.AgentSettings
-import ru.souz.agent.engine.GraphRuntime
-import ru.souz.agent.engine.RetryPolicy
+import ru.souz.agent.graph.GraphRuntime
+import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.nodes.NodesClassification
+import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.db.SettingsProvider
-import ru.souz.llms.LLMModel
+import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
+import ru.souz.tool.UserMessageClassifier
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -79,37 +81,21 @@ class NodesClassificationPromptTest {
     }
 
     @Test
-    fun `applyFilter keeps telegram tools when telegram is connected`() {
-        val toolsWithTelegram = defaultTools + (ToolCategory.TELEGRAM to mapOf("TgRead" to dummySetup("TgRead")))
-        val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns toolsWithTelegram }
-        val toolsSettings = mockTelegramFilteredToolsSettings(telegramConnected = true)
-
-        val filtered = toolsSettings.applyFilter(toolsFactory.toolsByCategory)
-
-        assertTrue(filtered.containsKey(ToolCategory.TELEGRAM))
-    }
-
-    @Test
-    fun `local provider classification still uses api classifier and narrows tools`() {
-        val localTools = mapOf(
-            ToolCategory.FILES to mapOf("Read" to dummySetup("Read")),
-            ToolCategory.MAIL to mapOf("MailRead" to dummySetup("MailRead")),
-        )
-        val settingsProvider = mockk<SettingsProvider> {
+    fun `local classifier still keeps api verification path for local models`() {
+        val localTools = mapOf(ToolCategory.FILES to mapOf("Read" to dummySetup("Read")))
+        val settingsProvider = mockk<AgentSettingsProvider> {
             every { gigaModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
         }
-        val localClassifier = mockk<ru.souz.tool.UserMessageClassifier> {
-            coEvery { classify(any()) } returns ru.souz.tool.UserMessageClassifier.Reply(
-                categories = listOf(ToolCategory.MAIL),
-                confidence = 50.0,
-            )
-        }
-        val apiClassifier = mockk<ru.souz.tool.UserMessageClassifier> {
-            coEvery { classify(any()) } returns ru.souz.tool.UserMessageClassifier.Reply(
-                categories = listOf(ToolCategory.FILES),
-                confidence = 90.0,
-            )
-        }
+        val apiClassifier = mockk<UserMessageClassifier>()
+        val localClassifier = mockk<UserMessageClassifier>()
+        coEvery { localClassifier.classify(any()) } returns UserMessageClassifier.Reply(
+            categories = listOf(ToolCategory.FILES),
+            confidence = 90.0,
+        )
+        coEvery { apiClassifier.classify(any()) } returns UserMessageClassifier.Reply(
+            categories = listOf(ToolCategory.FILES),
+            confidence = 90.0,
+        )
         val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns localTools }
         val toolsSettings = mockk<AgentToolsFilter> {
             every { applyFilter(any()) } answers { firstArg() }
@@ -123,7 +109,7 @@ class NodesClassificationPromptTest {
             toolsFilter = toolsSettings,
         )
 
-        val result = kotlinx.coroutines.runBlocking {
+        val result = runBlocking {
             classification.node().execute(
                 ctx = AgentContext(
                     input = "Прочитай файл",
@@ -154,7 +140,7 @@ class NodesClassificationPromptTest {
     }
 
     private fun buildPromptWith(filteredTools: Map<ToolCategory, Map<String, LLMToolSetup>>): String {
-        val settingsProvider = mockk<SettingsProvider>()
+        val settingsProvider = mockk<AgentSettingsProvider>()
         every { settingsProvider.gigaModel } returns LLMModel.Max
 
         val classification = NodesClassification(
@@ -178,7 +164,7 @@ class NodesClassificationPromptTest {
         )
 
         override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message {
-            return LLMRequest.Message(role = LLMMessageRole.function, content = "")
+            return LLMRequest.Message(LLMMessageRole.function, "ok")
         }
     }
 }

@@ -1,10 +1,10 @@
 package ru.souz.agent.nodes
 
 import org.slf4j.LoggerFactory
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.AgentSettings
-import ru.souz.agent.engine.Node
+import ru.souz.agent.graph.Node
 import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.DefaultBrowserProvider
@@ -26,7 +26,7 @@ import java.util.Locale
  * Nodes related to local data manipulation.
  * The nodes may update [AgentContext.input] or [AgentContext.history].
  */
-class NodesCommon(
+internal class NodesCommon(
     private val desktopInfoRepository: AgentDesktopInfoRepository,
     private val settingsProvider: AgentSettingsProvider,
     private val agentToolExecutor: AgentToolExecutor,
@@ -215,8 +215,10 @@ class NodesCommon(
     private suspend fun fnCallMessages(ctx: AgentContext<LLMResponse.Chat.Ok>): List<LLMRequest.Message> {
         val fnCallMessages = ctx.input.choices.mapNotNull { choice ->
             val msg = choice.message
-            if (msg.functionCall != null && msg.functionsStateId != null) {
-                executeTool(ctx.settings, msg.functionCall).copy(functionsStateId = msg.functionsStateId)
+            val functionCall = msg.functionCall
+            val functionsStateId = msg.functionsStateId
+            if (functionCall != null && functionsStateId != null) {
+                executeTool(ctx.settings, functionCall).copy(functionsStateId = functionsStateId)
             } else null
         }
         return fnCallMessages
@@ -233,7 +235,7 @@ class NodesCommon(
         }
 }
 
-fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {
+internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {
     val ctx = this
     return LLMRequest.Chat(
         model = ctx.settings.model,

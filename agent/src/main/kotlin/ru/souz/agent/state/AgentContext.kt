@@ -1,11 +1,10 @@
-package ru.souz.agent.engine
+package ru.souz.agent.state
 
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
 
-// Immutable context threaded through the graph
 data class AgentContext<I>(
     val input: I,
     val settings: AgentSettings,
@@ -22,7 +21,6 @@ data class AgentContext<I>(
     ): AgentContext<O> = AgentContext(input = transform(input), settings, history, activeTools, systemPrompt)
 }
 
-/** Wrapper to simplify accessing tools related data */
 data class AgentTools(
     val byCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
     val byName: Map<String, LLMToolSetup> = byCategory.values.flatMap { it.entries }

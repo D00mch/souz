@@ -2,8 +2,8 @@ package ru.souz.agent.nodes
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.Node
+import ru.souz.agent.graph.Node
+import ru.souz.agent.state.AgentContext
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -15,7 +15,7 @@ import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolCategory.*
 import ru.souz.tool.UserMessageClassifier
 
-class NodesClassification(
+internal class NodesClassification(
     private val settingsProvider: AgentSettingsProvider,
     private val logObjectMapper: ObjectMapper,
     private val apiClassifier: UserMessageClassifier,

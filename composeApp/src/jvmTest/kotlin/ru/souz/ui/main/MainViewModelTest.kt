@@ -28,6 +28,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentSettings
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -41,8 +43,6 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentSideEffect
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.AgentSettings
 import ru.souz.service.audio.ActiveSoundRecorderImpl
 import ru.souz.service.audio.InMemoryAudioRecorder
 import ru.souz.service.audio.Say

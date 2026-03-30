@@ -1,4 +1,4 @@
-package ru.souz.agent.engine
+package ru.souz.graph
 
 import org.slf4j.LoggerFactory
 import kotlin.properties.ReadOnlyProperty
@@ -17,24 +17,24 @@ class Graph<IN, OUT> internal constructor(
     override val name: String = "$label::graph"
 
     @Suppress("UNCHECKED_CAST")
-    override suspend fun execute(ctx: AgentContext<IN>, runtime: GraphRuntime): AgentContext<OUT> {
+    override suspend fun execute(ctx: IN, runtime: GraphRuntime): OUT {
         return runtime.withGraphScope(name) {
             val result = runner.run(
                 start = enter as Node<Any?, Any?>,
-                seed = ctx as AgentContext<Any?>,
+                seed = ctx as Any?,
                 runtime = runtime,
                 definition = definition,
                 stopPredicate = { node, _ -> node === exit }
             )
-            result as AgentContext<OUT>
+            result as OUT
         }
     }
 
     suspend fun start(
-        seed: AgentContext<IN>,
+        seed: IN,
         maxSteps: Int = 1000,
-        onStep: ((step: StepInfo, node: Node<Any?, Any?>, from: AgentContext<Any?>, to: AgentContext<Any?>) -> Unit)? = null,
-    ): AgentContext<OUT> {
+        onStep: ((step: StepInfo, node: Node<Any?, Any?>, from: Any?, to: Any?) -> Unit)? = null,
+    ): OUT {
         val runtime = GraphRuntime(
             retryPolicy = retryPolicy,
             maxSteps = maxSteps,
@@ -58,7 +58,7 @@ class GraphBuilder<IN, OUT> internal constructor(
         return target
     }
 
-    fun <IN, OUT> Node<IN, OUT>.edgeTo(router: suspend (AgentContext<OUT>) -> Node<OUT, *>) {
+    fun <IN, OUT> Node<IN, OUT>.edgeTo(router: suspend (OUT) -> Node<OUT, *>) {
         registerTransition(this, Transition.Dynamic(router))
     }
 
@@ -82,7 +82,7 @@ internal class GraphDefinition(
     private val l = LoggerFactory.getLogger(GraphDefinition::class.java)
 
     @Suppress("UNCHECKED_CAST")
-    suspend fun nextNodes(node: Node<Any?, Any?>, ctx: AgentContext<Any?>): List<Node<Any?, *>> {
+    suspend fun nextNodes(node: Node<Any?, Any?>, ctx: Any?): List<Node<Any?, *>> {
         val registered = transitions[node] as? List<Transition<Any?>> ?: emptyList()
         if (registered.isEmpty()) return emptyList()
 
@@ -107,7 +107,7 @@ internal class GraphDefinition(
 
 internal sealed interface Transition<OUT> {
     class Static<OUT>(val target: Node<OUT, *>) : Transition<OUT>
-    class Dynamic<OUT>(val router: suspend (AgentContext<OUT>) -> Node<OUT, *>) : Transition<OUT>
+    class Dynamic<OUT>(val router: suspend (OUT) -> Node<OUT, *>) : Transition<OUT>
 }
 
 private val defaultRetryPolicy = RetryPolicy()

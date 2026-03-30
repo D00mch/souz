@@ -1,11 +1,10 @@
-package ru.souz.agent.engine
+package ru.souz.graph
 
-import ru.souz.llms.LLMException
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.atomic.AtomicInteger
 
 class GraphCancellation(
-    val lastContext: AgentContext<*>,
+    val lastContext: Any?,
     cause: CancellationException? = null
 ) : CancellationException(cause?.message) {
     init {
@@ -39,14 +38,14 @@ data class StepInfo(
 class GraphRuntime private constructor(
     val retryPolicy: RetryPolicy,
     val maxSteps: Int,
-    val onStep: ((step: StepInfo, node: Node<Any?, Any?>, from: AgentContext<Any?>, to: AgentContext<Any?>) -> Unit)? = null,
+    val onStep: ((step: StepInfo, node: Node<Any?, Any?>, from: Any?, to: Any?) -> Unit)? = null,
     val counter: AtomicInteger,
     val graphStack: ArrayDeque<String>
 ) {
     constructor(
         retryPolicy: RetryPolicy,
         maxSteps: Int,
-        onStep: ((step: StepInfo, node: Node<Any?, Any?>, from: AgentContext<Any?>, to: AgentContext<Any?>) -> Unit)? = null,
+        onStep: ((step: StepInfo, node: Node<Any?, Any?>, from: Any?, to: Any?) -> Unit)? = null,
     ): this(retryPolicy, maxSteps, onStep, counter = AtomicInteger(), graphStack = ArrayDeque())
 
     fun graphPathSnapshot(): List<String> = graphStack.toList()
@@ -62,11 +61,11 @@ class GraphRuntime private constructor(
 }
 
 data class RetryPolicy(
-    val maxAttempts: Int = 2,
+    val maxAttempts: Int = 1,
     val shouldRetry: suspend (
         error: Throwable,
-        ctx: AgentContext<*>,
+        ctx: Any?,
         node: Node<*, *>?,
         attempt: Int
-    ) -> Boolean = { error, _, _, _ -> error is LLMException }
+    ) -> Boolean = { _, _, _, _ -> false }
 )

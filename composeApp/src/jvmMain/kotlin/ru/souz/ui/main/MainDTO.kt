@@ -1,6 +1,6 @@
 package ru.souz.ui.main
 
-import ru.souz.agent.engine.AgentContext
+import ru.souz.agent.state.AgentContext
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect

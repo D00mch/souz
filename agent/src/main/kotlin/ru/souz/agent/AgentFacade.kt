@@ -11,8 +11,8 @@ import kotlinx.coroutines.flow.merge
 import org.slf4j.LoggerFactory
 import ru.souz.GraphBasedAgent
 import ru.souz.LuaGraphBasedAgent
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.AgentSettings
+import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
@@ -20,7 +20,7 @@ import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.LLMModel
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class AgentFacade(
+class AgentFacade internal constructor(
     private val settingsProvider: AgentSettingsProvider,
     private val systemPromptResolver: SystemPromptResolver,
     private val sessionService: GraphSessionService,

@@ -7,16 +7,16 @@ import org.kodein.di.instance
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.GraphStepCallback
 import ru.souz.agent.TraceableAgent
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.Graph
-import ru.souz.agent.engine.Node
-import ru.souz.agent.engine.buildGraph
+import ru.souz.agent.graph.Graph
+import ru.souz.agent.graph.Node
+import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLua
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.state.AgentContext
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.LLMMessageRole
@@ -37,7 +37,7 @@ class LuaGraphBasedAgent(
 
     override val sideEffects: Flow<String> = nodesLua.sideEffects
 
-    override val graph: Graph<String, String> = buildGraph(name = "LuaAgent") {
+    private val graph: Graph<String, String> = buildGraph(name = "LuaAgent") {
         val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
         val nodeClassify: Node<String, String> = nodesClassify.node(GraphSessionService.NODE_NAME_CLASSIFY)
         val nodeMcp: Node<String, String> = nodesMCP.nodeProvideMcpTools("MCP Node")

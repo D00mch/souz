@@ -1,4 +1,4 @@
-package ru.souz.di
+package ru.souz.ui.common
 
 import org.jetbrains.compose.resources.getString
 import ru.souz.agent.spi.AgentErrorMessages

@@ -2,8 +2,8 @@ package ru.souz.agent.nodes
 
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.Node
+import ru.souz.agent.graph.Node
+import ru.souz.agent.state.AgentContext
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
@@ -11,7 +11,7 @@ import ru.souz.llms.restJsonMapper
 /**
  * Nodes for handling LLM chat errors.
  */
-class NodesErrorHandling(
+internal class NodesErrorHandling(
     private val errorMessages: AgentErrorMessages,
 ) {
     private val l = LoggerFactory.getLogger(NodesErrorHandling::class.java)

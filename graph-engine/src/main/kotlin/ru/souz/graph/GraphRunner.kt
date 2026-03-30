@@ -1,4 +1,4 @@
-package ru.souz.agent.engine
+package ru.souz.graph
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -13,14 +13,14 @@ internal class GraphRunner(
 
     suspend fun run(
         start: Node<Any?, Any?>,
-        seed: AgentContext<Any?>,
+        seed: Any?,
         runtime: GraphRuntime,
         definition: GraphDefinition,
-        stopPredicate: ((Node<Any?, Any?>, AgentContext<Any?>) -> Boolean)? = null,
-    ): AgentContext<Any?> {
+        stopPredicate: ((Node<Any?, Any?>, Any?) -> Boolean)? = null,
+    ): Any? {
         val queue = ArrayDeque<Frame>().apply { add(Frame(start, seed, 0)) }
-        val leaves = mutableListOf<AgentContext<*>>()
-        var lastCtx: AgentContext<Any?> = seed
+        val leaves = mutableListOf<Any?>()
+        var lastCtx: Any? = seed
         val coroutineContext = currentCoroutineContext()
 
         try {
@@ -60,15 +60,14 @@ internal class GraphRunner(
             throw GraphCancellation(lastCtx, cancel)
         }
 
-        @Suppress("UNCHECKED_CAST")
-        return leaves.lastOrNull() as? AgentContext<Any?> ?: lastCtx
+        return leaves.lastOrNull() ?: lastCtx
     }
 
     private suspend fun executeWithRetry(
         node: Node<Any?, Any?>,
-        inCtx: AgentContext<Any?>,
+        inCtx: Any?,
         runtime: GraphRuntime,
-    ): AgentContext<Any?> {
+    ): Any? {
         val policy = runtime.retryPolicy
         var attempt = 0
         var lastError: Throwable? = null
@@ -98,52 +97,7 @@ internal class GraphRunner(
 
     private data class Frame(
         val node: Node<Any?, Any?>,
-        val ctx: AgentContext<Any?>,
+        val ctx: Any?,
         val depth: Int,
     )
-}
-
-/*
-                    TEST CODE
- */
-
-private fun callLlmMock(ctx: AgentContext<String>): AgentContext<String> {
-    val text = ctx.input.trim()
-    if (text == "What is the weather today?") return ctx.map { "composeApp/src/jvmMain/kotlin/ru.souz/tooloseApp/src/jvmMain/kotlin/ru.souz/tool" }
-    return ctx.map { "Response: $it" }
-}
-
-private fun callToolMock(ctx: AgentContext<String>): AgentContext<String> {
-    return ctx.map { "The weather is fine!" }
-}
-
-suspend fun main() {
-    val userInputNode = Node<String, String>("userInput") { ctx -> ctx.map { readln() } }
-    val llmCallNode = Node("llmCall") { callLlmMock(it) }
-    val llmToolUseNode = Node("llmToolUse") { callToolMock(it) }
-    val userOutputNode = Node<String, String>("userOutput") { it }
-
-    val settings = AgentSettings("gpt5", 0.3f, emptyMap())
-    val seed = AgentContext(input = "What is the weather today?", settings, emptyList(), emptyList(), "")
-
-    val graph = buildGraph {
-        nodeInput.edgeTo(userInputNode)
-        userInputNode.edgeTo{ ctx ->
-            when (ctx.input) {
-                "exit", "finish" -> nodeFinish
-                else -> llmCallNode
-            }
-        }
-        llmToolUseNode.edgeTo(llmCallNode)
-        llmCallNode.edgeTo { ctx ->
-            when (ctx.input) {
-                "composeApp/src/jvmMain/kotlin/ru.souz/tooloseApp/src/jvmMain/kotlin/ru.souz/tool" -> llmToolUseNode
-                else -> userOutputNode
-            }
-        }
-        userOutputNode.edgeTo(userInputNode)
-    }
-    graph.start(seed, onStep = { step, n, from, to ->
-        println("step #${step.index} (depth ${step.currentGraphIndex}): node: ${n.name}, ctx: $to")
-    })
 }

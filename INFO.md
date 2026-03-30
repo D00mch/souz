@@ -42,25 +42,38 @@ If you are not sure about something, left a note for other developers to review.
 ├── native/                                 # Native bridge sources and local notes
 │   ├── INFO.md                             # Local native bridge notes
 │   └── llama-bridge/                       # JNI bridge sources and local-only build-* dirs
-├── agent/                                  # Standalone JVM module for the agent runtime and shared agent-facing types
+├── graph-engine/                           # Standalone JVM module with the generic graph DSL and runtime
+│   ├── build.gradle.kts                    # Graph engine module build
+│   ├── INFO.md                             # Graph engine notes
+│   └── src/
+│       └── main/
+│           └── kotlin/
+│               └── ru/souz/
+│                   └── graph/              # Generic graph primitives, runner, runtime, and DSL helpers
+├── agent/                                  # JVM module with public agent API, shared DTOs, host SPI, and concrete implementations
 │   ├── build.gradle.kts                    # Agent module build
 │   ├── INFO.md                             # Agent notes
 │   └── src/
 │       └── main/
 │           └── kotlin/
 │               └── ru/souz/
-│                   ├── agent/              # Graph-based agent runtime, nodes, execution, sessions, and SPI
-│                   │   ├── README.md       # Agent package overview and host boundary notes
-│                   │   ├── INFO.md         # Local notes for the agent package
-│                   │   ├── engine/         # Graph primitives and runner/runtime contracts
-│                   │   ├── impl/           # Agent implementations (standard and Lua-backed)
-│                   │   ├── nodes/          # LLM, MCP, classification, summarization, and error nodes
-│                   │   ├── runtime/        # Lua runtime and tool execution delegation
-│                   │   ├── session/        # Persisted graph session models and services
-│                   │   └── spi/            # Interfaces implemented by composeApp services and factories
+│                   ├── GraphBasedAgent.kt  # Standard tool-calling graph agent
+│                   ├── LuaGraphBasedAgent.kt # Lua-planning graph agent
+│                   ├── agent/              # Agent API, DI, host SPI, state, graph adapter, nodes, runtime helpers, and sessions
+│                       ├── AgentFacade.kt  # Active-agent selection, context lifecycle, and execution entry point
+│                       ├── Agent.kt        # Public agent contracts and execution result models
+│                       ├── AgentId.kt      # Supported agent identifiers and defaults
+│                       ├── AgentModule.kt  # Single DI module that wires agent internals
+│                       ├── SystemPromptResolver.kt # Default system prompt selection by agent/model/profile
+│                       ├── TraceableAgent.kt # Internal tracing-only contract used by concrete agents
+│                       ├── graph/          # Internal adapter from agent state to :graph-engine
+│                       ├── nodes/          # LLM, MCP, classification, summarization, and error nodes
+│                       ├── runtime/        # Lua runtime and tool execution delegation
+│                       ├── session/        # Persisted graph session models and services
+│                       ├── spi/            # Interfaces implemented by composeApp services and factories
+│                       └── state/          # AgentContext and related state/settings wrappers
 │                   ├── db/                 # Shared stored-data models used by agent and desktop indexing
 │                   ├── llms/               # Shared LLM DTOs and chat/tool contracts
-│                   │   └── giga/           # Giga provider interfaces and tool setup contract
 │                   └── tool/               # Shared tool categories and message classifier contract
 ├── composeApp/                             # Main desktop application module
 │   ├── build/                              # Build output for composeApp (generated)

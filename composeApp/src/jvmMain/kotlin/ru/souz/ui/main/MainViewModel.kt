@@ -21,7 +21,7 @@ import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
-import ru.souz.agent.engine.AgentContext
+import ru.souz.agent.state.AgentContext
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel

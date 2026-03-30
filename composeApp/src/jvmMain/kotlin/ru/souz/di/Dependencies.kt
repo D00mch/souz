@@ -3,25 +3,11 @@ package ru.souz.di
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import ru.souz.db.SettingsProviderImpl
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
-import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.AgentFacade
-import ru.souz.GraphBasedAgent
-import ru.souz.LuaGraphBasedAgent
-import ru.souz.agent.SystemPromptResolver
-import ru.souz.agent.runtime.LuaRuntime
-import ru.souz.agent.nodes.NodesErrorHandling
-import ru.souz.agent.nodes.NodesCommon
-import ru.souz.agent.nodes.NodesLLM
-import ru.souz.agent.nodes.NodesLua
-import ru.souz.agent.nodes.NodesSummarization
-import ru.souz.agent.nodes.NodesClassification
-import ru.souz.agent.nodes.NodesMCP
-import ru.souz.agent.session.GraphSessionRepository
-import ru.souz.agent.session.GraphSessionService
+import ru.souz.agent.agentDiModule
+import ru.souz.db.SettingsProviderImpl
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentSettingsProvider
@@ -114,6 +100,7 @@ import ru.souz.tool.web.ToolWebImageSearch
 import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebImageDownloader
 import ru.souz.tool.web.internal.WebResearchClient
+import ru.souz.ui.common.ComposeAgentErrorMessages
 import java.nio.file.Path
 
 private object DiTags {
@@ -239,8 +226,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolTelegramSearch(instance()) }
     bindSingleton { ToolTelegramSavedMessages(instance()) }
 
-    bindSingleton { GraphSessionRepository() }
-    bindSingleton { GraphSessionService(instance(), instance(DiTags.TAG_LOG)) }
     bindSingleton { DesktopDataExtractor(instance(), instance()) }
     bindSingleton {
         TelemetryOutboxRepository(
@@ -252,7 +237,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { TelemetryRuntimeConfig.production() }
     bindSingleton { TelemetryService(instance(), instance(), instance(), instance()) }
     bindSingleton<AgentTelemetry> { instance<TelemetryService>() }
-    bindSingleton { AgentToolExecutor(instance()) }
 
     // API
     bindSingleton { GigaAuth(instance()) }
@@ -282,35 +266,19 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
 
-    // LLM
-    bindSingleton { NodesErrorHandling(instance()) }
-    bindSingleton { NodesCommon(instance(), instance(), instance(), instance()) }
-    bindSingleton { NodesLLM(instance(), instance()) }
-    bindSingleton { LuaRuntime(instance()) }
-    bindSingleton { NodesLua(instance(), instance()) }
-    bindSingleton { NodesMCP(instance()) }
-    bindSingleton { NodesSummarization(instance(), instance()) }
-    bindSingleton {
-        NodesClassification(
-            instance(),
-            instance(DiTags.TAG_LOG),
-            apiClassifier = instance(DiTags.TAG_API),
-            localClassifier = instance(DiTags.TAG_LOCAL),
-            instance(),
-            instance(),
-        )
-    }
     bindSingleton { ToolsFactory(di) }
     bindSingleton<AgentToolCatalog> { instance<ToolsFactory>() }
-    bindSingleton { SystemPromptResolver() }
-    bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
-    bindSingleton { LuaGraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
-    bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    import(
+        agentDiModule(
+            logObjectMapperTag = DiTags.TAG_LOG,
+            apiClassifierTag = DiTags.TAG_API,
+            localClassifierTag = DiTags.TAG_LOCAL,
+        )
+    )
     bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }
     bindSingleton { FinderPathExtractor(instance()) }
     bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { McpConfigProvider(instance()) }
     bindSingleton { McpClientManager(instance()) }
     bindSingleton<McpToolProvider> { instance<McpClientManager>() }
-
 }

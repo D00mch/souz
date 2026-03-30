@@ -4,8 +4,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.withContext
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.Node
+import ru.souz.agent.graph.Node
+import ru.souz.agent.state.AgentContext
 import ru.souz.agent.runtime.LuaExecutionException
 import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.llms.LLMChatAPI
@@ -15,7 +15,7 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.toMessage
 
 // TODO: review after agent
-class NodesLua(
+internal class NodesLua(
     private val llmApi: LLMChatAPI,
     private val luaRuntime: LuaRuntime,
 ) {
@@ -186,8 +186,9 @@ class NodesLua(
                 }
 
                 append("\n  Returns:")
-                function.returnParameters?.properties?.forEach { (name, property) ->
-                    appendProperties(name, property, function.returnParameters.required)
+                val returnParameters = function.returnParameters
+                returnParameters?.properties?.forEach { (name, property) ->
+                    appendProperties(name, property, returnParameters.required)
                 }
                 /*
                     Available tools:

@@ -35,4 +35,5 @@ plugins {
 }
 
 include(":agent")
+include(":graph-engine")
 include(":composeApp")
