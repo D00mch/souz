@@ -1,4 +1,4 @@
-package ru.souz.audio
+package ru.souz.service.audio
 
 import java.io.*
 import javax.sound.sampled.*

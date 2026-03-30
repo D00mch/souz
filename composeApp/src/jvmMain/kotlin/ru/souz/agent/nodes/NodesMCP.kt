@@ -5,7 +5,7 @@ import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.agent.engine.Node
 import ru.souz.llms.giga.GigaToolSetup
-import ru.souz.mcp.McpClientManager
+import ru.souz.service.mcp.McpClientManager
 import kotlin.jvm.java
 
 class NodesMCP(private val mcpClientManager: McpClientManager) {

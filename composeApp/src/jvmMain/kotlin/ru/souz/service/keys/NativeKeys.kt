@@ -1,6 +1,6 @@
 @file:Suppress("unused")
 
-package ru.souz.keys
+package ru.souz.service.keys
 
 import com.sun.jna.Library
 import com.sun.jna.Native

@@ -1,6 +1,6 @@
-package ru.souz.audio
+package ru.souz.service.audio
 
-import ru.souz.keys.HotkeyListener
+import ru.souz.service.keys.HotkeyListener
 import com.github.kwhat.jnativehook.GlobalScreen
 import com.github.kwhat.jnativehook.NativeHookException
 import kotlinx.coroutines.*

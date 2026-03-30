@@ -1,7 +1,7 @@
 package ru.souz.tool.browser
 
-import ru.souz.keys.HotKey
-import ru.souz.keys.Keys
+import ru.souz.service.keys.HotKey
+import ru.souz.service.keys.Keys
 import ru.souz.tool.*
 
 class ToolBrowserHotkeys(private val keys: Keys) : ToolSetup<ToolBrowserHotkeys.Input> {

@@ -22,7 +22,7 @@ import kotlinx.coroutines.test.setMain
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import ru.souz.agent.AgentFacade
-import ru.souz.audio.Say
+import ru.souz.service.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.db.VectorDB

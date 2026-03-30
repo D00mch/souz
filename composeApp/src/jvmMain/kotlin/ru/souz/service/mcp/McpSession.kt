@@ -1,4 +1,4 @@
-package ru.souz.mcp
+package ru.souz.service.mcp
 
 interface McpSession : AutoCloseable {
     suspend fun listTools(): List<McpRemoteTool>

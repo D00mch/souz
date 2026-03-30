@@ -43,9 +43,9 @@ import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentSideEffect
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
-import ru.souz.audio.ActiveSoundRecorderImpl
-import ru.souz.audio.InMemoryAudioRecorder
-import ru.souz.audio.Say
+import ru.souz.service.audio.ActiveSoundRecorderImpl
+import ru.souz.service.audio.InMemoryAudioRecorder
+import ru.souz.service.audio.Say
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LlmBuildProfile

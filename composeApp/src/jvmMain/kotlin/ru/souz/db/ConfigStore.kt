@@ -9,7 +9,7 @@ import ru.souz.db.SettingsProviderImpl.Companion.OPENAI_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.QWEN_CHAT_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.SALUTE_SPEECH_KEY
 import ru.souz.llms.giga.gigaJsonMapper
-import ru.souz.mcp.OAUTH_STORE_PREFIX
+import ru.souz.service.mcp.OAUTH_STORE_PREFIX
 import ru.souz.telemetry.TelemetryStorageKeys
 import java.security.SecureRandom
 import java.nio.file.FileAlreadyExistsException

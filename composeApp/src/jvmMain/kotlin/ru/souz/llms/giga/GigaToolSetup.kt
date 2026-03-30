@@ -2,7 +2,7 @@ package ru.souz.llms.giga
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlinx.coroutines.CancellationException
-import ru.souz.keys.Keys
+import ru.souz.service.keys.Keys
 import ru.souz.llms.GigaMessageRole
 import ru.souz.llms.GigaRequest
 import ru.souz.llms.GigaResponse

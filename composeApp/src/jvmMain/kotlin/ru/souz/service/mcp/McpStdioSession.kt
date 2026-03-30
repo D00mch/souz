@@ -1,4 +1,4 @@
-package ru.souz.mcp
+package ru.souz.service.mcp
 
 import com.fasterxml.jackson.databind.JsonNode
 import kotlinx.coroutines.Dispatchers
@@ -11,6 +11,7 @@ import ru.souz.llms.giga.gigaJsonMapper
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.EOFException
+import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
@@ -45,7 +46,7 @@ class McpStdioSession(
         }
         process = ProcessBuilder(command).apply {
             if (!config.cwd.isNullOrBlank()) {
-                directory(java.io.File(config.cwd))
+                directory(File(config.cwd))
             }
             environment().putAll(config.env)
         }.start()

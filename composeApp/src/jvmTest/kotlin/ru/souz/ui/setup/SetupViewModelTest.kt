@@ -14,7 +14,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
-import ru.souz.audio.Say
+import ru.souz.service.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU

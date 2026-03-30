@@ -1,4 +1,4 @@
-package ru.souz.keys
+package ru.souz.service.keys
 
 import com.github.kwhat.jnativehook.GlobalScreen
 import com.github.kwhat.jnativehook.NativeHookException

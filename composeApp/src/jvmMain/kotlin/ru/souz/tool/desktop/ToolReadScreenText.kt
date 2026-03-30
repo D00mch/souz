@@ -8,7 +8,6 @@ import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 import org.slf4j.LoggerFactory
-import ru.souz.audio.Say
 import java.io.File
 
 class ToolReadScreenText(

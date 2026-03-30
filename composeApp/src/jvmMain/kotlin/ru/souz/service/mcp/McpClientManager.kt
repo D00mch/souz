@@ -1,4 +1,4 @@
-package ru.souz.mcp
+package ru.souz.service.mcp
 
 import com.fasterxml.jackson.databind.JsonNode
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,6 +12,7 @@ import ru.souz.llms.giga.GigaToolSetup
 import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.llms.giga.toGigaToolMessage
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.collections.iterator
 
 
 class McpClientManager(

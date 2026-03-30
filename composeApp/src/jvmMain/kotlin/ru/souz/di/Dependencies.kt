@@ -22,9 +22,9 @@ import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.session.GraphSessionService
-import ru.souz.audio.ActiveSoundRecorderImpl
-import ru.souz.audio.InMemoryAudioRecorder
-import ru.souz.audio.Say
+import ru.souz.service.audio.ActiveSoundRecorderImpl
+import ru.souz.service.audio.InMemoryAudioRecorder
+import ru.souz.service.audio.Say
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopDataExtractor
 import ru.souz.db.DesktopInfoRepository
@@ -39,7 +39,7 @@ import ru.souz.llms.giga.GigaVoiceAPI
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.SessionTokenLogging
 import ru.souz.llms.TokenLogging
-import ru.souz.keys.Keys
+import ru.souz.service.keys.Keys
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.anthropic.AnthropicChatAPI
@@ -55,8 +55,8 @@ import ru.souz.llms.local.LocalNativeBridge
 import ru.souz.llms.local.LocalPromptRenderer
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.llms.local.LocalStrictJsonParser
-import ru.souz.mcp.McpClientManager
-import ru.souz.mcp.McpConfigProvider
+import ru.souz.service.mcp.McpClientManager
+import ru.souz.service.mcp.McpConfigProvider
 import ru.souz.service.telegram.TelegramService
 import ru.souz.service.telegram.TelegramBotController
 import ru.souz.service.telegram.TelegramPlatformSupport

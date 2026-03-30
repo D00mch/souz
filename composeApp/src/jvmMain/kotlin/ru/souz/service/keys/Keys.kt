@@ -1,4 +1,4 @@
-package ru.souz.keys
+package ru.souz.service.keys
 
 import java.lang.Thread.sleep
 

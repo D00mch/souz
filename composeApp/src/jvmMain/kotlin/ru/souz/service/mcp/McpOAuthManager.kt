@@ -1,8 +1,9 @@
-package ru.souz.mcp
+package ru.souz.service.mcp
 
 import com.sun.net.httpserver.HttpServer
 import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.HttpClient
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -612,7 +613,7 @@ private data class OAuthClient(
     val clientSecret: String?,
 )
 
-private fun io.ktor.client.request.HttpRequestBuilder.setBodyFromJson(payload: Any) {
+private fun HttpRequestBuilder.setBodyFromJson(payload: Any) {
     setBody(gigaJsonMapper.writeValueAsString(payload))
 }
 

@@ -1,4 +1,4 @@
-package ru.souz.mcp
+package ru.souz.service.mcp
 
 import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.HttpClient
