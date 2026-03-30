@@ -1,4 +1,4 @@
-package ru.souz.telemetry
+package ru.souz.service.telemetry
 
 data class TelemetryRuntimeConfig(
     val baseUrl: String,

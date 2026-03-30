@@ -1,4 +1,4 @@
-package ru.souz.telemetry
+package ru.souz.service.telemetry
 
 import java.security.KeyFactory
 import java.security.KeyPairGenerator

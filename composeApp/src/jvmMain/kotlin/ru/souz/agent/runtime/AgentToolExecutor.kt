@@ -9,7 +9,7 @@ import ru.souz.llms.GigaMessageRole
 import ru.souz.llms.GigaRequest
 import ru.souz.llms.GigaResponse
 import ru.souz.llms.giga.GigaToolSetup
-import ru.souz.telemetry.TelemetryService
+import ru.souz.service.telemetry.TelemetryService
 
 class AgentToolExecutor(
     private val telemetryService: TelemetryService,

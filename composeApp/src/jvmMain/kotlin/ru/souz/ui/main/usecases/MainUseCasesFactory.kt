@@ -6,7 +6,7 @@ import ru.souz.service.audio.InMemoryAudioRecorder
 import ru.souz.service.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.TokenLogging
-import ru.souz.telemetry.TelemetryService
+import ru.souz.service.telemetry.TelemetryService
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 

@@ -4,7 +4,7 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
-import ru.souz.permissions.MacAppEnvironment
+import ru.souz.service.permissions.MacAppEnvironment
 import ru.souz.service.files.FilesService
 import ru.souz.tool.BadInputException
 import java.io.File

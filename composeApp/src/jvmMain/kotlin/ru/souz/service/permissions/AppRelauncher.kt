@@ -1,4 +1,4 @@
-package ru.souz.permissions
+package ru.souz.service.permissions
 
 import io.ktor.util.logging.debug
 import org.slf4j.LoggerFactory

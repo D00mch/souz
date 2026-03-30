@@ -1,4 +1,4 @@
-package ru.souz.permissions
+package ru.souz.service.permissions
 
 import com.sun.jna.Library
 import com.sun.jna.Native

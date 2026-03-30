@@ -1,6 +1,6 @@
 package ru.souz.tool.desktop
 
-import ru.souz.image.ImageUtils
+import ru.souz.service.image.ImageUtils
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters

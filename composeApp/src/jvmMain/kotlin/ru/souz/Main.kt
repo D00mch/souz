@@ -27,7 +27,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.service.mcp.McpClientManager
-import ru.souz.telemetry.TelemetryService
+import ru.souz.service.telemetry.TelemetryService
 import ru.souz.ui.rememberDockWindowController
 import ru.souz.ui.macos.MacWindowVibrancy
 import java.awt.Dimension

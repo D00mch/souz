@@ -59,9 +59,9 @@ import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.service.telegram.TelegramBotController
-import ru.souz.telemetry.TelemetryRequestContext
-import ru.souz.telemetry.TelemetryRequestSource
-import ru.souz.telemetry.TelemetryService
+import ru.souz.service.telemetry.TelemetryRequestContext
+import ru.souz.service.telemetry.TelemetryRequestSource
+import ru.souz.service.telemetry.TelemetryService
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.FilesToolUtil

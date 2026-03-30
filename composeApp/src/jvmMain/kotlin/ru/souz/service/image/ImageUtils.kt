@@ -1,6 +1,6 @@
-package ru.souz.image
+package ru.souz.service.image
 
-import ru.souz.image.ImageUtils.screenshotJpegBytes
+import ru.souz.service.image.ImageUtils.screenshotJpegBytes
 import java.awt.Rectangle
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream

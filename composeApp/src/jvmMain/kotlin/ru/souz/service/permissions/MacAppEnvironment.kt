@@ -1,4 +1,4 @@
-package ru.souz.permissions
+package ru.souz.service.permissions
 
 import java.io.File
 

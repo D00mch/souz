@@ -61,10 +61,10 @@ import ru.souz.service.telegram.TelegramService
 import ru.souz.service.telegram.TelegramBotController
 import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.service.files.FilesService
-import ru.souz.telemetry.TelemetryOutboxRepository
-import ru.souz.telemetry.TelemetryCryptoService
-import ru.souz.telemetry.TelemetryRuntimeConfig
-import ru.souz.telemetry.TelemetryService
+import ru.souz.service.telemetry.TelemetryOutboxRepository
+import ru.souz.service.telemetry.TelemetryCryptoService
+import ru.souz.service.telemetry.TelemetryRuntimeConfig
+import ru.souz.service.telemetry.TelemetryService
 import ru.souz.tool.*
 import ru.souz.tool.application.*
 import ru.souz.tool.browser.*

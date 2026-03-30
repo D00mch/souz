@@ -100,7 +100,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.coroutines.delay
 import kotlin.math.max
 import ru.souz.llms.GigaModel
-import ru.souz.permissions.MacAppEnvironment
+import ru.souz.service.permissions.MacAppEnvironment
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource

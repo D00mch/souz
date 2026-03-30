@@ -1,7 +1,7 @@
 package ru.souz.tool.desktop
 
 import ru.souz.llms.giga.toGiga
-import ru.souz.image.ImageUtils
+import ru.souz.service.image.ImageUtils
 import ru.souz.tool.*
 import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.*

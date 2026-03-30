@@ -1,4 +1,4 @@
-package ru.souz.telemetry
+package ru.souz.service.telemetry
 
 object TelemetryStorageKeys {
     const val USER_ID = "TELEMETRY_USER_ID"

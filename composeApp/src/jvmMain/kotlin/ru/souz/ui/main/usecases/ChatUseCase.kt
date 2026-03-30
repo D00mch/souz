@@ -18,11 +18,11 @@ import ru.souz.agent.engine.AgentContext
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.GigaModel
 import ru.souz.llms.TokenLogging
-import ru.souz.telemetry.TelemetryConversationEndReason
-import ru.souz.telemetry.TelemetryConversationStartReason
-import ru.souz.telemetry.TelemetryRequestSource
-import ru.souz.telemetry.TelemetryRequestStatus
-import ru.souz.telemetry.TelemetryService
+import ru.souz.service.telemetry.TelemetryConversationEndReason
+import ru.souz.service.telemetry.TelemetryConversationStartReason
+import ru.souz.service.telemetry.TelemetryRequestSource
+import ru.souz.service.telemetry.TelemetryRequestStatus
+import ru.souz.service.telemetry.TelemetryService
 import ru.souz.ui.main.ChatAgentActionFormatter
 import ru.souz.ui.main.ChatAttachedFile
 import ru.souz.ui.main.ChatMessage

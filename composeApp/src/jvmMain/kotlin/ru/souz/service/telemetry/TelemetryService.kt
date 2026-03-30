@@ -1,4 +1,4 @@
-package ru.souz.telemetry
+package ru.souz.service.telemetry
 
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.DeserializationFeature

@@ -39,8 +39,8 @@ import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.ui.main.usecases.PermissionsUseCase
 import ru.souz.ui.main.usecases.SpeechUseCase
 import ru.souz.ui.main.usecases.VoiceInputUseCase
-import ru.souz.telemetry.TelemetryConversationEndReason
-import ru.souz.telemetry.TelemetryRequestSource
+import ru.souz.service.telemetry.TelemetryConversationEndReason
+import ru.souz.service.telemetry.TelemetryRequestSource
 import ru.souz.ui.settings.availableLlmModels
 import ru.souz.ui.settings.defaultLlmModel
 import kotlin.time.Duration.Companion.minutes
