@@ -15,8 +15,8 @@ If you are not sure about something, left a note for other developers to review.
 ### Development principles
 
 - Prefer composition to inheritance. 
-- Do not mix coroutines with the JVM low level concurrency (volatile, synchronize, Threads, ThreadLocal, etc).
-- Utilize open closed.
+- Do not mix coroutines with the JVM low level concurrency primitives such as: Volatile, Synchronize, ThreadLocal, etc).
+- Utilize open closed principle.
 
 ## Features
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
