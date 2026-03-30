@@ -4,18 +4,18 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.agent.engine.Node
+import ru.souz.agent.spi.McpToolProvider
 import ru.souz.llms.giga.GigaToolSetup
-import ru.souz.service.mcp.McpClientManager
 import kotlin.jvm.java
 
-class NodesMCP(private val mcpClientManager: McpClientManager) {
+class NodesMCP(private val mcpToolProvider: McpToolProvider) {
     private val l = LoggerFactory.getLogger(NodesMCP::class.java)
 
     /**
      * Modifies [AgentContext.activeTools], [AgentSettings.tools] with available MCP tools
      */
     fun nodeProvideMcpTools(name: String): Node<String, String> = Node(name) { ctx ->
-        val mcpTools: List<GigaToolSetup> = runCatching { mcpClientManager.tools() }
+        val mcpTools: List<GigaToolSetup> = runCatching { mcpToolProvider.tools() }
             .onFailure { e -> l.warn("Failed to load MCP tools", e) }
             .getOrElse { emptyList() }
 

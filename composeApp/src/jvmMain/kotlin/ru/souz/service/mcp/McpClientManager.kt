@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
+import ru.souz.agent.spi.McpToolProvider
 import ru.souz.llms.GigaMessageRole
 import ru.souz.llms.GigaRequest
 import ru.souz.llms.GigaResponse
@@ -17,13 +18,13 @@ import kotlin.collections.iterator
 
 class McpClientManager(
     private val configProvider: McpConfigProvider,
-) : AutoCloseable {
+) : McpToolProvider, AutoCloseable {
     private val l = LoggerFactory.getLogger(McpClientManager::class.java)
     private val discoveryLock = Mutex()
     private val sessions = ConcurrentHashMap<String, McpSession>()
     private val discoveryState = MutableStateFlow(McpDiscoveryState())
 
-    suspend fun tools(): List<GigaToolSetup> = ensureDiscovered().toolSetups
+    override suspend fun tools(): List<GigaToolSetup> = ensureDiscovered().toolSetups
 
     suspend fun refreshTools(): List<GigaToolSetup> = discoveryLock.withLock {
         closeAllSessions()

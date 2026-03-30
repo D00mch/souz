@@ -5,14 +5,14 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentSettings
+import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.llms.GigaMessageRole
 import ru.souz.llms.GigaRequest
 import ru.souz.llms.GigaResponse
 import ru.souz.llms.giga.GigaToolSetup
-import ru.souz.service.telemetry.TelemetryService
 
 class AgentToolExecutor(
-    private val telemetryService: TelemetryService,
+    private val telemetryService: AgentTelemetry,
 ) {
     private val l = LoggerFactory.getLogger(AgentToolExecutor::class.java)
     private val _toolInvocations = MutableSharedFlow<GigaResponse.FunctionCall>(extraBufferCapacity = 32)

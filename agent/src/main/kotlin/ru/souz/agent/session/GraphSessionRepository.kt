@@ -3,7 +3,6 @@ package ru.souz.agent.session
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
 import ru.souz.llms.giga.gigaJsonMapper
-import ru.souz.tool.files.FilesToolUtil
 import java.io.File
 
 /**
@@ -13,7 +12,7 @@ import java.io.File
 class GraphSessionRepository {
     private val l = LoggerFactory.getLogger(GraphSessionRepository::class.java)
     private val sessionsDir: File by lazy {
-        File(FilesToolUtil.homeDirectory, ".local/state/souz/").apply { mkdirs() }
+        File(System.getProperty("user.home"), ".local/state/souz/").apply { mkdirs() }
     }
 
     fun save(session: GraphSession) {

@@ -42,6 +42,26 @@ If you are not sure about something, left a note for other developers to review.
 ├── native/                                 # Native bridge sources and local notes
 │   ├── INFO.md                             # Local native bridge notes
 │   └── llama-bridge/                       # JNI bridge sources and local-only build-* dirs
+├── agent/                                  # Standalone JVM module for the agent runtime and shared agent-facing types
+│   ├── build.gradle.kts                    # Agent module build
+│   ├── INFO.md                             # Agent notes
+│   └── src/
+│       └── main/
+│           └── kotlin/
+│               └── ru/souz/
+│                   ├── agent/              # Graph-based agent runtime, nodes, execution, sessions, and SPI
+│                   │   ├── README.md       # Agent package overview and host boundary notes
+│                   │   ├── INFO.md         # Local notes for the agent package
+│                   │   ├── engine/         # Graph primitives and runner/runtime contracts
+│                   │   ├── impl/           # Agent implementations (standard and Lua-backed)
+│                   │   ├── nodes/          # LLM, MCP, classification, summarization, and error nodes
+│                   │   ├── runtime/        # Lua runtime and tool execution delegation
+│                   │   ├── session/        # Persisted graph session models and services
+│                   │   └── spi/            # Interfaces implemented by composeApp services and factories
+│                   ├── db/                 # Shared stored-data models used by agent and desktop indexing
+│                   ├── llms/               # Shared LLM DTOs and chat/tool contracts
+│                   │   └── giga/           # Giga provider interfaces and tool setup contract
+│                   └── tool/               # Shared tool categories and message classifier contract
 ├── composeApp/                             # Main desktop application module
 │   ├── build/                              # Build output for composeApp (generated)
 │   ├── composeApp/                         # Auxiliary nested folder with test resource skeleton
@@ -58,15 +78,9 @@ If you are not sure about something, left a note for other developers to review.
 │       │   │       ├── App.kt              # Compose desktop app shell
 │       │   │       ├── Main.kt             # JVM entry point
 │       │   │       ├── TextMain.kt         # Text-mode/dev entry point
-│       │   │       ├── agent/              # Graph-based agent runtime, nodes, execution, and sessions
-│       │   │       │   ├── engine/         # Graph primitives and runner/runtime contracts
-│       │   │       │   ├── impl/           # Agent implementations (standard and Lua-backed)
-│       │   │       │   ├── nodes/          # LLM, MCP, classification, summarization, and error nodes
-│       │   │       │   ├── runtime/        # Lua runtime and tool execution delegation
-│       │   │       │   └── session/        # Persisted graph session models and services
 │       │   │       ├── db/                 # Settings, config store, desktop info, and vector DB layer
 │       │   │       ├── di/                 # Dependency wiring
-│       │   │       ├── llms/               # Shared LLM abstractions, DTOs, profiles, and provider factory
+│       │   │       ├── llms/               # Provider implementations, profiles, and provider factory
 │       │   │       │   ├── anthropic/      # Anthropic chat client and Ktor defaults
 │       │   │       │   ├── giga/           # GigaChat auth, REST chat, tools, and voice clients
 │       │   │       │   ├── local/          # Local llama.cpp bridge, model store/catalog, strict JSON support

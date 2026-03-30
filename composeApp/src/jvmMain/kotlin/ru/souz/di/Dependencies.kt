@@ -9,8 +9,8 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.AgentFacade
-import ru.souz.agent.impl.GraphBasedAgent
-import ru.souz.agent.impl.LuaGraphBasedAgent
+import ru.souz.GraphBasedAgent
+import ru.souz.LuaGraphBasedAgent
 import ru.souz.agent.SystemPromptResolver
 import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.agent.nodes.NodesErrorHandling
@@ -22,6 +22,14 @@ import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.session.GraphSessionService
+import ru.souz.agent.spi.AgentDesktopInfoRepository
+import ru.souz.agent.spi.AgentErrorMessages
+import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.AgentTelemetry
+import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.agent.spi.DefaultBrowserProvider
+import ru.souz.agent.spi.McpToolProvider
 import ru.souz.service.audio.ActiveSoundRecorderImpl
 import ru.souz.service.audio.InMemoryAudioRecorder
 import ru.souz.service.audio.Say
@@ -142,10 +150,13 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { LocalProviderAvailability(instance(), instance(), instance()) }
     bindSingleton { SettingsProviderImpl(instance(), instance()) }
     bindSingleton<SettingsProvider> { instance<SettingsProviderImpl>() }
+    bindSingleton<AgentSettingsProvider> { instance<SettingsProviderImpl>() }
     bindSingleton { LlmBuildProfile(instance(), instance()) }
     bindSingleton { ApiKeyAvailabilityUseCase(instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
+    bindSingleton<AgentDesktopInfoRepository> { instance<DesktopInfoRepository>() }
     bindSingleton { ToolsSettings(instance(), instance(), instance(), instance()) }
+    bindSingleton<AgentToolsFilter> { instance<ToolsSettings>() }
     bindSingleton { FilesToolUtil(instance()) }
     bindSingleton<FilesService> { instance<FilesToolUtil>() }
     bindSingleton { ToolPermissionBroker(instance()) }
@@ -160,6 +171,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         )
     }
     bindSingleton { TelegramService(instance()) }
+    bindSingleton<DefaultBrowserProvider> { DefaultBrowserProviderImpl }
+    bindSingleton<AgentErrorMessages> { ComposeAgentErrorMessages() }
 
     // Tools
     bindSingleton { ToolRunBashCommand }
@@ -238,6 +251,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { TelemetryCryptoService() }
     bindSingleton { TelemetryRuntimeConfig.production() }
     bindSingleton { TelemetryService(instance(), instance(), instance(), instance()) }
+    bindSingleton<AgentTelemetry> { instance<TelemetryService>() }
     bindSingleton { AgentToolExecutor(instance()) }
 
     // API
@@ -269,8 +283,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
 
     // LLM
-    bindSingleton { NodesErrorHandling() }
-    bindSingleton { NodesCommon(instance(), instance(), instance()) }
+    bindSingleton { NodesErrorHandling(instance()) }
+    bindSingleton { NodesCommon(instance(), instance(), instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { LuaRuntime(instance()) }
     bindSingleton { NodesLua(instance(), instance()) }
@@ -287,6 +301,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         )
     }
     bindSingleton { ToolsFactory(di) }
+    bindSingleton<AgentToolCatalog> { instance<ToolsFactory>() }
     bindSingleton { SystemPromptResolver() }
     bindSingleton { GraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
     bindSingleton { LuaGraphBasedAgent(di, instance(DiTags.TAG_LOG)) }
@@ -296,5 +311,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { McpConfigProvider(instance()) }
     bindSingleton { McpClientManager(instance()) }
+    bindSingleton<McpToolProvider> { instance<McpClientManager>() }
 
 }

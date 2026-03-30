@@ -29,6 +29,7 @@ import ru.souz.agent.engine.GraphRuntime
 import ru.souz.agent.engine.RetryPolicy
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.db.StorredData
@@ -586,6 +587,9 @@ class LocalInferenceSupportTest {
             desktopInfoRepository = desktopInfoRepository,
             settingsProvider = settingsProvider,
             agentToolExecutor = mockk<AgentToolExecutor>(relaxed = true),
+            defaultBrowserProvider = mockk<DefaultBrowserProvider> {
+                every { defaultBrowserDisplayName() } returns null
+            },
         )
         val context = AgentContext(
             input = "Проверь Telegram",
@@ -628,6 +632,9 @@ class LocalInferenceSupportTest {
             desktopInfoRepository = desktopInfoRepository,
             settingsProvider = settingsProvider,
             agentToolExecutor = mockk<AgentToolExecutor>(relaxed = true),
+            defaultBrowserProvider = mockk<DefaultBrowserProvider> {
+                every { defaultBrowserDisplayName() } returns null
+            },
         )
         val context = AgentContext(
             input = "Найди локальные данные",

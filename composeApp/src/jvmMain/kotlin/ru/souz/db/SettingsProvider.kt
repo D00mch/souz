@@ -1,6 +1,7 @@
 package ru.souz.db
 
 import ru.souz.agent.AgentId
+import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.GigaModel
@@ -15,10 +16,7 @@ import ru.souz.llms.local.LocalProviderAvailability
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
-interface SettingsProvider {
-    fun getSystemPromptForAgentModel(agentId: AgentId, model: GigaModel): String?
-    fun setSystemPromptForAgentModel(agentId: AgentId, model: GigaModel, prompt: String?)
-
+interface SettingsProvider : AgentSettingsProvider {
     var gigaChatKey: String?
     var qwenChatKey: String?
     var aiTunnelKey: String?
@@ -26,22 +24,22 @@ interface SettingsProvider {
     var openaiKey: String?
     var saluteSpeechKey: String?
     var supportEmail: String?
-    var defaultCalendar: String?
-    var regionProfile: String
-    var activeAgentId: AgentId
-    var gigaModel: GigaModel
+    override var defaultCalendar: String?
+    override var regionProfile: String
+    override var activeAgentId: AgentId
+    override var gigaModel: GigaModel
     var useFewShotExamples: Boolean
-    var useStreaming: Boolean
+    override var useStreaming: Boolean
     var notificationSoundEnabled: Boolean
     var voiceInputReviewEnabled: Boolean
     var safeModeEnabled: Boolean
     var needsOnboarding: Boolean
     var onboardingCompleted: Boolean
     var requestTimeoutMillis: Long
-    var contextSize: Int
+    override var contextSize: Int
     var initialWindowWidthDp: Int
     var initialWindowHeightDp: Int
-    var temperature: Float
+    override var temperature: Float
     var forbiddenFolders: List<String>
     var embeddingsModel: EmbeddingsModel
     var voiceRecognitionModel: VoiceRecognitionModel

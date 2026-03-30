@@ -9,22 +9,22 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import org.slf4j.LoggerFactory
+import ru.souz.GraphBasedAgent
+import ru.souz.LuaGraphBasedAgent
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
-import ru.souz.agent.impl.GraphBasedAgent
-import ru.souz.agent.impl.LuaGraphBasedAgent
 import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.session.GraphSessionService
-import ru.souz.db.SettingsProvider
 import ru.souz.llms.GigaModel
-import ru.souz.tool.ToolsFactory
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AgentFacade(
-    private val settingsProvider: SettingsProvider,
+    private val settingsProvider: AgentSettingsProvider,
     private val systemPromptResolver: SystemPromptResolver,
     private val sessionService: GraphSessionService,
-    private val toolsFactory: ToolsFactory,
+    private val toolCatalog: AgentToolCatalog,
     private val agentToolExecutor: AgentToolExecutor,
     private val graphBasedAgent: GraphBasedAgent,
     private val luaGraphBasedAgent: LuaGraphBasedAgent,
@@ -129,7 +129,7 @@ class AgentFacade(
         val settings = AgentSettings(
             model = model.alias,
             temperature = settingsProvider.temperature,
-            toolsByCategory = toolsFactory.toolsByCategory,
+            toolsByCategory = toolCatalog.toolsByCategory,
             contextSize = settingsProvider.contextSize,
         )
         val prompt = settingsProvider.getSystemPromptForAgentModel(agentId, model)

@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
+import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
@@ -45,7 +46,7 @@ class TelemetryService(
     private val cryptoService: TelemetryCryptoService,
     private val settingsProvider: SettingsProvider,
     private val runtimeConfig: TelemetryRuntimeConfig = TelemetryRuntimeConfig.production(),
-) {
+) : AgentTelemetry {
     private val l = LoggerFactory.getLogger(TelemetryService::class.java)
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val senderStarted = AtomicBoolean(false)
@@ -194,7 +195,7 @@ class TelemetryService(
         )
     }
 
-    fun recordToolExecution(
+    override fun recordToolExecution(
         functionName: String,
         functionArguments: Map<String, Any>,
         toolCategory: ToolCategory?,

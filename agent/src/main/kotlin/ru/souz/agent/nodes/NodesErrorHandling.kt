@@ -1,19 +1,19 @@
 package ru.souz.agent.nodes
 
 import com.fasterxml.jackson.module.kotlin.readValue
-import org.jetbrains.compose.resources.getString
 import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Node
+import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.llms.GigaResponse
 import ru.souz.llms.giga.gigaJsonMapper
-import souz.composeapp.generated.resources.Res
-import souz.composeapp.generated.resources.*
 
 /**
  * Nodes for handling LLM chat errors.
  */
-class NodesErrorHandling {
+class NodesErrorHandling(
+    private val errorMessages: AgentErrorMessages,
+) {
     private val l = LoggerFactory.getLogger(NodesErrorHandling::class.java)
 
     /**
@@ -26,12 +26,14 @@ class NodesErrorHandling {
             val error = ctx.input as GigaResponse.Chat.Error
             if (error.status == PAYLOAD_TOO_LARGE_STATUS) {
                 l.info("Resetting history due to a large object in it")
-                ctx.map(history = emptyList()) { getString(Res.string.error_agent_context_reset) }
+                val message = errorMessages.contextReset()
+                ctx.map(history = emptyList()) { message }
             } else if (error.status == PAYMENT_REQUIRED) {
                 showPaymentError(error, ctx)
             } else if (error.message.isKtorRequestTimeoutMessage()) {
                 l.info("LLM request timed out. Returning friendly timeout message")
-                ctx.map { getString(Res.string.error_agent_timeout) }
+                val message = errorMessages.timeout()
+                ctx.map { message }
             } else {
                 l.info("Unknown error. Status: ${error.status}. Message: ${error.message}")
                 ctx.map { error.message }
@@ -49,17 +51,18 @@ class NodesErrorHandling {
         } catch (_: Exception) {
             false
         }
+        val noMoneyMessage = errorMessages.noMoney()
         return ctx.map(history = emptyList()) {
             if (isMessageJson) {
                 buildString {
-                    appendLine(getString(Res.string.error_agent_no_money))
+                    appendLine(noMoneyMessage)
                     appendLine()
                     appendLine("```json")
                     appendLine(error.message)
                     append("```")
                 }
             } else {
-                getString(Res.string.error_agent_no_money) + ":\n ${error.message}"
+                noMoneyMessage + ":\n ${error.message}"
             }
         }
     }

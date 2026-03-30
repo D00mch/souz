@@ -247,7 +247,8 @@ class AiTunnelChatAPI(
 
                 GigaMessageRole.assistant -> {
                     // Check if this is a tool call (GigaChat format: has functionsStateId + content JSON)
-                    if (msg.functionsStateId != null) {
+                    val functionsStateId = msg.functionsStateId
+                    if (functionsStateId != null) {
                         try {
                             val contentJson = gigaJsonMapper.readTree(msg.content)
                             val name = contentJson["name"]?.asText()
@@ -255,13 +256,13 @@ class AiTunnelChatAPI(
 
                             if (name != null && argumentsNode != null) {
                                 val arguments = gigaJsonMapper.writeValueAsString(argumentsNode)
-                                lastToolCallIds[name] = msg.functionsStateId
+                                lastToolCallIds[name] = functionsStateId
 
                                 return@map buildMap {
                                     put("role", "assistant")
                                     put("content", null)
                                     put("tool_calls", listOf(buildMap {
-                                        put("id", msg.functionsStateId)
+                                        put("id", functionsStateId)
                                         put("type", "function")
                                         put("function", buildMap {
                                             put("name", name)

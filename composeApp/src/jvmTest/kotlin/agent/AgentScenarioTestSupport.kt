@@ -17,8 +17,8 @@ import ru.souz.agent.AgentId
 import ru.souz.agent.SystemPromptResolver
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
-import ru.souz.agent.impl.GraphBasedAgent
-import ru.souz.agent.impl.LuaGraphBasedAgent
+import ru.souz.GraphBasedAgent
+import ru.souz.LuaGraphBasedAgent
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider

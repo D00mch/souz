@@ -1,6 +1,5 @@
 package ru.souz.agent
 
-import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.llms.GigaModel
 
 class SystemPromptResolver {
@@ -12,6 +11,8 @@ class SystemPromptResolver {
         }
     }
 }
+
+private const val REGION_EN = "en"
 
 private val GRAPH_DEFAULT_SYSTEM_PROMPT_RU = """
 ## Правила работы:

@@ -238,11 +238,11 @@ class OpenAIChatAPI(
             if (msg.role != GigaMessageRole.function) return@forEach
             when {
                 !msg.functionsStateId.isNullOrBlank() -> {
-                    val id = msg.functionsStateId
+                    val id = msg.functionsStateId ?: return@forEach
                     remainingToolResultIds[id] = (remainingToolResultIds[id] ?: 0) + 1
                 }
                 !msg.name.isNullOrBlank() -> {
-                    val name = msg.name
+                    val name = msg.name ?: return@forEach
                     remainingToolResultNames[name] = (remainingToolResultNames[name] ?: 0) + 1
                 }
             }

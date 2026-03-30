@@ -1,22 +1,21 @@
 package ru.souz.agent.nodes
 
 import org.slf4j.LoggerFactory
-import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.AgentSettings
 import ru.souz.agent.engine.Node
-import ru.souz.db.DesktopInfoRepository
-import ru.souz.db.SettingsProvider
+import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.spi.AgentDesktopInfoRepository
+import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.db.StorredData
 import ru.souz.db.StorredType
 import ru.souz.llms.GigaMessageRole
+import ru.souz.llms.GigaModel
 import ru.souz.llms.GigaRequest
 import ru.souz.llms.GigaResponse
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.toSystemPromptMessage
-import ru.souz.llms.local.LocalModelProfiles
-import ru.souz.tool.ToolRunBashCommand
-import ru.souz.tool.browser.detectDefaultBrowser
-import ru.souz.tool.browser.prettyName
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -28,9 +27,10 @@ import java.util.Locale
  * The nodes may update [AgentContext.input] or [AgentContext.history].
  */
 class NodesCommon(
-    private val desktopInfoRepository: DesktopInfoRepository,
-    private val settingsProvider: SettingsProvider,
+    private val desktopInfoRepository: AgentDesktopInfoRepository,
+    private val settingsProvider: AgentSettingsProvider,
     private val agentToolExecutor: AgentToolExecutor,
+    private val defaultBrowserProvider: DefaultBrowserProvider,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
@@ -127,7 +127,7 @@ class NodesCommon(
 
         val additionalData = ArrayList<StorredData>()
 
-        if (!LocalModelProfiles.isLocalModelAlias(modelAlias)) {
+        if (!isLocalModelAlias(modelAlias)) {
             try {
                 additionalData.addAll(desktopInfoRepository.search(userText))
             } catch (e: Exception) {
@@ -135,11 +135,8 @@ class NodesCommon(
             }
         }
 
-        try {
-            val defaultBrowser = ToolRunBashCommand.detectDefaultBrowser().prettyName
-            additionalData.add(StorredData(defaultBrowser, StorredType.DEFAULT_BROWSER))
-        } catch (e: Exception) {
-            l.error("Error fetching browser info: ${e.message}")
+        defaultBrowserProvider.defaultBrowserDisplayName()?.let { browserName ->
+            additionalData.add(StorredData(browserName, StorredType.DEFAULT_BROWSER))
         }
 
         val defaultCalendar = settingsProvider.defaultCalendar
@@ -229,6 +226,11 @@ class NodesCommon(
         settings: AgentSettings,
         functionCall: GigaResponse.FunctionCall,
     ): GigaRequest.Message = agentToolExecutor.execute(settings, functionCall)
+
+    private fun isLocalModelAlias(modelAlias: String): Boolean =
+        GigaModel.entries.any { model ->
+            model.alias.equals(modelAlias, ignoreCase = true) && model.provider == LlmProvider.LOCAL
+        }
 }
 
 fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaRequest.Chat {

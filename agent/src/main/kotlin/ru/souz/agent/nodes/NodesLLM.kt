@@ -2,7 +2,6 @@
 
 package ru.souz.agent.nodes
 
-import io.ktor.util.logging.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -11,7 +10,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Node
-import ru.souz.db.SettingsProvider
+import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.llms.giga.GigaChatAPI
 import ru.souz.llms.GigaMessageRole
 import ru.souz.llms.GigaRequest
@@ -26,7 +25,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  */
 class NodesLLM(
     private val llmApi: GigaChatAPI,
-    private val settingsProvider: SettingsProvider,
+    private val settingsProvider: AgentSettingsProvider,
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
 
@@ -40,7 +39,7 @@ class NodesLLM(
      */
     fun chat(name: String = "LLM Chat"): Node<String, GigaResponse.Chat> =
         Node(name) { ctx: AgentContext<String> ->
-            l.debug { "LLM input is ${ctx.input}" }
+            l.debug("LLM input is {}", ctx.input)
             val response = withContext(Dispatchers.IO) {
                 val req = ctx.toGigaRequest(ctx.history)
                 if (settingsProvider.useStreaming) {

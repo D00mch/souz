@@ -2,6 +2,7 @@
 
 package ru.souz.tool
 
+import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.db.ConfigStore
 import ru.souz.llms.GigaRequest
 import ru.souz.llms.giga.GigaToolSetup
@@ -33,7 +34,7 @@ class ToolsSettings(
     private val toolsFactory: ToolsFactory,
     private val telegramService: TelegramService,
     private val telegramPlatformSupport: TelegramPlatformSupport,
-) {
+) : AgentToolsFilter {
     private val localState: AtomicReference<ToolsSettingsState?> = AtomicReference(null)
 
     fun load(
@@ -56,7 +57,7 @@ class ToolsSettings(
         store.put(TOOLS_SETTINGS_KEY, normalizedState)
     }
 
-    fun applyFilter(
+    override fun applyFilter(
         toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
     ): Map<ToolCategory, Map<String, GigaToolSetup>> {
         val savedSettings = load(toolsByCategory)

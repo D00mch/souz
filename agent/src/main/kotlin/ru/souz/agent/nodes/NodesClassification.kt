@@ -4,24 +4,24 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import ru.souz.agent.engine.AgentContext
 import ru.souz.agent.engine.Node
+import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.llms.GigaMessageRole
 import ru.souz.llms.GigaRequest
 import ru.souz.llms.giga.GigaToolSetup
 import ru.souz.llms.giga.gigaJsonMapper
-import ru.souz.db.SettingsProvider
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolCategory.*
-import ru.souz.tool.ToolsFactory
-import ru.souz.tool.ToolsSettings
 import ru.souz.tool.UserMessageClassifier
 
 class NodesClassification(
-    private val settingsProvider: SettingsProvider,
+    private val settingsProvider: AgentSettingsProvider,
     private val logObjectMapper: ObjectMapper,
     private val apiClassifier: UserMessageClassifier,
     private val localClassifier: UserMessageClassifier,
-    private val toolsFactory: ToolsFactory,
-    private val toolsSettings: ToolsSettings,
+    private val toolCatalog: AgentToolCatalog,
+    private val toolsFilter: AgentToolsFilter,
 ) {
     private val l = LoggerFactory.getLogger(NodesClassification::class.java)
 
@@ -32,7 +32,7 @@ class NodesClassification(
      */
     fun node(name: String = "select categories"): Node<String, String> = Node(name) { ctx: AgentContext<String> ->
         val categoryStates: Map<ToolCategory, Map<String, GigaToolSetup>> =
-            toolsSettings.applyFilter(toolsFactory.toolsByCategory)
+            toolsFilter.applyFilter(toolCatalog.toolsByCategory)
         val categories: List<ToolCategory> = classify(ctx.input, ctx.history, categoryStates)
 
         val categoriesToChoseFrom = if (categories.isEmpty() || categories.contains(HELP)) {

@@ -3,6 +3,7 @@ package ru.souz.db
 import org.kodein.di.DI
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
+import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.di.mainDiModule
 import ru.souz.llms.giga.GigaChatAPI
 import ru.souz.llms.GigaRequest
@@ -19,7 +20,7 @@ class DesktopInfoRepository(
     private val db: VectorDB,
     private val extractor: DesktopDataExtractor,
     private val settingsProvider: SettingsProvider,
-) {
+) : AgentDesktopInfoRepository {
     private val l = LoggerFactory.getLogger(DesktopInfoRepository::class.java)
 
     companion object {
@@ -73,7 +74,7 @@ class DesktopInfoRepository(
      * Convert the provided query to an embedding and return the most similar
      * stored texts from the database.
      */
-    suspend fun search(query: String, limit: Int = 5): List<StorredData> {
+    override suspend fun search(query: String, limit: Int): List<StorredData> {
         if (!hasEmbeddingsKeyConfigured()) return emptyList()
         val emb = when (val resp = api.embeddings(GigaRequest.Embeddings(input = listOf(query)))) {
             is GigaResponse.Embeddings.Ok -> resp.data.first().embedding

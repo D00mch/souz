@@ -1,4 +1,4 @@
-package ru.souz.agent.impl
+package ru.souz
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.flow.Flow
