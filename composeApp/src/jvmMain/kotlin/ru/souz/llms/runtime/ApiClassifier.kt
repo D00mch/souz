@@ -1,11 +1,14 @@
-package ru.souz.llms
+package ru.souz.llms.runtime
 
-import ru.souz.tool.UserMessageClassifier
-import ru.souz.tool.ToolCategory
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.restJsonMapper
+import ru.souz.tool.ToolCategory
+import ru.souz.tool.UserMessageClassifier
 
 class ApiClassifier(
     private val api: LLMFactory,

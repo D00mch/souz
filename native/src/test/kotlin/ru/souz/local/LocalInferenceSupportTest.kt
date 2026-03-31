@@ -12,6 +12,7 @@ import kotlinx.coroutines.withTimeout
 import java.nio.file.Files
 import java.nio.file.Path
 import org.junit.jupiter.api.AfterEach
+import kotlin.io.path.createTempFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -24,7 +25,6 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
-import ru.souz.llms.giga.toGiga
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
@@ -36,7 +36,6 @@ import ru.souz.llms.local.LocalProviderStatus
 import ru.souz.llms.local.LocalStrictJsonParser
 import ru.souz.llms.local.downloadPromptFor
 import ru.souz.llms.local.prefersPlainTextLocalOutput
-import ru.souz.tool.calendar.ToolCalendarListEvents
 
 class LocalInferenceSupportTest {
 
@@ -44,6 +43,34 @@ class LocalInferenceSupportTest {
     fun tearDown() {
         unmockkAll()
     }
+
+    private val calendarListEventsFn = LLMRequest.Function(
+        name = "CalendarListEvents",
+        description = "List events from a specific calendar for a specific date (or today).",
+        parameters = LLMRequest.Parameters(
+            type = "object",
+            properties = mapOf(
+                "calendarName" to LLMRequest.Property(
+                    type = "string",
+                    description = "Name of the calendar to search in.",
+                ),
+                "date" to LLMRequest.Property(
+                    type = "string",
+                    description = "Date to list events for in YYYY-MM-DD format. Defaults to today if omitted.",
+                ),
+            ),
+            required = listOf("calendarName", "date"),
+        ),
+        fewShotExamples = listOf(
+            LLMRequest.FewShotExample(
+                request = "List today's calendar events",
+                params = mapOf(
+                    "calendarName" to "Work",
+                    "date" to "2026-03-31",
+                ),
+            )
+        ),
+    )
 
     @Test
     fun `selectForRam chooses Qwen for supported local hosts`() {
@@ -319,7 +346,7 @@ class LocalInferenceSupportTest {
                 messages = listOf(
                     LLMRequest.Message(LLMMessageRole.user, "Какие встречи у меня сегодня?")
                 ),
-                functions = listOf(ToolCalendarListEvents().toGiga().fn),
+                functions = listOf(calendarListEventsFn),
             ),
             profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
         )
@@ -566,7 +593,7 @@ class LocalInferenceSupportTest {
 
         assertIs<LLMResponse.Embeddings.Error>(embeddings)
         assertIs<LLMResponse.Balance.Error>(balance)
-        assertFailsWith<UnsupportedOperationException> { api.uploadFile(createTempFile()) }
+        assertFailsWith<UnsupportedOperationException> { api.uploadFile(createTempFile().toFile()) }
         assertFailsWith<UnsupportedOperationException> { api.downloadFile("file_1") }
     }
 }

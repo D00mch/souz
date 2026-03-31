@@ -12,10 +12,10 @@ import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.giga.GigaRestChatAPI
-import ru.souz.llms.LLMFactory
 import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.qwen.QwenChatAPI
 import ru.souz.llms.local.LocalChatAPI
+import ru.souz.llms.runtime.LLMFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

@@ -30,11 +30,11 @@ agent/
    │   ├── GraphSessionRepository.kt  # Filesystem-backed session storage
    │   └── GraphSessionService.kt     # Session lifecycle and per-step capture
 db/                                   # Shared stored-data model used by prompt enrichment
-llms/                                 # Shared LLM DTOs and chat/tool contracts
 tool/                                 # Shared tool enums and classifier contract
 ```
 
 Notes:
 - `:agent` contains both the public agent contract layer and the concrete implementations.
 - `:graph-engine` is the lower-level boundary; the `agent/graph` package is an internal adapter over it.
+- Shared `ru.souz.llms` DTOs and chat/tool contracts now live in the separate `:llms` module.
 - `AgentFacade` is the intended entry point for UI and service layers that need to run the agent.

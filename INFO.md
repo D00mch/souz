@@ -22,7 +22,6 @@ If you are not sure about something, left a note for other developers to review.
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Local llama.cpp provider** with a thin native bridge, strict JSON tool contract, a RAM-gated local model catalog (currently Qwen profile), background preload/warmup on local model selection, prompt-prefix/KV reuse inside the native runtime, and model storage under `~/.local/state/souz/models/`.
-- **Runtime EN/RU profile toggle** with one packaged build: profile is switched via a shared segmented RU/EN toggle in Setup and Settings and controls provider/model availability.
 - **Key-aware model selection in Settings**: chat, embeddings, and voice recognition model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop toolset**: files, browser, calendar, mail, notes, desktop automation, analytics, and presentations.
@@ -39,42 +38,14 @@ If you are not sure about something, left a note for other developers to review.
 │   ├── release.md                          # Release-specific notes
 │   ├── telemetry-backend.md                # Telemetry backend contract
 │   └── voice-transcription.md              # Voice transcription routing and upload behavior
-├── native/                                 # Native bridge sources and local notes
-│   ├── INFO.md                             # Local native bridge notes
-│   └── llama-bridge/                       # JNI bridge sources and local-only build-* dirs
-├── graph-engine/                           # Standalone JVM module with the generic graph DSL and runtime
-│   ├── build.gradle.kts                    # Graph engine module build
-│   ├── INFO.md                             # Graph engine notes
-│   └── src/
-│       └── main/
-│           └── kotlin/
-│               └── ru/souz/
-│                   └── graph/              # Generic graph primitives, runner, runtime, and DSL helpers
-├── agent/                                  # JVM module with public agent API, shared DTOs, host SPI, and concrete implementations
-│   ├── build.gradle.kts                    # Agent module build
-│   ├── INFO.md                             # Agent notes
-│   └── src/
-│       └── main/
-│           └── kotlin/
-│               └── ru/souz/
-│                   ├── GraphBasedAgent.kt  # Standard tool-calling graph agent
-│                   ├── LuaGraphBasedAgent.kt # Lua-planning graph agent
-│                   ├── agent/              # Agent API, DI, host SPI, state, graph adapter, nodes, runtime helpers, and sessions
-│                       ├── AgentFacade.kt  # Active-agent selection, context lifecycle, and execution entry point
-│                       ├── Agent.kt        # Public agent contracts and execution result models
-│                       ├── AgentId.kt      # Supported agent identifiers and defaults
-│                       ├── AgentModule.kt  # Single DI module that wires agent internals
-│                       ├── SystemPromptResolver.kt # Default system prompt selection by agent/model/profile
-│                       ├── TraceableAgent.kt # Internal tracing-only contract used by concrete agents
-│                       ├── graph/          # Internal adapter from agent state to :graph-engine
-│                       ├── nodes/          # LLM, MCP, classification, summarization, and error nodes
-│                       ├── runtime/        # Lua runtime and tool execution delegation
-│                       ├── session/        # Persisted graph session models and services
-│                       ├── spi/            # Interfaces implemented by composeApp services and factories
-│                       └── state/          # AgentContext and related state/settings wrappers
-│                   ├── db/                 # Shared stored-data models used by agent and desktop indexing
-│                   ├── llms/               # Shared LLM DTOs and chat/tool contracts
-│                   └── tool/               # Shared tool categories and message classifier contract
+├── agent/                                  # Shared agent runtime module
+│   └── INFO.md                             # Module notes and internal layout
+├── graph-engine/                           # Shared graph DSL/runtime module
+│   └── INFO.md                             # Module notes and internal layout
+├── llms/                                   # Shared LLM contracts/helpers module
+│   └── INFO.md                             # Module notes and internal layout
+├── native/                                 # Shared local-model runtime/native bridge module
+│   └── INFO.md                             # Module notes and internal layout
 ├── composeApp/                             # Main desktop application module
 │   ├── build/                              # Build output for composeApp (generated)
 │   ├── composeApp/                         # Auxiliary nested folder with test resource skeleton
@@ -93,13 +64,12 @@ If you are not sure about something, left a note for other developers to review.
 │       │   │       ├── TextMain.kt         # Text-mode/dev entry point
 │       │   │       ├── db/                 # Settings, config store, desktop info, and vector DB layer
 │       │   │       ├── di/                 # Dependency wiring
-│       │   │       ├── llms/               # Provider implementations, profiles, and provider factory
+│       │   │       ├── llms/               # App-side LLM integrations and runtime wiring
 │       │   │       │   ├── anthropic/      # Anthropic chat client and Ktor defaults
 │       │   │       │   ├── giga/           # GigaChat auth, REST chat, tools, and voice clients
-│       │   │       │   ├── local/          # Local llama.cpp bridge, model store/catalog, strict JSON support
-│       │   │       │   │   └── INFO.md     # Local notes for the local provider
 │       │   │       │   ├── openai/         # OpenAI chat and voice clients
 │       │   │       │   ├── qwen/           # Qwen chat client
+│       │   │       │   ├── runtime/        # App-side LLMFactory and classifier wiring over shared/native modules
 │       │   │       │   └── tunnel/         # AiTunnel chat and voice clients
 │       │   │       ├── service/            # Runtime integrations and OS-facing helpers
 │       │   │       │   ├── audio/          # Audio recording and playback services
@@ -166,3 +136,20 @@ If you are not sure about something, left a note for other developers to review.
 ├── gradle/                                 # Gradle version catalog and wrapper configuration
 │   └── wrapper/                            # Gradle wrapper JAR/properties
 ```
+
+## Module Structure
+
+```mermaid
+graph TD
+    composeApp[":composeApp"] --> agent[":agent"]
+    composeApp --> llms[":llms"]
+    composeApp --> native[":native"]
+    agent --> graphEngine[":graph-engine"]
+    agent --> llms
+    native --> llms
+```
+
+- `:composeApp` depends on `:agent`, `:llms`, and `:native`.
+- `:agent` depends on `:graph-engine` and `:llms`.
+- `:native` depends on `:llms`.
+- `:graph-engine` and `:llms` do not depend on other project modules.

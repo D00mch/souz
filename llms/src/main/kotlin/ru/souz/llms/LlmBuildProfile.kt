@@ -1,15 +1,10 @@
 package ru.souz.llms
 
-import ru.souz.db.SettingsProvider
-import ru.souz.llms.local.LocalBridgeLoader
-import ru.souz.llms.local.LocalHostInfoProvider
-import ru.souz.llms.local.LocalModelStore
-import ru.souz.llms.local.LocalProviderAvailability
-import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
+private const val REGION_EN = "en"
 
 class LlmBuildProfile(
-    private val settingsProvider: SettingsProvider,
-    private val localProviderAvailability: LocalProviderAvailability = defaultLocalProviderAvailability(),
+    private val settingsProvider: LlmBuildProfileSettings,
+    private val localProviderAvailability: LocalModelAvailability = LocalModelsUnavailable,
 ) {
 
     private fun currentEdition(): BuildEdition =
@@ -82,11 +77,10 @@ class LlmBuildProfile(
     }
 }
 
-private fun defaultLocalProviderAvailability(): LocalProviderAvailability {
-    val hostInfoProvider = LocalHostInfoProvider()
-    return LocalProviderAvailability(
-        hostInfoProvider = hostInfoProvider,
-        modelStore = LocalModelStore(),
-        bridgeLoader = LocalBridgeLoader(hostInfoProvider),
-    )
+private object LocalModelsUnavailable : LocalModelAvailability {
+    override fun availableGigaModels(): List<LLMModel> = emptyList()
+
+    override fun defaultGigaModel(): LLMModel? = null
+
+    override fun isProviderAvailable(): Boolean = false
 }

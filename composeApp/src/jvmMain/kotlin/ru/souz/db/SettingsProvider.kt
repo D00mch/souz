@@ -6,6 +6,7 @@ import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LlmBuildProfileSettings
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
@@ -16,7 +17,7 @@ import ru.souz.llms.local.LocalProviderAvailability
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
-interface SettingsProvider : AgentSettingsProvider {
+interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     var gigaChatKey: String?
     var qwenChatKey: String?
     var aiTunnelKey: String?

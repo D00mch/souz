@@ -4,6 +4,7 @@ import com.sun.management.OperatingSystemMXBean
 import java.lang.management.ManagementFactory
 import org.slf4j.LoggerFactory
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LocalModelAvailability
 
 data class LocalLicenseRequirements(
     val summary: String,
@@ -132,7 +133,7 @@ class LocalProviderAvailability(
     private val hostInfoProvider: LocalHostInfoProvider,
     private val modelStore: LocalModelStore,
     private val bridgeLoader: LocalBridgeLoader,
-) {
+) : LocalModelAvailability {
     private val l = LoggerFactory.getLogger(LocalProviderAvailability::class.java)
 
     fun status(): LocalProviderStatus {
@@ -195,11 +196,11 @@ class LocalProviderAvailability(
         )
     }
 
-    fun availableGigaModels(): List<LLMModel> = status().availableModels
+    override fun availableGigaModels(): List<LLMModel> = status().availableModels
 
-    fun defaultGigaModel(): LLMModel? = status().selectedProfile?.gigaModel
+    override fun defaultGigaModel(): LLMModel? = status().selectedProfile?.gigaModel
 
     fun selectedProfile(): LocalModelProfile? = status().selectedProfile
 
-    fun isProviderAvailable(): Boolean = status().available
+    override fun isProviderAvailable(): Boolean = status().available
 }

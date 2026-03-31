@@ -24,10 +24,8 @@ import ru.souz.db.DesktopDataExtractor
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
-import ru.souz.llms.ApiClassifier
 import ru.souz.llms.giga.GigaAuth
 import ru.souz.llms.LLMChatAPI
-import ru.souz.llms.LLMFactory
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.giga.GigaVoiceAPI
 import ru.souz.llms.LlmBuildProfile
@@ -49,6 +47,8 @@ import ru.souz.llms.local.LocalNativeBridge
 import ru.souz.llms.local.LocalPromptRenderer
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.llms.local.LocalStrictJsonParser
+import ru.souz.llms.runtime.ApiClassifier
+import ru.souz.llms.runtime.LLMFactory
 import ru.souz.service.mcp.McpClientManager
 import ru.souz.service.mcp.McpConfigProvider
 import ru.souz.service.telegram.TelegramService

@@ -1,7 +1,12 @@
-package ru.souz.llms
+package ru.souz.llms.runtime
 
 import kotlinx.coroutines.flow.Flow
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.EmbeddingsModel
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.giga.GigaRestChatAPI

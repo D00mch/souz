@@ -3,14 +3,12 @@ plugins {
 }
 
 dependencies {
-    implementation(projects.graphEngine)
     implementation(projects.llms)
     implementation(kotlin("stdlib"))
     implementation(libs.kotlinx.coroutines)
     implementation(libs.jackson)
+    implementation(libs.jna)
     implementation(libs.logback)
-    implementation(libs.luaj.jse)
-    implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlin.testJunit5)
