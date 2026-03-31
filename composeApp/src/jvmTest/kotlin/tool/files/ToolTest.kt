@@ -26,6 +26,7 @@ import ru.souz.tool.files.ToolReadPdfPages
 import java.io.File
 import java.nio.file.Files
 import java.util.UUID
+import kotlin.test.AfterTest
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -40,9 +41,18 @@ class ToolTest {
     }
 
     private val filesToolUtil: FilesToolUtil = mockk()
+    private val createdTempDirs = mutableListOf<File>()
 
-    private fun createTempDirectory(): File =
-        Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "souz-test-").toFile()
+    @AfterTest
+    fun cleanupTempDirectories() {
+        createdTempDirs.asReversed().forEach { it.deleteRecursively() }
+        createdTempDirs.clear()
+    }
+
+    private fun createTempDirectory(prefix: String = "souz-test-"): File =
+        Files.createTempDirectory(fixtureDirectory().toPath(), prefix)
+            .toFile()
+            .also(createdTempDirs::add)
 
     private fun fixtureRoot(): File {
         val starts = generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
@@ -61,7 +71,7 @@ class ToolTest {
 
     private fun fixturePath(name: String): String = File(fixtureDirectory(), name).path
 
-    private fun fixtureInHome(name: String): File {
+    private fun copyFixtureToTempDirectory(name: String): File {
         val stream = sequenceOf(name, "directory/$name")
             .mapNotNull { path -> javaClass.classLoader.getResourceAsStream(path) }
             .firstOrNull()
@@ -85,8 +95,7 @@ class ToolTest {
         return target
     }
 
-    private fun firstFixturePdfPath(): String = fixtureInHome(PDF_FIXTURE_NAME).absolutePath
-
+    private fun copyPdfFixtureToTempDirectory(): File = copyFixtureToTempDirectory(PDF_FIXTURE_NAME)
 
     private fun createSampleFiles(baseDir: File) {
         val nestedDir = File(baseDir, "directory").apply { mkdirs() }
@@ -133,7 +142,7 @@ class ToolTest {
     @Test
     fun `test ToolReadFile`() {
         val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
-        val fixture = fixtureInHome("test.txt")
+        val fixture = copyFixtureToTempDirectory("test.txt")
 
         val result = ToolReadFile(filesToolUtil)
             .invoke(ToolReadFile.Input(fixture.absolutePath))
@@ -152,7 +161,7 @@ class ToolTest {
     @Test
     fun `test ToolReadPdfPages reads fixture pdf`() {
         val filesToolUtil = createFilesToolUtil(forbiddenFolders = listOf("~/Library/"))
-        val fixturePdf = fixtureInHome(firstFixturePdfPath().let(::File).name)
+        val fixturePdf = copyPdfFixtureToTempDirectory()
 
         val result = ToolReadPdfPages(filesToolUtil)
             .invoke(ToolReadPdfPages.Input(filePath = fixturePdf.absolutePath, startPage = 1))
@@ -169,7 +178,7 @@ class ToolTest {
     fun `test ToolReadPdfPages validates non-pdf and missing files`() {
         val filesToolUtil = createFilesToolUtil(forbiddenFolders = listOf("~/Library/"))
         val tool = ToolReadPdfPages(filesToolUtil)
-        val nonPdfFile = fixtureInHome("file.txt")
+        val nonPdfFile = copyFixtureToTempDirectory("file.txt")
 
         val nonPdfResult = tool.invoke(ToolReadPdfPages.Input(filePath = nonPdfFile.absolutePath))
         assertEquals("Error: Expecting .pdf file", nonPdfResult)
@@ -184,7 +193,7 @@ class ToolTest {
     @Test
     fun `test ToolReadPdfPages reports out-of-range page`() {
         val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
-        val fixturePdf = fixtureInHome(firstFixturePdfPath().let(::File).name)
+        val fixturePdf = copyPdfFixtureToTempDirectory()
 
         val result = ToolReadPdfPages(filesToolUtil)
             .invoke(ToolReadPdfPages.Input(filePath = fixturePdf.absolutePath, startPage = 10000))
@@ -200,7 +209,7 @@ class ToolTest {
         try {
             val filesToolUtil = createFilesToolUtil(forbiddenFolders = listOf("~/Library/"))
             val tool = ToolExtractText(filesToolUtil)
-            val fixtureText = fixtureInHome("file.txt")
+            val fixtureText = copyFixtureToTempDirectory("file.txt")
 
             val markdownFile = File(tempDir, "notes.md").apply {
                 writeText("# Notes\n\n- Alpha\n- Beta\n")
@@ -246,7 +255,7 @@ class ToolTest {
         )
 
         expectedMarkersByFile.forEach { (fileName, expectedMarker) ->
-            val fixture = fixtureInHome(fileName)
+            val fixture = copyFixtureToTempDirectory(fileName)
             val extracted = tool.invoke(ToolExtractText.Input(fixture.absolutePath))
             assertContains(extracted, "=== METADATA ===")
             assertContains(extracted, "Filename: $fileName")
@@ -579,7 +588,7 @@ class ToolTest {
 
     @Test
     fun `test ToolDeleteFile deletes folder`() {
-        val tempDir = Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "souz-test-delete-folder-").toFile()
+        val tempDir = createTempDirectory(prefix = "souz-test-delete-folder-")
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
             val folderToDelete = File(tempDir, "folder-to-delete").apply { mkdirs() }
