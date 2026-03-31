@@ -135,9 +135,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { LocalPromptRenderer() }
     bindSingleton { LocalStrictJsonParser() }
     bindSingleton { LocalProviderAvailability(instance(), instance(), instance()) }
-    bindSingleton { SettingsProviderImpl(instance(), instance()) }
-    bindSingleton<SettingsProvider> { instance<SettingsProviderImpl>() }
-    bindSingleton<AgentSettingsProvider> { instance<SettingsProviderImpl>() }
+    bindSingleton<SettingsProvider> { SettingsProviderImpl(instance(), instance()) }
     bindSingleton { LlmBuildProfile(instance(), instance()) }
     bindSingleton { ApiKeyAvailabilityUseCase(instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
