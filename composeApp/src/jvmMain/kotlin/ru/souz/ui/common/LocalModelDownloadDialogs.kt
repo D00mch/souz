@@ -98,6 +98,7 @@ fun LocalModelDownloadPromptDialog(
         confirmText = stringResource(Res.string.local_model_download_dialog_confirm),
         cancelText = stringResource(Res.string.local_model_download_dialog_cancel),
         details = buildPromptDetails(prompt),
+        dismissOnBackdropClick = false,
         onConfirm = onConfirm,
         onDismiss = onDismiss,
     )
@@ -217,7 +218,7 @@ private fun LocalModelDownloadProgressOverlay(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = onCancel,
+                    onClick = {},
                 )
         )
 

@@ -98,7 +98,8 @@ fun ConfirmDialog(
     confirmText: String = stringResource(Res.string.dialog_confirm),
     cancelText: String = stringResource(Res.string.dialog_cancel),
     variant: DialogVariant = DialogVariant.INFO,
-    details: String? = null
+    details: String? = null,
+    dismissOnBackdropClick: Boolean = true,
 ) {
     ConfirmDialogInternal(
         isOpen = isOpen,
@@ -119,6 +120,7 @@ fun ConfirmDialog(
         confirmEnabled = true,
         dialogMaxWidth = 320.dp,
         dialogMaxHeightFraction = 0.9f,
+        dismissOnBackdropClick = dismissOnBackdropClick,
         onDismiss = onDismiss,
         onConfirm = onConfirm,
     )
@@ -136,6 +138,7 @@ fun ConfirmDialog(
     confirmText: String = stringResource(Res.string.dialog_confirm),
     cancelText: String = stringResource(Res.string.dialog_cancel),
     confirmEnabled: Boolean = true,
+    dismissOnBackdropClick: Boolean = true,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -163,6 +166,7 @@ fun ConfirmDialog(
         confirmEnabled = confirmEnabled,
         dialogMaxWidth = dialogMaxWidth,
         dialogMaxHeightFraction = dialogMaxHeightFraction,
+        dismissOnBackdropClick = dismissOnBackdropClick,
         onDismiss = onDismiss,
         onConfirm = onConfirm,
     )
@@ -182,6 +186,7 @@ private fun ConfirmDialogInternal(
     confirmEnabled: Boolean,
     dialogMaxWidth: Dp,
     dialogMaxHeightFraction: Float,
+    dismissOnBackdropClick: Boolean,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
@@ -219,7 +224,7 @@ private fun ConfirmDialogInternal(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = onDismiss
+                    onClick = if (dismissOnBackdropClick) onDismiss else ({})
                 )
         )
 
