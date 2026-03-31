@@ -50,17 +50,24 @@ This document describes shared file-tool behavior and path conventions.
 ### `EditFile`
 
 - Works only on an existing safe file path.
-- Applies a unified diff patch, not a whole-file replacement.
+- Works only on plain text, code, and config files that are valid UTF-8 text.
+- Uses exact string replacement, not a caller-supplied patch.
+- Input is:
+  - `path`
+  - `oldString`
+  - `newString`
+  - optional `replaceAll`
 - Validation happens before any safe-mode permission prompt.
-- Patch requirements:
-  - standard unified diff headers (`---` and `+++`)
-  - exactly one target file
-  - target must match the requested path after `strip` handling
-  - `strip` in `0..10`
-- Supports common diff header forms including `a/` / `b/`, bare names, quoted paths, and absolute paths.
-- Runs `patch --dry-run` first and only applies if the dry-run succeeds.
-- Feeds patch text directly over stdin and rejects the internal `*** Begin Patch` wrapper format.
-- In safe mode, the validated patch is sent through the permission broker, which allows the UI to show a patch preview before approval.
+- Fails when:
+  - `oldString` is empty
+  - `oldString` and `newString` are identical
+  - `oldString` is not found in the current file
+  - `oldString` matches multiple locations and `replaceAll` is `false`
+  - the file is not an editable text/code/config file
+- The tool normalizes line endings internally for matching and preserves the file's original line-ending style on write.
+- In safe mode, the tool generates a unified diff preview from the old and new file contents and sends that patch through the permission broker for UI preview.
+- After approval and before the final write, the tool rereads the file and aborts if the content changed during the permission gap.
+- Writes use a temp file plus atomic-move fallback instead of invoking the system `patch` binary.
 
 ### `MoveFile`
 

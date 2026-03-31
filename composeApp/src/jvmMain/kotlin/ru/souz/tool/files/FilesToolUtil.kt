@@ -10,10 +10,14 @@ import ru.souz.tool.BadInputException
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.nio.ByteBuffer
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 
 class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesService {
 
@@ -25,14 +29,6 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
 
     val souzDocumentsDirectoryPath: Path
         get() = Companion.souzDocumentsDirectoryPath
-
-    val souzTelegramControlDirectoryPath: Path
-        get() = Companion.souzTelegramControlDirectoryPath
-
-    val souzWebAssetsDirectoryPath: Path
-        get() = Companion.souzWebAssetsDirectoryPath
-
-    fun normalizeExistingFilePath(raw: String?): String? = Companion.normalizeExistingFilePath(raw)
 
     /**
      * Generally, we don't want Agent to mess around anything out of $HOME and everything user disallowed
@@ -65,6 +61,106 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
             else -> "$homeStr/$path"
         }
     }
+
+    /**
+     * Resolves a raw path into a canonical existing file and enforces Souz path-safety rules.
+     *
+     * @throws [BadInputException] for missing or non-file targets
+     * @throws [ForbiddenFolder] when the path escapes the allowed area.
+     */
+    fun resolveSafeExistingFile(rawPath: String): File {
+        val fixedPath = applyDefaultEnvs(rawPath)
+        val file = File(fixedPath)
+        if (!isPathSafe(file)) throw ForbiddenFolder(fixedPath)
+        if (!file.exists() || !file.isFile) {
+            throw BadInputException("Invalid file path: $rawPath")
+        }
+        return file.canonicalFile
+    }
+
+    /**
+     * Loads a file that is eligible for in-place text editing.
+     *
+     * The file must be safe, present, not in the blocked extension list, not likely binary, and valid UTF-8.
+     * The returned [EditableTextFile] includes both raw content and a line-ending-normalized view so tools
+     * can match on `\n` internally while still restoring the original separator on write.
+     */
+    fun readEditableUtf8TextFile(file: File): EditableTextFile {
+        val canonicalFile = file.canonicalFile
+        if (!isPathSafe(canonicalFile)) throw ForbiddenFolder(canonicalFile.path)
+        if (!canonicalFile.exists() || !canonicalFile.isFile) {
+            throw BadInputException("Invalid file path: ${canonicalFile.path}")
+        }
+        if (canonicalFile.extension.lowercase() in NON_EDITABLE_EXTENSIONS) {
+            val errMsg = "Only plain text, code, and config files can be edited. Unsupported file type:"
+            throw BadInputException("$errMsg .${canonicalFile.extension.lowercase()}")
+        }
+
+        val bytes = Files.readAllBytes(canonicalFile.toPath())
+        if (isLikelyBinary(bytes)) {
+            throw BadInputException("Only plain text, code, and config files can be edited.")
+        }
+
+        val rawText = try {
+            decodeUtf8Strict(bytes)
+        } catch (_: CharacterCodingException) {
+            throw BadInputException("Only UTF-8 plain text, code, and config files can be edited.")
+        }
+
+        val lineSeparator = detectLineSeparator(rawText)
+        return EditableTextFile(
+            file = canonicalFile,
+            rawText = rawText,
+            normalizedText = normalizeLineEndings(rawText),
+            lineSeparator = lineSeparator,
+        )
+    }
+
+    /**
+     * Writes UTF-8 text through a temp file in the same directory and then moves it into place.
+     *
+     * Using a sibling temp file keeps the write on the same filesystem, which gives the best chance
+     * for an atomic replace via [moveWithAtomicFallback].
+     */
+    fun writeUtf8TextFileAtomically(
+        file: File,
+        content: String,
+        logger: org.slf4j.Logger,
+    ) {
+        val canonicalFile = file.canonicalFile
+        val parent = canonicalFile.parentFile ?: throw BadInputException("File has no parent directory")
+        if (!parent.exists() && !parent.mkdirs()) {
+            throw BadInputException("Failed to create directory: ${parent.path}")
+        }
+
+        val tempPath = Files.createTempFile(parent.toPath(), "${canonicalFile.name}.", ".tmp")
+        try {
+            Files.writeString(tempPath, content, StandardCharsets.UTF_8)
+            moveWithAtomicFallback(
+                sourcePath = tempPath,
+                destinationPath = canonicalFile.toPath(),
+                logger = logger,
+                replaceExisting = true,
+            )
+        } finally {
+            Files.deleteIfExists(tempPath)
+        }
+    }
+
+    /**
+     * Converts any CRLF or CR line endings to LF so text matching can use a single internal format.
+     */
+    fun normalizeLineEndings(text: String): String =
+        text.replace("\r\n", "\n").replace("\r", "\n")
+
+    /**
+     * Converts internally normalized LF line endings back to the file's original separator style.
+     */
+    fun restoreLineEndings(text: String, lineSeparator: String): String =
+        when (lineSeparator) {
+            "\n" -> text
+            else -> text.replace("\n", lineSeparator)
+        }
 
     /**
      * Validates that a unified diff patch (`---` / `+++` headers) touches exactly one file and that,
@@ -144,15 +240,33 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
      * not a partially moved file). Some filesystems do not support atomic moves for a given
      * source/destination pair; in that case we fall back to a regular move.
      */
-    fun moveWithAtomicFallback(sourcePath: Path, destinationPath: Path, logger: org.slf4j.Logger) {
+    fun moveWithAtomicFallback(
+        sourcePath: Path,
+        destinationPath: Path,
+        logger: org.slf4j.Logger,
+        replaceExisting: Boolean = false,
+    ) {
+        val atomicOptions = buildList {
+            add(StandardCopyOption.ATOMIC_MOVE)
+            if (replaceExisting) add(StandardCopyOption.REPLACE_EXISTING)
+        }.toTypedArray()
+        val fallbackOptions = buildList {
+            if (replaceExisting) add(StandardCopyOption.REPLACE_EXISTING)
+        }.toTypedArray()
         try {
-            Files.move(sourcePath, destinationPath, StandardCopyOption.ATOMIC_MOVE)
+            Files.move(sourcePath, destinationPath, *atomicOptions)
         } catch (exception: AtomicMoveNotSupportedException) {
             logger.warn("Failed to make an atomic move", exception)
-            Files.move(sourcePath, destinationPath)
+            Files.move(sourcePath, destinationPath, *fallbackOptions)
         }
     }
 
+    /**
+     * Returns the configured forbidden folders as canonical paths under the user's home directory.
+     *
+     * Blank entries are ignored, relative entries are resolved from [homeDirectory], and paths outside
+     * the home directory are discarded so later safety checks only compare against valid in-scope roots.
+     */
     fun forbiddenDirectories(): List<File> {
         return settingsProvider.forbiddenFolders.mapNotNull { raw ->
             val expanded = applyDefaultEnvs(raw).trim()
@@ -216,10 +330,77 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
         return WINDOWS_ABSOLUTE_PATH.matches(path)
     }
 
+    private fun detectLineSeparator(text: String): String = when {
+        text.contains("\r\n") -> "\r\n"
+        text.contains('\r') -> "\r"
+        else -> "\n"
+    }
+
+    private fun isLikelyBinary(bytes: ByteArray): Boolean {
+        if (bytes.any { it == 0.toByte() }) return true
+        if (bytes.isEmpty()) return false
+
+        val sample = bytes.take(BINARY_SAMPLE_SIZE)
+        val controlChars = sample.count { byte ->
+            val value = byte.toInt() and 0xFF
+            value < 0x20 && value !in setOf(0x09, 0x0A, 0x0C, 0x0D)
+        }
+        return controlChars * 5 > sample.size
+    }
+
+    private fun decodeUtf8Strict(bytes: ByteArray): String {
+        val decoder = StandardCharsets.UTF_8
+            .newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+        return decoder.decode(ByteBuffer.wrap(bytes)).toString()
+    }
+
     companion object {
         private val UNIFIED_DIFF_HUNK_HEADER =
             Regex("^@@ -\\d+(?:,\\d+)? \\+\\d+(?:,\\d+)? @@(?: .*)?$")
         private val WINDOWS_ABSOLUTE_PATH = Regex("^[A-Za-z]:[\\\\/].*")
+        private const val BINARY_SAMPLE_SIZE = 1024
+        private val NON_EDITABLE_EXTENSIONS = setOf(
+            "7z",
+            "avi",
+            "bmp",
+            "class",
+            "doc",
+            "docx",
+            "dmg",
+            "exe",
+            "gif",
+            "gz",
+            "heic",
+            "heif",
+            "ico",
+            "jar",
+            "jpeg",
+            "jpg",
+            "key",
+            "mov",
+            "mp3",
+            "mp4",
+            "odp",
+            "ods",
+            "odt",
+            "otf",
+            "pdf",
+            "png",
+            "ppt",
+            "pptx",
+            "so",
+            "svgz",
+            "tar",
+            "ttf",
+            "wav",
+            "webm",
+            "webp",
+            "xls",
+            "xlsx",
+            "zip",
+        )
 
         val homeStr: String get() = MacAppEnvironment.appDataHome
         val homeDirectory: File get() = File(homeStr).canonicalFile
@@ -241,13 +422,25 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
         val souzWebAssetsDirectoryPath: Path
             get() = souzDocumentsDirectoryPath.resolve("web_assets")
 
+        /**
+         * Opens a bundled classpath resource as a stream.
+         */
         fun resourceStream(path: String): InputStream =
             Thread.currentThread().contextClassLoader.getResourceAsStream(path)
                 ?: throw IOException("Certificate not found on classpath: $path")
 
+        /**
+         * Reads a bundled classpath resource as text.
+         */
         fun resourceAsText(path: String): String =
             resourceStream(path).bufferedReader().use { it.readText() }
 
+        /**
+         * Normalizes a user-provided path into a canonical absolute file path when that file already exists.
+         *
+         * This is intentionally conservative: it only succeeds for existing regular files and returns `null`
+         * for blank inputs, directories, missing files, or values that do not parse into a concrete target.
+         */
         fun normalizeExistingFilePath(raw: String?): String? {
             val cleaned = raw
                 ?.trim()
@@ -267,6 +460,20 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
             return file.takeIf { it.exists() && it.isFile }?.canonicalPath
         }
     }
+
+    /**
+     * Snapshot of a text file prepared for edit operations.
+     *
+     * @property rawText preserves the original bytes decoded as UTF-8
+     * @property normalizedText uses LF line endings for matching and diffing
+     * @property lineSeparator records the original separator to restore on write
+     */
+    data class EditableTextFile(
+        val file: File,
+        val rawText: String,
+        val normalizedText: String,
+        val lineSeparator: String,
+    )
 }
 
 @Suppress("FunctionName")
@@ -277,8 +484,8 @@ fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val filesToolUtil: FilesToolUtil by di.instance()
 
-    val result = filesToolUtil.isPathSafe(File(
-        filesToolUtil.applyDefaultEnvs("~/")
-    ))
+    val result = filesToolUtil.isPathSafe(
+        File(filesToolUtil.applyDefaultEnvs("~/"))
+    )
     println("Safe? $result")
 }

@@ -1,50 +1,49 @@
 package ru.souz.tool.files
 
+import com.github.difflib.DiffUtils
+import com.github.difflib.UnifiedDiffUtils
+import org.jetbrains.compose.resources.getString
+import org.slf4j.LoggerFactory
 import ru.souz.tool.*
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
-import org.jetbrains.compose.resources.getString
 import java.io.File
 
 class ToolModifyFile(
     private val filesToolUtil: FilesToolUtil,
     private val permissionBroker: ToolPermissionBroker? = null,
 ) : ToolSetup<ToolModifyFile.Input> {
+    private val l = LoggerFactory.getLogger(ToolModifyFile::class.java)
 
     data class Input(
         @InputParamDescription("The path to the file to be modified")
         val path: String,
 
         @InputParamDescription(
-            "Unified diff patch to apply (like git diff output). " +
-                    "Must modify ONLY the target file. Use a/<filename> and b/<filename> or just <filename>."
+            "Exact text to replace in the current file. Must match the existing content."
         )
-        val patch: String,
+        val oldString: String,
 
-        @InputParamDescription("How many leading path components to strip from patch paths. Use 1 for a/ and b/.")
-        val strip: Int = 1,
+        @InputParamDescription("Replacement text. May be empty to delete the matched text.")
+        val newString: String,
+
+        @InputParamDescription("Replace all occurrences of oldString. Default false.")
+        val replaceAll: Boolean = false,
     )
 
     override val name = "EditFile"
     override val description =
-        "Modify a file by applying a unified diff patch. Runs a dry-run first; applies only if clean. Patch must target only the specified file."
+        "Modify an existing plain text, code, or config file by replacing exact text. " +
+                "Fails when oldString is missing or ambiguous unless replaceAll is true."
 
     override val fewShotExamples = listOf(
         FewShotExample(
-            request = "Применить патч к ~/notes.txt",
+            request = "Замени строку в ~/notes.txt",
             params = mapOf(
                 "path" to "~/notes.txt",
-                "patch" to """
-                    --- a/notes.txt
-                    +++ b/notes.txt
-                    @@ -1,3 +1,4 @@
-                     one
-                    -two
-                    +TWO
-                     three
-                    +four
-                """.trimIndent(),
-                "strip" to 1
+                "oldString" to "two",
+                "newString" to "TWO",
+                "replaceAll" to false,
             )
         )
     )
@@ -56,122 +55,116 @@ class ToolModifyFile(
     )
 
     override suspend fun suspendInvoke(input: Input): String {
-        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
-        validateInput(input, fixedPath)
+        val preparedEdit = prepareEdit(input)
         val result = permissionBroker?.requestPermission(
             getString(Res.string.permission_modify_file),
             linkedMapOf(
-                "path" to fixedPath,
-                "strip" to input.strip.toString(),
-                "patch" to input.patch,
+                "path" to preparedEdit.file.path,
+                "replaceAll" to input.replaceAll.toString(),
+                "patch" to preparedEdit.patchPreview,
             )
         )
         if (result is ToolPermissionResult.No) return result.msg
-        return invoke(input)
-    }
-
-    override fun invoke(input: Input): String {
-        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
-        val file = validateInput(input, fixedPath)
-        val normalizedPatch = normalizeAbsoluteHeadersForPatch(input.patch, file.name)
-
-        val workDir = file.parentFile ?: throw BadInputException("File has no parent directory")
-        // Dry run first
-        val dry = runPatch(
-            workDir = workDir,
-            strip = input.strip,
-            patchText = normalizedPatch,
-            dryRun = true
-        )
-        if (dry.exitCode != 0) {
-            throw BadInputException(
-                "Patch dry-run failed:\n${dry.output}\n" +
-                        "Hint: generate an exact unified diff for current file content. " +
-                        "Do not delete and recreate the file; use EditFile to update it."
-            )
-        }
-
-        // Apply for real
-        val applied = runPatch(
-            workDir = workDir,
-            strip = input.strip,
-            patchText = normalizedPatch,
-            dryRun = false
-        )
-        if (applied.exitCode != 0) {
-            throw BadInputException(
-                "Patch apply failed:\n${applied.output}\n" +
-                        "Do not delete and recreate the file; use EditFile with a valid patch."
-            )
-        }
-
+        applyPreparedEdit(preparedEdit)
         return "OK"
     }
 
-    private data class CmdResult(val exitCode: Int, val output: String)
-
-    private fun runPatch(workDir: File, strip: Int, patchText: String, dryRun: Boolean): CmdResult {
-        // --batch: never prompt
-        // --forward: ignore already-applied hunks instead of reversing
-        val args = buildList {
-            add("patch")
-            add("--batch")
-            add("--forward")
-            if (dryRun) add("--dry-run")
-            add("-p$strip")
-        }
-
-        val pb = ProcessBuilder(args)
-            .directory(workDir)
-            .redirectErrorStream(true)
-
-        val p = pb.start()
-        p.outputStream.bufferedWriter().use { writer ->
-            writer.write(patchText)
-            if (!patchText.endsWith("\n")) writer.newLine()
-        }
-        val out = p.inputStream.bufferedReader().use { it.readText() }
-        val code = p.waitFor()
-        return CmdResult(code, out.trim())
+    override fun invoke(input: Input): String {
+        val preparedEdit = prepareEdit(input)
+        applyPreparedEdit(preparedEdit)
+        return "OK"
     }
 
-    private fun validateInput(input: Input, fixedPath: String): File {
-        val file = File(fixedPath)
+    private data class PreparedEdit(
+        val file: File,
+        val originalRawText: String,
+        val updatedRawText: String,
+        val patchPreview: String,
+    )
 
-        if (input.path.isBlank() || input.patch.isBlank()) throw BadInputException("Invalid input parameters")
-        if (!filesToolUtil.isPathSafe(file)) throw ForbiddenFolder(fixedPath)
-        if (!file.exists()) throw BadInputException("File does not exist")
-        if (input.strip !in 0..10) throw BadInputException("Invalid strip value")
+    private fun prepareEdit(input: Input): PreparedEdit {
+        if (input.path.isBlank()) throw BadInputException("Invalid input parameters")
 
-        // Guardrail: patch must only target the given file.
-        filesToolUtil.validateUnifiedDiffTargetsSingleFile(
-            patch = input.patch,
-            expectedFilePath = fixedPath,
-            strip = input.strip
+        val file = filesToolUtil.resolveSafeExistingFile(input.path)
+        val editableTextFile = filesToolUtil.readEditableUtf8TextFile(file)
+        val normalizedOldString = filesToolUtil.normalizeLineEndings(input.oldString)
+        val normalizedNewString = filesToolUtil.normalizeLineEndings(input.newString)
+
+        if (normalizedOldString.isEmpty()) {
+            throw BadInputException("oldString must not be empty. Use NewFile to create files.")
+        }
+        if (normalizedOldString == normalizedNewString) {
+            throw BadInputException("No changes to make: oldString and newString are exactly the same.")
+        }
+
+        val matches = countOccurrences(editableTextFile.normalizedText, normalizedOldString)
+        if (matches == 0) {
+            throw BadInputException("String to replace not found in file.")
+        }
+        if (matches > 1 && !input.replaceAll) {
+            throw BadInputException(
+                "Found $matches matches of oldString, but replaceAll is false. " +
+                        "Provide more context or set replaceAll to true."
+            )
+        }
+
+        val updatedNormalizedText = if (input.replaceAll) {
+            editableTextFile.normalizedText.replace(normalizedOldString, normalizedNewString)
+        } else {
+            editableTextFile.normalizedText.replaceFirst(normalizedOldString, normalizedNewString)
+        }
+        if (updatedNormalizedText == editableTextFile.normalizedText) {
+            throw BadInputException("String replacement produced no changes.")
+        }
+
+        return PreparedEdit(
+            file = file,
+            originalRawText = editableTextFile.rawText,
+            updatedRawText = filesToolUtil.restoreLineEndings(updatedNormalizedText, editableTextFile.lineSeparator),
+            patchPreview = createPatchPreview(
+                file = file,
+                originalNormalizedText = editableTextFile.normalizedText,
+                updatedNormalizedText = updatedNormalizedText,
+            ),
         )
-        return file
     }
 
-    private fun normalizeAbsoluteHeadersForPatch(patch: String, fileName: String): String {
-        return patch.lineSequence().joinToString("\n") { line ->
-            val prefix = when {
-                line.startsWith("--- ") -> "--- "
-                line.startsWith("+++ ") -> "+++ "
-                else -> return@joinToString line
-            }
-            val raw = line.removePrefix(prefix)
-            if (raw.startsWith("\"")) return@joinToString line
+    private fun applyPreparedEdit(preparedEdit: PreparedEdit) {
+        val currentFile = filesToolUtil.readEditableUtf8TextFile(preparedEdit.file)
+        if (currentFile.rawText != preparedEdit.originalRawText) {
+            throw BadInputException("File changed after preview generation. Read it again and retry.")
+        }
+        filesToolUtil.writeUtf8TextFileAtomically(preparedEdit.file, preparedEdit.updatedRawText, l)
+    }
 
-            val headerPath = raw.substringBefore('\t').trim()
-            val isAbsolute = headerPath.startsWith("/") || WINDOWS_ABSOLUTE_PATH.matches(headerPath)
-            if (!isAbsolute || headerPath == "/dev/null") return@joinToString line
+    private fun createPatchPreview(
+        file: File,
+        originalNormalizedText: String,
+        updatedNormalizedText: String,
+    ): String {
+        val originalLines = originalNormalizedText.toDiffLines()
+        val updatedLines = updatedNormalizedText.toDiffLines()
+        val patch = DiffUtils.diff(originalLines, updatedLines)
+        return UnifiedDiffUtils.generateUnifiedDiff(
+            "a/${file.name}",
+            "b/${file.name}",
+            originalLines,
+            patch,
+            3,
+        ).joinToString("\n")
+    }
 
-            val suffix = raw.removePrefix(headerPath)
-            "$prefix$fileName$suffix"
+    private fun countOccurrences(text: String, search: String): Int {
+        var count = 0
+        var startIndex = 0
+        while (true) {
+            val foundIndex = text.indexOf(search, startIndex)
+            if (foundIndex < 0) return count
+            count += 1
+            startIndex = foundIndex + search.length
         }
     }
 
-    private companion object {
-        val WINDOWS_ABSOLUTE_PATH = Regex("^[A-Za-z]:[\\\\/].*")
-    }
+    private fun String.toDiffLines(): List<String> =
+        split("\n", ignoreCase = false, limit = Int.MAX_VALUE)
 }

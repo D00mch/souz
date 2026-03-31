@@ -5,6 +5,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
@@ -306,14 +307,13 @@ class ToolTest {
 
             // modify new
             val newContent = "New\n"
-            val patch = """
-                --- a/$newFileName
-                +++ b/$newFileName
-                @@ -1 +1 @@
-                -${content.trimEnd('\n')}
-                +${newContent.trimEnd('\n')}
-            """.trimIndent() + "\n"
-            ToolModifyFile(filesToolUtil).invoke(ToolModifyFile.Input(path = path, patch = patch, strip = 1))
+            ToolModifyFile(filesToolUtil).invoke(
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = content.trimEnd('\n'),
+                    newString = newContent.trimEnd('\n'),
+                )
+            )
 
             // move
             ToolMoveFile(filesToolUtil).invoke(ToolMoveFile.Input(path, movedPath))
@@ -336,96 +336,104 @@ class ToolTest {
     }
 
     @Test
-    fun `test ToolModifyFile applies patch for filename with spaces`() {
+    fun `test ToolModifyFile edits file with spaces in the name and preserves line endings`() {
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
             val fileName = "my note.txt"
             val path = "${tempDir.absolutePath}/$fileName"
-            File(path).writeText("Hello\n")
-            val ts = "\t1970-01-01 00:00:00 +0000"
-
-            val patch = listOf(
-                "--- a/$fileName$ts",
-                "+++ b/$fileName$ts",
-                "@@ -1 +1,2 @@",
-                " Hello",
-                "+World",
-                ""
-            ).joinToString("\n")
+            File(path).writeText("Hello\r\n")
 
             val result = ToolModifyFile(filesToolUtil).invoke(
-                ToolModifyFile.Input(path = path, patch = patch, strip = 1)
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = "Hello\n",
+                    newString = "Hello\nWorld\n",
+                )
             )
 
             assertEquals("OK", result)
-            assertEquals("Hello\nWorld\n", File(path).readText())
+            assertEquals("Hello\r\nWorld\r\n", File(path).readText())
         } finally {
             tempDir.deleteRecursively()
         }
     }
 
     @Test
-    fun `test ToolModifyFile applies patch with absolute file headers`() {
+    fun `test ToolModifyFile replaceAll updates all matches`() {
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
-            val path = "${tempDir.absolutePath}/absolute.patch.txt"
-            File(path).writeText("before\n")
-
-            val patch = listOf(
-                "--- $path",
-                "+++ $path",
-                "@@ -1 +1 @@",
-                "-before",
-                "+after",
-                ""
-            ).joinToString("\n")
+            val path = "${tempDir.absolutePath}/replace-all.txt"
+            File(path).writeText("foo=1\nfoo=1\n")
 
             val result = ToolModifyFile(filesToolUtil).invoke(
-                ToolModifyFile.Input(path = path, patch = patch, strip = 0)
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = "foo=1",
+                    newString = "foo=2",
+                    replaceAll = true,
+                )
             )
 
             assertEquals("OK", result)
-            assertEquals("after\n", File(path).readText())
+            assertEquals("foo=2\nfoo=2\n", File(path).readText())
         } finally {
             tempDir.deleteRecursively()
         }
     }
 
     @Test
-    fun `test ToolModifyFile rejects invalid hunk header without ranges`() {
+    fun `test ToolModifyFile rejects ambiguous match when replaceAll is false`() {
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
-            val fileName = "invalid-hunk.txt"
-            val path = "${tempDir.absolutePath}/$fileName"
-            File(path).writeText("x\n")
-
-            val patch = listOf(
-                "--- $fileName",
-                "+++ $fileName",
-                "@@",
-                "-x",
-                "+y",
-                ""
-            ).joinToString("\n")
+            val path = "${tempDir.absolutePath}/ambiguous.txt"
+            File(path).writeText("x\nx\n")
 
             val error = assertFailsWith<BadInputException> {
                 ToolModifyFile(filesToolUtil).invoke(
-                    ToolModifyFile.Input(path = path, patch = patch, strip = 0)
+                    ToolModifyFile.Input(
+                        path = path,
+                        oldString = "x",
+                        newString = "y",
+                    )
                 )
             }
 
-            assertContains(error.message.orEmpty(), "Invalid hunk header")
-            assertEquals("x\n", File(path).readText())
+            assertContains(error.message.orEmpty(), "replaceAll is false")
+            assertEquals("x\nx\n", File(path).readText())
         } finally {
             tempDir.deleteRecursively()
         }
     }
 
     @Test
-    fun `test ToolModifyFile validates patch before asking permission`() = runTest {
+    fun `test ToolModifyFile rejects non text files`() {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/image.png"
+            File(path).writeBytes(byteArrayOf(0x01, 0x02, 0x03))
+
+            val error = assertFailsWith<BadInputException> {
+                ToolModifyFile(filesToolUtil).invoke(
+                    ToolModifyFile.Input(
+                        path = path,
+                        oldString = "a",
+                        newString = "b",
+                    )
+                )
+            }
+
+            assertContains(error.message.orEmpty(), "Unsupported file type")
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile validates input before asking permission`() = runTest {
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
@@ -437,23 +445,93 @@ class ToolTest {
             val permissionBroker = ToolPermissionBroker(settingsProvider)
             val tool = ToolModifyFile(filesToolUtil, permissionBroker)
 
-            val patch = """
-                *** Begin Patch
-                *** Update File: $path
-                @@
-                -line
-                +LINE
-                *** End Patch
-            """.trimIndent()
-
             val error = assertFailsWith<BadInputException> {
-                tool.suspendInvoke(ToolModifyFile.Input(path = path, patch = patch, strip = 0))
+                tool.suspendInvoke(
+                    ToolModifyFile.Input(
+                        path = path,
+                        oldString = "missing",
+                        newString = "LINE",
+                    )
+                )
             }
 
-            assertContains(error.message.orEmpty(), "unified diff")
+            assertContains(error.message.orEmpty(), "not found")
             val pendingRequest = withTimeoutOrNull(150) { permissionBroker.requests.first() }
             assertEquals(null, pendingRequest)
             assertEquals("line\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile sends generated patch preview to permission broker`() = runTest {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/preview.txt"
+            File(path).writeText("line\n")
+
+            val settingsProvider = mockk<SettingsProvider>()
+            every { settingsProvider.safeModeEnabled } returns true
+            val permissionBroker = ToolPermissionBroker(settingsProvider)
+            val tool = ToolModifyFile(filesToolUtil, permissionBroker)
+
+            val resultDeferred = async {
+                tool.suspendInvoke(
+                    ToolModifyFile.Input(
+                        path = path,
+                        oldString = "line",
+                        newString = "LINE",
+                    )
+                )
+            }
+            val request = permissionBroker.requests.first()
+            assertEquals(File(path).canonicalPath, request.params["path"])
+            assertEquals("false", request.params["replaceAll"])
+            assertContains(request.params["patch"].orEmpty(), "--- a/preview.txt")
+            assertContains(request.params["patch"].orEmpty(), "+++ b/preview.txt")
+            assertContains(request.params["patch"].orEmpty(), "+LINE")
+
+            permissionBroker.resolve(request.id, approved = true)
+            assertEquals("OK", resultDeferred.await())
+            assertEquals("LINE\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile fails when file changes during permission gap`() = runBlocking {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/stale.txt"
+            File(path).writeText("line\n")
+
+            val settingsProvider = mockk<SettingsProvider>()
+            every { settingsProvider.safeModeEnabled } returns true
+            val permissionBroker = ToolPermissionBroker(settingsProvider)
+            val tool = ToolModifyFile(filesToolUtil, permissionBroker)
+
+            supervisorScope {
+                val resultDeferred = async {
+                    tool.suspendInvoke(
+                        ToolModifyFile.Input(
+                            path = path,
+                            oldString = "line",
+                            newString = "LINE",
+                        )
+                    )
+                }
+                val request = permissionBroker.requests.first()
+                File(path).writeText("changed\n")
+                permissionBroker.resolve(request.id, approved = true)
+
+                val error = assertFailsWith<BadInputException> { resultDeferred.await() }
+                assertContains(error.message.orEmpty(), "File changed after preview generation")
+                assertEquals("changed\n", File(path).readText())
+            }
         } finally {
             tempDir.deleteRecursively()
         }
