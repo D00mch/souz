@@ -47,8 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.souz.agent.AgentId
 import ru.souz.llms.EmbeddingsModel
-import ru.souz.llms.GigaModel
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
@@ -265,7 +265,7 @@ private fun SettingsSectionScreen(
 @Composable
 fun ModelsSettingsContent(
     state: SettingsState,
-    onModelChange: (GigaModel) -> Unit,
+    onModelChange: (LLMModel) -> Unit,
     onEmbeddingsModelChange: (EmbeddingsModel) -> Unit,
     onVoiceRecognitionModelChange: (VoiceRecognitionModel) -> Unit,
     onTemperatureInput: (String) -> Unit,
@@ -1507,7 +1507,7 @@ fun CalendarDropdown(
 @Composable
 fun TokensBalanceSection(
     isLoading: Boolean,
-    balance: List<GigaResponse.BalanceItem>,
+    balance: List<LLMResponse.BalanceItem>,
     error: String?,
     onRefreshBalance: () -> Unit,
 ) {
@@ -1754,9 +1754,9 @@ private fun AgentId.descriptionRes() = when (this) {
 
 @Composable
 fun ModelDropdown(
-    selectedModel: GigaModel,
-    availableModels: List<GigaModel>,
-    onModelSelected: (GigaModel) -> Unit,
+    selectedModel: LLMModel,
+    availableModels: List<LLMModel>,
+    onModelSelected: (LLMModel) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -2012,10 +2012,10 @@ private val PreviewSettingsState = SettingsState(
     useFewShotExamples = true,
     useStreaming = true,
     safeModeEnabled = true,
-    gigaModel = GigaModel.Max,
+    gigaModel = LLMModel.Max,
     embeddingsModel = EmbeddingsModel.GigaEmbeddings,
     voiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech,
-    availableLlmModels = GigaModel.entries.take(3),
+    availableLlmModels = LLMModel.entries.take(3),
     availableEmbeddingsModels = EmbeddingsModel.entries.take(2),
     availableVoiceRecognitionModels = VoiceRecognitionModel.entries.take(3),
     systemPrompt = "Ты полезный ассистент. Отвечай кратко и по делу.",
@@ -2028,8 +2028,8 @@ private val PreviewSettingsState = SettingsState(
     supportEmail = "support@example.com",
     isBalanceLoading = false,
     balance = listOf(
-        GigaResponse.BalanceItem(usage = "REQUESTS", value = 12450),
-        GigaResponse.BalanceItem(usage = "TOKENS", value = 382000),
+        LLMResponse.BalanceItem(usage = "REQUESTS", value = 12450),
+        LLMResponse.BalanceItem(usage = "TOKENS", value = 382000),
     ),
     defaultCalendar = "Work",
     availableCalendars = listOf("Work", "Personal", "Team"),

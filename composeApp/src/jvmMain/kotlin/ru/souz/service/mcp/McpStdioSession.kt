@@ -7,7 +7,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.EOFException
@@ -130,7 +130,7 @@ class McpStdioSession(
     }
 
     private suspend fun writeJson(payload: Any) {
-        val line = gigaJsonMapper.writeValueAsString(payload)
+        val line = restJsonMapper.writeValueAsString(payload)
         withContext(Dispatchers.IO) {
             stdin.write(line)
             stdin.newLine()
@@ -146,7 +146,7 @@ class McpStdioSession(
             } ?: throw EOFException(
                 "MCP server ${config.name} closed stdout while waiting for response to $requestId"
             )
-            val node = runCatching { gigaJsonMapper.readTree(line) }
+            val node = runCatching { restJsonMapper.readTree(line) }
                 .onFailure { l.warn("Unexpected error on reading response line, id: $requestId", it) }
                 .getOrNull() ?: continue
             val idNode = node.path("id")

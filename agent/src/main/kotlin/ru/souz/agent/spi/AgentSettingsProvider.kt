@@ -1,7 +1,7 @@
 package ru.souz.agent.spi
 
 import ru.souz.agent.AgentId
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 
 /**
  * Minimal settings surface the agent runtime needs from the host application.
@@ -12,10 +12,10 @@ import ru.souz.llms.GigaModel
  */
 interface AgentSettingsProvider {
     /** Returns a model-specific system prompt override if one was saved by the host. */
-    fun getSystemPromptForAgentModel(agentId: AgentId, model: GigaModel): String?
+    fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String?
 
     /** Persists a model-specific system prompt override or clears it when null. */
-    fun setSystemPromptForAgentModel(agentId: AgentId, model: GigaModel, prompt: String?)
+    fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?)
 
     /** Default calendar name injected into additional prompt context when available. */
     var defaultCalendar: String?
@@ -27,7 +27,7 @@ interface AgentSettingsProvider {
     var activeAgentId: AgentId
 
     /** Currently selected chat model for the agent. */
-    var gigaModel: GigaModel
+    var gigaModel: LLMModel
 
     /** Whether the host prefers streaming LLM responses. */
     var useStreaming: Boolean

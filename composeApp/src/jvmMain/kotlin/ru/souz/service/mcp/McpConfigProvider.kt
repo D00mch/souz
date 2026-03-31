@@ -3,7 +3,7 @@ package ru.souz.service.mcp
 import com.fasterxml.jackson.databind.JsonNode
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import java.io.File
 
 class McpConfigProvider(
@@ -13,7 +13,7 @@ class McpConfigProvider(
 
     fun loadServers(): Map<String, McpServerConfig> {
         val source = loadRawConfig() ?: return emptyMap()
-        val root = runCatching { gigaJsonMapper.readTree(source) }.getOrElse { e ->
+        val root = runCatching { restJsonMapper.readTree(source) }.getOrElse { e ->
             l.warn("Failed to parse MCP config JSON: {}", e.message)
             return emptyMap()
         }

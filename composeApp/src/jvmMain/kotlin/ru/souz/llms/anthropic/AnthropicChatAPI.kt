@@ -29,14 +29,14 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
-import ru.souz.llms.giga.GigaChatAPI
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaModel
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.TokenLogging
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toFinishReason
 import ru.souz.llms.toSystemPromptMessage
 import java.io.File
@@ -62,7 +62,7 @@ private data class ParsedToolCall(
 class AnthropicChatAPI(
     private val settingsProvider: SettingsProvider,
     private val tokenLogging: TokenLogging,
-) : GigaChatAPI {
+) : LLMChatAPI {
     private val l = LoggerFactory.getLogger(AnthropicChatAPI::class.java)
 
     private val apiKey: String?
@@ -97,7 +97,7 @@ class AnthropicChatAPI(
 
     private val fileTypes = ConcurrentHashMap<String, String>()
 
-    override suspend fun message(body: GigaRequest.Chat): GigaResponse.Chat = try {
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val model = resolveChatModel(body.model)
         val response = client.post(MESSAGES_URL) {
             header("anthropic-beta", FILES_API_BETA)
@@ -106,22 +106,22 @@ class AnthropicChatAPI(
         val text = response.bodyAsText()
         if (response.status.isSuccess()) {
             parseMessageResponse(text, model).also { result ->
-                if (result is GigaResponse.Chat.Ok) {
+                if (result is LLMResponse.Chat.Ok) {
                     tokenLogging.logTokenUsage(result, body.copy(model = model))
                 }
             }
         } else {
-            GigaResponse.Chat.Error(response.status.value, text)
+            LLMResponse.Chat.Error(response.status.value, text)
         }
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
-        GigaResponse.Chat.Error(e.response.status.value, text)
+        LLMResponse.Chat.Error(e.response.status.value, text)
     } catch (t: Throwable) {
         l.error("Model: ${body.model}. Error in Anthropic chat", t)
-        GigaResponse.Chat.Error(-1, "Connection error: ${t.message}")
+        LLMResponse.Chat.Error(-1, "Connection error: ${t.message}")
     }
 
-    override suspend fun messageStream(body: GigaRequest.Chat): Flow<GigaResponse.Chat> = channelFlow {
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = channelFlow {
         val model = resolveChatModel(body.model)
         val toolBlocks = mutableMapOf<Int, ToolUseBlock>()
         var streamModel = model
@@ -141,7 +141,7 @@ class AnthropicChatAPI(
                         return@collect
                     }
 
-                    val node = runCatching { gigaJsonMapper.readTree(data) }
+                    val node = runCatching { restJsonMapper.readTree(data) }
                         .getOrElse {
                             l.warn("Failed to parse Anthropic stream chunk: $data", it)
                             return@collect
@@ -216,7 +216,7 @@ class AnthropicChatAPI(
                                 ?.get("stop_reason")
                                 ?.asText()
                                 .toAnthropicFinishReason()
-                            if (finishReason != null && finishReason != GigaResponse.FinishReason.function_call) {
+                            if (finishReason != null && finishReason != LLMResponse.FinishReason.function_call) {
                                 send(toFinishChunk(finishReason, streamModel))
                             }
                         }
@@ -225,22 +225,22 @@ class AnthropicChatAPI(
             }
         } catch (e: ClientRequestException) {
             val text = e.response.bodyAsText()
-            send(GigaResponse.Chat.Error(e.response.status.value, text))
+            send(LLMResponse.Chat.Error(e.response.status.value, text))
         } catch (t: Throwable) {
             l.error("Model: ${body.model}. Error in Anthropic stream chat", t)
-            send(GigaResponse.Chat.Error(-1, "Connection error: ${t.message}"))
+            send(LLMResponse.Chat.Error(-1, "Connection error: ${t.message}"))
         }
     }
 
-    override suspend fun embeddings(body: GigaRequest.Embeddings): GigaResponse.Embeddings {
+    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
         l.warn("Model: {}. Anthropic embeddings are not supported by the Anthropic API", body.model)
-        return GigaResponse.Embeddings.Error(
+        return LLMResponse.Embeddings.Error(
             status = 501,
             message = "Anthropic API does not provide embeddings. Choose GigaChat, Qwen, AI-Tunnel, or OpenAI embeddings.",
         )
     }
 
-    override suspend fun uploadFile(file: File): GigaResponse.UploadFile {
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile {
         val mime = withContext(Dispatchers.IO) {
             Files.probeContentType(file.toPath())
         } ?: "application/octet-stream"
@@ -266,8 +266,8 @@ class AnthropicChatAPI(
             throw IllegalStateException("Anthropic file upload failed: ${response.status.value}. $text")
         }
 
-        val node = gigaJsonMapper.readTree(text)
-        val upload = GigaResponse.UploadFile(
+        val node = restJsonMapper.readTree(text)
+        val upload = LLMResponse.UploadFile(
             bytes = node["bytes"]?.asLong() ?: 0L,
             createdAt = node["created_at"]?.asLong() ?: (System.currentTimeMillis() / 1000),
             filename = node["filename"]?.asText() ?: file.name,
@@ -284,12 +284,12 @@ class AnthropicChatAPI(
         return null
     }
 
-    override suspend fun balance(): GigaResponse.Balance {
-        return GigaResponse.Balance.Error(-1, "Balance check not implemented for Anthropic")
+    override suspend fun balance(): LLMResponse.Balance {
+        return LLMResponse.Balance.Error(-1, "Balance check not implemented for Anthropic")
     }
 
     private fun buildChatRequest(
-        body: GigaRequest.Chat,
+        body: LLMRequest.Chat,
         model: String,
         stream: Boolean,
     ): MutableMap<String, Any> {
@@ -313,10 +313,10 @@ class AnthropicChatAPI(
         return request
     }
 
-    private fun buildSystemPrompt(messages: List<GigaRequest.Message>): List<Map<String, Any>>? {
+    private fun buildSystemPrompt(messages: List<LLMRequest.Message>): List<Map<String, Any>>? {
         val prompt = messages
             .asSequence()
-            .filter { it.role == GigaMessageRole.system }
+            .filter { it.role == LLMMessageRole.system }
             .joinToString("\n") { it.content }
             .takeIf { it.isNotBlank() }
             ?: return null
@@ -330,16 +330,16 @@ class AnthropicChatAPI(
         )
     }
 
-    private fun buildMessages(messages: List<GigaRequest.Message>): List<Map<String, Any>> {
+    private fun buildMessages(messages: List<LLMRequest.Message>): List<Map<String, Any>> {
         val lastToolCallIds = mutableMapOf<String, String>()
 
         val builtMessages = messages
             .asSequence()
-            .filter { it.role != GigaMessageRole.system }
+            .filter { it.role != LLMMessageRole.system }
             .map { msg ->
                 when (msg.role) {
-                    GigaMessageRole.assistant -> buildAssistantMessage(msg, lastToolCallIds)
-                    GigaMessageRole.function -> buildFunctionResultMessage(msg, lastToolCallIds)
+                    LLMMessageRole.assistant -> buildAssistantMessage(msg, lastToolCallIds)
+                    LLMMessageRole.function -> buildFunctionResultMessage(msg, lastToolCallIds)
                     else -> mapOf(
                         "role" to "user",
                         "content" to buildTextAndAttachments(msg.content, msg.attachments),
@@ -374,7 +374,7 @@ class AnthropicChatAPI(
     }
 
     private fun buildAssistantMessage(
-        msg: GigaRequest.Message,
+        msg: LLMRequest.Message,
         lastToolCallIds: MutableMap<String, String>,
     ): Map<String, Any> {
         val toolUseId = msg.functionsStateId
@@ -407,7 +407,7 @@ class AnthropicChatAPI(
     }
 
     private fun buildFunctionResultMessage(
-        msg: GigaRequest.Message,
+        msg: LLMRequest.Message,
         lastToolCallIds: Map<String, String>,
     ): Map<String, Any> {
         val toolUseId = msg.functionsStateId ?: msg.name?.let { lastToolCallIds[it] }
@@ -469,7 +469,7 @@ class AnthropicChatAPI(
 
     private fun parseAssistantToolCall(content: String): ParsedToolCall? {
         return runCatching {
-            val contentNode = gigaJsonMapper.readTree(content)
+            val contentNode = restJsonMapper.readTree(content)
             val name = contentNode["name"]?.asText()?.takeIf { it.isNotBlank() } ?: return null
             val argsNode = contentNode["arguments"]
             val args = if (argsNode == null || argsNode.isNull) {
@@ -481,7 +481,7 @@ class AnthropicChatAPI(
         }.getOrNull()
     }
 
-    private fun buildTools(functions: List<GigaRequest.Function>): List<Map<String, Any>> {
+    private fun buildTools(functions: List<LLMRequest.Function>): List<Map<String, Any>> {
         return functions.map { fn ->
             val properties = fn.parameters.properties.mapValues { (_, prop) ->
                 buildMap {
@@ -507,8 +507,8 @@ class AnthropicChatAPI(
         }
     }
 
-    private fun parseMessageResponse(text: String, requestModel: String): GigaResponse.Chat {
-        val node = gigaJsonMapper.readTree(text)
+    private fun parseMessageResponse(text: String, requestModel: String): LLMResponse.Chat {
+        val node = restJsonMapper.readTree(text)
         val choices = parseChoices(node["content"])
         val finishReason = node["stop_reason"]?.asText().toAnthropicFinishReason()
         if (finishReason != null && choices.isNotEmpty()) {
@@ -519,10 +519,10 @@ class AnthropicChatAPI(
         }
 
         if (choices.isEmpty()) {
-            choices += GigaResponse.Choice(
-                message = GigaResponse.Message(
+            choices += LLMResponse.Choice(
+                message = LLMResponse.Message(
                     content = "",
-                    role = GigaMessageRole.assistant,
+                    role = LLMMessageRole.assistant,
                     functionCall = null,
                     functionsStateId = null,
                 ),
@@ -531,7 +531,7 @@ class AnthropicChatAPI(
             )
         }
 
-        return GigaResponse.Chat.Ok(
+        return LLMResponse.Chat.Ok(
             choices = choices,
             created = System.currentTimeMillis() / 1000,
             model = node["model"]?.asText() ?: requestModel,
@@ -539,20 +539,20 @@ class AnthropicChatAPI(
         )
     }
 
-    private fun parseChoices(contentNode: JsonNode?): MutableList<GigaResponse.Choice> {
+    private fun parseChoices(contentNode: JsonNode?): MutableList<LLMResponse.Choice> {
         if (contentNode == null || !contentNode.isArray) {
             return mutableListOf()
         }
 
-        val choices = mutableListOf<GigaResponse.Choice>()
+        val choices = mutableListOf<LLMResponse.Choice>()
         contentNode.forEachIndexed { index, block ->
             when (block["type"]?.asText()) {
                 "text" -> {
                     val text = block["text"]?.asText().orEmpty()
-                    choices += GigaResponse.Choice(
-                        message = GigaResponse.Message(
+                    choices += LLMResponse.Choice(
+                        message = LLMResponse.Message(
                             content = text,
-                            role = GigaMessageRole.assistant,
+                            role = LLMMessageRole.assistant,
                             functionCall = null,
                             functionsStateId = null,
                         ),
@@ -565,15 +565,15 @@ class AnthropicChatAPI(
                     val name = block["name"]?.asText().orEmpty()
                     val functionsStateId = block["id"]?.asText()
                     val args = parseFunctionArguments(block["input"]?.toString() ?: "{}")
-                    choices += GigaResponse.Choice(
-                        message = GigaResponse.Message(
+                    choices += LLMResponse.Choice(
+                        message = LLMResponse.Message(
                             content = "",
-                            role = GigaMessageRole.assistant,
-                            functionCall = GigaResponse.FunctionCall(name, args),
+                            role = LLMMessageRole.assistant,
+                            functionCall = LLMResponse.FunctionCall(name, args),
                             functionsStateId = functionsStateId,
                         ),
                         index = index,
-                        finishReason = GigaResponse.FinishReason.function_call,
+                        finishReason = LLMResponse.FinishReason.function_call,
                     )
                 }
             }
@@ -581,12 +581,12 @@ class AnthropicChatAPI(
         return choices
     }
 
-    private fun parseUsage(node: JsonNode?): GigaResponse.Usage {
+    private fun parseUsage(node: JsonNode?): LLMResponse.Usage {
         val promptTokens = (node?.get("input_tokens")?.asInt() ?: 0) +
             (node?.get("cache_creation_input_tokens")?.asInt() ?: 0)
         val completionTokens = node?.get("output_tokens")?.asInt() ?: 0
         val precachedTokens = node?.get("cache_read_input_tokens")?.asInt() ?: 0
-        return GigaResponse.Usage(
+        return LLMResponse.Usage(
             promptTokens = promptTokens,
             completionTokens = completionTokens,
             totalTokens = promptTokens + completionTokens,
@@ -596,7 +596,7 @@ class AnthropicChatAPI(
 
     private fun parseFunctionArguments(argsText: String): Map<String, Any> {
         if (argsText.isBlank()) return emptyMap()
-        return runCatching { gigaJsonMapper.readValue<Map<String, Any>>(argsText) }
+        return runCatching { restJsonMapper.readValue<Map<String, Any>>(argsText) }
             .getOrElse {
                 l.warn("Failed to parse Anthropic tool arguments: $argsText", it)
                 emptyMap()
@@ -624,7 +624,7 @@ class AnthropicChatAPI(
         if (normalized.startsWith("claude", ignoreCase = true)) {
             return normalized
         }
-        val model = GigaModel.entries.firstOrNull {
+        val model = LLMModel.entries.firstOrNull {
             it.alias.equals(normalized, ignoreCase = true) || it.name.equals(normalized, ignoreCase = true)
         } ?: return null
         if (model.provider == LlmProvider.ANTHROPIC) {
@@ -633,22 +633,22 @@ class AnthropicChatAPI(
         return null
     }
 
-    private fun toTextChunk(text: String, model: String, index: Int): GigaResponse.Chat.Ok {
-        val choice = GigaResponse.Choice(
-            message = GigaResponse.Message(
+    private fun toTextChunk(text: String, model: String, index: Int): LLMResponse.Chat.Ok {
+        val choice = LLMResponse.Choice(
+            message = LLMResponse.Message(
                 content = text,
-                role = GigaMessageRole.assistant,
+                role = LLMMessageRole.assistant,
                 functionCall = null,
                 functionsStateId = null,
             ),
             index = index,
             finishReason = null,
         )
-        return GigaResponse.Chat.Ok(
+        return LLMResponse.Chat.Ok(
             choices = listOf(choice),
             created = System.currentTimeMillis() / 1000,
             model = model,
-            usage = GigaResponse.Usage(0, 0, 0, 0),
+            usage = LLMResponse.Usage(0, 0, 0, 0),
         )
     }
 
@@ -658,44 +658,44 @@ class AnthropicChatAPI(
         functionsStateId: String?,
         model: String,
         index: Int,
-    ): GigaResponse.Chat.Ok {
-        val choice = GigaResponse.Choice(
-            message = GigaResponse.Message(
+    ): LLMResponse.Chat.Ok {
+        val choice = LLMResponse.Choice(
+            message = LLMResponse.Message(
                 content = "",
-                role = GigaMessageRole.assistant,
-                functionCall = GigaResponse.FunctionCall(name, args),
+                role = LLMMessageRole.assistant,
+                functionCall = LLMResponse.FunctionCall(name, args),
                 functionsStateId = functionsStateId,
             ),
             index = index,
-            finishReason = GigaResponse.FinishReason.function_call,
+            finishReason = LLMResponse.FinishReason.function_call,
         )
-        return GigaResponse.Chat.Ok(
+        return LLMResponse.Chat.Ok(
             choices = listOf(choice),
             created = System.currentTimeMillis() / 1000,
             model = model,
-            usage = GigaResponse.Usage(0, 0, 0, 0),
+            usage = LLMResponse.Usage(0, 0, 0, 0),
         )
     }
 
     private fun toFinishChunk(
-        finishReason: GigaResponse.FinishReason,
+        finishReason: LLMResponse.FinishReason,
         model: String,
-    ): GigaResponse.Chat.Ok {
-        val choice = GigaResponse.Choice(
-            message = GigaResponse.Message(
+    ): LLMResponse.Chat.Ok {
+        val choice = LLMResponse.Choice(
+            message = LLMResponse.Message(
                 content = "",
-                role = GigaMessageRole.assistant,
+                role = LLMMessageRole.assistant,
                 functionCall = null,
                 functionsStateId = null,
             ),
             index = 0,
             finishReason = finishReason,
         )
-        return GigaResponse.Chat.Ok(
+        return LLMResponse.Chat.Ok(
             choices = listOf(choice),
             created = System.currentTimeMillis() / 1000,
             model = model,
-            usage = GigaResponse.Usage(0, 0, 0, 0),
+            usage = LLMResponse.Usage(0, 0, 0, 0),
         )
     }
 
@@ -748,14 +748,14 @@ private fun Map<String, Any>.isCacheableBlock(): Boolean {
     }
 }
 
-private fun String?.toAnthropicFinishReason(): GigaResponse.FinishReason? {
+private fun String?.toAnthropicFinishReason(): LLMResponse.FinishReason? {
     if (this == null || this.equals("null", ignoreCase = true) || this.isBlank()) {
         return null
     }
     return when (this) {
-        "tool_use" -> GigaResponse.FinishReason.function_call
-        "max_tokens" -> GigaResponse.FinishReason.length
-        "end_turn", "stop_sequence" -> GigaResponse.FinishReason.stop
+        "tool_use" -> LLMResponse.FinishReason.function_call
+        "max_tokens" -> LLMResponse.FinishReason.length
+        "end_turn", "stop_sequence" -> LLMResponse.FinishReason.stop
         else -> this.toFinishReason()
     }
 }
@@ -764,14 +764,14 @@ suspend fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val api: AnthropicChatAPI by di.instance()
 
-    val request = GigaRequest.Chat(
-        model = System.getenv("ANTHROPIC_MODEL") ?: GigaModel.AnthropicHaiku45.alias,
+    val request = LLMRequest.Chat(
+        model = System.getenv("ANTHROPIC_MODEL") ?: LLMModel.AnthropicHaiku45.alias,
         temperature = 0f,
         maxTokens = 128,
         messages = listOf(
             "You are a concise assistant.".toSystemPromptMessage(),
-            GigaRequest.Message(
-                role = GigaMessageRole.user,
+            LLMRequest.Message(
+                role = LLMMessageRole.user,
                 content = "Reply with exactly: ANTHROPIC_OK",
             ),
         ),

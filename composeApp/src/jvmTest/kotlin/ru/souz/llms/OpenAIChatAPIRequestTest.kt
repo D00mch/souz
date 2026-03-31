@@ -3,7 +3,6 @@ package ru.souz.llms
 import io.mockk.every
 import io.mockk.mockk
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.giga.gigaJsonMapper
 import ru.souz.llms.openai.OpenAIChatAPI
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -18,18 +17,18 @@ class OpenAIChatAPIRequestTest {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
-            body = GigaRequest.Chat(
-                model = GigaModel.OpenAIGpt5Mini.name,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Mini.name,
                 maxTokens = 256,
                 messages = listOf(
-                    GigaRequest.Message(role = GigaMessageRole.user, content = "Get horoscope"),
+                    LLMRequest.Message(role = LLMMessageRole.user, content = "Get horoscope"),
                 ),
                 functions = listOf(function("get_horoscope")),
             ),
             stream = false,
         )
 
-        assertEquals(GigaModel.OpenAIGpt5Mini.alias, request["model"])
+        assertEquals(LLMModel.OpenAIGpt5Mini.alias, request["model"])
         assertEquals("auto", request["tool_choice"])
         val tools = request["tools"] as List<*>
         assertEquals(1, tools.size)
@@ -40,12 +39,12 @@ class OpenAIChatAPIRequestTest {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
-            body = GigaRequest.Chat(
-                model = GigaModel.OpenAIGpt5Nano.alias,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Nano.alias,
                 maxTokens = 256,
                 messages = listOf(
-                    GigaRequest.Message(
-                        role = GigaMessageRole.function,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.function,
                         content = """{"sign":"Taurus"}""",
                         functionsStateId = "call_123",
                         name = "get_horoscope",
@@ -69,21 +68,21 @@ class OpenAIChatAPIRequestTest {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
-            body = GigaRequest.Chat(
-                model = GigaModel.OpenAIGpt5Nano.alias,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Nano.alias,
                 maxTokens = 256,
                 messages = listOf(
-                    GigaRequest.Message(
-                        role = GigaMessageRole.assistant,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.assistant,
                         content = """{"name":"get_horoscope","arguments":{"sign":"Taurus"}}""",
                         functionsStateId = "call_123",
                     ),
-                    GigaRequest.Message(
-                        role = GigaMessageRole.assistant,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.assistant,
                         content = "null",
                     ),
-                    GigaRequest.Message(
-                        role = GigaMessageRole.function,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.function,
                         content = """{"sign":"Taurus"}""",
                         functionsStateId = "call_123",
                         name = "get_horoscope",
@@ -108,21 +107,21 @@ class OpenAIChatAPIRequestTest {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
-            body = GigaRequest.Chat(
-                model = GigaModel.OpenAIGpt5Nano.alias,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Nano.alias,
                 maxTokens = 256,
                 messages = listOf(
-                    GigaRequest.Message(
-                        role = GigaMessageRole.assistant,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.assistant,
                         content = """{"name":"get_horoscope","arguments":{"sign":"Taurus"}}""",
                         functionsStateId = "call_123",
                     ),
-                    GigaRequest.Message(
-                        role = GigaMessageRole.assistant,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.assistant,
                         content = "Plan: running the tool now",
                     ),
-                    GigaRequest.Message(
-                        role = GigaMessageRole.function,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.function,
                         content = """{"sign":"Taurus"}""",
                         functionsStateId = "call_123",
                         name = "get_horoscope",
@@ -149,28 +148,28 @@ class OpenAIChatAPIRequestTest {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
-            body = GigaRequest.Chat(
-                model = GigaModel.OpenAIGpt5Nano.alias,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Nano.alias,
                 maxTokens = 256,
                 messages = listOf(
-                    GigaRequest.Message(
-                        role = GigaMessageRole.assistant,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.assistant,
                         content = """{"name":"tool_a","arguments":{"x":"1"}}""",
                         functionsStateId = "call_a",
                     ),
-                    GigaRequest.Message(
-                        role = GigaMessageRole.assistant,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.assistant,
                         content = """{"name":"tool_b","arguments":{"y":"2"}}""",
                         functionsStateId = "call_b",
                     ),
-                    GigaRequest.Message(
-                        role = GigaMessageRole.function,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.function,
                         content = """{"ok":true}""",
                         functionsStateId = "call_a",
                         name = "tool_a",
                     ),
-                    GigaRequest.Message(
-                        role = GigaMessageRole.function,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.function,
                         content = """{"ok":true}""",
                         functionsStateId = "call_b",
                         name = "tool_b",
@@ -199,17 +198,17 @@ class OpenAIChatAPIRequestTest {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
-            body = GigaRequest.Chat(
-                model = GigaModel.OpenAIGpt5Nano.alias,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Nano.alias,
                 maxTokens = 256,
                 messages = listOf(
-                    GigaRequest.Message(
-                        role = GigaMessageRole.assistant,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.assistant,
                         content = """{"name":"get_horoscope","arguments":{"sign":"Taurus"}}""",
                         functionsStateId = "call_missing",
                     ),
-                    GigaRequest.Message(
-                        role = GigaMessageRole.user,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.user,
                         content = "continue",
                     ),
                 ),
@@ -233,27 +232,27 @@ class OpenAIChatAPIRequestTest {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
-            body = GigaRequest.Chat(
-                model = GigaModel.OpenAIGpt5Nano.alias,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Nano.alias,
                 maxTokens = 256,
                 messages = listOf(
-                    GigaRequest.Message(
-                        role = GigaMessageRole.assistant,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.assistant,
                         content = """{"name":"get_weather","arguments":{"city":"Berlin"}}""",
                         functionsStateId = "call_a",
                     ),
-                    GigaRequest.Message(
-                        role = GigaMessageRole.assistant,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.assistant,
                         content = """{"name":"get_weather","arguments":{"city":"Paris"}}""",
                         functionsStateId = "call_b",
                     ),
-                    GigaRequest.Message(
-                        role = GigaMessageRole.function,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.function,
                         content = """{"temp":10}""",
                         name = "get_weather",
                     ),
-                    GigaRequest.Message(
-                        role = GigaMessageRole.function,
+                    LLMRequest.Message(
+                        role = LLMMessageRole.function,
                         content = """{"temp":20}""",
                         name = "get_weather",
                     ),
@@ -309,10 +308,10 @@ class OpenAIChatAPIRequestTest {
                   }
                 }
             """.trimIndent(),
-            requestModel = GigaModel.OpenAIGpt5Nano.alias,
+            requestModel = LLMModel.OpenAIGpt5Nano.alias,
         )
 
-        val chat = response as GigaResponse.Chat.Ok
+        val chat = response as LLMResponse.Chat.Ok
         assertEquals(1, chat.choices.size)
         assertEquals("get_horoscope", chat.choices.first().message.functionCall?.name)
         assertTrue(chat.choices.none { it.message.content == "null" })
@@ -323,7 +322,7 @@ class OpenAIChatAPIRequestTest {
         val api = createApi()
         val request = invokeBuildEmbeddingsRequest(
             api = api,
-            body = GigaRequest.Embeddings(
+            body = LLMRequest.Embeddings(
                 model = "Embeddings",
                 input = listOf("hello"),
             ),
@@ -338,20 +337,20 @@ class OpenAIChatAPIRequestTest {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
-            body = GigaRequest.Chat(
-                model = GigaModel.OpenAIGpt5Nano.alias,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Nano.alias,
                 maxTokens = 256,
                 messages = listOf(
-                    GigaRequest.Message(role = GigaMessageRole.user, content = "run tool"),
+                    LLMRequest.Message(role = LLMMessageRole.user, content = "run tool"),
                 ),
                 functions = listOf(
-                    GigaRequest.Function(
+                    LLMRequest.Function(
                         name = "PresentationCreate",
                         description = "Create slides",
-                        parameters = GigaRequest.Parameters(
+                        parameters = LLMRequest.Parameters(
                             type = "object",
                             properties = mapOf(
-                                "slides" to GigaRequest.Property(
+                                "slides" to LLMRequest.Property(
                                     type = "array",
                                     description = "Array of slide objects",
                                 ),
@@ -388,7 +387,7 @@ class OpenAIChatAPIRequestTest {
         val processChunk = clazz.getDeclaredMethod("processChunk", com.fasterxml.jackson.databind.JsonNode::class.java)
         processChunk.isAccessible = true
 
-        val node = gigaJsonMapper.readTree(
+        val node = restJsonMapper.readTree(
             """
                 {
                   "choices": [
@@ -423,7 +422,7 @@ class OpenAIChatAPIRequestTest {
         )
 
         @Suppress("UNCHECKED_CAST")
-        val choices = processChunk.invoke(accumulator, node) as List<GigaResponse.Choice>
+        val choices = processChunk.invoke(accumulator, node) as List<LLMResponse.Choice>
         val toolChoices = choices.filter { it.message.functionCall != null }
         assertEquals(2, toolChoices.size)
         assertNotEquals(toolChoices[0].index, toolChoices[1].index)
@@ -434,7 +433,7 @@ class OpenAIChatAPIRequestTest {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.openaiKey } returns "test-key"
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
-        every { settingsProvider.gigaModel } returns GigaModel.OpenAIGpt5Nano
+        every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Nano
 
         val tokenLogging = mockk<TokenLogging>(relaxed = true)
         return OpenAIChatAPI(settingsProvider, tokenLogging)
@@ -443,12 +442,12 @@ class OpenAIChatAPIRequestTest {
     @Suppress("UNCHECKED_CAST")
     private fun invokeBuildChatRequest(
         api: OpenAIChatAPI,
-        body: GigaRequest.Chat,
+        body: LLMRequest.Chat,
         stream: Boolean,
     ): Map<String, Any> {
         val method = OpenAIChatAPI::class.java.getDeclaredMethod(
             "buildChatRequest",
-            GigaRequest.Chat::class.java,
+            LLMRequest.Chat::class.java,
             Boolean::class.javaPrimitiveType,
         )
         method.isAccessible = true
@@ -458,11 +457,11 @@ class OpenAIChatAPIRequestTest {
     @Suppress("UNCHECKED_CAST")
     private fun invokeBuildEmbeddingsRequest(
         api: OpenAIChatAPI,
-        body: GigaRequest.Embeddings,
+        body: LLMRequest.Embeddings,
     ): Map<String, Any> {
         val method = OpenAIChatAPI::class.java.getDeclaredMethod(
             "buildEmbeddingsRequest",
-            GigaRequest.Embeddings::class.java,
+            LLMRequest.Embeddings::class.java,
         )
         method.isAccessible = true
         return method.invoke(api, body) as Map<String, Any>
@@ -472,23 +471,23 @@ class OpenAIChatAPIRequestTest {
         api: OpenAIChatAPI,
         text: String,
         requestModel: String,
-    ): GigaResponse.Chat {
+    ): LLMResponse.Chat {
         val method = OpenAIChatAPI::class.java.getDeclaredMethod(
             "parseCompletionsResponse",
             String::class.java,
             String::class.java,
         )
         method.isAccessible = true
-        return method.invoke(api, text, requestModel) as GigaResponse.Chat
+        return method.invoke(api, text, requestModel) as LLMResponse.Chat
     }
 
-    private fun function(name: String): GigaRequest.Function = GigaRequest.Function(
+    private fun function(name: String): LLMRequest.Function = LLMRequest.Function(
         name = name,
         description = "$name description",
-        parameters = GigaRequest.Parameters(
+        parameters = LLMRequest.Parameters(
             type = "object",
             properties = mapOf(
-                "sign" to GigaRequest.Property(type = "string", description = "Sign"),
+                "sign" to LLMRequest.Property(type = "string", description = "Sign"),
             ),
             required = listOf("sign"),
         ),

@@ -3,15 +3,15 @@ package ru.souz.agent.nodes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.Node
-import ru.souz.agent.engine.buildGraph
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaException
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
-import ru.souz.llms.giga.GigaChatAPI
-import ru.souz.llms.GigaResponse.FinishReason
+import ru.souz.agent.graph.Node
+import ru.souz.agent.graph.buildGraph
+import ru.souz.agent.state.AgentContext
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMException
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMResponse.FinishReason
 import ru.souz.llms.toMessage
 import ru.souz.llms.toSystemPromptMessage
 import kotlin.math.ceil
@@ -19,8 +19,8 @@ import kotlin.math.ceil
 /**
  * Nodes responsible for summarizing conversation history.
  */
-class NodesSummarization(
-    private val llmApi: GigaChatAPI,
+internal class NodesSummarization(
+    private val llmApi: LLMChatAPI,
     private val nodesCommon: NodesCommon,
 ) {
     private val l = LoggerFactory.getLogger(NodesSummarization::class.java)
@@ -31,11 +31,11 @@ class NodesSummarization(
      */
     fun summarize(
         name: String = "Summarize or return",
-    ): Node<GigaResponse.Chat.Ok, String> = buildGraph(name) {
+    ): Node<LLMResponse.Chat.Ok, String> = buildGraph(name) {
         // nodes
-        val summarize: Node<GigaResponse.Chat.Ok, GigaResponse.Chat.Ok> = nodeSummarize()
-        val summaryToHistory: Node<GigaResponse.Chat.Ok, GigaResponse.Chat.Ok> = summaryToHistory()
-        val respToString: Node<GigaResponse.Chat.Ok, String> = nodesCommon.responseToString()
+        val summarize: Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> = nodeSummarize()
+        val summaryToHistory: Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> = summaryToHistory()
+        val respToString: Node<LLMResponse.Chat.Ok, String> = nodesCommon.responseToString()
 
         // graph
         nodeInput.edgeTo { ctx -> if (ctx.historyIsTooBig()) summarize else respToString }
@@ -45,13 +45,13 @@ class NodesSummarization(
     }
 
     /** Updates [AgentContext.input] based on [AgentContext.history]. */
-    private fun nodeSummarize(name: String = "llmSummarize"): Node<GigaResponse.Chat.Ok, GigaResponse.Chat.Ok> =
+    private fun nodeSummarize(name: String = "llmSummarize"): Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> =
         Node(name) { ctx ->
-            val summaryResponse: GigaResponse.Chat = withContext(Dispatchers.IO) {
+            val summaryResponse: LLMResponse.Chat = withContext(Dispatchers.IO) {
                 val conversation = ArrayList(ctx.history).apply {
                     add(
-                        GigaRequest.Message(
-                            role = GigaMessageRole.user,
+                        LLMRequest.Message(
+                            role = LLMMessageRole.user,
                             content = SUMMARIZATION_PROMPT,
                         )
                     )
@@ -61,25 +61,25 @@ class NodesSummarization(
             }
 
             when (summaryResponse) {
-                is GigaResponse.Chat.Error -> throw GigaException(summaryResponse)
-                is GigaResponse.Chat.Ok -> ctx.map { summaryResponse }
+                is LLMResponse.Chat.Error -> throw LLMException(summaryResponse)
+                is LLMResponse.Chat.Ok -> ctx.map { summaryResponse }
             }
         }
 
-    private fun summaryToHistory(name: String = "summary->history"): Node<GigaResponse.Chat.Ok, GigaResponse.Chat.Ok> =
+    private fun summaryToHistory(name: String = "summary->history"): Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> =
         Node(name) { ctx ->
-            val msg: GigaRequest.Message = ctx.input.choices.mapNotNull { it.toMessage() }.last()
+            val msg: LLMRequest.Message = ctx.input.choices.mapNotNull { it.toMessage() }.last()
             val msgPlus = msg.copy(content = "$SUMMARIZATION_PREFIX:\n${msg.content}")
             val newHistory = listOf(ctx.systemPrompt.toSystemPromptMessage(), msgPlus, ctx.history.last())
             l.info("Summarization\n\n${msgPlus.content}")
             ctx.map(history = newHistory) {
                 ctx.input
-                GigaResponse.Chat.Ok(
+                LLMResponse.Chat.Ok(
                     choices = listOf(
-                        GigaResponse.Choice(
-                            message = GigaResponse.Message(
+                        LLMResponse.Choice(
+                            message = LLMResponse.Message(
                                 content = ctx.history.lastOrNull()?.content ?: msgPlus.content,
-                                role = GigaMessageRole.assistant,
+                                role = LLMMessageRole.assistant,
                                 functionsStateId = null,
                             ),
                             index = ctx.input.choices.firstOrNull()?.index ?: 0,

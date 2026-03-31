@@ -14,9 +14,9 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentSideEffect
-import ru.souz.agent.engine.AgentContext
+import ru.souz.agent.state.AgentContext
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 import ru.souz.llms.TokenLogging
 import ru.souz.service.telemetry.TelemetryConversationEndReason
 import ru.souz.service.telemetry.TelemetryConversationStartReason
@@ -290,7 +290,7 @@ class ChatUseCase(
 
     fun snapshotContext(): AgentContext<String>? = agentFacade.currentContext.value
 
-    fun updateModel(model: GigaModel) {
+    fun updateModel(model: LLMModel) {
         agentFacade.setModel(model)
     }
 

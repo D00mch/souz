@@ -29,6 +29,18 @@ Run integration tests with:
 export SOUZ_AGENT_INTEGRATION_TESTS_ON=true && ./gradlew :composeApp:cleanJvmTest :composeApp:jvmTest --tests "agent.GraphAgentComplexScenarios"
 ```
 
+## Module Structure
+
+```mermaid
+graph TD
+    composeApp[":composeApp"] --> agent[":agent"]
+    composeApp --> llms[":llms"]
+    composeApp --> native[":native"]
+    agent --> graphEngine[":graph-engine"]
+    agent --> llms
+    native --> llms
+```
+
 # Compose builds
 
 ## Release builds

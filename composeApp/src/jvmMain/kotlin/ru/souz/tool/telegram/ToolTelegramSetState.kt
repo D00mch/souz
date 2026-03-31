@@ -4,7 +4,7 @@ import kotlinx.coroutines.runBlocking
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.service.telegram.TelegramChatAction
 import ru.souz.service.telegram.TelegramService
 import ru.souz.tool.BadInputException
@@ -102,7 +102,7 @@ class ToolTelegramSetState(
             throw BadInputException(error.message ?: "Failed to apply Telegram chat action")
         }
 
-        return gigaJsonMapper.writeValueAsString(
+        return restJsonMapper.writeValueAsString(
             mapOf(
                 "status" to "ok",
                 "action" to input.action.name,

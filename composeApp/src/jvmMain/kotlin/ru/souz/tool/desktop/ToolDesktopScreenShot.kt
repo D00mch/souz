@@ -1,6 +1,6 @@
 package ru.souz.tool.desktop
 
-import ru.souz.llms.giga.GigaChatAPI
+import ru.souz.llms.LLMChatAPI
 import ru.souz.service.image.ImageUtils
 import ru.souz.tool.*
 import kotlinx.coroutines.runBlocking
@@ -11,7 +11,7 @@ import ru.souz.di.mainDiModule
 import java.io.File
 
 class ToolDesktopScreenShot(
-    private val api: GigaChatAPI,
+    private val api: LLMChatAPI,
 ) : ToolSetupWithAttachments<ToolDesktopScreenShot.Input> {
     private val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
 
@@ -65,7 +65,7 @@ class ToolDesktopScreenShot(
 fun main() {
     val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
     val di = DI.invoke { import(mainDiModule) }
-    val api: GigaChatAPI by di.instance()
+    val api: LLMChatAPI by di.instance()
     val id = ToolDesktopScreenShot(api).invoke(ToolDesktopScreenShot.Input("1"))
     l.info(id)
 }

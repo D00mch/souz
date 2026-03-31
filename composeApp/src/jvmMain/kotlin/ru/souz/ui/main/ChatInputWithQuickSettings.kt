@@ -99,7 +99,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.coroutines.delay
 import kotlin.math.max
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 import ru.souz.service.permissions.MacAppEnvironment
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
@@ -203,7 +203,7 @@ internal fun ChatInputWithQuickSettings(
 
     val modelOptions = remember(availableModelAliases) {
         availableModelAliases.mapNotNull { alias ->
-            GigaModel.entries.firstOrNull { it.alias == alias }?.let { model ->
+            LLMModel.entries.firstOrNull { it.alias == alias }?.let { model ->
                 QuickOption(value = model.alias, label = model.displayName)
             }
         }

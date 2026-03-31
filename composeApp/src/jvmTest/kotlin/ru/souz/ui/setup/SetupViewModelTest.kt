@@ -19,7 +19,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.llms.BuildEdition
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
@@ -110,7 +110,7 @@ class SetupViewModelTest {
             aiTunnel = "",
             speech = "",
             onboardingCompleted = false,
-            gigaModel = GigaModel.Max,
+            gigaModel = LLMModel.Max,
         )
         val viewModel = createViewModel(settingsProvider)
 
@@ -118,7 +118,7 @@ class SetupViewModelTest {
         viewModel.send(SetupEvent.InputQwenChatKey("qwen-token"))
         advanceUntilIdle()
 
-        assertEquals(GigaModel.QwenMax, settingsProvider.gigaModel)
+        assertEquals(LLMModel.QwenMax, settingsProvider.gigaModel)
     }
 
     @Test
@@ -130,7 +130,7 @@ class SetupViewModelTest {
             anthropic = "",
             speech = "",
             onboardingCompleted = false,
-            gigaModel = GigaModel.Max,
+            gigaModel = LLMModel.Max,
         )
         val viewModel = createViewModel(settingsProvider)
 
@@ -139,9 +139,9 @@ class SetupViewModelTest {
         advanceUntilIdle()
 
         val expectedModel = if (supportsProvider(LlmProvider.AI_TUNNEL)) {
-            GigaModel.AiTunnelClaudeHaiku
+            LLMModel.AiTunnelClaudeHaiku
         } else {
-            GigaModel.Max
+            LLMModel.Max
         }
         assertEquals(expectedModel, settingsProvider.gigaModel)
     }
@@ -156,7 +156,7 @@ class SetupViewModelTest {
             openai = "",
             speech = "",
             onboardingCompleted = false,
-            gigaModel = GigaModel.Max,
+            gigaModel = LLMModel.Max,
         )
         val viewModel = createViewModel(settingsProvider)
 
@@ -165,9 +165,9 @@ class SetupViewModelTest {
         advanceUntilIdle()
 
         val expectedModel = if (supportsProvider(LlmProvider.ANTHROPIC)) {
-            GigaModel.AnthropicHaiku45
+            LLMModel.AnthropicHaiku45
         } else {
-            GigaModel.Max
+            LLMModel.Max
         }
         assertEquals(expectedModel, settingsProvider.gigaModel)
     }
@@ -182,7 +182,7 @@ class SetupViewModelTest {
             openai = "",
             speech = "",
             onboardingCompleted = false,
-            gigaModel = GigaModel.Max,
+            gigaModel = LLMModel.Max,
         )
         val viewModel = createViewModel(settingsProvider)
 
@@ -191,9 +191,9 @@ class SetupViewModelTest {
         advanceUntilIdle()
 
         val expectedModel = if (supportsProvider(LlmProvider.OPENAI)) {
-            GigaModel.OpenAIGpt5Nano
+            LLMModel.OpenAIGpt5Nano
         } else {
-            GigaModel.Max
+            LLMModel.Max
         }
         assertEquals(expectedModel, settingsProvider.gigaModel)
     }
@@ -208,21 +208,21 @@ class SetupViewModelTest {
             openai = "",
             speech = "",
             onboardingCompleted = false,
-            gigaModel = GigaModel.Max,
+            gigaModel = LLMModel.Max,
         )
         val viewModel = createViewModel(settingsProvider)
 
         advanceUntilIdle()
         viewModel.send(SetupEvent.InputQwenChatKey("qwen-token"))
         advanceUntilIdle()
-        assertEquals(GigaModel.QwenMax, settingsProvider.gigaModel)
+        assertEquals(LLMModel.QwenMax, settingsProvider.gigaModel)
 
         viewModel.send(SetupEvent.InputGigaChatKey("giga-token"))
         advanceUntilIdle()
         val expectedModel = if (supportsProvider(LlmProvider.GIGA)) {
-            GigaModel.Max
+            LLMModel.Max
         } else {
-            GigaModel.QwenMax
+            LLMModel.QwenMax
         }
         assertEquals(expectedModel, settingsProvider.gigaModel)
     }
@@ -235,7 +235,7 @@ class SetupViewModelTest {
             aiTunnel = "",
             speech = "",
             onboardingCompleted = false,
-            gigaModel = GigaModel.Pro,
+            gigaModel = LLMModel.Pro,
         )
         val viewModel = createViewModel(settingsProvider)
 
@@ -243,7 +243,7 @@ class SetupViewModelTest {
         viewModel.send(SetupEvent.InputAiTunnelKey("ait-token"))
         advanceUntilIdle()
 
-        assertEquals(GigaModel.Pro, settingsProvider.gigaModel)
+        assertEquals(LLMModel.Pro, settingsProvider.gigaModel)
     }
 
     @Test
@@ -308,7 +308,7 @@ class SetupViewModelTest {
         openai: String = "",
         speech: String,
         onboardingCompleted: Boolean,
-        gigaModel: GigaModel = GigaModel.Max,
+        gigaModel: LLMModel = LLMModel.Max,
     ): SettingsProvider {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
 

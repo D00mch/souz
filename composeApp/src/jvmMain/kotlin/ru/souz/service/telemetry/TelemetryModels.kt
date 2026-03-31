@@ -1,6 +1,6 @@
 package ru.souz.service.telemetry
 
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMResponse
 
 data class TelemetryEvent(
     val eventId: String,
@@ -126,7 +126,7 @@ internal data class ConversationMetrics(
     val startReason: TelemetryConversationStartReason,
     val requestCount: Int = 0,
     val toolCallCount: Int = 0,
-    val tokenUsage: GigaResponse.Usage = ZERO_USAGE,
+    val tokenUsage: LLMResponse.Usage = ZERO_USAGE,
 )
 
 internal data class TelemetryInstallationIdentity(
@@ -136,4 +136,4 @@ internal data class TelemetryInstallationIdentity(
 )
 
 internal const val TELEMETRY_SCHEMA_VERSION = 1
-internal val ZERO_USAGE = GigaResponse.Usage(0, 0, 0, 0)
+internal val ZERO_USAGE = LLMResponse.Usage(0, 0, 0, 0)

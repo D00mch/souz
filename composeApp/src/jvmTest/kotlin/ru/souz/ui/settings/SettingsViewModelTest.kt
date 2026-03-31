@@ -28,8 +28,8 @@ import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.db.VectorDB
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.EmbeddingsModel
-import ru.souz.llms.giga.GigaChatAPI
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
@@ -125,13 +125,13 @@ class SettingsViewModelTest {
 
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         every { agentFacade.setModel(any()) } answers {
-            val model = firstArg<GigaModel>()
+            val model = firstArg<LLMModel>()
             "prompt-for-${model.alias}"
         }
         every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.LUA_GRAPH)
         every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.LUA_GRAPH, ru.souz.agent.AgentId.GRAPH)
 
-        val chatApi = mockk<GigaChatAPI>(relaxed = true)
+        val chatApi = mockk<LLMChatAPI>(relaxed = true)
         val telegramService = mockk<TelegramService>(relaxed = true)
         every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
         val localModelStore = mockk<LocalModelStore>(relaxed = true)
@@ -143,7 +143,7 @@ class SettingsViewModelTest {
             bindSingleton { localModelStore }
             bindSingleton { localLlamaRuntime }
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
-            bindSingleton<GigaChatAPI> { chatApi }
+            bindSingleton<LLMChatAPI> { chatApi }
             bindSingleton<AgentFacade> { agentFacade }
             bindSingleton<TelegramPlatformSupport> { TelegramPlatformSupport }
             bindSingleton<TelegramService> { telegramService }
@@ -185,7 +185,7 @@ class SettingsViewModelTest {
         every { settingsProvider.regionProfile } returns REGION_RU
         every { settingsProvider.regionProfile = any() } just runs
         every { settingsProvider.qwenChatKey } returns "qwen-key"
-        every { settingsProvider.gigaModel } returns GigaModel.QwenMax
+        every { settingsProvider.gigaModel } returns LLMModel.QwenMax
         every { settingsProvider.embeddingsModel } returns EmbeddingsModel.GigaEmbeddings
         every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.SaluteSpeech
         every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
@@ -202,8 +202,8 @@ class SettingsViewModelTest {
 
         val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
         every { localProviderAvailability.isProviderAvailable() } returns true
-        every { localProviderAvailability.availableGigaModels() } returns listOf(GigaModel.LocalQwen3_4B_Instruct_2507)
-        every { localProviderAvailability.defaultGigaModel() } returns GigaModel.LocalQwen3_4B_Instruct_2507
+        every { localProviderAvailability.availableGigaModels() } returns listOf(LLMModel.LocalQwen3_4B_Instruct_2507)
+        every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
         val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
         val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
 
@@ -214,11 +214,11 @@ class SettingsViewModelTest {
         every { localModelStore.modelPath(localProfile) } returns File(System.getProperty("java.io.tmpdir"), localProfile.ggufFilename).toPath()
 
         val agentFacade = mockk<AgentFacade>(relaxed = true)
-        every { agentFacade.setModel(any()) } answers { "prompt-for-${firstArg<GigaModel>().alias}" }
+        every { agentFacade.setModel(any()) } answers { "prompt-for-${firstArg<LLMModel>().alias}" }
         every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.LUA_GRAPH)
         every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.LUA_GRAPH, ru.souz.agent.AgentId.GRAPH)
 
-        val chatApi = mockk<GigaChatAPI>(relaxed = true)
+        val chatApi = mockk<LLMChatAPI>(relaxed = true)
         val telegramService = mockk<TelegramService>(relaxed = true)
         every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
 
@@ -228,7 +228,7 @@ class SettingsViewModelTest {
             bindSingleton { localModelStore }
             bindSingleton { localLlamaRuntime }
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
-            bindSingleton<GigaChatAPI> { chatApi }
+            bindSingleton<LLMChatAPI> { chatApi }
             bindSingleton<AgentFacade> { agentFacade }
             bindSingleton<TelegramPlatformSupport> { TelegramPlatformSupport }
             bindSingleton<TelegramService> { telegramService }
@@ -239,12 +239,12 @@ class SettingsViewModelTest {
         val viewModel = SettingsViewModel(di)
         advanceUntilIdle()
 
-        viewModel.handleEvent(SettingsEvent.SelectModel(GigaModel.LocalQwen3_4B_Instruct_2507))
+        viewModel.handleEvent(SettingsEvent.SelectModel(LLMModel.LocalQwen3_4B_Instruct_2507))
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
-        assertEquals(GigaModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
+        assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
         assertNull(state.localModelDownloadState)
-        verify(exactly = 1) { agentFacade.setModel(GigaModel.QwenMax) }
+        verify(exactly = 1) { agentFacade.setModel(LLMModel.QwenMax) }
     }
 }

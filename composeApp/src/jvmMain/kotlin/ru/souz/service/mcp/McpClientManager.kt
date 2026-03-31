@@ -6,11 +6,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import ru.souz.agent.spi.McpToolProvider
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
-import ru.souz.llms.giga.GigaToolSetup
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.restJsonMapper
 import ru.souz.llms.giga.toGigaToolMessage
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.collections.iterator
@@ -24,9 +24,9 @@ class McpClientManager(
     private val sessions = ConcurrentHashMap<String, McpSession>()
     private val discoveryState = MutableStateFlow(McpDiscoveryState())
 
-    override suspend fun tools(): List<GigaToolSetup> = ensureDiscovered().toolSetups
+    override suspend fun tools(): List<LLMToolSetup> = ensureDiscovered().toolSetups
 
-    suspend fun refreshTools(): List<GigaToolSetup> = discoveryLock.withLock {
+    suspend fun refreshTools(): List<LLMToolSetup> = discoveryLock.withLock {
         closeAllSessions()
 
         val configs = configProvider.loadServers()
@@ -37,7 +37,7 @@ class McpClientManager(
         }
 
         val registered = LinkedHashMap<String, RegisteredMcpTool>()
-        val setups = ArrayList<GigaToolSetup>()
+        val setups = ArrayList<LLMToolSetup>()
         val usedFunctionNames = LinkedHashSet<String>()
 
         for ((serverName, config) in configs) {
@@ -56,7 +56,7 @@ class McpClientManager(
                     toolName = remoteTool.name,
                     occupied = usedFunctionNames,
                 )
-                val fn = GigaRequest.Function(
+                val fn = LLMRequest.Function(
                     name = functionName,
                     description = buildDescription(serverName, remoteTool),
                     parameters = schemaToParameters(remoteTool.inputSchema),
@@ -172,19 +172,19 @@ class McpClientManager(
         return sanitized.ifBlank { "Tool" }
     }
 
-    private fun schemaToParameters(schema: JsonNode?): GigaRequest.Parameters {
+    private fun schemaToParameters(schema: JsonNode?): LLMRequest.Parameters {
         if (schema == null || !schema.isObject) {
-            return GigaRequest.Parameters(type = "object", properties = emptyMap(), required = emptyList())
+            return LLMRequest.Parameters(type = "object", properties = emptyMap(), required = emptyList())
         }
 
         val propertiesNode = schema.path("properties")
-        val properties = LinkedHashMap<String, GigaRequest.Property>()
+        val properties = LinkedHashMap<String, LLMRequest.Property>()
         if (propertiesNode.isObject) {
             val names = propertiesNode.fieldNames()
             while (names.hasNext()) {
                 val key = names.next()
                 val value = propertiesNode.path(key)
-                properties[key] = GigaRequest.Property(
+                properties[key] = LLMRequest.Property(
                     type = schemaTypeForGiga(value),
                     description = gigaPropertyDescription(value),
                     enum = value.path("enum").takeIf { it.isArray }?.map { it.asText() },
@@ -197,7 +197,7 @@ class McpClientManager(
             ?.mapNotNull { node -> node.takeIf { it.isTextual }?.asText() }
             ?: emptyList()
 
-        return GigaRequest.Parameters(
+        return LLMRequest.Parameters(
             type = "object",
             properties = properties,
             required = required,
@@ -332,7 +332,7 @@ class McpClientManager(
     private fun parseJsonString(text: String): Any? {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return null
-        val node = runCatching { gigaJsonMapper.readTree(trimmed) }.getOrNull() ?: return null
+        val node = runCatching { restJsonMapper.readTree(trimmed) }.getOrNull() ?: return null
         return jsonNodeToAny(node)
     }
 
@@ -363,7 +363,7 @@ private data class McpDiscoveryState(
     val loaded: Boolean = false,
     val serverConfigs: Map<String, McpServerConfig> = emptyMap(),
     val toolsByName: Map<String, RegisteredMcpTool> = emptyMap(),
-    val toolSetups: List<GigaToolSetup> = emptyList(),
+    val toolSetups: List<LLMToolSetup> = emptyList(),
 )
 
 private data class RegisteredMcpTool(
@@ -371,16 +371,16 @@ private data class RegisteredMcpTool(
     val remoteToolName: String,
     val functionName: String,
     val inputSchema: JsonNode?,
-    val fn: GigaRequest.Function,
+    val fn: LLMRequest.Function,
 )
 
 private class McpGigaToolSetup(
     private val manager: McpClientManager,
     private val tool: RegisteredMcpTool,
-) : GigaToolSetup {
-    override val fn: GigaRequest.Function = tool.fn
+) : LLMToolSetup {
+    override val fn: LLMRequest.Function = tool.fn
 
-    override suspend fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
+    override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message {
         return try {
             val result = manager.callTool(tool.functionName, functionCall.arguments)
             val body = mapOf(
@@ -390,9 +390,9 @@ private class McpGigaToolSetup(
                 "tool" to tool.remoteToolName,
                 "raw" to result.raw,
             )
-            GigaRequest.Message(
-                role = GigaMessageRole.function,
-                content = gigaJsonMapper.writeValueAsString(body),
+            LLMRequest.Message(
+                role = LLMMessageRole.function,
+                content = restJsonMapper.writeValueAsString(body),
                 name = functionCall.name,
             )
         } catch (e: Exception) {

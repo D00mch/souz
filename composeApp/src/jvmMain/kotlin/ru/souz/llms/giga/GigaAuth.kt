@@ -8,7 +8,7 @@ import io.ktor.client.request.forms.*
 import io.ktor.http.*
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMResponse
 
 class GigaAuth(
     private val settingsProvider: SettingsProvider,
@@ -34,7 +34,7 @@ class GigaAuth(
             throw IllegalStateException("Error in requestToken: ${response.status}")
         }
         val token = try {
-            response.body<GigaResponse.Token>()
+            response.body<LLMResponse.Token>()
         } catch (e: Exception) {
             l.error("Error in requestToken: ${e.message}")
             throw e

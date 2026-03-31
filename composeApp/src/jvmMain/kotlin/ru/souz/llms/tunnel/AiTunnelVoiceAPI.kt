@@ -14,7 +14,7 @@ import io.ktor.http.isSuccess
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.VoiceRecognitionProvider
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -88,7 +88,7 @@ class AiTunnelVoiceAPI(
             throw IllegalStateException("AiTunnel transcription failed: ${response.status.value}")
         }
 
-        return gigaJsonMapper.readTree(responseBody)["text"]?.asText()?.trim().orEmpty()
+        return restJsonMapper.readTree(responseBody)["text"]?.asText()?.trim().orEmpty()
     }
 
     fun clear() = client.close()

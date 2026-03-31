@@ -11,7 +11,7 @@ import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import java.io.File
 
 class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindFilesByName.Input> {
@@ -72,7 +72,7 @@ class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<
             .filter { it.isNotBlank() }
             .toList()
 
-        return gigaJsonMapper.writeValueAsString(result)
+        return restJsonMapper.writeValueAsString(result)
     }
 }
 
@@ -90,7 +90,7 @@ fun main() {
     println("Raw JSON result: $resultJson")
 
     try {
-        val fileList: List<String> = gigaJsonMapper.readValue(resultJson)
+        val fileList: List<String> = restJsonMapper.readValue(resultJson)
 
         if (fileList.isEmpty()) {
             println("No files found.")

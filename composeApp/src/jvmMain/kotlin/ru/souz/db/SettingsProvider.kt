@@ -4,8 +4,9 @@ import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.DEFAULT_MAX_TOKENS
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LlmBuildProfileSettings
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
@@ -16,7 +17,7 @@ import ru.souz.llms.local.LocalProviderAvailability
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
-interface SettingsProvider : AgentSettingsProvider {
+interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     var gigaChatKey: String?
     var qwenChatKey: String?
     var aiTunnelKey: String?
@@ -27,7 +28,7 @@ interface SettingsProvider : AgentSettingsProvider {
     override var defaultCalendar: String?
     override var regionProfile: String
     override var activeAgentId: AgentId
-    override var gigaModel: GigaModel
+    override var gigaModel: LLMModel
     var useFewShotExamples: Boolean
     override var useStreaming: Boolean
     var notificationSoundEnabled: Boolean
@@ -119,12 +120,12 @@ class SettingsProviderImpl(
         if (_safeModeDelegate.isNullOrBlank()) _safeModeDelegate = "true"
     }
 
-    override fun getSystemPromptForAgentModel(agentId: AgentId, model: GigaModel): String? {
+    override fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String? {
         val key = "${SYSTEM_PROMPT}_${agentId.storageValue}_${model.name}"
         return configStore.get<String>(key)
     }
 
-    override fun setSystemPromptForAgentModel(agentId: AgentId, model: GigaModel, prompt: String?) {
+    override fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?) {
         val key = "${SYSTEM_PROMPT}_${agentId.storageValue}_${model.name}"
         when {
             prompt.isNullOrBlank() -> configStore.rm(key)
@@ -159,9 +160,9 @@ class SettingsProviderImpl(
             configStore.put(ACTIVE_AGENT_ID, value.storageValue)
         }
 
-    override var gigaModel: GigaModel
+    override var gigaModel: LLMModel
         get() = _gigaModelDelegate?.let { value ->
-            GigaModel.entries.firstOrNull { model ->
+            LLMModel.entries.firstOrNull { model ->
                 model.name.equals(value, ignoreCase = true) || model.alias.equals(value, ignoreCase = true)
             }
         }?.let(::normalizeGigaModel)
@@ -297,7 +298,7 @@ class SettingsProviderImpl(
         envKey = MCP_SERVERS_FILE
     )
 
-    private fun defaultLlmModel(): GigaModel {
+    private fun defaultLlmModel(): LLMModel {
         val defaults = LlmBuildProfile.defaultsForLanguage(regionProfile)
         val availableLocalDefault = localProviderAvailability.defaultGigaModel()
         return LlmBuildProfile.providerPrioritiesForLanguage(regionProfile)
@@ -311,7 +312,7 @@ class SettingsProviderImpl(
             ?: defaults.values.first()
     }
 
-    private fun normalizeGigaModel(model: GigaModel): GigaModel {
+    private fun normalizeGigaModel(model: LLMModel): LLMModel {
         val availableProviders = LlmBuildProfile.defaultsForLanguage(regionProfile).keys
         return when {
             model.provider == LlmProvider.LOCAL && model !in localProviderAvailability.availableGigaModels() -> defaultLlmModel()

@@ -1,19 +1,19 @@
 package ru.souz.agent.nodes
 
 import org.slf4j.LoggerFactory
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.AgentSettings
-import ru.souz.agent.engine.Node
+import ru.souz.agent.graph.Node
 import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.db.StorredData
 import ru.souz.db.StorredType
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaModel
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.toSystemPromptMessage
 import java.time.LocalDateTime
@@ -26,7 +26,7 @@ import java.util.Locale
  * Nodes related to local data manipulation.
  * The nodes may update [AgentContext.input] or [AgentContext.history].
  */
-class NodesCommon(
+internal class NodesCommon(
     private val desktopInfoRepository: AgentDesktopInfoRepository,
     private val settingsProvider: AgentSettingsProvider,
     private val agentToolExecutor: AgentToolExecutor,
@@ -41,7 +41,7 @@ class NodesCommon(
      */
     fun inputToHistory(name: String = "Input->History"): Node<String, String> =
         Node(name) { ctx ->
-            val usrMsg = GigaRequest.Message(GigaMessageRole.user, ctx.input)
+            val usrMsg = LLMRequest.Message(LLMMessageRole.user, ctx.input)
             val history = ArrayList(ctx.history).apply {
                 if (isEmpty()) add(ctx.systemPrompt.toSystemPromptMessage())
                 add(usrMsg)
@@ -50,13 +50,13 @@ class NodesCommon(
         }
 
     /**
-     * Converts LLM's [GigaResponse.Chat.Ok] into text suitable for the user to see.
+     * Converts LLM's [LLMResponse.Chat.Ok] into text suitable for the user to see.
      *
      * Modifies [AgentContext.input] by replacing the response with the final message content.
      */
     fun responseToString(
         name: String = "Response -> String"
-    ): Node<GigaResponse.Chat.Ok, String> = Node(name) { ctx ->
+    ): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
         val content = ctx.input.choices
             .asReversed()
             .firstOrNull { it.message.content.isNotBlank() }
@@ -75,11 +75,11 @@ class NodesCommon(
     }
 
     /**
-     * Executes all the [GigaResponse.FunctionCall] from history synchronously.
+     * Executes all the [LLMResponse.FunctionCall] from history synchronously.
      *
      * Updates [AgentContext.history] and [AgentContext.input] with tool call results.
      */
-    fun toolUse(name: String = "toolUse"): Node<GigaResponse.Chat.Ok, String> = Node(name) { ctx ->
+    fun toolUse(name: String = "toolUse"): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
         val fnCallMessages = fnCallMessages(ctx)
         val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
         ctx.map(history = history) { ctx.history.last().content }
@@ -93,14 +93,14 @@ class NodesCommon(
      * Modifies [AgentContext.history] when new data is added.
      */
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
-        val additionalMessage: GigaRequest.Message? = appendActualInformation(
+        val additionalMessage: LLMRequest.Message? = appendActualInformation(
             userText = ctx.input,
             modelAlias = ctx.settings.model,
         )
 
-        val newHistory = ArrayList<GigaRequest.Message>()
+        val newHistory = ArrayList<LLMRequest.Message>()
         ctx.history.forEach { msg ->
-            val isOldContext = msg.role == GigaMessageRole.user && msg.content.contains("<context>")
+            val isOldContext = msg.role == LLMMessageRole.user && msg.content.contains("<context>")
             if (!isOldContext) newHistory.add(msg)
         }
 
@@ -122,7 +122,7 @@ class NodesCommon(
     private suspend fun appendActualInformation(
         userText: String,
         modelAlias: String,
-    ): GigaRequest.Message? {
+    ): LLMRequest.Message? {
         if (userText.isBlank()) return null
 
         val additionalData = ArrayList<StorredData>()
@@ -167,8 +167,8 @@ class NodesCommon(
             append("</context>")
         }
 
-        return GigaRequest.Message(
-            role = GigaMessageRole.user,
+        return LLMRequest.Message(
+            role = LLMMessageRole.user,
             content = content
         )
     }
@@ -212,11 +212,13 @@ class NodesCommon(
         null
     }
 
-    private suspend fun fnCallMessages(ctx: AgentContext<GigaResponse.Chat.Ok>): List<GigaRequest.Message> {
+    private suspend fun fnCallMessages(ctx: AgentContext<LLMResponse.Chat.Ok>): List<LLMRequest.Message> {
         val fnCallMessages = ctx.input.choices.mapNotNull { choice ->
             val msg = choice.message
-            if (msg.functionCall != null && msg.functionsStateId != null) {
-                executeTool(ctx.settings, msg.functionCall).copy(functionsStateId = msg.functionsStateId)
+            val functionCall = msg.functionCall
+            val functionsStateId = msg.functionsStateId
+            if (functionCall != null && functionsStateId != null) {
+                executeTool(ctx.settings, functionCall).copy(functionsStateId = functionsStateId)
             } else null
         }
         return fnCallMessages
@@ -224,18 +226,18 @@ class NodesCommon(
 
     private suspend fun executeTool(
         settings: AgentSettings,
-        functionCall: GigaResponse.FunctionCall,
-    ): GigaRequest.Message = agentToolExecutor.execute(settings, functionCall)
+        functionCall: LLMResponse.FunctionCall,
+    ): LLMRequest.Message = agentToolExecutor.execute(settings, functionCall)
 
     private fun isLocalModelAlias(modelAlias: String): Boolean =
-        GigaModel.entries.any { model ->
+        LLMModel.entries.any { model ->
             model.alias.equals(modelAlias, ignoreCase = true) && model.provider == LlmProvider.LOCAL
         }
 }
 
-fun <T> AgentContext<T>.toGigaRequest(history: List<GigaRequest.Message>): GigaRequest.Chat {
+internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {
     val ctx = this
-    return GigaRequest.Chat(
+    return LLMRequest.Chat(
         model = ctx.settings.model,
         messages = history,
         functions = ctx.activeTools,

@@ -15,8 +15,8 @@ import org.kodein.di.instance
 import ru.souz.agent.Agent
 import ru.souz.agent.AgentId
 import ru.souz.agent.SystemPromptResolver
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.AgentSettings
+import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentSettings
 import ru.souz.GraphBasedAgent
 import ru.souz.LuaGraphBasedAgent
 import ru.souz.db.ConfigStore
@@ -24,11 +24,11 @@ import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl
 import ru.souz.di.mainDiModule
-import ru.souz.llms.giga.GigaChatAPI
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMModel
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.openai.OpenAIChatAPI
@@ -56,7 +56,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
 class AgentScenarioTestSupport(
-    private val selectedModel: GigaModel,
+    private val selectedModel: LLMModel,
     private val agentType: AgentId,
 ) {
     val filesUtil: FilesToolUtil by lazy { FilesToolUtil(spySettings) }
@@ -240,7 +240,7 @@ class AgentScenarioTestSupport(
                         localChatAPI = it
                     }
             }
-            bindSingleton<GigaChatAPI>(overrides = true) {
+            bindSingleton<LLMChatAPI>(overrides = true) {
                 when (selectedModel.provider) {
                     LlmProvider.GIGA -> instance<GigaRestChatAPI>()
                     LlmProvider.QWEN -> instance<QwenChatAPI>()
@@ -292,9 +292,9 @@ class AgentScenarioTestSupport(
             bindProvider<DI> { this.di }
             overrides()
         }
-        val agent = when (agentType) {
-            AgentId.GRAPH -> GraphBasedAgent(di, gigaJsonMapper)
-            AgentId.LUA_GRAPH -> LuaGraphBasedAgent(di, gigaJsonMapper)
+        val agent: Agent = when (agentType) {
+            AgentId.GRAPH -> GraphBasedAgent(di, restJsonMapper)
+            AgentId.LUA_GRAPH -> LuaGraphBasedAgent(di, restJsonMapper)
         }
         runGraphAgent(agent, di, userPrompt)
     }

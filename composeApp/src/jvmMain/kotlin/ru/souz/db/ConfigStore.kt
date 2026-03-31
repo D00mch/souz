@@ -8,7 +8,7 @@ import ru.souz.db.SettingsProviderImpl.Companion.GIGA_CHAT_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.OPENAI_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.QWEN_CHAT_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.SALUTE_SPEECH_KEY
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.service.mcp.OAUTH_STORE_PREFIX
 import ru.souz.service.telemetry.TelemetryStorageKeys
 import java.security.SecureRandom
@@ -41,7 +41,7 @@ object ConfigStore {
         val str = when (value) {
             is String -> value
             is Int, is Long, is Float, is Double, is Boolean -> value.toString()
-            else -> gigaJsonMapper.writeValueAsString(value)
+            else -> restJsonMapper.writeValueAsString(value)
         }
         prefs.put(key, SecretPrefsCodec.encodeForStorage(key, str))
     }
@@ -65,7 +65,7 @@ object ConfigStore {
                 Double::class -> str.toDouble()
                 Boolean::class -> str.toBooleanStrict()
                 String::class -> str
-                else -> gigaJsonMapper.readValue<T>(str)
+                else -> restJsonMapper.readValue<T>(str)
             } as T
         }.getOrNull()
     }

@@ -124,6 +124,8 @@ kotlin {
 
         jvmMain.dependencies {
             implementation(projects.agent)
+            implementation(projects.llms)
+            implementation(projects.native)
             implementation(libs.compose.ui.tooling.preview.desktop)
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)

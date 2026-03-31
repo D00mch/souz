@@ -1,9 +1,9 @@
 package ru.souz.agent
 
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 
 class SystemPromptResolver {
-    fun defaultPrompt(agentId: AgentId, model: GigaModel, regionProfile: String): String {
+    fun defaultPrompt(agentId: AgentId, model: LLMModel, regionProfile: String): String {
         val isEnglish = regionProfile.equals(REGION_EN, ignoreCase = true)
         return when (agentId) {
             AgentId.GRAPH -> if (isEnglish) GRAPH_DEFAULT_SYSTEM_PROMPT_EN else GRAPH_DEFAULT_SYSTEM_PROMPT_RU

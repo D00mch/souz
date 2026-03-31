@@ -4,7 +4,7 @@ import kotlinx.coroutines.runBlocking
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.service.telegram.TelegramService
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
@@ -99,7 +99,7 @@ class ToolTelegramForward(
             throw BadInputException(error.message ?: "Failed to forward Telegram message")
         }
 
-        return gigaJsonMapper.writeValueAsString(
+        return restJsonMapper.writeValueAsString(
             mapOf(
                 "status" to "forwarded",
                 "chatId" to forwarded.chatId,

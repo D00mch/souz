@@ -8,7 +8,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.kodein.di.bindSingleton
 import ru.souz.agent.AgentId
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 import ru.souz.service.telegram.TelegramService
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.files.FilesToolUtil
@@ -26,7 +26,7 @@ import ru.souz.tool.web.ToolInternetSearch
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentComplexScenarios {
 
-    private val selectedModel = GigaModel.AnthropicHaiku45
+    private val selectedModel = LLMModel.AnthropicHaiku45
     private val agentType = AgentId.GRAPH
     private val support = AgentScenarioTestSupport(selectedModel, agentType)
     private val runTest = support::runTest

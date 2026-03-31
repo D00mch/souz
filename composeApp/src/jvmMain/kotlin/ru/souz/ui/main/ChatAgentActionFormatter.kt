@@ -2,12 +2,12 @@ package ru.souz.ui.main
 
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMResponse
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 
 class ChatAgentActionFormatter {
-    suspend fun format(functionCall: GigaResponse.FunctionCall): String {
+    suspend fun format(functionCall: LLMResponse.FunctionCall): String {
         val args = functionCall.arguments
         return when (functionCall.name) {
             "ListFiles" -> format(Res.string.chat_action_list_files, pathArg(args, "path"))

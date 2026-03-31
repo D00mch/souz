@@ -2,7 +2,7 @@ package ru.souz.tool.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.runBlocking
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -12,7 +12,7 @@ import ru.souz.tool.web.internal.WebResearchClient
 
 internal class ToolWebPageText(
     private val webResearchClient: WebResearchClient = WebResearchClient(),
-    private val mapper: ObjectMapper = gigaJsonMapper,
+    private val mapper: ObjectMapper = restJsonMapper,
 ) : ToolSetup<ToolWebPageText.Input> {
     data class Input(
         @InputParamDescription("Page URL (must start with http:// or https://)")

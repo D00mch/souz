@@ -13,7 +13,7 @@ import org.kodein.di.bindProvider
 import org.kodein.di.bindSingleton
 import ru.souz.agent.AgentId
 import ru.souz.GraphBasedAgent
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.application.ToolOpen
 import ru.souz.tool.application.ToolShowApps
@@ -45,7 +45,7 @@ import ru.souz.tool.textReplace.ToolGetClipboard
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentToolScenariosIntegrationTest {
 
-    private val selectedModel = GigaModel.LocalQwen3_4B_Instruct_2507
+    private val selectedModel = LLMModel.LocalQwen3_4B_Instruct_2507
     private val agentType = AgentId.GRAPH
     private val support = AgentScenarioTestSupport(selectedModel, agentType)
     private val runTest = support::runTest

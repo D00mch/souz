@@ -2,7 +2,7 @@ package ru.souz.tool.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.runBlocking
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -22,7 +22,7 @@ internal class ToolWebImageSearch(
     private val filesToolUtil: FilesToolUtil,
     private val webResearchClient: WebResearchClient = WebResearchClient(),
     private val webImageDownloader: WebImageDownloader = WebImageDownloader(filesToolUtil),
-    private val mapper: ObjectMapper = gigaJsonMapper,
+    private val mapper: ObjectMapper = restJsonMapper,
     private val webToolSupport: WebToolSupport = WebToolSupport(),
 ) : ToolSetup<ToolWebImageSearch.Input> {
     data class WebImageSearchOutput(

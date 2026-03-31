@@ -9,13 +9,13 @@ import ru.souz.db.SettingsProvider
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.EmbeddingsModel
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.giga.GigaRestChatAPI
-import ru.souz.llms.LLMFactory
 import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.qwen.QwenChatAPI
 import ru.souz.llms.local.LocalChatAPI
+import ru.souz.llms.runtime.LLMFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -33,8 +33,8 @@ class LLMFactoryEmbeddingsTest {
         val openAiApi = mockk<OpenAIChatAPI>()
         val localApi = mockk<LocalChatAPI>()
 
-        val requestSlot = slot<GigaRequest.Embeddings>()
-        coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns GigaResponse.Embeddings.Ok(
+        val requestSlot = slot<LLMRequest.Embeddings>()
+        coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns LLMResponse.Embeddings.Ok(
             data = emptyList(),
             model = EmbeddingsModel.AiTunnelEmbeddingAda.alias,
             objectType = "list",
@@ -51,7 +51,7 @@ class LLMFactoryEmbeddingsTest {
         )
 
         factory.embeddings(
-            GigaRequest.Embeddings(
+            LLMRequest.Embeddings(
                 input = listOf("hello"),
             )
         )
@@ -71,8 +71,8 @@ class LLMFactoryEmbeddingsTest {
         val openAiApi = mockk<OpenAIChatAPI>()
         val localApi = mockk<LocalChatAPI>()
 
-        val requestSlot = slot<GigaRequest.Embeddings>()
-        coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns GigaResponse.Embeddings.Ok(
+        val requestSlot = slot<LLMRequest.Embeddings>()
+        coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns LLMResponse.Embeddings.Ok(
             data = emptyList(),
             model = EmbeddingsModel.AiTunnelEmbeddingAda.alias,
             objectType = "list",
@@ -89,7 +89,7 @@ class LLMFactoryEmbeddingsTest {
         )
 
         factory.embeddings(
-            GigaRequest.Embeddings(
+            LLMRequest.Embeddings(
                 model = EmbeddingsModel.QwenEmbeddings.alias,
                 input = listOf("hello"),
             )

@@ -8,13 +8,13 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.Node
+import ru.souz.agent.graph.Node
+import ru.souz.agent.state.AgentContext
 import ru.souz.agent.spi.AgentSettingsProvider
-import ru.souz.llms.giga.GigaChatAPI
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.toMessage
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.atomics.AtomicReference
@@ -23,8 +23,8 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 /**
  * Nodes with calls to LLM
  */
-class NodesLLM(
-    private val llmApi: GigaChatAPI,
+internal class NodesLLM(
+    private val llmApi: LLMChatAPI,
     private val settingsProvider: AgentSettingsProvider,
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
@@ -33,11 +33,11 @@ class NodesLLM(
     
     /**
      * Calls LLM's API with the current [AgentContext.history].
-     * Converts [AgentContext.history] into [AgentContext.input] as [GigaRequest.Chat] suitable for LLM call
+     * Converts [AgentContext.history] into [AgentContext.input] as [LLMRequest.Chat] suitable for LLM call
      *
      * Modifies [AgentContext.history] and [AgentContext.input]
      */
-    fun chat(name: String = "LLM Chat"): Node<String, GigaResponse.Chat> =
+    fun chat(name: String = "LLM Chat"): Node<String, LLMResponse.Chat> =
         Node(name) { ctx: AgentContext<String> ->
             l.debug("LLM input is {}", ctx.input)
             val response = withContext(Dispatchers.IO) {
@@ -50,15 +50,15 @@ class NodesLLM(
             }
             l.debug("LLM response is {}", response)
             val history = ArrayList(ctx.history).apply {
-                if (response is GigaResponse.Chat.Ok) {
+                if (response is LLMResponse.Chat.Ok) {
                     addAll(response.choices.mapNotNull { it.toMessage() })
                 }
             }
             ctx.map(history = history) { response }
         }
 
-    private suspend fun streamResponse(request: GigaRequest.Chat): GigaResponse.Chat {
-        val streamResponse = AtomicReference<GigaResponse.Chat?>(null)
+    private suspend fun streamResponse(request: LLMRequest.Chat): LLMResponse.Chat {
+        val streamResponse = AtomicReference<LLMResponse.Chat?>(null)
         val choicesByIndex = ConcurrentHashMap<Int, ChoiceAccumulator>()
         val pending = StringBuilder()
         var increasingChunkSize = 20
@@ -66,14 +66,14 @@ class NodesLLM(
         withContext(Dispatchers.IO) {
             llmApi.messageStream(request).takeWhile { response ->
                 l.info("Stream response type ${response::class.java}")
-                if (response is GigaResponse.Chat.Error) {
+                if (response is LLMResponse.Chat.Error) {
                     streamResponse.store(response)
                     false
                 } else {
                     true
                 }
             }.collect { response ->
-                response as GigaResponse.Chat.Ok
+                response as LLMResponse.Chat.Ok
                 l.debug("choices: {}", response.choices)
 
                 val content = response.choices.firstOrNull()?.message?.content
@@ -96,7 +96,7 @@ class NodesLLM(
                 }
                 val merged = choicesByIndex.entries.map { (index, acc) -> acc.toChoice(index) }
 
-                GigaResponse.Chat.Ok(
+                LLMResponse.Chat.Ok(
                     choices = merged,
                     created = response.created,
                     model = response.model,
@@ -111,17 +111,17 @@ class NodesLLM(
             }
         }
 
-        return streamResponse.load() ?: GigaResponse.Chat.Error(-1, "Connection error")
+        return streamResponse.load() ?: LLMResponse.Chat.Error(-1, "Connection error")
     }
 
     private class ChoiceAccumulator(
-        var role: GigaMessageRole,
+        var role: LLMMessageRole,
         val content: StringBuilder = StringBuilder(),
-        var functionCall: GigaResponse.FunctionCall? = null,
+        var functionCall: LLMResponse.FunctionCall? = null,
         var functionsStateId: String? = null,
-        var finishReason: GigaResponse.FinishReason? = null,
+        var finishReason: LLMResponse.FinishReason? = null,
     ) {
-        fun merge(choice: GigaResponse.Choice) {
+        fun merge(choice: LLMResponse.Choice) {
             val msg = choice.message
             if (msg.content.isNotBlank()) {
                 content.append(msg.content)
@@ -136,8 +136,8 @@ class NodesLLM(
             role = msg.role
         }
 
-        fun toChoice(index: Int): GigaResponse.Choice = GigaResponse.Choice(
-            message = GigaResponse.Message(
+        fun toChoice(index: Int): LLMResponse.Choice = LLMResponse.Choice(
+            message = LLMResponse.Message(
                 content = content.toString(),
                 role = role,
                 functionCall = functionCall,

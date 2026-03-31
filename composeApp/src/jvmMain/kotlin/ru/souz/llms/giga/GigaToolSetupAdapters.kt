@@ -1,9 +1,11 @@
 package ru.souz.llms.giga
 
 import kotlinx.coroutines.CancellationException
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ShellException
 import ru.souz.tool.ToolSetup
@@ -15,15 +17,15 @@ import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.isSubclassOf
 import kotlin.reflect.full.primaryConstructor
 
-inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
+inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): LLMToolSetup {
     val toolSetup = this
-    return object : GigaToolSetup {
-        override val fn: GigaRequest.Function = GigaRequest.Function(
+    return object : LLMToolSetup {
+        override val fn: LLMRequest.Function = LLMRequest.Function(
             name = toolSetup.name,
             description = toolSetup.description,
-            parameters = GigaRequest.Parameters(
+            parameters = LLMRequest.Parameters(
                 type = "object",
-                properties = HashMap<String, GigaRequest.Property>().apply {
+                properties = HashMap<String, LLMRequest.Property>().apply {
                     val clazz = Input::class
                     for (kProperty: KCallable<*> in clazz.declaredMembers) {
                         val annotation = kProperty.findAnnotation<InputParamDescription>() ?: continue
@@ -48,7 +50,7 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
                                 else -> "object"
                             }
                         }
-                        put(kProperty.name, GigaRequest.Property(type, description, enumValues))
+                        put(kProperty.name, LLMRequest.Property(type, description, enumValues))
                     }
                 },
                 required = Input::class.primaryConstructor?.parameters
@@ -56,22 +58,22 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
                     ?.mapNotNull { it.name }
                     ?: emptyList(),
             ),
-            fewShotExamples = toolSetup.fewShotExamples.map { GigaRequest.FewShotExample(it.request, it.params) },
-            returnParameters = GigaRequest.Parameters(
+            fewShotExamples = toolSetup.fewShotExamples.map { LLMRequest.FewShotExample(it.request, it.params) },
+            returnParameters = LLMRequest.Parameters(
                 type = toolSetup.returnParameters.type,
                 properties = toolSetup.returnParameters.properties.mapValues {
-                    GigaRequest.Property(it.value.type, it.value.description)
+                    LLMRequest.Property(it.value.type, it.value.description)
                 },
             ),
         )
 
-        override suspend fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
+        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message {
             return try {
-                val input: Input = gigaJsonMapper.convertValue(functionCall.arguments, Input::class.java)
+                val input: Input = restJsonMapper.convertValue(functionCall.arguments, Input::class.java)
                 val toolResult = toolSetup.suspendInvoke(input)
-                GigaRequest.Message(
-                    role = GigaMessageRole.function,
-                    content = gigaJsonMapper.writeValueAsString(toolResult),
+                LLMRequest.Message(
+                    role = LLMMessageRole.function,
+                    content = restJsonMapper.writeValueAsString(toolResult),
                     name = functionCall.name,
                 )
             } catch (e: CancellationException) {
@@ -85,17 +87,17 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): GigaToolSetup {
     }
 }
 
-inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): GigaToolSetup {
+inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): LLMToolSetup {
     val toolSetup = this
     val gigaToolSetup = (toolSetup as ToolSetup<Input>).toGiga()
-    return object : GigaToolSetup by gigaToolSetup {
-        override suspend fun invoke(functionCall: GigaResponse.FunctionCall): GigaRequest.Message {
+    return object : LLMToolSetup by gigaToolSetup {
+        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message {
             return try {
-                val input: Input = gigaJsonMapper.convertValue(functionCall.arguments, Input::class.java)
+                val input: Input = restJsonMapper.convertValue(functionCall.arguments, Input::class.java)
                 val toolResult = toolSetup.suspendInvoke(input)
-                GigaRequest.Message(
-                    role = GigaMessageRole.function,
-                    content = gigaJsonMapper.writeValueAsString(toolResult),
+                LLMRequest.Message(
+                    role = LLMMessageRole.function,
+                    content = restJsonMapper.writeValueAsString(toolResult),
                     attachments = toolSetup.attachments,
                     name = functionCall.name,
                 )
@@ -110,14 +112,14 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): GigaT
     }
 }
 
-fun Throwable.toGigaToolMessage(name: String?): GigaRequest.Message {
+fun Throwable.toGigaToolMessage(name: String?): LLMRequest.Message {
     val msg = when (this) {
         is ShellException -> "The function was executed with shell, the exit code: $exitCode, output: $message"
         else -> "Can't invoke function: ${message ?: toString()}"
     }
-    return GigaRequest.Message(
-        role = GigaMessageRole.function,
-        content = gigaJsonMapper.writeValueAsString(mapOf("result" to msg)),
+    return LLMRequest.Message(
+        role = LLMMessageRole.function,
+        content = restJsonMapper.writeValueAsString(mapOf("result" to msg)),
         name = name,
     )
 }

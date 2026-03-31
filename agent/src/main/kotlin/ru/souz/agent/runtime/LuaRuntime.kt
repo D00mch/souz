@@ -15,10 +15,10 @@ import org.luaj.vm2.lib.OneArgFunction
 import org.luaj.vm2.lib.VarArgFunction
 import org.luaj.vm2.lib.jse.JsePlatform
 import org.slf4j.LoggerFactory
-import ru.souz.agent.engine.AgentSettings
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.GigaResponse
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.agent.state.AgentSettings
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.restJsonMapper
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.CoroutineContext
 
@@ -30,7 +30,7 @@ class LuaRuntime(
     suspend fun execute(
         code: String,
         settings: AgentSettings,
-        activeTools: List<GigaRequest.Function>,
+        activeTools: List<LLMRequest.Function>,
     ): String = withContext(Dispatchers.IO) {
         try {
             val executionDeadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(LUA_EXECUTION_TIMEOUT_MILLIS)
@@ -52,7 +52,7 @@ class LuaRuntime(
 
     private fun createGlobals(
         settings: AgentSettings,
-        activeTools: Map<String, GigaRequest.Function>,
+        activeTools: Map<String, LLMRequest.Function>,
         parentContext: CoroutineContext,
         executionDeadlineNanos: Long,
     ): Globals {
@@ -91,12 +91,12 @@ class LuaRuntime(
         })
         globals.set("json_decode", object : OneArgFunction() {
             override fun call(arg: LuaValue): LuaValue = javaToLua(
-                gigaJsonMapper.readValue(arg.checkjstring(), Any::class.java)
+                restJsonMapper.readValue(arg.checkjstring(), Any::class.java)
             )
         })
         globals.set("json_encode", object : OneArgFunction() {
             override fun call(arg: LuaValue): LuaValue = valueOf(
-                gigaJsonMapper.writeValueAsString(luaToJava(arg))
+                restJsonMapper.writeValueAsString(luaToJava(arg))
             )
         })
         return globals
@@ -104,13 +104,13 @@ class LuaRuntime(
 
     private fun createToolFunction(
         toolName: String,
-        function: GigaRequest.Function,
+        function: LLMRequest.Function,
         settings: AgentSettings,
         parentContext: CoroutineContext,
     ): VarArgFunction = object : VarArgFunction() {
         override fun invoke(args: Varargs): Varargs {
             val arguments = argsToToolArguments(args, function)
-            val functionCall = GigaResponse.FunctionCall(
+            val functionCall = LLMResponse.FunctionCall(
                 name = toolName,
                 arguments = arguments,
             )
@@ -124,7 +124,7 @@ class LuaRuntime(
 
     private fun argsToToolArguments(
         args: Varargs,
-        function: GigaRequest.Function,
+        function: LLMRequest.Function,
     ): Map<String, Any> {
         if (args.narg() == 0 || args.arg1().isnil()) return emptyMap()
 
@@ -151,13 +151,13 @@ class LuaRuntime(
     }
 
     private fun decodeToolResult(rawContent: String): Any? = runCatching {
-        gigaJsonMapper.readValue(rawContent, Any::class.java)
+        restJsonMapper.readValue(rawContent, Any::class.java)
     }.getOrElse { rawContent }
 
     private fun luaResultToString(value: LuaValue): String = when {
         value.isnil() -> ""
         value.isstring() || value.isnumber() || value.isboolean() -> value.tojstring()
-        else -> gigaJsonMapper.writeValueAsString(luaToJava(value))
+        else -> restJsonMapper.writeValueAsString(luaToJava(value))
     }
 
     private fun luaToJava(value: LuaValue): Any? = when {

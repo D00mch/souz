@@ -5,7 +5,7 @@ import io.mockk.mockkStatic
 import io.mockk.unmockkAll
 import kotlinx.coroutines.test.runTest
 import org.jetbrains.compose.resources.getString
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMResponse
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.chat_action_internet_research
 import souz.composeapp.generated.resources.chat_action_web_search
@@ -32,7 +32,7 @@ class ChatAgentActionFormatterTest {
     @Test
     fun `formats internet search action`() = runTest {
         val actual = ChatAgentActionFormatter().format(
-            functionCall = GigaResponse.FunctionCall(
+            functionCall = LLMResponse.FunctionCall(
                 name = "InternetSearch",
                 arguments = mapOf("query" to "котлин корутины"),
             )
@@ -44,7 +44,7 @@ class ChatAgentActionFormatterTest {
     @Test
     fun `formats internet research action`() = runTest {
         val actual = ChatAgentActionFormatter().format(
-            functionCall = GigaResponse.FunctionCall(
+            functionCall = LLMResponse.FunctionCall(
                 name = "InternetResearch",
                 arguments = mapOf("query" to "сравнение MCP серверов"),
             )

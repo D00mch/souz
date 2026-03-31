@@ -3,7 +3,7 @@ package tool.files
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.mockk.every
 import io.mockk.mockk
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.files.ToolFindInFiles
 import java.io.File
@@ -31,7 +31,7 @@ class ToolFindInFilesTest {
 
         val resultsJson = ToolFindInFiles(filesToolUtil)
             .invoke(ToolFindInFiles.Input(baseDir.absolutePath, "needle"))
-        val results: List<List<String>> = gigaJsonMapper.readValue(resultsJson)
+        val results: List<List<String>> = restJsonMapper.readValue(resultsJson)
         val paths = results.map { it.first() }
 
         assertTrue(allowedFile.absolutePath in paths, "Expected allowed file result")

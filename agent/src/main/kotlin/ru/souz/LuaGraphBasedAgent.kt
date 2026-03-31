@@ -7,20 +7,20 @@ import org.kodein.di.instance
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.GraphStepCallback
 import ru.souz.agent.TraceableAgent
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.Graph
-import ru.souz.agent.engine.Node
-import ru.souz.agent.engine.buildGraph
+import ru.souz.agent.graph.Graph
+import ru.souz.agent.graph.Node
+import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLua
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.state.AgentContext
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.session.GraphSessionService
-import ru.souz.llms.GigaMessageRole
-import ru.souz.llms.GigaResponse
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMResponse
 
 class LuaGraphBasedAgent(
     di: DI,
@@ -37,44 +37,44 @@ class LuaGraphBasedAgent(
 
     override val sideEffects: Flow<String> = nodesLua.sideEffects
 
-    override val graph: Graph<String, String> = buildGraph(name = "LuaAgent") {
+    private val graph: Graph<String, String> = buildGraph(name = "LuaAgent") {
         val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
         val nodeClassify: Node<String, String> = nodesClassify.node(GraphSessionService.NODE_NAME_CLASSIFY)
         val nodeMcp: Node<String, String> = nodesMCP.nodeProvideMcpTools("MCP Node")
         val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
-        val planLua: Node<String, GigaResponse.Chat> = nodesLua.plan()
-        val chatOk: Node<GigaResponse.Chat, GigaResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
-            ctx.map { ctx.input as GigaResponse.Chat.Ok }
+        val planLua: Node<String, LLMResponse.Chat> = nodesLua.plan()
+        val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
+            ctx.map { ctx.input as LLMResponse.Chat.Ok }
         }
-        val chatErrorToFinish: Node<GigaResponse.Chat, String> = nodesErrorHandling.chatErrorToFinish()
-        val summary: Node<GigaResponse.Chat.Ok, String> = nodesSummarization.summarize()
-        val chatResponseToString: Node<GigaResponse.Chat.Ok, String> = nodesCommon.responseToString("Chat.Ok -> String")
+        val chatErrorToFinish: Node<LLMResponse.Chat, String> = nodesErrorHandling.chatErrorToFinish()
+        val summary: Node<LLMResponse.Chat.Ok, String> = nodesSummarization.summarize()
+        val chatResponseToString: Node<LLMResponse.Chat.Ok, String> = nodesCommon.responseToString("Chat.Ok -> String")
         val responseToCode: Node<String, String> = nodesLua.responseToCode()
         val runLua: Node<String, NodesLua.LuaExecutionResult> = nodesLua.execute()
         val runLuaOk: Node<NodesLua.LuaExecutionResult, String> = nodesLua.executeSuccessToString()
-        val runLuaOutputToChatOk: Node<String, GigaResponse.Chat.Ok> = Node("Lua Output -> Chat.Ok") { ctx ->
+        val runLuaOutputToChatOk: Node<String, LLMResponse.Chat.Ok> = Node("Lua Output -> Chat.Ok") { ctx ->
             ctx.map {
-                GigaResponse.Chat.Ok(
+                LLMResponse.Chat.Ok(
                     choices = listOf(
-                        GigaResponse.Choice(
-                            message = GigaResponse.Message(
+                        LLMResponse.Choice(
+                            message = LLMResponse.Message(
                                 content = ctx.input,
-                                role = GigaMessageRole.assistant,
+                                role = LLMMessageRole.assistant,
                                 functionsStateId = null,
                             ),
                             index = 0,
-                            finishReason = GigaResponse.FinishReason.stop,
+                            finishReason = LLMResponse.FinishReason.stop,
                         )
                     ),
                     created = System.currentTimeMillis(),
                     model = ctx.settings.model,
-                    usage = GigaResponse.Usage(0, 0, 0, 0),
+                    usage = LLMResponse.Usage(0, 0, 0, 0),
                 )
             }
         }
         val runLuaError: Node<NodesLua.LuaExecutionResult, NodesLua.LuaExecutionResult.Failure> =
             nodesLua.executeFailureToRepair()
-        val repairLua: Node<NodesLua.LuaExecutionResult.Failure, GigaResponse.Chat> = nodesLua.repair()
+        val repairLua: Node<NodesLua.LuaExecutionResult.Failure, LLMResponse.Chat> = nodesLua.repair()
 
         nodeInput.edgeTo(inputToHistory)
         inputToHistory.edgeTo(nodeClassify)
@@ -83,8 +83,8 @@ class LuaGraphBasedAgent(
         contextEnrich.edgeTo(planLua)
         planLua.edgeTo { ctx ->
             when (ctx.input) {
-                is GigaResponse.Chat.Error -> chatErrorToFinish
-                is GigaResponse.Chat.Ok -> chatOk
+                is LLMResponse.Chat.Error -> chatErrorToFinish
+                is LLMResponse.Chat.Ok -> chatOk
             }
         }
         chatOk.edgeTo(chatResponseToString)
@@ -99,8 +99,8 @@ class LuaGraphBasedAgent(
         runLuaError.edgeTo(repairLua)
         repairLua.edgeTo { ctx ->
             when (ctx.input) {
-                is GigaResponse.Chat.Error -> chatErrorToFinish
-                is GigaResponse.Chat.Ok -> chatOk
+                is LLMResponse.Chat.Error -> chatErrorToFinish
+                is LLMResponse.Chat.Ok -> chatOk
             }
         }
         runLuaOk.edgeTo(runLuaOutputToChatOk)

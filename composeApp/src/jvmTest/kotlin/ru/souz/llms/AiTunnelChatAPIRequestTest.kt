@@ -15,20 +15,20 @@ class AiTunnelChatAPIRequestTest {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
-            body = GigaRequest.Chat(
-                model = GigaModel.AiTunnelGpt5Nano.alias,
+            body = LLMRequest.Chat(
+                model = LLMModel.AiTunnelGpt5Nano.alias,
                 maxTokens = 256,
                 messages = listOf(
-                    GigaRequest.Message(role = GigaMessageRole.user, content = "run tool"),
+                    LLMRequest.Message(role = LLMMessageRole.user, content = "run tool"),
                 ),
                 functions = listOf(
-                    GigaRequest.Function(
+                    LLMRequest.Function(
                         name = "PresentationCreate",
                         description = "Create slides",
-                        parameters = GigaRequest.Parameters(
+                        parameters = LLMRequest.Parameters(
                             type = "object",
                             properties = mapOf(
-                                "slides" to GigaRequest.Property(
+                                "slides" to LLMRequest.Property(
                                     type = "array",
                                     description = "Array of slide objects",
                                 ),
@@ -60,7 +60,7 @@ class AiTunnelChatAPIRequestTest {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.aiTunnelKey } returns "test-key"
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
-        every { settingsProvider.gigaModel } returns GigaModel.AiTunnelGpt5Nano
+        every { settingsProvider.gigaModel } returns LLMModel.AiTunnelGpt5Nano
 
         val tokenLogging = mockk<TokenLogging>(relaxed = true)
         return AiTunnelChatAPI(settingsProvider, tokenLogging)
@@ -69,12 +69,12 @@ class AiTunnelChatAPIRequestTest {
     @Suppress("UNCHECKED_CAST")
     private fun invokeBuildChatRequest(
         api: AiTunnelChatAPI,
-        body: GigaRequest.Chat,
+        body: LLMRequest.Chat,
         stream: Boolean,
     ): Map<String, Any> {
         val method = AiTunnelChatAPI::class.java.getDeclaredMethod(
             "buildChatRequest",
-            GigaRequest.Chat::class.java,
+            LLMRequest.Chat::class.java,
             Boolean::class.javaPrimitiveType,
         )
         method.isAccessible = true

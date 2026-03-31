@@ -9,8 +9,8 @@ import kotlinx.coroutines.coroutineScope
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.GraphStepCallback
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.Graph
+import ru.souz.agent.graph.Graph
+import ru.souz.agent.state.AgentContext
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
@@ -45,11 +45,13 @@ internal class GraphExecutionDelegateImpl(
         val newContext = coroutineScope {
             val result: Deferred<AgentContext<String>> = async {
                 graph.start(ctx) { step, node, from, to ->
+                    val fromCtx = from as AgentContext<Any?>
+                    val toCtx = to as AgentContext<Any?>
                     val prettyInput = runCatching {
-                        logObjectMapper.writeValueAsString(from.input)
-                    }.getOrElse { from.input.toString() }
+                        logObjectMapper.writeValueAsString(fromCtx.input)
+                    }.getOrElse { fromCtx.input.toString() }
                     logger.debug("Step: {}, node: {}, input: {}", step.index, node.name, prettyInput)
-                    onStep?.invoke(step, node, from, to)
+                    onStep?.invoke(step, node, fromCtx, toCtx)
                 }
             }
             runningJob.store(result)

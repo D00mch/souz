@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
 import ru.souz.db.ConfigStore
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import java.nio.file.Files
@@ -94,7 +94,7 @@ private class KtorTelegramBotApi : TelegramBotApi {
             parameter("offset", offset)
             parameter("timeout", timeoutSeconds)
         }
-        return gigaJsonMapper.readValue(response.bodyAsText())
+        return restJsonMapper.readValue(response.bodyAsText())
     }
 
     override suspend fun sendMessage(token: String, chatId: Long, text: String) {
@@ -108,7 +108,7 @@ private class KtorTelegramBotApi : TelegramBotApi {
         val response = client.get("https://api.telegram.org/bot$token/getFile") {
             parameter("file_id", fileId)
         }
-        return gigaJsonMapper.readValue(response.bodyAsText())
+        return restJsonMapper.readValue(response.bodyAsText())
     }
 
     override suspend fun downloadTelegramFileBytes(token: String, filePath: String): ByteArray {

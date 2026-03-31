@@ -4,8 +4,8 @@ package ru.souz.tool
 
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.db.ConfigStore
-import ru.souz.llms.GigaRequest
-import ru.souz.llms.giga.GigaToolSetup
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMToolSetup
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.service.telegram.TelegramService
@@ -38,7 +38,7 @@ class ToolsSettings(
     private val localState: AtomicReference<ToolsSettingsState?> = AtomicReference(null)
 
     fun load(
-        toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>> = toolsFactory.toolsByCategory
+        toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = toolsFactory.toolsByCategory
     ): ToolsSettingsState {
         val storedState: ToolsSettingsState? = localState.load() ?: store.get(TOOLS_SETTINGS_KEY)
         val defaultState = defaultState(toolsByCategory)
@@ -58,16 +58,16 @@ class ToolsSettings(
     }
 
     override fun applyFilter(
-        toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
-    ): Map<ToolCategory, Map<String, GigaToolSetup>> {
+        toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
+    ): Map<ToolCategory, Map<String, LLMToolSetup>> {
         val savedSettings = load(toolsByCategory)
-        val result = HashMap<ToolCategory, Map<String, GigaToolSetup>>(toolsByCategory.size)
+        val result = HashMap<ToolCategory, Map<String, LLMToolSetup>>(toolsByCategory.size)
         for ((category, tools) in toolsByCategory) {
             if (isCategoryForceDisabled(category)) continue
             val categorySavedSettings = savedSettings.categories[category]
             if (categorySavedSettings?.enabled == false) continue
 
-            val allowed = HashMap<String, GigaToolSetup>(tools.size)
+            val allowed = HashMap<String, LLMToolSetup>(tools.size)
             for ((toolName, setup) in tools) {
                 val toolSettings = categorySavedSettings?.settings?.get(toolName)
                 if (toolSettings?.enabled != false) {
@@ -85,7 +85,7 @@ class ToolsSettings(
     }
 
     private fun defaultState(
-        toolsByCategory: Map<ToolCategory, Map<String, GigaToolSetup>>,
+        toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
     ): ToolsSettingsState = ToolsSettingsState(
         categories = toolsByCategory.mapValues { (_, tools) ->
             ToolCategorySettings(
@@ -147,9 +147,9 @@ class ToolsSettings(
         }
 
     private fun applyOverrides(
-        setup: GigaToolSetup,
+        setup: LLMToolSetup,
         savedToolSettings: ToolSettingsEntry?,
-    ): GigaToolSetup {
+    ): LLMToolSetup {
         if (savedToolSettings == null) return setup
         val description = savedToolSettings.description ?: setup.fn.description
 
@@ -157,10 +157,10 @@ class ToolsSettings(
             return setup
         }
 
-        val examples: List<GigaRequest.FewShotExample> =
-            savedToolSettings.examples?.map { GigaRequest.FewShotExample(it.request, it.params) } ?: emptyList()
+        val examples: List<LLMRequest.FewShotExample> =
+            savedToolSettings.examples?.map { LLMRequest.FewShotExample(it.request, it.params) } ?: emptyList()
 
-        return object : GigaToolSetup by setup {
+        return object : LLMToolSetup by setup {
             override val fn = setup.fn.copy(
                 description = description,
                 fewShotExamples = examples + (setup.fn.fewShotExamples ?: emptyList()),

@@ -7,7 +7,7 @@ import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.instance
 import org.slf4j.LoggerFactory
-import ru.souz.llms.giga.gigaJsonMapper
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolCategorySettings
@@ -192,7 +192,7 @@ class ToolDetailsViewModel(
             val params = if (example.paramsJson.isBlank()) {
                 emptyMap()
             } else {
-                runCatching { gigaJsonMapper.readValue(example.paramsJson, paramsTypeRef) }
+                runCatching { restJsonMapper.readValue(example.paramsJson, paramsTypeRef) }
                     .getOrElse {
                         return ExamplesParseResult(
                             examples = null,
@@ -211,7 +211,7 @@ class ToolDetailsViewModel(
     private fun FewShotExample.toUi(): ToolExampleUi = ToolExampleUi(
         id = newExampleId(),
         request = request,
-        paramsJson = gigaJsonMapper.writeValueAsString(params),
+        paramsJson = restJsonMapper.writeValueAsString(params),
     )
 
     private fun newExampleId(): String = UUID.randomUUID().toString()

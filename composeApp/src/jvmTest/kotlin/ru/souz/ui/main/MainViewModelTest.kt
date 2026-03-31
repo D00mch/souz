@@ -28,6 +28,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentSettings
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -41,8 +43,6 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentSideEffect
-import ru.souz.agent.engine.AgentContext
-import ru.souz.agent.engine.AgentSettings
 import ru.souz.service.audio.ActiveSoundRecorderImpl
 import ru.souz.service.audio.InMemoryAudioRecorder
 import ru.souz.service.audio.Say
@@ -50,9 +50,9 @@ import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.TokenLogging
-import ru.souz.llms.GigaModel
-import ru.souz.llms.GigaResponse
-import ru.souz.llms.GigaResponse.FunctionCall
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMResponse.FunctionCall
 import ru.souz.llms.giga.GigaVoiceAPI
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
@@ -229,7 +229,7 @@ class MainViewModelTest {
                 firstResponse.completeExceptionally(CancellationException("Cancelled by alt press"))
             },
             recognizeBehavior = {
-                GigaResponse.RecognizeResponse(result = listOf("second request"))
+                LLMResponse.RecognizeResponse(result = listOf("second request"))
             },
         )
 
@@ -266,7 +266,7 @@ class MainViewModelTest {
         val harness = createHarness(
             voiceInputReviewEnabled = true,
             recognizeBehavior = {
-                GigaResponse.RecognizeResponse(result = listOf(draft))
+                LLMResponse.RecognizeResponse(result = listOf(draft))
             },
         )
 
@@ -292,7 +292,7 @@ class MainViewModelTest {
         val draft = "voice draft input"
         val harness = createHarness(
             voiceInputReviewEnabled = true,
-            recognizeBehavior = { GigaResponse.RecognizeResponse(result = listOf(draft)) },
+            recognizeBehavior = { LLMResponse.RecognizeResponse(result = listOf(draft)) },
         )
 
         try {
@@ -323,7 +323,7 @@ class MainViewModelTest {
             recognizeBehavior = {
                 call += 1
                 val result = if (call == 1) firstDraft else secondDraft
-                GigaResponse.RecognizeResponse(result = listOf(result))
+                LLMResponse.RecognizeResponse(result = listOf(result))
             },
         )
 
@@ -359,7 +359,7 @@ class MainViewModelTest {
             recognizeBehavior = {
                 recognitionStarted.complete(Unit)
                 releaseRecognition.await()
-                GigaResponse.RecognizeResponse(result = listOf("final draft"))
+                LLMResponse.RecognizeResponse(result = listOf("final draft"))
             },
         )
 
@@ -394,7 +394,7 @@ class MainViewModelTest {
                     response.await()
                 },
                 recognizeBehavior = {
-                    GigaResponse.RecognizeResponse(result = listOf("hello"))
+                    LLMResponse.RecognizeResponse(result = listOf("hello"))
                 },
             )
 
@@ -570,7 +570,7 @@ class MainViewModelTest {
     fun `selecting missing local model opens download prompt in main chat`() = runTest(mainDispatcher) {
         val harness = createHarness(
             qwenChatKey = "qwen-key",
-            localAvailableModel = GigaModel.LocalQwen3_4B_Instruct_2507,
+            localAvailableModel = LLMModel.LocalQwen3_4B_Instruct_2507,
             localModelDownloaded = false,
         )
 
@@ -578,11 +578,11 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            viewModel.handleEvent(MainEvent.UpdateChatModel(GigaModel.LocalQwen3_4B_Instruct_2507.alias))
+            viewModel.handleEvent(MainEvent.UpdateChatModel(LLMModel.LocalQwen3_4B_Instruct_2507.alias))
 
-            val state = awaitState(viewModel) { it.localModelDownloadPrompt?.model == GigaModel.LocalQwen3_4B_Instruct_2507 }
-            assertEquals(GigaModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
-            assertFalse(state.selectedModel == GigaModel.LocalQwen3_4B_Instruct_2507.alias)
+            val state = awaitState(viewModel) { it.localModelDownloadPrompt?.model == LLMModel.LocalQwen3_4B_Instruct_2507 }
+            assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
+            assertFalse(state.selectedModel == LLMModel.LocalQwen3_4B_Instruct_2507.alias)
         } finally {
             harness.clear()
         }
@@ -737,10 +737,10 @@ class MainViewModelTest {
         needsOnboarding: Boolean = false,
         voiceInputReviewEnabled: Boolean = false,
         qwenChatKey: String = "",
-        localAvailableModel: GigaModel? = null,
+        localAvailableModel: LLMModel? = null,
         localModelDownloaded: Boolean = true,
-        recognizeBehavior: suspend (ByteArray) -> GigaResponse.RecognizeResponse = {
-            GigaResponse.RecognizeResponse()
+        recognizeBehavior: suspend (ByteArray) -> LLMResponse.RecognizeResponse = {
+            LLMResponse.RecognizeResponse()
         },
     ): TestHarness {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
@@ -755,7 +755,7 @@ class MainViewModelTest {
         every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.LUA_GRAPH, ru.souz.agent.AgentId.GRAPH)
 
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
-        every { settingsProvider.gigaModel } returns GigaModel.Max
+        every { settingsProvider.gigaModel } returns LLMModel.Max
         every { settingsProvider.contextSize } returns 16_000
         every { settingsProvider.useStreaming } returns false
         every { settingsProvider.regionProfile } returns "ru"
@@ -810,8 +810,8 @@ class MainViewModelTest {
         var telemetryRequestCounter = 0
         var telemetryConversationCounter = 0
         every { tokenLogging.requestContextElement(any()) } returns EmptyCoroutineContext
-        every { tokenLogging.currentRequestTokenUsage(any()) } returns GigaResponse.Usage(0, 0, 0, 0)
-        every { tokenLogging.sessionTokenUsage() } returns GigaResponse.Usage(0, 0, 0, 0)
+        every { tokenLogging.currentRequestTokenUsage(any()) } returns LLMResponse.Usage(0, 0, 0, 0)
+        every { tokenLogging.sessionTokenUsage() } returns LLMResponse.Usage(0, 0, 0, 0)
         every { telemetryService.startConversation(any()) } answers {
             "conversation-${++telemetryConversationCounter}"
         }
@@ -888,7 +888,7 @@ class MainViewModelTest {
 
     private fun emptyAgentContext() = AgentContext(
         input = "", settings = AgentSettings(
-            model = GigaModel.Max.alias, temperature = 0f, toolsByCategory = emptyMap()
+            model = LLMModel.Max.alias, temperature = 0f, toolsByCategory = emptyMap()
         ), history = emptyList(), activeTools = emptyList(), systemPrompt = ""
     )
 

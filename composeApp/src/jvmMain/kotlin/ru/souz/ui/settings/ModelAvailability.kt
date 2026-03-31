@@ -3,16 +3,16 @@ package ru.souz.ui.settings
 import ru.souz.db.SettingsProvider
 import ru.souz.db.hasKey
 import ru.souz.llms.EmbeddingsModel
-import ru.souz.llms.GigaModel
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
 
-fun SettingsProvider.availableLlmModels(llmBuildProfile: LlmBuildProfile): List<GigaModel> =
+fun SettingsProvider.availableLlmModels(llmBuildProfile: LlmBuildProfile): List<LLMModel> =
     llmBuildProfile.availableModels.filter { model -> this.hasKey(model.provider) }
 
-fun SettingsProvider.defaultLlmModel(llmBuildProfile: LlmBuildProfile): GigaModel? {
+fun SettingsProvider.defaultLlmModel(llmBuildProfile: LlmBuildProfile): LLMModel? {
     val availableModels = this.availableLlmModels(llmBuildProfile)
     if (availableModels.isEmpty()) return null
 
