@@ -139,16 +139,6 @@ If you are not sure about something, left a note for other developers to review.
 
 ## Module Structure
 
-```mermaid
-graph TD
-    composeApp[":composeApp"] --> agent[":agent"]
-    composeApp --> llms[":llms"]
-    composeApp --> native[":native"]
-    agent --> graphEngine[":graph-engine"]
-    agent --> llms
-    native --> llms
-```
-
 - `:composeApp` depends on `:agent`, `:llms`, and `:native`.
 - `:agent` depends on `:graph-engine` and `:llms`.
 - `:native` depends on `:llms`.
