@@ -13,46 +13,61 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
+/** Selection review to resolve staged edits. */
 enum class ToolModifySelectionAction {
     APPLY_SELECTED,
     DISCARD_SELECTED,
 }
 
+/** Final outcome for one staged [ToolModifyFile] call after the review step finishes. */
 enum class ToolModifyApplyStatus {
     APPLIED,
     DISCARDED,
+
+    /** The staged edit no longer matched because earlier review choices changed its expected context. */
     SKIPPED_CONFLICT,
+
+    /** The file changed on disk after staging, so replay was aborted for safety. */
     SKIPPED_EXTERNAL_CONFLICT,
 }
 
-data class ToolModifyPendingReviewItem(
-    val id: Long,
-    val path: String,
-    val patchPreview: String,
-)
+/** Snapshot of all staged [ToolModifyFile] calls awaiting review. */
+data class ToolModifyPendingReview(val items: List<Item>) {
+    
+    /** One staged [ToolModifyFile] call exposed to the review. */
+    data class Item(
+        val id: Long,
+        val path: String,
+        val patchPreview: String,
+    )
+}
 
-data class ToolModifyPendingReview(
-    val items: List<ToolModifyPendingReviewItem>,
-)
-
-data class ToolModifyApplyItemResult(
-    val id: Long,
-    val path: String,
-    val status: ToolModifyApplyStatus,
-    val warning: String? = null,
-)
-
-data class ToolModifyApplyResult(
-    val items: List<ToolModifyApplyItemResult>,
-) {
+/** Aggregate result of resolving the current staged edit batch. */
+data class ToolModifyApplyResult(val items: List<Item>) {
+    
     val appliedCount: Int get() = items.count { it.status == ToolModifyApplyStatus.APPLIED }
     val discardedCount: Int get() = items.count { it.status == ToolModifyApplyStatus.DISCARDED }
     val skippedCount: Int get() = items.count {
         it.status == ToolModifyApplyStatus.SKIPPED_CONFLICT ||
             it.status == ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT
     }
+
+    /** Result entry for one staged edit after apply/discard resolution. */
+    data class Item(
+        val id: Long,
+        val path: String,
+        val status: ToolModifyApplyStatus,
+        val warning: String? = null,
+    )
 }
 
+/**
+ * Safe-mode broker for [ToolModifyFile].
+ *
+ * Instead of prompting on each edit immediately, this broker stages individual edit requests, keeps a
+ * virtual per-file working state for later edits in the same run, and exposes a final review/apply step
+ * that replays selected edits only if the file has not changed externally.
+ */
 class DeferredToolModifyPermissionBroker(
     private val settingsProvider: SettingsProvider,
     private val filesToolUtil: FilesToolUtil,
@@ -67,8 +82,14 @@ class DeferredToolModifyPermissionBroker(
 
     fun shouldStageEdits(): Boolean = settingsProvider.safeModeEnabled
 
+    /**
+     * Returns whether any staged [ToolModifyFile] calls are waiting for review.
+     */
     fun hasPendingEdits(): Boolean = hasPendingEdits.get()
 
+    /**
+     * Validates and stages one [ToolModifyFile] call against the current virtual file state.
+     */
     suspend fun stageEdit(input: ToolModifyFile.Input) {
         mutex.withLock {
             val canonicalFile = filesToolUtil.resolveSafeExistingFile(input.path)
@@ -94,11 +115,14 @@ class DeferredToolModifyPermissionBroker(
         }
     }
 
+    /**
+     * Returns the current review snapshot, or `null` when there is nothing staged.
+     */
     suspend fun snapshotPendingReview(): ToolModifyPendingReview? = mutex.withLock {
         if (stagedCalls.isEmpty()) return null
         ToolModifyPendingReview(
             items = stagedCalls.map { staged ->
-                ToolModifyPendingReviewItem(
+                ToolModifyPendingReview.Item(
                     id = staged.id,
                     path = staged.path,
                     patchPreview = staged.patchPreview,
@@ -107,6 +131,12 @@ class DeferredToolModifyPermissionBroker(
         )
     }
 
+    /**
+     * Applies or discards the staged batch according to [action] and [selectedIds].
+     *
+     * Selected edits are replayed in original order per file against a fresh disk read to ensure the final
+     * write is still based on the same on-disk content that was reviewed.
+     */
     suspend fun applySelection(
         selectedIds: Set<Long>,
         action: ToolModifySelectionAction,
@@ -121,13 +151,13 @@ class DeferredToolModifyPermissionBroker(
                 .filterNot(selectedIds::contains)
                 .toSet()
         }
-        val results = ArrayList<ToolModifyApplyItemResult>(stagedSnapshot.size)
+        val results = ArrayList<ToolModifyApplyResult.Item>(stagedSnapshot.size)
 
         stagedSnapshot.groupBy { it.path }.forEach { (path, callsForFile) ->
             val virtualFile = virtualFiles[path]
             if (virtualFile == null) {
                 callsForFile.forEach { staged ->
-                    results += ToolModifyApplyItemResult(
+                    results += ToolModifyApplyResult.Item(
                         id = staged.id,
                         path = staged.path,
                         status = if (staged.id in selectedForApply) {
@@ -178,7 +208,7 @@ class DeferredToolModifyPermissionBroker(
             var hasAppliedChanges = false
             callsForFile.forEach { staged ->
                 if (staged.id !in selectedForApply) {
-                    results += ToolModifyApplyItemResult(
+                    results += ToolModifyApplyResult.Item(
                         id = staged.id,
                         path = staged.path,
                         status = ToolModifyApplyStatus.DISCARDED,
@@ -195,13 +225,13 @@ class DeferredToolModifyPermissionBroker(
                     )
                     workingRawText = prepared.updatedRawText
                     hasAppliedChanges = true
-                    results += ToolModifyApplyItemResult(
+                    results += ToolModifyApplyResult.Item(
                         id = staged.id,
                         path = staged.path,
                         status = ToolModifyApplyStatus.APPLIED,
                     )
                 } catch (_: BadInputException) {
-                    results += ToolModifyApplyItemResult(
+                    results += ToolModifyApplyResult.Item(
                         id = staged.id,
                         path = staged.path,
                         status = ToolModifyApplyStatus.SKIPPED_CONFLICT,
@@ -219,6 +249,9 @@ class DeferredToolModifyPermissionBroker(
         ToolModifyApplyResult(items = results)
     }
 
+    /**
+     * Drops all currently staged edits without applying them.
+     */
     suspend fun clearPending() {
         mutex.withLock { clearLocked() }
     }
@@ -236,6 +269,9 @@ class DeferredToolModifyPermissionBroker(
         hasPendingEdits.set(false)
     }
 
+    /**
+     * Immutable record of one staged [ToolModifyFile] invocation.
+     */
     private data class StagedEditCall(
         val id: Long,
         val input: ToolModifyFile.Input,
@@ -243,6 +279,9 @@ class DeferredToolModifyPermissionBroker(
         val patchPreview: String,
     )
 
+    /**
+     * Per-file virtual editing state used while additional staged edits are still accumulating.
+     */
     private data class VirtualFileState(
         val file: java.io.File,
         val originalRawText: String,
@@ -261,13 +300,13 @@ class DeferredToolModifyPermissionBroker(
         )
 
     private fun appendExternalConflictResults(
-        results: MutableList<ToolModifyApplyItemResult>,
+        results: MutableList<ToolModifyApplyResult.Item>,
         callsForFile: List<StagedEditCall>,
         selectedForApply: Set<Long>,
         warning: String,
     ) {
         callsForFile.forEach { staged ->
-            results += ToolModifyApplyItemResult(
+            results += ToolModifyApplyResult.Item(
                 id = staged.id,
                 path = staged.path,
                 status = if (staged.id in selectedForApply) {

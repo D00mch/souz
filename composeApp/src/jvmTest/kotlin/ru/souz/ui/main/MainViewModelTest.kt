@@ -67,6 +67,7 @@ import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
+import ru.souz.tool.files.ToolModifyFile
 import ru.souz.ui.BaseViewModel
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.main.usecases.MainUseCasesFactory
@@ -755,6 +756,136 @@ class MainViewModelTest {
         }
     }
 
+    @Test
+    fun `stale response clears staged edit broker state`() = runTest(mainDispatcher) {
+        val firstResponse = CompletableDeferred<String>()
+        val secondResponse = CompletableDeferred<String>()
+        lateinit var harness: TestHarness
+        val stagedFile = java.nio.file.Files.createTempFile(
+            FilesToolUtil.homeDirectory.toPath(),
+            "souz-stale-response-",
+            ".txt",
+        ).toFile().apply {
+            writeText("line\n")
+        }
+        harness = createHarness(
+            safeModeEnabled = true,
+            executeBehavior = { input ->
+                when (input) {
+                    "first request" -> {
+                        harness.deferredToolModifyPermissionBroker.stageEdit(
+                            ToolModifyFile.Input(
+                                path = stagedFile.absolutePath,
+                                oldString = "line",
+                                newString = "LINE",
+                            )
+                        )
+                        firstResponse.await()
+                    }
+
+                    "second request" -> secondResponse.await()
+                    else -> error("Unexpected input: $input")
+                }
+            },
+            onCancelActiveJob = { /* Simulate stale completion after a non-cooperative cancel. */ },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
+            awaitState(viewModel) { it.isProcessing && it.chatMessages.any { msg -> msg.text == "first request" } }
+            assertTrue(harness.deferredToolModifyPermissionBroker.hasPendingEdits())
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("second request"))
+            awaitState(viewModel) { it.isProcessing && it.chatMessages.any { msg -> msg.text == "second request" } }
+
+            firstResponse.complete("stale answer")
+            advanceUntilIdle()
+
+            assertFalse(harness.deferredToolModifyPermissionBroker.hasPendingEdits())
+            assertNull(harness.deferredToolModifyPermissionBroker.snapshotPendingReview())
+            assertFalse(viewModel.uiState.value.chatMessages.any { it.text == "stale answer" })
+
+            secondResponse.complete("second answer")
+            val finalState = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "second answer" }
+            }
+            assertFalse(finalState.chatMessages.any { it.toolModifyReview != null })
+        } finally {
+            firstResponse.completeExceptionally(CancellationException("cleanup"))
+            secondResponse.completeExceptionally(CancellationException("cleanup"))
+            harness.clear()
+            stagedFile.delete()
+        }
+    }
+
+    @Test
+    fun `stale failure clears staged edit broker state`() = runTest(mainDispatcher) {
+        val firstFailureGate = CompletableDeferred<Unit>()
+        val secondResponse = CompletableDeferred<String>()
+        lateinit var harness: TestHarness
+        val stagedFile = java.nio.file.Files.createTempFile(
+            FilesToolUtil.homeDirectory.toPath(),
+            "souz-stale-failure-",
+            ".txt",
+        ).toFile().apply {
+            writeText("line\n")
+        }
+        harness = createHarness(
+            safeModeEnabled = true,
+            executeBehavior = { input ->
+                when (input) {
+                    "first request" -> {
+                        harness.deferredToolModifyPermissionBroker.stageEdit(
+                            ToolModifyFile.Input(
+                                path = stagedFile.absolutePath,
+                                oldString = "line",
+                                newString = "LINE",
+                            )
+                        )
+                        firstFailureGate.await()
+                        throw IllegalStateException("stale failure")
+                    }
+
+                    "second request" -> secondResponse.await()
+                    else -> error("Unexpected input: $input")
+                }
+            },
+            onCancelActiveJob = { /* Simulate stale failure after a non-cooperative cancel. */ },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("first request"))
+            awaitState(viewModel) { it.isProcessing && it.chatMessages.any { msg -> msg.text == "first request" } }
+            assertTrue(harness.deferredToolModifyPermissionBroker.hasPendingEdits())
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("second request"))
+            awaitState(viewModel) { it.isProcessing && it.chatMessages.any { msg -> msg.text == "second request" } }
+
+            firstFailureGate.complete(Unit)
+            advanceUntilIdle()
+
+            assertFalse(harness.deferredToolModifyPermissionBroker.hasPendingEdits())
+            assertNull(harness.deferredToolModifyPermissionBroker.snapshotPendingReview())
+            assertFalse(viewModel.uiState.value.chatMessages.any { it.text.contains("stale failure") })
+
+            secondResponse.complete("second answer")
+            val finalState = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "second answer" }
+            }
+            assertFalse(finalState.chatMessages.any { it.toolModifyReview != null })
+        } finally {
+            secondResponse.completeExceptionally(CancellationException("cleanup"))
+            harness.clear()
+            stagedFile.delete()
+        }
+    }
+
 
     private suspend fun TestScope.awaitState(
         viewModel: MainViewModel,
@@ -811,6 +942,7 @@ class MainViewModelTest {
         onCancelActiveJob: () -> Unit = {},
         needsOnboarding: Boolean = false,
         voiceInputReviewEnabled: Boolean = false,
+        safeModeEnabled: Boolean = false,
         qwenChatKey: String = "",
         localAvailableModel: LLMModel? = null,
         localModelDownloaded: Boolean = true,
@@ -834,6 +966,7 @@ class MainViewModelTest {
         every { settingsProvider.contextSize } returns 16_000
         every { settingsProvider.useStreaming } returns false
         every { settingsProvider.regionProfile } returns "ru"
+        every { settingsProvider.forbiddenFolders } returns emptyList()
         every { settingsProvider.qwenChatKey } returns qwenChatKey
         every { settingsProvider.regionProfile = any() } just runs
         val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
@@ -854,7 +987,7 @@ class MainViewModelTest {
         var onboardingCompletedState = false
         every { settingsProvider.onboardingCompleted } answers { onboardingCompletedState }
         every { settingsProvider.onboardingCompleted = any() } answers { onboardingCompletedState = firstArg<Boolean>() }
-        every { settingsProvider.safeModeEnabled } returns false
+        every { settingsProvider.safeModeEnabled } returns safeModeEnabled
         var voiceInputReviewEnabledState = voiceInputReviewEnabled
         every { settingsProvider.voiceInputReviewEnabled } answers { voiceInputReviewEnabledState }
         every { settingsProvider.voiceInputReviewEnabled = any() } answers {
@@ -950,6 +1083,7 @@ class MainViewModelTest {
             say = say,
             incomingMessages = incomingMessages,
             sideEffects = sideEffects,
+            deferredToolModifyPermissionBroker = deferredToolModifyPermissionBroker,
         )
     }
 
@@ -988,6 +1122,7 @@ class MainViewModelTest {
         val say: Say,
         val incomingMessages: MutableSharedFlow<TelegramBotController.IncomingMessage>,
         val sideEffects: MutableSharedFlow<AgentSideEffect>,
+        val deferredToolModifyPermissionBroker: DeferredToolModifyPermissionBroker,
     ) {
         fun clear() {
             val onCleared = MainViewModel::class.java.getDeclaredMethod("onCleared")

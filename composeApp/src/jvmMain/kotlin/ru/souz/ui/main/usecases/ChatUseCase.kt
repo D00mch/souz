@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
@@ -159,6 +160,7 @@ class ChatUseCase(
                 l.info("Skipping stale chat response for request {}", requestId)
                 telemetryStatus = TelemetryRequestStatus.CANCELLED
                 telemetryErrorMessage = "StaleRequest"
+                clearPendingToolModifyReview(discardBrokerState = true)
                 onResult?.invoke(Result.failure(CancellationException("Stale request")))
                 return
             }
@@ -300,6 +302,7 @@ class ChatUseCase(
             telemetryErrorMessage = telemetryErrorLabel(e)
             if (activeChatRequestId.get() != requestId) {
                 l.info("Ignoring stale chat failure for request {}: {}", requestId, e.message)
+                clearPendingToolModifyReview(discardBrokerState = true)
                 onResult?.invoke(Result.failure(e))
                 return
             }
@@ -369,7 +372,7 @@ class ChatUseCase(
     }
 
     fun clearContext() {
-        clearPendingToolModifyReview(discardBrokerState = true)
+        clearPendingToolModifyReviewBlocking(discardBrokerState = true)
         agentFacade.clearContext()
     }
 
@@ -444,7 +447,7 @@ class ChatUseCase(
         finishCurrentConversation(TelemetryConversationEndReason.VIEW_MODEL_CLEARED)
         killTaskSideEffectJobs()
         cancelActiveJob()
-        clearPendingToolModifyReview(discardBrokerState = true)
+        clearPendingToolModifyReviewBlocking(discardBrokerState = true)
     }
 
     private fun ensureConversation(source: TelemetryRequestSource): String =
@@ -539,12 +542,18 @@ class ChatUseCase(
         _outputs.emit(MainUseCaseOutput.State(reduce))
     }
 
-    private fun clearPendingToolModifyReview(discardBrokerState: Boolean) {
+    private suspend fun clearPendingToolModifyReview(discardBrokerState: Boolean) {
         pendingToolModifyReview.getAndSet(null)?.decision?.cancel()
         if (discardBrokerState) {
-            kotlinx.coroutines.runBlocking {
+            withContext(NonCancellable) {
                 deferredToolModifyPermissionBroker.clearPending()
             }
+        }
+    }
+
+    private fun clearPendingToolModifyReviewBlocking(discardBrokerState: Boolean) {
+        runBlocking {
+            clearPendingToolModifyReview(discardBrokerState = discardBrokerState)
         }
     }
 
