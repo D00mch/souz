@@ -1,12 +1,16 @@
 ## Project Structure
 
 ```text
-graph/
-├── Graph.kt                         # Graph DSL, node wiring, and graph execution entry point
-├── GraphRunner.kt                   # Step-by-step graph traversal and retry handling
-├── GraphRuntime.kt                  # Runtime policy, retry state, and step bookkeeping
-├── Node.kt                          # Generic graph node abstraction
-└── README.md                        # Local notes for the graph engine
+graph-engine/
+├── src/main/kotlin/ru/souz/graph/
+│   ├── Graph.kt                     # Graph DSL, node wiring, and graph execution entry point
+│   ├── GraphRunner.kt               # Step-by-step graph traversal and retry handling
+│   ├── GraphRuntime.kt              # Runtime policy, retry state, and step bookkeeping
+│   └── Node.kt                      # Generic graph node abstraction
+├── src/test/kotlin/ru/souz/graph/
+│   └── GraphReadmeExampleTest.kt    # Executable example used by the README
+├── INFO.md                          # Local notes for the graph engine
+└── README.md                        # Public module overview
 ```
 
 Notes:

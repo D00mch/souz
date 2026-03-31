@@ -13,7 +13,6 @@ internal typealias GraphBuilder<IN, OUT> = CoreGraphBuilder<AgentContext<IN>, Ag
 internal typealias GraphRuntime = ru.souz.graph.GraphRuntime
 internal typealias RetryPolicy = ru.souz.graph.RetryPolicy
 internal typealias StepInfo = ru.souz.graph.StepInfo
-internal typealias GraphCancellation = ru.souz.graph.GraphCancellation
 
 private val defaultRetryPolicy = RetryPolicy(
     maxAttempts = 2,
