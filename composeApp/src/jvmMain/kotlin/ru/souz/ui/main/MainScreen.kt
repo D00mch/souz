@@ -75,6 +75,8 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.souz.LocalWindowScope
+import ru.souz.tool.files.ToolModifyApplyStatus
+import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.common.*
 import souz.composeapp.generated.resources.*
 import java.awt.datatransfer.Transferable
@@ -178,6 +180,12 @@ fun MainScreen(
         onConsumePendingVoiceInputDraft = { token ->
             viewModel.send(MainEvent.ConsumePendingVoiceInputDraft(token))
         },
+        onToggleToolModifyReviewSelection = { messageId, itemId ->
+            viewModel.send(MainEvent.ToggleToolModifyReviewSelection(messageId, itemId))
+        },
+        onResolveToolModifyReview = { messageId, action ->
+            viewModel.send(MainEvent.ResolveToolModifyReview(messageId, action))
+        },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
         onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
@@ -213,6 +221,8 @@ fun MainScreenContent(
     onSendChatMessage: (String) -> Unit = {},
     onClearContext: () -> Unit = {},
     onConsumePendingVoiceInputDraft: (Long) -> Unit = {},
+    onToggleToolModifyReviewSelection: (String, Long) -> Unit = { _, _ -> },
+    onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit = { _, _ -> },
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
     onSelectApprovalCandidate: (Long) -> Unit = {},
@@ -389,6 +399,7 @@ fun MainScreenContent(
                     pendingVoiceInputDraft = state.pendingVoiceInputDraft,
                     pendingVoiceInputDraftToken = state.pendingVoiceInputDraftToken,
                     isProcessing = state.isProcessing,
+                    isAwaitingToolReview = state.isAwaitingToolReview,
                     isListening = state.isListening,
                     isOnline = isOnline,
                     isSpeaking = state.isSpeaking,
@@ -403,6 +414,8 @@ fun MainScreenContent(
                     onStartListening = onStartListening,
                     onStopListening = onStopListening,
                     onStopSpeech = onStopSpeech,
+                    onToggleToolModifyReviewSelection = onToggleToolModifyReviewSelection,
+                    onResolveToolModifyReview = onResolveToolModifyReview,
                     onShowSnack = onShowSnack,
                     onOpenPath = onOpenPath,
                     modifier = Modifier
@@ -669,9 +682,14 @@ private fun chatMarkdownColors(textColor: Color) = DefaultMarkdownColors(
 )
 
 @Composable
-private fun ToolModifyPatchPreview(patch: String) {
-    val (lines, isTruncated) = remember(patch) {
-        buildPatchPreviewLines(patch, ToolModifyPatchPreviewMaxLines)
+private fun ToolModifyPatchPreview(
+    patch: String,
+    minHeight: Dp = ToolModifyPatchPreviewMinHeight,
+    maxHeight: Dp = ToolModifyPatchPreviewMaxHeight,
+    maxLines: Int = ToolModifyPatchPreviewMaxLines,
+) {
+    val (lines, isTruncated) = remember(patch, maxLines) {
+        buildPatchPreviewLines(patch, maxLines)
     }
     val verticalScroll = rememberScrollState()
     val horizontalScroll = rememberScrollState()
@@ -680,8 +698,8 @@ private fun ToolModifyPatchPreview(patch: String) {
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(
-                min = ToolModifyPatchPreviewMinHeight,
-                max = ToolModifyPatchPreviewMaxHeight
+                min = minHeight,
+                max = maxHeight
             )
             .clip(RoundedCornerShape(6.dp))
             .background(Color(0x33000000))
@@ -749,6 +767,249 @@ private data class PatchPreviewLine(
 )
 
 @Composable
+private fun ToolModifyReviewBlock(
+    messageId: String,
+    review: ToolModifyReviewUi,
+    onToggleSelection: (String, Long) -> Unit,
+    onResolve: (String, ToolModifySelectionAction) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0x10FFFFFF))
+            .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(14.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = if (review.isResolved) "Edit review result" else "Review staged EditFile changes",
+            color = Color(0xE6FFFFFF),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+
+        review.summary?.takeIf { it.isNotBlank() }?.let { summary ->
+            Text(
+                text = summary,
+                color = Color(0x99FFFFFF),
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+            )
+        }
+
+        if (!review.isResolved) {
+            Text(
+                text = "Apply selected applies checked changes and discards the rest. Discard selected does the opposite.",
+                color = Color(0x80FFFFFF),
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+            )
+        }
+
+        review.items.forEach { item ->
+            ToolModifyReviewItemCard(
+                messageId = messageId,
+                item = item,
+                reviewResolved = review.isResolved,
+                onToggleSelection = onToggleSelection,
+            )
+        }
+
+        if (!review.isResolved) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ReviewActionButton(
+                    text = "Apply selected",
+                    primary = true,
+                    onClick = { onResolve(messageId, ToolModifySelectionAction.APPLY_SELECTED) },
+                )
+                ReviewActionButton(
+                    text = "Discard selected",
+                    primary = false,
+                    onClick = { onResolve(messageId, ToolModifySelectionAction.DISCARD_SELECTED) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolModifyReviewItemCard(
+    messageId: String,
+    item: ToolModifyReviewItemUi,
+    reviewResolved: Boolean,
+    onToggleSelection: (String, Long) -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            reviewResolved -> statusColorFor(item.status)
+            item.selected -> Color(0x66F59E0B)
+            isHovered -> Color(0x33FFFFFF)
+            else -> Color(0x1AFFFFFF)
+        },
+        animationSpec = tween(durationMillis = 150)
+    )
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            reviewResolved -> statusColorFor(item.status).copy(alpha = 0.08f)
+            item.selected -> Color(0x14F59E0B)
+            isHovered -> Color(0x10FFFFFF)
+            else -> Color(0x08FFFFFF)
+        },
+        animationSpec = tween(durationMillis = 150)
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(backgroundColor)
+            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .then(
+                if (!reviewResolved) {
+                    Modifier
+                        .pointerHoverIcon(PointerIcon.Hand)
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            onClick = { onToggleSelection(messageId, item.id) },
+                        )
+                } else {
+                    Modifier
+                }
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = item.path,
+                    color = Color(0xF2FFFFFF),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = statusTextFor(item, reviewResolved),
+                    color = statusColorFor(item.status),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+
+            if (!reviewResolved) {
+                Icon(
+                    imageVector = if (item.selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                    contentDescription = null,
+                    tint = if (item.selected) Color(0xFFF59E0B) else Color(0x66FFFFFF),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        item.warning?.takeIf { it.isNotBlank() }?.let { warning ->
+            Text(
+                text = warning,
+                color = Color(0xFFFFB4AB),
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+            )
+        }
+
+        ToolModifyPatchPreview(
+            patch = item.patchPreview,
+            minHeight = 120.dp,
+            maxHeight = 240.dp,
+            maxLines = 120,
+        )
+    }
+}
+
+@Composable
+private fun ReviewActionButton(
+    text: String,
+    primary: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            primary && isHovered -> Color(0x33FFFFFF)
+            primary -> Color(0x1FFFFFFF)
+            isHovered -> Color(0x18FFFFFF)
+            else -> Color(0x10FFFFFF)
+        },
+        animationSpec = tween(durationMillis = 150)
+    )
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            primary && isHovered -> Color(0x44FFFFFF)
+            primary -> Color(0x33FFFFFF)
+            isHovered -> Color(0x28FFFFFF)
+            else -> Color(0x1AFFFFFF)
+        },
+        animationSpec = tween(durationMillis = 150)
+    )
+
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(backgroundColor)
+            .border(1.dp, borderColor, RoundedCornerShape(10.dp))
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+private fun statusTextFor(item: ToolModifyReviewItemUi, reviewResolved: Boolean): String =
+    if (!reviewResolved) {
+        if (item.selected) "Selected" else "Not selected"
+    } else {
+        when (item.status) {
+            ToolModifyApplyStatus.APPLIED -> "Applied"
+            ToolModifyApplyStatus.DISCARDED -> "Discarded"
+            ToolModifyApplyStatus.SKIPPED_CONFLICT -> "Skipped: dependency conflict"
+            ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT -> "Skipped: file changed on disk"
+            null -> "Pending"
+        }
+    }
+
+private fun statusColorFor(status: ToolModifyApplyStatus?): Color = when (status) {
+    ToolModifyApplyStatus.APPLIED -> Color(0xFF4ADE80)
+    ToolModifyApplyStatus.DISCARDED -> Color(0xFFB0BEC5)
+    ToolModifyApplyStatus.SKIPPED_CONFLICT,
+    ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT -> Color(0xFFFFB74D)
+    null -> Color(0xFFF59E0B)
+}
+
+@Composable
 private fun chatMarkdownTypography(
     baseStyle: TextStyle,
     codeStyle: TextStyle,
@@ -806,6 +1067,7 @@ fun ChatModeContent(
     pendingVoiceInputDraft: String?,
     pendingVoiceInputDraftToken: Long,
     isProcessing: Boolean,
+    isAwaitingToolReview: Boolean,
     isListening: Boolean,
     isOnline: Boolean,
     isSpeaking: Boolean,
@@ -820,6 +1082,8 @@ fun ChatModeContent(
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
     onStopSpeech: () -> Unit,
+    onToggleToolModifyReviewSelection: (String, Long) -> Unit,
+    onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
     onShowSnack: (String) -> Unit,
     onOpenPath: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -905,7 +1169,9 @@ fun ChatModeContent(
                 items(messages, key = { it.id }) { message ->
                     ChatBubble(
                         message = message,
-                        onOpenPath = onOpenPath
+                        onOpenPath = onOpenPath,
+                        onToggleToolModifyReviewSelection = onToggleToolModifyReviewSelection,
+                        onResolveToolModifyReview = onResolveToolModifyReview,
                     )
                 }
 
@@ -965,7 +1231,7 @@ fun ChatModeContent(
             onStartListening = onStartListening,
             onStopListening = onStopListening,
             onStopSpeaking = onStopSpeech,
-            enabled = !isProcessing,
+            enabled = !isProcessing && !isAwaitingToolReview,
             focusRequester = focusRequester,
             selectedModel = selectedModel,
             availableModelAliases = availableModelAliases,
@@ -1029,7 +1295,9 @@ private fun ChatFileDropTarget(
 @Composable
 private fun ChatBubble(
     message: ChatMessage,
-    onOpenPath: (String) -> Unit
+    onOpenPath: (String) -> Unit,
+    onToggleToolModifyReviewSelection: (String, Long) -> Unit,
+    onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
 ) {
     val hoverInteractionSource = remember { MutableInteractionSource() }
     val isHovered by hoverInteractionSource.collectIsHoveredAsState()
@@ -1180,6 +1448,15 @@ private fun ChatBubble(
                     )
                 }
 
+                message.toolModifyReview?.let { review ->
+                    ToolModifyReviewBlock(
+                        messageId = message.id,
+                        review = review,
+                        onToggleSelection = onToggleToolModifyReviewSelection,
+                        onResolve = onResolveToolModifyReview,
+                    )
+                }
+
                 if (message.text.isNotBlank()) {
                     val parts = remember(message.text) { parseMarkdownContent(message.text) }
                     val baseFontSize = 14.sp
@@ -1266,37 +1543,39 @@ private fun ChatBubble(
                         color = ChatAssistantTimestampColor,
                         fontSize = 11.sp
                     )
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(copyBackgroundColor)
-                            .hoverable(interactionSource = copyInteractionSource)
-                            .pointerHoverIcon(PointerIcon.Hand)
-                            .clickable(
-                                interactionSource = copyInteractionSource,
-                                indication = null,
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(message.text))
-                                    copied = true
-                                    val clickId = copyNonce + 1
-                                    copyNonce = clickId
-                                    scope.launch {
-                                        delay(2000)
-                                        if (copyNonce == clickId) {
-                                            copied = false
+                    if (message.text.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(copyBackgroundColor)
+                                .hoverable(interactionSource = copyInteractionSource)
+                                .pointerHoverIcon(PointerIcon.Hand)
+                                .clickable(
+                                    interactionSource = copyInteractionSource,
+                                    indication = null,
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(message.text))
+                                        copied = true
+                                        val clickId = copyNonce + 1
+                                        copyNonce = clickId
+                                        scope.launch {
+                                            delay(2000)
+                                            if (copyNonce == clickId) {
+                                                copied = false
+                                            }
                                         }
                                     }
-                                }
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                            contentDescription = null,
-                            tint = copyIconColor,
-                            modifier = Modifier.size(14.dp)
-                        )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                                contentDescription = null,
+                                tint = copyIconColor,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
                 }
             }

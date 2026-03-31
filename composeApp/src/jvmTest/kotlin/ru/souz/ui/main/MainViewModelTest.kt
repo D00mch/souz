@@ -62,8 +62,10 @@ import ru.souz.service.telegram.TelegramBotController
 import ru.souz.service.telemetry.TelemetryRequestContext
 import ru.souz.service.telemetry.TelemetryRequestSource
 import ru.souz.service.telemetry.TelemetryService
+import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
+import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.main.usecases.MainUseCasesFactory
@@ -798,7 +800,8 @@ class MainViewModelTest {
             recognizeBehavior.invoke(firstArg())
         }
 
-        val toolPermissionBroker = ToolPermissionBroker(settingsProvider)
+        val toolPermissionBroker: ToolPermissionBroker = ImmediateToolPermissionBroker(settingsProvider)
+        val deferredToolModifyPermissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, FilesToolUtil(settingsProvider))
 
         val telegramBotController = mockk<TelegramBotController>(relaxed = true)
         val incomingMessages = MutableSharedFlow<TelegramBotController.IncomingMessage>()
@@ -840,6 +843,7 @@ class MainViewModelTest {
             bindSingleton { localLlamaRuntime }
             bindSingleton { say }
             bindSingleton { toolPermissionBroker }
+            bindSingleton { deferredToolModifyPermissionBroker }
             bindSingleton { telegramBotController }
             bindSingleton { InMemoryAudioRecorder() }
             bindSingleton { FilesToolUtil(instance()) }
@@ -848,7 +852,19 @@ class MainViewModelTest {
             bindSingleton<TokenLogging> { tokenLogging }
             bindSingleton { telemetryService }
             bindSingleton {
-                MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance())
+                MainUseCasesFactory(
+                    instance(),
+                    instance(),
+                    instance(),
+                    instance(),
+                    instance(),
+                    instance(),
+                    instance(),
+                    instance(),
+                    instance(),
+                    instance(),
+                    instance(),
+                )
             }
         }
 
