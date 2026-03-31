@@ -21,5 +21,5 @@ jobs:
       - name: Assemble
         run: ./gradlew assemble
 
-      - name: Run JVM tests
-        run: ./gradlew :composeApp:cleanJvmTest :composeApp:jvmTest
+      - name: Run all tests
+        run: ./gradlew check --console=plain
