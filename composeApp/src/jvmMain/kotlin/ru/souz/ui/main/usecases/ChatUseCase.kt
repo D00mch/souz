@@ -369,6 +369,7 @@ class ChatUseCase(
     }
 
     fun clearContext() {
+        clearPendingToolModifyReview(discardBrokerState = true)
         agentFacade.clearContext()
     }
 

@@ -602,6 +602,55 @@ class ToolTest {
         }
     }
 
+    @Test
+    fun `test ToolModifyFile applySelection marks deleted file as external conflict and continues`() = runTest {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val deletedPath = "${tempDir.absolutePath}/deleted.txt"
+            val appliedPath = "${tempDir.absolutePath}/applied.txt"
+            File(deletedPath).writeText("alpha\n")
+            File(appliedPath).writeText("beta\n")
+
+            val settingsProvider = mockk<SettingsProvider>()
+            every { settingsProvider.safeModeEnabled } returns true
+            val permissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, filesToolUtil)
+            val tool = ToolModifyFile(filesToolUtil, permissionBroker)
+
+            tool.suspendInvoke(
+                ToolModifyFile.Input(
+                    path = deletedPath,
+                    oldString = "alpha",
+                    newString = "ALPHA",
+                )
+            )
+            tool.suspendInvoke(
+                ToolModifyFile.Input(
+                    path = appliedPath,
+                    oldString = "beta",
+                    newString = "BETA",
+                )
+            )
+
+            assertTrue(File(deletedPath).delete())
+            val pending = permissionBroker.snapshotPendingReview() ?: error("Expected staged review items")
+            val applyResult = permissionBroker.applySelection(
+                selectedIds = pending.items.mapTo(linkedSetOf()) { it.id },
+                action = ToolModifySelectionAction.APPLY_SELECTED,
+            )
+
+            val deletedResult = applyResult.items.first { it.path == File(deletedPath).canonicalPath }
+            val appliedResult = applyResult.items.first { it.path == File(appliedPath).canonicalPath }
+            assertEquals(ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT, deletedResult.status)
+            assertContains(deletedResult.warning.orEmpty(), "no longer readable")
+            assertEquals(ToolModifyApplyStatus.APPLIED, appliedResult.status)
+            assertFalse(File(deletedPath).exists())
+            assertEquals("BETA\n", File(appliedPath).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
     private fun hasOpenGlRuntime(): Boolean {
         val mapped = System.mapLibraryName("GL")
         val candidates = listOf(

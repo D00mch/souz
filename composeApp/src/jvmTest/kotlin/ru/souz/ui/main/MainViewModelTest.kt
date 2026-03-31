@@ -67,6 +67,7 @@ import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
+import ru.souz.ui.BaseViewModel
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
@@ -690,6 +691,70 @@ class MainViewModelTest {
         }
     }
 
+    @Test
+    fun `clear context resets awaiting tool review state`() = runTest(mainDispatcher) {
+        val harness = createHarness()
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+            forceUiState(
+                viewModel,
+                viewModel.uiState.value.copy(
+                    isAwaitingToolReview = true,
+                    chatMessages = listOf(
+                        ChatMessage(
+                            text = "pending review",
+                            isUser = false,
+                            toolModifyReview = ToolModifyReviewUi(items = emptyList()),
+                        )
+                    ),
+                )
+            )
+
+            viewModel.handleEvent(MainEvent.ClearContext)
+
+            val state = awaitState(viewModel) { !it.isAwaitingToolReview && it.chatMessages.isEmpty() }
+            assertFalse(state.isAwaitingToolReview)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `new conversation resets awaiting tool review state`() = runTest(mainDispatcher) {
+        val harness = createHarness()
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+            forceUiState(
+                viewModel,
+                viewModel.uiState.value.copy(
+                    isAwaitingToolReview = true,
+                    chatMessages = listOf(
+                        ChatMessage(
+                            text = "pending review",
+                            isUser = false,
+                            toolModifyReview = ToolModifyReviewUi(items = emptyList()),
+                        )
+                    ),
+                )
+            )
+
+            viewModel.handleEvent(MainEvent.RequestNewConversation)
+            awaitState(viewModel) { it.showNewChatDialog }
+            viewModel.handleEvent(MainEvent.ConfirmNewConversation)
+
+            val state = awaitState(viewModel) {
+                !it.isAwaitingToolReview && it.chatMessages.isEmpty() && !it.showNewChatDialog
+            }
+            assertFalse(state.isAwaitingToolReview)
+        } finally {
+            harness.clear()
+        }
+    }
+
 
     private suspend fun TestScope.awaitState(
         viewModel: MainViewModel,
@@ -719,6 +784,14 @@ class MainViewModelTest {
             withContext(Dispatchers.Default) { yield() }
         }
         error("Timed out waiting for voice request to start")
+    }
+
+    private fun forceUiState(viewModel: MainViewModel, state: MainState) {
+        val uiStateField = BaseViewModel::class.java.getDeclaredField("_uiState")
+        uiStateField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val uiState = uiStateField.get(viewModel) as MutableStateFlow<MainState>
+        uiState.value = state
     }
 
     private suspend fun emitAudioFlowEvent(viewModel: MainViewModel, data: ByteArray) {

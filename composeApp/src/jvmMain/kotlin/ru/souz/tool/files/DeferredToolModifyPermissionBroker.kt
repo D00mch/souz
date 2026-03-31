@@ -9,6 +9,7 @@ import ru.souz.tool.BadInputException
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolPermissionRequest
 import ru.souz.tool.ToolPermissionResult
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -144,24 +145,32 @@ class DeferredToolModifyPermissionBroker(
                 return@forEach
             }
 
-            val currentFile = filesToolUtil.readEditableUtf8TextFile(virtualFile.file)
+            val currentFile = try {
+                filesToolUtil.readEditableUtf8TextFile(virtualFile.file)
+            } catch (_: BadInputException) {
+                appendExternalConflictResults(
+                    results = results,
+                    callsForFile = callsForFile,
+                    selectedForApply = selectedForApply,
+                    warning = "Can't apply because the file changed on disk or is no longer readable after staging.",
+                )
+                return@forEach
+            } catch (_: IOException) {
+                appendExternalConflictResults(
+                    results = results,
+                    callsForFile = callsForFile,
+                    selectedForApply = selectedForApply,
+                    warning = "Can't apply because the file changed on disk or is no longer readable after staging.",
+                )
+                return@forEach
+            }
             if (currentFile.rawText != virtualFile.originalRawText) {
-                callsForFile.forEach { staged ->
-                    results += ToolModifyApplyItemResult(
-                        id = staged.id,
-                        path = staged.path,
-                        status = if (staged.id in selectedForApply) {
-                            ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT
-                        } else {
-                            ToolModifyApplyStatus.DISCARDED
-                        },
-                        warning = if (staged.id in selectedForApply) {
-                            "Can't apply because the file changed on disk after staging."
-                        } else {
-                            null
-                        },
-                    )
-                }
+                appendExternalConflictResults(
+                    results = results,
+                    callsForFile = callsForFile,
+                    selectedForApply = selectedForApply,
+                    warning = "Can't apply because the file changed on disk after staging.",
+                )
                 return@forEach
             }
 
@@ -250,6 +259,26 @@ class DeferredToolModifyPermissionBroker(
             normalizedText = filesToolUtil.normalizeLineEndings(rawText),
             lineSeparator = filesToolUtil.detectLineSeparator(rawText),
         )
+
+    private fun appendExternalConflictResults(
+        results: MutableList<ToolModifyApplyItemResult>,
+        callsForFile: List<StagedEditCall>,
+        selectedForApply: Set<Long>,
+        warning: String,
+    ) {
+        callsForFile.forEach { staged ->
+            results += ToolModifyApplyItemResult(
+                id = staged.id,
+                path = staged.path,
+                status = if (staged.id in selectedForApply) {
+                    ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT
+                } else {
+                    ToolModifyApplyStatus.DISCARDED
+                },
+                warning = if (staged.id in selectedForApply) warning else null,
+            )
+        }
+    }
 
     private companion object {
         val l = org.slf4j.LoggerFactory.getLogger(DeferredToolModifyPermissionBroker::class.java)
