@@ -9,6 +9,7 @@ import ru.souz.llms.TokenLogging
 import ru.souz.service.telemetry.TelemetryService
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
+import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 
 data class MainUseCases(
     val chat: ChatUseCase,
@@ -25,6 +26,7 @@ class MainUseCasesFactory(
     private val audioRecorder: InMemoryAudioRecorder,
     private val say: Say,
     private val toolPermissionBroker: ToolPermissionBroker,
+    private val deferredToolModifyPermissionBroker: DeferredToolModifyPermissionBroker,
     private val selectionApprovalSources: Set<SelectionApprovalSource>,
     private val finderPathExtractor: FinderPathExtractor,
     private val tokenLogging: TokenLogging,
@@ -40,6 +42,7 @@ class MainUseCasesFactory(
             speechUseCase = speechUseCase,
             finderPathExtractor = finderPathExtractor,
             chatAttachmentsUseCase = attachmentsUseCase,
+            deferredToolModifyPermissionBroker = deferredToolModifyPermissionBroker,
             tokenLogging = tokenLogging,
             telemetryService = telemetryService,
             ioDispatcher = ioDispatcher,

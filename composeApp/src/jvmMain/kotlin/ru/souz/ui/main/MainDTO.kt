@@ -9,6 +9,8 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMModel
 import ru.souz.llms.local.LocalModelDownloadPrompt
 import ru.souz.llms.local.LocalModelDownloadState
+import ru.souz.tool.files.ToolModifyApplyStatus
+import ru.souz.tool.files.ToolModifySelectionAction
 
 /**
  * Chat message for the chat mode.
@@ -43,10 +45,26 @@ data class ChatMessage(
     val isUser: Boolean,
     val isVoice: Boolean = false,
     val agentActions: List<String> = emptyList(),
+    val toolModifyReview: ToolModifyReviewUi? = null,
     val attachedFiles: List<ChatAttachedFile> = emptyList(),
     val finderPaths: List<FinderPathItem> = emptyList(),
     val timestamp: Long = System.currentTimeMillis(),
     val id: String = java.util.UUID.randomUUID().toString()
+)
+
+data class ToolModifyReviewUi(
+    val items: List<ToolModifyReviewItemUi>,
+    val isResolved: Boolean = false,
+    val summary: String? = null,
+)
+
+data class ToolModifyReviewItemUi(
+    val id: Long,
+    val path: String,
+    val patchPreview: String,
+    val selected: Boolean = true,
+    val status: ToolModifyApplyStatus? = null,
+    val warning: String? = null,
 )
 
 data class ToolPermissionDialogData(
@@ -94,6 +112,7 @@ data class MainState(
     val availableModelAliases: List<String> = listOf(LLMModel.Max.alias),
     val selectedContextSize: Int = DEFAULT_MAX_TOKENS,
     val isSpeaking: Boolean = false,
+    val isAwaitingToolReview: Boolean = false,
     val showNewChatDialog: Boolean = false,
     val toolPermissionDialog: ToolPermissionDialogData? = null,
     val selectionDialog: SelectionDialogData? = null,
@@ -131,6 +150,8 @@ sealed interface MainEvent : VMEvent {
     data class SendChatMessage(val text: String) : MainEvent
     data class OpenPath(val path: String) : MainEvent
     data object RefreshSettings : MainEvent
+    data class ToggleToolModifyReviewSelection(val messageId: String, val itemId: Long) : MainEvent
+    data class ResolveToolModifyReview(val messageId: String, val action: ToolModifySelectionAction) : MainEvent
     data object ApproveToolPermission : MainEvent
     data object RejectToolPermission : MainEvent
     data class SelectApprovalCandidate(val candidateId: Long) : MainEvent

@@ -83,7 +83,7 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
      *
      * The file must be safe, present, not in the blocked extension list, not likely binary, and valid UTF-8.
      * The returned [EditableTextFile] includes both raw content and a line-ending-normalized view so tools
-     * can match on `\n` internally while still restoring the original separator on write.
+     * can match on `\n` internally while still preserving untouched raw bytes on write.
      */
     fun readEditableUtf8TextFile(file: File): EditableTextFile {
         val canonicalFile = file.canonicalFile
@@ -107,12 +107,12 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
             throw BadInputException("Only UTF-8 plain text, code, and config files can be edited.")
         }
 
-        val lineSeparator = detectLineSeparator(rawText)
+        val normalizedTextIndex = buildNormalizedTextIndex(rawText)
         return EditableTextFile(
             file = canonicalFile,
             rawText = rawText,
-            normalizedText = normalizeLineEndings(rawText),
-            lineSeparator = lineSeparator,
+            normalizedText = normalizedTextIndex.normalizedText,
+            lineSeparator = detectLineSeparator(rawText),
         )
     }
 
@@ -151,7 +151,45 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
      * Converts any CRLF or CR line endings to LF so text matching can use a single internal format.
      */
     fun normalizeLineEndings(text: String): String =
-        text.replace("\r\n", "\n").replace("\r", "\n")
+        buildNormalizedTextIndex(text).normalizedText
+
+    /**
+     * Builds an LF-normalized view of [text] together with a raw-offset lookup for each normalized boundary.
+     *
+     * The returned offsets allow callers to map a match range in normalized coordinates back to the exact
+     * byte-preserving raw substring, which lets small edits avoid rewriting unrelated line endings.
+     */
+    fun buildNormalizedTextIndex(text: String): NormalizedTextIndex {
+        val normalized = StringBuilder(text.length)
+        val rawOffsets = ArrayList<Int>(text.length + 1)
+        rawOffsets += 0
+
+        var rawIndex = 0
+        while (rawIndex < text.length) {
+            when (val ch = text[rawIndex]) {
+                '\r' -> {
+                    if (rawIndex + 1 < text.length && text[rawIndex + 1] == '\n') {
+                        normalized.append('\n')
+                        rawIndex += 2
+                    } else {
+                        normalized.append('\n')
+                        rawIndex += 1
+                    }
+                }
+
+                else -> {
+                    normalized.append(ch)
+                    rawIndex += 1
+                }
+            }
+            rawOffsets += rawIndex
+        }
+
+        return NormalizedTextIndex(
+            normalizedText = normalized.toString(),
+            rawOffsets = rawOffsets.toIntArray(),
+        )
+    }
 
     /**
      * Converts internally normalized LF line endings back to the file's original separator style.
@@ -330,7 +368,7 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
         return WINDOWS_ABSOLUTE_PATH.matches(path)
     }
 
-    private fun detectLineSeparator(text: String): String = when {
+    fun detectLineSeparator(text: String): String = when {
         text.contains("\r\n") -> "\r\n"
         text.contains('\r') -> "\r"
         else -> "\n"
@@ -466,13 +504,18 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
      *
      * @property rawText preserves the original bytes decoded as UTF-8
      * @property normalizedText uses LF line endings for matching and diffing
-     * @property lineSeparator records the original separator to restore on write
+     * @property lineSeparator records the preferred separator to use for newly inserted lines
      */
     data class EditableTextFile(
         val file: File,
         val rawText: String,
         val normalizedText: String,
         val lineSeparator: String,
+    )
+
+    data class NormalizedTextIndex(
+        val normalizedText: String,
+        val rawOffsets: IntArray,
     )
 }
 

@@ -1,6 +1,7 @@
 package ru.souz.ui.main.usecases
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
@@ -27,6 +29,12 @@ import ru.souz.ui.main.ChatAgentActionFormatter
 import ru.souz.ui.main.ChatAttachedFile
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainState
+import ru.souz.ui.main.ToolModifyReviewItemUi
+import ru.souz.ui.main.ToolModifyReviewUi
+import ru.souz.tool.files.DeferredToolModifyPermissionBroker
+import ru.souz.tool.files.ToolModifyApplyResult
+import ru.souz.tool.files.ToolModifyApplyStatus
+import ru.souz.tool.files.ToolModifySelectionAction
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -38,6 +46,7 @@ class ChatUseCase(
     private val speechUseCase: SpeechUseCase,
     private val finderPathExtractor: FinderPathExtractor,
     private val chatAttachmentsUseCase: ChatAttachmentsUseCase,
+    private val deferredToolModifyPermissionBroker: DeferredToolModifyPermissionBroker,
     private val tokenLogging: TokenLogging,
     private val telemetryService: TelemetryService,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -47,6 +56,7 @@ class ChatUseCase(
     private val taskSideEffectJobs = ArrayList<Job>()
     private val activeChatRequestId = AtomicLong(0L)
     private val activeRequestMessages = AtomicReference<ActiveRequestMessages?>(null)
+    private val pendingToolModifyReview = AtomicReference<PendingToolModifyReviewState?>(null)
     private val conversationLock = Any()
     private var currentConversationId: String? = null
     private val pendingConversationClosures = LinkedHashMap<String, TelemetryConversationEndReason>()
@@ -74,6 +84,7 @@ class ChatUseCase(
     ) {
         killTaskSideEffectJobs()
         cancelActiveJob()
+        clearPendingToolModifyReview(discardBrokerState = true)
 
         val userText = chatMessage.trim()
         if (userText.isEmpty()) {
@@ -145,17 +156,101 @@ class ChatUseCase(
             val botAttachments = chatAttachmentsUseCase.buildAttachmentsFromPaths(
                 extractedFinderPaths.map { it.path }
             )
-            val botMessage = pendingBotMessage.copy(
-                text = response,
-                finderPaths = extractedFinderPaths,
-                attachedFiles = botAttachments,
-            )
             if (activeChatRequestId.get() != requestId) {
                 l.info("Skipping stale chat response for request {}", requestId)
                 telemetryStatus = TelemetryRequestStatus.CANCELLED
                 telemetryErrorMessage = "StaleRequest"
+                clearPendingToolModifyReview(discardBrokerState = true)
                 onResult?.invoke(Result.failure(CancellationException("Stale request")))
                 return
+            }
+
+            val pendingReview = deferredToolModifyPermissionBroker.snapshotPendingReview()
+            val finalBotText = if (pendingReview != null) {
+                val reviewMessage = pendingBotMessage.copy(
+                    toolModifyReview = ToolModifyReviewUi(
+                        items = pendingReview.items.map { item ->
+                            ToolModifyReviewItemUi(
+                                id = item.id,
+                                path = item.path,
+                                patchPreview = item.patchPreview,
+                            )
+                        }
+                    )
+                )
+                val reviewDeferred = CompletableDeferred<ToolModifyReviewDecision>()
+                pendingToolModifyReview.set(
+                    PendingToolModifyReviewState(
+                        requestId = requestId,
+                        messageId = reviewMessage.id,
+                        decision = reviewDeferred,
+                    )
+                )
+                activeRequestMessages.set(
+                    ActiveRequestMessages(
+                        requestId = requestId,
+                        userMessageId = userMessage.id,
+                        pendingMessageId = reviewMessage.id,
+                    )
+                )
+                emitState {
+                    copy(
+                        chatMessages = upsertMessage(reviewMessage, fallbackMessageId = pendingBotMessage.id),
+                        isProcessing = false,
+                        isAwaitingToolReview = true,
+                        agentActions = emptyList(),
+                    )
+                }
+
+                val decision = reviewDeferred.await()
+                val applyResult = deferredToolModifyPermissionBroker.applySelection(
+                    selectedIds = decision.selectedIds,
+                    action = decision.action,
+                )
+                val resolvedReview = reviewMessage.toolModifyReview?.copy(
+                    items = reviewMessage.toolModifyReview.items.map { item ->
+                        val outcome = applyResult.items.firstOrNull { it.id == item.id }
+                        item.copy(
+                            selected = item.id in decision.selectedIds,
+                            status = outcome?.status,
+                            warning = outcome?.warning,
+                        )
+                    },
+                    isResolved = true,
+                    summary = formatToolModifyReviewSummary(applyResult),
+                )
+                emitState {
+                    copy(
+                        chatMessages = chatMessages.map { message ->
+                            if (message.id == reviewMessage.id) {
+                                message.copy(toolModifyReview = resolvedReview)
+                            } else {
+                                message
+                            }
+                        },
+                        isAwaitingToolReview = false,
+                    )
+                }
+                pendingToolModifyReview.set(null)
+                appendToolModifySummary(response, applyResult)
+            } else {
+                response
+            }
+
+            val botMessage = if (pendingReview != null) {
+                ChatMessage(
+                    text = finalBotText,
+                    isUser = false,
+                    isVoice = isVoice,
+                    attachedFiles = botAttachments,
+                    finderPaths = extractedFinderPaths,
+                )
+            } else {
+                pendingBotMessage.copy(
+                    text = finalBotText,
+                    finderPaths = extractedFinderPaths,
+                    attachedFiles = botAttachments,
+                )
             }
 
             if (settingsProvider.notificationSoundEnabled) {
@@ -165,12 +260,13 @@ class ChatUseCase(
             emitState {
                 val completedBotMessage = botMessage.copy(agentActions = agentActions)
                 copy(
-                    chatMessages = if (chatMessages.lastOrNull()?.id == completedBotMessage.id) {
-                        chatMessages.mapLast { completedBotMessage }
-                    } else {
+                    chatMessages = if (pendingReview != null) {
                         chatMessages + completedBotMessage
+                    } else {
+                        upsertMessage(completedBotMessage)
                     },
                     isProcessing = false,
+                    isAwaitingToolReview = false,
                     agentActions = emptyList(),
                 )
             }
@@ -185,12 +281,17 @@ class ChatUseCase(
             telemetryErrorMessage = telemetryErrorLabel(e)
             l.info("Chat message cancelled: {}", e.message)
             val isCurrentRequest = activeChatRequestId.get() == requestId
+            clearPendingToolModifyReview(discardBrokerState = true)
             withContext(NonCancellable) {
                 emitState {
-                    val idsToDrop = arrayOf(userMessage.id, pendingBotMessage.id)
+                    val idsToDrop = activeRequestMessages.get()
+                        ?.takeIf { it.requestId == requestId }
+                        ?.let { arrayOf(it.userMessageId, it.pendingMessageId) }
+                        ?: arrayOf(userMessage.id, pendingBotMessage.id)
                     copy(
                         chatMessages = chatMessages.filterNot { it.id in idsToDrop },
                         isProcessing = if (isCurrentRequest) false else isProcessing,
+                        isAwaitingToolReview = if (isCurrentRequest) false else isAwaitingToolReview,
                         agentActions = if (isCurrentRequest) emptyList() else agentActions,
                     )
                 }
@@ -201,6 +302,7 @@ class ChatUseCase(
             telemetryErrorMessage = telemetryErrorLabel(e)
             if (activeChatRequestId.get() != requestId) {
                 l.info("Ignoring stale chat failure for request {}: {}", requestId, e.message)
+                clearPendingToolModifyReview(discardBrokerState = true)
                 onResult?.invoke(Result.failure(e))
                 return
             }
@@ -216,6 +318,7 @@ class ChatUseCase(
                 copy(
                     chatMessages = chatMessages + errorMessage,
                     isProcessing = false,
+                    isAwaitingToolReview = false,
                     agentActions = emptyList(),
                 )
             }
@@ -250,12 +353,14 @@ class ChatUseCase(
 
         killTaskSideEffectJobs()
         cancelActiveJob()
+        clearPendingToolModifyReview(discardBrokerState = true)
 
         emitState {
             val idsToDrop = inFlightMessages?.let { arrayOf(it.userMessageId, it.pendingMessageId) } ?: emptyArray()
             copy(
                 chatMessages = if (idsToDrop.isEmpty()) chatMessages else chatMessages.filterNot { it.id in idsToDrop },
                 isProcessing = false,
+                isAwaitingToolReview = false,
                 agentActions = emptyList(),
             )
         }
@@ -267,7 +372,47 @@ class ChatUseCase(
     }
 
     fun clearContext() {
+        clearPendingToolModifyReviewBlocking(discardBrokerState = true)
         agentFacade.clearContext()
+    }
+
+    suspend fun toggleToolModifyReviewSelection(messageId: String, itemId: Long) {
+        val pendingReviewState = pendingToolModifyReview.get() ?: return
+        if (pendingReviewState.messageId != messageId) return
+        emitState {
+            copy(
+                chatMessages = chatMessages.map { message ->
+                    if (message.id != messageId) return@map message
+                    val review = message.toolModifyReview ?: return@map message
+                    message.copy(
+                        toolModifyReview = review.copy(
+                            items = review.items.map { item ->
+                                if (item.id == itemId && !review.isResolved) {
+                                    item.copy(selected = !item.selected)
+                                } else {
+                                    item
+                                }
+                            }
+                        )
+                    )
+                }
+            )
+        }
+    }
+
+    fun resolveToolModifyReview(
+        messageId: String,
+        action: ToolModifySelectionAction,
+        selectedIds: Set<Long>,
+    ) {
+        val pendingReviewState = pendingToolModifyReview.get() ?: return
+        if (pendingReviewState.messageId != messageId) return
+        pendingReviewState.decision.complete(
+            ToolModifyReviewDecision(
+                action = action,
+                selectedIds = selectedIds,
+            )
+        )
     }
 
     fun finishCurrentConversation(reason: TelemetryConversationEndReason) {
@@ -302,6 +447,7 @@ class ChatUseCase(
         finishCurrentConversation(TelemetryConversationEndReason.VIEW_MODEL_CLEARED)
         killTaskSideEffectJobs()
         cancelActiveJob()
+        clearPendingToolModifyReviewBlocking(discardBrokerState = true)
     }
 
     private fun ensureConversation(source: TelemetryRequestSource): String =
@@ -343,6 +489,9 @@ class ChatUseCase(
             agentFacade.sideEffects.collect { effect ->
                 when (effect) {
                     is AgentSideEffect.Text -> {
+                        if (deferredToolModifyPermissionBroker.hasPendingEdits()) {
+                            return@collect
+                        }
                         val text = effect.v
                         accumulatedText += text
                         emitState {
@@ -373,7 +522,11 @@ class ChatUseCase(
                     is AgentSideEffect.Fn -> {
                         val action = chatAgentActionFormatter.format(effect.call)
                         emitState {
-                            copy(agentActions = (agentActions + action).takeLast(MAX_AGENT_ACTIONS))
+                            copy(
+                                agentActions = (agentActions + action)
+                                    .distinct()
+                                    .takeLast(MAX_AGENT_ACTIONS)
+                            )
                         }
                     }
                 }
@@ -393,6 +546,53 @@ class ChatUseCase(
         _outputs.emit(MainUseCaseOutput.State(reduce))
     }
 
+    private suspend fun clearPendingToolModifyReview(discardBrokerState: Boolean) {
+        pendingToolModifyReview.getAndSet(null)?.decision?.cancel()
+        if (discardBrokerState) {
+            withContext(NonCancellable) {
+                deferredToolModifyPermissionBroker.clearPending()
+            }
+        }
+    }
+
+    private fun clearPendingToolModifyReviewBlocking(discardBrokerState: Boolean) {
+        runBlocking {
+            clearPendingToolModifyReview(discardBrokerState = discardBrokerState)
+        }
+    }
+
+    private fun MainState.upsertMessage(
+        message: ChatMessage,
+        fallbackMessageId: String? = null,
+    ): List<ChatMessage> = when {
+        chatMessages.lastOrNull()?.id == message.id -> chatMessages.mapLast { message }
+        fallbackMessageId != null && chatMessages.lastOrNull()?.id == fallbackMessageId ->
+            chatMessages.mapLast { message }
+        else -> chatMessages + message
+    }
+
+    private fun appendToolModifySummary(
+        response: String,
+        applyResult: ToolModifyApplyResult,
+    ): String {
+        val summary = buildString {
+            appendLine()
+            appendLine()
+            appendLine("Applied changes summary:")
+            appendLine("- Applied: ${applyResult.appliedCount}")
+            appendLine("- Discarded: ${applyResult.discardedCount}")
+            appendLine("- Skipped: ${applyResult.skippedCount}")
+            applyResult.items
+                .filter { it.status == ToolModifyApplyStatus.SKIPPED_CONFLICT || it.status == ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT }
+                .forEach { item ->
+                    appendLine("- Warning: ${item.path}: ${item.warning ?: "Can't apply the staged change."}")
+                }
+        }
+        return response + summary
+    }
+
+    private fun formatToolModifyReviewSummary(applyResult: ToolModifyApplyResult): String =
+        "Applied ${applyResult.appliedCount}, discarded ${applyResult.discardedCount}, skipped ${applyResult.skippedCount}"
 
     private suspend fun extractFinderPaths(text: String) =
         withContext(ioDispatcher) {
@@ -416,5 +616,16 @@ class ChatUseCase(
         val requestId: Long,
         val userMessageId: String,
         val pendingMessageId: String,
+    )
+
+    private data class PendingToolModifyReviewState(
+        val requestId: Long,
+        val messageId: String,
+        val decision: CompletableDeferred<ToolModifyReviewDecision>,
+    )
+
+    private data class ToolModifyReviewDecision(
+        val action: ToolModifySelectionAction,
+        val selectedIds: Set<Long>,
     )
 }

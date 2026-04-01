@@ -5,20 +5,22 @@ import io.mockk.mockk
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.tool.BadInputException
+import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.ToolPermissionBroker
+import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.files.ToolDeleteFile
 import ru.souz.tool.files.ToolExtractText
 import ru.souz.tool.files.ToolFindInFiles
 import ru.souz.tool.files.ToolFindTextInFiles
 import ru.souz.tool.files.ToolListFiles
+import ru.souz.tool.files.ToolModifyApplyStatus
 import ru.souz.tool.files.ToolModifyFile
+import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolReadFile
@@ -369,6 +371,29 @@ class ToolTest {
     }
 
     @Test
+    fun `test ToolModifyFile preserves mixed line endings outside replaced region`() {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/mixed-eol.txt"
+            File(path).writeText("first\r\nsecond\nthird\r\n")
+
+            val result = ToolModifyFile(filesToolUtil).invoke(
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = "second\n",
+                    newString = "SECOND\n",
+                )
+            )
+
+            assertEquals("OK", result)
+            assertEquals("first\r\nSECOND\nthird\r\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `test ToolModifyFile replaceAll updates all matches`() {
         val tempDir = createTempDirectory()
         try {
@@ -451,7 +476,7 @@ class ToolTest {
 
             val settingsProvider = mockk<SettingsProvider>()
             every { settingsProvider.safeModeEnabled } returns true
-            val permissionBroker = ToolPermissionBroker(settingsProvider)
+            val permissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, filesToolUtil)
             val tool = ToolModifyFile(filesToolUtil, permissionBroker)
 
             val error = assertFailsWith<BadInputException> {
@@ -465,8 +490,7 @@ class ToolTest {
             }
 
             assertContains(error.message.orEmpty(), "not found")
-            val pendingRequest = withTimeoutOrNull(150) { permissionBroker.requests.first() }
-            assertEquals(null, pendingRequest)
+            assertEquals(null, permissionBroker.snapshotPendingReview())
             assertEquals("line\n", File(path).readText())
         } finally {
             tempDir.deleteRecursively()
@@ -474,7 +498,7 @@ class ToolTest {
     }
 
     @Test
-    fun `test ToolModifyFile sends generated patch preview to permission broker`() = runTest {
+    fun `test ToolModifyFile stages generated patch preview for review`() = runTest {
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
@@ -483,35 +507,67 @@ class ToolTest {
 
             val settingsProvider = mockk<SettingsProvider>()
             every { settingsProvider.safeModeEnabled } returns true
-            val permissionBroker = ToolPermissionBroker(settingsProvider)
+            val permissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, filesToolUtil)
             val tool = ToolModifyFile(filesToolUtil, permissionBroker)
 
-            val resultDeferred = async {
-                tool.suspendInvoke(
-                    ToolModifyFile.Input(
-                        path = path,
-                        oldString = "line",
-                        newString = "LINE",
-                    )
+            val result = tool.suspendInvoke(
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = "line",
+                    newString = "LINE",
                 )
-            }
-            val request = permissionBroker.requests.first()
-            assertEquals(File(path).canonicalPath, request.params["path"])
-            assertEquals("false", request.params["replaceAll"])
-            assertContains(request.params["patch"].orEmpty(), "--- a/preview.txt")
-            assertContains(request.params["patch"].orEmpty(), "+++ b/preview.txt")
-            assertContains(request.params["patch"].orEmpty(), "+LINE")
+            )
 
-            permissionBroker.resolve(request.id, approved = true)
-            assertEquals("OK", resultDeferred.await())
-            assertEquals("LINE\n", File(path).readText())
+            val review = permissionBroker.snapshotPendingReview()
+            assertEquals("Staged, not yet applied", result)
+            assertEquals(File(path).canonicalPath, review?.items?.singleOrNull()?.path)
+            assertContains(review?.items?.singleOrNull()?.patchPreview.orEmpty(), "--- a/preview.txt")
+            assertContains(review?.items?.singleOrNull()?.patchPreview.orEmpty(), "+++ b/preview.txt")
+            assertContains(review?.items?.singleOrNull()?.patchPreview.orEmpty(), "+LINE")
+            assertEquals("line\n", File(path).readText())
         } finally {
             tempDir.deleteRecursively()
         }
     }
 
     @Test
-    fun `test ToolModifyFile fails when file changes during permission gap`() = runBlocking {
+    fun `test ToolModifyFile staged apply preserves mixed line endings outside replaced region`() = runTest {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/mixed-eol-staged.txt"
+            File(path).writeText("first\r\nsecond\nthird\r\n")
+
+            val settingsProvider = mockk<SettingsProvider>()
+            every { settingsProvider.safeModeEnabled } returns true
+            val permissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, filesToolUtil)
+            val tool = ToolModifyFile(filesToolUtil, permissionBroker)
+
+            val stageResult = tool.suspendInvoke(
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = "second\n",
+                    newString = "SECOND\n",
+                )
+            )
+
+            val stagedId = permissionBroker.snapshotPendingReview()?.items?.singleOrNull()?.id
+                ?: error("Expected staged review item")
+            val applyResult = permissionBroker.applySelection(
+                selectedIds = setOf(stagedId),
+                action = ToolModifySelectionAction.APPLY_SELECTED,
+            )
+
+            assertEquals("Staged, not yet applied", stageResult)
+            assertEquals(ToolModifyApplyStatus.APPLIED, applyResult.items.single().status)
+            assertEquals("first\r\nSECOND\nthird\r\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile skips staged apply when file changes during review gap`() = runTest {
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
@@ -520,27 +576,76 @@ class ToolTest {
 
             val settingsProvider = mockk<SettingsProvider>()
             every { settingsProvider.safeModeEnabled } returns true
-            val permissionBroker = ToolPermissionBroker(settingsProvider)
+            val permissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, filesToolUtil)
             val tool = ToolModifyFile(filesToolUtil, permissionBroker)
 
-            supervisorScope {
-                val resultDeferred = async {
-                    tool.suspendInvoke(
-                        ToolModifyFile.Input(
-                            path = path,
-                            oldString = "line",
-                            newString = "LINE",
-                        )
-                    )
-                }
-                val request = permissionBroker.requests.first()
-                File(path).writeText("changed\n")
-                permissionBroker.resolve(request.id, approved = true)
+            tool.suspendInvoke(
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = "line",
+                    newString = "LINE",
+                )
+            )
+            File(path).writeText("changed\n")
 
-                val error = assertFailsWith<BadInputException> { resultDeferred.await() }
-                assertContains(error.message.orEmpty(), "File changed after preview generation")
-                assertEquals("changed\n", File(path).readText())
-            }
+            val stagedId = permissionBroker.snapshotPendingReview()?.items?.singleOrNull()?.id
+                ?: error("Expected staged review item")
+            val applyResult = permissionBroker.applySelection(
+                selectedIds = setOf(stagedId),
+                action = ToolModifySelectionAction.APPLY_SELECTED,
+            )
+
+            assertEquals(ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT, applyResult.items.single().status)
+            assertEquals("changed\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile applySelection marks deleted file as external conflict and continues`() = runTest {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val deletedPath = "${tempDir.absolutePath}/deleted.txt"
+            val appliedPath = "${tempDir.absolutePath}/applied.txt"
+            File(deletedPath).writeText("alpha\n")
+            File(appliedPath).writeText("beta\n")
+
+            val settingsProvider = mockk<SettingsProvider>()
+            every { settingsProvider.safeModeEnabled } returns true
+            val permissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, filesToolUtil)
+            val tool = ToolModifyFile(filesToolUtil, permissionBroker)
+
+            tool.suspendInvoke(
+                ToolModifyFile.Input(
+                    path = deletedPath,
+                    oldString = "alpha",
+                    newString = "ALPHA",
+                )
+            )
+            tool.suspendInvoke(
+                ToolModifyFile.Input(
+                    path = appliedPath,
+                    oldString = "beta",
+                    newString = "BETA",
+                )
+            )
+
+            assertTrue(File(deletedPath).delete())
+            val pending = permissionBroker.snapshotPendingReview() ?: error("Expected staged review items")
+            val applyResult = permissionBroker.applySelection(
+                selectedIds = pending.items.mapTo(linkedSetOf()) { it.id },
+                action = ToolModifySelectionAction.APPLY_SELECTED,
+            )
+
+            val deletedResult = applyResult.items.first { it.path == File(deletedPath).canonicalPath }
+            val appliedResult = applyResult.items.first { it.path == File(appliedPath).canonicalPath }
+            assertEquals(ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT, deletedResult.status)
+            assertContains(deletedResult.warning.orEmpty(), "no longer readable")
+            assertEquals(ToolModifyApplyStatus.APPLIED, appliedResult.status)
+            assertFalse(File(deletedPath).exists())
+            assertEquals("BETA\n", File(appliedPath).readText())
         } finally {
             tempDir.deleteRecursively()
         }
@@ -568,7 +673,7 @@ class ToolTest {
 
             val settingsProvider = mockk<SettingsProvider>()
             every { settingsProvider.safeModeEnabled } returns true
-            val permissionBroker = ToolPermissionBroker(settingsProvider)
+            val permissionBroker: ToolPermissionBroker = ImmediateToolPermissionBroker(settingsProvider)
             val tool = ToolDeleteFile(filesToolUtil, permissionBroker)
 
             val resultDeferred = async {

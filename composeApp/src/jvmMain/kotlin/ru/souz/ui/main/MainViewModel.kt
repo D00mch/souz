@@ -219,6 +219,27 @@ class MainViewModel(
             }
 
             MainEvent.RefreshSettings -> refreshSettings()
+            is MainEvent.ToggleToolModifyReviewSelection ->
+                chatUseCase.toggleToolModifyReviewSelection(
+                    messageId = event.messageId,
+                    itemId = event.itemId,
+                )
+
+            is MainEvent.ResolveToolModifyReview -> {
+                val selectedIds = currentState.chatMessages
+                    .firstOrNull { it.id == event.messageId }
+                    ?.toolModifyReview
+                    ?.items
+                    ?.filter { it.selected }
+                    ?.mapTo(linkedSetOf()) { it.id }
+                    .orEmpty()
+                chatUseCase.resolveToolModifyReview(
+                    messageId = event.messageId,
+                    action = event.action,
+                    selectedIds = selectedIds,
+                )
+            }
+
             MainEvent.ApproveToolPermission ->
                 permissionsUseCase.resolveToolPermission(currentState.toolPermissionDialog?.requestId, approved = true)
 
@@ -307,6 +328,7 @@ class MainViewModel(
                 lastKnownAgentContext = null,
                 userExpectCloseOnX = false,
                 isProcessing = false,
+                isAwaitingToolReview = false,
                 chatMessages = emptyList(),
                 chatStartTip = startTips.randomOrNull() ?: "",
                 chatSessionId = chatSessionId + 1,
@@ -496,6 +518,7 @@ class MainViewModel(
                         lastText = lastText,
                         lastKnownAgentContext = lastKnownAgentContext ?: currentState.lastKnownAgentContext,
                         userExpectCloseOnX = true,
+                        isAwaitingToolReview = false,
                         chatMessages = emptyList(),
                         agentActions = emptyList(),
                         chatStartTip = startTips.randomOrNull() ?: "",

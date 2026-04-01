@@ -64,9 +64,13 @@ This document describes shared file-tool behavior and path conventions.
   - `oldString` is not found in the current file
   - `oldString` matches multiple locations and `replaceAll` is `false`
   - the file is not an editable text/code/config file
-- The tool normalizes line endings internally for matching and preserves the file's original line-ending style on write.
-- In safe mode, the tool generates a unified diff preview from the old and new file contents and sends that patch through the permission broker for UI preview.
-- After approval and before the final write, the tool rereads the file and aborts if the content changed during the permission gap.
+- The tool normalizes line endings internally for matching, preserves untouched line endings exactly, and uses the file's detected separator as a fallback for newly inserted lines.
+- Outside safe mode, the tool writes immediately after validation.
+- In safe mode, the tool does not write immediately. Each `EditFile` call is staged as a pending edit and returns `"Staged, not yet applied"`.
+- Later `EditFile` calls in the same run see the staged virtual file state, not just the on-disk file state.
+- Safe-mode review happens after the agent finishes tool use. The UI shows each staged `EditFile` call with its own diff preview and lets the user apply or discard selected changes.
+- Selected edits are replayed in original order during the final apply step. If a selected edit no longer matches because an earlier staged edit was discarded, that edit is skipped and reported as a conflict.
+- Before final apply, each touched file is reread from disk. If the file changed externally after staging started, pending edits for that file are skipped and reported as external conflicts.
 - Writes use a temp file plus atomic-move fallback instead of invoking the system `patch` binary.
 
 ### `MoveFile`
