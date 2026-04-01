@@ -38,6 +38,7 @@ import ru.souz.ui.main.usecases.MainUseCases
 import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.ui.main.usecases.PermissionsUseCase
 import ru.souz.ui.main.usecases.SpeechUseCase
+import ru.souz.ui.main.usecases.ToolModifyReviewUseCase
 import ru.souz.ui.main.usecases.VoiceInputUseCase
 import ru.souz.service.telemetry.TelemetryConversationEndReason
 import ru.souz.service.telemetry.TelemetryRequestSource
@@ -69,6 +70,7 @@ class MainViewModel(
 
     private val useCases: MainUseCases = mainUseCasesFactory.create(ioDispatchers)
     private val chatUseCase: ChatUseCase = useCases.chat
+    private val toolModifyReviewUseCase: ToolModifyReviewUseCase = useCases.toolModifyReview
     private val voiceInputUseCase: VoiceInputUseCase = useCases.voiceInput
     private val speechUseCase: SpeechUseCase = useCases.speech
     private val permissionsUseCase: PermissionsUseCase = useCases.permissions
@@ -181,8 +183,8 @@ class MainViewModel(
             MainEvent.ConfirmNewConversation -> confirmNewConversation()
             MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()
             MainEvent.ClearContext -> clearContext()
-            MainEvent.StopSpeech -> chatUseCase.stopSpeechAndSideEffects()
-            MainEvent.UserPressStop -> chatUseCase.stopCurrentExecution()
+            MainEvent.StopSpeech -> chatUseCase.stopAssistantOutput()
+            MainEvent.UserPressStop -> chatUseCase.abortActiveRequest()
             MainEvent.ShowLastText -> setPreviousText()
             MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
             is MainEvent.UpdateChatModel -> updateChatModel(event.model)
@@ -219,6 +221,27 @@ class MainViewModel(
             }
 
             MainEvent.RefreshSettings -> refreshSettings()
+            is MainEvent.ToggleToolModifyReviewSelection ->
+                toolModifyReviewUseCase.toggleSelection(
+                    messageId = event.messageId,
+                    itemId = event.itemId,
+                )
+
+            is MainEvent.ResolveToolModifyReview -> {
+                val selectedIds = currentState.chatMessages
+                    .firstOrNull { it.id == event.messageId }
+                    ?.toolModifyReview
+                    ?.items
+                    ?.filter { it.selected }
+                    ?.mapTo(linkedSetOf()) { it.id }
+                    .orEmpty()
+                toolModifyReviewUseCase.resolve(
+                    messageId = event.messageId,
+                    action = event.action,
+                    selectedIds = selectedIds,
+                )
+            }
+
             MainEvent.ApproveToolPermission ->
                 permissionsUseCase.resolveToolPermission(currentState.toolPermissionDialog?.requestId, approved = true)
 
@@ -257,6 +280,7 @@ class MainViewModel(
     private suspend fun collectUseCaseOutputs() {
         merge(
             chatUseCase.outputs,
+            toolModifyReviewUseCase.outputs,
             voiceInputUseCase.outputs,
             speechUseCase.outputs,
             permissionsUseCase.outputs,
@@ -294,9 +318,8 @@ class MainViewModel(
     }
 
     private suspend fun startNewConversation() {
-        chatUseCase.stopSpeechAndSideEffects()
         chatUseCase.finishCurrentConversation(TelemetryConversationEndReason.NEW_CONVERSATION)
-        chatUseCase.clearContext()
+        chatUseCase.clearConversationContext()
 
         setState {
             copy(
@@ -307,6 +330,7 @@ class MainViewModel(
                 lastKnownAgentContext = null,
                 userExpectCloseOnX = false,
                 isProcessing = false,
+                isAwaitingToolReview = false,
                 chatMessages = emptyList(),
                 chatStartTip = startTips.randomOrNull() ?: "",
                 chatSessionId = chatSessionId + 1,
@@ -478,8 +502,7 @@ class MainViewModel(
     private suspend fun clearContext() {
         val lastKnownAgentContext: AgentContext<String>? = chatUseCase.snapshotContext()
         chatUseCase.finishCurrentConversation(TelemetryConversationEndReason.CLEAR_CONTEXT)
-        chatUseCase.clearContext()
-        chatUseCase.stopSpeechAndSideEffects()
+        chatUseCase.clearConversationContext()
 
         when (currentState.userExpectCloseOnX) {
             false -> {
@@ -496,6 +519,7 @@ class MainViewModel(
                         lastText = lastText,
                         lastKnownAgentContext = lastKnownAgentContext ?: currentState.lastKnownAgentContext,
                         userExpectCloseOnX = true,
+                        isAwaitingToolReview = false,
                         chatMessages = emptyList(),
                         agentActions = emptyList(),
                         chatStartTip = startTips.randomOrNull() ?: "",

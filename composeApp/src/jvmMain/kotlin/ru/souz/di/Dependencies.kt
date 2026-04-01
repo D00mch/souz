@@ -144,7 +144,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<AgentToolsFilter> { instance<ToolsSettings>() }
     bindSingleton { FilesToolUtil(instance()) }
     bindSingleton<FilesService> { instance<FilesToolUtil>() }
-    bindSingleton { ToolPermissionBroker(instance()) }
+    bindSingleton<ToolPermissionBroker> { ImmediateToolPermissionBroker(instance()) }
+    bindSingleton { DeferredToolModifyPermissionBroker(instance(), instance()) }
     bindSingleton { TelegramContactSelectionBroker() }
     bindSingleton { TelegramChatSelectionBroker() }
     bindSingleton { TelegramContactSelectionApprovalSource(instance()) }
@@ -275,7 +276,21 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     )
     bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }
     bindSingleton { FinderPathExtractor(instance()) }
-    bindSingleton { MainUseCasesFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton {
+        MainUseCasesFactory(
+            instance(),
+            instance(),
+            instance(),
+            instance(),
+            instance(),
+            instance(),
+            instance(),
+            instance(),
+            instance(),
+            instance(),
+            instance(),
+        )
+    }
     bindSingleton { McpConfigProvider(instance()) }
     bindSingleton { McpClientManager(instance()) }
     bindSingleton<McpToolProvider> { instance<McpClientManager>() }

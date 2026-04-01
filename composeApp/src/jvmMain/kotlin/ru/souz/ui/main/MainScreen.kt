@@ -75,6 +75,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.souz.LocalWindowScope
+import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.common.*
 import souz.composeapp.generated.resources.*
 import java.awt.datatransfer.Transferable
@@ -107,10 +108,7 @@ private val MessageAttachmentNameColor = Color(0x99FFFFFF)
 private val ToolPermissionDialogMaxWidth = 920.dp
 private val ToolPermissionCompactDialogMaxWidth = 360.dp
 private const val ToolPermissionDialogMaxHeightFraction = 1f
-private val ToolModifyPatchPreviewMinHeight = 220.dp
-private val ToolModifyPatchPreviewMaxHeight = 620.dp
 private const val ToolModifyPatchParam = "patch"
-private const val ToolModifyPatchPreviewMaxLines = 350
 
 private enum class MacTrafficKind {
     Close,
@@ -178,6 +176,12 @@ fun MainScreen(
         onConsumePendingVoiceInputDraft = { token ->
             viewModel.send(MainEvent.ConsumePendingVoiceInputDraft(token))
         },
+        onToggleToolModifyReviewSelection = { messageId, itemId ->
+            viewModel.send(MainEvent.ToggleToolModifyReviewSelection(messageId, itemId))
+        },
+        onResolveToolModifyReview = { messageId, action ->
+            viewModel.send(MainEvent.ResolveToolModifyReview(messageId, action))
+        },
         onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
         onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
         onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
@@ -213,6 +217,8 @@ fun MainScreenContent(
     onSendChatMessage: (String) -> Unit = {},
     onClearContext: () -> Unit = {},
     onConsumePendingVoiceInputDraft: (Long) -> Unit = {},
+    onToggleToolModifyReviewSelection: (String, Long) -> Unit = { _, _ -> },
+    onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit = { _, _ -> },
     onApproveToolPermission: () -> Unit = {},
     onRejectToolPermission: () -> Unit = {},
     onSelectApprovalCandidate: (Long) -> Unit = {},
@@ -389,6 +395,7 @@ fun MainScreenContent(
                     pendingVoiceInputDraft = state.pendingVoiceInputDraft,
                     pendingVoiceInputDraftToken = state.pendingVoiceInputDraftToken,
                     isProcessing = state.isProcessing,
+                    isAwaitingToolReview = state.isAwaitingToolReview,
                     isListening = state.isListening,
                     isOnline = isOnline,
                     isSpeaking = state.isSpeaking,
@@ -403,6 +410,8 @@ fun MainScreenContent(
                     onStartListening = onStartListening,
                     onStopListening = onStopListening,
                     onStopSpeech = onStopSpeech,
+                    onToggleToolModifyReviewSelection = onToggleToolModifyReviewSelection,
+                    onResolveToolModifyReview = onResolveToolModifyReview,
                     onShowSnack = onShowSnack,
                     onOpenPath = onOpenPath,
                     modifier = Modifier
@@ -669,86 +678,6 @@ private fun chatMarkdownColors(textColor: Color) = DefaultMarkdownColors(
 )
 
 @Composable
-private fun ToolModifyPatchPreview(patch: String) {
-    val (lines, isTruncated) = remember(patch) {
-        buildPatchPreviewLines(patch, ToolModifyPatchPreviewMaxLines)
-    }
-    val verticalScroll = rememberScrollState()
-    val horizontalScroll = rememberScrollState()
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(
-                min = ToolModifyPatchPreviewMinHeight,
-                max = ToolModifyPatchPreviewMaxHeight
-            )
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color(0x33000000))
-            .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(6.dp))
-            .padding(8.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(verticalScroll)
-                .horizontalScroll(horizontalScroll),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            lines.forEach { line ->
-                Text(
-                    text = line.text,
-                    color = line.color,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp
-                )
-            }
-            if (isTruncated) {
-                Text(
-                    text = "... (preview truncated)",
-                    color = Color(0x99FFFFFF),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp
-                )
-            }
-        }
-    }
-}
-
-private fun buildPatchPreviewLines(
-    patch: String,
-    maxLines: Int,
-): Pair<List<PatchPreviewLine>, Boolean> {
-    if (patch.isBlank()) {
-        return listOf(PatchPreviewLine("(empty patch)", Color(0x99FFFFFF))) to false
-    }
-
-    val allLines = patch.lines()
-    val preview = allLines
-        .take(maxLines)
-        .map { line ->
-            val color = when {
-                line.startsWith("+++") || line.startsWith("---") -> Color(0xFF90CAF9)
-                line.startsWith("@@") -> Color(0xFFFFCC80)
-                line.startsWith("+") -> Color(0xFFB9F6CA)
-                line.startsWith("-") -> Color(0xFFFF8A80)
-                line.startsWith("diff ") || line.startsWith("index ") -> Color(0xFFB0BEC5)
-                else -> Color(0xCCFFFFFF)
-            }
-            PatchPreviewLine(text = line, color = color)
-        }
-
-    return preview to (allLines.size > maxLines)
-}
-
-private data class PatchPreviewLine(
-    val text: String,
-    val color: Color,
-)
-
-@Composable
 private fun chatMarkdownTypography(
     baseStyle: TextStyle,
     codeStyle: TextStyle,
@@ -806,6 +735,7 @@ fun ChatModeContent(
     pendingVoiceInputDraft: String?,
     pendingVoiceInputDraftToken: Long,
     isProcessing: Boolean,
+    isAwaitingToolReview: Boolean,
     isListening: Boolean,
     isOnline: Boolean,
     isSpeaking: Boolean,
@@ -820,6 +750,8 @@ fun ChatModeContent(
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
     onStopSpeech: () -> Unit,
+    onToggleToolModifyReviewSelection: (String, Long) -> Unit,
+    onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
     onShowSnack: (String) -> Unit,
     onOpenPath: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -905,7 +837,9 @@ fun ChatModeContent(
                 items(messages, key = { it.id }) { message ->
                     ChatBubble(
                         message = message,
-                        onOpenPath = onOpenPath
+                        onOpenPath = onOpenPath,
+                        onToggleToolModifyReviewSelection = onToggleToolModifyReviewSelection,
+                        onResolveToolModifyReview = onResolveToolModifyReview,
                     )
                 }
 
@@ -965,7 +899,7 @@ fun ChatModeContent(
             onStartListening = onStartListening,
             onStopListening = onStopListening,
             onStopSpeaking = onStopSpeech,
-            enabled = !isProcessing,
+            enabled = !isProcessing && !isAwaitingToolReview,
             focusRequester = focusRequester,
             selectedModel = selectedModel,
             availableModelAliases = availableModelAliases,
@@ -1029,7 +963,9 @@ private fun ChatFileDropTarget(
 @Composable
 private fun ChatBubble(
     message: ChatMessage,
-    onOpenPath: (String) -> Unit
+    onOpenPath: (String) -> Unit,
+    onToggleToolModifyReviewSelection: (String, Long) -> Unit,
+    onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
 ) {
     val hoverInteractionSource = remember { MutableInteractionSource() }
     val isHovered by hoverInteractionSource.collectIsHoveredAsState()
@@ -1180,6 +1116,15 @@ private fun ChatBubble(
                     )
                 }
 
+                message.toolModifyReview?.let { review ->
+                    ToolModifyReviewBlock(
+                        messageId = message.id,
+                        review = review,
+                        onToggleSelection = onToggleToolModifyReviewSelection,
+                        onResolve = onResolveToolModifyReview,
+                    )
+                }
+
                 if (message.text.isNotBlank()) {
                     val parts = remember(message.text) { parseMarkdownContent(message.text) }
                     val baseFontSize = 14.sp
@@ -1266,37 +1211,39 @@ private fun ChatBubble(
                         color = ChatAssistantTimestampColor,
                         fontSize = 11.sp
                     )
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(copyBackgroundColor)
-                            .hoverable(interactionSource = copyInteractionSource)
-                            .pointerHoverIcon(PointerIcon.Hand)
-                            .clickable(
-                                interactionSource = copyInteractionSource,
-                                indication = null,
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(message.text))
-                                    copied = true
-                                    val clickId = copyNonce + 1
-                                    copyNonce = clickId
-                                    scope.launch {
-                                        delay(2000)
-                                        if (copyNonce == clickId) {
-                                            copied = false
+                    if (message.text.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(copyBackgroundColor)
+                                .hoverable(interactionSource = copyInteractionSource)
+                                .pointerHoverIcon(PointerIcon.Hand)
+                                .clickable(
+                                    interactionSource = copyInteractionSource,
+                                    indication = null,
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(message.text))
+                                        copied = true
+                                        val clickId = copyNonce + 1
+                                        copyNonce = clickId
+                                        scope.launch {
+                                            delay(2000)
+                                            if (copyNonce == clickId) {
+                                                copied = false
+                                            }
                                         }
                                     }
-                                }
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                            contentDescription = null,
-                            tint = copyIconColor,
-                            modifier = Modifier.size(14.dp)
-                        )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                                contentDescription = null,
+                                tint = copyIconColor,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
                 }
             }

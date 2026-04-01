@@ -21,17 +21,28 @@ data class ToolPermissionRequest(
     val params: Map<String, String>,
 )
 
-class ToolPermissionBroker(
+interface ToolPermissionBroker {
+    val requests: Flow<ToolPermissionRequest>
+
+    suspend fun requestPermission(description: String, params: Map<String, String>): ToolPermissionResult
+
+    fun resolve(requestId: Long, approved: Boolean)
+}
+
+class ImmediateToolPermissionBroker(
     private val settingsProvider: SettingsProvider,
-) {
+) : ToolPermissionBroker {
     private val requestId = AtomicLong(0L)
     private val requestMutex = Mutex()
     private val requestsChannel = Channel<ToolPermissionRequest>(capacity = Channel.BUFFERED)
     private val pendingDecisions = ConcurrentHashMap<Long, CompletableDeferred<Boolean>>()
 
-    val requests: Flow<ToolPermissionRequest> = requestsChannel.receiveAsFlow()
+    override val requests: Flow<ToolPermissionRequest> = requestsChannel.receiveAsFlow()
 
-    suspend fun requestPermission(description: String, params: Map<String, String>): ToolPermissionResult {
+    override suspend fun requestPermission(
+        description: String,
+        params: Map<String, String>,
+    ): ToolPermissionResult {
         if (!settingsProvider.safeModeEnabled) return ToolPermissionResult.Ok
         return requestMutex.withLock {
             val id = requestId.incrementAndGet()
@@ -53,7 +64,7 @@ class ToolPermissionBroker(
         }
     }
 
-    fun resolve(requestId: Long, approved: Boolean) {
+    override fun resolve(requestId: Long, approved: Boolean) {
         pendingDecisions.remove(requestId)?.complete(approved)
     }
 
