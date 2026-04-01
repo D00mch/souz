@@ -58,7 +58,11 @@ class VoiceInputUseCase(
                     }
                 }
             },
-            onDoubleClick = { chatUseCase.cancelActiveJob() },
+            onDoubleClick = {
+                scope.launch {
+                    chatUseCase.abortActiveRequest()
+                }
+            },
         )
 
         launch { audioRecorder.logState() }
@@ -146,8 +150,7 @@ class VoiceInputUseCase(
             return
         }
 
-        chatUseCase.stopSpeechAndSideEffects()
-        chatUseCase.cancelActiveJob()
+        chatUseCase.abortActiveRequest()
         speechUseCase.playMacPingSafely(scope)
 
         val statusMsg = getString(Res.string.voice_status_recording_started)

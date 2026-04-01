@@ -13,6 +13,7 @@ import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 
 data class MainUseCases(
     val chat: ChatUseCase,
+    val toolModifyReview: ToolModifyReviewUseCase,
     val voiceInput: VoiceInputUseCase,
     val speech: SpeechUseCase,
     val permissions: PermissionsUseCase,
@@ -36,13 +37,16 @@ class MainUseCasesFactory(
     fun create(ioDispatcher: CoroutineDispatcher): MainUseCases {
         val speechUseCase = SpeechUseCase(say)
         val attachmentsUseCase = ChatAttachmentsUseCase(ioDispatcher)
+        val toolModifyReviewUseCase = ToolModifyReviewUseCase(
+            deferredToolModifyPermissionBroker = deferredToolModifyPermissionBroker,
+        )
         val chatUseCase = ChatUseCase(
             agentFacade = agentFacade,
             settingsProvider = settingsProvider,
             speechUseCase = speechUseCase,
             finderPathExtractor = finderPathExtractor,
             chatAttachmentsUseCase = attachmentsUseCase,
-            deferredToolModifyPermissionBroker = deferredToolModifyPermissionBroker,
+            toolModifyReviewUseCase = toolModifyReviewUseCase,
             tokenLogging = tokenLogging,
             telemetryService = telemetryService,
             ioDispatcher = ioDispatcher,
@@ -63,6 +67,7 @@ class MainUseCasesFactory(
 
         return MainUseCases(
             chat = chatUseCase,
+            toolModifyReview = toolModifyReviewUseCase,
             voiceInput = voiceInputUseCase,
             speech = speechUseCase,
             permissions = permissionsUseCase,

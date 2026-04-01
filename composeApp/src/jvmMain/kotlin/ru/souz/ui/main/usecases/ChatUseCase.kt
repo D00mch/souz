@@ -1,7 +1,6 @@
 package ru.souz.ui.main.usecases
 
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -11,7 +10,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
@@ -22,6 +20,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.TokenLogging
 import ru.souz.service.telemetry.TelemetryConversationEndReason
 import ru.souz.service.telemetry.TelemetryConversationStartReason
+import ru.souz.service.telemetry.TelemetryRequestContext
 import ru.souz.service.telemetry.TelemetryRequestSource
 import ru.souz.service.telemetry.TelemetryRequestStatus
 import ru.souz.service.telemetry.TelemetryService
@@ -29,12 +28,6 @@ import ru.souz.ui.main.ChatAgentActionFormatter
 import ru.souz.ui.main.ChatAttachedFile
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainState
-import ru.souz.ui.main.ToolModifyReviewItemUi
-import ru.souz.ui.main.ToolModifyReviewUi
-import ru.souz.tool.files.DeferredToolModifyPermissionBroker
-import ru.souz.tool.files.ToolModifyApplyResult
-import ru.souz.tool.files.ToolModifyApplyStatus
-import ru.souz.tool.files.ToolModifySelectionAction
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -46,7 +39,7 @@ class ChatUseCase(
     private val speechUseCase: SpeechUseCase,
     private val finderPathExtractor: FinderPathExtractor,
     private val chatAttachmentsUseCase: ChatAttachmentsUseCase,
-    private val deferredToolModifyPermissionBroker: DeferredToolModifyPermissionBroker,
+    private val toolModifyReviewUseCase: ToolModifyReviewUseCase,
     private val tokenLogging: TokenLogging,
     private val telemetryService: TelemetryService,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -56,7 +49,6 @@ class ChatUseCase(
     private val taskSideEffectJobs = ArrayList<Job>()
     private val activeChatRequestId = AtomicLong(0L)
     private val activeRequestMessages = AtomicReference<ActiveRequestMessages?>(null)
-    private val pendingToolModifyReview = AtomicReference<PendingToolModifyReviewState?>(null)
     private val conversationLock = Any()
     private var currentConversationId: String? = null
     private val pendingConversationClosures = LinkedHashMap<String, TelemetryConversationEndReason>()
@@ -82,9 +74,7 @@ class ChatUseCase(
         requestSource: TelemetryRequestSource = TelemetryRequestSource.CHAT_UI,
         onResult: ((Result<String>) -> Unit)? = null,
     ) {
-        killTaskSideEffectJobs()
-        cancelActiveJob()
-        clearPendingToolModifyReview(discardBrokerState = true)
+        resetBeforeSendingMessage()
 
         val userText = chatMessage.trim()
         if (userText.isEmpty()) {
@@ -92,268 +82,61 @@ class ChatUseCase(
             return
         }
 
-        val requestId = activeChatRequestId.incrementAndGet()
-        val conversationId = ensureConversation(requestSource)
-        val requestContext = telemetryService.beginRequest(
-            conversationId = conversationId,
-            source = requestSource,
-            model = settingsProvider.gigaModel.alias,
-            provider = settingsProvider.gigaModel.provider.name,
-            inputLengthChars = userText.length,
-            attachedFilesCount = attachedFiles.size,
-        )
-        markConversationRequestStarted(conversationId)
-        tokenLogging.startRequest(requestContext.requestId)
-        var telemetryStatus = TelemetryRequestStatus.SUCCESS
-        var telemetryResponseLength: Int? = null
-        var telemetryErrorMessage: String? = null
-        val userMessage = ChatMessage(
-            text = displayMessage.trim(),
-            isUser = true,
+        val session = createChatRequestSession(
+            userText = userText,
+            displayMessage = displayMessage,
             isVoice = isVoice,
             attachedFiles = attachedFiles,
+            requestSource = requestSource,
         )
-
-        val pendingBotMessage = ChatMessage(
-            text = "",
-            isUser = false,
-            isVoice = isVoice,
-        )
-        activeRequestMessages.set(
-            ActiveRequestMessages(
-                requestId = requestId,
-                userMessageId = userMessage.id,
-                pendingMessageId = pendingBotMessage.id,
-            )
-        )
-
-        var sideEffectsJob: Job? = null
 
         try {
-            emitState {
-                copy(
-                    chatMessages = chatMessages + userMessage,
-                    chatStartTip = "",
-
-                    isProcessing = true,
-                    statusMessage = "",
-                    agentActions = emptyList(),
-                )
-            }
-
-            sideEffectsJob = subscribeOnTaskSideEffects(scope, pendingBotMessage)
+            emitRequestStarted(session)
+            session.sideEffectsJob = subscribeOnTaskSideEffects(scope, session.pendingBotMessage)
             l.info("About to execute agent with user input {}", userText)
 
-            val response = withContext(
-                ioDispatcher +
-                    telemetryService.requestContextElement(requestContext) +
-                    tokenLogging.requestContextElement(requestContext.requestId)
-            ) {
-                agentFacade.execute(userText)
-            }
+            val response = executeAgentRequest(session, userText)
+            val completedResponse = buildCompletedResponse(session, response, onResult)
+                ?: return
 
-            val extractedFinderPaths = extractFinderPaths(response)
-            val botAttachments = chatAttachmentsUseCase.buildAttachmentsFromPaths(
-                extractedFinderPaths.map { it.path }
+            handleRequestSuccess(
+                scope = scope,
+                session = session,
+                response = completedResponse,
+                onResult = onResult,
             )
-            if (activeChatRequestId.get() != requestId) {
-                l.info("Skipping stale chat response for request {}", requestId)
-                telemetryStatus = TelemetryRequestStatus.CANCELLED
-                telemetryErrorMessage = "StaleRequest"
-                clearPendingToolModifyReview(discardBrokerState = true)
-                onResult?.invoke(Result.failure(CancellationException("Stale request")))
-                return
-            }
-
-            val pendingReview = deferredToolModifyPermissionBroker.snapshotPendingReview()
-            val finalBotText = if (pendingReview != null) {
-                val reviewMessage = pendingBotMessage.copy(
-                    toolModifyReview = ToolModifyReviewUi(
-                        items = pendingReview.items.map { item ->
-                            ToolModifyReviewItemUi(
-                                id = item.id,
-                                path = item.path,
-                                patchPreview = item.patchPreview,
-                            )
-                        }
-                    )
-                )
-                val reviewDeferred = CompletableDeferred<ToolModifyReviewDecision>()
-                pendingToolModifyReview.set(
-                    PendingToolModifyReviewState(
-                        requestId = requestId,
-                        messageId = reviewMessage.id,
-                        decision = reviewDeferred,
-                    )
-                )
-                activeRequestMessages.set(
-                    ActiveRequestMessages(
-                        requestId = requestId,
-                        userMessageId = userMessage.id,
-                        pendingMessageId = reviewMessage.id,
-                    )
-                )
-                emitState {
-                    copy(
-                        chatMessages = upsertMessage(reviewMessage, fallbackMessageId = pendingBotMessage.id),
-                        isProcessing = false,
-                        isAwaitingToolReview = true,
-                        agentActions = emptyList(),
-                    )
-                }
-
-                val decision = reviewDeferred.await()
-                val applyResult = deferredToolModifyPermissionBroker.applySelection(
-                    selectedIds = decision.selectedIds,
-                    action = decision.action,
-                )
-                val resolvedReview = reviewMessage.toolModifyReview?.copy(
-                    items = reviewMessage.toolModifyReview.items.map { item ->
-                        val outcome = applyResult.items.firstOrNull { it.id == item.id }
-                        item.copy(
-                            selected = item.id in decision.selectedIds,
-                            status = outcome?.status,
-                            warning = outcome?.warning,
-                        )
-                    },
-                    isResolved = true,
-                    summary = formatToolModifyReviewSummary(applyResult),
-                )
-                emitState {
-                    copy(
-                        chatMessages = chatMessages.map { message ->
-                            if (message.id == reviewMessage.id) {
-                                message.copy(toolModifyReview = resolvedReview)
-                            } else {
-                                message
-                            }
-                        },
-                        isAwaitingToolReview = false,
-                    )
-                }
-                pendingToolModifyReview.set(null)
-                appendToolModifySummary(response, applyResult)
-            } else {
-                response
-            }
-
-            val botMessage = if (pendingReview != null) {
-                ChatMessage(
-                    text = finalBotText,
-                    isUser = false,
-                    isVoice = isVoice,
-                    attachedFiles = botAttachments,
-                    finderPaths = extractedFinderPaths,
-                )
-            } else {
-                pendingBotMessage.copy(
-                    text = finalBotText,
-                    finderPaths = extractedFinderPaths,
-                    attachedFiles = botAttachments,
-                )
-            }
-
-            if (settingsProvider.notificationSoundEnabled) {
-                speechUseCase.playMacPingMsgSafely(scope)
-            }
-
-            emitState {
-                val completedBotMessage = botMessage.copy(agentActions = agentActions)
-                copy(
-                    chatMessages = if (pendingReview != null) {
-                        chatMessages + completedBotMessage
-                    } else {
-                        upsertMessage(completedBotMessage)
-                    },
-                    isProcessing = false,
-                    isAwaitingToolReview = false,
-                    agentActions = emptyList(),
-                )
-            }
-
-            if (isVoice && !settingsProvider.useStreaming) {
-                speechUseCase.queuePrepared(botMessage.text)
-            }
-            telemetryResponseLength = botMessage.text.length
-            onResult?.invoke(Result.success(botMessage.text))
         } catch (e: CancellationException) {
-            telemetryStatus = TelemetryRequestStatus.CANCELLED
-            telemetryErrorMessage = telemetryErrorLabel(e)
-            l.info("Chat message cancelled: {}", e.message)
-            val isCurrentRequest = activeChatRequestId.get() == requestId
-            clearPendingToolModifyReview(discardBrokerState = true)
-            withContext(NonCancellable) {
-                emitState {
-                    val idsToDrop = activeRequestMessages.get()
-                        ?.takeIf { it.requestId == requestId }
-                        ?.let { arrayOf(it.userMessageId, it.pendingMessageId) }
-                        ?: arrayOf(userMessage.id, pendingBotMessage.id)
-                    copy(
-                        chatMessages = chatMessages.filterNot { it.id in idsToDrop },
-                        isProcessing = if (isCurrentRequest) false else isProcessing,
-                        isAwaitingToolReview = if (isCurrentRequest) false else isAwaitingToolReview,
-                        agentActions = if (isCurrentRequest) emptyList() else agentActions,
-                    )
-                }
-            }
-            onResult?.invoke(Result.failure(e))
+            session.telemetryStatus = TelemetryRequestStatus.CANCELLED
+            session.telemetryErrorMessage = telemetryErrorLabel(e)
+            handleRequestCancellation(session, e, onResult)
         } catch (e: Exception) {
-            telemetryStatus = TelemetryRequestStatus.ERROR
-            telemetryErrorMessage = telemetryErrorLabel(e)
-            if (activeChatRequestId.get() != requestId) {
-                l.info("Ignoring stale chat failure for request {}: {}", requestId, e.message)
-                clearPendingToolModifyReview(discardBrokerState = true)
-                onResult?.invoke(Result.failure(e))
+            session.telemetryStatus = TelemetryRequestStatus.ERROR
+            session.telemetryErrorMessage = telemetryErrorLabel(e)
+            if (!handleRequestFailure(session, e, onResult)) {
                 return
             }
-
-            l.error("Chat message failed: {}", e.message, e)
-            val errorMessage = ChatMessage(
-                text = "Ошибка: ${e.message}",
-                isUser = false,
-                isVoice = isVoice,
-            )
-
-            emitState {
-                copy(
-                    chatMessages = chatMessages + errorMessage,
-                    isProcessing = false,
-                    isAwaitingToolReview = false,
-                    agentActions = emptyList(),
-                )
-            }
-            onResult?.invoke(Result.failure(e))
         } finally {
-            telemetryService.finishRequest(
-                context = requestContext,
-                status = telemetryStatus,
-                responseLengthChars = telemetryResponseLength,
-                errorMessage = telemetryErrorMessage,
-                requestTokenUsage = tokenLogging.currentRequestTokenUsage(requestContext.requestId),
-                sessionTokenUsage = tokenLogging.sessionTokenUsage(),
-            )
-            tokenLogging.finishRequest(requestContext.requestId)
-            finishPendingConversationIfNeeded(requestContext.conversationId)
-            sideEffectsJob?.cancel()
-            sideEffectsJob?.let { taskSideEffectJobs.remove(it) }
-            val currentActiveRequest = activeRequestMessages.get()
-            if (currentActiveRequest?.requestId == requestId) {
-                activeRequestMessages.compareAndSet(currentActiveRequest, null)
-            }
+            finalizeRequestSession(session)
         }
     }
 
-    fun cancelActiveJob() {
+    /**
+     * Stops only the currently running agent execution without directly mutating chat UI state.
+     */
+    private fun cancelActiveJob() {
         agentFacade.cancelActiveJob()
     }
 
-    suspend fun stopCurrentExecution() {
+    /**
+     * Cancels the active request, drops any in-flight chat messages, and clears pending approvals.
+     */
+    suspend fun abortActiveRequest() {
         val nextRequestId = activeChatRequestId.incrementAndGet()
         val inFlightMessages = activeRequestMessages.getAndSet(null)
 
         killTaskSideEffectJobs()
         cancelActiveJob()
-        clearPendingToolModifyReview(discardBrokerState = true)
+        toolModifyReviewUseCase.clearPendingReview(discardBrokerState = true)
 
         emitState {
             val idsToDrop = inFlightMessages?.let { arrayOf(it.userMessageId, it.pendingMessageId) } ?: emptyArray()
@@ -364,55 +147,22 @@ class ChatUseCase(
                 agentActions = emptyList(),
             )
         }
-        l.info("Stop requested: invalidated request {}", nextRequestId)
+        l.info("Active request reset: invalidated request {}", nextRequestId)
     }
 
-    fun stopSpeechAndSideEffects() {
+    /**
+     * Stops synthesized speech and streamed side effects while leaving chat history intact.
+     */
+    fun stopAssistantOutput() {
         killTaskSideEffectJobs()
     }
 
-    fun clearContext() {
-        clearPendingToolModifyReviewBlocking(discardBrokerState = true)
+    /**
+     * Clears the agent context after resetting any in-flight request state.
+     */
+    suspend fun clearConversationContext() {
+        abortActiveRequest()
         agentFacade.clearContext()
-    }
-
-    suspend fun toggleToolModifyReviewSelection(messageId: String, itemId: Long) {
-        val pendingReviewState = pendingToolModifyReview.get() ?: return
-        if (pendingReviewState.messageId != messageId) return
-        emitState {
-            copy(
-                chatMessages = chatMessages.map { message ->
-                    if (message.id != messageId) return@map message
-                    val review = message.toolModifyReview ?: return@map message
-                    message.copy(
-                        toolModifyReview = review.copy(
-                            items = review.items.map { item ->
-                                if (item.id == itemId && !review.isResolved) {
-                                    item.copy(selected = !item.selected)
-                                } else {
-                                    item
-                                }
-                            }
-                        )
-                    )
-                }
-            )
-        }
-    }
-
-    fun resolveToolModifyReview(
-        messageId: String,
-        action: ToolModifySelectionAction,
-        selectedIds: Set<Long>,
-    ) {
-        val pendingReviewState = pendingToolModifyReview.get() ?: return
-        if (pendingReviewState.messageId != messageId) return
-        pendingReviewState.decision.complete(
-            ToolModifyReviewDecision(
-                action = action,
-                selectedIds = selectedIds,
-            )
-        )
     }
 
     fun finishCurrentConversation(reason: TelemetryConversationEndReason) {
@@ -447,7 +197,7 @@ class ChatUseCase(
         finishCurrentConversation(TelemetryConversationEndReason.VIEW_MODEL_CLEARED)
         killTaskSideEffectJobs()
         cancelActiveJob()
-        clearPendingToolModifyReviewBlocking(discardBrokerState = true)
+        toolModifyReviewUseCase.clearPendingReviewBlocking(discardBrokerState = true)
     }
 
     private fun ensureConversation(source: TelemetryRequestSource): String =
@@ -489,7 +239,7 @@ class ChatUseCase(
             agentFacade.sideEffects.collect { effect ->
                 when (effect) {
                     is AgentSideEffect.Text -> {
-                        if (deferredToolModifyPermissionBroker.hasPendingEdits()) {
+                        if (toolModifyReviewUseCase.hasPendingEdits()) {
                             return@collect
                         }
                         val text = effect.v
@@ -542,23 +292,291 @@ class ChatUseCase(
         taskSideEffectJobs.clear()
     }
 
-    private suspend fun emitState(reduce: MainState.() -> MainState) {
-        _outputs.emit(MainUseCaseOutput.State(reduce))
+    /**
+     * Resets any in-flight chat execution state before a new request starts.
+     */
+    private suspend fun resetBeforeSendingMessage() {
+        killTaskSideEffectJobs()
+        cancelActiveJob()
+        toolModifyReviewUseCase.clearPendingReview(discardBrokerState = true)
     }
 
-    private suspend fun clearPendingToolModifyReview(discardBrokerState: Boolean) {
-        pendingToolModifyReview.getAndSet(null)?.decision?.cancel()
-        if (discardBrokerState) {
-            withContext(NonCancellable) {
-                deferredToolModifyPermissionBroker.clearPending()
+    /**
+     * Creates a session object that carries chat request state through execution,
+     * telemetry, approval flow, and final cleanup.
+     */
+    private fun createChatRequestSession(
+        userText: String,
+        displayMessage: String,
+        isVoice: Boolean,
+        attachedFiles: List<ChatAttachedFile>,
+        requestSource: TelemetryRequestSource,
+    ): ChatRequestSession {
+        val requestId = activeChatRequestId.incrementAndGet()
+        val conversationId = ensureConversation(requestSource)
+        val requestContext = telemetryService.beginRequest(
+            conversationId = conversationId,
+            source = requestSource,
+            model = settingsProvider.gigaModel.alias,
+            provider = settingsProvider.gigaModel.provider.name,
+            inputLengthChars = userText.length,
+            attachedFilesCount = attachedFiles.size,
+        )
+        markConversationRequestStarted(conversationId)
+        tokenLogging.startRequest(requestContext.requestId)
+
+        val session = ChatRequestSession(
+            requestId = requestId,
+            requestContext = requestContext,
+            userMessage = ChatMessage(
+                text = displayMessage.trim(),
+                isUser = true,
+                isVoice = isVoice,
+                attachedFiles = attachedFiles,
+            ),
+            pendingBotMessage = ChatMessage(
+                text = "",
+                isUser = false,
+                isVoice = isVoice,
+            ),
+        )
+        updateActiveRequestMessages(session)
+        return session
+    }
+
+    /**
+     * Tracks the user message and the current bot placeholder/review message that
+     * belong to the active request so later cancellation or cleanup can remove them.
+     */
+    private fun updateActiveRequestMessages(
+        session: ChatRequestSession,
+        pendingMessageId: String = session.pendingBotMessage.id,
+    ) {
+        session.currentPendingMessageId = pendingMessageId
+        activeRequestMessages.set(
+            ActiveRequestMessages(
+                requestId = session.requestId,
+                userMessageId = session.userMessage.id,
+                pendingMessageId = pendingMessageId,
+            )
+        )
+    }
+
+    /** Publishes the user's message and flips the UI into processing mode for this session. */
+    private suspend fun emitRequestStarted(session: ChatRequestSession) {
+        emitState {
+            copy(
+                chatMessages = chatMessages + session.userMessage,
+                chatStartTip = "",
+                isProcessing = true,
+                statusMessage = "",
+                agentActions = emptyList(),
+            )
+        }
+    }
+
+    /** Executes the agent under the session's telemetry and token logging context. */
+    private suspend fun executeAgentRequest(
+        session: ChatRequestSession,
+        userText: String,
+    ): String = withContext(
+        ioDispatcher +
+            telemetryService.requestContextElement(session.requestContext) +
+            tokenLogging.requestContextElement(session.requestContext.requestId)
+    ) {
+        agentFacade.execute(userText)
+    }
+
+    /**
+     * Turns the raw agent response into the final bot message shape, including
+     * attachments, finder paths, stale-request detection, and optional tool review.
+     */
+    private suspend fun buildCompletedResponse(
+        session: ChatRequestSession,
+        response: String,
+        onResult: ((Result<String>) -> Unit)?,
+    ): CompletedChatResponse? {
+        val extractedFinderPaths = extractFinderPaths(response)
+        val botAttachments = chatAttachmentsUseCase.buildAttachmentsFromPaths(
+            extractedFinderPaths.map { it.path }
+        )
+        if (!ensureSessionIsCurrent(session, onResult)) {
+            return null
+        }
+
+        val toolReviewResult = toolModifyReviewUseCase.resolvePendingReviewIfNeeded(
+            requestId = session.requestId,
+            pendingBotMessage = session.pendingBotMessage,
+            response = response,
+            onReviewShown = { reviewMessageId ->
+                updateActiveRequestMessages(session, pendingMessageId = reviewMessageId)
+            },
+        )
+        val botMessage = if (toolReviewResult.appendAsNewMessage) {
+            ChatMessage(
+                text = toolReviewResult.text,
+                isUser = false,
+                isVoice = session.pendingBotMessage.isVoice,
+                attachedFiles = botAttachments,
+                finderPaths = extractedFinderPaths,
+            )
+        } else {
+            session.pendingBotMessage.copy(
+                text = toolReviewResult.text,
+                finderPaths = extractedFinderPaths,
+                attachedFiles = botAttachments,
+            )
+        }
+        return CompletedChatResponse(
+            botMessage = botMessage,
+            appendAsNewMessage = toolReviewResult.appendAsNewMessage,
+        )
+    }
+
+    /**
+     * Verifies that the session still owns the latest request slot before UI state
+     * is updated with the completed agent response.
+     */
+    private suspend fun ensureSessionIsCurrent(
+        session: ChatRequestSession,
+        onResult: ((Result<String>) -> Unit)?,
+    ): Boolean {
+        if (activeChatRequestId.get() == session.requestId) {
+            return true
+        }
+
+        l.info("Skipping stale chat response for request {}", session.requestId)
+        session.telemetryStatus = TelemetryRequestStatus.CANCELLED
+        session.telemetryErrorMessage = "StaleRequest"
+        toolModifyReviewUseCase.clearPendingReview(discardBrokerState = true)
+        onResult?.invoke(Result.failure(CancellationException("Stale request")))
+        return false
+    }
+
+    /**
+     * Commits a successful request into UI state, triggers completion side effects,
+     * and records response metrics on the session for final telemetry reporting.
+     */
+    private suspend fun handleRequestSuccess(
+        scope: CoroutineScope,
+        session: ChatRequestSession,
+        response: CompletedChatResponse,
+        onResult: ((Result<String>) -> Unit)?,
+    ) {
+        if (settingsProvider.notificationSoundEnabled) {
+            speechUseCase.playMacPingMsgSafely(scope)
+        }
+
+        emitState {
+            val completedBotMessage = response.botMessage.copy(agentActions = agentActions)
+            copy(
+                chatMessages = if (response.appendAsNewMessage) {
+                    chatMessages + completedBotMessage
+                } else {
+                    upsertMessage(completedBotMessage)
+                },
+                isProcessing = false,
+                isAwaitingToolReview = false,
+                agentActions = emptyList(),
+            )
+        }
+
+        if (response.botMessage.isVoice && !settingsProvider.useStreaming) {
+            speechUseCase.queuePrepared(response.botMessage.text)
+        }
+        session.telemetryResponseLength = response.botMessage.text.length
+        onResult?.invoke(Result.success(response.botMessage.text))
+    }
+
+    /**
+     * Removes the session's pending UI messages after cancellation and clears any
+     * approval state that might still be waiting for user input.
+     */
+    private suspend fun handleRequestCancellation(
+        session: ChatRequestSession,
+        error: CancellationException,
+        onResult: ((Result<String>) -> Unit)?,
+    ) {
+        l.info("Chat message cancelled: {}", error.message)
+        val isCurrentRequest = activeChatRequestId.get() == session.requestId
+        toolModifyReviewUseCase.clearPendingReview(discardBrokerState = true)
+        withContext(NonCancellable) {
+            emitState {
+                val idsToDrop = activeRequestMessages.get()
+                    ?.takeIf { it.requestId == session.requestId }
+                    ?.let { arrayOf(it.userMessageId, it.pendingMessageId) }
+                    ?: arrayOf(session.userMessage.id, session.currentPendingMessageId)
+                copy(
+                    chatMessages = chatMessages.filterNot { it.id in idsToDrop },
+                    isProcessing = if (isCurrentRequest) false else isProcessing,
+                    isAwaitingToolReview = if (isCurrentRequest) false else isAwaitingToolReview,
+                    agentActions = if (isCurrentRequest) emptyList() else agentActions,
+                )
             }
         }
+        onResult?.invoke(Result.failure(error))
     }
 
-    private fun clearPendingToolModifyReviewBlocking(discardBrokerState: Boolean) {
-        runBlocking {
-            clearPendingToolModifyReview(discardBrokerState = discardBrokerState)
+    /**
+     * Publishes an error message for the current session, unless the failure belongs
+     * to a request that has already been superseded by a newer one.
+     */
+    private suspend fun handleRequestFailure(
+        session: ChatRequestSession,
+        error: Exception,
+        onResult: ((Result<String>) -> Unit)?,
+    ): Boolean {
+        if (activeChatRequestId.get() != session.requestId) {
+            l.info("Ignoring stale chat failure for request {}: {}", session.requestId, error.message)
+            toolModifyReviewUseCase.clearPendingReview(discardBrokerState = true)
+            onResult?.invoke(Result.failure(error))
+            return false
         }
+
+        l.error("Chat message failed: {}", error.message, error)
+        val errorMessage = ChatMessage(
+            text = "Ошибка: ${error.message}",
+            isUser = false,
+            isVoice = session.userMessage.isVoice,
+        )
+
+        emitState {
+            copy(
+                chatMessages = chatMessages + errorMessage,
+                isProcessing = false,
+                isAwaitingToolReview = false,
+                agentActions = emptyList(),
+            )
+        }
+        onResult?.invoke(Result.failure(error))
+        return true
+    }
+
+    /**
+     * Completes telemetry, stops side-effect streaming, and clears the active request
+     * bookkeeping for the finished session.
+     */
+    private fun finalizeRequestSession(session: ChatRequestSession) {
+        telemetryService.finishRequest(
+            context = session.requestContext,
+            status = session.telemetryStatus,
+            responseLengthChars = session.telemetryResponseLength,
+            errorMessage = session.telemetryErrorMessage,
+            requestTokenUsage = tokenLogging.currentRequestTokenUsage(session.requestContext.requestId),
+            sessionTokenUsage = tokenLogging.sessionTokenUsage(),
+        )
+        tokenLogging.finishRequest(session.requestContext.requestId)
+        finishPendingConversationIfNeeded(session.requestContext.conversationId)
+        session.sideEffectsJob?.cancel()
+        session.sideEffectsJob?.let { taskSideEffectJobs.remove(it) }
+        val currentActiveRequest = activeRequestMessages.get()
+        if (currentActiveRequest?.requestId == session.requestId) {
+            activeRequestMessages.compareAndSet(currentActiveRequest, null)
+        }
+    }
+
+    private suspend fun emitState(reduce: MainState.() -> MainState) {
+        _outputs.emit(MainUseCaseOutput.State(reduce))
     }
 
     private fun MainState.upsertMessage(
@@ -570,29 +588,6 @@ class ChatUseCase(
             chatMessages.mapLast { message }
         else -> chatMessages + message
     }
-
-    private fun appendToolModifySummary(
-        response: String,
-        applyResult: ToolModifyApplyResult,
-    ): String {
-        val summary = buildString {
-            appendLine()
-            appendLine()
-            appendLine("Applied changes summary:")
-            appendLine("- Applied: ${applyResult.appliedCount}")
-            appendLine("- Discarded: ${applyResult.discardedCount}")
-            appendLine("- Skipped: ${applyResult.skippedCount}")
-            applyResult.items
-                .filter { it.status == ToolModifyApplyStatus.SKIPPED_CONFLICT || it.status == ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT }
-                .forEach { item ->
-                    appendLine("- Warning: ${item.path}: ${item.warning ?: "Can't apply the staged change."}")
-                }
-        }
-        return response + summary
-    }
-
-    private fun formatToolModifyReviewSummary(applyResult: ToolModifyApplyResult): String =
-        "Applied ${applyResult.appliedCount}, discarded ${applyResult.discardedCount}, skipped ${applyResult.skippedCount}"
 
     private suspend fun extractFinderPaths(text: String) =
         withContext(ioDispatcher) {
@@ -618,14 +613,21 @@ class ChatUseCase(
         val pendingMessageId: String,
     )
 
-    private data class PendingToolModifyReviewState(
+    private class ChatRequestSession(
         val requestId: Long,
-        val messageId: String,
-        val decision: CompletableDeferred<ToolModifyReviewDecision>,
-    )
+        val requestContext: TelemetryRequestContext,
+        val userMessage: ChatMessage,
+        val pendingBotMessage: ChatMessage,
+    ) {
+        var currentPendingMessageId: String = pendingBotMessage.id
+        var telemetryStatus: TelemetryRequestStatus = TelemetryRequestStatus.SUCCESS
+        var telemetryResponseLength: Int? = null
+        var telemetryErrorMessage: String? = null
+        var sideEffectsJob: Job? = null
+    }
 
-    private data class ToolModifyReviewDecision(
-        val action: ToolModifySelectionAction,
-        val selectedIds: Set<Long>,
+    private data class CompletedChatResponse(
+        val botMessage: ChatMessage,
+        val appendAsNewMessage: Boolean,
     )
 }

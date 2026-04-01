@@ -13,6 +13,7 @@ ui/main/
 │   ├── ChatUseCase.kt                 # Agent execution, streaming updates, chat message lifecycle
 │   ├── ChatAttachmentsUseCase.kt      # Finder/file-drop integration and attachment metadata building
 │   ├── FinderPathExtractor.kt         # Extracts/normalizes filesystem paths from model responses
+│   ├── ToolModifyReviewUseCase.kt     # Deferred tool-modify review/approval flow for chat messages
 │   ├── VoiceInputUseCase.kt           # Hotkey recording + speech recognition pipeline
 │   ├── SpeechUseCase.kt               # Speech queue and `isSpeaking` state synchronization
 │   ├── PermissionsUseCase.kt          # Onboarding + runtime approval orchestration (tool permissions + pluggable selection dialogs)
@@ -22,5 +23,6 @@ ui/main/
 
 Notes:
 - Data flow is unidirectional: `MainScreen` sends `MainEvent` -> `MainViewModel` delegates to use cases -> use cases emit `MainUseCaseOutput` reducers/effects -> `MainState` updates.
+- Tool/file approval flows are split by responsibility: `PermissionsUseCase` handles generic tool and selection approvals, while `ToolModifyReviewUseCase` owns deferred file-modification review state.
 - To add a new user action, update `MainDTO.kt` (`MainEvent`), handle it in `MainViewModel.kt`, and keep domain logic in `usecases/` instead of composables.
 - Main regression coverage for this package is in `composeApp/src/jvmTest/kotlin/ru/souz/ui/main/MainViewModelTest.kt`.
