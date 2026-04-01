@@ -394,6 +394,32 @@ class ToolTest {
     }
 
     @Test
+    fun `test readEditableUtf8TextFile exposes raw offsets for mixed line endings`() {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/mixed-eol-index.txt"
+            File(path).writeText("first\r\nsecond\nthird\r\n")
+
+            val editable = filesToolUtil.readEditableUtf8TextFile(File(path))
+            val match = "second\n"
+            val normalizedStart = editable.normalizedText.indexOf(match)
+            val normalizedEnd = normalizedStart + match.length
+
+            assertEquals("first\nsecond\nthird\n", editable.normalizedText)
+            assertEquals(
+                expected = match,
+                actual = editable.rawText.substring(
+                    editable.normalizedTextIndex.rawOffsets[normalizedStart],
+                    editable.normalizedTextIndex.rawOffsets[normalizedEnd],
+                ),
+            )
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `test ToolModifyFile replaceAll updates all matches`() {
         val tempDir = createTempDirectory()
         try {

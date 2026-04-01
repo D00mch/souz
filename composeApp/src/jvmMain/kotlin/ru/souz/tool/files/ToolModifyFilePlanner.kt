@@ -55,18 +55,17 @@ internal object ToolModifyFilePlanner {
             throw BadInputException("String replacement produced no changes.")
         }
 
-        val normalizedTextIndex = filesToolUtil.buildNormalizedTextIndex(editableTextFile.rawText)
         return ToolModifyPreparedEdit(
             file = editableTextFile.file,
             originalRawText = editableTextFile.rawText,
             originalNormalizedText = editableTextFile.normalizedText,
             updatedRawText = rebuildRawText(
                 sourceRawText = editableTextFile.rawText,
-                rawOffsets = normalizedTextIndex.rawOffsets,
+                rawOffsets = editableTextFile.normalizedTextIndex.rawOffsets,
                 matchStarts = selectedMatchStarts,
                 matchLength = normalizedOldString.length,
                 normalizedReplacement = normalizedNewString,
-                preferredLineSeparator = editableTextFile.lineSeparator,
+                preferredLineSeparator = editableTextFile.preferredLineSeparator,
             ),
             updatedNormalizedText = updatedNormalizedText,
             patchPreview = createPatchPreview(

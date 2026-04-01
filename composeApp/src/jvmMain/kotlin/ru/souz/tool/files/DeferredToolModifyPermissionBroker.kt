@@ -295,8 +295,8 @@ class DeferredToolModifyPermissionBroker(
         FilesToolUtil.EditableTextFile(
             file = file,
             rawText = rawText,
-            normalizedText = filesToolUtil.normalizeLineEndings(rawText),
-            lineSeparator = filesToolUtil.detectLineSeparator(rawText),
+            normalizedTextIndex = filesToolUtil.buildNormalizedTextIndex(rawText),
+            preferredLineSeparator = filesToolUtil.detectPreferredLineSeparator(rawText),
         )
 
     private fun appendExternalConflictResults(

@@ -82,8 +82,8 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
      * Loads a file that is eligible for in-place text editing.
      *
      * The file must be safe, present, not in the blocked extension list, not likely binary, and valid UTF-8.
-     * The returned [EditableTextFile] includes both raw content and a line-ending-normalized view so tools
-     * can match on `\n` internally while still preserving untouched raw bytes on write.
+     * The returned [EditableTextFile] includes both raw content and a normalized-to-raw offset index so
+     * tools can match on `\n` internally while still preserving untouched raw bytes on write.
      */
     fun readEditableUtf8TextFile(file: File): EditableTextFile {
         val canonicalFile = file.canonicalFile
@@ -111,8 +111,8 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
         return EditableTextFile(
             file = canonicalFile,
             rawText = rawText,
-            normalizedText = normalizedTextIndex.normalizedText,
-            lineSeparator = detectLineSeparator(rawText),
+            normalizedTextIndex = normalizedTextIndex,
+            preferredLineSeparator = detectPreferredLineSeparator(rawText),
         )
     }
 
@@ -190,15 +190,6 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
             rawOffsets = rawOffsets.toIntArray(),
         )
     }
-
-    /**
-     * Converts internally normalized LF line endings back to the file's original separator style.
-     */
-    fun restoreLineEndings(text: String, lineSeparator: String): String =
-        when (lineSeparator) {
-            "\n" -> text
-            else -> text.replace("\n", lineSeparator)
-        }
 
     /**
      * Validates that a unified diff patch (`---` / `+++` headers) touches exactly one file and that,
@@ -368,7 +359,7 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
         return WINDOWS_ABSOLUTE_PATH.matches(path)
     }
 
-    fun detectLineSeparator(text: String): String = when {
+    fun detectPreferredLineSeparator(text: String): String = when {
         text.contains("\r\n") -> "\r\n"
         text.contains('\r') -> "\r"
         else -> "\n"
@@ -503,15 +494,18 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
      * Snapshot of a text file prepared for edit operations.
      *
      * @property rawText preserves the original bytes decoded as UTF-8
-     * @property normalizedText uses LF line endings for matching and diffing
-     * @property lineSeparator records the preferred separator to use for newly inserted lines
+     * @property normalizedTextIndex maps the LF-normalized text back to exact raw offsets
+     * @property preferredLineSeparator records the fallback separator to use for newly inserted lines
      */
     data class EditableTextFile(
         val file: File,
         val rawText: String,
-        val normalizedText: String,
-        val lineSeparator: String,
-    )
+        val normalizedTextIndex: NormalizedTextIndex,
+        val preferredLineSeparator: String,
+    ) {
+        val normalizedText: String
+            get() = normalizedTextIndex.normalizedText
+    }
 
     data class NormalizedTextIndex(
         val normalizedText: String,
