@@ -522,7 +522,11 @@ class ChatUseCase(
                     is AgentSideEffect.Fn -> {
                         val action = chatAgentActionFormatter.format(effect.call)
                         emitState {
-                            copy(agentActions = (agentActions + action).takeLast(MAX_AGENT_ACTIONS))
+                            copy(
+                                agentActions = (agentActions + action)
+                                    .distinct()
+                                    .takeLast(MAX_AGENT_ACTIONS)
+                            )
                         }
                     }
                 }
