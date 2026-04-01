@@ -26,10 +26,14 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.local.LocalChatAPI
+import ru.souz.llms.local.LocalBridgeLoader
+import ru.souz.llms.local.LocalHostInfo
+import ru.souz.llms.local.LocalHostInfoProvider
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.LocalNativeBridge
+import ru.souz.llms.local.LocalPlatform
 import ru.souz.llms.local.LocalPromptRenderer
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.llms.local.LocalProviderStatus
@@ -84,6 +88,53 @@ class LocalInferenceSupportTest {
             listOf(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507),
             LocalModelProfiles.availableForRam(16),
         )
+    }
+
+    @Test
+    fun `local provider availability returns unavailable when host detection fails`() {
+        val hostInfoProvider = mockk<LocalHostInfoProvider>()
+        every { hostInfoProvider.current() } throws NoClassDefFoundError("java/lang/management/ManagementFactory")
+
+        val availability = LocalProviderAvailability(
+            hostInfoProvider = hostInfoProvider,
+            modelStore = mockk(relaxed = true),
+            bridgeLoader = mockk<LocalBridgeLoader>(relaxed = true),
+        )
+
+        val status = availability.status()
+
+        assertFalse(status.available)
+        assertEquals("Local inference is unavailable because host detection failed.", status.message)
+        assertNull(status.selectedProfile)
+        assertTrue(status.availableModels.isEmpty())
+    }
+
+    @Test
+    fun `local provider availability returns unavailable when system memory is unknown`() {
+        val hostInfoProvider = mockk<LocalHostInfoProvider>()
+        every { hostInfoProvider.current() } returns LocalHostInfo(
+            osName = "Mac OS X",
+            osArch = "aarch64",
+            totalRamBytes = 0L,
+            totalRamGb = 0,
+            platform = LocalPlatform.MACOS_ARM64,
+        )
+
+        val availability = LocalProviderAvailability(
+            hostInfoProvider = hostInfoProvider,
+            modelStore = mockk(relaxed = true),
+            bridgeLoader = mockk<LocalBridgeLoader>(relaxed = true),
+        )
+
+        val status = availability.status()
+
+        assertFalse(status.available)
+        assertEquals(
+            "Local inference is unavailable because system memory could not be determined.",
+            status.message,
+        )
+        assertNull(status.selectedProfile)
+        assertTrue(status.availableModels.isEmpty())
     }
 
     @Test
