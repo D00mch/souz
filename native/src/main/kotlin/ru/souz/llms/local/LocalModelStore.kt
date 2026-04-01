@@ -75,7 +75,7 @@ class LocalModelStore(
                     response = response,
                     existingBytes = existingBytes,
                 )
-                if (totalBytes != null && existingBytes >= totalBytes) {
+                if (totalBytes != null && existingBytes == totalBytes) {
                     Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
                     onProgress(LocalModelDownloadProgress(bytesDownloaded = totalBytes, totalBytes = totalBytes))
                     return@withContext target

@@ -395,6 +395,49 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `download restarts from zero when ranged request is unsatisfied for oversized partial file`() = runTest {
+        val tempRoot = Files.createTempDirectory("souz-local-models-test")
+        val profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
+        val target = tempRoot.resolve(profile.id).resolve(profile.ggufFilename)
+        val tempFile = target.resolveSibling("${profile.ggufFilename}.part")
+        Files.createDirectories(target.parent)
+        Files.write(tempFile, "stale-model".toByteArray())
+
+        val requests = mutableListOf<HttpRequest>()
+        val httpClient = mockk<HttpClient>()
+        val rangeNotSatisfiable = mockk<HttpResponse<InputStream>>()
+        val fullResponse = mockk<HttpResponse<InputStream>>()
+        every {
+            httpClient.send(
+                capture(requests),
+                any<HttpResponse.BodyHandler<InputStream>>(),
+            )
+        } returnsMany listOf(rangeNotSatisfiable, fullResponse)
+        every { rangeNotSatisfiable.statusCode() } returns 416
+        every { rangeNotSatisfiable.headers() } returns HttpHeaders.of(
+            mapOf("Content-Range" to listOf("bytes */5"))
+        ) { _, _ -> true }
+        every { rangeNotSatisfiable.body() } returns ByteArrayInputStream(ByteArray(0))
+        every { fullResponse.statusCode() } returns 200
+        every { fullResponse.headers() } returns HttpHeaders.of(
+            mapOf("Content-Length" to listOf("5"))
+        ) { _, _ -> true }
+        every { fullResponse.body() } returns ByteArrayInputStream("fresh".toByteArray())
+
+        val store = LocalModelStore(rootDir = tempRoot, httpClient = httpClient)
+
+        val result = store.download(profile)
+
+        assertEquals(target, result)
+        assertEquals(2, requests.size)
+        assertEquals("bytes=11-", requests[0].headers().firstValue("Range").orElse(null))
+        assertNull(requests[1].headers().firstValue("Range").orElse(null))
+        assertTrue(Files.isRegularFile(target))
+        assertFalse(Files.exists(tempFile))
+        assertContentEquals("fresh".toByteArray(), Files.readAllBytes(target))
+    }
+
+    @Test
     fun `download cancellation keeps partial file for future resume`() = runTest {
         val tempRoot = Files.createTempDirectory("souz-local-models-test")
         val profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
