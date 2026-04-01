@@ -211,8 +211,8 @@ compose.desktop {
             // Compose copies app resources from <root>/common + OS/target subfolders.
             appResourcesRootDir.set(preparedAppResourcesDir)
 
-            // include HTTP client and java.sql needed by Apache Tika parser discovery
-            modules("java.naming", "java.net.http", "java.sql")
+            // Include Tika dependencies plus management modules used by local-model host detection.
+            modules("java.management", "java.naming", "java.net.http", "java.sql", "jdk.management")
 
             macOS {
                 bundleID = distributionBundleId

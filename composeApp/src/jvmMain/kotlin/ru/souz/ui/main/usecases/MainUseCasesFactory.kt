@@ -9,9 +9,11 @@ import ru.souz.llms.TokenLogging
 import ru.souz.service.telemetry.TelemetryService
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
+import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 
 data class MainUseCases(
     val chat: ChatUseCase,
+    val toolModifyReview: ToolModifyReviewUseCase,
     val voiceInput: VoiceInputUseCase,
     val speech: SpeechUseCase,
     val permissions: PermissionsUseCase,
@@ -25,6 +27,7 @@ class MainUseCasesFactory(
     private val audioRecorder: InMemoryAudioRecorder,
     private val say: Say,
     private val toolPermissionBroker: ToolPermissionBroker,
+    private val deferredToolModifyPermissionBroker: DeferredToolModifyPermissionBroker,
     private val selectionApprovalSources: Set<SelectionApprovalSource>,
     private val finderPathExtractor: FinderPathExtractor,
     private val tokenLogging: TokenLogging,
@@ -34,12 +37,16 @@ class MainUseCasesFactory(
     fun create(ioDispatcher: CoroutineDispatcher): MainUseCases {
         val speechUseCase = SpeechUseCase(say)
         val attachmentsUseCase = ChatAttachmentsUseCase(ioDispatcher)
+        val toolModifyReviewUseCase = ToolModifyReviewUseCase(
+            deferredToolModifyPermissionBroker = deferredToolModifyPermissionBroker,
+        )
         val chatUseCase = ChatUseCase(
             agentFacade = agentFacade,
             settingsProvider = settingsProvider,
             speechUseCase = speechUseCase,
             finderPathExtractor = finderPathExtractor,
             chatAttachmentsUseCase = attachmentsUseCase,
+            toolModifyReviewUseCase = toolModifyReviewUseCase,
             tokenLogging = tokenLogging,
             telemetryService = telemetryService,
             ioDispatcher = ioDispatcher,
@@ -60,6 +67,7 @@ class MainUseCasesFactory(
 
         return MainUseCases(
             chat = chatUseCase,
+            toolModifyReview = toolModifyReviewUseCase,
             voiceInput = voiceInputUseCase,
             speech = speechUseCase,
             permissions = permissionsUseCase,

@@ -475,7 +475,7 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolFindFilesByName: ToolFindFilesByName = spyk(realToolFind)
         val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
 
-        var currentContent = ""
+        var currentContent = "Hello"
         val tempFile = "test_integration"
         val appendText = "World is over"
 
@@ -483,14 +483,10 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolExtractText.invoke(any()) } answers { currentContent }
         coEvery { toolModifyFile.invoke(any()) } answers {
             val request = firstArg<ToolModifyFile.Input>()
-            val addedLines = request.patch.lineSequence()
-                .filter { it.startsWith("+") && !it.startsWith("+++ ") }
-                .map { it.removePrefix("+") }
-                .toList()
-            if (addedLines.isNotEmpty()) {
-                currentContent = listOf(currentContent, addedLines.joinToString("\n"))
-                    .filter { it.isNotEmpty() }
-                    .joinToString("\n")
+            currentContent = if (request.replaceAll) {
+                currentContent.replace(request.oldString, request.newString)
+            } else {
+                currentContent.replaceFirst(request.oldString, request.newString)
             }
             "Modified"
         }
@@ -501,7 +497,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }
         coVerify(exactly = 1) {
-            toolModifyFile.invoke(match { it.path.contains(tempFile) && it.patch.contains(appendText) })
+            toolModifyFile.invoke(match { it.path.contains(tempFile) && it.newString.contains(appendText) })
         }
     }
 

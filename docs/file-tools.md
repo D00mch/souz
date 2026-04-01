@@ -50,17 +50,28 @@ This document describes shared file-tool behavior and path conventions.
 ### `EditFile`
 
 - Works only on an existing safe file path.
-- Applies a unified diff patch, not a whole-file replacement.
+- Works only on plain text, code, and config files that are valid UTF-8 text.
+- Uses exact string replacement, not a caller-supplied patch.
+- Input is:
+  - `path`
+  - `oldString`
+  - `newString`
+  - optional `replaceAll`
 - Validation happens before any safe-mode permission prompt.
-- Patch requirements:
-  - standard unified diff headers (`---` and `+++`)
-  - exactly one target file
-  - target must match the requested path after `strip` handling
-  - `strip` in `0..10`
-- Supports common diff header forms including `a/` / `b/`, bare names, quoted paths, and absolute paths.
-- Runs `patch --dry-run` first and only applies if the dry-run succeeds.
-- Feeds patch text directly over stdin and rejects the internal `*** Begin Patch` wrapper format.
-- In safe mode, the validated patch is sent through the permission broker, which allows the UI to show a patch preview before approval.
+- Fails when:
+  - `oldString` is empty
+  - `oldString` and `newString` are identical
+  - `oldString` is not found in the current file
+  - `oldString` matches multiple locations and `replaceAll` is `false`
+  - the file is not an editable text/code/config file
+- The tool normalizes line endings internally for matching, preserves untouched line endings exactly, and uses the file's detected separator as a fallback for newly inserted lines.
+- Outside safe mode, the tool writes immediately after validation.
+- In safe mode, the tool does not write immediately. Each `EditFile` call is staged as a pending edit and returns `"Staged, not yet applied"`.
+- Later `EditFile` calls in the same run see the staged virtual file state, not just the on-disk file state.
+- Safe-mode review happens after the agent finishes tool use. The UI shows each staged `EditFile` call with its own diff preview and lets the user apply or discard selected changes.
+- Selected edits are replayed in original order during the final apply step. If a selected edit no longer matches because an earlier staged edit was discarded, that edit is skipped and reported as a conflict.
+- Before final apply, each touched file is reread from disk. If the file changed externally after staging started, pending edits for that file are skipped and reported as external conflicts.
+- Writes use a temp file plus atomic-move fallback instead of invoking the system `patch` binary.
 
 ### `MoveFile`
 

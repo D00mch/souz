@@ -52,6 +52,8 @@ data class LocalHostInfo(
 )
 
 class LocalHostInfoProvider {
+    private val l = LoggerFactory.getLogger(LocalHostInfoProvider::class.java)
+
     fun current(): LocalHostInfo {
         val osName = System.getProperty("os.name").orEmpty()
         val osArch = System.getProperty("os.arch").orEmpty()
@@ -66,9 +68,7 @@ class LocalHostInfoProvider {
             else -> null
         }
 
-        val totalRamBytes = (ManagementFactory.getOperatingSystemMXBean() as? OperatingSystemMXBean)
-            ?.totalMemorySize
-            ?: 0L
+        val totalRamBytes = detectTotalRamBytes(osName)
 
         return LocalHostInfo(
             osName = osName,
@@ -77,6 +77,37 @@ class LocalHostInfoProvider {
             totalRamGb = (totalRamBytes / GIGABYTE).toInt(),
             platform = platform,
         )
+    }
+
+    private fun detectTotalRamBytes(osName: String): Long {
+        val managementBytes = runCatching {
+            (ManagementFactory.getOperatingSystemMXBean() as? OperatingSystemMXBean)
+                ?.totalMemorySize
+                ?: 0L
+        }.getOrElse { error ->
+            l.warn("Unable to read host memory via management APIs.", error)
+            0L
+        }
+        if (managementBytes > 0L) {
+            return managementBytes
+        }
+
+        if (!osName.contains("Mac", ignoreCase = true)) {
+            return 0L
+        }
+
+        return runCatching {
+            val process = ProcessBuilder("/usr/sbin/sysctl", "-n", "hw.memsize")
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().use { it.readText().trim() }
+            val exitCode = process.waitFor()
+            check(exitCode == 0) { "sysctl exited with code $exitCode: $output" }
+            output.toLong()
+        }.getOrElse { error ->
+            l.warn("Unable to read host memory via sysctl.", error)
+            0L
+        }
     }
 
     private companion object {
@@ -137,7 +168,16 @@ class LocalProviderAvailability(
     private val l = LoggerFactory.getLogger(LocalProviderAvailability::class.java)
 
     fun status(): LocalProviderStatus {
-        val host = hostInfoProvider.current()
+        val host = runCatching { hostInfoProvider.current() }
+            .getOrElse { error ->
+                l.warn("Local host detection failed.", error)
+                return LocalProviderStatus(
+                    available = false,
+                    message = "Local inference is unavailable because host detection failed.",
+                    selectedProfile = null,
+                    availableModels = emptyList(),
+                )
+            }
         val platform = host.platform
             ?: return LocalProviderStatus(
                 available = false,
@@ -145,6 +185,14 @@ class LocalProviderAvailability(
                 selectedProfile = null,
                 availableModels = emptyList(),
             )
+        if (host.totalRamBytes <= 0L) {
+            return LocalProviderStatus(
+                available = false,
+                message = "Local inference is unavailable because system memory could not be determined.",
+                selectedProfile = null,
+                availableModels = emptyList(),
+            )
+        }
 
         val selectedProfile = runCatching { LocalModelProfiles.selectForRam(host.totalRamGb) }
             .getOrElse { error ->

@@ -6,18 +6,21 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.tool.BadInputException
+import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.ToolPermissionBroker
+import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.files.ToolDeleteFile
 import ru.souz.tool.files.ToolExtractText
 import ru.souz.tool.files.ToolFindInFiles
 import ru.souz.tool.files.ToolFindTextInFiles
 import ru.souz.tool.files.ToolListFiles
+import ru.souz.tool.files.ToolModifyApplyStatus
 import ru.souz.tool.files.ToolModifyFile
+import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolReadFile
@@ -25,6 +28,7 @@ import ru.souz.tool.files.ToolReadPdfPages
 import java.io.File
 import java.nio.file.Files
 import java.util.UUID
+import kotlin.test.AfterTest
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -39,9 +43,18 @@ class ToolTest {
     }
 
     private val filesToolUtil: FilesToolUtil = mockk()
+    private val createdTempDirs = mutableListOf<File>()
 
-    private fun createTempDirectory(): File =
-        Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "souz-test-").toFile()
+    @AfterTest
+    fun cleanupTempDirectories() {
+        createdTempDirs.asReversed().forEach { it.deleteRecursively() }
+        createdTempDirs.clear()
+    }
+
+    private fun createTempDirectory(prefix: String = "souz-test-"): File =
+        Files.createTempDirectory(fixtureDirectory().toPath(), prefix)
+            .toFile()
+            .also(createdTempDirs::add)
 
     private fun fixtureRoot(): File {
         val starts = generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
@@ -60,7 +73,7 @@ class ToolTest {
 
     private fun fixturePath(name: String): String = File(fixtureDirectory(), name).path
 
-    private fun fixtureInHome(name: String): File {
+    private fun copyFixtureToTempDirectory(name: String): File {
         val stream = sequenceOf(name, "directory/$name")
             .mapNotNull { path -> javaClass.classLoader.getResourceAsStream(path) }
             .firstOrNull()
@@ -84,8 +97,7 @@ class ToolTest {
         return target
     }
 
-    private fun firstFixturePdfPath(): String = fixtureInHome(PDF_FIXTURE_NAME).absolutePath
-
+    private fun copyPdfFixtureToTempDirectory(): File = copyFixtureToTempDirectory(PDF_FIXTURE_NAME)
 
     private fun createSampleFiles(baseDir: File) {
         val nestedDir = File(baseDir, "directory").apply { mkdirs() }
@@ -132,7 +144,7 @@ class ToolTest {
     @Test
     fun `test ToolReadFile`() {
         val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
-        val fixture = fixtureInHome("test.txt")
+        val fixture = copyFixtureToTempDirectory("test.txt")
 
         val result = ToolReadFile(filesToolUtil)
             .invoke(ToolReadFile.Input(fixture.absolutePath))
@@ -151,7 +163,7 @@ class ToolTest {
     @Test
     fun `test ToolReadPdfPages reads fixture pdf`() {
         val filesToolUtil = createFilesToolUtil(forbiddenFolders = listOf("~/Library/"))
-        val fixturePdf = fixtureInHome(firstFixturePdfPath().let(::File).name)
+        val fixturePdf = copyPdfFixtureToTempDirectory()
 
         val result = ToolReadPdfPages(filesToolUtil)
             .invoke(ToolReadPdfPages.Input(filePath = fixturePdf.absolutePath, startPage = 1))
@@ -168,7 +180,7 @@ class ToolTest {
     fun `test ToolReadPdfPages validates non-pdf and missing files`() {
         val filesToolUtil = createFilesToolUtil(forbiddenFolders = listOf("~/Library/"))
         val tool = ToolReadPdfPages(filesToolUtil)
-        val nonPdfFile = fixtureInHome("file.txt")
+        val nonPdfFile = copyFixtureToTempDirectory("file.txt")
 
         val nonPdfResult = tool.invoke(ToolReadPdfPages.Input(filePath = nonPdfFile.absolutePath))
         assertEquals("Error: Expecting .pdf file", nonPdfResult)
@@ -183,7 +195,7 @@ class ToolTest {
     @Test
     fun `test ToolReadPdfPages reports out-of-range page`() {
         val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
-        val fixturePdf = fixtureInHome(firstFixturePdfPath().let(::File).name)
+        val fixturePdf = copyPdfFixtureToTempDirectory()
 
         val result = ToolReadPdfPages(filesToolUtil)
             .invoke(ToolReadPdfPages.Input(filePath = fixturePdf.absolutePath, startPage = 10000))
@@ -199,7 +211,7 @@ class ToolTest {
         try {
             val filesToolUtil = createFilesToolUtil(forbiddenFolders = listOf("~/Library/"))
             val tool = ToolExtractText(filesToolUtil)
-            val fixtureText = fixtureInHome("file.txt")
+            val fixtureText = copyFixtureToTempDirectory("file.txt")
 
             val markdownFile = File(tempDir, "notes.md").apply {
                 writeText("# Notes\n\n- Alpha\n- Beta\n")
@@ -245,7 +257,7 @@ class ToolTest {
         )
 
         expectedMarkersByFile.forEach { (fileName, expectedMarker) ->
-            val fixture = fixtureInHome(fileName)
+            val fixture = copyFixtureToTempDirectory(fileName)
             val extracted = tool.invoke(ToolExtractText.Input(fixture.absolutePath))
             assertContains(extracted, "=== METADATA ===")
             assertContains(extracted, "Filename: $fileName")
@@ -306,14 +318,13 @@ class ToolTest {
 
             // modify new
             val newContent = "New\n"
-            val patch = """
-                --- a/$newFileName
-                +++ b/$newFileName
-                @@ -1 +1 @@
-                -${content.trimEnd('\n')}
-                +${newContent.trimEnd('\n')}
-            """.trimIndent() + "\n"
-            ToolModifyFile(filesToolUtil).invoke(ToolModifyFile.Input(path = path, patch = patch, strip = 1))
+            ToolModifyFile(filesToolUtil).invoke(
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = content.trimEnd('\n'),
+                    newString = newContent.trimEnd('\n'),
+                )
+            )
 
             // move
             ToolMoveFile(filesToolUtil).invoke(ToolMoveFile.Input(path, movedPath))
@@ -336,96 +347,153 @@ class ToolTest {
     }
 
     @Test
-    fun `test ToolModifyFile applies patch for filename with spaces`() {
+    fun `test ToolModifyFile edits file with spaces in the name and preserves line endings`() {
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
             val fileName = "my note.txt"
             val path = "${tempDir.absolutePath}/$fileName"
-            File(path).writeText("Hello\n")
-            val ts = "\t1970-01-01 00:00:00 +0000"
-
-            val patch = listOf(
-                "--- a/$fileName$ts",
-                "+++ b/$fileName$ts",
-                "@@ -1 +1,2 @@",
-                " Hello",
-                "+World",
-                ""
-            ).joinToString("\n")
+            File(path).writeText("Hello\r\n")
 
             val result = ToolModifyFile(filesToolUtil).invoke(
-                ToolModifyFile.Input(path = path, patch = patch, strip = 1)
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = "Hello\n",
+                    newString = "Hello\nWorld\n",
+                )
             )
 
             assertEquals("OK", result)
-            assertEquals("Hello\nWorld\n", File(path).readText())
+            assertEquals("Hello\r\nWorld\r\n", File(path).readText())
         } finally {
             tempDir.deleteRecursively()
         }
     }
 
     @Test
-    fun `test ToolModifyFile applies patch with absolute file headers`() {
+    fun `test ToolModifyFile preserves mixed line endings outside replaced region`() {
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
-            val path = "${tempDir.absolutePath}/absolute.patch.txt"
-            File(path).writeText("before\n")
-
-            val patch = listOf(
-                "--- $path",
-                "+++ $path",
-                "@@ -1 +1 @@",
-                "-before",
-                "+after",
-                ""
-            ).joinToString("\n")
+            val path = "${tempDir.absolutePath}/mixed-eol.txt"
+            File(path).writeText("first\r\nsecond\nthird\r\n")
 
             val result = ToolModifyFile(filesToolUtil).invoke(
-                ToolModifyFile.Input(path = path, patch = patch, strip = 0)
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = "second\n",
+                    newString = "SECOND\n",
+                )
             )
 
             assertEquals("OK", result)
-            assertEquals("after\n", File(path).readText())
+            assertEquals("first\r\nSECOND\nthird\r\n", File(path).readText())
         } finally {
             tempDir.deleteRecursively()
         }
     }
 
     @Test
-    fun `test ToolModifyFile rejects invalid hunk header without ranges`() {
+    fun `test readEditableUtf8TextFile exposes raw offsets for mixed line endings`() {
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
-            val fileName = "invalid-hunk.txt"
-            val path = "${tempDir.absolutePath}/$fileName"
-            File(path).writeText("x\n")
+            val path = "${tempDir.absolutePath}/mixed-eol-index.txt"
+            File(path).writeText("first\r\nsecond\nthird\r\n")
 
-            val patch = listOf(
-                "--- $fileName",
-                "+++ $fileName",
-                "@@",
-                "-x",
-                "+y",
-                ""
-            ).joinToString("\n")
+            val editable = filesToolUtil.readEditableUtf8TextFile(File(path))
+            val match = "second\n"
+            val normalizedStart = editable.normalizedText.indexOf(match)
+            val normalizedEnd = normalizedStart + match.length
+
+            assertEquals("first\nsecond\nthird\n", editable.normalizedText)
+            assertEquals(
+                expected = match,
+                actual = editable.rawText.substring(
+                    editable.normalizedTextIndex.rawOffsets[normalizedStart],
+                    editable.normalizedTextIndex.rawOffsets[normalizedEnd],
+                ),
+            )
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile replaceAll updates all matches`() {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/replace-all.txt"
+            File(path).writeText("foo=1\nfoo=1\n")
+
+            val result = ToolModifyFile(filesToolUtil).invoke(
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = "foo=1",
+                    newString = "foo=2",
+                    replaceAll = true,
+                )
+            )
+
+            assertEquals("OK", result)
+            assertEquals("foo=2\nfoo=2\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile rejects ambiguous match when replaceAll is false`() {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/ambiguous.txt"
+            File(path).writeText("x\nx\n")
 
             val error = assertFailsWith<BadInputException> {
                 ToolModifyFile(filesToolUtil).invoke(
-                    ToolModifyFile.Input(path = path, patch = patch, strip = 0)
+                    ToolModifyFile.Input(
+                        path = path,
+                        oldString = "x",
+                        newString = "y",
+                    )
                 )
             }
 
-            assertContains(error.message.orEmpty(), "Invalid hunk header")
-            assertEquals("x\n", File(path).readText())
+            assertContains(error.message.orEmpty(), "replaceAll is false")
+            assertEquals("x\nx\n", File(path).readText())
         } finally {
             tempDir.deleteRecursively()
         }
     }
 
     @Test
-    fun `test ToolModifyFile validates patch before asking permission`() = runTest {
+    fun `test ToolModifyFile rejects non text files`() {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/image.png"
+            File(path).writeBytes(byteArrayOf(0x01, 0x02, 0x03))
+
+            val error = assertFailsWith<BadInputException> {
+                ToolModifyFile(filesToolUtil).invoke(
+                    ToolModifyFile.Input(
+                        path = path,
+                        oldString = "a",
+                        newString = "b",
+                    )
+                )
+            }
+
+            assertContains(error.message.orEmpty(), "Unsupported file type")
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile validates input before asking permission`() = runTest {
         val tempDir = createTempDirectory()
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
@@ -434,26 +502,176 @@ class ToolTest {
 
             val settingsProvider = mockk<SettingsProvider>()
             every { settingsProvider.safeModeEnabled } returns true
-            val permissionBroker = ToolPermissionBroker(settingsProvider)
+            val permissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, filesToolUtil)
             val tool = ToolModifyFile(filesToolUtil, permissionBroker)
 
-            val patch = """
-                *** Begin Patch
-                *** Update File: $path
-                @@
-                -line
-                +LINE
-                *** End Patch
-            """.trimIndent()
-
             val error = assertFailsWith<BadInputException> {
-                tool.suspendInvoke(ToolModifyFile.Input(path = path, patch = patch, strip = 0))
+                tool.suspendInvoke(
+                    ToolModifyFile.Input(
+                        path = path,
+                        oldString = "missing",
+                        newString = "LINE",
+                    )
+                )
             }
 
-            assertContains(error.message.orEmpty(), "unified diff")
-            val pendingRequest = withTimeoutOrNull(150) { permissionBroker.requests.first() }
-            assertEquals(null, pendingRequest)
+            assertContains(error.message.orEmpty(), "not found")
+            assertEquals(null, permissionBroker.snapshotPendingReview())
             assertEquals("line\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile stages generated patch preview for review`() = runTest {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/preview.txt"
+            File(path).writeText("line\n")
+
+            val settingsProvider = mockk<SettingsProvider>()
+            every { settingsProvider.safeModeEnabled } returns true
+            val permissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, filesToolUtil)
+            val tool = ToolModifyFile(filesToolUtil, permissionBroker)
+
+            val result = tool.suspendInvoke(
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = "line",
+                    newString = "LINE",
+                )
+            )
+
+            val review = permissionBroker.snapshotPendingReview()
+            assertEquals("Staged, not yet applied", result)
+            assertEquals(File(path).canonicalPath, review?.items?.singleOrNull()?.path)
+            assertContains(review?.items?.singleOrNull()?.patchPreview.orEmpty(), "--- a/preview.txt")
+            assertContains(review?.items?.singleOrNull()?.patchPreview.orEmpty(), "+++ b/preview.txt")
+            assertContains(review?.items?.singleOrNull()?.patchPreview.orEmpty(), "+LINE")
+            assertEquals("line\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile staged apply preserves mixed line endings outside replaced region`() = runTest {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/mixed-eol-staged.txt"
+            File(path).writeText("first\r\nsecond\nthird\r\n")
+
+            val settingsProvider = mockk<SettingsProvider>()
+            every { settingsProvider.safeModeEnabled } returns true
+            val permissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, filesToolUtil)
+            val tool = ToolModifyFile(filesToolUtil, permissionBroker)
+
+            val stageResult = tool.suspendInvoke(
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = "second\n",
+                    newString = "SECOND\n",
+                )
+            )
+
+            val stagedId = permissionBroker.snapshotPendingReview()?.items?.singleOrNull()?.id
+                ?: error("Expected staged review item")
+            val applyResult = permissionBroker.applySelection(
+                selectedIds = setOf(stagedId),
+                action = ToolModifySelectionAction.APPLY_SELECTED,
+            )
+
+            assertEquals("Staged, not yet applied", stageResult)
+            assertEquals(ToolModifyApplyStatus.APPLIED, applyResult.items.single().status)
+            assertEquals("first\r\nSECOND\nthird\r\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile skips staged apply when file changes during review gap`() = runTest {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val path = "${tempDir.absolutePath}/stale.txt"
+            File(path).writeText("line\n")
+
+            val settingsProvider = mockk<SettingsProvider>()
+            every { settingsProvider.safeModeEnabled } returns true
+            val permissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, filesToolUtil)
+            val tool = ToolModifyFile(filesToolUtil, permissionBroker)
+
+            tool.suspendInvoke(
+                ToolModifyFile.Input(
+                    path = path,
+                    oldString = "line",
+                    newString = "LINE",
+                )
+            )
+            File(path).writeText("changed\n")
+
+            val stagedId = permissionBroker.snapshotPendingReview()?.items?.singleOrNull()?.id
+                ?: error("Expected staged review item")
+            val applyResult = permissionBroker.applySelection(
+                selectedIds = setOf(stagedId),
+                action = ToolModifySelectionAction.APPLY_SELECTED,
+            )
+
+            assertEquals(ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT, applyResult.items.single().status)
+            assertEquals("changed\n", File(path).readText())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `test ToolModifyFile applySelection marks deleted file as external conflict and continues`() = runTest {
+        val tempDir = createTempDirectory()
+        try {
+            val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
+            val deletedPath = "${tempDir.absolutePath}/deleted.txt"
+            val appliedPath = "${tempDir.absolutePath}/applied.txt"
+            File(deletedPath).writeText("alpha\n")
+            File(appliedPath).writeText("beta\n")
+
+            val settingsProvider = mockk<SettingsProvider>()
+            every { settingsProvider.safeModeEnabled } returns true
+            val permissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, filesToolUtil)
+            val tool = ToolModifyFile(filesToolUtil, permissionBroker)
+
+            tool.suspendInvoke(
+                ToolModifyFile.Input(
+                    path = deletedPath,
+                    oldString = "alpha",
+                    newString = "ALPHA",
+                )
+            )
+            tool.suspendInvoke(
+                ToolModifyFile.Input(
+                    path = appliedPath,
+                    oldString = "beta",
+                    newString = "BETA",
+                )
+            )
+
+            assertTrue(File(deletedPath).delete())
+            val pending = permissionBroker.snapshotPendingReview() ?: error("Expected staged review items")
+            val applyResult = permissionBroker.applySelection(
+                selectedIds = pending.items.mapTo(linkedSetOf()) { it.id },
+                action = ToolModifySelectionAction.APPLY_SELECTED,
+            )
+
+            val deletedResult = applyResult.items.first { it.path == File(deletedPath).canonicalPath }
+            val appliedResult = applyResult.items.first { it.path == File(appliedPath).canonicalPath }
+            assertEquals(ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT, deletedResult.status)
+            assertContains(deletedResult.warning.orEmpty(), "no longer readable")
+            assertEquals(ToolModifyApplyStatus.APPLIED, appliedResult.status)
+            assertFalse(File(deletedPath).exists())
+            assertEquals("BETA\n", File(appliedPath).readText())
         } finally {
             tempDir.deleteRecursively()
         }
@@ -481,7 +699,7 @@ class ToolTest {
 
             val settingsProvider = mockk<SettingsProvider>()
             every { settingsProvider.safeModeEnabled } returns true
-            val permissionBroker = ToolPermissionBroker(settingsProvider)
+            val permissionBroker: ToolPermissionBroker = ImmediateToolPermissionBroker(settingsProvider)
             val tool = ToolDeleteFile(filesToolUtil, permissionBroker)
 
             val resultDeferred = async {
@@ -501,7 +719,7 @@ class ToolTest {
 
     @Test
     fun `test ToolDeleteFile deletes folder`() {
-        val tempDir = Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "souz-test-delete-folder-").toFile()
+        val tempDir = createTempDirectory(prefix = "souz-test-delete-folder-")
         try {
             val filesToolUtil = createFilesToolUtil(listOf("~/Library/"))
             val folderToDelete = File(tempDir, "folder-to-delete").apply { mkdirs() }
