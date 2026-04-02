@@ -7,6 +7,7 @@ ui/main/
 ├── ChatInputWithQuickSettings.kt      # Chat input UI, model/context selectors, send/mic controls
 ├── ChatAttachmentUi.kt                # Attachment visuals (icons/colors), thumbnail decode, size formatting
 ├── ThinkingProcessPanel.kt            # Thinking/trace panel rendering from agent history
+├── search/                            # Chat search projection, indexing, highlighting, and panel UI
 ├── usecases/                          # Use-case layer for business logic behind the main screen
 │   ├── MainUseCasesFactory.kt         # Builds and wires all use cases used by MainViewModel
 │   ├── MainUseCaseOutput.kt           # Shared use-case output contract (state reducer/effect)

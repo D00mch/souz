@@ -32,6 +32,9 @@ import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.downloadPromptFor
 import ru.souz.ui.BaseViewModel
+import ru.souz.ui.main.search.ChatMessageSearchProjection
+import ru.souz.ui.main.search.ChatSearchEngine
+import ru.souz.ui.main.search.ChatSearchState
 import ru.souz.ui.main.usecases.ChatUseCase
 import ru.souz.ui.main.usecases.MainUseCaseOutput
 import ru.souz.ui.main.usecases.MainUseCases
@@ -75,6 +78,8 @@ class MainViewModel(
     private val speechUseCase: SpeechUseCase = useCases.speech
     private val permissionsUseCase: PermissionsUseCase = useCases.permissions
     private val attachmentsUseCase = useCases.attachments
+    private val chatSearchEngine = ChatSearchEngine()
+    private var chatSearchProjections: Map<String, ChatMessageSearchProjection> = emptyMap()
     private var startTips: List<String> = emptyList()
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
@@ -194,6 +199,15 @@ class MainViewModel(
             MainEvent.PickChatAttachments -> pickChatAttachments()
             is MainEvent.AttachDroppedFiles -> addAttachedFiles(event.paths)
             is MainEvent.RemoveChatAttachment -> removeAttachedFile(event.path)
+            is MainEvent.UpdateChatSearchQuery -> setStateAndReindexChatSearch {
+                copy(chatSearch = chatSearchEngine.updateQuery(chatSearch, event.query))
+            }
+            MainEvent.SelectNextChatSearchResult -> setState {
+                copy(chatSearch = chatSearchEngine.next(chatSearch))
+            }
+            MainEvent.SelectPreviousChatSearchResult -> setState {
+                copy(chatSearch = chatSearchEngine.previous(chatSearch))
+            }
             is MainEvent.OpenPath -> {
                 ru.souz.ui.common.FinderService.openInFinder(event.path)
                     .onFailure { error ->
@@ -270,6 +284,9 @@ class MainViewModel(
         send(MainEvent.AttachDroppedFiles(droppedPaths))
     }
 
+    fun chatSearchProjectionFor(messageId: String): ChatMessageSearchProjection? =
+        chatSearchProjections[messageId]
+
     override suspend fun handleSideEffect(effect: MainEffect) {
         when (effect) {
             is MainEffect.ShowError -> l.error(effect.message)
@@ -286,10 +303,55 @@ class MainViewModel(
             permissionsUseCase.outputs,
         ).collect { output ->
             when (output) {
-                is MainUseCaseOutput.State -> setState(output.reduce)
+                is MainUseCaseOutput.State -> {
+                    if (output.refreshChatSearch) {
+                        setStateAndRefreshChatSearch(output.reduce)
+                    } else {
+                        setState(output.reduce)
+                    }
+                }
                 is MainUseCaseOutput.Effect -> send(output.effect)
             }
         }
+    }
+
+    private suspend fun setStateAndReindexChatSearch(
+        reduce: MainState.() -> MainState,
+    ) {
+        var projections = emptyMap<String, ChatMessageSearchProjection>()
+        setState {
+            val updatedState = reduce()
+            projections = chatSearchEngine.ensureProjections(
+                messages = updatedState.chatMessages,
+                cached = chatSearchProjections,
+            )
+            updatedState.copy(
+                chatSearch = chatSearchEngine.reindex(
+                    messages = updatedState.chatMessages,
+                    projections = projections,
+                    search = updatedState.chatSearch,
+                )
+            )
+        }
+        chatSearchProjections = projections
+    }
+
+    private suspend fun setStateAndRefreshChatSearch(
+        reduce: MainState.() -> MainState,
+    ) {
+        var projections = emptyMap<String, ChatMessageSearchProjection>()
+        setState {
+            val updatedState = reduce()
+            projections = chatSearchEngine.buildProjections(updatedState.chatMessages)
+            updatedState.copy(
+                chatSearch = chatSearchEngine.reindex(
+                    messages = updatedState.chatMessages,
+                    projections = projections,
+                    search = updatedState.chatSearch,
+                )
+            )
+        }
+        chatSearchProjections = projections
     }
 
     private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository): Job = launch(ioDispatchers) {
@@ -321,7 +383,7 @@ class MainViewModel(
         chatUseCase.finishCurrentConversation(TelemetryConversationEndReason.NEW_CONVERSATION)
         chatUseCase.clearConversationContext()
 
-        setState {
+        setStateAndRefreshChatSearch {
             copy(
                 displayedText = startTips.randomOrNull() ?: "",
                 statusMessage = "",
@@ -337,6 +399,7 @@ class MainViewModel(
                 attachedFiles = emptyList(),
                 pendingVoiceInputDraft = null,
                 showNewChatDialog = false,
+                chatSearch = ChatSearchState(),
             )
         }
     }
@@ -513,7 +576,7 @@ class MainViewModel(
                 } else {
                     currentText
                 }
-                setState {
+                setStateAndRefreshChatSearch {
                     copy(
                         displayedText = clearedText,
                         lastText = lastText,
@@ -526,13 +589,14 @@ class MainViewModel(
                         attachedFiles = emptyList(),
                         pendingVoiceInputDraft = null,
                         showNewChatDialog = false,
+                        chatSearch = ChatSearchState(),
                     )
                 }
             }
 
             true -> {
                 val clearedText = getString(Res.string.status_context_cleared_default)
-                setState {
+                setStateAndRefreshChatSearch {
                     copy(
                         displayedText = clearedText,
                         userExpectCloseOnX = false,
@@ -542,6 +606,7 @@ class MainViewModel(
                         attachedFiles = emptyList(),
                         pendingVoiceInputDraft = null,
                         showNewChatDialog = false,
+                        chatSearch = ChatSearchState(),
                     )
                 }
                 send(MainEffect.Hide)

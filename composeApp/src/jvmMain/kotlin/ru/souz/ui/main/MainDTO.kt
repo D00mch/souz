@@ -11,6 +11,7 @@ import ru.souz.llms.local.LocalModelDownloadPrompt
 import ru.souz.llms.local.LocalModelDownloadState
 import ru.souz.tool.files.ToolModifyApplyStatus
 import ru.souz.tool.files.ToolModifySelectionAction
+import ru.souz.ui.main.search.ChatSearchState
 
 /**
  * Chat message for the chat mode.
@@ -121,6 +122,7 @@ data class MainState(
     val attachedFiles: List<ChatAttachedFile> = emptyList(),
     val pendingVoiceInputDraft: String? = null,
     val pendingVoiceInputDraftToken: Long = 0L,
+    val chatSearch: ChatSearchState = ChatSearchState(),
 ) : VMState {
 
     companion object {
@@ -149,6 +151,9 @@ sealed interface MainEvent : VMEvent {
     data class RemoveChatAttachment(val path: String) : MainEvent
     data class SendChatMessage(val text: String) : MainEvent
     data class OpenPath(val path: String) : MainEvent
+    data class UpdateChatSearchQuery(val query: String) : MainEvent
+    data object SelectNextChatSearchResult : MainEvent
+    data object SelectPreviousChatSearchResult : MainEvent
     data object RefreshSettings : MainEvent
     data class ToggleToolModifyReviewSelection(val messageId: String, val itemId: Long) : MainEvent
     data class ResolveToolModifyReview(val messageId: String, val action: ToolModifySelectionAction) : MainEvent

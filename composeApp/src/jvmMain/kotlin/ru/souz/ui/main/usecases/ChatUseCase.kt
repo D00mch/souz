@@ -138,7 +138,7 @@ class ChatUseCase(
         cancelActiveJob()
         toolModifyReviewUseCase.clearPendingReview(discardBrokerState = true)
 
-        emitState {
+        emitState(refreshChatSearch = true) {
             val idsToDrop = inFlightMessages?.let { arrayOf(it.userMessageId, it.pendingMessageId) } ?: emptyArray()
             copy(
                 chatMessages = if (idsToDrop.isEmpty()) chatMessages else chatMessages.filterNot { it.id in idsToDrop },
@@ -244,7 +244,7 @@ class ChatUseCase(
                         }
                         val text = effect.v
                         accumulatedText += text
-                        emitState {
+                        emitState(refreshChatSearch = true) {
                             val updatedMessage = msg.copy(
                                 text = accumulatedText,
                             )
@@ -364,7 +364,7 @@ class ChatUseCase(
 
     /** Publishes the user's message and flips the UI into processing mode for this session. */
     private suspend fun emitRequestStarted(session: ChatRequestSession) {
-        emitState {
+        emitState(refreshChatSearch = true) {
             copy(
                 chatMessages = chatMessages + session.userMessage,
                 chatStartTip = "",
@@ -467,7 +467,7 @@ class ChatUseCase(
             speechUseCase.playMacPingMsgSafely(scope)
         }
 
-        emitState {
+        emitState(refreshChatSearch = true) {
             val completedBotMessage = response.botMessage.copy(agentActions = agentActions)
             copy(
                 chatMessages = if (response.appendAsNewMessage) {
@@ -501,7 +501,7 @@ class ChatUseCase(
         val isCurrentRequest = activeChatRequestId.get() == session.requestId
         toolModifyReviewUseCase.clearPendingReview(discardBrokerState = true)
         withContext(NonCancellable) {
-            emitState {
+            emitState(refreshChatSearch = true) {
                 val idsToDrop = activeRequestMessages.get()
                     ?.takeIf { it.requestId == session.requestId }
                     ?.let { arrayOf(it.userMessageId, it.pendingMessageId) }
@@ -540,7 +540,7 @@ class ChatUseCase(
             isVoice = session.userMessage.isVoice,
         )
 
-        emitState {
+        emitState(refreshChatSearch = true) {
             copy(
                 chatMessages = chatMessages + errorMessage,
                 isProcessing = false,
@@ -575,8 +575,16 @@ class ChatUseCase(
         }
     }
 
-    private suspend fun emitState(reduce: MainState.() -> MainState) {
-        _outputs.emit(MainUseCaseOutput.State(reduce))
+    private suspend fun emitState(
+        refreshChatSearch: Boolean = false,
+        reduce: MainState.() -> MainState,
+    ) {
+        _outputs.emit(
+            MainUseCaseOutput.State(
+                reduce = reduce,
+                refreshChatSearch = refreshChatSearch,
+            )
+        )
     }
 
     private fun MainState.upsertMessage(
