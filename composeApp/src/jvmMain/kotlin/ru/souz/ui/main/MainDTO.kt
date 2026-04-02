@@ -91,6 +91,27 @@ data class SelectionDialogCandidateUi(
     val preview: String?,
 )
 
+data class ChatSearchResult(
+    val messageId: String,
+    val messageIndex: Int,
+    val matchIndexInMessage: Int = 0,
+)
+
+data class ChatSearchState(
+    val isOpen: Boolean = false,
+    val query: String = "",
+    val results: List<ChatSearchResult> = emptyList(),
+    val currentIndex: Int = 0,
+    val activationToken: Long = 0L,
+    val selectAllOnActivate: Boolean = false,
+) {
+    val normalizedQuery: String
+        get() = query.trim()
+
+    val activeResult: ChatSearchResult?
+        get() = results.getOrNull(currentIndex)
+}
+
 /**
  * State for the main screen that mirrors the floating glass panel experience.
  */
@@ -121,6 +142,7 @@ data class MainState(
     val attachedFiles: List<ChatAttachedFile> = emptyList(),
     val pendingVoiceInputDraft: String? = null,
     val pendingVoiceInputDraftToken: Long = 0L,
+    val chatSearch: ChatSearchState = ChatSearchState(),
 ) : VMState {
 
     companion object {
@@ -149,6 +171,11 @@ sealed interface MainEvent : VMEvent {
     data class RemoveChatAttachment(val path: String) : MainEvent
     data class SendChatMessage(val text: String) : MainEvent
     data class OpenPath(val path: String) : MainEvent
+    data object OpenChatSearch : MainEvent
+    data object CloseChatSearch : MainEvent
+    data class UpdateChatSearchQuery(val query: String) : MainEvent
+    data object SelectNextChatSearchResult : MainEvent
+    data object SelectPreviousChatSearchResult : MainEvent
     data object RefreshSettings : MainEvent
     data class ToggleToolModifyReviewSelection(val messageId: String, val itemId: Long) : MainEvent
     data class ResolveToolModifyReview(val messageId: String, val action: ToolModifySelectionAction) : MainEvent

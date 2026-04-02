@@ -75,6 +75,7 @@ class MainViewModel(
     private val speechUseCase: SpeechUseCase = useCases.speech
     private val permissionsUseCase: PermissionsUseCase = useCases.permissions
     private val attachmentsUseCase = useCases.attachments
+    private val chatSearchUseCase = useCases.chatSearch
     private var startTips: List<String> = emptyList()
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
@@ -89,7 +90,7 @@ class MainViewModel(
             val selectedModel = pickConfiguredOrDefaultModel(availableModels)
             applySelectedModel(selectedModel)
 
-            setState {
+            updateState {
                 copy(
                     selectedModel = selectedModel.alias,
                     availableModelAliases = availableModels.map { it.alias },
@@ -112,7 +113,7 @@ class MainViewModel(
                 onRecognizedText = { recognizedText ->
                     withContext(Dispatchers.Main) {
                         if (settingsProvider.voiceInputReviewEnabled) {
-                            setState {
+                            updateState {
                                 copy(
                                     pendingVoiceInputDraft = recognizedText.trim(),
                                     pendingVoiceInputDraftToken = pendingVoiceInputDraftToken + 1,
@@ -176,7 +177,7 @@ class MainViewModel(
             MainEvent.StopListening -> voiceInputUseCase.stopRecording(currentState.isListening)
             is MainEvent.ConsumePendingVoiceInputDraft -> {
                 if (event.token == currentState.pendingVoiceInputDraftToken) {
-                    setState { copy(pendingVoiceInputDraft = null) }
+                    updateState { copy(pendingVoiceInputDraft = null) }
                 }
             }
             MainEvent.RequestNewConversation -> requestNewConversation()
@@ -186,7 +187,7 @@ class MainViewModel(
             MainEvent.StopSpeech -> chatUseCase.stopAssistantOutput()
             MainEvent.UserPressStop -> chatUseCase.abortActiveRequest()
             MainEvent.ShowLastText -> setPreviousText()
-            MainEvent.ToggleThinkingPanel -> setState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
+            MainEvent.ToggleThinkingPanel -> updateState { copy(isThinkingPanelOpen = !isThinkingPanelOpen) }
             is MainEvent.UpdateChatModel -> updateChatModel(event.model)
             MainEvent.ConfirmLocalModelDownload -> confirmLocalModelDownload()
             MainEvent.CancelLocalModelDownload -> cancelLocalModelDownload()
@@ -194,6 +195,21 @@ class MainViewModel(
             MainEvent.PickChatAttachments -> pickChatAttachments()
             is MainEvent.AttachDroppedFiles -> addAttachedFiles(event.paths)
             is MainEvent.RemoveChatAttachment -> removeAttachedFile(event.path)
+            MainEvent.OpenChatSearch -> updateState {
+                copy(chatSearch = chatSearchUseCase.open(chatSearch))
+            }
+            MainEvent.CloseChatSearch -> updateState {
+                copy(chatSearch = chatSearchUseCase.close(chatSearch))
+            }
+            is MainEvent.UpdateChatSearchQuery -> updateState {
+                copy(chatSearch = chatSearchUseCase.updateQuery(chatMessages, chatSearch, event.query))
+            }
+            MainEvent.SelectNextChatSearchResult -> updateState {
+                copy(chatSearch = chatSearchUseCase.next(chatSearch))
+            }
+            MainEvent.SelectPreviousChatSearchResult -> updateState {
+                copy(chatSearch = chatSearchUseCase.previous(chatSearch))
+            }
             is MainEvent.OpenPath -> {
                 ru.souz.ui.common.FinderService.openInFinder(event.path)
                     .onFailure { error ->
@@ -209,7 +225,7 @@ class MainViewModel(
                 )
                 if (composedMessage.isBlank()) return@vmLaunch
 
-                setState { copy(attachedFiles = emptyList()) }
+                updateState { copy(attachedFiles = emptyList()) }
                 chatUseCase.sendChatMessage(
                     scope = viewModelScope,
                     isVoice = false,
@@ -286,8 +302,23 @@ class MainViewModel(
             permissionsUseCase.outputs,
         ).collect { output ->
             when (output) {
-                is MainUseCaseOutput.State -> setState(output.reduce)
+                is MainUseCaseOutput.State -> updateState(output.reduce)
                 is MainUseCaseOutput.Effect -> send(output.effect)
+            }
+        }
+    }
+
+    private suspend fun updateState(reduce: MainState.() -> MainState) {
+        setState {
+            val updatedState = reduce()
+            val syncedSearch = chatSearchUseCase.sync(
+                messages = updatedState.chatMessages,
+                search = updatedState.chatSearch,
+            )
+            if (syncedSearch == updatedState.chatSearch) {
+                updatedState
+            } else {
+                updatedState.copy(chatSearch = syncedSearch)
             }
         }
     }
@@ -305,23 +336,23 @@ class MainViewModel(
             return
         }
 
-        setState { copy(showNewChatDialog = true) }
+        updateState { copy(showNewChatDialog = true) }
     }
 
     private suspend fun confirmNewConversation() {
-        setState { copy(showNewChatDialog = false) }
+        updateState { copy(showNewChatDialog = false) }
         startNewConversation()
     }
 
     private suspend fun dismissNewConversationDialog() {
-        setState { copy(showNewChatDialog = false) }
+        updateState { copy(showNewChatDialog = false) }
     }
 
     private suspend fun startNewConversation() {
         chatUseCase.finishCurrentConversation(TelemetryConversationEndReason.NEW_CONVERSATION)
         chatUseCase.clearConversationContext()
 
-        setState {
+        updateState {
             copy(
                 displayedText = startTips.randomOrNull() ?: "",
                 statusMessage = "",
@@ -337,6 +368,7 @@ class MainViewModel(
                 attachedFiles = emptyList(),
                 pendingVoiceInputDraft = null,
                 showNewChatDialog = false,
+                chatSearch = chatSearchUseCase.clear(),
             )
         }
     }
@@ -356,7 +388,7 @@ class MainViewModel(
             existing = currentState.attachedFiles,
             rawPaths = paths,
         )
-        setState { copy(attachedFiles = updated) }
+        updateState { copy(attachedFiles = updated) }
     }
 
     private suspend fun removeAttachedFile(path: String) {
@@ -364,7 +396,7 @@ class MainViewModel(
             existing = currentState.attachedFiles,
             rawPath = path,
         )
-        setState { copy(attachedFiles = updated) }
+        updateState { copy(attachedFiles = updated) }
     }
 
     private suspend fun updateChatModel(modelAlias: String) {
@@ -373,7 +405,7 @@ class MainViewModel(
         val model = availableModels.firstOrNull { it.alias == modelAlias } ?: return
         val downloadPrompt = localModelStore.downloadPromptFor(model)
         if (downloadPrompt != null) {
-            setState {
+            updateState {
                 copy(
                     localModelDownloadPrompt = downloadPrompt,
                     localModelDownloadState = null,
@@ -382,14 +414,14 @@ class MainViewModel(
             return
         }
         applySelectedModel(model)
-        setState { copy(selectedModel = model.alias) }
+        updateState { copy(selectedModel = model.alias) }
     }
 
     private suspend fun confirmLocalModelDownload() {
         val prompt = currentState.localModelDownloadPrompt ?: return
         localModelDownloadJob?.cancelAndJoin()
         localModelDownloadJob = viewModelScope.launch(ioDispatchers) {
-            setState {
+            updateState {
                 copy(
                     localModelDownloadPrompt = null,
                     localModelDownloadState = LocalModelDownloadState(prompt),
@@ -398,20 +430,20 @@ class MainViewModel(
 
             runCatching {
                 localModelStore.download(prompt.profile) { progress ->
-                    setState {
+                    updateState {
                         copy(localModelDownloadState = LocalModelDownloadState(prompt, progress))
                     }
                 }
             }.onSuccess {
                 applySelectedModel(prompt.model)
-                setState {
+                updateState {
                     copy(
                         selectedModel = prompt.model.alias,
                         localModelDownloadState = null,
                     )
                 }
             }.onFailure { error ->
-                setState { copy(localModelDownloadState = null) }
+                updateState { copy(localModelDownloadState = null) }
                 if (error is CancellationException) {
                     return@onFailure
                 }
@@ -427,7 +459,7 @@ class MainViewModel(
         val hadActiveDownload = currentState.localModelDownloadState != null
         localModelDownloadJob?.cancelAndJoin()
         localModelDownloadJob = null
-        setState {
+        updateState {
             copy(
                 localModelDownloadPrompt = null,
                 localModelDownloadState = null,
@@ -442,7 +474,7 @@ class MainViewModel(
         if (size <= 0) return
         settingsProvider.contextSize = size
         chatUseCase.updateContextSize(size)
-        setState { copy(selectedContextSize = size) }
+        updateState { copy(selectedContextSize = size) }
     }
 
     private suspend fun refreshSettings() {
@@ -450,7 +482,7 @@ class MainViewModel(
         val selectedModel = pickConfiguredOrDefaultModel(availableModels)
         applySelectedModel(selectedModel)
 
-        setState {
+        updateState {
             copy(
                 selectedModel = selectedModel.alias,
                 availableModelAliases = availableModels.map { it.alias },
@@ -496,7 +528,7 @@ class MainViewModel(
         }
 
         val prevText = currentState.lastText ?: return
-        setState { copy(displayedText = prevText, lastText = null, userExpectCloseOnX = false) }
+        updateState { copy(displayedText = prevText, lastText = null, userExpectCloseOnX = false) }
     }
 
     private suspend fun clearContext() {
@@ -513,7 +545,7 @@ class MainViewModel(
                 } else {
                     currentText
                 }
-                setState {
+                updateState {
                     copy(
                         displayedText = clearedText,
                         lastText = lastText,
@@ -526,13 +558,14 @@ class MainViewModel(
                         attachedFiles = emptyList(),
                         pendingVoiceInputDraft = null,
                         showNewChatDialog = false,
+                        chatSearch = chatSearchUseCase.clear(),
                     )
                 }
             }
 
             true -> {
                 val clearedText = getString(Res.string.status_context_cleared_default)
-                setState {
+                updateState {
                     copy(
                         displayedText = clearedText,
                         userExpectCloseOnX = false,
@@ -542,6 +575,7 @@ class MainViewModel(
                         attachedFiles = emptyList(),
                         pendingVoiceInputDraft = null,
                         showNewChatDialog = false,
+                        chatSearch = chatSearchUseCase.clear(),
                     )
                 }
                 send(MainEffect.Hide)

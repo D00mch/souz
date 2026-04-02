@@ -24,12 +24,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mikepenz.markdown.model.MarkdownAnnotator
+import com.mikepenz.markdown.model.markdownAnnotator
 import kotlinx.coroutines.delay
+import org.intellij.markdown.MarkdownElementTypes
+import org.intellij.markdown.MarkdownTokenTypes
+import org.intellij.markdown.ast.ASTNode
+import org.intellij.markdown.ast.getTextInNode
+import org.intellij.markdown.ast.findChildOfType
+import org.intellij.markdown.flavours.gfm.GFMElementTypes
+import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
+import org.intellij.markdown.flavours.gfm.GFMTokenTypes
+import org.intellij.markdown.parser.MarkdownParser
 
 sealed class MarkdownPart {
     data class TextContent(val content: String) : MarkdownPart()
@@ -153,15 +166,215 @@ fun parseMarkdownContent(input: String): List<MarkdownPart> {
     return parts
 }
 
+fun buildSearchHighlightedAnnotatedString(
+    text: String,
+    query: String,
+    highlightColor: Color,
+    activeHighlightColor: Color = highlightColor,
+    activeMatchIndex: Int? = null,
+): AnnotatedString = buildAnnotatedString {
+    appendHighlightedMatches(
+        text = text,
+        query = query,
+        highlightColor = highlightColor,
+        activeHighlightColor = activeHighlightColor,
+        activeMatchIndex = activeMatchIndex,
+    )
+}
+
+fun String.findSearchMatchStartIndexes(
+    query: String,
+): List<Int> {
+    val text = this
+    if (query.isBlank() || text.isEmpty()) return emptyList()
+
+    val matches = mutableListOf<Int>()
+    var currentIndex = 0
+    while (currentIndex < text.length) {
+        val matchIndex = text.indexOf(query, startIndex = currentIndex, ignoreCase = true)
+        if (matchIndex < 0) break
+        matches += matchIndex
+        currentIndex = matchIndex + query.length
+    }
+    return matches
+}
+
+fun buildSearchableMessageText(
+    text: String,
+    isUserMessage: Boolean,
+): String {
+    if (isUserMessage || text.isBlank()) return text
+
+    return buildString {
+        parseMarkdownContent(text).forEachIndexed { index, part ->
+            if (index > 0 && isNotEmpty() && last() != '\n') {
+                append('\n')
+            }
+            when (part) {
+                is MarkdownPart.TextContent -> appendPlainMarkdownText(part.content)
+                is MarkdownPart.CodeContent -> append(part.code)
+            }
+        }
+    }
+}
+
+@Composable
+fun rememberSearchMarkdownAnnotator(
+    query: String,
+    highlightColor: Color,
+    activeHighlightColor: Color = highlightColor,
+    activeMatchIndex: Int? = null,
+): MarkdownAnnotator {
+    var consumedMatchCount = 0
+
+    return markdownAnnotator { content: String, child: ASTNode ->
+        if (query.isBlank() || child.type != MarkdownTokenTypes.TEXT) {
+            return@markdownAnnotator false
+        }
+        val childText = child.getTextInNode(content).toString()
+        val childMatchCount = childText.findSearchMatchStartIndexes(query).size
+        val childActiveMatchIndex = activeMatchIndex
+            ?.minus(consumedMatchCount)
+            ?.takeIf { it in 0 until childMatchCount }
+
+        appendHighlightedMatches(
+            text = childText,
+            query = query,
+            highlightColor = highlightColor,
+            activeHighlightColor = activeHighlightColor,
+            activeMatchIndex = childActiveMatchIndex,
+        )
+        consumedMatchCount += childMatchCount
+        true
+    }
+}
+
+private fun AnnotatedString.Builder.appendHighlightedMatches(
+    text: String,
+    query: String,
+    highlightColor: Color,
+    activeHighlightColor: Color,
+    activeMatchIndex: Int?,
+) {
+    if (query.isBlank() || text.isEmpty()) {
+        append(text)
+        return
+    }
+
+    var currentIndex = 0
+    text.findSearchMatchStartIndexes(query).forEachIndexed { matchOrdinal, matchIndex ->
+        if (matchIndex > currentIndex) {
+            append(text.substring(currentIndex, matchIndex))
+        }
+        val color = if (matchOrdinal == activeMatchIndex) activeHighlightColor else highlightColor
+        pushStyle(SpanStyle(background = color))
+        append(text.substring(matchIndex, matchIndex + query.length))
+        pop()
+        currentIndex = matchIndex + query.length
+    }
+    if (currentIndex < text.length) {
+        append(text.substring(currentIndex))
+    }
+}
+
+private fun StringBuilder.appendPlainMarkdownText(markdown: String) {
+    if (markdown.isBlank()) return
+
+    val tree = MarkdownParser(GFMFlavourDescriptor()).buildMarkdownTreeFromString(markdown)
+    appendVisibleMarkdownNodes(markdown, tree.children)
+}
+
+private fun StringBuilder.appendVisibleMarkdownNodes(
+    content: String,
+    children: List<ASTNode>,
+) {
+    children.forEach { child ->
+        when (child.type) {
+            MarkdownElementTypes.PARAGRAPH,
+            MarkdownElementTypes.EMPH,
+            MarkdownElementTypes.STRONG,
+            MarkdownElementTypes.BLOCK_QUOTE,
+            MarkdownElementTypes.ORDERED_LIST,
+            MarkdownElementTypes.UNORDERED_LIST,
+            MarkdownElementTypes.LIST_ITEM,
+            MarkdownElementTypes.CODE_BLOCK,
+            MarkdownElementTypes.CODE_FENCE,
+            MarkdownElementTypes.ATX_1,
+            MarkdownElementTypes.ATX_2,
+            MarkdownElementTypes.ATX_3,
+            MarkdownElementTypes.ATX_4,
+            MarkdownElementTypes.ATX_5,
+            MarkdownElementTypes.ATX_6,
+            MarkdownElementTypes.SETEXT_1,
+            MarkdownElementTypes.SETEXT_2,
+            GFMElementTypes.STRIKETHROUGH -> appendVisibleMarkdownNodes(content, child.children)
+
+            MarkdownElementTypes.CODE_SPAN -> appendVisibleMarkdownNodes(
+                content = content,
+                children = child.children.filterNot { it.type == MarkdownTokenTypes.BACKTICK },
+            )
+
+            MarkdownElementTypes.INLINE_LINK,
+            MarkdownElementTypes.SHORT_REFERENCE_LINK,
+            MarkdownElementTypes.FULL_REFERENCE_LINK -> {
+                val linkText = child.findChildOfType(MarkdownElementTypes.LINK_TEXT)
+                if (linkText != null) {
+                    appendVisibleMarkdownNodes(content, linkText.children)
+                }
+            }
+
+            MarkdownElementTypes.AUTOLINK -> append(child.getTextInNode(content).toString().trim('<', '>'))
+            MarkdownElementTypes.IMAGE,
+            MarkdownElementTypes.LINK_DEFINITION -> Unit
+
+            MarkdownTokenTypes.TEXT -> append(child.getTextInNode(content))
+            MarkdownTokenTypes.WHITE_SPACE -> append(' ')
+            MarkdownTokenTypes.EOL,
+            MarkdownTokenTypes.HARD_LINE_BREAK -> append('\n')
+            MarkdownTokenTypes.SINGLE_QUOTE -> append('\'')
+            MarkdownTokenTypes.DOUBLE_QUOTE -> append('\"')
+            MarkdownTokenTypes.LPAREN -> append('(')
+            MarkdownTokenTypes.RPAREN -> append(')')
+            MarkdownTokenTypes.LBRACKET -> append('[')
+            MarkdownTokenTypes.RBRACKET -> append(']')
+            MarkdownTokenTypes.LT -> append('<')
+            MarkdownTokenTypes.GT -> append('>')
+            MarkdownTokenTypes.COLON -> append(':')
+            MarkdownTokenTypes.EXCLAMATION_MARK -> append('!')
+            GFMTokenTypes.GFM_AUTOLINK -> append(child.getTextInNode(content))
+            else -> appendVisibleMarkdownNodes(content, child.children)
+        }
+    }
+}
+
 @Composable
 fun CodeBlockWithCopy(
     code: String,
     language: String?,
     style: TextStyle,
+    searchQuery: String = "",
+    highlightColor: Color = Color.Transparent,
+    activeHighlightColor: Color = highlightColor,
+    activeMatchIndex: Int? = null,
 ) {
     val clipboardManager = LocalClipboardManager.current
     val displayLang = if (!language.isNullOrBlank()) language.uppercase() else "CODE"
     var copied by remember(code) { mutableStateOf(false) }
+    val highlightedCode = remember(
+        code,
+        searchQuery,
+        highlightColor,
+        activeHighlightColor,
+        activeMatchIndex,
+    ) {
+        buildSearchHighlightedAnnotatedString(
+            text = code,
+            query = searchQuery,
+            highlightColor = highlightColor,
+            activeHighlightColor = activeHighlightColor,
+            activeMatchIndex = activeMatchIndex,
+        )
+    }
 
     LaunchedEffect(copied) {
         if (copied) {
@@ -221,7 +434,7 @@ fun CodeBlockWithCopy(
             }
 
             Text(
-                text = code,
+                text = highlightedCode,
                 style = style,
                 modifier = Modifier.padding(12.dp)
             )

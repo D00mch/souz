@@ -18,6 +18,7 @@ data class MainUseCases(
     val speech: SpeechUseCase,
     val permissions: PermissionsUseCase,
     val attachments: ChatAttachmentsUseCase,
+    val chatSearch: ChatSearchUseCase,
 )
 
 class MainUseCasesFactory(
@@ -57,6 +58,7 @@ class MainUseCasesFactory(
             selectionApprovalSources = selectionApprovalSources,
             speechUseCase = speechUseCase,
         )
+        val chatSearchUseCase = ChatSearchUseCase()
         val voiceInputUseCase = VoiceInputUseCase(
             audioRecorder = audioRecorder,
             speechRecognitionProvider = speechRecognitionProvider,
@@ -72,6 +74,7 @@ class MainUseCasesFactory(
             speech = speechUseCase,
             permissions = permissionsUseCase,
             attachments = attachmentsUseCase,
+            chatSearch = chatSearchUseCase,
         )
     }
 }

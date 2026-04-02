@@ -13,7 +13,6 @@ import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -80,6 +79,9 @@ import ru.souz.ui.common.*
 import souz.composeapp.generated.resources.*
 import java.awt.datatransfer.Transferable
 import java.awt.dnd.*
+import java.awt.KeyEventDispatcher
+import java.awt.KeyboardFocusManager
+import java.awt.event.KeyEvent
 import java.util.*
 
 
@@ -100,6 +102,8 @@ private val ChatHoverIconHoverColor = Color(0x80FFFFFF)
 private val ChatHoverButtonBackground = Color(0x0FFFFFFF)
 private val ChatSelectionHandleColor = Color(0xFFFFFFFF)
 private val ChatSelectionBackgroundColor = Color(0x66FFFFFF)
+private val ChatSearchHighlightColor = Color(0x26FFFFFF)
+private val ChatSearchActiveHighlightColor = Color(0x40FFFFFF)
 private val FinderPathChipBackground = Color(0x2625CAB0)
 private val FinderPathChipBorder = Color(0x8812E0B5)
 private val FinderPathChipTextColor = Color(0xFF12E0B5)
@@ -187,6 +191,11 @@ fun MainScreen(
         onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
         onCancelSelectionDialog = { viewModel.send(MainEvent.CancelSelectionDialog) },
         onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
+        onOpenChatSearch = { viewModel.send(MainEvent.OpenChatSearch) },
+        onUpdateChatSearchQuery = { viewModel.send(MainEvent.UpdateChatSearchQuery(it)) },
+        onSelectNextChatSearchResult = { viewModel.send(MainEvent.SelectNextChatSearchResult) },
+        onSelectPreviousChatSearchResult = { viewModel.send(MainEvent.SelectPreviousChatSearchResult) },
+        onCloseChatSearch = { viewModel.send(MainEvent.CloseChatSearch) },
     )
 }
 
@@ -224,9 +233,15 @@ fun MainScreenContent(
     onSelectApprovalCandidate: (Long) -> Unit = {},
     onCancelSelectionDialog: () -> Unit = {},
     onOpenPath: (String) -> Unit = {},
+    onOpenChatSearch: () -> Unit = {},
+    onUpdateChatSearchQuery: (String) -> Unit = {},
+    onSelectNextChatSearchResult: () -> Unit = {},
+    onSelectPreviousChatSearchResult: () -> Unit = {},
+    onCloseChatSearch: () -> Unit = {},
 ) {
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
+    val window = LocalWindowScope.current?.window
 
     val stringAppName = stringResource(Res.string.app_title_short)
     val stringNewChatTitle = stringResource(Res.string.dialog_new_chat_title)
@@ -236,6 +251,29 @@ fun MainScreenContent(
     val stringPermissionAllow = stringResource(Res.string.dialog_permission_allow)
     val stringPermissionDeny = stringResource(Res.string.dialog_permission_deny)
     val stringPermissionModifyFile = stringResource(Res.string.permission_modify_file)
+
+    DisposableEffect(window, onOpenChatSearch) {
+        if (window == null) return@DisposableEffect onDispose {}
+
+        val dispatcher = KeyEventDispatcher { event ->
+            if (event.id == KeyEvent.KEY_PRESSED &&
+                event.keyCode == KeyEvent.VK_F &&
+                (event.isMetaDown || event.isControlDown) &&
+                window.isFocused
+            ) {
+                onOpenChatSearch()
+                true
+            } else {
+                false
+            }
+        }
+
+        val focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
+        focusManager.addKeyEventDispatcher(dispatcher)
+        onDispose {
+            focusManager.removeKeyEventDispatcher(dispatcher)
+        }
+    }
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -342,9 +380,17 @@ fun MainScreenContent(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
                             .padding(end = 20.dp),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        CompactChatSearchPanel(
+                            state = state.chatSearch,
+                            onQueryChange = onUpdateChatSearchQuery,
+                            onNext = onSelectNextChatSearchResult,
+                            onPrevious = onSelectPreviousChatSearchResult,
+                            onClose = onCloseChatSearch,
+                        )
+
                         TopToolbarIconButton(
                             size = TopActionButtonSize,
                             onClick = onOpenSettings
@@ -385,6 +431,7 @@ fun MainScreenContent(
 
                 ChatModeContent(
                     messages = state.chatMessages,
+                    searchState = state.chatSearch,
                     agentActions = state.agentActions,
                     chatPlaceholder = state.chatStartTip,
                     chatSessionId = state.chatSessionId,
@@ -725,6 +772,7 @@ private enum class HeadingScale { LARGE, SMALL }
 @Composable
 fun ChatModeContent(
     messages: List<ChatMessage>,
+    searchState: ChatSearchState,
     agentActions: List<String>,
     chatPlaceholder: String,
     chatSessionId: Long,
@@ -758,6 +806,9 @@ fun ChatModeContent(
 ) {
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
+    val searchResultIds = remember(searchState.isOpen, searchState.results) {
+        if (!searchState.isOpen) emptySet() else searchState.results.mapTo(linkedSetOf()) { it.messageId }
+    }
     val speakingMessageId = messages.lastOrNull()
         ?.takeIf { isSpeaking && !it.isUser && it.isVoice }
         ?.id
@@ -768,17 +819,24 @@ fun ChatModeContent(
     val windowInfo = LocalWindowInfo.current
     val isWindowFocused = windowInfo.isWindowFocused
 
-    LaunchedEffect(isWindowFocused) {
-        if (isWindowFocused) {
+    LaunchedEffect(isWindowFocused, searchState.isOpen) {
+        if (isWindowFocused && !searchState.isOpen) {
             focusRequester.requestFocus()
         }
     }
 
-    LaunchedEffect(messages.size, isProcessing) {
+    LaunchedEffect(messages.size, isProcessing, searchState.isOpen, searchState.query) {
+        if (searchState.isOpen && searchState.query.isNotBlank()) return@LaunchedEffect
         if (messages.isNotEmpty() || isProcessing) {
             val targetIndex = if (isProcessing) messages.size else messages.lastIndex
             listState.animateScrollToItem(targetIndex)
         }
+    }
+
+    LaunchedEffect(searchState.isOpen, searchState.activeResult?.messageId, searchState.activeResult?.messageIndex) {
+        val activeResult = searchState.activeResult ?: return@LaunchedEffect
+        if (!searchState.isOpen) return@LaunchedEffect
+        listState.animateScrollToItem(activeResult.messageIndex)
     }
 
     LaunchedEffect(pendingVoiceInputDraftToken) {
@@ -792,7 +850,9 @@ fun ChatModeContent(
             selection = TextRange(mergedText.length),
         )
         onConsumePendingVoiceInputDraft(draftToken)
-        focusRequester.requestFocus()
+        if (!searchState.isOpen) {
+            focusRequester.requestFocus()
+        }
     }
 
 
@@ -804,8 +864,10 @@ fun ChatModeContent(
 
     Column(
         modifier = modifier.onPreviewKeyEvent { event ->
-            if (event.type == KeyEventType.KeyDown &&
+            if (!searchState.isOpen &&
+                event.type == KeyEventType.KeyDown &&
                 !event.isMetaPressed &&
+                !event.isCtrlPressed &&
                 event.key != Key.Enter &&
                 event.key != Key.NumPadEnter
             ) {
@@ -837,6 +899,10 @@ fun ChatModeContent(
                 items(messages, key = { it.id }) { message ->
                     ChatBubble(
                         message = message,
+                        searchQuery = if (message.id in searchResultIds) searchState.normalizedQuery else "",
+                        activeSearchMatchIndexInMessage = searchState.activeResult
+                            ?.takeIf { it.messageId == message.id }
+                            ?.matchIndexInMessage,
                         onOpenPath = onOpenPath,
                         onToggleToolModifyReviewSelection = onToggleToolModifyReviewSelection,
                         onResolveToolModifyReview = onResolveToolModifyReview,
@@ -963,6 +1029,8 @@ private fun ChatFileDropTarget(
 @Composable
 private fun ChatBubble(
     message: ChatMessage,
+    searchQuery: String,
+    activeSearchMatchIndexInMessage: Int?,
     onOpenPath: (String) -> Unit,
     onToggleToolModifyReviewSelection: (String, Long) -> Unit,
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
@@ -987,6 +1055,8 @@ private fun ChatBubble(
         )
     )
     val revealOffsetPx = with(LocalDensity.current) { revealOffset.toPx() }
+    val highlightColor = ChatSearchHighlightColor
+    val activeHighlightColor = ChatSearchActiveHighlightColor
 
     val contentModifier = Modifier
         .fillMaxWidth()
@@ -1002,6 +1072,21 @@ private fun ChatBubble(
             handleColor = ChatSelectionHandleColor,
             backgroundColor = ChatSelectionBackgroundColor
         )
+        val highlightedUserText = remember(
+            message.text,
+            searchQuery,
+            highlightColor,
+            activeHighlightColor,
+            activeSearchMatchIndexInMessage,
+        ) {
+            buildSearchHighlightedAnnotatedString(
+                text = message.text,
+                query = searchQuery,
+                highlightColor = highlightColor,
+                activeHighlightColor = activeHighlightColor,
+                activeMatchIndex = activeSearchMatchIndexInMessage,
+            )
+        }
 
         BoxWithConstraints(modifier = contentModifier) {
             val maxBubbleWidth = maxWidth * 0.7f
@@ -1048,7 +1133,7 @@ private fun ChatBubble(
                             CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
                                 SelectionContainer {
                                     Text(
-                                        text = message.text,
+                                        text = highlightedUserText,
                                         color = ChatUserTextColor,
                                         fontSize = 14.sp,
                                         lineHeight = 22.4.sp,
@@ -1127,6 +1212,24 @@ private fun ChatBubble(
 
                 if (message.text.isNotBlank()) {
                     val parts = remember(message.text) { parseMarkdownContent(message.text) }
+                    val searchParts = remember(message.text, searchQuery, activeSearchMatchIndexInMessage) {
+                        var previousMatchCount = 0
+                        parts.map { part ->
+                            val searchablePartText = when (part) {
+                                is MarkdownPart.TextContent -> buildSearchableMessageText(
+                                    text = part.content,
+                                    isUserMessage = false,
+                                )
+                                is MarkdownPart.CodeContent -> part.code
+                            }
+                            val matchCount = searchablePartText.findSearchMatchStartIndexes(searchQuery).size
+                            val activeMatchIndexInPart = activeSearchMatchIndexInMessage
+                                ?.minus(previousMatchCount)
+                                ?.takeIf { it in 0 until matchCount }
+                            previousMatchCount += matchCount
+                            part to activeMatchIndexInPart
+                        }
+                    }
                     val baseFontSize = 14.sp
                     val baseStyle = TextStyle(
                         color = ChatAssistantTextColor,
@@ -1148,13 +1251,20 @@ private fun ChatBubble(
                     CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
                         SelectionContainer {
                             Column {
-                                parts.forEach { part ->
+                                searchParts.forEach { (part, activeMatchIndexInPart) ->
                                     when (part) {
                                         is MarkdownPart.TextContent -> {
+                                            val annotator = rememberSearchMarkdownAnnotator(
+                                                query = searchQuery,
+                                                highlightColor = highlightColor,
+                                                activeHighlightColor = activeHighlightColor,
+                                                activeMatchIndex = activeMatchIndexInPart,
+                                            )
                                             Markdown(
                                                 content = part.content,
                                                 colors = colors,
                                                 typography = typography,
+                                                annotator = annotator,
                                                 modifier = Modifier.fillMaxWidth()
                                             )
                                         }
@@ -1163,7 +1273,11 @@ private fun ChatBubble(
                                             CodeBlockWithCopy(
                                                 code = part.code,
                                                 language = part.language,
-                                                style = codeStyle
+                                                style = codeStyle,
+                                                searchQuery = searchQuery,
+                                                highlightColor = highlightColor,
+                                                activeHighlightColor = activeHighlightColor,
+                                                activeMatchIndex = activeMatchIndexInPart,
                                             )
                                         }
                                     }

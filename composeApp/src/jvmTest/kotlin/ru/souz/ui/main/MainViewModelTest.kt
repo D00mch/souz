@@ -656,6 +656,85 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `search query builds results and navigation wraps`() = runTest(mainDispatcher) {
+        val harness = createHarness()
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            val firstMatch = ChatMessage(text = "alpha target", isUser = true)
+            val noMatch = ChatMessage(text = "beta", isUser = false)
+            val secondMatch = ChatMessage(text = "gamma TARGET", isUser = false)
+            forceUiState(
+                viewModel,
+                viewModel.uiState.value.copy(
+                    chatMessages = listOf(firstMatch, noMatch, secondMatch),
+                ),
+            )
+
+            viewModel.handleEvent(MainEvent.OpenChatSearch)
+            viewModel.handleEvent(MainEvent.UpdateChatSearchQuery("target"))
+
+            val initialState = awaitState(viewModel) { state ->
+                state.chatSearch.isOpen &&
+                    state.chatSearch.results.size == 2 &&
+                    state.chatSearch.activeResult?.messageId == firstMatch.id
+            }
+            assertEquals(listOf(firstMatch.id, secondMatch.id), initialState.chatSearch.results.map { it.messageId })
+
+            viewModel.handleEvent(MainEvent.SelectNextChatSearchResult)
+            val nextState = awaitState(viewModel) { it.chatSearch.currentIndex == 1 }
+            assertEquals(secondMatch.id, nextState.chatSearch.activeResult?.messageId)
+
+            viewModel.handleEvent(MainEvent.SelectNextChatSearchResult)
+            val wrappedState = awaitState(viewModel) { it.chatSearch.currentIndex == 0 }
+            assertEquals(firstMatch.id, wrappedState.chatSearch.activeResult?.messageId)
+
+            viewModel.handleEvent(MainEvent.SelectPreviousChatSearchResult)
+            val previousState = awaitState(viewModel) { it.chatSearch.currentIndex == 1 }
+            assertEquals(secondMatch.id, previousState.chatSearch.activeResult?.messageId)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `reopening search keeps query and requests select all`() = runTest(mainDispatcher) {
+        val harness = createHarness()
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            forceUiState(
+                viewModel,
+                viewModel.uiState.value.copy(
+                    chatMessages = listOf(ChatMessage(text = "alpha", isUser = true)),
+                ),
+            )
+
+            viewModel.handleEvent(MainEvent.OpenChatSearch)
+            viewModel.handleEvent(MainEvent.UpdateChatSearchQuery("alpha"))
+            val searchOpened = awaitState(viewModel) { it.chatSearch.query == "alpha" && it.chatSearch.isOpen }
+
+            viewModel.handleEvent(MainEvent.CloseChatSearch)
+            val closedState = awaitState(viewModel) { !it.chatSearch.isOpen }
+            assertEquals("alpha", closedState.chatSearch.query)
+            assertFalse(closedState.chatSearch.selectAllOnActivate)
+
+            viewModel.handleEvent(MainEvent.OpenChatSearch)
+            val reopenedState = awaitState(viewModel) {
+                it.chatSearch.isOpen && it.chatSearch.activationToken > searchOpened.chatSearch.activationToken
+            }
+            assertEquals("alpha", reopenedState.chatSearch.query)
+            assertTrue(reopenedState.chatSearch.selectAllOnActivate)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `sending message with attachments composes payload and clears pending attachments`() = runTest(mainDispatcher) {
         var executedInput: String? = null
         val harness = createHarness(executeBehavior = { input ->
