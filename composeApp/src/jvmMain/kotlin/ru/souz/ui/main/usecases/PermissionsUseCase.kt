@@ -124,7 +124,7 @@ class PermissionsUseCase(
         } else {
             getString(Res.string.onboarding_display_text)
         }
-        emitState {
+        emitState(refreshChatSearch = true) {
             copy(
                 isSpeaking = true,
                 chatStartTip = "",
@@ -226,8 +226,16 @@ class PermissionsUseCase(
         }.getOrElse { false }
     }
 
-    private suspend fun emitState(reduce: MainState.() -> MainState) {
-        _outputs.send(MainUseCaseOutput.State(reduce))
+    private suspend fun emitState(
+        refreshChatSearch: Boolean = false,
+        reduce: MainState.() -> MainState,
+    ) {
+        _outputs.send(
+            MainUseCaseOutput.State(
+                reduce = reduce,
+                refreshChatSearch = refreshChatSearch,
+            )
+        )
     }
 
     companion object {

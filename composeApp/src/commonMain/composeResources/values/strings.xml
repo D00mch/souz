@@ -12,6 +12,7 @@
     <string name="status_processing">Processing...</string>
     <string name="status_thinking">Thinking</string>
     <string name="chat_placeholder_tip">Ask me anything...</string>
+    <string name="chat_search_placeholder">Search</string>
     <string name="welcome_logo_content_desc">Souz logo</string>
     <string name="welcome_quick_actions_subtitle">Ask anything or choose a quick action</string>
     <string name="quick_action_mail_label">Check mail</string>

@@ -13,7 +13,6 @@ import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -54,6 +53,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -77,9 +77,13 @@ import org.kodein.di.compose.localDI
 import ru.souz.LocalWindowScope
 import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.common.*
+import ru.souz.ui.main.search.*
 import souz.composeapp.generated.resources.*
 import java.awt.datatransfer.Transferable
 import java.awt.dnd.*
+import java.awt.KeyEventDispatcher
+import java.awt.KeyboardFocusManager
+import java.awt.event.KeyEvent
 import java.util.*
 
 
@@ -100,6 +104,8 @@ private val ChatHoverIconHoverColor = Color(0x80FFFFFF)
 private val ChatHoverButtonBackground = Color(0x0FFFFFFF)
 private val ChatSelectionHandleColor = Color(0xFFFFFFFF)
 private val ChatSelectionBackgroundColor = Color(0x66FFFFFF)
+private val ChatSearchHighlightColor = Color(0x26FFFFFF)
+private val ChatSearchActiveHighlightColor = Color(0x40FFFFFF)
 private val FinderPathChipBackground = Color(0x2625CAB0)
 private val FinderPathChipBorder = Color(0x8812E0B5)
 private val FinderPathChipTextColor = Color(0xFF12E0B5)
@@ -187,6 +193,10 @@ fun MainScreen(
         onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
         onCancelSelectionDialog = { viewModel.send(MainEvent.CancelSelectionDialog) },
         onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
+        onUpdateChatSearchQuery = { viewModel.send(MainEvent.UpdateChatSearchQuery(it)) },
+        onSelectNextChatSearchResult = { viewModel.send(MainEvent.SelectNextChatSearchResult) },
+        onSelectPreviousChatSearchResult = { viewModel.send(MainEvent.SelectPreviousChatSearchResult) },
+        searchProjectionProvider = { viewModel.chatSearchProjectionFor(it) },
     )
 }
 
@@ -224,9 +234,15 @@ fun MainScreenContent(
     onSelectApprovalCandidate: (Long) -> Unit = {},
     onCancelSelectionDialog: () -> Unit = {},
     onOpenPath: (String) -> Unit = {},
+    onUpdateChatSearchQuery: (String) -> Unit = {},
+    onSelectNextChatSearchResult: () -> Unit = {},
+    onSelectPreviousChatSearchResult: () -> Unit = {},
+    searchProjectionProvider: (String) -> ChatMessageSearchProjection? = { null },
 ) {
     val windowInfo = LocalWindowInfo.current
     val isFocused = windowInfo.isWindowFocused
+    val window = LocalWindowScope.current?.window
+    val searchPanelState = rememberChatSearchPanelState(resetKey = state.chatSessionId)
 
     val stringAppName = stringResource(Res.string.app_title_short)
     val stringNewChatTitle = stringResource(Res.string.dialog_new_chat_title)
@@ -236,6 +252,29 @@ fun MainScreenContent(
     val stringPermissionAllow = stringResource(Res.string.dialog_permission_allow)
     val stringPermissionDeny = stringResource(Res.string.dialog_permission_deny)
     val stringPermissionModifyFile = stringResource(Res.string.permission_modify_file)
+
+    DisposableEffect(window, state.chatSearch.query) {
+        if (window == null) return@DisposableEffect onDispose { }
+
+        val dispatcher = KeyEventDispatcher { event ->
+            if (event.id == KeyEvent.KEY_PRESSED &&
+                event.keyCode == KeyEvent.VK_F &&
+                (event.isMetaDown || event.isControlDown) &&
+                window.isFocused
+            ) {
+                searchPanelState.open(state.chatSearch.query)
+                true
+            } else {
+                false
+            }
+        }
+
+        val focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
+        focusManager.addKeyEventDispatcher(dispatcher)
+        onDispose {
+            focusManager.removeKeyEventDispatcher(dispatcher)
+        }
+    }
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -342,9 +381,18 @@ fun MainScreenContent(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
                             .padding(end = 20.dp),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        CompactChatSearchPanel(
+                            panelState = searchPanelState,
+                            searchState = state.chatSearch,
+                            onQueryChange = onUpdateChatSearchQuery,
+                            onNext = onSelectNextChatSearchResult,
+                            onPrevious = onSelectPreviousChatSearchResult,
+                            onClose = { searchPanelState.close() },
+                        )
+
                         TopToolbarIconButton(
                             size = TopActionButtonSize,
                             onClick = onOpenSettings
@@ -385,6 +433,8 @@ fun MainScreenContent(
 
                 ChatModeContent(
                     messages = state.chatMessages,
+                    searchState = state.chatSearch,
+                    isSearchOpen = searchPanelState.isOpen,
                     agentActions = state.agentActions,
                     chatPlaceholder = state.chatStartTip,
                     chatSessionId = state.chatSessionId,
@@ -414,6 +464,7 @@ fun MainScreenContent(
                     onResolveToolModifyReview = onResolveToolModifyReview,
                     onShowSnack = onShowSnack,
                     onOpenPath = onOpenPath,
+                    searchProjectionProvider = searchProjectionProvider,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
@@ -725,6 +776,8 @@ private enum class HeadingScale { LARGE, SMALL }
 @Composable
 fun ChatModeContent(
     messages: List<ChatMessage>,
+    searchState: ChatSearchState,
+    isSearchOpen: Boolean,
     agentActions: List<String>,
     chatPlaceholder: String,
     chatSessionId: Long,
@@ -754,10 +807,12 @@ fun ChatModeContent(
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
     onShowSnack: (String) -> Unit,
     onOpenPath: (String) -> Unit,
+    searchProjectionProvider: (String) -> ChatMessageSearchProjection?,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
+    val searchEnabled = isSearchOpen && searchState.normalizedQuery.isNotEmpty()
     val speakingMessageId = messages.lastOrNull()
         ?.takeIf { isSpeaking && !it.isUser && it.isVoice }
         ?.id
@@ -768,17 +823,24 @@ fun ChatModeContent(
     val windowInfo = LocalWindowInfo.current
     val isWindowFocused = windowInfo.isWindowFocused
 
-    LaunchedEffect(isWindowFocused) {
-        if (isWindowFocused) {
+    LaunchedEffect(isWindowFocused, isSearchOpen) {
+        if (isWindowFocused && !isSearchOpen) {
             focusRequester.requestFocus()
         }
     }
 
-    LaunchedEffect(messages.size, isProcessing) {
+    LaunchedEffect(messages.size, isProcessing, searchEnabled) {
+        if (searchEnabled) return@LaunchedEffect
         if (messages.isNotEmpty() || isProcessing) {
             val targetIndex = if (isProcessing) messages.size else messages.lastIndex
             listState.animateScrollToItem(targetIndex)
         }
+    }
+
+    LaunchedEffect(isSearchOpen, searchState.activeMatch?.messageId, searchState.activeMatch?.messageIndex) {
+        val activeMatch = searchState.activeMatch ?: return@LaunchedEffect
+        if (!isSearchOpen) return@LaunchedEffect
+        listState.animateScrollToItem(activeMatch.messageIndex)
     }
 
     LaunchedEffect(pendingVoiceInputDraftToken) {
@@ -792,7 +854,9 @@ fun ChatModeContent(
             selection = TextRange(mergedText.length),
         )
         onConsumePendingVoiceInputDraft(draftToken)
-        focusRequester.requestFocus()
+        if (!isSearchOpen) {
+            focusRequester.requestFocus()
+        }
     }
 
 
@@ -806,8 +870,10 @@ fun ChatModeContent(
         modifier = modifier.onPreviewKeyEvent { event ->
             if (event.type == KeyEventType.KeyDown &&
                 !event.isMetaPressed &&
+                !event.isCtrlPressed &&
                 event.key != Key.Enter &&
-                event.key != Key.NumPadEnter
+                event.key != Key.NumPadEnter &&
+                !isSearchOpen
             ) {
                 focusRequester.requestFocus()
             }
@@ -837,6 +903,9 @@ fun ChatModeContent(
                 items(messages, key = { it.id }) { message ->
                     ChatBubble(
                         message = message,
+                        searchState = searchState,
+                        searchEnabled = searchEnabled,
+                        searchProjection = searchProjectionProvider(message.id),
                         onOpenPath = onOpenPath,
                         onToggleToolModifyReviewSelection = onToggleToolModifyReviewSelection,
                         onResolveToolModifyReview = onResolveToolModifyReview,
@@ -963,6 +1032,9 @@ private fun ChatFileDropTarget(
 @Composable
 private fun ChatBubble(
     message: ChatMessage,
+    searchState: ChatSearchState,
+    searchEnabled: Boolean,
+    searchProjection: ChatMessageSearchProjection?,
     onOpenPath: (String) -> Unit,
     onToggleToolModifyReviewSelection: (String, Long) -> Unit,
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
@@ -995,6 +1067,11 @@ private fun ChatBubble(
             alpha = revealAlpha
             translationY = revealOffsetPx
         }
+    val messageSearchProjection = searchProjection ?: remember(message.id, message.text, message.isUser) {
+        ChatSearchProjector().project(message)
+    }
+    val highlightColor = ChatSearchHighlightColor
+    val activeHighlightColor = ChatSearchActiveHighlightColor
 
     if (message.isUser) {
         val bubbleShape = RoundedCornerShape(16.dp)
@@ -1002,6 +1079,29 @@ private fun ChatBubble(
             handleColor = ChatSelectionHandleColor,
             backgroundColor = ChatSelectionBackgroundColor
         )
+        val partProjection = messageSearchProjection.parts.firstOrNull() as? PlainTextSearchPartProjection
+        val partMatchRanges = if (searchEnabled && partProjection != null) {
+            searchState.matchRangesForPart(message.id, partProjection.partIndex)
+        } else {
+            emptyList()
+        }
+        val activeRange = if (searchEnabled && partProjection != null) {
+            searchState.activeRangeForPart(message.id, partProjection.partIndex)
+        } else {
+            null
+        }
+        val highlightedUserText = remember(
+            message.text,
+            partMatchRanges,
+            activeRange,
+        ) {
+            (partProjection?.text ?: message.text).buildSearchHighlightedAnnotatedString(
+                matchRanges = partMatchRanges,
+                highlightColor = highlightColor,
+                activeHighlightColor = activeHighlightColor,
+                activeRange = activeRange,
+            )
+        }
 
         BoxWithConstraints(modifier = contentModifier) {
             val maxBubbleWidth = maxWidth * 0.7f
@@ -1048,7 +1148,7 @@ private fun ChatBubble(
                             CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
                                 SelectionContainer {
                                     Text(
-                                        text = message.text,
+                                        text = highlightedUserText,
                                         color = ChatUserTextColor,
                                         fontSize = 14.sp,
                                         lineHeight = 22.4.sp,
@@ -1126,7 +1226,6 @@ private fun ChatBubble(
                 }
 
                 if (message.text.isNotBlank()) {
-                    val parts = remember(message.text) { parseMarkdownContent(message.text) }
                     val baseFontSize = 14.sp
                     val baseStyle = TextStyle(
                         color = ChatAssistantTextColor,
@@ -1144,26 +1243,89 @@ private fun ChatBubble(
                         handleColor = ChatSelectionHandleColor,
                         backgroundColor = ChatSelectionBackgroundColor
                     )
+                    val linkSpanStyle = SpanStyle(
+                        color = typography.link.color,
+                        fontSize = typography.link.fontSize,
+                        fontWeight = typography.link.fontWeight,
+                        fontStyle = typography.link.fontStyle,
+                        letterSpacing = typography.link.letterSpacing,
+                        textDecoration = typography.link.textDecoration,
+                        background = typography.link.background,
+                    )
 
                     CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
                         SelectionContainer {
                             Column {
-                                parts.forEach { part ->
+                                messageSearchProjection.parts.forEach { part ->
+                                    val partMatchRanges = if (searchEnabled) {
+                                        searchState.matchRangesForPart(message.id, part.partIndex)
+                                    } else {
+                                        emptyList()
+                                    }
+                                    val activeRange = if (searchEnabled) {
+                                        searchState.activeRangeForPart(message.id, part.partIndex)
+                                    } else {
+                                        null
+                                    }
                                     when (part) {
-                                        is MarkdownPart.TextContent -> {
+                                        is MarkdownTextSearchPartProjection -> {
+                                            val annotator = if (partMatchRanges.isEmpty()) {
+                                                null
+                                            } else {
+                                                rememberSearchMarkdownAnnotator(
+                                                    matchRanges = partMatchRanges,
+                                                    highlightColor = highlightColor,
+                                                    activeHighlightColor = activeHighlightColor,
+                                                    activeRange = activeRange,
+                                                    linkSpanStyle = linkSpanStyle,
+                                                )
+                                            }
                                             Markdown(
-                                                content = part.content,
+                                                content = part.markdown,
                                                 colors = colors,
                                                 typography = typography,
+                                                annotator = annotator ?: com.mikepenz.markdown.model.markdownAnnotator(),
                                                 modifier = Modifier.fillMaxWidth()
                                             )
                                         }
 
-                                        is MarkdownPart.CodeContent -> {
+                                        is CodeBlockSearchPartProjection -> {
+                                            val highlightedCode = remember(
+                                                part.code,
+                                                partMatchRanges,
+                                                activeRange,
+                                            ) {
+                                                part.code.buildSearchHighlightedAnnotatedString(
+                                                    matchRanges = partMatchRanges,
+                                                    highlightColor = highlightColor,
+                                                    activeHighlightColor = activeHighlightColor,
+                                                    activeRange = activeRange,
+                                                )
+                                            }
                                             CodeBlockWithCopy(
                                                 code = part.code,
                                                 language = part.language,
-                                                style = codeStyle
+                                                style = codeStyle,
+                                                renderedCode = highlightedCode,
+                                            )
+                                        }
+
+                                        is PlainTextSearchPartProjection -> {
+                                            val highlightedAssistantText = remember(
+                                                part.text,
+                                                partMatchRanges,
+                                                activeRange,
+                                            ) {
+                                                part.text.buildSearchHighlightedAnnotatedString(
+                                                    matchRanges = partMatchRanges,
+                                                    highlightColor = highlightColor,
+                                                    activeHighlightColor = activeHighlightColor,
+                                                    activeRange = activeRange,
+                                                )
+                                            }
+                                            Text(
+                                                text = highlightedAssistantText,
+                                                style = baseStyle,
                                             )
                                         }
                                     }

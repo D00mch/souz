@@ -158,6 +158,7 @@ fun CodeBlockWithCopy(
     code: String,
     language: String?,
     style: TextStyle,
+    renderedCode: AnnotatedString = AnnotatedString(code),
 ) {
     val clipboardManager = LocalClipboardManager.current
     val displayLang = if (!language.isNullOrBlank()) language.uppercase() else "CODE"
@@ -221,7 +222,7 @@ fun CodeBlockWithCopy(
             }
 
             Text(
-                text = code,
+                text = renderedCode,
                 style = style,
                 modifier = Modifier.padding(12.dp)
             )

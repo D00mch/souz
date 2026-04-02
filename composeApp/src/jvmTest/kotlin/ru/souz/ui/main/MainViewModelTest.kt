@@ -75,6 +75,7 @@ import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import ru.souz.ui.main.usecases.VoiceInputUseCase
 import ru.souz.ui.common.FinderService
+import ru.souz.ui.main.search.ChatSearchState
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.EmptyCoroutineContext
@@ -689,6 +690,49 @@ class MainViewModelTest {
         } finally {
             harness.clear()
             tempFile.delete()
+        }
+    }
+
+    @Test
+    fun `search query builds results and navigation wraps`() = runTest(mainDispatcher) {
+        val harness = createHarness()
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            val firstMatch = ChatMessage(text = "alpha target", isUser = true)
+            val noMatch = ChatMessage(text = "beta", isUser = false)
+            val secondMatch = ChatMessage(text = "gamma TARGET", isUser = false)
+            forceUiState(
+                viewModel,
+                viewModel.uiState.value.copy(
+                    chatMessages = listOf(firstMatch, noMatch, secondMatch),
+                    chatSearch = ChatSearchState(),
+                ),
+            )
+
+            viewModel.handleEvent(MainEvent.UpdateChatSearchQuery("target"))
+
+            val initialState = awaitState(viewModel) { state ->
+                state.chatSearch.matches.size == 2 &&
+                    state.chatSearch.activeMatch?.messageId == firstMatch.id
+            }
+            assertEquals(listOf(firstMatch.id, secondMatch.id), initialState.chatSearch.matches.map { it.messageId })
+
+            viewModel.handleEvent(MainEvent.SelectNextChatSearchResult)
+            val nextState = awaitState(viewModel) { it.chatSearch.currentIndex == 1 }
+            assertEquals(secondMatch.id, nextState.chatSearch.activeMatch?.messageId)
+
+            viewModel.handleEvent(MainEvent.SelectNextChatSearchResult)
+            val wrappedState = awaitState(viewModel) { it.chatSearch.currentIndex == 0 }
+            assertEquals(firstMatch.id, wrappedState.chatSearch.activeMatch?.messageId)
+
+            viewModel.handleEvent(MainEvent.SelectPreviousChatSearchResult)
+            val previousState = awaitState(viewModel) { it.chatSearch.currentIndex == 1 }
+            assertEquals(secondMatch.id, previousState.chatSearch.activeMatch?.messageId)
+        } finally {
+            harness.clear()
         }
     }
 
