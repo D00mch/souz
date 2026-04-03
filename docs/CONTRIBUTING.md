@@ -1,5 +1,10 @@
 # Contributing
 
+## Environment Requirements
+
+- Java Development Kit (JDK) **21**
+- Use the project Gradle Wrapper (`./gradlew`)
+
 ## Code Style and Principles
 
 - Default [Kotlin Coding conventions](https://kotlinlang.org/docs/coding-conventions.html)
