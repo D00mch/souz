@@ -66,7 +66,7 @@ class SetupViewModel(
             )
             val supportsLocalInference = apiKeyAvailabilityUseCase.availability().supportsLocalInference
             setState {
-                copy(shouldProceed = hasAnyConfiguredKey || supportsLocalInference)
+                copy(shouldProceed = hasAnyConfiguredKey)
             }
             markOnboardingIfNeeded(hasAnyConfiguredKey || supportsLocalInference)
         }

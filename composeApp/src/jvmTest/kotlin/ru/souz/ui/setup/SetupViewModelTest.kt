@@ -78,10 +78,10 @@ class SetupViewModelTest {
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
-        assertFalse(state.canProceed)
-        assertFalse(state.shouldProceed)
         assertEquals(0, state.configuredKeysCount)
-        verify(exactly = 0) { settingsProvider.needsOnboarding = true }
+        assertFalse(state.shouldProceed)
+        assertEquals(state.supportsLocalInference, state.canProceed)
+        verify(exactly = if (state.supportsLocalInference) 1 else 0) { settingsProvider.needsOnboarding = true }
     }
 
     @Test
