@@ -7,9 +7,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+BUILD_GRADLE="$PROJECT_DIR/composeApp/build.gradle.kts"
 MAIN_RELEASE_DIR="$PROJECT_DIR/composeApp/build/compose/binaries/main-release"
 APP_OUTPUT_DIR="$MAIN_RELEASE_DIR/app"
 DMG_OUTPUT_DIR="$MAIN_RELEASE_DIR/dmg"
+DEST_DIR="$PROJECT_DIR/dest/homebrew"
 COMPOSE_RUNTIME_CACHE_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/main/runtime"
 COMPOSE_CHECK_RUNTIME_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/checkRuntime"
 
@@ -25,6 +27,10 @@ Examples:
   ./build-logic/kmp-build-macos-dev.sh --jdk-arch arm64
   ./build-logic/kmp-build-macos-dev.sh --jdk-arch x86_64
 EOF
+}
+
+extract_version() {
+  sed -n 's/.*packageVersion = "\(.*\)".*/\1/p' "$BUILD_GRADLE" | head -n 1
 }
 
 JDK_ARCH_INPUT=""
@@ -76,6 +82,24 @@ if [[ ! -x "$JDK_HOME/bin/java" ]]; then
   echo "Resolved JDK is invalid: $JDK_HOME" >&2
   exit 1
 fi
+
+VERSION="$(extract_version)"
+if [[ -z "$VERSION" ]]; then
+  echo "Unable to determine packageVersion from $BUILD_GRADLE." >&2
+  exit 1
+fi
+
+case "$JDK_ARCH" in
+  arm64)
+    DMG_ARCH_SUFFIX="aarch64"
+    ;;
+  x86_64)
+    DMG_ARCH_SUFFIX="X86_64"
+    ;;
+esac
+
+DEST_VERSION_DIR="$DEST_DIR/$VERSION"
+DEST_DMG_PATH="$DEST_VERSION_DIR/Souz_${DMG_ARCH_SUFFIX}-$VERSION.dmg"
 
 if ! command -v security >/dev/null 2>&1; then
   echo "Missing 'security' tool. This script must run on macOS." >&2
@@ -163,6 +187,10 @@ if [[ -z "$DMG_PATH" ]]; then
   echo "Build finished, but no DMG was found in: $DMG_OUTPUT_DIR" >&2
   exit 1
 fi
+
+mkdir -p "$DEST_VERSION_DIR"
+mv -f "$DMG_PATH" "$DEST_DMG_PATH"
+DMG_PATH="$DEST_DMG_PATH"
 
 echo "Build verification passed."
 echo "App bundle: $APP_BUNDLE_PATH"

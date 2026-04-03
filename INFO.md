@@ -35,6 +35,7 @@ If you are not sure about something, left a note for other developers to review.
 ├── docs/                                   # Project docs extracted from top-level notes
 │   ├── config-store-security.md            # ConfigStore encryption and secret handling
 │   ├── file-tools.md                       # File tool guarantees and path conventions
+│   ├── homebrew.md                         # Homebrew cask distribution and release notes
 │   ├── release.md                          # Release-specific notes
 │   ├── telemetry-backend.md                # Telemetry backend contract
 │   └── voice-transcription.md              # Voice transcription routing and upload behavior
