@@ -24,7 +24,7 @@ Usage:
   prepare-homebrew-release.sh [options]
 
 Generate the Homebrew cask from DMGs already present in:
-  dest/<version>/
+  dest/homebrew/<version>/
 
 The script expects:
   Souz_aarch64-<version>.dmg
@@ -167,7 +167,7 @@ if [[ -z "$OUTPUT" ]]; then
 fi
 
 OUTPUT_DIR="$(dirname "$OUTPUT")"
-DMG_INPUT_DIR="$PROJECT_DIR/dest/$VERSION"
+DMG_INPUT_DIR="$PROJECT_DIR/dest/homebrew/$VERSION"
 ARM64_DMG_PATH="$DMG_INPUT_DIR/Souz_aarch64-$VERSION.dmg"
 INTEL_DMG_PATH="$DMG_INPUT_DIR/Souz_X86_64-$VERSION.dmg"
 RELEASE_BASE_URL="https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG"

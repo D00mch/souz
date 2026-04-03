@@ -56,5 +56,5 @@ graph TD
 
 - [KMP release documentation](https://github.com/JetBrains/compose-multiplatform/blob/master/tutorials/Signing_and_notarization_on_macOS/README.md).
 - Use [kmp-build-macos-universal.sh](build-logic/kmp-build-macos-universal.sh) script to prepare app bundles.
-- Use [kmp-build-macos-dev.sh](build-logic/kmp-build-macos-dev.sh) to build notarized arch-specific DMGs and export each one to `dest/<version>/`.
-- Use [prepare-homebrew-release.sh](build-logic/prepare-homebrew-release.sh) to generate the `souz-ai` tap cask from the DMGs in `dest/<version>/`.
+- Use [kmp-build-macos-dev.sh](build-logic/kmp-build-macos-dev.sh) to build notarized arch-specific DMGs and export each one to `dest/homebrew/<version>/`.
+- Use [prepare-homebrew-release.sh](build-logic/prepare-homebrew-release.sh) to generate the `souz-ai` tap cask from the DMGs in `dest/homebrew/<version>/`.
