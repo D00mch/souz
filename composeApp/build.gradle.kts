@@ -207,7 +207,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Pkg)
             packageName = distributionPackageName
-            packageVersion = "1.0.4"
+            packageVersion = "1.0.5"
             // Compose copies app resources from <root>/common + OS/target subfolders.
             appResourcesRootDir.set(preparedAppResourcesDir)
 

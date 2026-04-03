@@ -44,6 +44,10 @@ bin/
 ### Mac OS ###
 .DS_Store
 
+### Local release output ###
+/dest/
+/desk/
+
 ### Local native/vendor artifacts ###
 /third_party/llama.cpp/
 /native/llama-bridge/build-*/
