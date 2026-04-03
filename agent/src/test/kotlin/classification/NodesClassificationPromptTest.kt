@@ -169,6 +169,46 @@ class NodesClassificationPromptTest {
         assertTrue(historyMessage.contains("ASSISTANT: I found a few typos."))
     }
 
+    @Test
+    fun `classifier body ignores injected context messages`() {
+        val localClassifier = CapturingClassifier(
+            UserMessageClassifier.Reply(
+                categories = listOf(ToolCategory.FILES),
+                confidence = 90.0,
+            )
+        )
+        val apiClassifier = CapturingClassifier(
+            UserMessageClassifier.Reply(
+                categories = listOf(ToolCategory.FILES),
+                confidence = 90.0,
+            )
+        )
+
+        executeClassification(
+            input = "do it",
+            history = listOf(
+                LLMRequest.Message(LLMMessageRole.system, "system"),
+                LLMRequest.Message(LLMMessageRole.user, "Please fix typos in `/tmp/article.md`"),
+                LLMRequest.Message(LLMMessageRole.user, "<context>\n- [General fact]: Current date and time\n</context>"),
+                LLMRequest.Message(LLMMessageRole.assistant, "The file is fixed. I can also apply a couple of style improvements."),
+                LLMRequest.Message(LLMMessageRole.user, "<context>\n- [Default browser]: Safari\n</context>"),
+                LLMRequest.Message(LLMMessageRole.assistant, "I would only apply the optional style improvements now."),
+                LLMRequest.Message(LLMMessageRole.user, "do it"),
+            ),
+            localClassifier = localClassifier,
+            apiClassifier = apiClassifier,
+        )
+
+        val body: LLMRequest.Chat = restJsonMapper.readValue(localClassifier.requireBody())
+        val historyMessage = body.messages[1].content
+
+        assertTrue(historyMessage.contains("USER: Please fix typos in `/tmp/article.md`"))
+        assertTrue(historyMessage.contains("ASSISTANT: I would only apply the optional style improvements now."))
+        assertFalse(historyMessage.contains("<context>"))
+        assertFalse(historyMessage.contains("Default browser"))
+        assertFalse(historyMessage.contains("Current date and time"))
+    }
+
     private fun mockTelegramFilteredToolsSettings(telegramConnected: Boolean): AgentToolsFilter {
         return mockk<AgentToolsFilter>().also { toolsSettings ->
             every { toolsSettings.applyFilter(any()) } answers {
