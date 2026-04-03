@@ -24,7 +24,7 @@ Relevant current packaging details:
 
 ## Generate the cask
 
-This repo uses a single script, [prepare-homebrew-release.sh](/Users/dumch/work/souz/build-logic/prepare-homebrew-release.sh), to calculate SHA-256 values from the exported DMGs in `dest/<version>/`, generate `souz-ai.rb`, and copy it into the tap repo.
+This repo uses a single script, [prepare-homebrew-release.sh](/Users/dumch/work/souz/build-logic/prepare-homebrew-release.sh), to calculate SHA-256 values from the exported DMGs in `dest/homebrew/<version>/`, generate `souz-ai.rb`, and copy it into the tap repo.
 
 ### Build Then Generate
 
@@ -35,7 +35,7 @@ Build both architectures first:
 ./build-logic/kmp-build-macos-dev.sh --jdk-arch x86_64
 ```
 
-The build script exports each finished DMG to `dest/<version>/`, so after the second run you should have both:
+The build script exports each finished DMG to `dest/homebrew/<version>/`, so after the second run you should have both:
 
 - `Souz_aarch64-<version>.dmg`
 - `Souz_X86_64-<version>.dmg`
@@ -51,7 +51,7 @@ This build flow requires the usual signing and notarization environment variable
 The Homebrew script reads these DMGs directly from:
 
 ```text
-dest/<version>/
+dest/homebrew/<version>/
 ```
 
 By default, it writes:
