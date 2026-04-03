@@ -1,17 +1,17 @@
-# Souz 
+# Souz
 
 [Website](https://souz.app)
 
-A desktop AI Agent with focus on security. The principles are described in:
+A desktop AI agent focused on security. The principles are described in:
 
 - [How to Build AI Agents You Can Actually Trust](https://medium.com/@liverm0r/building-ai-agents-for-non-technical-users-50d24c3184a8)
 - [The same article in Russian](https://habr.com/ru/articles/1010236/)
 
-# Developers notes
+# Developer notes
  
-Take a look at [contributing page](docs/CONTRIBUTING.md).
+Take a look at the [contributing page](docs/CONTRIBUTING.md).
 
-Recommendd IntelliJ IDEA plugins:
+Recommended IntelliJ IDEA plugins:
 
 - Kotlin Multiplatform;
 - Compose Multiplatform;
