@@ -20,7 +20,6 @@ data class SetupState(
     val supportsLocalInference: Boolean = false,
     val configuredKeysCount: Int = 0,
     val canProceed: Boolean = false,
-    val shouldProceed: Boolean = false,
     val hasOpenedVoiceSelection: Boolean = false,
     val hasShownVoiceReminderOnProceed: Boolean = false,
     val showVoiceReminderDialog: Boolean = false,

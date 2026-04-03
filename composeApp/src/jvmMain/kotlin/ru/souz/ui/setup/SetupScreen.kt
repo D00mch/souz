@@ -87,9 +87,6 @@ fun SetupScreen(
             }
         }
     }
-    LaunchedEffect(state.shouldProceed) {
-        if (state.shouldProceed) onOpenMain()
-    }
 
     SetupScreenContent(
         state = state,

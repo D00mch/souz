@@ -45,7 +45,7 @@ class SetupViewModelTest {
     }
 
     @Test
-    fun `setup auto-proceeds when at least one key exists`() = runTest(dispatcher) {
+    fun `setup enables proceed when at least one key exists`() = runTest(dispatcher) {
         val settingsProvider = settingsProviderStub(
             giga = "",
             qwen = "qwen-token",
@@ -59,8 +59,25 @@ class SetupViewModelTest {
 
         val state = viewModel.uiState.value
         assertTrue(state.canProceed)
-        assertTrue(state.shouldProceed)
         assertEquals(1, state.configuredKeysCount)
+        verify(exactly = 0) { settingsProvider.needsOnboarding = true }
+    }
+
+    @Test
+    fun `proceed marks onboarding as needed for first-time setup`() = runTest(dispatcher) {
+        val settingsProvider = settingsProviderStub(
+            giga = "",
+            qwen = "qwen-token",
+            aiTunnel = "",
+            speech = "",
+            onboardingCompleted = false,
+        )
+        val viewModel = createViewModel(settingsProvider)
+
+        advanceUntilIdle()
+        viewModel.send(SetupEvent.Proceed)
+        advanceUntilIdle()
+
         verify { settingsProvider.needsOnboarding = true }
     }
 
@@ -79,7 +96,6 @@ class SetupViewModelTest {
 
         val state = viewModel.uiState.value
         assertFalse(state.canProceed)
-        assertFalse(state.shouldProceed)
         assertEquals(0, state.configuredKeysCount)
         verify(exactly = 0) { settingsProvider.needsOnboarding = true }
     }
