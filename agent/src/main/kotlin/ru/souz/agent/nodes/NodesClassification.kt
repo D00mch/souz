@@ -25,10 +25,18 @@ internal class NodesClassification(
 ) {
     private val l = LoggerFactory.getLogger(NodesClassification::class.java)
 
+    private companion object {
+        const val DEFAULT_HISTORY_WINDOW = 3
+        const val EXPANDED_HISTORY_WINDOW = 4
+        const val SHORT_MESSAGE_CHAR_THRESHOLD = 24
+        const val SHORT_MESSAGE_WORD_THRESHOLD = 4
+        val WORD_REGEX = Regex("""[\p{L}\p{N}]+(?:['’_-][\p{L}\p{N}]+)*""")
+    }
+
     /**
      * Classifies the user input and selects tools for the current step.
      *
-     * Modifies [AgentContext.activeTools] based on the classification algorithm and [ToolsSettings].
+     * Modifies [AgentContext.activeTools] based on the classification algorithm and [AgentToolCatalog].
      */
     fun node(name: String = "select categories"): Node<String, String> = Node(name) { ctx: AgentContext<String> ->
         val categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>> =
@@ -77,10 +85,13 @@ internal class NodesClassification(
         history: List<LLMRequest.Message>,
         categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>>
     ): LLMRequest.Chat {
-        val smallHistory = history.takeLast(if (history.size > 3) 2 else 0).joinToString("\n") { it.content }
+        val formattedHistory = historyForClassification(userText, history)
+            .joinToString(separator = "\n\n") { message ->
+                "${message.role.name.uppercase()}: ${message.content.trim()}"
+            }
         val messages = listOf(
             LLMRequest.Message(LLMMessageRole.system, buildPrompt(categoryStates)),
-            LLMRequest.Message(LLMMessageRole.user, "History:\n$smallHistory\n"),
+            LLMRequest.Message(LLMMessageRole.user, "History:\n$formattedHistory\n"),
             LLMRequest.Message(LLMMessageRole.user, "New message:\n$userText"),
         )
         return LLMRequest.Chat(
@@ -88,6 +99,42 @@ internal class NodesClassification(
             messages = messages,
             functions = emptyList(),
         )
+    }
+
+    private fun historyForClassification(
+        userText: String,
+        history: List<LLMRequest.Message>,
+    ): List<LLMRequest.Message> {
+        val conversationHistory = history
+            .filterNot { it.role == LLMMessageRole.system }
+            .filterNot { it.isInjectedContext() }
+            .dropCurrentUserTurn(userText)
+
+        val historyWindow = if (isUserPromptTooShort(userText)) {
+            EXPANDED_HISTORY_WINDOW
+        } else {
+            DEFAULT_HISTORY_WINDOW
+        }
+
+        return conversationHistory.takeLast(historyWindow)
+    }
+
+    private fun LLMRequest.Message.isInjectedContext(): Boolean =
+        role == LLMMessageRole.user && content.contains("<context>")
+
+    private fun List<LLMRequest.Message>.dropCurrentUserTurn(userText: String): List<LLMRequest.Message> {
+        val lastMessage = lastOrNull() ?: return this
+        if (lastMessage.role != LLMMessageRole.user) return this
+        if (lastMessage.content != userText) return this
+        return dropLast(1)
+    }
+
+    private fun isUserPromptTooShort(userText: String): Boolean {
+        val normalizedText = userText.trim()
+        if (normalizedText.isBlank()) return false
+        if (normalizedText.length <= SHORT_MESSAGE_CHAR_THRESHOLD) return true
+        val wordsCount = WORD_REGEX.findAll(normalizedText).count()
+        return wordsCount <= SHORT_MESSAGE_WORD_THRESHOLD
     }
 
     fun buildPrompt(toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>): String {
@@ -111,7 +158,9 @@ internal class NodesClassification(
 1. Мысленно разложи запрос на шаги, условия и зависимые действия.
 2. Если запрос составной ("сначала", "потом", "если"), учти категории, необходимые для каждого шага.
 3. Выбирай категорию только если инструмент из неё действительно нужен, а не просто тема разговора пересекается с ней.
-4. Учитывай историю только если новый запрос явно продолжает или уточняет её.
+4. Если новый запрос сам по себе достаточно конкретен, опирайся прежде всего на него.
+5. Если новый запрос короткий или в нем пропущен объект действия, восстанови недостающий контекст из недавней истории и только потом выбери категорию.
+6. Не путай работу с файлами и работу с выделенным текстом: TEXT_REPLACE подходит только когда речь именно про текущий selection.
 
 $categoriesInfoSection
 $examplesSection
@@ -119,6 +168,7 @@ $examplesSection
 Проверка перед ответом:
 - не повторяй категории
 - не добавляй пояснений, кавычек или markdown
+- если новый запрос короткий, сначала восстанови, что именно нужно сделать по истории, и только потом выбирай категорию
 
 Формат ответа:
 CATEGORY1,CATEGORY2 0-100
@@ -170,7 +220,8 @@ CATEGORY1,CATEGORY2 0-100
             "найди в закладках обзор фондового рынка",
             "переключи вкладку на YouTube",
             "открой новую вкладку",
-            "поищи в истории браузера"
+            "поищи в истории браузера",
+            "какие сайты я чаще всего посещаю"
         )
 
         WEB_SEARCH -> listOf(
