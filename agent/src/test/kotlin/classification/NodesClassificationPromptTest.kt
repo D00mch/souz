@@ -21,8 +21,10 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.UserMessageClassifier
+import com.fasterxml.jackson.module.kotlin.readValue
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -130,6 +132,43 @@ class NodesClassificationPromptTest {
         coVerify(exactly = 1) { apiClassifier.classify(any()) }
     }
 
+    @Test
+    fun `classifier body keeps focused history for concrete request`() {
+        val localClassifier = CapturingClassifier(
+            UserMessageClassifier.Reply(
+                categories = listOf(ToolCategory.FILES),
+                confidence = 90.0,
+            )
+        )
+        val apiClassifier = CapturingClassifier(
+            UserMessageClassifier.Reply(
+                categories = listOf(ToolCategory.FILES),
+                confidence = 90.0,
+            )
+        )
+
+        executeClassification(
+            input = "Fix typos in `/tmp/notes.md` and apply the optional style edits",
+            history = listOf(
+                LLMRequest.Message(LLMMessageRole.system, "system"),
+                LLMRequest.Message(LLMMessageRole.user, "Old request about telegram"),
+                LLMRequest.Message(LLMMessageRole.assistant, "Old telegram answer"),
+                LLMRequest.Message(LLMMessageRole.user, "Please check `/tmp/notes.md`"),
+                LLMRequest.Message(LLMMessageRole.assistant, "I found a few typos."),
+                LLMRequest.Message(LLMMessageRole.user, "Fix typos in `/tmp/notes.md` and apply the optional style edits"),
+            ),
+            localClassifier = localClassifier,
+            apiClassifier = apiClassifier,
+        )
+
+        val body: LLMRequest.Chat = restJsonMapper.readValue(localClassifier.requireBody())
+        val historyMessage = body.messages[1].content
+
+        assertFalse(historyMessage.contains("Old request about telegram"))
+        assertTrue(historyMessage.contains("USER: Please check `/tmp/notes.md`"))
+        assertTrue(historyMessage.contains("ASSISTANT: I found a few typos."))
+    }
+
     private fun mockTelegramFilteredToolsSettings(telegramConnected: Boolean): AgentToolsFilter {
         return mockk<AgentToolsFilter>().also { toolsSettings ->
             every { toolsSettings.applyFilter(any()) } answers {
@@ -155,6 +194,46 @@ class NodesClassificationPromptTest {
         return classification.buildPrompt(filteredTools)
     }
 
+    private fun executeClassification(
+        input: String,
+        history: List<LLMRequest.Message>,
+        localClassifier: UserMessageClassifier,
+        apiClassifier: UserMessageClassifier,
+    ) {
+        val settingsProvider = mockk<AgentSettingsProvider> {
+            every { gigaModel } returns LLMModel.Max
+        }
+        val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns defaultTools }
+        val toolsSettings = mockk<AgentToolsFilter> {
+            every { applyFilter(any()) } answers { firstArg() }
+        }
+        val classification = NodesClassification(
+            settingsProvider = settingsProvider,
+            logObjectMapper = ObjectMapper(),
+            apiClassifier = apiClassifier,
+            localClassifier = localClassifier,
+            toolCatalog = toolsFactory,
+            toolsFilter = toolsSettings,
+        )
+
+        runBlocking {
+            classification.node().execute(
+                ctx = AgentContext(
+                    input = input,
+                    settings = AgentSettings(
+                        model = LLMModel.Max.alias,
+                        temperature = 0.2f,
+                        toolsByCategory = defaultTools,
+                    ),
+                    history = history,
+                    activeTools = emptyList(),
+                    systemPrompt = "",
+                ),
+                runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
+            )
+        }
+    }
+
     private fun dummySetup(name: String): LLMToolSetup = object : LLMToolSetup {
         override val fn: LLMRequest.Function = LLMRequest.Function(
             name = name,
@@ -166,5 +245,18 @@ class NodesClassificationPromptTest {
         override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message {
             return LLMRequest.Message(LLMMessageRole.function, "ok")
         }
+    }
+
+    private class CapturingClassifier(
+        private val reply: UserMessageClassifier.Reply,
+    ) : UserMessageClassifier {
+        private var body: String? = null
+
+        override suspend fun classify(body: String): UserMessageClassifier.Reply {
+            this.body = body
+            return reply
+        }
+
+        fun requireBody(): String = checkNotNull(body) { "Classifier was not invoked" }
     }
 }
