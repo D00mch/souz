@@ -22,6 +22,8 @@ import ru.souz.llms.BuildEdition
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.local.LocalModelProfiles
+import ru.souz.llms.local.LocalModelStore
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -99,6 +101,33 @@ class SetupViewModelTest {
         viewModel.send(SetupEvent.Proceed)
         advanceUntilIdle()
 
+        verify(exactly = 0) { settingsProvider.needsOnboarding = true }
+    }
+
+    @Test
+    fun `setup skips onboarding flag when selected local model is already downloaded`() = runTest(dispatcher) {
+        val settingsProvider = settingsProviderStub(
+            giga = "",
+            qwen = "",
+            aiTunnel = "",
+            speech = "",
+            onboardingCompleted = false,
+            gigaModel = LLMModel.LocalQwen3_4B_Instruct_2507,
+        )
+        val localModelStore = mockk<LocalModelStore>(relaxed = true)
+        every { localModelStore.isPresent(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507) } returns true
+
+        val viewModel = createViewModel(
+            settingsProvider = settingsProvider,
+            localModelStore = localModelStore,
+        )
+
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(0, state.configuredKeysCount)
+        assertFalse(state.shouldProceed)
+        assertEquals(state.supportsLocalInference, state.canProceed)
         verify(exactly = 0) { settingsProvider.needsOnboarding = true }
     }
 
@@ -284,7 +313,10 @@ class SetupViewModelTest {
         return candidates.any { it.exists() }
     }
 
-    private fun createViewModel(settingsProvider: SettingsProvider): SetupViewModel {
+    private fun createViewModel(
+        settingsProvider: SettingsProvider,
+        localModelStore: LocalModelStore = mockk(relaxed = true),
+    ): SetupViewModel {
         val say = mockk<Say>(relaxed = true)
         val llmBuildProfile = LlmBuildProfile(settingsProvider)
         val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
@@ -292,6 +324,7 @@ class SetupViewModelTest {
             bindSingleton<SettingsProvider> { settingsProvider }
             bindSingleton<LlmBuildProfile> { llmBuildProfile }
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
+            bindSingleton<LocalModelStore> { localModelStore }
             bindSingleton<Say> { say }
         }
         return SetupViewModel(di)

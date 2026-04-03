@@ -13,6 +13,8 @@ import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.local.LocalModelProfiles
+import ru.souz.llms.local.LocalModelStore
 import ru.souz.ui.BaseViewModel
 import ru.souz.ui.common.openProviderLink
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
@@ -26,6 +28,7 @@ class SetupViewModel(
     private val settingsProvider: SettingsProvider by di.instance()
     private val llmBuildProfile: LlmBuildProfile by di.instance()
     private val apiKeyAvailabilityUseCase: ApiKeyAvailabilityUseCase by di.instance()
+    private val localModelStore: LocalModelStore by di.instance()
     private val say: Say by di.instance()
     private val startedWithoutAnyApiKeys: Boolean = !apiKeyAvailabilityUseCase.hasAnyConfiguredKey(
         values = ApiKeyValues(
@@ -299,9 +302,21 @@ class SetupViewModel(
     }
 
     private fun markOnboardingIfNeeded(canProceed: Boolean) {
-        if (canProceed && !settingsProvider.onboardingCompleted) {
-            settingsProvider.needsOnboarding = true
+        if (!canProceed || settingsProvider.onboardingCompleted) return
+        if (isSelectedLocalModelDownloaded()) {
+            settingsProvider.needsOnboarding = false
+            return
         }
+        settingsProvider.needsOnboarding = true
+    }
+
+    private fun isSelectedLocalModelDownloaded(): Boolean {
+        val selectedProfile = LocalModelProfiles.forAlias(settingsProvider.gigaModel.alias) ?: return false
+        return runCatching { localModelStore.isPresent(selectedProfile) }
+            .getOrElse { error ->
+                l.warn("Failed to check local model availability for onboarding skip", error)
+                false
+            }
     }
 
     /** Choose default LLM base on the keys provided */
