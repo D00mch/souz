@@ -57,21 +57,19 @@ fun main() {
                 telemetryService,
             ) {
                 val closed = AtomicBoolean(false)
-                ({
+                fun closeServices() {
                     if (!closed.compareAndSet(false, true)) {
-                        Unit
-                    } else {
-                        startupLog.info("Shutting down services")
-                        runCatching { localLlamaRuntime.close() }
-                            .onFailure { startupLog.warn("Failed to close local runtime: {}", it.message) }
-                        runCatching { mcpClientManager.close() }
-                            .onFailure { startupLog.warn("Failed to close MCP manager: {}", it.message) }
-                        runCatching { telegramBotController.close() }
-                            .onFailure { startupLog.warn("Failed to close Telegram bot controller: {}", it.message) }
-                        runCatching { telemetryService.close() }
-                            .onFailure { startupLog.warn("Failed to close telemetry service: {}", it.message) }
+                        return
                     }
-                })
+
+                    startupLog.info("Shutting down services")
+                    closeService("local runtime") { localLlamaRuntime.close() }
+                    closeService("MCP manager") { mcpClientManager.close() }
+                    closeService("Telegram bot controller") { telegramBotController.close() }
+                    closeService("telemetry service") { telemetryService.close() }
+                }
+
+                ::closeServices
             }
 
             DisposableEffect(Unit) {
@@ -199,3 +197,7 @@ private fun logStartupPlatformInfo() {
         System.getProperty("java.runtime.version").orEmpty(),
     )
 }
+
+private fun closeService(serviceName: String, closeAction: () -> Unit) =
+    runCatching(closeAction)
+        .onFailure { startupLog.warn("Failed to close {}: {}", serviceName, it.message) }
