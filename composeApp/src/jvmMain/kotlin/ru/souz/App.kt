@@ -24,7 +24,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.kodein.di.compose.localDI
+import org.kodein.di.instance
 import ru.souz.Screen.*
+import ru.souz.db.SettingsProvider
 import ru.souz.tool.ToolCategory
 import ru.souz.ui.AppTheme
 import ru.souz.ui.main.MainScreen
@@ -44,7 +47,11 @@ fun App(
     onMinimizeWindow: () -> Unit,
     onToggleMaximizeWindow: () -> Unit,
 ) {
-    var currentScreen: Screen by remember { mutableStateOf(Setup) }
+    val di = localDI()
+    val settingsProvider: SettingsProvider by di.instance()
+    var currentScreen: Screen by remember {
+        mutableStateOf(if (settingsProvider.onboardingCompleted) Main else Setup)
+    }
     var toolsScreen by remember { mutableStateOf<Tools?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()

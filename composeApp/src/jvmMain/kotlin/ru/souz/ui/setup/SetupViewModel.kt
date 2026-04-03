@@ -54,21 +54,6 @@ class SetupViewModel(
                 openAiKey = openAiKey,
                 saluteSpeechKey = saluteSpeechKey,
             )
-            val hasAnyConfiguredKey = apiKeyAvailabilityUseCase.hasAnyConfiguredKey(
-                values = ApiKeyValues(
-                gigaChatKey = gigaChatKey,
-                qwenChatKey = qwenChatKey,
-                aiTunnelKey = aiTunnelKey,
-                anthropicKey = anthropicKey,
-                openaiKey = openAiKey,
-                saluteSpeechKey = saluteSpeechKey,
-                ),
-            )
-            val supportsLocalInference = apiKeyAvailabilityUseCase.availability().supportsLocalInference
-            setState {
-                copy(shouldProceed = hasAnyConfiguredKey || supportsLocalInference)
-            }
-            markOnboardingIfNeeded(hasAnyConfiguredKey || supportsLocalInference)
         }
     }
 

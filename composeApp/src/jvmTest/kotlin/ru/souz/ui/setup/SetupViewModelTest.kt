@@ -11,7 +11,6 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import ru.souz.service.audio.Say
@@ -35,7 +34,6 @@ class SetupViewModelTest {
 
     @BeforeTest
     fun setUp() {
-        assumeTrue(hasOpenGlRuntime(), "Skipping SetupViewModelTest: libGL is unavailable")
         Dispatchers.setMain(dispatcher)
     }
 
@@ -45,7 +43,7 @@ class SetupViewModelTest {
     }
 
     @Test
-    fun `setup auto-proceeds when at least one key exists`() = runTest(dispatcher) {
+    fun `setup enables proceed when at least one key exists`() = runTest(dispatcher) {
         val settingsProvider = settingsProviderStub(
             giga = "",
             qwen = "qwen-token",
@@ -59,8 +57,33 @@ class SetupViewModelTest {
 
         val state = viewModel.uiState.value
         assertTrue(state.canProceed)
-        assertTrue(state.shouldProceed)
         assertEquals(1, state.configuredKeysCount)
+        verify(exactly = 0) { settingsProvider.needsOnboarding = true }
+    }
+
+    @Test
+    fun `proceed marks onboarding as needed for first-time setup`() = runTest(dispatcher) {
+        val settingsProvider = settingsProviderStub(
+            giga = "",
+            qwen = "qwen-token",
+            aiTunnel = "",
+            speech = "",
+            onboardingCompleted = false,
+        )
+        val viewModel = createViewModel(settingsProvider)
+
+        advanceUntilIdle()
+        viewModel.send(SetupEvent.Proceed)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showVoiceReminderDialog)
+        verify(exactly = 0) { settingsProvider.needsOnboarding = true }
+
+        viewModel.send(SetupEvent.DismissVoiceReminderDialog)
+        advanceUntilIdle()
+        viewModel.send(SetupEvent.Proceed)
+        advanceUntilIdle()
+
         verify { settingsProvider.needsOnboarding = true }
     }
 
@@ -79,7 +102,6 @@ class SetupViewModelTest {
 
         val state = viewModel.uiState.value
         assertFalse(state.canProceed)
-        assertFalse(state.shouldProceed)
         assertEquals(0, state.configuredKeysCount)
         verify(exactly = 0) { settingsProvider.needsOnboarding = true }
     }
@@ -271,17 +293,6 @@ class SetupViewModelTest {
 
         assertFalse(viewModel.uiState.value.useEnglishVersion)
         verify { settingsProvider.regionProfile = REGION_RU }
-    }
-
-    private fun hasOpenGlRuntime(): Boolean {
-        val mapped = System.mapLibraryName("GL")
-        val candidates = listOf(
-            java.io.File("/usr/lib/x86_64-linux-gnu/$mapped"),
-            java.io.File("/lib/x86_64-linux-gnu/$mapped"),
-            java.io.File("/usr/lib64/$mapped"),
-            java.io.File("/usr/lib/$mapped"),
-        )
-        return candidates.any { it.exists() }
     }
 
     private fun createViewModel(settingsProvider: SettingsProvider): SetupViewModel {
