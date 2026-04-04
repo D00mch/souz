@@ -40,7 +40,7 @@ object LocalStrictJsonContract {
         appendLine("""2. {"type":"tool_calls","calls":[{"id":"call_1","name":"ToolName","arguments":{}}]}""")
         appendLine("Rules:")
         appendLine("- Never emit markdown, comments, XML, or prose outside the JSON object.")
-        appendLine("- Never emit control tokens or wrappers such as <|...|>, <tool_call>, <tool_result>, or <think>.")
+        appendLine("- Never emit control tokens or wrappers such as <|...|>, <|turn>, <turn|>, <|tool_call>, <tool_call|>, <tool_call>, <tool_result>, or <think>.")
         appendLine("- In a final response, \"content\" must be plain human-readable text, not another JSON object like {\"result\":\"...\"}.")
         appendLine("- Use \"tool_calls\" when any tool is required before answering.")
         appendLine("- Tool call ids must be unique within the response.")
@@ -329,7 +329,7 @@ class LocalStrictJsonParser {
     )
 
     private companion object {
-        val CONTROL_TOKEN_REGEX = Regex("""<\|.*?\|>""")
+        val CONTROL_TOKEN_REGEX = Regex("""<\|[^>\r\n]*\|>|<\|[A-Za-z0-9_:-]+>|<[A-Za-z0-9_:-]+\|>""")
     }
 
     private fun parseFinal(

@@ -1,0 +1,62 @@
+diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-metal-device.m
+index 17d51b11b..db5af264e 100644
+--- a/ggml/src/ggml-metal/ggml-metal-device.m
++++ b/ggml/src/ggml-metal/ggml-metal-device.m
+@@ -102,6 +102,29 @@ int ggml_metal_pipeline_max_theads_per_threadgroup(struct ggml_metal_pipeline_wi
+     NSLock * lock;
+ };
+ 
++static void ggml_metal_configure_compile_options(ggml_metal_device_t dev, MTLCompileOptions * options) {
++#if TARGET_OS_OSX && __MAC_OS_X_VERSION_MAX_ALLOWED >= 260000
++    if (ggml_metal_device_get_props(dev)->has_tensor) {
++        if (@available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 2.0, *)) {
++            options.languageVersion = MTLLanguageVersion4_0;
++            return;
++        }
++    }
++#endif
++
++#if TARGET_OS_OSX && __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
++    if (ggml_metal_device_get_props(dev)->has_bfloat) {
++        if (@available(macOS 14.0, iOS 17.0, tvOS 17.0, visionOS 1.0, *)) {
++            options.languageVersion = MTLLanguageVersion3_1;
++            return;
++        }
++    }
++#endif
++
++    GGML_UNUSED(dev);
++    GGML_UNUSED(options);
++}
++
+ ggml_metal_library_t ggml_metal_library_init(ggml_metal_device_t dev) {
+     id<MTLLibrary> library = nil;
+     id<MTLDevice> device = ggml_metal_device_get_obj(dev);
+@@ -226,6 +249,7 @@ ggml_metal_library_t ggml_metal_library_init(ggml_metal_device_t dev) {
+ 
+                 MTLCompileOptions * options = [MTLCompileOptions new];
+                 options.preprocessorMacros = prep;
++                ggml_metal_configure_compile_options(dev, options);
+ 
+                 //[options setFastMathEnabled:false];
+ 
+@@ -283,6 +307,7 @@ ggml_metal_library_t ggml_metal_library_init_from_source(ggml_metal_device_t dev
+ 
+         MTLCompileOptions * options = [MTLCompileOptions new];
+         options.preprocessorMacros = prep;
++        ggml_metal_configure_compile_options(dev, options);
+ 
+         library = [device newLibraryWithSource:src options:options error:&error];
+         if (error) {
+@@ -484,6 +509,11 @@ void ggml_metal_encoder_debug_group_pop (ggml_metal_encoder_t encoder) {
+ }
+ 
+ void ggml_metal_encoder_set_pipeline(ggml_metal_encoder_t encoder, struct ggml_metal_pipeline_with_params pipeline) {
++    if (pipeline.pipeline == nil || pipeline.pipeline->obj == nil) {
++        GGML_LOG_ERROR("%s: refusing to bind nil compute pipeline\n", __func__);
++        return;
++    }
++
+     [encoder->obj setComputePipelineState:pipeline.pipeline->obj];
+ }
+ 

@@ -26,7 +26,7 @@ import ru.souz.tool.web.ToolInternetSearch
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentComplexScenarios {
 
-    private val selectedModel = LLMModel.AnthropicHaiku45
+    private val selectedModel = LLMModel.LocalGemma4_E2B_It
     private val agentType = AgentId.GRAPH
     private val support = AgentScenarioTestSupport(selectedModel, agentType)
     private val runTest = support::runTest

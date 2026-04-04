@@ -10,9 +10,10 @@ ARM_OUT="$ROOT_DIR/composeApp/src/jvmMain/resources/darwin-arm64"
 X64_OUT="$ROOT_DIR/composeApp/src/jvmMain/resources/darwin-x64"
 DEFAULT_VENDOR_DIR="$ROOT_DIR/third_party/llama.cpp"
 LLAMA_CPP_REPO_URL="${LLAMA_CPP_REPO_URL:-https://github.com/ggml-org/llama.cpp.git}"
-LLAMA_CPP_REF="${LLAMA_CPP_REF:-968189729f71bf1dbe109556986ddf2e2cf3e534}"
+LLAMA_CPP_REF="${LLAMA_CPP_REF:-b8635075ffe27b135c49afb9a8b5c434bd42c502}"
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/souz/vendor"
 CACHED_LLAMA_DIR="$CACHE_ROOT/llama.cpp"
+LLAMA_CPP_LOCAL_PATCH="$ROOT_DIR/native/llama-bridge/patches/llama.cpp-metal-bfloat-embed.patch"
 
 mkdir -p "$ARM_OUT" "$X64_OUT"
 
@@ -53,9 +54,24 @@ resolve_llama_dir() {
   echo "$CACHED_LLAMA_DIR"
 }
 
+apply_local_llama_patch() {
+  if [[ ! -f "$LLAMA_CPP_LOCAL_PATCH" ]]; then
+    return
+  fi
+
+  if git -C "$LLAMA_CPP_DIR" apply --reverse --check "$LLAMA_CPP_LOCAL_PATCH" >/dev/null 2>&1; then
+    echo "llama.cpp local patch already applied: $(basename "$LLAMA_CPP_LOCAL_PATCH")"
+    return
+  fi
+
+  echo "Applying local llama.cpp patch: $(basename "$LLAMA_CPP_LOCAL_PATCH")"
+  git -C "$LLAMA_CPP_DIR" apply "$LLAMA_CPP_LOCAL_PATCH"
+}
+
 LLAMA_CPP_DIR="$(resolve_llama_dir)"
 echo "Using llama.cpp from: $LLAMA_CPP_DIR"
 echo "Pinned llama.cpp ref: $LLAMA_CPP_REF"
+apply_local_llama_patch
 
 cmake -S "$BRIDGE_DIR" -B "$ARM_BUILD_DIR" \
   -DCMAKE_BUILD_TYPE=Release \

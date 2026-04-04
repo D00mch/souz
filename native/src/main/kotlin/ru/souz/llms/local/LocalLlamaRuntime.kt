@@ -142,9 +142,9 @@ class LocalLlamaRuntime(
             prompt = prompt,
             contextSize = contextSize,
             maxTokens = completionBudget,
-            temperature = body.temperature ?: DEFAULT_TEMPERATURE,
-            topP = DEFAULT_TOP_P,
-            topK = DEFAULT_TOP_K,
+            temperature = body.temperature ?: profile.samplingDefaults.temperature,
+            topP = profile.samplingDefaults.topP,
+            topK = profile.samplingDefaults.topK,
             seed = DEFAULT_SEED,
             stop = emptyList(),
             grammar = if (profile.useNativeGrammar && useStructuredOutput) LocalStrictJsonContract.grammar else "",
@@ -422,9 +422,6 @@ class LocalLlamaRuntime(
     }
 
     private companion object {
-        const val DEFAULT_TOP_K = 40
-        const val DEFAULT_TOP_P = 0.9f
-        const val DEFAULT_TEMPERATURE = 0.2f
         const val DEFAULT_SEED = 42
         const val MAX_COMPLETION_TOKENS = 1024
         const val CONTEXT_SAFETY_MARGIN_TOKENS = 512

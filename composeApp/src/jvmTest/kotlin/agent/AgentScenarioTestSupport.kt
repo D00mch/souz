@@ -69,7 +69,9 @@ class AgentScenarioTestSupport(
             every { requestTimeoutMillis } returns 60_000L
             every { temperature } returns 0.2f
             every { getSystemPromptForAgentModel(any(), any()) } answers {
-                "Будь полезен. Выполняй инструкции с помощью тулов."
+                """
+                    Будь полезен. Выполняй инструкции с помощью тулов.
+                """.trimIndent()
             }
         }
     }

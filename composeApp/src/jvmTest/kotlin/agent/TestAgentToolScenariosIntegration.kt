@@ -45,7 +45,7 @@ import ru.souz.tool.textReplace.ToolGetClipboard
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentToolScenariosIntegrationTest {
 
-    private val selectedModel = LLMModel.LocalQwen3_4B_Instruct_2507
+    private val selectedModel = LLMModel.LocalGemma4_E4B_It
     private val agentType = AgentId.GRAPH
     private val support = AgentScenarioTestSupport(selectedModel, agentType)
     private val runTest = support::runTest

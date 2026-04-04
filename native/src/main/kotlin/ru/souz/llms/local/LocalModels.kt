@@ -11,6 +11,17 @@ data class LocalLicenseRequirements(
     val requiresManualAcceptance: Boolean = false,
 )
 
+enum class LocalPromptFamily {
+    QWEN_CHATML,
+    GEMMA4,
+}
+
+data class LocalSamplingDefaults(
+    val temperature: Float,
+    val topP: Float,
+    val topK: Int,
+)
+
 data class LocalModelProfile(
     val gigaModel: LLMModel,
     val id: String,
@@ -21,6 +32,8 @@ data class LocalModelProfile(
     val minRamGb: Int,
     val defaultContextSize: Int,
     val maxContextSize: Int = defaultContextSize,
+    val promptFamily: LocalPromptFamily,
+    val samplingDefaults: LocalSamplingDefaults,
     val useNativeGrammar: Boolean = false,
     val licenseRequirements: LocalLicenseRequirements,
     val defaultGpuLayers: Int = 99,
@@ -126,6 +139,56 @@ object LocalModelProfiles {
         minRamGb = 8,
         defaultContextSize = 8192,
         maxContextSize = 8192,
+        promptFamily = LocalPromptFamily.QWEN_CHATML,
+        samplingDefaults = LocalSamplingDefaults(
+            temperature = 0.2f,
+            topP = 0.9f,
+            topK = 40,
+        ),
+        licenseRequirements = LocalLicenseRequirements(
+            summary = "Apache 2.0",
+            requiresManualAcceptance = false,
+        ),
+    )
+
+    val GEMMA4_E2B_IT = LocalModelProfile(
+        gigaModel = LLMModel.LocalGemma4_E2B_It,
+        id = "local-gemma-4-e2b-it",
+        displayName = "Local Gemma 4 E2B Instruct",
+        huggingFaceRepoId = "unsloth/gemma-4-E2B-it-GGUF",
+        ggufFilename = "gemma-4-E2B-it-Q4_K_M.gguf",
+        quantization = "Q4_K_M",
+        minRamGb = 8,
+        defaultContextSize = 8192,
+        maxContextSize = 8192,
+        promptFamily = LocalPromptFamily.GEMMA4,
+        samplingDefaults = LocalSamplingDefaults(
+            temperature = 1.0f,
+            topP = 0.95f,
+            topK = 64,
+        ),
+        licenseRequirements = LocalLicenseRequirements(
+            summary = "Apache 2.0",
+            requiresManualAcceptance = false,
+        ),
+    )
+
+    val GEMMA4_E4B_IT = LocalModelProfile(
+        gigaModel = LLMModel.LocalGemma4_E4B_It,
+        id = "local-gemma-4-e4b-it",
+        displayName = "Local Gemma 4 E4B Instruct",
+        huggingFaceRepoId = "unsloth/gemma-4-E4B-it-GGUF",
+        ggufFilename = "gemma-4-E4B-it-Q4_K_M.gguf",
+        quantization = "Q4_K_M",
+        minRamGb = 16,
+        defaultContextSize = 8192,
+        maxContextSize = 8192,
+        promptFamily = LocalPromptFamily.GEMMA4,
+        samplingDefaults = LocalSamplingDefaults(
+            temperature = 1.0f,
+            topP = 0.95f,
+            topK = 64,
+        ),
         licenseRequirements = LocalLicenseRequirements(
             summary = "Apache 2.0",
             requiresManualAcceptance = false,
@@ -134,6 +197,8 @@ object LocalModelProfiles {
 
     val all: List<LocalModelProfile> = listOf(
         QWEN3_4B_INSTRUCT_2507,
+        GEMMA4_E2B_IT,
+        GEMMA4_E4B_IT,
     )
 
     fun forAlias(alias: String): LocalModelProfile? = all.firstOrNull { profile ->

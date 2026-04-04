@@ -22,7 +22,10 @@ class LocalPromptRenderer {
         val messages = body.messages.filterNot { it.role == LLMMessageRole.system }
             .map { toRenderedMessage(it, profile) }
 
-        return renderQwen(systemPrompt, messages)
+        return when (profile.promptFamily) {
+            LocalPromptFamily.QWEN_CHATML -> renderQwen(systemPrompt, messages)
+            LocalPromptFamily.GEMMA4 -> renderGemma4(systemPrompt, messages)
+        }
     }
 
     private fun buildSystemPrompt(body: LLMRequest.Chat, profile: LocalModelProfile): String {
@@ -258,6 +261,20 @@ class LocalPromptRenderer {
             appendLine("<|im_end|>")
         }
         append("<|im_start|>assistant\n")
+    }
+
+    private fun renderGemma4(systemPrompt: String, messages: List<RenderedMessage>): String = buildString {
+        if (systemPrompt.isNotBlank()) {
+            appendLine("<|turn>system")
+            appendLine(systemPrompt)
+            appendLine("<turn|>")
+        }
+        messages.forEach { message ->
+            appendLine("<|turn>${message.role}")
+            appendLine(message.content)
+            appendLine("<turn|>")
+        }
+        append("<|turn>assistant\n")
     }
 
     private fun normalizeToolResultContent(rawContent: String, profile: LocalModelProfile): Any {

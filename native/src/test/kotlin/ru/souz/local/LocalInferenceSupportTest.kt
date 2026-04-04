@@ -96,7 +96,18 @@ class LocalInferenceSupportTest {
     @Test
     fun `availableForRam exposes only supported local profiles`() {
         assertEquals(
-            listOf(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507),
+            listOf(
+                LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+                LocalModelProfiles.GEMMA4_E2B_IT,
+            ),
+            LocalModelProfiles.availableForRam(8),
+        )
+        assertEquals(
+            listOf(
+                LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+                LocalModelProfiles.GEMMA4_E2B_IT,
+                LocalModelProfiles.GEMMA4_E4B_IT,
+            ),
             LocalModelProfiles.availableForRam(16),
         )
     }
@@ -172,6 +183,37 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `gemma prompt renderer uses gemma turns and roles`() {
+        val renderer = LocalPromptRenderer()
+        val chat = LLMRequest.Chat(
+            model = LocalModelProfiles.GEMMA4_E2B_IT.gigaModel.alias,
+            messages = listOf(
+                LLMRequest.Message(LLMMessageRole.system, "System"),
+                LLMRequest.Message(LLMMessageRole.user, "Проверь календарь"),
+                LLMRequest.Message(LLMMessageRole.assistant, "Сначала посмотрю историю"),
+                LLMRequest.Message(
+                    role = LLMMessageRole.function,
+                    content = "\"ok\"",
+                    functionsStateId = "call_1",
+                    name = "CalendarListEvents",
+                ),
+            ),
+        )
+
+        val prompt = renderer.render(
+            body = chat,
+            profile = LocalModelProfiles.GEMMA4_E2B_IT,
+        )
+
+        assertTrue(prompt.startsWith("<|turn>system"))
+        assertTrue(prompt.contains("<|turn>user\nПроверь календарь\n<turn|>"))
+        assertTrue(prompt.contains("<|turn>assistant\nСначала посмотрю историю\n<turn|>"))
+        assertTrue(prompt.contains("<|turn>user\n{\"tool_result\":{\"tool_name\":\"CalendarListEvents\",\"tool_call_id\":\"call_1\",\"content\":\"ok\"}}\n<turn|>"))
+        assertTrue(prompt.endsWith("<|turn>assistant\n"))
+        assertFalse(prompt.contains("<|im_start|>"))
+    }
+
+    @Test
     fun `classification prompts use plain text local output mode`() {
         val renderer = LocalPromptRenderer()
         val chat = LLMRequest.Chat(
@@ -201,6 +243,37 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `gemma classification prompts use plain text local output mode`() {
+        val renderer = LocalPromptRenderer()
+        val chat = LLMRequest.Chat(
+            model = LocalModelProfiles.GEMMA4_E4B_IT.gigaModel.alias,
+            messages = listOf(
+                LLMRequest.Message(
+                    LLMMessageRole.system,
+                    """
+                        Выбери категории.
+
+                        Формат ответа:
+                        CATEGORY1,CATEGORY2 0-100
+                    """.trimIndent(),
+                ),
+                LLMRequest.Message(LLMMessageRole.user, "New message:\nнайди файл"),
+            ),
+        )
+
+        val prompt = renderer.render(
+            body = chat,
+            profile = LocalModelProfiles.GEMMA4_E4B_IT,
+        )
+
+        assertTrue(chat.prefersPlainTextLocalOutput())
+        assertTrue(prompt.contains("<|turn>system"))
+        assertTrue(prompt.contains("<|turn>user\nNew message:\nнайди файл\n<turn|>"))
+        assertTrue(prompt.contains("CATEGORY1,CATEGORY2 0-100"))
+        assertFalse(prompt.contains("Return exactly one JSON object and nothing else."))
+    }
+
+    @Test
     fun `strict json parser converts final response`() {
         val parser = LocalStrictJsonParser()
 
@@ -224,6 +297,26 @@ class LocalInferenceSupportTest {
 
 {"type":"final","content":"hello"}<|eot_id|>""",
             requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals("hello", ok.choices.single().message.content)
+    }
+
+    @Test
+    fun `strict json parser strips gemma asymmetric control tokens`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """
+                <|turn>assistant
+                <turn|>
+                <|channel>final
+                <channel|>
+                {"type":"final","content":"hello"}
+            """.trimIndent(),
+            requestModel = LocalModelProfiles.GEMMA4_E2B_IT.gigaModel.alias,
             usage = LLMResponse.Usage(10, 5, 15, 0),
         )
 
@@ -352,6 +445,21 @@ class LocalInferenceSupportTest {
         Files.writeString(storedPath, "stub")
 
         assertNull(store.downloadPromptFor(model))
+    }
+
+    @Test
+    fun `download prompt is built for gemma local models`() {
+        val tempRoot = Files.createTempDirectory("souz-local-models-test")
+        val store = LocalModelStore(rootDir = tempRoot)
+
+        listOf(LocalModelProfiles.GEMMA4_E2B_IT, LocalModelProfiles.GEMMA4_E4B_IT).forEach { profile ->
+            val prompt = store.downloadPromptFor(profile.gigaModel)
+
+            assertNotNull(prompt)
+            assertEquals(profile.gigaModel, prompt.model)
+            assertEquals(profile, prompt.profile)
+            assertEquals(store.modelPath(profile).toAbsolutePath().toString(), prompt.targetPath)
+        }
     }
 
     @Test
@@ -772,6 +880,105 @@ class LocalInferenceSupportTest {
                 prompt = "x".repeat(24_000),
             )
         )
+    }
+
+    @Test
+    fun `local runtime uses profile sampling defaults for gemma`() = runTest {
+        val profile = LocalModelProfiles.GEMMA4_E2B_IT
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "OK",
+            selectedProfile = profile,
+            availableModels = listOf(profile.gigaModel),
+        )
+
+        val modelStore = mockk<LocalModelStore>()
+        every { modelStore.requireAvailable(profile) } returns Path.of("/tmp/${profile.ggufFilename}")
+
+        val promptRenderer = mockk<LocalPromptRenderer>()
+        every { promptRenderer.render(any(), profile) } returns "prompt"
+
+        val requestSlot = slot<String>()
+        val bridge = mockk<LocalNativeBridge>()
+        val runtimePointer = Pointer(31)
+        val modelPointer = Pointer(32)
+        every { bridge.createRuntime() } returns runtimePointer
+        every { bridge.loadModel(runtimePointer, any()) } returns modelPointer
+        every { bridge.generate(runtimePointer, modelPointer, capture(requestSlot)) } returns """
+            {"text":"{\"type\":\"final\",\"content\":\"done\"}","finish_reason":"stop","prompt_tokens":4,"completion_tokens":2,"total_tokens":6,"precached_prompt_tokens":0}
+        """.trimIndent()
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = modelStore,
+            promptRenderer = promptRenderer,
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = bridge,
+        )
+
+        val response = runtime.chat(
+            LLMRequest.Chat(
+                model = profile.gigaModel.alias,
+                messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+            )
+        )
+
+        assertIs<LLMResponse.Chat.Ok>(response)
+        val request = restJsonMapper.readValue(requestSlot.captured, LocalLlamaRuntime.LocalGenerationRequest::class.java)
+        assertEquals(1.0f, request.temperature)
+        assertEquals(0.95f, request.topP)
+        assertEquals(64, request.topK)
+    }
+
+    @Test
+    fun `explicit temperature overrides local profile default`() = runTest {
+        val profile = LocalModelProfiles.GEMMA4_E4B_IT
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "OK",
+            selectedProfile = profile,
+            availableModels = listOf(profile.gigaModel),
+        )
+
+        val modelStore = mockk<LocalModelStore>()
+        every { modelStore.requireAvailable(profile) } returns Path.of("/tmp/${profile.ggufFilename}")
+
+        val promptRenderer = mockk<LocalPromptRenderer>()
+        every { promptRenderer.render(any(), profile) } returns "prompt"
+
+        val requestSlot = slot<String>()
+        val bridge = mockk<LocalNativeBridge>()
+        val runtimePointer = Pointer(41)
+        val modelPointer = Pointer(42)
+        every { bridge.createRuntime() } returns runtimePointer
+        every { bridge.loadModel(runtimePointer, any()) } returns modelPointer
+        every { bridge.generate(runtimePointer, modelPointer, capture(requestSlot)) } returns """
+            {"text":"{\"type\":\"final\",\"content\":\"done\"}","finish_reason":"stop","prompt_tokens":4,"completion_tokens":2,"total_tokens":6,"precached_prompt_tokens":0}
+        """.trimIndent()
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = modelStore,
+            promptRenderer = promptRenderer,
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = bridge,
+        )
+
+        val response = runtime.chat(
+            LLMRequest.Chat(
+                model = profile.gigaModel.alias,
+                messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+                temperature = 0.35f,
+            )
+        )
+
+        assertIs<LLMResponse.Chat.Ok>(response)
+        val request = restJsonMapper.readValue(requestSlot.captured, LocalLlamaRuntime.LocalGenerationRequest::class.java)
+        assertEquals(0.35f, request.temperature)
+        assertEquals(0.95f, request.topP)
+        assertEquals(64, request.topK)
     }
 
     @Test
