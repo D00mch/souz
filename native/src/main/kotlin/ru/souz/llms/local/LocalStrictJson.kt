@@ -40,7 +40,7 @@ object LocalStrictJsonContract {
         appendLine("""2. {"type":"tool_calls","calls":[{"id":"call_1","name":"ToolName","arguments":{}}]}""")
         appendLine("Rules:")
         appendLine("- Never emit markdown, comments, XML, or prose outside the JSON object.")
-        appendLine("- Never emit control tokens or wrappers such as <|...|>, <tool_call>, <tool_result>, or <think>.")
+        appendLine("- Never emit control tokens or wrappers such as <|...|>, <|turn>, <turn|>, <|tool_call>, <tool_call|>, <tool_call>, <tool_result>, or <think>.")
         appendLine("- In a final response, \"content\" must be plain human-readable text, not another JSON object like {\"result\":\"...\"}.")
         appendLine("- Use \"tool_calls\" when any tool is required before answering.")
         appendLine("- Tool call ids must be unique within the response.")
@@ -127,8 +127,8 @@ class LocalStrictJsonParser {
     private fun normalizeRawText(rawText: String): String {
         val trimmed = rawText.trim()
         if (trimmed.isEmpty()) return trimmed
-        val withoutControlTokens = CONTROL_TOKEN_REGEX.replace(trimmed, " ").trim()
-        return extractFirstJsonObject(withoutControlTokens) ?: withoutControlTokens
+        extractFirstJsonObject(trimmed)?.let { return it }
+        return stripStandaloneControlWrapperLines(trimmed)
     }
 
     private fun looksLikeSingleToolCall(node: JsonNode): Boolean =
@@ -299,6 +299,38 @@ class LocalStrictJsonParser {
             .replace("\r", "\\r")
             .take(limit)
 
+    private fun stripStandaloneControlWrapperLines(text: String): String {
+        val lines = text.lines()
+        var start = 0
+        var end = lines.lastIndex
+
+        while (start <= end && isStandaloneControlWrapperLine(lines[start])) {
+            start += 1
+        }
+        while (end >= start && isStandaloneControlWrapperLine(lines[end])) {
+            end -= 1
+        }
+
+        return if (start > end) {
+            ""
+        } else {
+            lines.subList(start, end + 1).joinToString("\n").trim()
+        }
+    }
+
+    private fun isStandaloneControlWrapperLine(line: String): Boolean {
+        val trimmed = line.trim()
+        if (trimmed.isEmpty()) return true
+        if (!trimmed.startsWith("<")) return false
+
+        val withoutTokens = CONTROL_TOKEN_REGEX.replace(trimmed, " ").trim()
+        if (withoutTokens.isEmpty()) return true
+
+        return withoutTokens.split(WHITESPACE_REGEX).all { token ->
+            token in CONTROL_WRAPPER_LABELS
+        }
+    }
+
     private fun shouldTreatAsPlainTextFinal(text: String): Boolean {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return false
@@ -329,7 +361,20 @@ class LocalStrictJsonParser {
     )
 
     private companion object {
-        val CONTROL_TOKEN_REGEX = Regex("""<\|.*?\|>""")
+        val CONTROL_TOKEN_REGEX = Regex("""<\|[^>\r\n]*\|>|<\|[A-Za-z0-9_:-]+>|<[A-Za-z0-9_:-]+\|>|</?[A-Za-z0-9_:-]+>""")
+        val WHITESPACE_REGEX = Regex("""\s+""")
+        val CONTROL_WRAPPER_LABELS = setOf(
+            "assistant",
+            "user",
+            "system",
+            "tool",
+            "tool_call",
+            "tool_result",
+            "analysis",
+            "commentary",
+            "final",
+            "channel",
+        )
     }
 
     private fun parseFinal(

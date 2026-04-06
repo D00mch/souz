@@ -11,7 +11,7 @@ native/
 │   ├── LocalModelSelection.kt         # Download prompt/state helpers for local model selection flows
 │   ├── LocalModels.kt                 # Local model catalog, host/platform detection, and availability gating
 │   ├── LocalModelStore.kt             # Model storage paths and GGUF download support
-│   ├── LocalPromptRenderer.kt         # Qwen prompt rendering and compact tool-guidance generation
+│   ├── LocalPromptRenderer.kt         # Prompt-family rendering (Qwen ChatML and Gemma 4 turns) plus compact tool-guidance generation
 │   └── LocalStrictJson.kt             # Strict JSON contract plus recovery/parsing for local model output
 ├── src/test/kotlin/ru/souz/local/
 │   └── LocalInferenceSupportTest.kt   # Coverage for prompt rendering, parsing, availability, and local runtime helpers
@@ -30,5 +30,7 @@ Notes:
 - Treat those paths as out of scope unless the task is explicitly about updating upstream `llama.cpp` or debugging the native bridge build.
 - Packaged bridge binaries live in `composeApp/src/jvmMain/resources/darwin-*`.
 - Rebuild the packaged bridge binaries with `composeApp/src/jvmMain/resources/scripts/build-llama-bridge.sh`.
-- The rebuild script uses `LLAMA_CPP_SOURCE_DIR` when set, otherwise a local `third_party/llama.cpp` checkout, otherwise it clones the pinned `llama.cpp` ref `968189729f71bf1dbe109556986ddf2e2cf3e534` into `${XDG_CACHE_HOME:-~/.cache}/souz/vendor/llama.cpp`.
+- The rebuild script uses `LLAMA_CPP_SOURCE_DIR` when set, otherwise a local `third_party/llama.cpp` checkout, otherwise it clones the pinned `llama.cpp` ref `b8635075ffe27b135c49afb9a8b5c434bd42c502` into `${XDG_CACHE_HOME:-~/.cache}/souz/vendor/llama.cpp`.
+- The rebuild script also reapplies `native/llama-bridge/patches/llama.cpp-metal-bfloat-embed.patch` before compiling, because the local `third_party/llama.cpp` checkout is gitignored and the Gemma 4 update needs an extra Metal runtime-compile fix on top of the pinned upstream ref.
 - On macOS the bridge now disables ggml Metal residency sets by default (`GGML_METAL_NO_RESIDENCY=1`) to avoid shutdown aborts; set `SOUZ_LLAMA_METAL_RESIDENCY=1` only if you need to opt back in for debugging.
+- Local runtime debug logs now include the effective generation variants (`context_size`, `max_tokens`, grammar flag) and native decode failures now return detailed batch/context parameters, so Gemma context-window issues can be diagnosed from app logs without attaching a debugger.

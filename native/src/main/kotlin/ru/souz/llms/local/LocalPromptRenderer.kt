@@ -18,14 +18,18 @@ internal fun LLMRequest.Chat.prefersPlainTextLocalOutput(): Boolean {
 
 class LocalPromptRenderer {
     fun render(body: LLMRequest.Chat, profile: LocalModelProfile): String {
-        val systemPrompt = buildSystemPrompt(body, profile)
+        val contextBudget = resolveEffectiveContextBudget(body, profile)
+        val systemPrompt = buildSystemPrompt(body, profile, contextBudget)
         val messages = body.messages.filterNot { it.role == LLMMessageRole.system }
-            .map { toRenderedMessage(it, profile) }
+            .map { toRenderedMessage(it, profile, contextBudget) }
 
-        return renderQwen(systemPrompt, messages)
+        return when (profile.promptFamily) {
+            LocalPromptFamily.QWEN_CHATML -> renderQwen(systemPrompt, messages)
+            LocalPromptFamily.GEMMA4 -> renderGemma4(systemPrompt, messages)
+        }
     }
 
-    private fun buildSystemPrompt(body: LLMRequest.Chat, profile: LocalModelProfile): String {
+    private fun buildSystemPrompt(body: LLMRequest.Chat, profile: LocalModelProfile, contextBudget: Int): String {
         val explicitSystem = body.messages
             .filter { it.role == LLMMessageRole.system }
             .joinToString("\n\n") { it.content.trim() }
@@ -34,7 +38,7 @@ class LocalPromptRenderer {
         val contract = if (body.prefersPlainTextLocalOutput()) {
             ""
         } else {
-            LocalStrictJsonContract.instructions(renderToolGuidance(body.functions, profile))
+            LocalStrictJsonContract.instructions(renderToolGuidance(body.functions, contextBudget))
         }
         return listOf(explicitSystem, contract)
             .filter { it.isNotBlank() }
@@ -43,21 +47,21 @@ class LocalPromptRenderer {
 
     private fun renderToolGuidance(
         functions: List<LLMRequest.Function>,
-        profile: LocalModelProfile,
+        contextBudget: Int,
     ): String {
         if (functions.isEmpty()) {
             return ""
         }
 
         val maxChars = when {
-            profile.maxContextSize <= 8192 -> SMALL_CONTEXT_TOOL_GUIDANCE_CHARS
+            contextBudget <= SMALL_CONTEXT_THRESHOLD -> SMALL_CONTEXT_TOOL_GUIDANCE_CHARS
             else -> LARGE_CONTEXT_TOOL_GUIDANCE_CHARS
         }
         val preferredModes = when {
-            profile.maxContextSize <= 8192 && functions.size > SMALL_CONTEXT_COMPACT_GUIDANCE_LIMIT ->
+            contextBudget <= SMALL_CONTEXT_THRESHOLD && functions.size > SMALL_CONTEXT_COMPACT_GUIDANCE_LIMIT ->
                 listOf(ToolGuidanceMode.MINIMAL)
 
-            profile.maxContextSize <= 8192 && functions.size > FULL_GUIDANCE_LIMIT ->
+            contextBudget <= SMALL_CONTEXT_THRESHOLD && functions.size > FULL_GUIDANCE_LIMIT ->
                 listOf(ToolGuidanceMode.COMPACT, ToolGuidanceMode.MINIMAL)
 
             functions.size > COMPACT_GUIDANCE_LIMIT ->
@@ -199,7 +203,11 @@ class LocalPromptRenderer {
             ?.joinToString("|")
             ?: property.type
 
-    private fun toRenderedMessage(message: LLMRequest.Message, profile: LocalModelProfile): RenderedMessage = when (message.role) {
+    private fun toRenderedMessage(
+        message: LLMRequest.Message,
+        profile: LocalModelProfile,
+        contextBudget: Int,
+    ): RenderedMessage = when (message.role) {
         LLMMessageRole.user -> RenderedMessage(role = "user", content = message.content.trim())
         LLMMessageRole.assistant -> RenderedMessage(
             role = "assistant",
@@ -213,7 +221,7 @@ class LocalPromptRenderer {
                     "tool_result" to mapOf(
                         "tool_name" to message.name.orEmpty(),
                         "tool_call_id" to message.functionsStateId.orEmpty(),
-                        "content" to normalizeToolResultContent(message.content, profile),
+                        "content" to normalizeToolResultContent(message.content, contextBudget),
                     )
                 )
             ),
@@ -260,10 +268,24 @@ class LocalPromptRenderer {
         append("<|im_start|>assistant\n")
     }
 
-    private fun normalizeToolResultContent(rawContent: String, profile: LocalModelProfile): Any {
+    private fun renderGemma4(systemPrompt: String, messages: List<RenderedMessage>): String = buildString {
+        if (systemPrompt.isNotBlank()) {
+            appendLine("<|turn>system")
+            appendLine(systemPrompt)
+            appendLine("<turn|>")
+        }
+        messages.forEach { message ->
+            appendLine("<|turn>${message.role}")
+            appendLine(message.content)
+            appendLine("<turn|>")
+        }
+        append("<|turn>assistant\n")
+    }
+
+    private fun normalizeToolResultContent(rawContent: String, contextBudget: Int): Any {
         val decoded = runCatching { restJsonMapper.readValue<String>(rawContent) }.getOrDefault(rawContent)
         val budget = when {
-            profile.maxContextSize <= 8192 -> LOCAL_SMALL_CONTEXT_TOOL_PREVIEW_CHARS
+            contextBudget <= SMALL_CONTEXT_THRESHOLD -> LOCAL_SMALL_CONTEXT_TOOL_PREVIEW_CHARS
             else -> LOCAL_LARGE_CONTEXT_TOOL_PREVIEW_CHARS
         }
 
@@ -278,6 +300,15 @@ class LocalPromptRenderer {
         return runCatching { restJsonMapper.readValue<Any>(decoded) }.getOrDefault(decoded)
     }
 
+    private fun resolveEffectiveContextBudget(body: LLMRequest.Chat, profile: LocalModelProfile): Int =
+        if (body.maxTokens >= MIN_CONTEXT_THRESHOLD) {
+            body.maxTokens
+                .coerceAtLeast(MIN_CONTEXT_THRESHOLD)
+                .coerceAtMost(profile.maxContextSize)
+        } else {
+            profile.defaultContextSize.coerceAtMost(profile.maxContextSize)
+        }
+
     private data class RenderedMessage(
         val role: String,
         val content: String,
@@ -290,6 +321,8 @@ class LocalPromptRenderer {
     }
 
     private companion object {
+        const val MIN_CONTEXT_THRESHOLD = 2_048
+        const val SMALL_CONTEXT_THRESHOLD = 8_192
         const val FULL_GUIDANCE_LIMIT = 4
         const val SMALL_CONTEXT_COMPACT_GUIDANCE_LIMIT = 8
         const val COMPACT_GUIDANCE_LIMIT = 12

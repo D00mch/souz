@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -66,6 +67,34 @@ struct generation_result {
 
 using runtime_ptr = souz_runtime *;
 constexpr int DEFAULT_PROMPT_BATCH_SIZE = 512;
+
+std::string format_generation_details(
+    int context_size,
+    int requested_max_tokens,
+    int prompt_tokens,
+    int max_tokens,
+    int prompt_batch_size,
+    size_t reused_prompt_tokens,
+    size_t offset = 0,
+    int chunk_size = 0,
+    int decode_status = 0
+) {
+    std::ostringstream out;
+    out << "context_size=" << context_size
+        << ", requested_max_tokens=" << requested_max_tokens
+        << ", prompt_tokens=" << prompt_tokens
+        << ", max_tokens=" << max_tokens
+        << ", prompt_batch_size=" << prompt_batch_size
+        << ", reused_prompt_tokens=" << reused_prompt_tokens;
+    if (chunk_size > 0) {
+        out << ", offset=" << offset
+            << ", chunk_size=" << chunk_size;
+    }
+    if (decode_status != 0) {
+        out << ", decode_status=" << decode_status;
+    }
+    return out.str();
+}
 
 log_filter_state & native_log_state() {
     static log_filter_state state;
@@ -402,11 +431,25 @@ generation_result generate_impl(
     for (size_t offset = reused_prompt_tokens; offset < prompt_tokens.size(); offset += static_cast<size_t>(prompt_batch_size)) {
         const int chunk_size = std::min<int>(prompt_batch_size, static_cast<int>(prompt_tokens.size() - offset));
         llama_batch batch = llama_batch_get_one(prompt_tokens.data() + offset, chunk_size);
-        if (llama_decode(ctx, batch) != 0) {
+        const int decode_status = llama_decode(ctx, batch);
+        if (decode_status != 0) {
             if (runtime->cancel_requested.load()) {
                 throw std::runtime_error("Generation cancelled.");
             }
-            throw std::runtime_error("Failed to decode the prompt.");
+            throw std::runtime_error(
+                "Failed to decode the prompt: " +
+                    format_generation_details(
+                        context_size,
+                        requested_max_tokens,
+                        static_cast<int>(prompt_tokens.size()),
+                        max_tokens,
+                        prompt_batch_size,
+                        reused_prompt_tokens,
+                        offset,
+                        chunk_size,
+                        decode_status
+                    )
+            );
         }
     }
 
@@ -446,11 +489,25 @@ generation_result generate_impl(
         }
 
         llama_batch next_batch = llama_batch_get_one(&token, 1);
-        if (llama_decode(ctx, next_batch) != 0) {
+        const int decode_status = llama_decode(ctx, next_batch);
+        if (decode_status != 0) {
             if (runtime->cancel_requested.load()) {
                 throw std::runtime_error("Generation cancelled.");
             }
-            throw std::runtime_error("Failed to decode the next token.");
+            throw std::runtime_error(
+                "Failed to decode the next token: " +
+                    format_generation_details(
+                        context_size,
+                        requested_max_tokens,
+                        static_cast<int>(prompt_tokens.size()),
+                        max_tokens,
+                        prompt_batch_size,
+                        reused_prompt_tokens,
+                        prompt_tokens.size() + generated_tokens.size(),
+                        1,
+                        decode_status
+                    )
+            );
         }
 
         if (step == max_tokens - 1) {

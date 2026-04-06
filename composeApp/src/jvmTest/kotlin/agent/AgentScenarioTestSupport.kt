@@ -60,16 +60,20 @@ class AgentScenarioTestSupport(
     private val agentType: AgentId,
 ) {
     val filesUtil: FilesToolUtil by lazy { FilesToolUtil(spySettings) }
+    private var fewShotExamplesEnabled: Boolean = true
 
     private val spySettings: SettingsProviderImpl by lazy {
         spyk(SettingsProviderImpl(ConfigStore)) {
             every { forbiddenFolders } returns emptyList()
             every { useStreaming } returns false
+            every { useFewShotExamples } answers { fewShotExamplesEnabled }
             every { gigaModel } returns selectedModel
             every { requestTimeoutMillis } returns 60_000L
             every { temperature } returns 0.2f
             every { getSystemPromptForAgentModel(any(), any()) } answers {
-                "Будь полезен. Выполняй инструкции с помощью тулов."
+                """
+                    Будь полезен. Выполняй инструкции с помощью тулов.
+                """.trimIndent()
             }
         }
     }
@@ -284,19 +288,26 @@ class AgentScenarioTestSupport(
 
     suspend fun runScenarioWithMocks(
         userPrompt: String,
+        useFewShotExamples: Boolean = false,
         overrides: DI.MainBuilder.() -> Unit,
     ) {
-        val di = DI.invoke(allowSilentOverride = true) {
-            import(mainDiModule)
-            import(testOverrideModule, allowOverride = true)
-            bindProvider<DI> { this.di }
-            overrides()
+        val previousFewShotExamplesEnabled = fewShotExamplesEnabled
+        fewShotExamplesEnabled = useFewShotExamples
+        try {
+            val di = DI.invoke(allowSilentOverride = true) {
+                import(mainDiModule)
+                import(testOverrideModule, allowOverride = true)
+                bindProvider<DI> { this.di }
+                overrides()
+            }
+            val agent: Agent = when (agentType) {
+                AgentId.GRAPH -> GraphBasedAgent(di, restJsonMapper)
+                AgentId.LUA_GRAPH -> LuaGraphBasedAgent(di, restJsonMapper)
+            }
+            runGraphAgent(agent, di, userPrompt)
+        } finally {
+            fewShotExamplesEnabled = previousFewShotExamplesEnabled
         }
-        val agent: Agent = when (agentType) {
-            AgentId.GRAPH -> GraphBasedAgent(di, restJsonMapper)
-            AgentId.LUA_GRAPH -> LuaGraphBasedAgent(di, restJsonMapper)
-        }
-        runGraphAgent(agent, di, userPrompt)
     }
 
     fun finish() {
