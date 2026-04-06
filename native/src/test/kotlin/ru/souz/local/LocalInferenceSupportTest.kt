@@ -325,6 +325,38 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `strict json parser preserves control tokens inside valid json content`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"type":"final","content":"Use <|turn> and <turn|> literally."}""",
+            requestModel = LocalModelProfiles.GEMMA4_E2B_IT.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals("Use <|turn> and <turn|> literally.", ok.choices.single().message.content)
+    }
+
+    @Test
+    fun `strict json parser strips standalone control wrapper lines around plain text`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """
+                <|turn>assistant
+                FILES 95
+                <turn|>
+            """.trimIndent(),
+            requestModel = LocalModelProfiles.GEMMA4_E2B_IT.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals("FILES 95", ok.choices.single().message.content)
+    }
+
+    @Test
     fun `strict json parser falls back to plain text final response`() {
         val parser = LocalStrictJsonParser()
 
@@ -823,7 +855,35 @@ class LocalInferenceSupportTest {
     }
 
     @Test
-    fun `local runtime resolves context size dynamically within requested window and model cap`() {
+    fun `gemma prompt renderer uses configured context budget for tool result truncation`() {
+        val renderer = LocalPromptRenderer()
+        val oversizedResult = restJsonMapper.writeValueAsString(
+            "{\"items\":[\"${"x".repeat(5_000)}\"]}"
+        )
+
+        val prompt = renderer.render(
+            body = LLMRequest.Chat(
+                model = LocalModelProfiles.GEMMA4_E2B_IT.gigaModel.alias,
+                messages = listOf(
+                    LLMRequest.Message(
+                        role = LLMMessageRole.function,
+                        content = oversizedResult,
+                        functionsStateId = "call_1",
+                        name = "ToolTelegramReadInbox",
+                    ),
+                ),
+                maxTokens = 4_096,
+            ),
+            profile = LocalModelProfiles.GEMMA4_E2B_IT,
+        )
+
+        assertTrue(prompt.contains("\"truncated\":true"))
+        assertTrue(prompt.contains("truncated for local context window"))
+        assertFalse(prompt.contains("x".repeat(4_500)))
+    }
+
+    @Test
+    fun `local runtime resolves context size from configured window and profile defaults`() {
         val runtime = LocalLlamaRuntime(
             availability = mockk(relaxed = true),
             modelStore = mockk(relaxed = true),
@@ -833,26 +893,26 @@ class LocalInferenceSupportTest {
         )
 
         assertEquals(
-            2048,
+            4096,
             runtime.resolveContextSize(
                 body = LLMRequest.Chat(
-                    model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+                    model = LocalModelProfiles.GEMMA4_E2B_IT.gigaModel.alias,
                     messages = emptyList(),
                     maxTokens = 4096,
                 ),
-                profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+                profile = LocalModelProfiles.GEMMA4_E2B_IT,
                 prompt = "Короткий prompt",
             )
         )
         assertEquals(
-            8192,
+            96_000,
             runtime.resolveContextSize(
                 body = LLMRequest.Chat(
-                    model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+                    model = LocalModelProfiles.GEMMA4_E4B_IT.gigaModel.alias,
                     messages = emptyList(),
-                    maxTokens = 32000,
+                    maxTokens = 256_000,
                 ),
-                profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+                profile = LocalModelProfiles.GEMMA4_E4B_IT,
                 prompt = "x".repeat(60_000),
             )
         )
@@ -880,6 +940,99 @@ class LocalInferenceSupportTest {
                 prompt = "x".repeat(24_000),
             )
         )
+    }
+
+    @Test
+    fun `configured local context window disables expansion retry and fits completion inside window`() = runTest {
+        val profile = LocalModelProfiles.GEMMA4_E2B_IT
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "OK",
+            selectedProfile = profile,
+            availableModels = listOf(profile.gigaModel),
+        )
+
+        val modelStore = mockk<LocalModelStore>()
+        every { modelStore.requireAvailable(profile) } returns Path.of("/tmp/${profile.ggufFilename}")
+
+        val promptRenderer = mockk<LocalPromptRenderer>()
+        every { promptRenderer.render(any(), profile) } returns "prompt"
+
+        val requestSlot = slot<String>()
+        val bridge = mockk<LocalNativeBridge>()
+        val runtimePointer = Pointer(51)
+        val modelPointer = Pointer(52)
+        every { bridge.createRuntime() } returns runtimePointer
+        every { bridge.loadModel(runtimePointer, any()) } returns modelPointer
+        every { bridge.generate(runtimePointer, modelPointer, capture(requestSlot)) } returns """
+            {"text":"{\"type\":\"final\",\"content\":\"done\"}","finish_reason":"stop","prompt_tokens":4,"completion_tokens":2,"total_tokens":6,"precached_prompt_tokens":0}
+        """.trimIndent()
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = modelStore,
+            promptRenderer = promptRenderer,
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = bridge,
+        )
+
+        val response = runtime.chat(
+            LLMRequest.Chat(
+                model = profile.gigaModel.alias,
+                messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+                maxTokens = 4096,
+            )
+        )
+
+        assertIs<LLMResponse.Chat.Ok>(response)
+        val request = restJsonMapper.readValue(requestSlot.captured, LocalLlamaRuntime.LocalGenerationRequest::class.java)
+        assertEquals(4096, request.contextSize)
+        assertEquals(1024, request.maxTokens)
+        verify(exactly = 1) { bridge.generate(runtimePointer, modelPointer, any()) }
+    }
+
+    @Test
+    fun `local runtime rejects unavailable local alias before model loading`() = runTest {
+        val selectedProfile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
+        val unavailableProfile = LocalModelProfiles.GEMMA4_E4B_IT
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "OK",
+            selectedProfile = selectedProfile,
+            availableModels = listOf(
+                selectedProfile.gigaModel,
+                LocalModelProfiles.GEMMA4_E2B_IT.gigaModel,
+            ),
+        )
+
+        val modelStore = mockk<LocalModelStore>(relaxed = true)
+        val promptRenderer = mockk<LocalPromptRenderer>(relaxed = true)
+        val bridge = mockk<LocalNativeBridge>(relaxed = true)
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = modelStore,
+            promptRenderer = promptRenderer,
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = bridge,
+        )
+
+        val response = runtime.chat(
+            LLMRequest.Chat(
+                model = unavailableProfile.gigaModel.alias,
+                messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+            )
+        )
+
+        val error = assertIs<LLMResponse.Chat.Error>(response)
+        assertTrue(error.message.contains(unavailableProfile.displayName))
+        assertTrue(error.message.contains("unsupported on this host"))
+        verify(exactly = 0) { modelStore.requireAvailable(any()) }
+        verify(exactly = 0) { promptRenderer.render(any(), any()) }
+        verify(exactly = 0) { bridge.createRuntime() }
+        verify(exactly = 0) { bridge.loadModel(any(), any()) }
     }
 
     @Test

@@ -3,6 +3,7 @@ package ru.souz.llms.local
 import com.sun.management.OperatingSystemMXBean
 import java.lang.management.ManagementFactory
 import org.slf4j.LoggerFactory
+import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LocalModelAvailability
 
@@ -159,8 +160,8 @@ object LocalModelProfiles {
         ggufFilename = "gemma-4-E2B-it-Q4_K_M.gguf",
         quantization = "Q4_K_M",
         minRamGb = 8,
-        defaultContextSize = 8192,
-        maxContextSize = 8192,
+        defaultContextSize = DEFAULT_MAX_TOKENS,
+        maxContextSize = 96_000,
         promptFamily = LocalPromptFamily.GEMMA4,
         samplingDefaults = LocalSamplingDefaults(
             temperature = 1.0f,
@@ -181,8 +182,8 @@ object LocalModelProfiles {
         ggufFilename = "gemma-4-E4B-it-Q4_K_M.gguf",
         quantization = "Q4_K_M",
         minRamGb = 16,
-        defaultContextSize = 8192,
-        maxContextSize = 8192,
+        defaultContextSize = DEFAULT_MAX_TOKENS,
+        maxContextSize = 96_000,
         promptFamily = LocalPromptFamily.GEMMA4,
         samplingDefaults = LocalSamplingDefaults(
             temperature = 1.0f,

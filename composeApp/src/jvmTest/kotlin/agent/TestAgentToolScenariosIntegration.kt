@@ -45,7 +45,7 @@ import ru.souz.tool.textReplace.ToolGetClipboard
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentToolScenariosIntegrationTest {
 
-    private val selectedModel = LLMModel.LocalGemma4_E4B_It
+    private val selectedModel = LLMModel.LocalGemma4_E2B_It
     private val agentType = AgentId.GRAPH
     private val support = AgentScenarioTestSupport(selectedModel, agentType)
     private val runTest = support::runTest
@@ -60,8 +60,9 @@ class GraphAgentToolScenariosIntegrationTest {
 
     private suspend fun runScenarioWithMocks(
         userPrompt: String,
+        useFewShotExamples: Boolean = true,
         overrides: DI.MainBuilder.() -> Unit,
-    ) = support.runScenarioWithMocks(userPrompt, overrides)
+    ) = support.runScenarioWithMocks(userPrompt, useFewShotExamples, overrides)
 
     @ParameterizedTest(name = "scenario1_launchApplication[{index}] {0}")
     @ValueSource(

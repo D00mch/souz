@@ -128,15 +128,22 @@ class LocalLlamaRuntime(
             return NativeGenerationResult.error(availabilityStatus.message)
         }
 
-        val profile = LocalModelProfiles.forAlias(body.model)
+        val requestedProfile = LocalModelProfiles.forAlias(body.model)
+        if (requestedProfile != null && requestedProfile.gigaModel !in availabilityStatus.availableModels) {
+            return NativeGenerationResult.error(
+                "Local model ${requestedProfile.displayName} is unsupported on this host.",
+            )
+        }
+
+        val profile = requestedProfile
             ?: availabilityStatus.selectedProfile
             ?: return NativeGenerationResult.error("No local model profile is available for ${body.model}.")
 
         val modelHandle = ensureModel(profile)
         val runtime = ensureRuntime()
         val prompt = promptRenderer.render(body, profile)
-        val completionBudget = resolveCompletionBudget(body)
-        val contextSize = resolveContextSize(body, profile, prompt, completionBudget)
+        val contextSize = resolveContextSize(body, profile, prompt)
+        val completionBudget = resolveCompletionBudget(body, prompt, contextSize)
         val useStructuredOutput = !body.prefersPlainTextLocalOutput()
         val generationRequest = LocalGenerationRequest(
             prompt = prompt,
@@ -150,9 +157,33 @@ class LocalLlamaRuntime(
             grammar = if (profile.useNativeGrammar && useStructuredOutput) LocalStrictJsonContract.grammar else "",
         )
 
-        val requestVariants = buildRequestVariants(generationRequest, profile)
+        val requestVariants = buildRequestVariants(
+            request = generationRequest,
+            expansionContextSize = resolveExpansionContextSize(body, profile),
+        )
+        l.debug(
+            "Prepared local generation for model={} promptFamily={} stream={} requestedWindow={} promptChars={} variants={}",
+            profile.id,
+            profile.promptFamily,
+            stream,
+            body.maxTokens,
+            prompt.length,
+            requestVariants.joinToString(prefix = "[", postfix = "]") { candidate ->
+                "{ctx=${candidate.contextSize},max=${candidate.maxTokens},temp=${candidate.temperature},topP=${candidate.topP},topK=${candidate.topK},grammar=${candidate.grammar.isNotBlank()}}"
+            },
+        )
         var lastError: Throwable? = null
         for ((index, candidate) in requestVariants.withIndex()) {
+            l.debug(
+                "Executing local generation variant {}/{} for model={} ctx={} max={} grammar={} promptChars={}",
+                index + 1,
+                requestVariants.size,
+                profile.id,
+                candidate.contextSize,
+                candidate.maxTokens,
+                candidate.grammar.isNotBlank(),
+                candidate.prompt.length,
+            )
             val result = runCatching {
                 executeGeneration(runtime, modelHandle, candidate, stream)
             }.recoverCatching { error ->
@@ -170,6 +201,15 @@ class LocalLlamaRuntime(
 
             val error = result.exceptionOrNull() ?: continue
             lastError = error
+            l.warn(
+                "Local generation variant failed for model={} ctx={} max={} grammar={} requestedWindow={}: {}",
+                profile.id,
+                candidate.contextSize,
+                candidate.maxTokens,
+                candidate.grammar.isNotBlank(),
+                body.maxTokens,
+                error.message,
+            )
             if (!shouldRetryWithExpandedContext(error, candidate, profile) || index == requestVariants.lastIndex) {
                 break
             }
@@ -244,11 +284,11 @@ class LocalLlamaRuntime(
 
     private fun buildRequestVariants(
         request: LocalGenerationRequest,
-        profile: LocalModelProfile,
+        expansionContextSize: Int?,
     ): List<LocalGenerationRequest> {
         val variants = mutableListOf(request)
-        if (request.contextSize < profile.maxContextSize) {
-            variants += request.copy(contextSize = profile.maxContextSize)
+        if (expansionContextSize != null && request.contextSize < expansionContextSize) {
+            variants += request.copy(contextSize = expansionContextSize)
         }
         return variants
     }
@@ -280,24 +320,59 @@ class LocalLlamaRuntime(
         )
     }
 
-    internal fun resolveCompletionBudget(body: LLMRequest.Chat): Int =
-        body.maxTokens
-            .takeIf { it > 0 }
-            ?.let { minOf(MAX_COMPLETION_TOKENS, it) }
-            ?: MAX_COMPLETION_TOKENS
+    internal fun resolveCompletionBudget(
+        body: LLMRequest.Chat,
+        prompt: String,
+        contextSize: Int,
+    ): Int {
+        val requestedBudget = if (usesConfiguredContextWindow(body)) {
+            MAX_COMPLETION_TOKENS
+        } else {
+            body.maxTokens
+                .takeIf { it > 0 }
+                ?.let { minOf(MAX_COMPLETION_TOKENS, it) }
+                ?: MAX_COMPLETION_TOKENS
+        }
+        val promptEstimate = prompt.estimateTokenCount()
+        val availableCompletion = (contextSize - promptEstimate - CONTEXT_SAFETY_MARGIN_TOKENS).coerceAtLeast(1)
+        return requestedBudget.coerceAtMost(availableCompletion)
+    }
 
     internal fun resolveContextSize(
         body: LLMRequest.Chat,
         profile: LocalModelProfile,
         prompt: String,
-        completionBudget: Int = resolveCompletionBudget(body),
     ): Int {
+        if (usesConfiguredContextWindow(body)) {
+            return body.maxTokens
+                .coerceAtLeast(MIN_CONTEXT_SIZE)
+                .coerceAtMost(profile.maxContextSize)
+        }
+
         val promptEstimate = prompt.estimateTokenCount()
+        val completionBudget = body.maxTokens
+            .takeIf { it > 0 }
+            ?.let { minOf(MAX_COMPLETION_TOKENS, it) }
+            ?: MAX_COMPLETION_TOKENS
         val desired = promptEstimate + completionBudget + CONTEXT_SAFETY_MARGIN_TOKENS
         return nextContextBucket(desired)
             .coerceAtLeast(MIN_CONTEXT_SIZE)
+            .coerceAtMost(profile.defaultContextSize.coerceAtMost(profile.maxContextSize))
+    }
+
+    internal fun resolveExpansionContextSize(
+        body: LLMRequest.Chat,
+        profile: LocalModelProfile,
+    ): Int? = if (usesConfiguredContextWindow(body)) {
+        null
+    } else {
+        profile.defaultContextSize
+            .coerceAtLeast(MIN_CONTEXT_SIZE)
             .coerceAtMost(profile.maxContextSize)
     }
+
+    internal fun usesConfiguredContextWindow(body: LLMRequest.Chat): Boolean =
+        body.maxTokens >= MIN_CONTEXT_SIZE
 
     private fun nextContextBucket(tokens: Int): Int {
         val normalized = tokens.coerceAtLeast(MIN_CONTEXT_SIZE)
