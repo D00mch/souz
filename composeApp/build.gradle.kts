@@ -52,18 +52,19 @@ val macNotarizationPassword = providers.gradleProperty("mac.notarization.passwor
 val macNotarizationTeamId = providers.gradleProperty("mac.notarization.teamId").orElse("A6VYB9APPM")
 
 val sourceAppResourcesDir = layout.projectDirectory.dir("src/jvmMain/resources")
+val sourceNativeResourcesDir = rootProject.layout.projectDirectory.dir("native/src/main/resources")
 val preparedAppResourcesDir = layout.buildDirectory.dir("generated/souz-app-resources")
 
 val prepareMacAppResources by tasks.registering(Sync::class) {
     group = "distribution"
-    description = "Prepare app resources and mirror TDLight/JNativeHook natives into common/darwin-* for packaging."
+    description = "Prepare app resources and mirror macOS native binaries into common/darwin-* for packaging."
 
     from(sourceAppResourcesDir)
     into(preparedAppResourcesDir)
 
     // Compose copies app resources from <root>/common + OS/target subfolders.
-    // Mirror native binaries from source-only darwin-* roots into common so they
-    // are available in Contents/app/resources and loaded from java.library.path.
+    // Mirror native binaries into common so they are available in
+    // Contents/app/resources for macOS packaging and signing.
     from(sourceAppResourcesDir.file("darwin-arm64/libtdjni.macos_arm64.dylib")) {
         into("common/darwin-arm64")
     }
@@ -76,10 +77,10 @@ val prepareMacAppResources by tasks.registering(Sync::class) {
     from(sourceAppResourcesDir.file("darwin-x64/libJNativeHook.dylib")) {
         into("common/darwin-x64")
     }
-    from(sourceAppResourcesDir.file("darwin-arm64/libsouz_llama_bridge.dylib")) {
+    from(sourceNativeResourcesDir.file("darwin-arm64/libsouz_llama_bridge.dylib")) {
         into("common/darwin-arm64")
     }
-    from(sourceAppResourcesDir.file("darwin-x64/libsouz_llama_bridge.dylib")) {
+    from(sourceNativeResourcesDir.file("darwin-x64/libsouz_llama_bridge.dylib")) {
         into("common/darwin-x64")
     }
 }
@@ -207,7 +208,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Pkg)
             packageName = distributionPackageName
-            packageVersion = "1.0.5"
+            packageVersion = "1.0.6"
             // Compose copies app resources from <root>/common + OS/target subfolders.
             appResourcesRootDir.set(preparedAppResourcesDir)
 
