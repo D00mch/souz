@@ -46,6 +46,7 @@ If you are not sure about something, left a note for other developers to review.
 ├── llms/                                   # Shared LLM contracts/helpers module
 │   └── INFO.md                             # Module notes and internal layout
 ├── native/                                 # Shared local-model runtime/native bridge module
+│   ├── src/main/resources/                 # Packaged llama bridge binaries by macOS architecture
 │   └── INFO.md                             # Module notes and internal layout
 ├── composeApp/                             # Main desktop application module
 │   ├── build/                              # Build output for composeApp (generated)
@@ -117,7 +118,7 @@ If you are not sure about something, left a note for other developers to review.
 │       │   ├── resources/                  # Runtime resources
 │       │   │   ├── bot_avatar.png          # Default avatar image for the Telegram PC Control bot
 │       │   │   ├── certs/                  # Trusted certificate bundles
-│       │   │   ├── darwin-arm64/           # macOS arm64 JNI/native binaries
+│       │   │   ├── darwin-arm64/           # macOS arm64 app-owned JNI/native binaries
 │       │   │   └── scripts/                # Helper scripts and native build helpers
 │       │   └── swift/                      # Swift source for native media keys bridge
 │       └── jvmTest/                        # JVM test source set
