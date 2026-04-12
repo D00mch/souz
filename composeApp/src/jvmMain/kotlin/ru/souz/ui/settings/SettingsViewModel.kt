@@ -4,7 +4,6 @@ import androidx.lifecycle.viewModelScope
 import io.ktor.util.logging.debug
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -26,9 +25,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.local.LocalModelDownloadState
 import ru.souz.llms.local.LocalLlamaRuntime
-import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.downloadPromptFor
 import ru.souz.service.telegram.TelegramAuthStep
@@ -38,7 +35,11 @@ import ru.souz.tool.config.ToolSoundConfig
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.calendar.CalendarAppleScriptCommands
 import ru.souz.ui.BaseViewModel
+import ru.souz.ui.common.cancelLocalModelDownload as cancelLocalModelDownloadFlow
+import ru.souz.ui.common.launchDesktopIndexRebuild
+import ru.souz.ui.common.launchLocalModelPreload
 import ru.souz.ui.common.openProviderLink
+import ru.souz.ui.common.startLocalModelDownload
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.ui.common.usecases.ApiKeyValues
 import ru.souz.ui.settings.SettingsEvent.*
@@ -211,7 +212,7 @@ class SettingsViewModel(
                 keysProvider.embeddingsModel = event.model
                 val effectiveModel = keysProvider.embeddingsModel
                 if (currentModel != effectiveModel) {
-                    scheduleDesktopIndexRebuild()
+                    launchDesktopIndexRebuild(viewModelScope, ioDispatchers, desktopInfoRepository, l)
                 }
                 setState { copy(embeddingsModel = effectiveModel) }
             }
@@ -391,7 +392,7 @@ class SettingsViewModel(
         val newPrompt = agentFacade.setModel(model)
         val effectiveEmbeddingsModel = keysProvider.embeddingsModel
         if (previousEmbeddingsModel != effectiveEmbeddingsModel) {
-            scheduleDesktopIndexRebuild()
+            launchDesktopIndexRebuild(viewModelScope, ioDispatchers, desktopInfoRepository, l)
         }
         setState {
             copy(
@@ -403,71 +404,63 @@ class SettingsViewModel(
             )
         }
         fetchBalance()
-        scheduleLocalModelPreload(model)
+        localModelPreloadJob = launchLocalModelPreload(
+            currentJob = localModelPreloadJob,
+            scope = viewModelScope,
+            dispatcher = ioDispatchers,
+            model = model,
+            runtime = localLlamaRuntime,
+            logger = l,
+        )
     }
 
     private suspend fun confirmLocalModelDownload() {
-        val prompt = currentState.localModelDownloadPrompt ?: return
-        localModelDownloadJob?.cancelAndJoin()
-        localModelDownloadJob = viewModelScope.launch(ioDispatchers) {
-            setState {
-                copy(
-                    localModelDownloadPrompt = null,
-                    localModelDownloadState = LocalModelDownloadState(prompt),
-                )
-            }
-
-            runCatching {
-                localModelStore.downloadRequiredAssets(prompt.profile) { progress ->
-                    setState {
-                        copy(localModelDownloadState = LocalModelDownloadState(prompt, progress))
-                    }
+        localModelDownloadJob = startLocalModelDownload(
+            currentJob = localModelDownloadJob,
+            scope = viewModelScope,
+            dispatcher = ioDispatchers,
+            prompt = currentState.localModelDownloadPrompt,
+            store = localModelStore,
+            updateDownloadState = { state ->
+                setState {
+                    copy(
+                        localModelDownloadPrompt = null,
+                        localModelDownloadState = state,
+                    )
                 }
-            }.onSuccess {
+            },
+            onSuccess = { prompt ->
                 applySelectedModel(prompt.model)
                 setState { copy(localModelDownloadState = null) }
-            }.onFailure { error ->
-                setState { copy(localModelDownloadState = null) }
-                if (error is CancellationException) {
-                    return@onFailure
-                }
+            },
+            onError = { error ->
                 send(SettingsEffect.ShowSnackbar(error.message ?: getString(Res.string.local_model_download_failed)))
             }
-
-            localModelDownloadJob = null
+        )?.also { job ->
+            job.invokeOnCompletion {
+                if (localModelDownloadJob === job) {
+                    localModelDownloadJob = null
+                }
+            }
         }
     }
 
     private suspend fun cancelLocalModelDownload() {
-        val hadActiveDownload = currentState.localModelDownloadState != null
-        localModelDownloadJob?.cancelAndJoin()
-        localModelDownloadJob = null
-        setState {
-            copy(
-                localModelDownloadPrompt = null,
-                localModelDownloadState = null,
-            )
-        }
-        if (hadActiveDownload) {
-            send(SettingsEffect.ShowSnackbar(getString(Res.string.local_model_download_cancelled)))
-        }
-    }
-
-    private fun scheduleLocalModelPreload(model: LLMModel) {
-        if (!LocalModelProfiles.isLocalModelAlias(model.alias)) {
-            localModelPreloadJob?.cancel()
-            localModelPreloadJob = null
-            return
-        }
-        localModelPreloadJob?.cancel()
-        localModelPreloadJob = viewModelScope.launch(ioDispatchers) {
-            runCatching { localLlamaRuntime.preload(model.alias) }
-                .onFailure { error ->
-                    if (error !is CancellationException) {
-                        l.warn("Local model preload failed for {}: {}", model.alias, error.message)
-                    }
+        localModelDownloadJob = cancelLocalModelDownloadFlow(
+            currentJob = localModelDownloadJob,
+            hasActiveDownload = currentState.localModelDownloadState != null,
+            clearDownloadState = {
+                setState {
+                    copy(
+                        localModelDownloadPrompt = null,
+                        localModelDownloadState = null,
+                    )
                 }
-        }
+            },
+            onCancelled = {
+                send(SettingsEffect.ShowSnackbar(getString(Res.string.local_model_download_cancelled)))
+            },
+        )
     }
 
     private suspend fun refreshFromProvider() {
@@ -506,7 +499,7 @@ class SettingsViewModel(
         ) { keysProvider.defaultEmbeddingsModel(llmBuildProfile) }
         if (selectedEmbeddingsModel != configuredEmbeddingsModel) {
             keysProvider.embeddingsModel = selectedEmbeddingsModel
-            scheduleDesktopIndexRebuild()
+            launchDesktopIndexRebuild(viewModelScope, ioDispatchers, desktopInfoRepository, l)
         }
 
         val availableVoiceRecognitionModels = keysProvider.availableVoiceRecognitionModels(llmBuildProfile)
@@ -570,15 +563,6 @@ class SettingsViewModel(
                 voiceSpeed = voiceSpeed,
                 voiceSpeedInput = voiceSpeed.toString(),
             )
-        }
-    }
-
-    private fun scheduleDesktopIndexRebuild() {
-        viewModelScope.launch(ioDispatchers) {
-            runCatching { desktopInfoRepository.rebuildIndexNow() }
-                .onFailure { error ->
-                    l.warn("Desktop index rebuild failed: {}", error.message)
-                }
         }
     }
 

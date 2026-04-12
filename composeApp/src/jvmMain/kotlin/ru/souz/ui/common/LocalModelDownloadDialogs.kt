@@ -117,17 +117,17 @@ fun LocalModelDownloadProgressDialog(
 
 @Composable
 private fun buildPromptDetails(prompt: LocalModelDownloadPrompt): String = buildString {
-    prompt.downloads.forEachIndexed { index, target ->
+    prompt.downloads.forEachIndexed { index, profile ->
         if (index > 0) {
             appendLine()
             appendLine()
         }
-        appendLine(target.profile.displayName)
-        appendLine(stringResource(Res.string.local_model_download_detail_repo).format(target.profile.huggingFaceRepoId))
-        appendLine(stringResource(Res.string.local_model_download_detail_quantization).format(target.profile.quantization))
-        appendLine(stringResource(Res.string.local_model_download_detail_license).format(target.profile.licenseRequirements.summary))
-        append(stringResource(Res.string.local_model_download_detail_storage).format(target.targetPath))
-        if (target.profile.licenseRequirements.requiresManualAcceptance) {
+        appendLine(profile.displayName)
+        appendLine(stringResource(Res.string.local_model_download_detail_repo).format(profile.huggingFaceRepoId))
+        appendLine(stringResource(Res.string.local_model_download_detail_quantization).format(profile.quantization))
+        appendLine(stringResource(Res.string.local_model_download_detail_license).format(profile.licenseRequirements.summary))
+        append(stringResource(Res.string.local_model_download_detail_storage).format(prompt.targetPath(profile)))
+        if (profile.licenseRequirements.requiresManualAcceptance) {
             appendLine()
             appendLine()
             append(stringResource(Res.string.local_model_download_detail_manual_license))
@@ -456,8 +456,8 @@ private fun LocalModelDownloadCloseButton(
 
 @Composable
 private fun LocalModelDownloadBody(state: LocalModelDownloadState) {
-    val currentTarget = state.prompt.downloads.firstOrNull { target ->
-        target.profile.displayName == state.progress.activeProfileName
+    val currentTarget = state.prompt.downloads.firstOrNull { profile ->
+        profile.displayName == state.progress.activeProfileName
     } ?: state.prompt.downloads.firstOrNull()
     val progressText = state.fraction
         ?.let {
@@ -473,7 +473,7 @@ private fun LocalModelDownloadBody(state: LocalModelDownloadState) {
         ?.let { "${(it * 100).roundToInt()}%" }
         ?: stringResource(Res.string.local_model_download_progress_action)
     val speedBytesPerSecond = rememberDownloadSpeed(
-        resetKey = currentTarget?.targetPath ?: state.prompt.profile.id,
+        resetKey = currentTarget?.let(state.prompt::targetPath) ?: state.prompt.profile.id,
         bytesDownloaded = state.progress.bytesDownloaded,
     )
     val storageLabel = stringResource(Res.string.local_model_download_detail_storage)
@@ -538,7 +538,7 @@ private fun LocalModelDownloadBody(state: LocalModelDownloadState) {
 
         LocalModelDownloadStorageCard(
             label = storageLabel,
-            path = currentTarget?.targetPath ?: "",
+            path = currentTarget?.let(state.prompt::targetPath) ?: "",
         )
     }
 }

@@ -590,7 +590,7 @@ class MainViewModelTest {
             assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
             assertEquals(
                 listOf(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.id, LocalEmbeddingProfiles.default().id),
-                state.localModelDownloadPrompt?.downloads?.map { it.profile.id },
+                state.localModelDownloadPrompt?.downloads?.map { it.id },
             )
             assertFalse(state.selectedModel == LLMModel.LocalQwen3_4B_Instruct_2507.alias)
         } finally {
@@ -615,7 +615,7 @@ class MainViewModelTest {
             assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507.alias, state.selectedModel)
             assertEquals(
                 listOf(LocalEmbeddingProfiles.default().id),
-                state.localModelDownloadPrompt?.downloads?.map { it.profile.id },
+                state.localModelDownloadPrompt?.downloads?.map { it.id },
             )
         } finally {
             harness.clear()

@@ -69,7 +69,6 @@ data class LocalEmbeddingProfile(
     override val quantization: String,
     override val minRamGb: Int,
     val maxContextSize: Int,
-    val outputDimensions: Int,
     val queryPrefix: String,
     val documentPrefix: String,
     override val licenseRequirements: LocalLicenseRequirements,
@@ -267,7 +266,6 @@ object LocalEmbeddingProfiles {
         quantization = "Q4_0",
         minRamGb = 4,
         maxContextSize = 2048,
-        outputDimensions = 768,
         queryPrefix = "task: search result | query: ",
         documentPrefix = "title: none | text: ",
         licenseRequirements = LocalLicenseRequirements(
@@ -285,21 +283,8 @@ object LocalEmbeddingProfiles {
     fun default(): LocalEmbeddingProfile = EMBEDDING_GEMMA_300M
 }
 
-object LocalModelBindings {
-    fun linkedEmbeddingProfile(model: LLMModel): LocalEmbeddingProfile? = when (model.provider) {
-        ru.souz.llms.LlmProvider.LOCAL -> LocalEmbeddingProfiles.default()
-        else -> null
-    }
-
-    fun linkedEmbeddingProfile(profile: LocalModelProfile): LocalEmbeddingProfile =
-        linkedEmbeddingProfile(profile.gigaModel) ?: LocalEmbeddingProfiles.default()
-
-    fun requiredDownloadProfiles(profile: LocalModelProfile): List<LocalDownloadableProfile> =
-        buildList {
-            add(profile)
-            add(linkedEmbeddingProfile(profile))
-        }
-}
+fun LocalModelProfile.requiredDownloadProfiles(): List<LocalDownloadableProfile> =
+    listOf(this, LocalEmbeddingProfiles.default())
 
 data class LocalProviderStatus(
     val available: Boolean,

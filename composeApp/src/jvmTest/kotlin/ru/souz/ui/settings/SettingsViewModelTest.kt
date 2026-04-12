@@ -250,7 +250,7 @@ class SettingsViewModelTest {
         assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
         assertEquals(
             listOf(localProfile.id, LocalEmbeddingProfiles.default().id),
-            state.localModelDownloadPrompt?.downloads?.map { it.profile.id },
+            state.localModelDownloadPrompt?.downloads?.map { it.id },
         )
         assertNull(state.localModelDownloadState)
         verify(exactly = 1) { agentFacade.setModel(LLMModel.QwenMax) }
@@ -338,7 +338,7 @@ class SettingsViewModelTest {
 
         val state = viewModel.uiState.value
         assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
-        assertEquals(listOf(LocalEmbeddingProfiles.default().id), state.localModelDownloadPrompt?.downloads?.map { it.profile.id })
+        assertEquals(listOf(LocalEmbeddingProfiles.default().id), state.localModelDownloadPrompt?.downloads?.map { it.id })
         verify(exactly = 0) { agentFacade.setModel(any()) }
     }
 }

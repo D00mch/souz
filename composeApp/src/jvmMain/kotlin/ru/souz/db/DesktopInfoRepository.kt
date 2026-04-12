@@ -9,6 +9,8 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.local.LocalEmbeddingProfiles
+import ru.souz.llms.local.LocalModelStore
 import java.time.LocalDate
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -23,12 +25,14 @@ class DesktopInfoRepository(
     private val db: VectorDB,
     private val extractor: DesktopDataExtractor,
     private val settingsProvider: SettingsProvider,
+    private val localModelStore: LocalModelStore = LocalModelStore(),
 ) : AgentDesktopInfoRepository {
     private val l = LoggerFactory.getLogger(DesktopInfoRepository::class.java)
     private val refreshMutex = Mutex()
 
     companion object {
         private const val LAST_RUN_KEY = "rag_repo_last_run"
+        private const val INDEX_MODEL_KEY = "rag_repo_index_model"
         private const val REMOTE_EMBEDDINGS_BATCH_SIZE = 500
         private const val LOCAL_EMBEDDINGS_BATCH_SIZE = 64
     }
@@ -65,7 +69,7 @@ class DesktopInfoRepository(
      * stored texts from the database.
      */
     override suspend fun search(query: String, limit: Int): List<StorredData> {
-        if (!hasEmbeddingsKeyConfigured()) return emptyList()
+        if (!isEmbeddingsReady() || !isCurrentIndexReady()) return emptyList()
         val emb = when (val resp = api.embeddings(LLMRequest.Embeddings(input = listOf(query)))) {
             is LLMResponse.Embeddings.Ok -> resp.data.first().embedding
             is LLMResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
@@ -75,17 +79,20 @@ class DesktopInfoRepository(
 
     private suspend fun refreshDesktopData(force: Boolean) = refreshMutex.withLock {
         db.initializeOnce()
-        if (!hasEmbeddingsKeyConfigured()) {
+        if (!isEmbeddingsReady()) {
             l.info(
-                "Skip storeDesktopDataDaily: embeddings provider {} has no configured API key",
-                settingsProvider.embeddingsModel.provider
+                "Skip storeDesktopDataDaily: embeddings model {} is not ready",
+                settingsProvider.embeddingsModel.alias,
             )
             return
         }
 
         val today = LocalDate.now().toString() // returns data like 2023-03-31
-        if (!force && ConfigStore.get(LAST_RUN_KEY, "") == today) return
+        val targetEmbeddingsModel = currentEmbeddingsFingerprint()
+        val indexModel = currentIndexModel()
+        if (!force && ConfigStore.get(LAST_RUN_KEY, "") == today && indexModel == targetEmbeddingsModel) return
 
+        ConfigStore.rm(INDEX_MODEL_KEY)
         db.clearAllData()
         val data = extractor.all()
         if (data.isEmpty()) {
@@ -100,12 +107,29 @@ class DesktopInfoRepository(
             REMOTE_EMBEDDINGS_BATCH_SIZE
         }
         data.chunked(batchSize).forEach { chunk ->
+            if (!isEmbeddingsReady() || currentEmbeddingsFingerprint() != targetEmbeddingsModel) {
+                l.info("Stop desktop index rebuild: embeddings model changed while rebuilding")
+                return@withLock
+            }
             storeDesktopInfo(chunk)
         }
+        ConfigStore.put(INDEX_MODEL_KEY, targetEmbeddingsModel)
         ConfigStore.put(LAST_RUN_KEY, today)
     }
 
-    private fun hasEmbeddingsKeyConfigured(): Boolean = settingsProvider.hasKey(settingsProvider.embeddingsModel.provider)
+    private fun isEmbeddingsReady(): Boolean {
+        val model = settingsProvider.embeddingsModel
+        if (!settingsProvider.hasKey(model.provider)) return false
+        if (model.provider != LlmProvider.LOCAL) return true
+        val profile = LocalEmbeddingProfiles.forAlias(model.alias) ?: return false
+        return localModelStore.isPresent(profile)
+    }
+
+    private fun isCurrentIndexReady(): Boolean = currentIndexModel() == currentEmbeddingsFingerprint()
+
+    private fun currentIndexModel(): String = ConfigStore.get(INDEX_MODEL_KEY, "")
+
+    private fun currentEmbeddingsFingerprint(): String = settingsProvider.embeddingsModel.name
 }
 
 suspend fun main() {

@@ -479,7 +479,7 @@ class LocalInferenceSupportTest {
                 LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.id,
                 LocalEmbeddingProfiles.default().id,
             ),
-            missingPrompt.downloads.map { it.profile.id },
+            missingPrompt.downloads.map { it.id },
         )
 
         val storedPath = store.modelPath(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507)
@@ -488,7 +488,7 @@ class LocalInferenceSupportTest {
 
         val embeddingsPrompt = store.downloadPromptFor(model)
         assertNotNull(embeddingsPrompt)
-        assertEquals(listOf(LocalEmbeddingProfiles.default().id), embeddingsPrompt.downloads.map { it.profile.id })
+        assertEquals(listOf(LocalEmbeddingProfiles.default().id), embeddingsPrompt.downloads.map { it.id })
 
         val embeddingPath = store.modelPath(LocalEmbeddingProfiles.default())
         Files.createDirectories(embeddingPath.parent)
@@ -508,9 +508,9 @@ class LocalInferenceSupportTest {
             assertNotNull(prompt)
             assertEquals(profile.gigaModel, prompt.model)
             assertEquals(profile, prompt.profile)
-            assertEquals(profile.id, prompt.downloads.first().profile.id)
-            assertEquals(store.modelPath(profile).toAbsolutePath().toString(), prompt.downloads.first().targetPath)
-            assertEquals(LocalEmbeddingProfiles.default().id, prompt.downloads.last().profile.id)
+            assertEquals(profile.id, prompt.downloads.first().id)
+            assertEquals(store.modelPath(profile).toAbsolutePath().toString(), prompt.targetPath(prompt.downloads.first()))
+            assertEquals(LocalEmbeddingProfiles.default().id, prompt.downloads.last().id)
         }
     }
 

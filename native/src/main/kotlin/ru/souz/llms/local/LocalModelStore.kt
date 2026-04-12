@@ -47,8 +47,7 @@ class LocalModelStore(
         profile: LocalModelProfile,
         onProgress: suspend (LocalModelDownloadProgress) -> Unit = {},
     ): Path = downloadMutex.withLock {
-        val missingProfiles = LocalModelBindings.requiredDownloadProfiles(profile)
-            .filterNot(::isPresent)
+        val missingProfiles = profile.requiredDownloadProfiles().filterNot(::isPresent)
 
         if (missingProfiles.isEmpty()) {
             return@withLock requireAvailable(profile)
