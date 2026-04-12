@@ -4,6 +4,7 @@ import com.sun.management.OperatingSystemMXBean
 import java.lang.management.ManagementFactory
 import org.slf4j.LoggerFactory
 import ru.souz.llms.DEFAULT_MAX_TOKENS
+import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LocalModelAvailability
 
@@ -11,6 +12,20 @@ data class LocalLicenseRequirements(
     val summary: String,
     val requiresManualAcceptance: Boolean = false,
 )
+
+interface LocalDownloadableProfile {
+    val id: String
+    val displayName: String
+    val huggingFaceRepoId: String
+    val ggufFilename: String
+    val quantization: String
+    val minRamGb: Int
+    val licenseRequirements: LocalLicenseRequirements
+    val defaultGpuLayers: Int
+
+    val downloadUrl: String
+        get() = "https://huggingface.co/$huggingFaceRepoId/resolve/main/$ggufFilename?download=true"
+}
 
 enum class LocalPromptFamily {
     QWEN_CHATML,
@@ -25,22 +40,45 @@ data class LocalSamplingDefaults(
 
 data class LocalModelProfile(
     val gigaModel: LLMModel,
-    val id: String,
-    val displayName: String,
-    val huggingFaceRepoId: String,
-    val ggufFilename: String,
-    val quantization: String,
-    val minRamGb: Int,
+    override val id: String,
+    override val displayName: String,
+    override val huggingFaceRepoId: String,
+    override val ggufFilename: String,
+    override val quantization: String,
+    override val minRamGb: Int,
     val defaultContextSize: Int,
     val maxContextSize: Int = defaultContextSize,
     val promptFamily: LocalPromptFamily,
     val samplingDefaults: LocalSamplingDefaults,
     val useNativeGrammar: Boolean = false,
-    val licenseRequirements: LocalLicenseRequirements,
-    val defaultGpuLayers: Int = 99,
-) {
-    val downloadUrl: String =
-        "https://huggingface.co/$huggingFaceRepoId/resolve/main/$ggufFilename?download=true"
+    override val licenseRequirements: LocalLicenseRequirements,
+    override val defaultGpuLayers: Int = 99,
+) : LocalDownloadableProfile
+
+enum class LocalEmbeddingInputKind {
+    QUERY,
+    DOCUMENT,
+}
+
+data class LocalEmbeddingProfile(
+    val embeddingsModel: EmbeddingsModel,
+    override val id: String,
+    override val displayName: String,
+    override val huggingFaceRepoId: String,
+    override val ggufFilename: String,
+    override val quantization: String,
+    override val minRamGb: Int,
+    val maxContextSize: Int,
+    val outputDimensions: Int,
+    val queryPrefix: String,
+    val documentPrefix: String,
+    override val licenseRequirements: LocalLicenseRequirements,
+    override val defaultGpuLayers: Int = 99,
+) : LocalDownloadableProfile {
+    fun format(text: String, inputKind: LocalEmbeddingInputKind): String = when (inputKind) {
+        LocalEmbeddingInputKind.QUERY -> "$queryPrefix$text"
+        LocalEmbeddingInputKind.DOCUMENT -> "$documentPrefix$text"
+    }
 }
 
 enum class LocalPlatform(
@@ -217,6 +255,50 @@ object LocalModelProfiles {
             ?: error("Local inference requires at least ${QWEN3_4B_INSTRUCT_2507.minRamGb} GB RAM")
 
     fun isLocalModelAlias(alias: String): Boolean = forAlias(alias) != null
+}
+
+object LocalEmbeddingProfiles {
+    val EMBEDDING_GEMMA_300M = LocalEmbeddingProfile(
+        embeddingsModel = EmbeddingsModel.LocalEmbeddingGemma300M,
+        id = "local-embeddinggemma-300m",
+        displayName = "Local EmbeddingGemma 300M",
+        huggingFaceRepoId = "unsloth/embeddinggemma-300m-GGUF",
+        ggufFilename = "embeddinggemma-300m-Q4_0.gguf",
+        quantization = "Q4_0",
+        minRamGb = 4,
+        maxContextSize = 2048,
+        outputDimensions = 768,
+        queryPrefix = "task: search result | query: ",
+        documentPrefix = "title: none | text: ",
+        licenseRequirements = LocalLicenseRequirements(
+            summary = "Gemma license",
+            requiresManualAcceptance = false,
+        ),
+    )
+
+    val all: List<LocalEmbeddingProfile> = listOf(EMBEDDING_GEMMA_300M)
+
+    fun forAlias(alias: String): LocalEmbeddingProfile? = all.firstOrNull { profile ->
+        profile.id.equals(alias, ignoreCase = true) || profile.embeddingsModel.alias.equals(alias, ignoreCase = true)
+    }
+
+    fun default(): LocalEmbeddingProfile = EMBEDDING_GEMMA_300M
+}
+
+object LocalModelBindings {
+    fun linkedEmbeddingProfile(model: LLMModel): LocalEmbeddingProfile? = when (model.provider) {
+        ru.souz.llms.LlmProvider.LOCAL -> LocalEmbeddingProfiles.default()
+        else -> null
+    }
+
+    fun linkedEmbeddingProfile(profile: LocalModelProfile): LocalEmbeddingProfile =
+        linkedEmbeddingProfile(profile.gigaModel) ?: LocalEmbeddingProfiles.default()
+
+    fun requiredDownloadProfiles(profile: LocalModelProfile): List<LocalDownloadableProfile> =
+        buildList {
+            add(profile)
+            add(linkedEmbeddingProfile(profile))
+        }
 }
 
 data class LocalProviderStatus(

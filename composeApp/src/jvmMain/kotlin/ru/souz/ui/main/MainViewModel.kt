@@ -24,6 +24,8 @@ import ru.souz.agent.AgentFacade
 import ru.souz.agent.state.AgentContext
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
+import ru.souz.db.VectorDB
+import ru.souz.db.syncEmbeddingsSelection
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.local.LocalModelDownloadState
@@ -460,7 +462,7 @@ class MainViewModel(
             }
 
             runCatching {
-                localModelStore.download(prompt.profile) { progress ->
+                localModelStore.downloadRequiredAssets(prompt.profile) { progress ->
                     setState {
                         copy(localModelDownloadState = LocalModelDownloadState(prompt, progress))
                     }
@@ -529,9 +531,14 @@ class MainViewModel(
     }
 
     private fun applySelectedModel(model: LLMModel) {
+        val previousEmbeddingsModel = settingsProvider.embeddingsModel
         if (settingsProvider.gigaModel != model) {
             settingsProvider.gigaModel = model
             chatUseCase.updateModel(model)
+        }
+        val effectiveEmbeddingsModel = settingsProvider.syncEmbeddingsSelection()
+        if (previousEmbeddingsModel != effectiveEmbeddingsModel) {
+            VectorDB.clearAllData()
         }
         scheduleLocalModelPreload(model)
     }

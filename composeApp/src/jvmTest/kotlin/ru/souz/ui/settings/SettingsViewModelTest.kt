@@ -33,6 +33,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
+import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
@@ -244,6 +245,10 @@ class SettingsViewModelTest {
 
         val state = viewModel.uiState.value
         assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
+        assertEquals(
+            listOf(localProfile.id, LocalEmbeddingProfiles.default().id),
+            state.localModelDownloadPrompt?.downloads?.map { it.profile.id },
+        )
         assertNull(state.localModelDownloadState)
         verify(exactly = 1) { agentFacade.setModel(LLMModel.QwenMax) }
     }

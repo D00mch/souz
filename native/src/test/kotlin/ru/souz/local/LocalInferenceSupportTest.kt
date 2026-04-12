@@ -7,6 +7,7 @@ import java.net.http.HttpHeaders
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import com.sun.jna.Pointer
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -38,6 +39,8 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalBridgeLoader
+import ru.souz.llms.local.LocalEmbeddingInputKind
+import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalHostInfo
 import ru.souz.llms.local.LocalHostInfoProvider
 import ru.souz.llms.local.LocalLlamaRuntime
@@ -463,7 +466,7 @@ class LocalInferenceSupportTest {
     }
 
     @Test
-    fun `download prompt is returned only when local model is missing`() {
+    fun `download prompt is returned until both local chat and linked embeddings are available`() {
         val tempRoot = Files.createTempDirectory("souz-local-models-test")
         val store = LocalModelStore(rootDir = tempRoot)
         val model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel
@@ -471,10 +474,25 @@ class LocalInferenceSupportTest {
         val missingPrompt = store.downloadPromptFor(model)
         assertNotNull(missingPrompt)
         assertEquals(model, missingPrompt.model)
+        assertEquals(
+            listOf(
+                LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.id,
+                LocalEmbeddingProfiles.default().id,
+            ),
+            missingPrompt.downloads.map { it.profile.id },
+        )
 
         val storedPath = store.modelPath(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507)
         Files.createDirectories(storedPath.parent)
         Files.writeString(storedPath, "stub")
+
+        val embeddingsPrompt = store.downloadPromptFor(model)
+        assertNotNull(embeddingsPrompt)
+        assertEquals(listOf(LocalEmbeddingProfiles.default().id), embeddingsPrompt.downloads.map { it.profile.id })
+
+        val embeddingPath = store.modelPath(LocalEmbeddingProfiles.default())
+        Files.createDirectories(embeddingPath.parent)
+        Files.writeString(embeddingPath, "stub")
 
         assertNull(store.downloadPromptFor(model))
     }
@@ -490,7 +508,9 @@ class LocalInferenceSupportTest {
             assertNotNull(prompt)
             assertEquals(profile.gigaModel, prompt.model)
             assertEquals(profile, prompt.profile)
-            assertEquals(store.modelPath(profile).toAbsolutePath().toString(), prompt.targetPath)
+            assertEquals(profile.id, prompt.downloads.first().profile.id)
+            assertEquals(store.modelPath(profile).toAbsolutePath().toString(), prompt.downloads.first().targetPath)
+            assertEquals(LocalEmbeddingProfiles.default().id, prompt.downloads.last().profile.id)
         }
     }
 
@@ -1135,13 +1155,80 @@ class LocalInferenceSupportTest {
     }
 
     @Test
-    fun `local chat api reports unsupported features`() = runTest {
-        val api = LocalChatAPI(runtime = mockk(relaxed = true))
+    fun `local runtime formats embedding gemma inputs for query and document batches`() = runTest {
+        val profile = LocalEmbeddingProfiles.default()
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "ok",
+            selectedProfile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+            availableModels = listOf(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel),
+        )
+
+        val modelStore = mockk<LocalModelStore>()
+        every { modelStore.requireAvailable(profile) } returns Path.of("/tmp/${profile.ggufFilename}")
+
+        val bridge = mockk<LocalNativeBridge>()
+        val runtimePointer = Pointer(51)
+        val modelPointer = Pointer(52)
+        val requests = mutableListOf<String>()
+        every { bridge.createRuntime() } returns runtimePointer
+        every { bridge.loadModel(runtimePointer, any()) } returns modelPointer
+        every { bridge.embeddings(runtimePointer, modelPointer, capture(requests)) } returnsMany listOf(
+            """{"embeddings":[[0.1,0.2]],"prompt_tokens":4,"total_tokens":4}""",
+            """{"embeddings":[[0.3,0.4],[0.5,0.6]],"prompt_tokens":8,"total_tokens":8}""",
+        )
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = modelStore,
+            promptRenderer = mockk(relaxed = true),
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = bridge,
+        )
+
+        val queryResponse = runtime.embeddings(
+            LLMRequest.Embeddings(
+                model = profile.embeddingsModel.alias,
+                input = listOf("hello"),
+            )
+        )
+        val documentResponse = runtime.embeddings(
+            LLMRequest.Embeddings(
+                model = profile.embeddingsModel.alias,
+                input = listOf("doc one", "doc two"),
+            )
+        )
+
+        assertIs<LLMResponse.Embeddings.Ok>(queryResponse)
+        assertIs<LLMResponse.Embeddings.Ok>(documentResponse)
+
+        val queryRequest = restJsonMapper.readValue(requests[0], LocalLlamaRuntime.LocalEmbeddingsRequest::class.java)
+        assertEquals(LocalEmbeddingInputKind.QUERY, runtime.resolveEmbeddingInputKind(LLMRequest.Embeddings(input = listOf("hello"))))
+        assertEquals(listOf("task: search result | query: hello"), queryRequest.inputs)
+
+        val documentRequest = restJsonMapper.readValue(requests[1], LocalLlamaRuntime.LocalEmbeddingsRequest::class.java)
+        assertEquals(LocalEmbeddingInputKind.DOCUMENT, runtime.resolveEmbeddingInputKind(LLMRequest.Embeddings(input = listOf("doc one", "doc two"))))
+        assertEquals(
+            listOf("title: none | text: doc one", "title: none | text: doc two"),
+            documentRequest.inputs,
+        )
+    }
+
+    @Test
+    fun `local chat api supports embeddings and still rejects unsupported file features`() = runTest {
+        val runtime = mockk<LocalLlamaRuntime>(relaxed = true)
+        coEvery { runtime.embeddings(any()) } returns LLMResponse.Embeddings.Ok(
+            data = listOf(LLMResponse.Embedding(listOf(0.1, 0.2), 0, "embedding")),
+            model = LocalEmbeddingProfiles.default().embeddingsModel.alias,
+            objectType = "list",
+        )
+        val api = LocalChatAPI(runtime = runtime)
 
         val embeddings = api.embeddings(LLMRequest.Embeddings(input = listOf("hello")))
         val balance = api.balance()
 
-        assertIs<LLMResponse.Embeddings.Error>(embeddings)
+        assertIs<LLMResponse.Embeddings.Ok>(embeddings)
         assertIs<LLMResponse.Balance.Error>(balance)
         assertFailsWith<UnsupportedOperationException> { api.uploadFile(createTempFile().toFile()) }
         assertFailsWith<UnsupportedOperationException> { api.downloadFile("file_1") }

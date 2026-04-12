@@ -20,7 +20,7 @@ object VectorDB {
     private val l = LoggerFactory.getLogger(VectorDB::class.java)
     private val indexPath = "${FilesToolUtil.homeStr}/.local/state/souz/"
     private const val INIT_KEY = "rag_db_initialized"
-    private const val DEFAULT_MIN_SCORE = 0.92f
+    private const val DEFAULT_MIN_SCORE = 0.65f
 
     fun initializeOnce() {
         if (ConfigStore.get(INIT_KEY, false)) return

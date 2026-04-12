@@ -54,6 +54,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMResponse.FunctionCall
 import ru.souz.llms.giga.GigaVoiceAPI
+import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
@@ -587,6 +588,10 @@ class MainViewModelTest {
 
             val state = awaitState(viewModel) { it.localModelDownloadPrompt?.model == LLMModel.LocalQwen3_4B_Instruct_2507 }
             assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
+            assertEquals(
+                listOf(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.id, LocalEmbeddingProfiles.default().id),
+                state.localModelDownloadPrompt?.downloads?.map { it.profile.id },
+            )
             assertFalse(state.selectedModel == LLMModel.LocalQwen3_4B_Instruct_2507.alias)
         } finally {
             harness.clear()
@@ -1013,6 +1018,9 @@ class MainViewModelTest {
         every { settingsProvider.forbiddenFolders } returns emptyList()
         every { settingsProvider.qwenChatKey } returns qwenChatKey
         every { settingsProvider.regionProfile = any() } just runs
+        var embeddingsModelState = ru.souz.llms.EmbeddingsModel.GigaEmbeddings
+        every { settingsProvider.embeddingsModel } answers { embeddingsModelState }
+        every { settingsProvider.embeddingsModel = any() } answers { embeddingsModelState = firstArg() }
         val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
         every { localProviderAvailability.isProviderAvailable() } returns (localAvailableModel != null)
         every { localProviderAvailability.availableGigaModels() } returns listOfNotNull(localAvailableModel)

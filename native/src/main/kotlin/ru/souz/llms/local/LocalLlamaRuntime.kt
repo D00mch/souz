@@ -79,6 +79,28 @@ class LocalLlamaRuntime(
         emit(response)
     }
 
+    suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
+        val nativeResult = runCatching { embed(body) }
+            .getOrElse { error ->
+                NativeEmbeddingsResult.error("Local embeddings failed: ${error.message ?: error::class.simpleName.orEmpty()}")
+            }
+        nativeResult.error?.let { message ->
+            return LLMResponse.Embeddings.Error(-1, message)
+        }
+        return LLMResponse.Embeddings.Ok(
+            data = nativeResult.embeddings.mapIndexed { index, embedding ->
+                LLMResponse.Embedding(
+                    embedding = embedding,
+                    index = index,
+                    objectType = "embedding",
+                )
+            },
+            model = LocalEmbeddingProfiles.forAlias(body.model)?.embeddingsModel?.alias
+                ?: LocalEmbeddingProfiles.default().embeddingsModel.alias,
+            objectType = "list",
+        )
+    }
+
     fun cancelActiveRequest() {
         runtimeHandle.get()?.let { runtime ->
             runCatching { bridge.cancel(runtime) }
@@ -120,6 +142,44 @@ class LocalLlamaRuntime(
                 l.warn("Local model preload warmup failed for {}: {}", profile.id, error.message)
             }
         }
+    }
+
+    private suspend fun embed(body: LLMRequest.Embeddings): NativeEmbeddingsResult {
+        val availabilityStatus = availability.status()
+        if (!availabilityStatus.available) {
+            return NativeEmbeddingsResult.error(availabilityStatus.message)
+        }
+
+        if (body.input.isEmpty()) {
+            return NativeEmbeddingsResult.error("Local embeddings request is empty.")
+        }
+
+        val profile = LocalEmbeddingProfiles.forAlias(body.model) ?: LocalEmbeddingProfiles.default()
+        val runtime = ensureRuntime()
+        val modelHandle = ensureModel(profile)
+        val inputKind = resolveEmbeddingInputKind(body)
+        val preparedInputs = body.input.map { text -> profile.format(text, inputKind) }
+        val requestJson = restJsonMapper.writeValueAsString(
+            LocalEmbeddingsRequest(
+                inputs = preparedInputs,
+                contextSize = profile.maxContextSize,
+                normalize = true,
+            )
+        )
+
+        l.debug(
+            "Prepared local embeddings for model={} items={} inputKind={} contextSize={}",
+            profile.id,
+            preparedInputs.size,
+            inputKind,
+            profile.maxContextSize,
+        )
+        val responseJson = withContext(Dispatchers.IO) {
+            runtimeOperationMutex.withLock {
+                bridge.embeddings(runtime, modelHandle, requestJson)
+            }
+        }
+        return restJsonMapper.readValue(responseJson, NativeEmbeddingsResult::class.java)
     }
 
     private suspend fun generate(body: LLMRequest.Chat, stream: Boolean): NativeGenerationResult {
@@ -374,6 +434,9 @@ class LocalLlamaRuntime(
     internal fun usesConfiguredContextWindow(body: LLMRequest.Chat): Boolean =
         body.maxTokens >= MIN_CONTEXT_SIZE
 
+    internal fun resolveEmbeddingInputKind(body: LLMRequest.Embeddings): LocalEmbeddingInputKind =
+        if (body.input.size == 1) LocalEmbeddingInputKind.QUERY else LocalEmbeddingInputKind.DOCUMENT
+
     private fun nextContextBucket(tokens: Int): Int {
         val normalized = tokens.coerceAtLeast(MIN_CONTEXT_SIZE)
         return CONTEXT_BUCKETS.firstOrNull { normalized <= it } ?: CONTEXT_BUCKETS.last()
@@ -385,7 +448,7 @@ class LocalLlamaRuntime(
         }
     }
 
-    private suspend fun ensureModel(profile: LocalModelProfile): Pointer = loadMutex.withLock {
+    private suspend fun ensureModel(profile: LocalDownloadableProfile): Pointer = loadMutex.withLock {
         val runtime = runtimeHandle.get() ?: runtimeOperationMutex.withLock {
             runtimeHandle.get() ?: bridge.createRuntime().also(runtimeHandle::set)
         }
@@ -448,7 +511,7 @@ class LocalLlamaRuntime(
     }
 
     private data class LoadedModel(
-        val profile: LocalModelProfile,
+        val profile: LocalDownloadableProfile,
         val pointer: Pointer,
     )
 
@@ -471,6 +534,12 @@ class LocalLlamaRuntime(
         val grammar: String,
     )
 
+    data class LocalEmbeddingsRequest(
+        val inputs: List<String>,
+        @field:JsonProperty("context_size") val contextSize: Int,
+        val normalize: Boolean,
+    )
+
     data class NativeGenerationResult(
         val text: String,
         @field:JsonProperty("finish_reason") val finishReason: String = "stop",
@@ -491,6 +560,20 @@ class LocalLlamaRuntime(
             fun error(message: String): NativeGenerationResult = NativeGenerationResult(
                 text = "",
                 finishReason = "error",
+                error = message,
+            )
+        }
+    }
+
+    data class NativeEmbeddingsResult(
+        val embeddings: List<List<Double>> = emptyList(),
+        @field:JsonProperty("prompt_tokens") val promptTokens: Int = 0,
+        @field:JsonProperty("total_tokens") val totalTokens: Int = promptTokens,
+        val error: String? = null,
+    ) {
+        companion object {
+            fun error(message: String): NativeEmbeddingsResult = NativeEmbeddingsResult(
+                embeddings = emptyList(),
                 error = message,
             )
         }

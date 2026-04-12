@@ -8,6 +8,7 @@ import ru.souz.di.mainDiModule
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LlmProvider
 import java.time.LocalDate
 import kotlin.random.Random
 
@@ -25,6 +26,8 @@ class DesktopInfoRepository(
 
     companion object {
         private const val LAST_RUN_KEY = "rag_repo_last_run"
+        private const val REMOTE_EMBEDDINGS_BATCH_SIZE = 500
+        private const val LOCAL_EMBEDDINGS_BATCH_SIZE = 64
     }
 
     /**
@@ -48,7 +51,12 @@ class DesktopInfoRepository(
         } else {
             l.info("About to store data, random sample: {}", data[Random.nextInt(data.size)])
         }
-        data.chunked(500).forEach { chunk ->
+        val batchSize = if (settingsProvider.embeddingsModel.provider == LlmProvider.LOCAL) {
+            LOCAL_EMBEDDINGS_BATCH_SIZE
+        } else {
+            REMOTE_EMBEDDINGS_BATCH_SIZE
+        }
+        data.chunked(batchSize).forEach { chunk ->
             storeDesktopInfo(chunk)
         }
         ConfigStore.put(LAST_RUN_KEY, today)
@@ -87,7 +95,7 @@ class DesktopInfoRepository(
 }
 
 suspend fun main() {
- //   ConfigStore.rm("rag_repo_last_run") // to reset
+    ConfigStore.rm("rag_repo_last_run") // to reset
     val di = DI.invoke { import(mainDiModule) }
     val api: LLMChatAPI by di.instance()
     val vectorDB: VectorDB by di.instance()

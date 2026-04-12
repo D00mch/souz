@@ -21,6 +21,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.db.VectorDB
+import ru.souz.db.syncEmbeddingsSelection
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
@@ -208,10 +209,11 @@ class SettingsViewModel(
                 if (event.model !in currentState.availableEmbeddingsModels) return
                 val currentModel = keysProvider.embeddingsModel
                 keysProvider.embeddingsModel = event.model
-                if (currentModel != event.model) {
+                val effectiveModel = keysProvider.syncEmbeddingsSelection()
+                if (currentModel != effectiveModel) {
                     VectorDB.clearAllData()
                 }
-                setState { copy(embeddingsModel = event.model) }
+                setState { copy(embeddingsModel = effectiveModel) }
             }
             is SelectVoiceRecognitionModel -> {
                 if (event.model !in currentState.availableVoiceRecognitionModels) return
@@ -385,8 +387,20 @@ class SettingsViewModel(
 
     private suspend fun applySelectedModel(model: LLMModel) {
         flushPendingSystemPromptSave()
+        val previousEmbeddingsModel = keysProvider.embeddingsModel
         val newPrompt = agentFacade.setModel(model)
-        setState { copy(gigaModel = model, systemPrompt = newPrompt) }
+        val effectiveEmbeddingsModel = keysProvider.syncEmbeddingsSelection()
+        if (previousEmbeddingsModel != effectiveEmbeddingsModel) {
+            VectorDB.clearAllData()
+        }
+        setState {
+            copy(
+                gigaModel = model,
+                systemPrompt = newPrompt,
+                embeddingsModel = effectiveEmbeddingsModel,
+                availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(llmBuildProfile),
+            )
+        }
         fetchBalance()
         scheduleLocalModelPreload(model)
     }
@@ -403,7 +417,7 @@ class SettingsViewModel(
             }
 
             runCatching {
-                localModelStore.download(prompt.profile) { progress ->
+                localModelStore.downloadRequiredAssets(prompt.profile) { progress ->
                     setState {
                         copy(localModelDownloadState = LocalModelDownloadState(prompt, progress))
                     }
@@ -478,8 +492,8 @@ class SettingsViewModel(
         val activeAgentId = agentFacade.activeAgentId.value
         val availableAgents = agentFacade.availableAgents
 
+        val configuredEmbeddingsModel = keysProvider.syncEmbeddingsSelection()
         val availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(llmBuildProfile)
-        val configuredEmbeddingsModel = keysProvider.embeddingsModel
         val selectedEmbeddingsModel = pickConfiguredOrDefault(
             configured = configuredEmbeddingsModel,
             available = availableEmbeddingsModels,

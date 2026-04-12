@@ -11,6 +11,7 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.local.LocalBridgeLoader
+import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalHostInfoProvider
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.LocalProviderAvailability
@@ -263,14 +264,16 @@ class SettingsProviderImpl(
         }
 
     override var embeddingsModel: EmbeddingsModel
-        get() = _embeddingsModelDelegate?.let { value ->
-            EmbeddingsModel.entries.firstOrNull {
-                it.name.equals(value, ignoreCase = true) || it.alias.equals(
-                    value,
-                    ignoreCase = true
-                )
+        get() = enforcedEmbeddingsModel()
+            ?: _embeddingsModelDelegate?.let { value ->
+                EmbeddingsModel.entries.firstOrNull {
+                    it.name.equals(value, ignoreCase = true) || it.alias.equals(
+                        value,
+                        ignoreCase = true
+                    )
+                }
             }
-        } ?: EmbeddingsModel.GigaEmbeddings
+            ?: EmbeddingsModel.GigaEmbeddings
         set(value) {
             _embeddingsModelDelegate = value.name
         }
@@ -319,6 +322,12 @@ class SettingsProviderImpl(
             model.provider !in availableProviders -> defaultLlmModel()
             else -> model
         }
+    }
+
+    private fun enforcedEmbeddingsModel(): EmbeddingsModel? = when {
+        gigaModel.provider == LlmProvider.LOCAL && localProviderAvailability.isProviderAvailable() ->
+            LocalEmbeddingProfiles.default().embeddingsModel
+        else -> null
     }
 
     private fun hasConfiguredAccess(provider: LlmProvider): Boolean = when (provider) {
@@ -404,6 +413,10 @@ fun SettingsProvider.hasKey(provider: VoiceRecognitionProvider): Boolean = when 
     VoiceRecognitionProvider.SALUTE_SPEECH -> !saluteSpeechKey.isNullOrBlank()
     VoiceRecognitionProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
     VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
+}
+
+fun SettingsProvider.syncEmbeddingsSelection(): EmbeddingsModel {
+    return embeddingsModel
 }
 
 fun main() {

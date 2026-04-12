@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -65,8 +66,26 @@ struct generation_result {
     std::string error;
 };
 
+struct embeddings_result {
+    std::vector<std::vector<double>> embeddings;
+    int prompt_tokens = 0;
+    int total_tokens = 0;
+    std::string error;
+};
+
 using runtime_ptr = souz_runtime *;
 constexpr int DEFAULT_PROMPT_BATCH_SIZE = 512;
+
+struct batch_guard {
+    llama_batch batch;
+
+    batch_guard(int32_t n_tokens, int32_t embd, int32_t n_seq_max)
+        : batch(llama_batch_init(n_tokens, embd, n_seq_max)) {}
+
+    ~batch_guard() {
+        llama_batch_free(batch);
+    }
+};
 
 std::string format_generation_details(
     int context_size,
@@ -157,8 +176,8 @@ void configure_backend_environment() {
         explicit_residency != nullptr &&
         (std::strcmp(explicit_residency, "1") == 0 || std::strcmp(explicit_residency, "true") == 0);
 
-    if (explicit_no_residency == nullptr && !should_keep_residency) {
-        setenv("GGML_METAL_NO_RESIDENCY", "1", 0);
+    if (!should_keep_residency) {
+        setenv("GGML_METAL_NO_RESIDENCY", "1", 1);
     }
 #endif
 }
@@ -297,8 +316,8 @@ std::string token_to_piece(const llama_vocab * vocab, llama_token token) {
     return std::string(buffer.data(), static_cast<size_t>(written));
 }
 
-std::vector<llama_token> tokenize(const llama_vocab * vocab, const std::string & prompt) {
-    const int required = -llama_tokenize(vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()), nullptr, 0, false, true);
+std::vector<llama_token> tokenize(const llama_vocab * vocab, const std::string & prompt, bool add_special = false) {
+    const int required = -llama_tokenize(vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()), nullptr, 0, add_special, true);
     if (required <= 0) {
         throw std::runtime_error("Prompt tokenization failed.");
     }
@@ -310,7 +329,7 @@ std::vector<llama_token> tokenize(const llama_vocab * vocab, const std::string &
         static_cast<int32_t>(prompt.size()),
         tokens.data(),
         static_cast<int32_t>(tokens.size()),
-        false,
+        add_special,
         true
     );
     if (actual < 0) {
@@ -331,6 +350,45 @@ bool trim_stop_sequence(std::string & text, const std::vector<std::string> & sto
         }
     }
     return false;
+}
+
+void batch_add_sequence(llama_batch & batch, const std::vector<llama_token> & tokens, llama_seq_id seq_id) {
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        const int32_t index = batch.n_tokens;
+        batch.token[index] = tokens[i];
+        batch.pos[index] = static_cast<llama_pos>(i);
+        batch.n_seq_id[index] = 1;
+        batch.seq_id[index][0] = seq_id;
+        batch.logits[index] = 1;
+        batch.n_tokens += 1;
+    }
+}
+
+std::vector<double> read_embedding_vector(
+    const float * source,
+    int size,
+    bool normalize
+) {
+    if (source == nullptr) {
+        throw std::runtime_error("Failed to read embeddings from the local model.");
+    }
+
+    std::vector<double> result(static_cast<size_t>(size), 0.0);
+    double norm = 0.0;
+    for (int i = 0; i < size; ++i) {
+        result[static_cast<size_t>(i)] = source[i];
+        norm += static_cast<double>(source[i]) * static_cast<double>(source[i]);
+    }
+
+    if (!normalize || norm <= 0.0) {
+        return result;
+    }
+
+    const double magnitude = std::sqrt(norm);
+    for (double & value : result) {
+        value /= magnitude;
+    }
+    return result;
 }
 
 llama_sampler * create_sampler(const llama_vocab * vocab, const json & request) {
@@ -527,6 +585,124 @@ generation_result generate_impl(
     return result;
 }
 
+embeddings_result embeddings_impl(
+    runtime_ptr runtime,
+    model_ptr model,
+    const json & request
+) {
+    embeddings_result result;
+    const auto inputs = request.value("inputs", std::vector<std::string>{});
+    const int context_size = request.value("context_size", 2048);
+    const bool normalize = request.value("normalize", true);
+
+    if (inputs.empty()) {
+        throw std::runtime_error("Embeddings request is empty.");
+    }
+    if (context_size <= 0) {
+        throw std::runtime_error("Embeddings context size must be positive.");
+    }
+    if (llama_model_has_encoder(model->model) && llama_model_has_decoder(model->model)) {
+        throw std::runtime_error("Encoder-decoder models are not supported for local embeddings.");
+    }
+
+    const llama_vocab * vocab = llama_model_get_vocab(model->model);
+    std::vector<std::vector<llama_token>> tokenized_inputs;
+    tokenized_inputs.reserve(inputs.size());
+
+    for (const auto & input : inputs) {
+        auto tokens = tokenize(vocab, input, true);
+        if (tokens.empty()) {
+            throw std::runtime_error("An embeddings input is empty after tokenization.");
+        }
+        if (static_cast<int>(tokens.size()) > context_size) {
+            throw std::runtime_error("An embeddings input exceeds the configured local context window.");
+        }
+        result.prompt_tokens += static_cast<int>(tokens.size());
+        tokenized_inputs.push_back(std::move(tokens));
+    }
+    result.total_tokens = result.prompt_tokens;
+    result.embeddings.resize(inputs.size());
+
+    const int32_t max_sequences_per_batch = std::max(
+        int32_t{1},
+        std::min<int32_t>(static_cast<int32_t>(tokenized_inputs.size()), context_size)
+    );
+
+    llama_context_params ctx_params = llama_context_default_params();
+    ctx_params.n_ctx = static_cast<uint32_t>(context_size);
+    ctx_params.n_batch = static_cast<uint32_t>(context_size);
+    ctx_params.n_ubatch = ctx_params.n_batch;
+    ctx_params.n_seq_max = static_cast<uint32_t>(max_sequences_per_batch);
+    ctx_params.n_threads = std::max(1u, std::thread::hardware_concurrency() / 2);
+    ctx_params.n_threads_batch = std::max(1u, std::thread::hardware_concurrency());
+    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    ctx_params.offload_kqv = true;
+    ctx_params.abort_callback = abort_callback;
+    ctx_params.abort_callback_data = &runtime->cancel_requested;
+    ctx_params.embeddings = true;
+
+    std::unique_ptr<llama_context, decltype(&llama_free)> ctx(
+        llama_init_from_model(model->model, ctx_params),
+        &llama_free
+    );
+    if (!ctx) {
+        throw std::runtime_error("Failed to initialize llama context for embeddings.");
+    }
+
+    const enum llama_pooling_type pooling_type = llama_pooling_type(ctx.get());
+    const int embedding_size = pooling_type == LLAMA_POOLING_TYPE_RANK
+        ? static_cast<int>(llama_model_n_cls_out(model->model))
+        : static_cast<int>(llama_model_n_embd_out(model->model));
+
+    batch_guard batch(context_size, 0, max_sequences_per_batch);
+    std::vector<int> batch_sequence_order;
+    std::vector<int> batch_last_token_indices;
+    batch_sequence_order.reserve(inputs.size());
+    batch_last_token_indices.reserve(inputs.size());
+
+    auto flush_batch = [&]() {
+        if (batch.batch.n_tokens == 0) {
+            return;
+        }
+
+        llama_memory_clear(llama_get_memory(ctx.get()), true);
+        const int decode_status = llama_decode(ctx.get(), batch.batch);
+        if (decode_status != 0) {
+            if (runtime->cancel_requested.load()) {
+                throw std::runtime_error("Embeddings request cancelled.");
+            }
+            throw std::runtime_error("Failed to compute local embeddings.");
+        }
+
+        for (size_t i = 0; i < batch_sequence_order.size(); ++i) {
+            const int sequence_index = batch_sequence_order[i];
+            const float * embedding = pooling_type == LLAMA_POOLING_TYPE_NONE
+                ? llama_get_embeddings_ith(ctx.get(), batch_last_token_indices[i])
+                : llama_get_embeddings_seq(ctx.get(), static_cast<llama_seq_id>(i));
+            result.embeddings[static_cast<size_t>(sequence_index)] =
+                read_embedding_vector(embedding, embedding_size, normalize);
+        }
+
+        batch.batch.n_tokens = 0;
+        batch_sequence_order.clear();
+        batch_last_token_indices.clear();
+    };
+
+    for (size_t index = 0; index < tokenized_inputs.size(); ++index) {
+        const auto & tokens = tokenized_inputs[index];
+        if (batch.batch.n_tokens > 0 && batch.batch.n_tokens + static_cast<int32_t>(tokens.size()) > context_size) {
+            flush_batch();
+        }
+
+        batch_add_sequence(batch.batch, tokens, static_cast<llama_seq_id>(batch_sequence_order.size()));
+        batch_sequence_order.push_back(static_cast<int>(index));
+        batch_last_token_indices.push_back(batch.batch.n_tokens - 1);
+    }
+
+    flush_batch();
+    return result;
+}
+
 json healthcheck_json() {
     return json{
         {"ok", true},
@@ -542,6 +718,15 @@ json result_json(const generation_result & result) {
         {"completion_tokens", result.completion_tokens},
         {"total_tokens", result.total_tokens},
         {"precached_prompt_tokens", result.precached_prompt_tokens},
+        {"error", result.error.empty() ? json(nullptr) : json(result.error)},
+    };
+}
+
+json embeddings_result_json(const embeddings_result & result) {
+    return json{
+        {"embeddings", result.embeddings},
+        {"prompt_tokens", result.prompt_tokens},
+        {"total_tokens", result.total_tokens},
         {"error", result.error.empty() ? json(nullptr) : json(result.error)},
     };
 }
@@ -652,6 +837,24 @@ const char * souz_llama_generate(void * runtime, void * model, const char * requ
         return duplicate_string(result_json(result).dump());
     } catch (const std::exception & error) {
         clear_cached_context(static_cast<runtime_ptr>(runtime));
+        write_error(error_buffer, error_buffer_size, error.what());
+        return nullptr;
+    }
+}
+
+const char * souz_llama_embeddings(void * runtime, void * model, const char * request_json, char * error_buffer, size_t error_buffer_size) {
+    try {
+        auto * runtime_ptr = require_runtime(runtime);
+        auto * model_ptr = require_model(model);
+        if (request_json == nullptr) {
+            throw std::runtime_error("Embeddings request is null.");
+        }
+
+        std::lock_guard<std::mutex> lock(runtime_ptr->mutex);
+        runtime_ptr->cancel_requested.store(false);
+        const embeddings_result result = embeddings_impl(runtime_ptr, model_ptr, json::parse(request_json));
+        return duplicate_string(embeddings_result_json(result).dump());
+    } catch (const std::exception & error) {
         write_error(error_buffer, error_buffer_size, error.what());
         return nullptr;
     }

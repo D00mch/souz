@@ -164,6 +164,7 @@ enum class EmbeddingsModel(
     AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", LlmProvider.AI_TUNNEL),
     AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", LlmProvider.AI_TUNNEL),
     OpenAITextEmbedding3Small("OpenAI: text-embedding-3-small", "text-embedding-3-small", LlmProvider.OPENAI),
+    LocalEmbeddingGemma300M("Local EmbeddingGemma 300M", "local-embeddinggemma-300m", LlmProvider.LOCAL),
 }
 
 enum class VoiceRecognitionModel(
