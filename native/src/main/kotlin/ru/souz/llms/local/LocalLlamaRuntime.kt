@@ -38,7 +38,8 @@ class LocalLlamaRuntime(
     private val runtimeOperationMutex = Mutex()
 
     private val runtimeHandle = AtomicReference<Pointer?>(null)
-    private val loadedModel = AtomicReference<LoadedModel?>(null)
+    private val loadedChatModel = AtomicReference<LoadedModel?>(null)
+    private val loadedEmbeddingModel = AtomicReference<LoadedModel?>(null)
     private val warmedModelId = AtomicReference<String?>(null)
 
     suspend fun chat(body: LLMRequest.Chat): LLMResponse.Chat {
@@ -123,7 +124,7 @@ class LocalLlamaRuntime(
         }
 
         val runtime = ensureRuntime()
-        val modelHandle = ensureModel(profile)
+        val modelHandle = ensureChatModel(profile)
         if (warmedModelId.get() == profile.id) {
             return
         }
@@ -156,7 +157,7 @@ class LocalLlamaRuntime(
 
         val profile = LocalEmbeddingProfiles.forAlias(body.model) ?: LocalEmbeddingProfiles.default()
         val runtime = ensureRuntime()
-        val modelHandle = ensureModel(profile)
+        val modelHandle = ensureEmbeddingModel(profile)
         val inputKind = resolveEmbeddingInputKind(body)
         val preparedInputs = body.input.map { text -> profile.format(text, inputKind) }
         val requestJson = restJsonMapper.writeValueAsString(
@@ -199,7 +200,7 @@ class LocalLlamaRuntime(
             ?: availabilityStatus.selectedProfile
             ?: return NativeGenerationResult.error("No local model profile is available for ${body.model}.")
 
-        val modelHandle = ensureModel(profile)
+        val modelHandle = ensureChatModel(profile)
         val runtime = ensureRuntime()
         val prompt = promptRenderer.render(body, profile)
         val contextSize = resolveContextSize(body, profile, prompt)
@@ -448,17 +449,31 @@ class LocalLlamaRuntime(
         }
     }
 
-    private suspend fun ensureModel(profile: LocalDownloadableProfile): Pointer = loadMutex.withLock {
+    private suspend fun ensureChatModel(profile: LocalModelProfile): Pointer =
+        ensureModel(profile = profile, slot = loadedChatModel, resetWarmupState = true)
+
+    private suspend fun ensureEmbeddingModel(profile: LocalEmbeddingProfile): Pointer =
+        ensureModel(profile = profile, slot = loadedEmbeddingModel, resetWarmupState = false)
+
+    private suspend fun ensureModel(
+        profile: LocalDownloadableProfile,
+        slot: AtomicReference<LoadedModel?>,
+        resetWarmupState: Boolean,
+    ): Pointer = loadMutex.withLock {
         val runtime = runtimeHandle.get() ?: runtimeOperationMutex.withLock {
             runtimeHandle.get() ?: bridge.createRuntime().also(runtimeHandle::set)
         }
-        loadedModel.get()?.takeIf { it.profile.id == profile.id }?.pointer?.let { return@withLock it }
+        slot.get()?.takeIf { it.profile.id == profile.id }?.pointer?.let { return@withLock it }
 
         runtimeOperationMutex.withLock {
-            loadedModel.get()?.let { current ->
+            slot.get()?.takeIf { it.profile.id == profile.id }?.pointer?.let { return@withLock it }
+
+            slot.get()?.let { current ->
                 bridge.unloadModel(runtime, current.pointer)
-                loadedModel.set(null)
-                warmedModelId.set(null)
+                slot.set(null)
+                if (resetWarmupState) {
+                    warmedModelId.set(null)
+                }
             }
 
             val modelPath = modelStore.requireAvailable(profile)
@@ -471,7 +486,7 @@ class LocalLlamaRuntime(
                 )
             )
             val pointer = bridge.loadModel(runtime, requestJson)
-            loadedModel.set(LoadedModel(profile = profile, pointer = pointer))
+            slot.set(LoadedModel(profile = profile, pointer = pointer))
             return@withLock pointer
         }
     }
@@ -481,16 +496,25 @@ class LocalLlamaRuntime(
         loadMutex.withLock {
             runtimeOperationMutex.withLock {
                 val runtime = runtimeHandle.get()
-                val currentModel = loadedModel.get()
+                val chatModel = loadedChatModel.get()
+                val embeddingModel = loadedEmbeddingModel.get()
 
-                if (runtime != null && currentModel != null) {
-                    runCatching { bridge.unloadModel(runtime, currentModel.pointer) }
+                if (runtime != null && chatModel != null) {
+                    runCatching { bridge.unloadModel(runtime, chatModel.pointer) }
                         .onFailure { error ->
-                            l.warn("Failed to unload local model during shutdown: {}", error.message)
+                            l.warn("Failed to unload local chat model during shutdown: {}", error.message)
                         }
                 }
 
-                loadedModel.set(null)
+                if (runtime != null && embeddingModel != null) {
+                    runCatching { bridge.unloadModel(runtime, embeddingModel.pointer) }
+                        .onFailure { error ->
+                            l.warn("Failed to unload local embeddings model during shutdown: {}", error.message)
+                        }
+                }
+
+                loadedChatModel.set(null)
+                loadedEmbeddingModel.set(null)
                 warmedModelId.set(null)
 
                 if (runtime != null) {

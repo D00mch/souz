@@ -10,6 +10,8 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import java.time.LocalDate
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.random.Random
 
 /**
@@ -23,6 +25,7 @@ class DesktopInfoRepository(
     private val settingsProvider: SettingsProvider,
 ) : AgentDesktopInfoRepository {
     private val l = LoggerFactory.getLogger(DesktopInfoRepository::class.java)
+    private val refreshMutex = Mutex()
 
     companion object {
         private const val LAST_RUN_KEY = "rag_repo_last_run"
@@ -34,32 +37,11 @@ class DesktopInfoRepository(
      * Extract desktop data and store embeddings at most once per day.
      */
     suspend fun storeDesktopDataDaily() {
-        db.initializeOnce()
-        if (!hasEmbeddingsKeyConfigured()) {
-            l.info(
-                "Skip storeDesktopDataDaily: embeddings provider {} has no configured API key",
-                settingsProvider.embeddingsModel.provider
-            )
-            return
-        }
-        val today = LocalDate.now().toString() // returns data like 2023-03-31
-        if (ConfigStore.get(LAST_RUN_KEY, "") == today) return
-        db.clearAllData()
-        val data = extractor.all()
-        if (data.isEmpty()) {
-            l.info("DesktopDataExtractor.all() is empty!")
-        } else {
-            l.info("About to store data, random sample: {}", data[Random.nextInt(data.size)])
-        }
-        val batchSize = if (settingsProvider.embeddingsModel.provider == LlmProvider.LOCAL) {
-            LOCAL_EMBEDDINGS_BATCH_SIZE
-        } else {
-            REMOTE_EMBEDDINGS_BATCH_SIZE
-        }
-        data.chunked(batchSize).forEach { chunk ->
-            storeDesktopInfo(chunk)
-        }
-        ConfigStore.put(LAST_RUN_KEY, today)
+        refreshDesktopData(force = false)
+    }
+
+    suspend fun rebuildIndexNow() {
+        refreshDesktopData(force = true)
     }
 
     suspend fun storeDesktopInfo(data: List<StorredData>) {
@@ -89,6 +71,38 @@ class DesktopInfoRepository(
             is LLMResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
         }
         return db.searchSimilar(emb, limit)
+    }
+
+    private suspend fun refreshDesktopData(force: Boolean) = refreshMutex.withLock {
+        db.initializeOnce()
+        if (!hasEmbeddingsKeyConfigured()) {
+            l.info(
+                "Skip storeDesktopDataDaily: embeddings provider {} has no configured API key",
+                settingsProvider.embeddingsModel.provider
+            )
+            return
+        }
+
+        val today = LocalDate.now().toString() // returns data like 2023-03-31
+        if (!force && ConfigStore.get(LAST_RUN_KEY, "") == today) return
+
+        db.clearAllData()
+        val data = extractor.all()
+        if (data.isEmpty()) {
+            l.info("DesktopDataExtractor.all() is empty!")
+        } else {
+            l.info("About to store data, random sample: {}", data[Random.nextInt(data.size)])
+        }
+
+        val batchSize = if (settingsProvider.embeddingsModel.provider == LlmProvider.LOCAL) {
+            LOCAL_EMBEDDINGS_BATCH_SIZE
+        } else {
+            REMOTE_EMBEDDINGS_BATCH_SIZE
+        }
+        data.chunked(batchSize).forEach { chunk ->
+            storeDesktopInfo(chunk)
+        }
+        ConfigStore.put(LAST_RUN_KEY, today)
     }
 
     private fun hasEmbeddingsKeyConfigured(): Boolean = settingsProvider.hasKey(settingsProvider.embeddingsModel.provider)

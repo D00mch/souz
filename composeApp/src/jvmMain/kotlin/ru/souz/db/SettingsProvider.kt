@@ -415,10 +415,6 @@ fun SettingsProvider.hasKey(provider: VoiceRecognitionProvider): Boolean = when 
     VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
 }
 
-fun SettingsProvider.syncEmbeddingsSelection(): EmbeddingsModel {
-    return embeddingsModel
-}
-
 fun main() {
     val s: SettingsProviderImpl = SettingsProviderImpl(ConfigStore)
     s.needsOnboarding = false

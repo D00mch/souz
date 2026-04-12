@@ -10,12 +10,7 @@ class LocalChatAPI(
     private val runtime: LocalLlamaRuntime,
 ) : LLMChatAPI {
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
-        val result = runtime.chat(body)
-        if (result is LLMResponse.Chat.Ok) {
-            result
-        } else {
-            result
-        }
+        runtime.chat(body)
     } catch (error: Exception) {
         LLMResponse.Chat.Error(-1, "Local provider error: ${error.message}")
     }

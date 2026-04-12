@@ -24,8 +24,6 @@ import ru.souz.agent.AgentFacade
 import ru.souz.agent.state.AgentContext
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
-import ru.souz.db.VectorDB
-import ru.souz.db.syncEmbeddingsSelection
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.local.LocalModelDownloadState
@@ -94,7 +92,10 @@ class MainViewModel(
             val randomTip = startTips.randomOrNull() ?: ""
             val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
             val selectedModel = pickConfiguredOrDefaultModel(availableModels)
-            applySelectedModel(selectedModel)
+            val downloadPrompt = localModelStore.downloadPromptFor(selectedModel)
+            if (downloadPrompt == null) {
+                applySelectedModel(selectedModel)
+            }
 
             setState {
                 copy(
@@ -102,7 +103,8 @@ class MainViewModel(
                     availableModelAliases = availableModels.map { it.alias },
                     selectedContextSize = settingsProvider.contextSize,
                     displayedText = randomTip,
-                    chatStartTip = randomTip
+                    chatStartTip = randomTip,
+                    localModelDownloadPrompt = downloadPrompt,
                 )
             }
         }
@@ -358,7 +360,12 @@ class MainViewModel(
 
     private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository): Job = launch(ioDispatchers) {
         while (isActive) {
-            repo.storeDesktopDataDaily()
+            runCatching { repo.storeDesktopDataDaily() }
+                .onFailure { error ->
+                    if (error !is CancellationException) {
+                        l.warn("Desktop index refresh failed: {}", error.message)
+                    }
+                }
             delay(5.minutes)
         }
     }
@@ -513,13 +520,17 @@ class MainViewModel(
     private suspend fun refreshSettings() {
         val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
         val selectedModel = pickConfiguredOrDefaultModel(availableModels)
-        applySelectedModel(selectedModel)
+        val downloadPrompt = localModelStore.downloadPromptFor(selectedModel)
+        if (downloadPrompt == null) {
+            applySelectedModel(selectedModel)
+        }
 
         setState {
             copy(
                 selectedModel = selectedModel.alias,
                 availableModelAliases = availableModels.map { it.alias },
                 selectedContextSize = settingsProvider.contextSize,
+                localModelDownloadPrompt = downloadPrompt,
             )
         }
     }
@@ -536,11 +547,20 @@ class MainViewModel(
             settingsProvider.gigaModel = model
             chatUseCase.updateModel(model)
         }
-        val effectiveEmbeddingsModel = settingsProvider.syncEmbeddingsSelection()
+        val effectiveEmbeddingsModel = settingsProvider.embeddingsModel
         if (previousEmbeddingsModel != effectiveEmbeddingsModel) {
-            VectorDB.clearAllData()
+            scheduleDesktopIndexRebuild()
         }
         scheduleLocalModelPreload(model)
+    }
+
+    private fun scheduleDesktopIndexRebuild() {
+        viewModelScope.launch(ioDispatchers) {
+            runCatching { desktopInfoRepository.rebuildIndexNow() }
+                .onFailure { error ->
+                    l.warn("Desktop index rebuild failed: {}", error.message)
+                }
+        }
     }
 
     private fun scheduleLocalModelPreload(model: LLMModel) {

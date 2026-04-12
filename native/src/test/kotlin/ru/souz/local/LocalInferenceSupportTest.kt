@@ -1216,6 +1216,73 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `local runtime keeps chat and embeddings models loaded separately`() = runTest {
+        val chatProfile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
+        val embeddingProfile = LocalEmbeddingProfiles.default()
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "ok",
+            selectedProfile = chatProfile,
+            availableModels = listOf(chatProfile.gigaModel),
+        )
+
+        val modelStore = mockk<LocalModelStore>()
+        every { modelStore.requireAvailable(chatProfile) } returns Path.of("/tmp/${chatProfile.ggufFilename}")
+        every { modelStore.requireAvailable(embeddingProfile) } returns Path.of("/tmp/${embeddingProfile.ggufFilename}")
+
+        val promptRenderer = mockk<LocalPromptRenderer>()
+        every { promptRenderer.render(any(), chatProfile) } returns "prompt"
+
+        val bridge = mockk<LocalNativeBridge>()
+        val runtimePointer = Pointer(61)
+        val chatPointer = Pointer(62)
+        val embeddingPointer = Pointer(63)
+        every { bridge.createRuntime() } returns runtimePointer
+        every { bridge.loadModel(runtimePointer, any()) } returnsMany listOf(chatPointer, embeddingPointer)
+        every { bridge.generate(runtimePointer, chatPointer, any()) } returns
+            """{"text":"{\"type\":\"final\",\"content\":\"done\"}","finish_reason":"stop","prompt_tokens":4,"completion_tokens":2,"total_tokens":6,"precached_prompt_tokens":0}"""
+        every { bridge.embeddings(runtimePointer, embeddingPointer, any()) } returns
+            """{"embeddings":[[0.1,0.2]],"prompt_tokens":4,"total_tokens":4}"""
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = modelStore,
+            promptRenderer = promptRenderer,
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = bridge,
+        )
+
+        assertIs<LLMResponse.Chat.Ok>(
+            runtime.chat(
+                LLMRequest.Chat(
+                    model = chatProfile.gigaModel.alias,
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+                )
+            )
+        )
+        assertIs<LLMResponse.Embeddings.Ok>(
+            runtime.embeddings(
+                LLMRequest.Embeddings(
+                    model = embeddingProfile.embeddingsModel.alias,
+                    input = listOf("hello"),
+                )
+            )
+        )
+        assertIs<LLMResponse.Chat.Ok>(
+            runtime.chat(
+                LLMRequest.Chat(
+                    model = chatProfile.gigaModel.alias,
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello again")),
+                )
+            )
+        )
+
+        verify(exactly = 2) { bridge.loadModel(runtimePointer, any()) }
+        verify(exactly = 0) { bridge.unloadModel(any(), any()) }
+    }
+
+    @Test
     fun `local chat api supports embeddings and still rejects unsupported file features`() = runTest {
         val runtime = mockk<LocalLlamaRuntime>(relaxed = true)
         coEvery { runtime.embeddings(any()) } returns LLMResponse.Embeddings.Ok(

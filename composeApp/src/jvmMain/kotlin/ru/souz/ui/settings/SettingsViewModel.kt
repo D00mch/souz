@@ -16,12 +16,11 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
 import ru.souz.service.audio.Say
+import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
-import ru.souz.db.VectorDB
-import ru.souz.db.syncEmbeddingsSelection
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
@@ -57,6 +56,7 @@ class SettingsViewModel(
 
     private val l = LoggerFactory.getLogger(SettingsViewModel::class.java)
     private val keysProvider: SettingsProvider by di.instance()
+    private val desktopInfoRepository: DesktopInfoRepository by di.instance()
     private val llmBuildProfile: LlmBuildProfile by di.instance()
     private val localModelStore: LocalModelStore by di.instance()
     private val localLlamaRuntime: LocalLlamaRuntime by di.instance()
@@ -209,9 +209,9 @@ class SettingsViewModel(
                 if (event.model !in currentState.availableEmbeddingsModels) return
                 val currentModel = keysProvider.embeddingsModel
                 keysProvider.embeddingsModel = event.model
-                val effectiveModel = keysProvider.syncEmbeddingsSelection()
+                val effectiveModel = keysProvider.embeddingsModel
                 if (currentModel != effectiveModel) {
-                    VectorDB.clearAllData()
+                    scheduleDesktopIndexRebuild()
                 }
                 setState { copy(embeddingsModel = effectiveModel) }
             }
@@ -389,9 +389,9 @@ class SettingsViewModel(
         flushPendingSystemPromptSave()
         val previousEmbeddingsModel = keysProvider.embeddingsModel
         val newPrompt = agentFacade.setModel(model)
-        val effectiveEmbeddingsModel = keysProvider.syncEmbeddingsSelection()
+        val effectiveEmbeddingsModel = keysProvider.embeddingsModel
         if (previousEmbeddingsModel != effectiveEmbeddingsModel) {
-            VectorDB.clearAllData()
+            scheduleDesktopIndexRebuild()
         }
         setState {
             copy(
@@ -399,6 +399,7 @@ class SettingsViewModel(
                 systemPrompt = newPrompt,
                 embeddingsModel = effectiveEmbeddingsModel,
                 availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(llmBuildProfile),
+                localModelDownloadPrompt = null,
             )
         }
         fetchBalance()
@@ -488,11 +489,16 @@ class SettingsViewModel(
             configured = configuredLlmModel,
             available = availableLlmModels,
         ) { keysProvider.defaultLlmModel(llmBuildProfile) }
-        val selectedPrompt = agentFacade.setModel(selectedLlmModel)
+        val downloadPrompt = localModelStore.downloadPromptFor(selectedLlmModel)
+        val selectedPrompt = if (downloadPrompt == null) {
+            agentFacade.setModel(selectedLlmModel)
+        } else {
+            agentFacade.currentContext.value.systemPrompt
+        }
         val activeAgentId = agentFacade.activeAgentId.value
         val availableAgents = agentFacade.availableAgents
 
-        val configuredEmbeddingsModel = keysProvider.syncEmbeddingsSelection()
+        val configuredEmbeddingsModel = keysProvider.embeddingsModel
         val availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(llmBuildProfile)
         val selectedEmbeddingsModel = pickConfiguredOrDefault(
             configured = configuredEmbeddingsModel,
@@ -500,7 +506,7 @@ class SettingsViewModel(
         ) { keysProvider.defaultEmbeddingsModel(llmBuildProfile) }
         if (selectedEmbeddingsModel != configuredEmbeddingsModel) {
             keysProvider.embeddingsModel = selectedEmbeddingsModel
-            VectorDB.clearAllData()
+            scheduleDesktopIndexRebuild()
         }
 
         val availableVoiceRecognitionModels = keysProvider.availableVoiceRecognitionModels(llmBuildProfile)
@@ -548,6 +554,7 @@ class SettingsViewModel(
                 gigaModel = selectedLlmModel,
                 embeddingsModel = selectedEmbeddingsModel,
                 voiceRecognitionModel = selectedVoiceRecognitionModel,
+                localModelDownloadPrompt = downloadPrompt,
                 availableLlmModels = availableLlmModels,
                 availableEmbeddingsModels = availableEmbeddingsModels,
                 availableVoiceRecognitionModels = availableVoiceRecognitionModels,
@@ -563,6 +570,15 @@ class SettingsViewModel(
                 voiceSpeed = voiceSpeed,
                 voiceSpeedInput = voiceSpeed.toString(),
             )
+        }
+    }
+
+    private fun scheduleDesktopIndexRebuild() {
+        viewModelScope.launch(ioDispatchers) {
+            runCatching { desktopInfoRepository.rebuildIndexNow() }
+                .onFailure { error ->
+                    l.warn("Desktop index rebuild failed: {}", error.message)
+                }
         }
     }
 
