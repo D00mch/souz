@@ -399,6 +399,62 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `strict json parser recovers malformed final with inner quotes`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"type":"final","content":"Извините, у меня нет доступа к личным фотографиям для запроса о "тете фроси". Пожалуйста, уточните детали."}""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(
+            """Извините, у меня нет доступа к личным фотографиям для запроса о "тете фроси". Пожалуйста, уточните детали.""",
+            ok.choices.single().message.content,
+        )
+    }
+
+    @Test
+    fun `strict json parser recovers malformed final with broken separator`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"type":"final","content="# Развитие ИИ в России\n\n## Краткий вывод\nНе удалось собрать все источники."}""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(
+            """
+                # Развитие ИИ в России
+
+                ## Краткий вывод
+                Не удалось собрать все источники.
+            """.trimIndent(),
+            ok.choices.single().message.content,
+        )
+    }
+
+    @Test
+    fun `strict json parser recovers malformed result with inner quotes`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"result":"1. ID: 604 | Subject: "Срочная задача" | From: Syamil Khizr"}""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(
+            """1. ID: 604 | Subject: "Срочная задача" | From: Syamil Khizr""",
+            ok.choices.single().message.content,
+        )
+    }
+
+    @Test
     fun `strict json parser converts tool calls`() {
         val parser = LocalStrictJsonParser()
 

@@ -72,6 +72,14 @@ class LocalStrictJsonParser {
                 tryRecoverMalformedToolCalls(trimmed)?.let { recovered ->
                     return parseToolCalls(recovered, requestModel, usage, created)
                 }
+                tryRecoverMalformedFinalText(trimmed)?.let { recovered ->
+                    return plainTextFinal(
+                        text = recovered,
+                        requestModel = requestModel,
+                        usage = usage,
+                        created = created,
+                    )
+                }
                 if (shouldTreatAsPlainTextFinal(trimmed)) {
                     return plainTextFinal(
                         text = trimmed,
@@ -242,6 +250,62 @@ class LocalStrictJsonParser {
         return runCatching { restJsonMapper.readTree(restJsonMapper.writeValueAsString(recovered)) }.getOrNull()
     }
 
+    private fun tryRecoverMalformedFinalText(text: String): String? {
+        if (text.contains("\"tool_calls\"")) return null
+
+        if (text.contains("final")) {
+            extractLooseStringField(text, "content")
+                ?.let(::unwrapEmbeddedResultObject)
+                ?.let { return it }
+        }
+
+        return extractLooseStringField(text, "result")
+    }
+
+    private fun extractLooseStringField(text: String, fieldName: String): String? {
+        val fieldStart = Regex("[\"']?$fieldName[\"']?\\s*[:=]\\s*\"").find(text)?.range?.last?.plus(1)
+            ?: return null
+        val fieldEnd = text.lastUnescapedQuoteIndex()
+        if (fieldEnd <= fieldStart) return null
+
+        return decodeLooseJsonEscapes(text.substring(fieldStart, fieldEnd))
+            .trim()
+            .takeIf { it.isNotEmpty() }
+    }
+
+    private fun String.lastUnescapedQuoteIndex(): Int {
+        for (index in lastIndex downTo 0) {
+            if (this[index] != '"' || isEscaped(index)) continue
+            return index
+        }
+        return -1
+    }
+
+    private fun String.isEscaped(index: Int): Boolean {
+        var backslashes = 0
+        var cursor = index - 1
+        while (cursor >= 0 && this[cursor] == '\\') {
+            backslashes += 1
+            cursor -= 1
+        }
+        return backslashes % 2 == 1
+    }
+
+    private fun decodeLooseJsonEscapes(text: String): String {
+        val withUnicode = UNICODE_ESCAPE_REGEX.replace(text) { match ->
+            match.groupValues[1].toInt(16).toChar().toString()
+        }
+
+        return withUnicode
+            .replace("\\\"", "\"")
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\t", "\t")
+            .replace("\\b", "\b")
+            .replace("\\f", "\u000C")
+            .replace("\\\\", "\\")
+    }
+
     private fun extractQuotedField(text: String, fieldName: String, startIndex: Int): String? {
         val regex = Regex(""""$fieldName"\s*:\s*"((?:\\.|[^"\\])*)"""")
         return regex.find(text, startIndex)?.groupValues?.getOrNull(1)
@@ -362,6 +426,7 @@ class LocalStrictJsonParser {
 
     private companion object {
         val CONTROL_TOKEN_REGEX = Regex("""<\|[^>\r\n]*\|>|<\|[A-Za-z0-9_:-]+>|<[A-Za-z0-9_:-]+\|>|</?[A-Za-z0-9_:-]+>""")
+        val UNICODE_ESCAPE_REGEX = Regex("""\\u([0-9a-fA-F]{4})""")
         val WHITESPACE_REGEX = Regex("""\s+""")
         val CONTROL_WRAPPER_LABELS = setOf(
             "assistant",
