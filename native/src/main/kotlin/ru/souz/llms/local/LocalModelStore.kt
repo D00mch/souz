@@ -28,14 +28,14 @@ class LocalModelStore(
     private val l = LoggerFactory.getLogger(LocalModelStore::class.java)
     private val downloadMutex = Mutex()
 
-    fun modelPath(profile: LocalModelProfile): Path =
+    fun modelPath(profile: LocalDownloadableProfile): Path =
         rootDir.resolve(profile.id).resolve(profile.ggufFilename)
 
-    fun isPresent(profile: LocalModelProfile): Boolean = Files.isRegularFile(modelPath(profile))
+    fun isPresent(profile: LocalDownloadableProfile): Boolean = Files.isRegularFile(modelPath(profile))
 
-    fun canDownload(profile: LocalModelProfile): Boolean = profile.downloadUrl.isNotBlank()
+    fun canDownload(profile: LocalDownloadableProfile): Boolean = profile.downloadUrl.isNotBlank()
 
-    fun requireAvailable(profile: LocalModelProfile): Path {
+    fun requireAvailable(profile: LocalDownloadableProfile): Path {
         val target = modelPath(profile)
         if (Files.isRegularFile(target)) {
             return target
@@ -43,14 +43,61 @@ class LocalModelStore(
         error("Model ${profile.displayName} is not downloaded yet. Download it before starting local inference.")
     }
 
-    suspend fun download(
+    suspend fun downloadRequiredAssets(
         profile: LocalModelProfile,
         onProgress: suspend (LocalModelDownloadProgress) -> Unit = {},
     ): Path = downloadMutex.withLock {
-        withContext(Dispatchers.IO) {
+        val missingProfiles = profile.requiredDownloadProfiles().filterNot(::isPresent)
+
+        if (missingProfiles.isEmpty()) {
+            return@withLock requireAvailable(profile)
+        }
+
+        missingProfiles.forEachIndexed { index, missingProfile ->
+            downloadInternal(missingProfile) { progress ->
+                onProgress(
+                    progress.copy(
+                        activeProfileName = missingProfile.displayName,
+                        completedProfiles = index,
+                        totalProfiles = missingProfiles.size,
+                    )
+                )
+            }
+            val target = modelPath(missingProfile)
+            onProgress(
+                LocalModelDownloadProgress(
+                    bytesDownloaded = Files.size(target),
+                    totalBytes = Files.size(target),
+                    activeProfileName = missingProfile.displayName,
+                    completedProfiles = index + 1,
+                    totalProfiles = missingProfiles.size,
+                )
+            )
+        }
+
+        requireAvailable(profile)
+    }
+
+    suspend fun download(
+        profile: LocalDownloadableProfile,
+        onProgress: suspend (LocalModelDownloadProgress) -> Unit = {},
+    ): Path = downloadMutex.withLock {
+        downloadInternal(profile, onProgress)
+    }
+
+    private suspend fun downloadInternal(
+        profile: LocalDownloadableProfile,
+        onProgress: suspend (LocalModelDownloadProgress) -> Unit = {},
+    ): Path {
+        return withContext(Dispatchers.IO) {
             val target = modelPath(profile)
             if (Files.isRegularFile(target)) {
-                onProgress(LocalModelDownloadProgress(bytesDownloaded = Files.size(target), totalBytes = Files.size(target)))
+                onProgress(
+                    LocalModelDownloadProgress(
+                        bytesDownloaded = Files.size(target),
+                        totalBytes = Files.size(target),
+                    )
+                )
                 return@withContext target
             }
 
@@ -218,6 +265,9 @@ class LocalModelStore(
 data class LocalModelDownloadProgress(
     val bytesDownloaded: Long,
     val totalBytes: Long?,
+    val activeProfileName: String? = null,
+    val completedProfiles: Int = 0,
+    val totalProfiles: Int = 1,
 ) {
     val fraction: Float?
         get() = totalBytes

@@ -32,9 +32,11 @@ class NodesCommonTest {
     }
 
     @Test
-    fun `local model keeps static additional context but skips desktop search`() = runTest {
+    fun `local model includes desktop search in additional context`() = runTest {
         val desktopInfoRepository = mockk<AgentDesktopInfoRepository>()
-        coEvery { desktopInfoRepository.search(any(), any()) } returns listOf()
+        coEvery { desktopInfoRepository.search(any(), any()) } returns listOf(
+            StorredData("Найден локальный факт", StorredType.GENERAL_FACT)
+        )
         val settingsProvider = mockk<AgentSettingsProvider> {
             every { defaultCalendar } returns "Work"
         }
@@ -67,9 +69,10 @@ class NodesCommonTest {
         )
         val injectedContext = assertNotNull(result.history.firstOrNull { it.content.contains("<context>") })
 
+        assertTrue(injectedContext.content.contains("Найден локальный факт"))
         assertTrue(injectedContext.content.contains("Календарь по умолчанию: Work"))
         assertTrue(injectedContext.content.contains("Текущие дата и время:"))
-        coVerify(exactly = 0) { desktopInfoRepository.search(any(), any()) }
+        coVerify(exactly = 1) { desktopInfoRepository.search(any(), any()) }
     }
 
     @Test

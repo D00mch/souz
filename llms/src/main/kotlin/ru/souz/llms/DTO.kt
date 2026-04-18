@@ -1,5 +1,6 @@
 package ru.souz.llms
 
+import com.fasterxml.jackson.annotation.JsonIgnore
 import com.fasterxml.jackson.annotation.JsonProperty
 import java.util.*
 
@@ -100,6 +101,11 @@ object LLMResponse {
     enum class FinishReason { stop, length, function_call, blacklist, error }
 }
 
+enum class EmbeddingInputKind {
+    QUERY,
+    DOCUMENT,
+}
+
 fun String.toFinishReason(): LLMResponse.FinishReason? {
     if (this.isEmpty()) return null
     return runCatching { LLMResponse.FinishReason.valueOf(this) }.getOrNull()
@@ -164,6 +170,7 @@ enum class EmbeddingsModel(
     AiTunnelEmbeddingAda("AI-Tunnel: text-embedding-ada-002", "text-embedding-ada-002", LlmProvider.AI_TUNNEL),
     AiTunnelQwen3Embedding("AI-Tunnel: qwen3-embedding-8b", "qwen3-embedding-8b", LlmProvider.AI_TUNNEL),
     OpenAITextEmbedding3Small("OpenAI: text-embedding-3-small", "text-embedding-3-small", LlmProvider.OPENAI),
+    LocalEmbeddingGemma300M("Local EmbeddingGemma 300M", "local-embeddinggemma-300m", LlmProvider.LOCAL),
 }
 
 enum class VoiceRecognitionModel(
@@ -239,6 +246,9 @@ object LLMRequest {
     data class Embeddings(
         val model: String = "Embeddings",
         val input: List<String>,
+        @get:JsonIgnore
+        @field:JsonIgnore
+        val inputKind: EmbeddingInputKind = EmbeddingInputKind.QUERY,
     )
 }
 

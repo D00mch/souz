@@ -17,6 +17,7 @@ internal interface SouzLlamaBridgeLibrary : Library {
     fun souz_llama_model_load(runtime: Pointer, requestJson: String, errorBuffer: ByteArray, errorBufferSize: Long): Pointer?
     fun souz_llama_model_unload(runtime: Pointer, model: Pointer?)
     fun souz_llama_generate(runtime: Pointer, model: Pointer, requestJson: String, errorBuffer: ByteArray, errorBufferSize: Long): Pointer?
+    fun souz_llama_embeddings(runtime: Pointer, model: Pointer, requestJson: String, errorBuffer: ByteArray, errorBufferSize: Long): Pointer?
     fun souz_llama_generate_stream(
         runtime: Pointer,
         model: Pointer,
@@ -33,6 +34,10 @@ internal interface SouzLlamaBridgeLibrary : Library {
     fun interface StreamCallback : Callback {
         fun invoke(eventJson: Pointer?, userData: Pointer?)
     }
+}
+
+internal interface PosixCLibrary : Library {
+    fun setenv(name: String, value: String, overwrite: Int): Int
 }
 
 class LocalBridgeLoader(
@@ -60,6 +65,7 @@ class LocalBridgeLoader(
         synchronized(this) {
             cached.get()?.takeIf { it.platform == platform }?.let { return it.library }
             val extracted = extractLibrary(platform)
+            configureEnvironmentBeforeLoad(platform)
             l.info("Loading local bridge from {}", extracted)
             val library = Native.load(extracted.toAbsolutePath().toString(), SouzLlamaBridgeLibrary::class.java)
             cached.set(LoadedBridge(platform = platform, path = extracted, library = library))
@@ -87,6 +93,21 @@ class LocalBridgeLoader(
         }
         target.toFile().setExecutable(true)
         return target
+    }
+
+    private fun configureEnvironmentBeforeLoad(platform: LocalPlatform) {
+        if (platform != LocalPlatform.MACOS_ARM64 && platform != LocalPlatform.MACOS_X64) {
+            return
+        }
+        val keepResidency = System.getenv("SOUZ_LLAMA_METAL_RESIDENCY")
+            ?.let { value -> value.equals("1", ignoreCase = true) || value.equals("true", ignoreCase = true) }
+            ?: false
+        if (keepResidency) {
+            return
+        }
+
+        val libc = Native.load("c", PosixCLibrary::class.java)
+        libc.setenv("GGML_METAL_NO_RESIDENCY", "1", 1)
     }
 
     private fun pointerToString(pointer: Pointer?): String? = pointer?.let {
@@ -133,6 +154,13 @@ class LocalNativeBridge(
         val errorBuffer = ByteArray(ERROR_BUFFER_SIZE)
         val pointer = loader.library().souz_llama_generate(runtime, model, requestJson, errorBuffer, errorBuffer.size.toLong())
             ?: error(errorMessage("Local generation failed", errorBuffer))
+        return consumeString(pointer)
+    }
+
+    fun embeddings(runtime: Pointer, model: Pointer, requestJson: String): String {
+        val errorBuffer = ByteArray(ERROR_BUFFER_SIZE)
+        val pointer = loader.library().souz_llama_embeddings(runtime, model, requestJson, errorBuffer, errorBuffer.size.toLong())
+            ?: error(errorMessage("Local embeddings failed", errorBuffer))
         return consumeString(pointer)
     }
 

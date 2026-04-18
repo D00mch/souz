@@ -11,10 +11,8 @@ import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.db.StorredData
 import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LlmProvider
 import ru.souz.llms.toSystemPromptMessage
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -95,7 +93,6 @@ internal class NodesCommon(
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
         val additionalMessage: LLMRequest.Message? = appendActualInformation(
             userText = ctx.input,
-            modelAlias = ctx.settings.model,
         )
 
         val newHistory = ArrayList<LLMRequest.Message>()
@@ -121,18 +118,15 @@ internal class NodesCommon(
 
     private suspend fun appendActualInformation(
         userText: String,
-        modelAlias: String,
     ): LLMRequest.Message? {
         if (userText.isBlank()) return null
 
         val additionalData = ArrayList<StorredData>()
 
-        if (!isLocalModelAlias(modelAlias)) {
-            try {
-                additionalData.addAll(desktopInfoRepository.search(userText))
-            } catch (e: Exception) {
-                l.error("Error searching desktop info: ${e.message}")
-            }
+        try {
+            additionalData.addAll(desktopInfoRepository.search(userText))
+        } catch (e: Exception) {
+            l.error("Error searching desktop info: ${e.message}")
         }
 
         defaultBrowserProvider.defaultBrowserDisplayName()?.let { browserName ->
@@ -228,11 +222,6 @@ internal class NodesCommon(
         settings: AgentSettings,
         functionCall: LLMResponse.FunctionCall,
     ): LLMRequest.Message = agentToolExecutor.execute(settings, functionCall)
-
-    private fun isLocalModelAlias(modelAlias: String): Boolean =
-        LLMModel.entries.any { model ->
-            model.alias.equals(modelAlias, ignoreCase = true) && model.provider == LlmProvider.LOCAL
-        }
 }
 
 internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {

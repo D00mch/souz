@@ -54,6 +54,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMResponse.FunctionCall
 import ru.souz.llms.giga.GigaVoiceAPI
+import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
@@ -587,7 +588,35 @@ class MainViewModelTest {
 
             val state = awaitState(viewModel) { it.localModelDownloadPrompt?.model == LLMModel.LocalQwen3_4B_Instruct_2507 }
             assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
+            assertEquals(
+                listOf(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.id, LocalEmbeddingProfiles.default().id),
+                state.localModelDownloadPrompt?.downloads?.map { it.id },
+            )
             assertFalse(state.selectedModel == LLMModel.LocalQwen3_4B_Instruct_2507.alias)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `startup opens download prompt when persisted local model misses linked embeddings`() = runTest(mainDispatcher) {
+        val harness = createHarness(
+            qwenChatKey = "qwen-key",
+            configuredModel = LLMModel.LocalQwen3_4B_Instruct_2507,
+            localAvailableModel = LLMModel.LocalQwen3_4B_Instruct_2507,
+            localModelDownloaded = true,
+            localEmbeddingsDownloaded = false,
+        )
+
+        try {
+            val state = awaitState(harness.viewModel) {
+                it.localModelDownloadPrompt?.model == LLMModel.LocalQwen3_4B_Instruct_2507
+            }
+            assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507.alias, state.selectedModel)
+            assertEquals(
+                listOf(LocalEmbeddingProfiles.default().id),
+                state.localModelDownloadPrompt?.downloads?.map { it.id },
+            )
         } finally {
             harness.clear()
         }
@@ -988,8 +1017,10 @@ class MainViewModelTest {
         voiceInputReviewEnabled: Boolean = false,
         safeModeEnabled: Boolean = false,
         qwenChatKey: String = "",
+        configuredModel: LLMModel = LLMModel.Max,
         localAvailableModel: LLMModel? = null,
         localModelDownloaded: Boolean = true,
+        localEmbeddingsDownloaded: Boolean = localModelDownloaded,
         recognizeBehavior: suspend (ByteArray) -> LLMResponse.RecognizeResponse = {
             LLMResponse.RecognizeResponse()
         },
@@ -1006,13 +1037,18 @@ class MainViewModelTest {
         every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.LUA_GRAPH, ru.souz.agent.AgentId.GRAPH)
 
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
-        every { settingsProvider.gigaModel } returns LLMModel.Max
+        var gigaModelState = configuredModel
+        every { settingsProvider.gigaModel } answers { gigaModelState }
+        every { settingsProvider.gigaModel = any() } answers { gigaModelState = firstArg() }
         every { settingsProvider.contextSize } returns 16_000
         every { settingsProvider.useStreaming } returns false
         every { settingsProvider.regionProfile } returns "ru"
         every { settingsProvider.forbiddenFolders } returns emptyList()
         every { settingsProvider.qwenChatKey } returns qwenChatKey
         every { settingsProvider.regionProfile = any() } just runs
+        var embeddingsModelState = ru.souz.llms.EmbeddingsModel.GigaEmbeddings
+        every { settingsProvider.embeddingsModel } answers { embeddingsModelState }
+        every { settingsProvider.embeddingsModel = any() } answers { embeddingsModelState = firstArg() }
         val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
         every { localProviderAvailability.isProviderAvailable() } returns (localAvailableModel != null)
         every { localProviderAvailability.availableGigaModels() } returns listOfNotNull(localAvailableModel)
@@ -1024,6 +1060,9 @@ class MainViewModelTest {
             val profile = LocalModelProfiles.forAlias(model.alias) ?: error("Missing local profile for ${model.alias}")
             every { localModelStore.isPresent(profile) } returns localModelDownloaded
             every { localModelStore.modelPath(profile) } returns File(System.getProperty("java.io.tmpdir"), profile.ggufFilename).toPath()
+            every { localModelStore.isPresent(LocalEmbeddingProfiles.default()) } returns localEmbeddingsDownloaded
+            every { localModelStore.modelPath(LocalEmbeddingProfiles.default()) } returns
+                File(System.getProperty("java.io.tmpdir"), LocalEmbeddingProfiles.default().ggufFilename).toPath()
         }
         var needsOnboardingState = needsOnboarding
         every { settingsProvider.needsOnboarding } answers { needsOnboardingState }
@@ -1044,6 +1083,7 @@ class MainViewModelTest {
 
         val desktopInfoRepository = mockk<DesktopInfoRepository>(relaxed = true)
         coEvery { desktopInfoRepository.storeDesktopDataDaily() } returns Unit
+        coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
 
         val gigaVoiceApi = mockk<GigaVoiceAPI>(relaxed = true)
         coEvery { gigaVoiceApi.recognize(any()) } coAnswers {

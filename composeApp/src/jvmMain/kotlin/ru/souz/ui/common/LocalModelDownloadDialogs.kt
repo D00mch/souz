@@ -117,14 +117,21 @@ fun LocalModelDownloadProgressDialog(
 
 @Composable
 private fun buildPromptDetails(prompt: LocalModelDownloadPrompt): String = buildString {
-    appendLine(stringResource(Res.string.local_model_download_detail_repo).format(prompt.profile.huggingFaceRepoId))
-    appendLine(stringResource(Res.string.local_model_download_detail_quantization).format(prompt.profile.quantization))
-    appendLine(stringResource(Res.string.local_model_download_detail_license).format(prompt.profile.licenseRequirements.summary))
-    append(stringResource(Res.string.local_model_download_detail_storage).format(prompt.targetPath))
-    if (prompt.profile.licenseRequirements.requiresManualAcceptance) {
-        appendLine()
-        appendLine()
-        append(stringResource(Res.string.local_model_download_detail_manual_license))
+    prompt.downloads.forEachIndexed { index, profile ->
+        if (index > 0) {
+            appendLine()
+            appendLine()
+        }
+        appendLine(profile.displayName)
+        appendLine(stringResource(Res.string.local_model_download_detail_repo).format(profile.huggingFaceRepoId))
+        appendLine(stringResource(Res.string.local_model_download_detail_quantization).format(profile.quantization))
+        appendLine(stringResource(Res.string.local_model_download_detail_license).format(profile.licenseRequirements.summary))
+        append(stringResource(Res.string.local_model_download_detail_storage).format(prompt.targetPath(profile)))
+        if (profile.licenseRequirements.requiresManualAcceptance) {
+            appendLine()
+            appendLine()
+            append(stringResource(Res.string.local_model_download_detail_manual_license))
+        }
     }
 }
 
@@ -449,6 +456,9 @@ private fun LocalModelDownloadCloseButton(
 
 @Composable
 private fun LocalModelDownloadBody(state: LocalModelDownloadState) {
+    val currentTarget = state.prompt.downloads.firstOrNull { profile ->
+        profile.displayName == state.progress.activeProfileName
+    } ?: state.prompt.downloads.firstOrNull()
     val progressText = state.fraction
         ?.let {
             stringResource(Res.string.local_model_download_progress_known).format(
@@ -463,7 +473,7 @@ private fun LocalModelDownloadBody(state: LocalModelDownloadState) {
         ?.let { "${(it * 100).roundToInt()}%" }
         ?: stringResource(Res.string.local_model_download_progress_action)
     val speedBytesPerSecond = rememberDownloadSpeed(
-        resetKey = state.prompt.targetPath,
+        resetKey = currentTarget?.let(state.prompt::targetPath) ?: state.prompt.profile.id,
         bytesDownloaded = state.progress.bytesDownloaded,
     )
     val storageLabel = stringResource(Res.string.local_model_download_detail_storage)
@@ -486,6 +496,15 @@ private fun LocalModelDownloadBody(state: LocalModelDownloadState) {
                 verticalAlignment = Alignment.Bottom,
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    val activeProfileName = state.progress.activeProfileName
+                    if (!activeProfileName.isNullOrBlank()) {
+                        Text(
+                            text = activeProfileName,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            color = LocalModelDownloadProgressColors.progressSecondary,
+                        )
+                    }
                     Text(
                         text = progressText,
                         fontSize = 13.sp,
@@ -502,7 +521,11 @@ private fun LocalModelDownloadBody(state: LocalModelDownloadState) {
                 }
 
                 Text(
-                    text = progressLabel,
+                    text = if (state.progress.totalProfiles > 1) {
+                        "${minOf(state.progress.completedProfiles + 1, state.progress.totalProfiles)}/${state.progress.totalProfiles} $progressLabel"
+                    } else {
+                        progressLabel
+                    },
                     fontSize = 15.sp,
                     lineHeight = 20.sp,
                     fontWeight = FontWeight.Medium,
@@ -515,7 +538,7 @@ private fun LocalModelDownloadBody(state: LocalModelDownloadState) {
 
         LocalModelDownloadStorageCard(
             label = storageLabel,
-            path = state.prompt.targetPath,
+            path = currentTarget?.let(state.prompt::targetPath) ?: "",
         )
     }
 }

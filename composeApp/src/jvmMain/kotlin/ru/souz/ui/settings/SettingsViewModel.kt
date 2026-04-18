@@ -4,7 +4,6 @@ import androidx.lifecycle.viewModelScope
 import io.ktor.util.logging.debug
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -16,19 +15,17 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
 import ru.souz.service.audio.Say
+import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
-import ru.souz.db.VectorDB
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.local.LocalModelDownloadState
 import ru.souz.llms.local.LocalLlamaRuntime
-import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.downloadPromptFor
 import ru.souz.service.telegram.TelegramAuthStep
@@ -38,6 +35,7 @@ import ru.souz.tool.config.ToolSoundConfig
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.calendar.CalendarAppleScriptCommands
 import ru.souz.ui.BaseViewModel
+import ru.souz.ui.common.LocalModelUiCoordinator
 import ru.souz.ui.common.openProviderLink
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.ui.common.usecases.ApiKeyValues
@@ -56,6 +54,7 @@ class SettingsViewModel(
 
     private val l = LoggerFactory.getLogger(SettingsViewModel::class.java)
     private val keysProvider: SettingsProvider by di.instance()
+    private val desktopInfoRepository: DesktopInfoRepository by di.instance()
     private val llmBuildProfile: LlmBuildProfile by di.instance()
     private val localModelStore: LocalModelStore by di.instance()
     private val localLlamaRuntime: LocalLlamaRuntime by di.instance()
@@ -73,6 +72,16 @@ class SettingsViewModel(
     private val pendingTextSettingSaveJobs = mutableMapOf<DeferredTextSetting, Job>()
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
+    private val localModelUiCoordinator by lazy(kotlin.LazyThreadSafetyMode.NONE) {
+        LocalModelUiCoordinator(
+            scope = viewModelScope,
+            dispatcher = ioDispatchers,
+            modelStore = localModelStore,
+            localLlamaRuntime = localLlamaRuntime,
+            desktopInfoRepository = desktopInfoRepository,
+            logger = l,
+        )
+    }
 
     init {
         viewModelScope.launch {
@@ -208,10 +217,11 @@ class SettingsViewModel(
                 if (event.model !in currentState.availableEmbeddingsModels) return
                 val currentModel = keysProvider.embeddingsModel
                 keysProvider.embeddingsModel = event.model
-                if (currentModel != event.model) {
-                    VectorDB.clearAllData()
+                val effectiveModel = keysProvider.embeddingsModel
+                if (currentModel != effectiveModel) {
+                    localModelUiCoordinator.rebuildDesktopIndex()
                 }
-                setState { copy(embeddingsModel = event.model) }
+                setState { copy(embeddingsModel = effectiveModel) }
             }
             is SelectVoiceRecognitionModel -> {
                 if (event.model !in currentState.availableVoiceRecognitionModels) return
@@ -385,74 +395,72 @@ class SettingsViewModel(
 
     private suspend fun applySelectedModel(model: LLMModel) {
         flushPendingSystemPromptSave()
+        val previousEmbeddingsModel = keysProvider.embeddingsModel
         val newPrompt = agentFacade.setModel(model)
-        setState { copy(gigaModel = model, systemPrompt = newPrompt) }
+        val effectiveEmbeddingsModel = keysProvider.embeddingsModel
+        if (previousEmbeddingsModel != effectiveEmbeddingsModel) {
+            localModelUiCoordinator.rebuildDesktopIndex()
+        }
+        setState {
+            copy(
+                gigaModel = model,
+                systemPrompt = newPrompt,
+                embeddingsModel = effectiveEmbeddingsModel,
+                availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(llmBuildProfile),
+                localModelDownloadPrompt = null,
+            )
+        }
         fetchBalance()
-        scheduleLocalModelPreload(model)
+        localModelPreloadJob = localModelUiCoordinator.scheduleLocalModelPreload(
+            currentJob = localModelPreloadJob,
+            model = model,
+        )
     }
 
     private suspend fun confirmLocalModelDownload() {
-        val prompt = currentState.localModelDownloadPrompt ?: return
-        localModelDownloadJob?.cancelAndJoin()
-        localModelDownloadJob = viewModelScope.launch(ioDispatchers) {
-            setState {
-                copy(
-                    localModelDownloadPrompt = null,
-                    localModelDownloadState = LocalModelDownloadState(prompt),
-                )
-            }
-
-            runCatching {
-                localModelStore.download(prompt.profile) { progress ->
-                    setState {
-                        copy(localModelDownloadState = LocalModelDownloadState(prompt, progress))
-                    }
+        localModelDownloadJob = localModelUiCoordinator.startDownload(
+            currentJob = localModelDownloadJob,
+            prompt = currentState.localModelDownloadPrompt,
+            updateDownloadState = { state ->
+                setState {
+                    copy(
+                        localModelDownloadPrompt = null,
+                        localModelDownloadState = state,
+                    )
                 }
-            }.onSuccess {
+            },
+            onSuccess = { prompt ->
                 applySelectedModel(prompt.model)
                 setState { copy(localModelDownloadState = null) }
-            }.onFailure { error ->
-                setState { copy(localModelDownloadState = null) }
-                if (error is CancellationException) {
-                    return@onFailure
-                }
+            },
+            onError = { error ->
                 send(SettingsEffect.ShowSnackbar(error.message ?: getString(Res.string.local_model_download_failed)))
             }
-
-            localModelDownloadJob = null
+        )?.also { job ->
+            job.invokeOnCompletion {
+                if (localModelDownloadJob === job) {
+                    localModelDownloadJob = null
+                }
+            }
         }
     }
 
     private suspend fun cancelLocalModelDownload() {
-        val hadActiveDownload = currentState.localModelDownloadState != null
-        localModelDownloadJob?.cancelAndJoin()
-        localModelDownloadJob = null
-        setState {
-            copy(
-                localModelDownloadPrompt = null,
-                localModelDownloadState = null,
-            )
-        }
-        if (hadActiveDownload) {
-            send(SettingsEffect.ShowSnackbar(getString(Res.string.local_model_download_cancelled)))
-        }
-    }
-
-    private fun scheduleLocalModelPreload(model: LLMModel) {
-        if (!LocalModelProfiles.isLocalModelAlias(model.alias)) {
-            localModelPreloadJob?.cancel()
-            localModelPreloadJob = null
-            return
-        }
-        localModelPreloadJob?.cancel()
-        localModelPreloadJob = viewModelScope.launch(ioDispatchers) {
-            runCatching { localLlamaRuntime.preload(model.alias) }
-                .onFailure { error ->
-                    if (error !is CancellationException) {
-                        l.warn("Local model preload failed for {}: {}", model.alias, error.message)
-                    }
+        localModelDownloadJob = localModelUiCoordinator.cancelDownload(
+            currentJob = localModelDownloadJob,
+            hasActiveDownload = currentState.localModelDownloadState != null,
+            clearDownloadState = {
+                setState {
+                    copy(
+                        localModelDownloadPrompt = null,
+                        localModelDownloadState = null,
+                    )
                 }
-        }
+            },
+            onCancelled = {
+                send(SettingsEffect.ShowSnackbar(getString(Res.string.local_model_download_cancelled)))
+            },
+        )
     }
 
     private suspend fun refreshFromProvider() {
@@ -474,19 +482,24 @@ class SettingsViewModel(
             configured = configuredLlmModel,
             available = availableLlmModels,
         ) { keysProvider.defaultLlmModel(llmBuildProfile) }
-        val selectedPrompt = agentFacade.setModel(selectedLlmModel)
+        val downloadPrompt = localModelStore.downloadPromptFor(selectedLlmModel)
+        val selectedPrompt = if (downloadPrompt == null) {
+            agentFacade.setModel(selectedLlmModel)
+        } else {
+            agentFacade.currentContext.value.systemPrompt
+        }
         val activeAgentId = agentFacade.activeAgentId.value
         val availableAgents = agentFacade.availableAgents
 
-        val availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(llmBuildProfile)
         val configuredEmbeddingsModel = keysProvider.embeddingsModel
+        val availableEmbeddingsModels = keysProvider.availableEmbeddingsModels(llmBuildProfile)
         val selectedEmbeddingsModel = pickConfiguredOrDefault(
             configured = configuredEmbeddingsModel,
             available = availableEmbeddingsModels,
         ) { keysProvider.defaultEmbeddingsModel(llmBuildProfile) }
         if (selectedEmbeddingsModel != configuredEmbeddingsModel) {
             keysProvider.embeddingsModel = selectedEmbeddingsModel
-            VectorDB.clearAllData()
+            localModelUiCoordinator.rebuildDesktopIndex()
         }
 
         val availableVoiceRecognitionModels = keysProvider.availableVoiceRecognitionModels(llmBuildProfile)
@@ -534,6 +547,7 @@ class SettingsViewModel(
                 gigaModel = selectedLlmModel,
                 embeddingsModel = selectedEmbeddingsModel,
                 voiceRecognitionModel = selectedVoiceRecognitionModel,
+                localModelDownloadPrompt = downloadPrompt,
                 availableLlmModels = availableLlmModels,
                 availableEmbeddingsModels = availableEmbeddingsModels,
                 availableVoiceRecognitionModels = availableVoiceRecognitionModels,

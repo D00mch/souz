@@ -8,6 +8,7 @@ import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
+import ru.souz.llms.local.LocalEmbeddingProfiles
 
 fun SettingsProvider.availableLlmModels(llmBuildProfile: LlmBuildProfile): List<LLMModel> =
     llmBuildProfile.availableModels.filter { model -> this.hasKey(model.provider) }
@@ -25,12 +26,22 @@ fun SettingsProvider.defaultLlmModel(llmBuildProfile: LlmBuildProfile): LLMModel
         ?: availableModels.first()
 }
 
-fun SettingsProvider.availableEmbeddingsModels(llmBuildProfile: LlmBuildProfile): List<EmbeddingsModel> = EmbeddingsModel.entries
-    .filter { model ->
-        this.hasKey(model.provider) && model.provider in llmBuildProfile.availableProviders
+fun SettingsProvider.availableEmbeddingsModels(llmBuildProfile: LlmBuildProfile): List<EmbeddingsModel> =
+    when {
+        gigaModel.provider == LlmProvider.LOCAL && LlmProvider.LOCAL in llmBuildProfile.availableProviders ->
+            listOf(LocalEmbeddingProfiles.default().embeddingsModel)
+
+        else -> EmbeddingsModel.entries.filter { model ->
+            model.provider != LlmProvider.LOCAL &&
+                this.hasKey(model.provider) &&
+                model.provider in llmBuildProfile.availableProviders
+        }
     }
 
 fun SettingsProvider.defaultEmbeddingsModel(llmBuildProfile: LlmBuildProfile): EmbeddingsModel? {
+    if (gigaModel.provider == LlmProvider.LOCAL && LlmProvider.LOCAL in llmBuildProfile.availableProviders) {
+        return LocalEmbeddingProfiles.default().embeddingsModel
+    }
     val availableModels = this.availableEmbeddingsModels(llmBuildProfile)
     if (availableModels.isEmpty()) return null
 
