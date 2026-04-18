@@ -35,11 +35,8 @@ import ru.souz.tool.config.ToolSoundConfig
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.calendar.CalendarAppleScriptCommands
 import ru.souz.ui.BaseViewModel
-import ru.souz.ui.common.cancelLocalModelDownload as cancelLocalModelDownloadFlow
-import ru.souz.ui.common.launchDesktopIndexRebuild
-import ru.souz.ui.common.launchLocalModelPreload
+import ru.souz.ui.common.LocalModelUiCoordinator
 import ru.souz.ui.common.openProviderLink
-import ru.souz.ui.common.startLocalModelDownload
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.ui.common.usecases.ApiKeyValues
 import ru.souz.ui.settings.SettingsEvent.*
@@ -75,6 +72,16 @@ class SettingsViewModel(
     private val pendingTextSettingSaveJobs = mutableMapOf<DeferredTextSetting, Job>()
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
+    private val localModelUiCoordinator by lazy(kotlin.LazyThreadSafetyMode.NONE) {
+        LocalModelUiCoordinator(
+            scope = viewModelScope,
+            dispatcher = ioDispatchers,
+            modelStore = localModelStore,
+            localLlamaRuntime = localLlamaRuntime,
+            desktopInfoRepository = desktopInfoRepository,
+            logger = l,
+        )
+    }
 
     init {
         viewModelScope.launch {
@@ -212,7 +219,7 @@ class SettingsViewModel(
                 keysProvider.embeddingsModel = event.model
                 val effectiveModel = keysProvider.embeddingsModel
                 if (currentModel != effectiveModel) {
-                    launchDesktopIndexRebuild(viewModelScope, ioDispatchers, desktopInfoRepository, l)
+                    localModelUiCoordinator.rebuildDesktopIndex()
                 }
                 setState { copy(embeddingsModel = effectiveModel) }
             }
@@ -392,7 +399,7 @@ class SettingsViewModel(
         val newPrompt = agentFacade.setModel(model)
         val effectiveEmbeddingsModel = keysProvider.embeddingsModel
         if (previousEmbeddingsModel != effectiveEmbeddingsModel) {
-            launchDesktopIndexRebuild(viewModelScope, ioDispatchers, desktopInfoRepository, l)
+            localModelUiCoordinator.rebuildDesktopIndex()
         }
         setState {
             copy(
@@ -404,23 +411,16 @@ class SettingsViewModel(
             )
         }
         fetchBalance()
-        localModelPreloadJob = launchLocalModelPreload(
+        localModelPreloadJob = localModelUiCoordinator.scheduleLocalModelPreload(
             currentJob = localModelPreloadJob,
-            scope = viewModelScope,
-            dispatcher = ioDispatchers,
             model = model,
-            runtime = localLlamaRuntime,
-            logger = l,
         )
     }
 
     private suspend fun confirmLocalModelDownload() {
-        localModelDownloadJob = startLocalModelDownload(
+        localModelDownloadJob = localModelUiCoordinator.startDownload(
             currentJob = localModelDownloadJob,
-            scope = viewModelScope,
-            dispatcher = ioDispatchers,
             prompt = currentState.localModelDownloadPrompt,
-            store = localModelStore,
             updateDownloadState = { state ->
                 setState {
                     copy(
@@ -446,7 +446,7 @@ class SettingsViewModel(
     }
 
     private suspend fun cancelLocalModelDownload() {
-        localModelDownloadJob = cancelLocalModelDownloadFlow(
+        localModelDownloadJob = localModelUiCoordinator.cancelDownload(
             currentJob = localModelDownloadJob,
             hasActiveDownload = currentState.localModelDownloadState != null,
             clearDownloadState = {
@@ -499,7 +499,7 @@ class SettingsViewModel(
         ) { keysProvider.defaultEmbeddingsModel(llmBuildProfile) }
         if (selectedEmbeddingsModel != configuredEmbeddingsModel) {
             keysProvider.embeddingsModel = selectedEmbeddingsModel
-            launchDesktopIndexRebuild(viewModelScope, ioDispatchers, desktopInfoRepository, l)
+            localModelUiCoordinator.rebuildDesktopIndex()
         }
 
         val availableVoiceRecognitionModels = keysProvider.availableVoiceRecognitionModels(llmBuildProfile)

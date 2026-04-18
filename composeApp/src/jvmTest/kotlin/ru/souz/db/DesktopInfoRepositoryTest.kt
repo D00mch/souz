@@ -6,13 +6,16 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.mockkObject
+import io.mockk.slot
 import io.mockk.runs
 import io.mockk.unmockkAll
 import io.mockk.verify
 import java.time.LocalDate
+import kotlin.test.BeforeTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import ru.souz.llms.EmbeddingInputKind
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
@@ -21,11 +24,19 @@ import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalModelStore
 
 class DesktopInfoRepositoryTest {
+    private var previousLastRun: String? = null
+    private var previousIndexModel: String? = null
+
+    @BeforeTest
+    fun setUp() {
+        previousLastRun = ConfigStore.get(LAST_RUN_KEY)
+        previousIndexModel = ConfigStore.get(INDEX_MODEL_KEY)
+    }
 
     @AfterTest
     fun tearDown() {
-        ConfigStore.rm("rag_repo_last_run")
-        ConfigStore.rm("rag_repo_index_model")
+        restoreKey(LAST_RUN_KEY, previousLastRun)
+        restoreKey(INDEX_MODEL_KEY, previousIndexModel)
         unmockkAll()
     }
 
@@ -53,8 +64,8 @@ class DesktopInfoRepositoryTest {
         every { settingsProvider.gigaChatKey } returns "giga-key"
 
         val repository = DesktopInfoRepository(api, VectorDB, extractor, settingsProvider)
-        ConfigStore.put("rag_repo_last_run", LocalDate.now().toString())
-        ConfigStore.put("rag_repo_index_model", EmbeddingsModel.GigaEmbeddings.name)
+        ConfigStore.put(LAST_RUN_KEY, LocalDate.now().toString())
+        ConfigStore.put(INDEX_MODEL_KEY, EmbeddingsModel.GigaEmbeddings.name)
 
         kotlinx.coroutines.runBlocking {
             repository.storeDesktopDataDaily()
@@ -123,5 +134,46 @@ class DesktopInfoRepositoryTest {
 
         coVerify(exactly = 1) { api.embeddings(any()) }
         verify(exactly = 0) { VectorDB.searchSimilar(any(), any()) }
+    }
+
+    @Test
+    fun `storeDesktopInfo marks indexed texts as document embeddings`() {
+        mockkObject(VectorDB)
+        every { VectorDB.insert(any(), any()) } just runs
+
+        val requestSlot = slot<LLMRequest.Embeddings>()
+        val api = mockk<LLMChatAPI>()
+        coEvery { api.embeddings(capture(requestSlot)) } returns LLMResponse.Embeddings.Ok(
+            data = listOf(LLMResponse.Embedding(listOf(0.1, 0.2), 0, "embedding")),
+            model = "Embeddings",
+            objectType = "list",
+        )
+
+        val repository = DesktopInfoRepository(
+            api = api,
+            db = VectorDB,
+            extractor = mockk(relaxed = true),
+            settingsProvider = mockk(relaxed = true),
+        )
+
+        kotlinx.coroutines.runBlocking {
+            repository.storeDesktopInfo(listOf(StorredData("single doc", StorredType.GENERAL_FACT)))
+        }
+
+        assertEquals(EmbeddingInputKind.DOCUMENT, requestSlot.captured.inputKind)
+        assertEquals(listOf("single doc"), requestSlot.captured.input)
+    }
+
+    private fun restoreKey(key: String, value: String?) {
+        if (value == null) {
+            ConfigStore.rm(key)
+        } else {
+            ConfigStore.put(key, value)
+        }
+    }
+
+    private companion object {
+        const val LAST_RUN_KEY = "rag_repo_last_run"
+        const val INDEX_MODEL_KEY = "rag_repo_index_model"
     }
 }

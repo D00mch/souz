@@ -1,5 +1,6 @@
 package ru.souz.llms
 
+import com.fasterxml.jackson.annotation.JsonIgnore
 import com.fasterxml.jackson.annotation.JsonProperty
 import java.util.*
 
@@ -98,6 +99,11 @@ object LLMResponse {
 
     @Suppress("EnumEntryName")
     enum class FinishReason { stop, length, function_call, blacklist, error }
+}
+
+enum class EmbeddingInputKind {
+    QUERY,
+    DOCUMENT,
 }
 
 fun String.toFinishReason(): LLMResponse.FinishReason? {
@@ -240,6 +246,9 @@ object LLMRequest {
     data class Embeddings(
         val model: String = "Embeddings",
         val input: List<String>,
+        @get:JsonIgnore
+        @field:JsonIgnore
+        val inputKind: EmbeddingInputKind = EmbeddingInputKind.QUERY,
     )
 }
 

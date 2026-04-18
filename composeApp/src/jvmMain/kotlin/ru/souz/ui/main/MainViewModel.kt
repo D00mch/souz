@@ -29,10 +29,7 @@ import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.downloadPromptFor
 import ru.souz.ui.BaseViewModel
-import ru.souz.ui.common.cancelLocalModelDownload as cancelLocalModelDownloadFlow
-import ru.souz.ui.common.launchDesktopIndexRebuild
-import ru.souz.ui.common.launchLocalModelPreload
-import ru.souz.ui.common.startLocalModelDownload
+import ru.souz.ui.common.LocalModelUiCoordinator
 import ru.souz.ui.main.search.ChatMessageSearchProjection
 import ru.souz.ui.main.search.ChatSearchEngine
 import ru.souz.ui.main.search.ChatSearchState
@@ -84,6 +81,16 @@ class MainViewModel(
     private var startTips: List<String> = emptyList()
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
+    private val localModelUiCoordinator by lazy(kotlin.LazyThreadSafetyMode.NONE) {
+        LocalModelUiCoordinator(
+            scope = viewModelScope,
+            dispatcher = ioDispatchers,
+            modelStore = localModelStore,
+            localLlamaRuntime = localLlamaRuntime,
+            desktopInfoRepository = desktopInfoRepository,
+            logger = l,
+        )
+    }
 
     init {
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectUseCaseOutputs() }
@@ -459,12 +466,9 @@ class MainViewModel(
     }
 
     private suspend fun confirmLocalModelDownload() {
-        localModelDownloadJob = startLocalModelDownload(
+        localModelDownloadJob = localModelUiCoordinator.startDownload(
             currentJob = localModelDownloadJob,
-            scope = viewModelScope,
-            dispatcher = ioDispatchers,
             prompt = currentState.localModelDownloadPrompt,
-            store = localModelStore,
             updateDownloadState = { state ->
                 setState {
                     copy(
@@ -496,7 +500,7 @@ class MainViewModel(
     }
 
     private suspend fun cancelLocalModelDownload() {
-        localModelDownloadJob = cancelLocalModelDownloadFlow(
+        localModelDownloadJob = localModelUiCoordinator.cancelDownload(
             currentJob = localModelDownloadJob,
             hasActiveDownload = currentState.localModelDownloadState != null,
             clearDownloadState = {
@@ -552,15 +556,11 @@ class MainViewModel(
         }
         val effectiveEmbeddingsModel = settingsProvider.embeddingsModel
         if (previousEmbeddingsModel != effectiveEmbeddingsModel) {
-            launchDesktopIndexRebuild(viewModelScope, ioDispatchers, desktopInfoRepository, l)
+            localModelUiCoordinator.rebuildDesktopIndex()
         }
-        localModelPreloadJob = launchLocalModelPreload(
+        localModelPreloadJob = localModelUiCoordinator.scheduleLocalModelPreload(
             currentJob = localModelPreloadJob,
-            scope = viewModelScope,
-            dispatcher = ioDispatchers,
             model = model,
-            runtime = localLlamaRuntime,
-            logger = l,
         )
     }
 

@@ -33,6 +33,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import ru.souz.llms.EmbeddingInputKind
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -1191,12 +1192,14 @@ class LocalInferenceSupportTest {
             LLMRequest.Embeddings(
                 model = profile.embeddingsModel.alias,
                 input = listOf("hello"),
+                inputKind = EmbeddingInputKind.QUERY,
             )
         )
         val documentResponse = runtime.embeddings(
             LLMRequest.Embeddings(
                 model = profile.embeddingsModel.alias,
-                input = listOf("doc one", "doc two"),
+                input = listOf("doc one"),
+                inputKind = EmbeddingInputKind.DOCUMENT,
             )
         )
 
@@ -1204,13 +1207,23 @@ class LocalInferenceSupportTest {
         assertIs<LLMResponse.Embeddings.Ok>(documentResponse)
 
         val queryRequest = restJsonMapper.readValue(requests[0], LocalLlamaRuntime.LocalEmbeddingsRequest::class.java)
-        assertEquals(LocalEmbeddingInputKind.QUERY, runtime.resolveEmbeddingInputKind(LLMRequest.Embeddings(input = listOf("hello"))))
+        assertEquals(
+            LocalEmbeddingInputKind.QUERY,
+            runtime.resolveEmbeddingInputKind(
+                LLMRequest.Embeddings(input = listOf("hello"), inputKind = EmbeddingInputKind.QUERY)
+            )
+        )
         assertEquals(listOf("task: search result | query: hello"), queryRequest.inputs)
 
         val documentRequest = restJsonMapper.readValue(requests[1], LocalLlamaRuntime.LocalEmbeddingsRequest::class.java)
-        assertEquals(LocalEmbeddingInputKind.DOCUMENT, runtime.resolveEmbeddingInputKind(LLMRequest.Embeddings(input = listOf("doc one", "doc two"))))
         assertEquals(
-            listOf("title: none | text: doc one", "title: none | text: doc two"),
+            LocalEmbeddingInputKind.DOCUMENT,
+            runtime.resolveEmbeddingInputKind(
+                LLMRequest.Embeddings(input = listOf("doc one"), inputKind = EmbeddingInputKind.DOCUMENT)
+            )
+        )
+        assertEquals(
+            listOf("title: none | text: doc one"),
             documentRequest.inputs,
         )
     }

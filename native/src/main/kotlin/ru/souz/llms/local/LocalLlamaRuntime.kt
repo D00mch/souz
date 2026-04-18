@@ -20,6 +20,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import ru.souz.llms.EmbeddingInputKind
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -436,7 +437,10 @@ class LocalLlamaRuntime(
         body.maxTokens >= MIN_CONTEXT_SIZE
 
     internal fun resolveEmbeddingInputKind(body: LLMRequest.Embeddings): LocalEmbeddingInputKind =
-        if (body.input.size == 1) LocalEmbeddingInputKind.QUERY else LocalEmbeddingInputKind.DOCUMENT
+        when (body.inputKind) {
+            EmbeddingInputKind.QUERY -> LocalEmbeddingInputKind.QUERY
+            EmbeddingInputKind.DOCUMENT -> LocalEmbeddingInputKind.DOCUMENT
+        }
 
     private fun nextContextBucket(tokens: Int): Int {
         val normalized = tokens.coerceAtLeast(MIN_CONTEXT_SIZE)

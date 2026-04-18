@@ -5,6 +5,7 @@ import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.di.mainDiModule
+import ru.souz.llms.EmbeddingInputKind
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -50,7 +51,12 @@ class DesktopInfoRepository(
 
     suspend fun storeDesktopInfo(data: List<StorredData>) {
         val shortened = data.map { it.copy(text = it.text.take(500)) } // get 500 symbols of long texts
-        val embeddings = when (val resp = api.embeddings(LLMRequest.Embeddings(input = shortened.map { it.text }))) {
+        val embeddings = when (val resp = api.embeddings(
+            LLMRequest.Embeddings(
+                input = shortened.map { it.text },
+                inputKind = EmbeddingInputKind.DOCUMENT,
+            )
+        )) {
             is LLMResponse.Embeddings.Ok -> resp.data.map { it.embedding }
             is LLMResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
         }
@@ -70,7 +76,12 @@ class DesktopInfoRepository(
      */
     override suspend fun search(query: String, limit: Int): List<StorredData> {
         if (!isEmbeddingsReady() || !isCurrentIndexReady()) return emptyList()
-        val emb = when (val resp = api.embeddings(LLMRequest.Embeddings(input = listOf(query)))) {
+        val emb = when (val resp = api.embeddings(
+            LLMRequest.Embeddings(
+                input = listOf(query),
+                inputKind = EmbeddingInputKind.QUERY,
+            )
+        )) {
             is LLMResponse.Embeddings.Ok -> resp.data.first().embedding
             is LLMResponse.Embeddings.Error -> throw IllegalStateException("Embeddings error: ${resp.message}")
         }
