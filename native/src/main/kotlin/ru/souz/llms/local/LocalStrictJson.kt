@@ -64,8 +64,10 @@ class LocalStrictJsonParser {
         rawText: String,
         requestModel: String,
         usage: LLMResponse.Usage,
+        nativeFinishReason: String = "stop",
         created: Long = System.currentTimeMillis(),
     ): LLMResponse.Chat {
+        val finishReason = nativeFinishReason.toFinishReason()
         val trimmed = normalizeRawText(rawText)
         val node = runCatching { restJsonMapper.readTree(trimmed) }
             .getOrElse { error ->
@@ -77,6 +79,7 @@ class LocalStrictJsonParser {
                         text = recovered,
                         requestModel = requestModel,
                         usage = usage,
+                        finishReason = finishReason,
                         created = created,
                     )
                 }
@@ -85,6 +88,7 @@ class LocalStrictJsonParser {
                         text = trimmed,
                         requestModel = requestModel,
                         usage = usage,
+                        finishReason = finishReason,
                         created = created,
                     )
                 }
@@ -116,6 +120,7 @@ class LocalStrictJsonParser {
                     text = node["result"].asText(),
                     requestModel = requestModel,
                     usage = usage,
+                    finishReason = finishReason,
                     created = created,
                 )
             }
@@ -126,7 +131,7 @@ class LocalStrictJsonParser {
         }
 
         return when (type) {
-            "final" -> parseFinal(node, requestModel, usage, created)
+            "final" -> parseFinal(node, requestModel, usage, finishReason, created)
             "tool_calls" -> parseToolCalls(node, requestModel, usage, created)
             else -> LLMResponse.Chat.Error(-1, "Local provider JSON has unsupported type: $type")
         }
@@ -251,7 +256,7 @@ class LocalStrictJsonParser {
     }
 
     private fun tryRecoverMalformedFinalText(text: String): String? {
-        if (text.contains("\"tool_calls\"")) return null
+        if (!text.startsWith("{") || text.contains("\"tool_calls\"")) return null
 
         if (text.contains("final")) {
             extractLooseStringField(text, "content")
@@ -265,20 +270,26 @@ class LocalStrictJsonParser {
     private fun extractLooseStringField(text: String, fieldName: String): String? {
         val fieldStart = Regex("[\"']?$fieldName[\"']?\\s*[:=]\\s*\"").find(text)?.range?.last?.plus(1)
             ?: return null
-        val fieldEnd = text.lastUnescapedQuoteIndex()
+        val fieldEnd = text.findLooseStringFieldEnd(fieldStart)
         if (fieldEnd <= fieldStart) return null
 
         return decodeLooseJsonEscapes(text.substring(fieldStart, fieldEnd))
+            .let { candidate ->
+                if (fieldEnd == text.length) candidate.trimEnd().removeSuffix("}") else candidate
+            }
             .trim()
             .takeIf { it.isNotEmpty() }
     }
 
-    private fun String.lastUnescapedQuoteIndex(): Int {
-        for (index in lastIndex downTo 0) {
+    private fun String.findLooseStringFieldEnd(startIndex: Int): Int {
+        for (index in startIndex until length) {
             if (this[index] != '"' || isEscaped(index)) continue
-            return index
+            val next = nextNonWhitespaceChar(index + 1)
+            if (next == null || next == '}' || next == ',') {
+                return index
+            }
         }
-        return -1
+        return length
     }
 
     private fun String.isEscaped(index: Int): Boolean {
@@ -292,7 +303,8 @@ class LocalStrictJsonParser {
     }
 
     private fun decodeLooseJsonEscapes(text: String): String {
-        val withUnicode = UNICODE_ESCAPE_REGEX.replace(text) { match ->
+        val protected = text.replace("""\\""", DOUBLE_BACKSLASH_PLACEHOLDER)
+        val withUnicode = UNICODE_ESCAPE_REGEX.replace(protected) { match ->
             match.groupValues[1].toInt(16).toChar().toString()
         }
 
@@ -303,7 +315,14 @@ class LocalStrictJsonParser {
             .replace("\\t", "\t")
             .replace("\\b", "\b")
             .replace("\\f", "\u000C")
-            .replace("\\\\", "\\")
+            .replace(DOUBLE_BACKSLASH_PLACEHOLDER, "\\")
+    }
+
+    private fun String.nextNonWhitespaceChar(startIndex: Int): Char? {
+        for (index in startIndex until length) {
+            if (!this[index].isWhitespace()) return this[index]
+        }
+        return null
     }
 
     private fun extractQuotedField(text: String, fieldName: String, startIndex: Int): String? {
@@ -405,6 +424,7 @@ class LocalStrictJsonParser {
         text: String,
         requestModel: String,
         usage: LLMResponse.Usage,
+        finishReason: LLMResponse.FinishReason,
         created: Long,
     ): LLMResponse.Chat = LLMResponse.Chat.Ok(
         choices = listOf(
@@ -416,7 +436,7 @@ class LocalStrictJsonParser {
                     functionsStateId = null,
                 ),
                 index = 0,
-                finishReason = LLMResponse.FinishReason.stop,
+                finishReason = finishReason,
             )
         ),
         created = created,
@@ -426,6 +446,7 @@ class LocalStrictJsonParser {
 
     private companion object {
         val CONTROL_TOKEN_REGEX = Regex("""<\|[^>\r\n]*\|>|<\|[A-Za-z0-9_:-]+>|<[A-Za-z0-9_:-]+\|>|</?[A-Za-z0-9_:-]+>""")
+        const val DOUBLE_BACKSLASH_PLACEHOLDER = "\uE000"
         val UNICODE_ESCAPE_REGEX = Regex("""\\u([0-9a-fA-F]{4})""")
         val WHITESPACE_REGEX = Regex("""\s+""")
         val CONTROL_WRAPPER_LABELS = setOf(
@@ -446,6 +467,7 @@ class LocalStrictJsonParser {
         node: JsonNode,
         requestModel: String,
         usage: LLMResponse.Usage,
+        finishReason: LLMResponse.FinishReason,
         created: Long,
     ): LLMResponse.Chat {
         val content = node["content"]?.takeIf(JsonNode::isTextual)?.asText()
@@ -461,7 +483,7 @@ class LocalStrictJsonParser {
                         functionsStateId = null,
                     ),
                     index = 0,
-                    finishReason = LLMResponse.FinishReason.stop,
+                    finishReason = finishReason,
                 )
             ),
             created = created,
@@ -524,5 +546,13 @@ class LocalStrictJsonParser {
             model = requestModel,
             usage = usage,
         )
+    }
+
+    private fun String.toFinishReason(): LLMResponse.FinishReason = when (lowercase()) {
+        "length", "max_tokens" -> LLMResponse.FinishReason.length
+        "tool_calls" -> LLMResponse.FinishReason.function_call
+        "blacklist" -> LLMResponse.FinishReason.blacklist
+        "error" -> LLMResponse.FinishReason.error
+        else -> LLMResponse.FinishReason.stop
     }
 }

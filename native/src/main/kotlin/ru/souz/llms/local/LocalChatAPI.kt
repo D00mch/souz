@@ -1,6 +1,7 @@
 package ru.souz.llms.local
 
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
@@ -10,12 +11,9 @@ class LocalChatAPI(
     private val runtime: LocalLlamaRuntime,
 ) : LLMChatAPI {
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
-        val result = runtime.chat(body)
-        if (result is LLMResponse.Chat.Ok) {
-            result
-        } else {
-            result
-        }
+        runtime.chat(body)
+    } catch (error: CancellationException) {
+        throw error
     } catch (error: Exception) {
         LLMResponse.Chat.Error(-1, "Local provider error: ${error.message}")
     }

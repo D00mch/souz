@@ -7,6 +7,7 @@ import java.net.http.HttpHeaders
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import com.sun.jna.Pointer
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -371,6 +372,20 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `strict json parser keeps plain text result phrases intact`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """The result: "42" is final.""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals("""The result: "42" is final.""", ok.choices.single().message.content)
+    }
+
+    @Test
     fun `strict json parser treats result object as final response`() {
         val parser = LocalStrictJsonParser()
 
@@ -452,6 +467,55 @@ class LocalInferenceSupportTest {
             """1. ID: 604 | Subject: "Срочная задача" | From: Syamil Khizr""",
             ok.choices.single().message.content,
         )
+    }
+
+    @Test
+    fun `strict json parser preserves literal backslash escapes during loose recovery`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"type":"final","content":"Literal slash escapes: \\n and \\b with "quotes"."}""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(
+            """Literal slash escapes: \n and \b with "quotes".""",
+            ok.choices.single().message.content,
+        )
+    }
+
+    @Test
+    fun `strict json parser keeps malformed final tail when closing quote is missing`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"type":"final","content":"Вот несколько вариантов обратной связи. "Формальный" вариант: сделать текст короче. "Резкий" вариант: убрать общий заход.""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 1024, 1034, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(
+            """Вот несколько вариантов обратной связи. "Формальный" вариант: сделать текст короче. "Резкий" вариант: убрать общий заход.""",
+            ok.choices.single().message.content,
+        )
+    }
+
+    @Test
+    fun `strict json parser preserves native length finish reason during loose recovery`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"type":"final","content":"Вот несколько вариантов. "Первый": короче."""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 1024, 1034, 0),
+            nativeFinishReason = "length",
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(LLMResponse.FinishReason.length, ok.choices.single().finishReason)
     }
 
     @Test
@@ -1201,5 +1265,21 @@ class LocalInferenceSupportTest {
         assertIs<LLMResponse.Balance.Error>(balance)
         assertFailsWith<UnsupportedOperationException> { api.uploadFile(createTempFile().toFile()) }
         assertFailsWith<UnsupportedOperationException> { api.downloadFile("file_1") }
+    }
+
+    @Test
+    fun `local chat api rethrows cancellation`() = runTest {
+        val runtime = mockk<LocalLlamaRuntime>()
+        coEvery { runtime.chat(any()) } throws CancellationException("stop")
+        val api = LocalChatAPI(runtime = runtime)
+
+        assertFailsWith<CancellationException> {
+            api.message(
+                LLMRequest.Chat(
+                    model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+                )
+            )
+        }
     }
 }
