@@ -16,6 +16,7 @@ void * souz_llama_model_load(void * runtime, const char * request_json, char * e
 void souz_llama_model_unload(void * runtime, void * model);
 
 const char * souz_llama_generate(void * runtime, void * model, const char * request_json, char * error_buffer, size_t error_buffer_size);
+const char * souz_llama_embeddings(void * runtime, void * model, const char * request_json, char * error_buffer, size_t error_buffer_size);
 const char * souz_llama_generate_stream(
     void * runtime,
     void * model,

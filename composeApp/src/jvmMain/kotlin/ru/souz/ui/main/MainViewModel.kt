@@ -10,7 +10,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.isActive
@@ -26,12 +25,11 @@ import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
-import ru.souz.llms.local.LocalModelDownloadState
 import ru.souz.llms.local.LocalLlamaRuntime
-import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.downloadPromptFor
 import ru.souz.ui.BaseViewModel
+import ru.souz.ui.common.LocalModelUiCoordinator
 import ru.souz.ui.main.search.ChatMessageSearchProjection
 import ru.souz.ui.main.search.ChatSearchEngine
 import ru.souz.ui.main.search.ChatSearchState
@@ -83,6 +81,16 @@ class MainViewModel(
     private var startTips: List<String> = emptyList()
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
+    private val localModelUiCoordinator by lazy(kotlin.LazyThreadSafetyMode.NONE) {
+        LocalModelUiCoordinator(
+            scope = viewModelScope,
+            dispatcher = ioDispatchers,
+            modelStore = localModelStore,
+            localLlamaRuntime = localLlamaRuntime,
+            desktopInfoRepository = desktopInfoRepository,
+            logger = l,
+        )
+    }
 
     init {
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectUseCaseOutputs() }
@@ -92,7 +100,10 @@ class MainViewModel(
             val randomTip = startTips.randomOrNull() ?: ""
             val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
             val selectedModel = pickConfiguredOrDefaultModel(availableModels)
-            applySelectedModel(selectedModel)
+            val downloadPrompt = localModelStore.downloadPromptFor(selectedModel)
+            if (downloadPrompt == null) {
+                applySelectedModel(selectedModel)
+            }
 
             setState {
                 copy(
@@ -100,7 +111,8 @@ class MainViewModel(
                     availableModelAliases = availableModels.map { it.alias },
                     selectedContextSize = settingsProvider.contextSize,
                     displayedText = randomTip,
-                    chatStartTip = randomTip
+                    chatStartTip = randomTip,
+                    localModelDownloadPrompt = downloadPrompt,
                 )
             }
         }
@@ -356,7 +368,12 @@ class MainViewModel(
 
     private fun CoroutineScope.launchDbSetup(repo: DesktopInfoRepository): Job = launch(ioDispatchers) {
         while (isActive) {
-            repo.storeDesktopDataDaily()
+            runCatching { repo.storeDesktopDataDaily() }
+                .onFailure { error ->
+                    if (error !is CancellationException) {
+                        l.warn("Desktop index refresh failed: {}", error.message)
+                    }
+                }
             delay(5.minutes)
         }
     }
@@ -449,23 +466,18 @@ class MainViewModel(
     }
 
     private suspend fun confirmLocalModelDownload() {
-        val prompt = currentState.localModelDownloadPrompt ?: return
-        localModelDownloadJob?.cancelAndJoin()
-        localModelDownloadJob = viewModelScope.launch(ioDispatchers) {
-            setState {
-                copy(
-                    localModelDownloadPrompt = null,
-                    localModelDownloadState = LocalModelDownloadState(prompt),
-                )
-            }
-
-            runCatching {
-                localModelStore.download(prompt.profile) { progress ->
-                    setState {
-                        copy(localModelDownloadState = LocalModelDownloadState(prompt, progress))
-                    }
+        localModelDownloadJob = localModelUiCoordinator.startDownload(
+            currentJob = localModelDownloadJob,
+            prompt = currentState.localModelDownloadPrompt,
+            updateDownloadState = { state ->
+                setState {
+                    copy(
+                        localModelDownloadPrompt = null,
+                        localModelDownloadState = state,
+                    )
                 }
-            }.onSuccess {
+            },
+            onSuccess = { prompt ->
                 applySelectedModel(prompt.model)
                 setState {
                     copy(
@@ -473,32 +485,36 @@ class MainViewModel(
                         localModelDownloadState = null,
                     )
                 }
-            }.onFailure { error ->
-                setState { copy(localModelDownloadState = null) }
-                if (error is CancellationException) {
-                    return@onFailure
-                }
+            },
+            onError = { error ->
                 val message = error.message ?: getString(Res.string.local_model_download_failed)
                 send(MainEffect.ShowError(message))
             }
-
-            localModelDownloadJob = null
+        )?.also { job ->
+            job.invokeOnCompletion {
+                if (localModelDownloadJob === job) {
+                    localModelDownloadJob = null
+                }
+            }
         }
     }
 
     private suspend fun cancelLocalModelDownload() {
-        val hadActiveDownload = currentState.localModelDownloadState != null
-        localModelDownloadJob?.cancelAndJoin()
-        localModelDownloadJob = null
-        setState {
-            copy(
-                localModelDownloadPrompt = null,
-                localModelDownloadState = null,
-            )
-        }
-        if (hadActiveDownload) {
-            send(MainEffect.ShowError(getString(Res.string.local_model_download_cancelled)))
-        }
+        localModelDownloadJob = localModelUiCoordinator.cancelDownload(
+            currentJob = localModelDownloadJob,
+            hasActiveDownload = currentState.localModelDownloadState != null,
+            clearDownloadState = {
+                setState {
+                    copy(
+                        localModelDownloadPrompt = null,
+                        localModelDownloadState = null,
+                    )
+                }
+            },
+            onCancelled = {
+                send(MainEffect.ShowError(getString(Res.string.local_model_download_cancelled)))
+            },
+        )
     }
 
     private suspend fun updateChatContextSize(size: Int) {
@@ -511,13 +527,17 @@ class MainViewModel(
     private suspend fun refreshSettings() {
         val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
         val selectedModel = pickConfiguredOrDefaultModel(availableModels)
-        applySelectedModel(selectedModel)
+        val downloadPrompt = localModelStore.downloadPromptFor(selectedModel)
+        if (downloadPrompt == null) {
+            applySelectedModel(selectedModel)
+        }
 
         setState {
             copy(
                 selectedModel = selectedModel.alias,
                 availableModelAliases = availableModels.map { it.alias },
                 selectedContextSize = settingsProvider.contextSize,
+                localModelDownloadPrompt = downloadPrompt,
             )
         }
     }
@@ -529,28 +549,19 @@ class MainViewModel(
     }
 
     private fun applySelectedModel(model: LLMModel) {
+        val previousEmbeddingsModel = settingsProvider.embeddingsModel
         if (settingsProvider.gigaModel != model) {
             settingsProvider.gigaModel = model
             chatUseCase.updateModel(model)
         }
-        scheduleLocalModelPreload(model)
-    }
-
-    private fun scheduleLocalModelPreload(model: LLMModel) {
-        if (!LocalModelProfiles.isLocalModelAlias(model.alias)) {
-            localModelPreloadJob?.cancel()
-            localModelPreloadJob = null
-            return
+        val effectiveEmbeddingsModel = settingsProvider.embeddingsModel
+        if (previousEmbeddingsModel != effectiveEmbeddingsModel) {
+            localModelUiCoordinator.rebuildDesktopIndex()
         }
-        localModelPreloadJob?.cancel()
-        localModelPreloadJob = viewModelScope.launch(ioDispatchers) {
-            runCatching { localLlamaRuntime.preload(model.alias) }
-                .onFailure { error ->
-                    if (error !is CancellationException) {
-                        l.warn("Local model preload failed for {}: {}", model.alias, error.message)
-                    }
-                }
-        }
+        localModelPreloadJob = localModelUiCoordinator.scheduleLocalModelPreload(
+            currentJob = localModelPreloadJob,
+            model = model,
+        )
     }
 
     private suspend fun setPreviousText() {
