@@ -274,9 +274,6 @@ class LocalStrictJsonParser {
         if (fieldEnd <= fieldStart) return null
 
         return decodeLooseJsonEscapes(text.substring(fieldStart, fieldEnd))
-            .let { candidate ->
-                if (fieldEnd == text.length) candidate.trimEnd().removeSuffix("}") else candidate
-            }
             .trim()
             .takeIf { it.isNotEmpty() }
     }
@@ -285,7 +282,7 @@ class LocalStrictJsonParser {
         for (index in startIndex until length) {
             if (this[index] != '"' || isEscaped(index)) continue
             val next = nextNonWhitespaceChar(index + 1)
-            if (next == null || next == '}' || next == ',') {
+            if (next == null || next == '}') {
                 return index
             }
         }
