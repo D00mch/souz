@@ -375,6 +375,20 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `strict json parser keeps plain text result phrases intact`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """The result: "42" is final.""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals("""The result: "42" is final.""", ok.choices.single().message.content)
+    }
+
+    @Test
     fun `strict json parser treats result object as final response`() {
         val parser = LocalStrictJsonParser()
 
@@ -400,6 +414,111 @@ class LocalInferenceSupportTest {
 
         val ok = assertIs<LLMResponse.Chat.Ok>(result)
         assertEquals("Список сообщений в почте: 7 штук.", ok.choices.single().message.content)
+    }
+
+    @Test
+    fun `strict json parser recovers malformed final with inner quotes`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"type":"final","content":"Извините, у меня нет доступа к личным фотографиям для запроса о "тете фроси". Пожалуйста, уточните детали."}""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(
+            """Извините, у меня нет доступа к личным фотографиям для запроса о "тете фроси". Пожалуйста, уточните детали.""",
+            ok.choices.single().message.content,
+        )
+    }
+
+    @Test
+    fun `strict json parser recovers malformed final with broken separator`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"type":"final","content="# Развитие ИИ в России\n\n## Краткий вывод\nНе удалось собрать все источники."}""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(
+            """
+                # Развитие ИИ в России
+
+                ## Краткий вывод
+                Не удалось собрать все источники.
+            """.trimIndent(),
+            ok.choices.single().message.content,
+        )
+    }
+
+    @Test
+    fun `strict json parser recovers malformed result with inner quotes`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"result":"1. ID: 604 | Subject: "Срочная задача" | From: Syamil Khizr"}""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(
+            """1. ID: 604 | Subject: "Срочная задача" | From: Syamil Khizr""",
+            ok.choices.single().message.content,
+        )
+    }
+
+    @Test
+    fun `strict json parser preserves literal backslash escapes during loose recovery`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"type":"final","content":"Literal slash escapes: \\n and \\b with "quotes"."}""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(
+            """Literal slash escapes: \n and \b with "quotes".""",
+            ok.choices.single().message.content,
+        )
+    }
+
+    @Test
+    fun `strict json parser keeps malformed final tail when closing quote is missing`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"type":"final","content":"Вот несколько вариантов обратной связи. "Формальный" вариант: сделать текст короче. "Резкий" вариант: убрать общий заход.""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 1024, 1034, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(
+            """Вот несколько вариантов обратной связи. "Формальный" вариант: сделать текст короче. "Резкий" вариант: убрать общий заход.""",
+            ok.choices.single().message.content,
+        )
+    }
+
+    @Test
+    fun `strict json parser preserves native length finish reason during loose recovery`() {
+        val parser = LocalStrictJsonParser()
+
+        val result = parser.parse(
+            rawText = """{"type":"final","content":"Вот несколько вариантов. "Первый": короче."""",
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 1024, 1034, 0),
+            nativeFinishReason = "length",
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(LLMResponse.FinishReason.length, ok.choices.single().finishReason)
     }
 
     @Test
@@ -1312,5 +1431,21 @@ class LocalInferenceSupportTest {
         assertIs<LLMResponse.Balance.Error>(balance)
         assertFailsWith<UnsupportedOperationException> { api.uploadFile(createTempFile().toFile()) }
         assertFailsWith<UnsupportedOperationException> { api.downloadFile("file_1") }
+    }
+
+    @Test
+    fun `local chat api rethrows cancellation`() = runTest {
+        val runtime = mockk<LocalLlamaRuntime>()
+        coEvery { runtime.chat(any()) } throws CancellationException("stop")
+        val api = LocalChatAPI(runtime = runtime)
+
+        assertFailsWith<CancellationException> {
+            api.message(
+                LLMRequest.Chat(
+                    model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+                )
+            )
+        }
     }
 }
