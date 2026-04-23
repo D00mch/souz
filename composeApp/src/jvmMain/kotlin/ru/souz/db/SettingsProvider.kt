@@ -413,6 +413,7 @@ fun SettingsProvider.hasKey(provider: VoiceRecognitionProvider): Boolean = when 
     VoiceRecognitionProvider.SALUTE_SPEECH -> !saluteSpeechKey.isNullOrBlank()
     VoiceRecognitionProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
     VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
+    VoiceRecognitionProvider.LOCAL_MACOS -> true
 }
 
 fun main() {

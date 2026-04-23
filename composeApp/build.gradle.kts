@@ -77,6 +77,12 @@ val prepareMacAppResources by tasks.registering(Sync::class) {
     from(sourceAppResourcesDir.file("darwin-x64/libJNativeHook.dylib")) {
         into("common/darwin-x64")
     }
+    from(sourceAppResourcesDir.file("darwin-arm64/libsouz_macos_speech_bridge.dylib")) {
+        into("common/darwin-arm64")
+    }
+    from(sourceAppResourcesDir.file("darwin-x64/libsouz_macos_speech_bridge.dylib")) {
+        into("common/darwin-x64")
+    }
     from(sourceNativeResourcesDir.file("darwin-arm64/libsouz_llama_bridge.dylib")) {
         into("common/darwin-arm64")
     }
@@ -248,6 +254,8 @@ compose.desktop {
                         <key>ITSAppUsesNonExemptEncryption</key><false/>
                         <key>NSMicrophoneUsageDescription</key>
                         <string>Needed for voice capture.</string>
+                        <key>NSSpeechRecognitionUsageDescription</key>
+                        <string>Needed for local speech transcription.</string>
                         <key>NSSystemAdministrationUsageDescription</key>
                         <string>Needed to observe input for shortcuts.</string>
                         <key>NSCalendarsUsageDescription</key>

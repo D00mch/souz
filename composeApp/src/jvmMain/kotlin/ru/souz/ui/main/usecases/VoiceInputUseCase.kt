@@ -117,6 +117,22 @@ class VoiceInputUseCase(
                     emitVoiceRecognitionUnavailable()
                     return@retryWhen false
                 }
+                if (cause is LocalMacOsSpeechPermissionDeniedException) {
+                    emitSpeechRecognitionPermissionDenied()
+                    return@retryWhen false
+                }
+                if (cause is LocalMacOsSpeechAppBundleMissingUsageDescriptionException) {
+                    emitLocalMacOsSpeechBundleRequired()
+                    return@retryWhen false
+                }
+                if (cause is LocalMacOsSpeechLocaleUnsupportedException) {
+                    emitLocalMacOsSpeechLocaleUnsupported()
+                    return@retryWhen false
+                }
+                if (cause is LocalMacOsSpeechUnavailableException) {
+                    emitLocalMacOsSpeechUnavailable()
+                    return@retryWhen false
+                }
 
                 l.error("Agent flow failed, attempt {}, cause: {}", attempt, cause.message, cause)
                 val errorMsg = getString(Res.string.error_prefix).format(cause.message ?: "")
@@ -202,6 +218,30 @@ class VoiceInputUseCase(
 
     private suspend fun emitVoiceRecognitionUnavailable() {
         val msg = getString(Res.string.voice_error_recognition_unavailable)
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitSpeechRecognitionPermissionDenied() {
+        val msg = getString(Res.string.voice_error_speech_permission_denied)
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitLocalMacOsSpeechUnavailable() {
+        val msg = getString(Res.string.voice_error_local_macos_unavailable)
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitLocalMacOsSpeechBundleRequired() {
+        val msg = getString(Res.string.voice_error_local_macos_bundle_required)
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitLocalMacOsSpeechLocaleUnsupported() {
+        val msg = getString(Res.string.voice_error_local_macos_locale_unsupported)
         speechUseCase.queue(msg)
         emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }

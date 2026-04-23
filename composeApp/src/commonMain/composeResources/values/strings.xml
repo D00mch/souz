@@ -305,6 +305,10 @@
     <string name="voice_error_empty_audio">No audio was captured. Hold the microphone button a bit longer and try again.</string>
     <string name="voice_error_microphone_unavailable">Microphone capture failed. Allow access in macOS Settings &gt; Privacy &amp; Security &gt; Microphone, then restart the app.</string>
     <string name="voice_error_missing_key">Add the API key for the selected voice recognition model in Settings > My Keys to use voice commands</string>
+    <string name="voice_error_speech_permission_denied">Speech recognition permission was denied. Allow access in macOS Settings &gt; Privacy &amp; Security &gt; Speech Recognition, then try again.</string>
+    <string name="voice_error_local_macos_bundle_required">Local macOS speech recognition requires the packaged macOS app. The IDE or plain Java launcher does not provide the required speech recognition permission metadata.</string>
+    <string name="voice_error_local_macos_unavailable">Local macOS speech recognition is unavailable on this device right now.</string>
+    <string name="voice_error_local_macos_locale_unsupported">The selected macOS speech recognition locale is not supported on this device.</string>
     <string name="voice_error_recognition_unavailable">Voice recognition is not available in this build yet.</string>
 
     <!-- Main ViewModel & status -->

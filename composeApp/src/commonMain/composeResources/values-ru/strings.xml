@@ -301,6 +301,10 @@
     <string name="voice_error_empty_audio">Аудио не записалось. Удерживайте кнопку микрофона чуть дольше и попробуйте снова.</string>
     <string name="voice_error_microphone_unavailable">Не удалось запустить запись с микрофона. Разрешите доступ в Настройки macOS &gt; Конфиденциальность и безопасность &gt; Микрофон и перезапустите приложение.</string>
     <string name="voice_error_missing_key">Добавьте ключ API для выбранной модели распознавания речи в Настройки > Мои ключи, чтобы использовать голосовые команды</string>
+    <string name="voice_error_speech_permission_denied">Доступ к распознаванию речи запрещён. Разрешите его в Настройки macOS &gt; Конфиденциальность и безопасность &gt; Распознавание речи и попробуйте снова.</string>
+    <string name="voice_error_local_macos_bundle_required">Локальное распознавание речи macOS требует запуска из упакованного приложения macOS. IDE или обычный запуск через Java не передают обязательный privacy-ключ для распознавания речи.</string>
+    <string name="voice_error_local_macos_unavailable">Локальное распознавание речи macOS сейчас недоступно на этом устройстве.</string>
+    <string name="voice_error_local_macos_locale_unsupported">Выбранная локаль распознавания речи macOS не поддерживается на этом устройстве.</string>
     <string name="voice_error_recognition_unavailable">Распознавание голоса в этой сборке пока недоступно.</string>
 
     <!-- Main ViewModel & status -->

@@ -55,7 +55,8 @@ fun SettingsProvider.defaultEmbeddingsModel(llmBuildProfile: LlmBuildProfile): E
 
 fun SettingsProvider.availableVoiceRecognitionModels(llmBuildProfile: LlmBuildProfile): List<VoiceRecognitionModel> =
     VoiceRecognitionModel.entries.filter { model ->
-        model.provider.isEnabledInBuild(llmBuildProfile) && this.hasKey(model.provider)
+        model.provider.isEnabledInCurrentEnvironment(llmBuildProfile) &&
+            (model.provider == VoiceRecognitionProvider.LOCAL_MACOS || this.hasKey(model.provider))
     }
 
 fun SettingsProvider.defaultVoiceRecognitionModel(llmBuildProfile: LlmBuildProfile): VoiceRecognitionModel? {
@@ -84,4 +85,13 @@ private fun VoiceRecognitionProvider.isEnabledInBuild(llmBuildProfile: LlmBuildP
     VoiceRecognitionProvider.SALUTE_SPEECH -> llmBuildProfile.supportsSaluteSpeechRecognition
     VoiceRecognitionProvider.AI_TUNNEL -> LlmProvider.AI_TUNNEL in llmBuildProfile.availableProviders
     VoiceRecognitionProvider.OPENAI -> LlmProvider.OPENAI in llmBuildProfile.availableProviders
+    VoiceRecognitionProvider.LOCAL_MACOS -> false
 }
+
+private fun VoiceRecognitionProvider.isEnabledInCurrentEnvironment(llmBuildProfile: LlmBuildProfile): Boolean = when (this) {
+    VoiceRecognitionProvider.LOCAL_MACOS -> isCurrentHostMacOs()
+    else -> isEnabledInBuild(llmBuildProfile)
+}
+
+internal fun isCurrentHostMacOs(): Boolean =
+    System.getProperty("os.name", "").contains("Mac", ignoreCase = true)
