@@ -7,12 +7,14 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.slf4j.LoggerFactory
 
 interface VMState
 interface VMEvent
 interface VMSideEffect
 
 abstract class BaseViewModel<STATE : VMState, EVENT : VMEvent, EFFECT : VMSideEffect> : ViewModel() {
+    private val l = LoggerFactory.getLogger(javaClass)
     private val initialState: STATE by lazy { initialState() }
 
     private val _uiState: MutableStateFlow<STATE> = MutableStateFlow(initialState)
@@ -25,8 +27,30 @@ abstract class BaseViewModel<STATE : VMState, EVENT : VMEvent, EFFECT : VMSideEf
     protected val currentState: STATE get() = _uiState.value
 
     init {
-        viewModelScope.launch { _events.collect { handleEvent(it) } }
-        viewModelScope.launch { _effects.collect { handleSideEffect(it) } }
+        viewModelScope.launch {
+            _events.collect { event ->
+                try {
+                    handleEvent(event)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    if (error.isFatalJvmError()) throw error
+                    l.error("Unhandled VM event error. Event: {}", event, error)
+                }
+            }
+        }
+        viewModelScope.launch {
+            _effects.collect { effect ->
+                try {
+                    handleSideEffect(effect)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    if (error.isFatalJvmError()) throw error
+                    l.error("Unhandled VM side-effect error. Effect: {}", effect, error)
+                }
+            }
+        }
     }
 
     fun send(event: EVENT) = viewModelScope.launch { _events.emit(event) }
@@ -54,4 +78,7 @@ abstract class BaseViewModel<STATE : VMState, EVENT : VMEvent, EFFECT : VMSideEf
 
     fun <T> ioAsync(block: suspend CoroutineScope.() -> T): Deferred<T> =
         viewModelScope.async(ioDispatchers) { block() }
+
+    private fun Throwable.isFatalJvmError(): Boolean =
+        this is VirtualMachineError || this is ThreadDeath
 }
