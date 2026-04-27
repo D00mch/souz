@@ -9,6 +9,7 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.local.LocalEmbeddingProfiles
+import ru.souz.ui.main.usecases.MacOsSpeechBridgeLoader
 
 fun SettingsProvider.availableLlmModels(llmBuildProfile: LlmBuildProfile): List<LLMModel> =
     llmBuildProfile.availableModels.filter { model -> this.hasKey(model.provider) }
@@ -89,9 +90,6 @@ private fun VoiceRecognitionProvider.isEnabledInBuild(llmBuildProfile: LlmBuildP
 }
 
 private fun VoiceRecognitionProvider.isEnabledInCurrentEnvironment(llmBuildProfile: LlmBuildProfile): Boolean = when (this) {
-    VoiceRecognitionProvider.LOCAL_MACOS -> isCurrentHostMacOs()
+    VoiceRecognitionProvider.LOCAL_MACOS -> MacOsSpeechBridgeLoader.isCurrentHost()
     else -> isEnabledInBuild(llmBuildProfile)
 }
-
-internal fun isCurrentHostMacOs(): Boolean =
-    System.getProperty("os.name", "").contains("Mac", ignoreCase = true)

@@ -15,6 +15,9 @@ private enum BridgeError: String {
     case unsupportedLocale = "LOCAL_MACOS_STT:UNSUPPORTED_LOCALE"
 }
 
+private let authorizationTimeoutSeconds: Int = 30
+private let recognitionTimeoutSeconds: Int = 120
+
 @_cdecl("souz_macos_speech_has_usage_description")
 public func souz_macos_speech_has_usage_description() -> Int32 {
     let usageDescription = Bundle.main.object(forInfoDictionaryKey: "NSSpeechRecognitionUsageDescription") as? String
@@ -40,7 +43,9 @@ public func souz_macos_speech_request_authorization_if_needed() -> Int32 {
         resolved = status
         semaphore.signal()
     }
-    semaphore.wait()
+    guard semaphore.wait(timeout: .now() + .seconds(authorizationTimeoutSeconds)) == .success else {
+        return authorizationUnsupported
+    }
     return mapAuthorizationStatus(resolved)
 }
 
@@ -147,15 +152,28 @@ public func souz_macos_speech_recognize_wav(
         }
     }
 
-    semaphore.wait()
+    let waitResult = semaphore.wait(timeout: .now() + .seconds(recognitionTimeoutSeconds))
+    if waitResult == .timedOut {
+        lock.lock()
+        if !didFinish {
+            didFinish = true
+            failure = "\(BridgeError.unavailable.rawValue):Speech recognition timed out."
+        }
+        lock.unlock()
+    }
     task?.cancel()
 
-    if let recognizedText {
-        return strdup(recognizedText)
+    lock.lock()
+    let finalText = recognizedText
+    let finalFailure = failure
+    lock.unlock()
+
+    if let finalText {
+        return strdup(finalText)
     }
 
     writeError(
-        failure ?? "\(BridgeError.unavailable.rawValue):Speech recognition finished without a final result.",
+        finalFailure ?? "\(BridgeError.unavailable.rawValue):Speech recognition finished without a final result.",
         to: errorBuffer,
         size: errorBufferSize
     )
@@ -183,9 +201,16 @@ private func mapAuthorizationStatus(_ status: SFSpeechRecognizerAuthorizationSta
 }
 
 private func isLocaleSupported(_ localeIdentifier: String) -> Bool {
-    SFSpeechRecognizer.supportedLocales().contains { supported in
-        supported.identifier.caseInsensitiveCompare(localeIdentifier) == .orderedSame
+    let requested = normalizedLocaleIdentifier(localeIdentifier)
+    return SFSpeechRecognizer.supportedLocales().contains { supported in
+        normalizedLocaleIdentifier(supported.identifier) == requested
     }
+}
+
+private func normalizedLocaleIdentifier(_ identifier: String) -> String {
+    Locale.canonicalIdentifier(from: identifier)
+        .replacingOccurrences(of: "_", with: "-")
+        .lowercased()
 }
 
 private func writeError(_ message: String, to buffer: UnsafeMutablePointer<CChar>?, size: Int32) {

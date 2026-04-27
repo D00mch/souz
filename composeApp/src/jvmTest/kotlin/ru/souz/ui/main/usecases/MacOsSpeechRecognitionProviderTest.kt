@@ -7,10 +7,12 @@ import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class MacOsSpeechRecognitionProviderTest {
@@ -94,6 +96,27 @@ class MacOsSpeechRecognitionProviderTest {
             error.message
         )
         assertEquals(0, bridge.authorizationStatusCalls)
+    }
+
+    @Test
+    fun `provider does not map coroutine cancellation to local speech error`() = runTest {
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.regionProfile } returns REGION_RU
+
+        val bridge = FakeMacOsSpeechBridge(
+            status = MacOsSpeechAuthorizationStatus.AUTHORIZED,
+            onRecognize = { _, _ -> throw CancellationException("cancelled") }
+        )
+
+        val provider = MacOsSpeechRecognitionProvider(
+            settingsProvider = settingsProvider,
+            bridge = bridge,
+            isMacOsProvider = { true },
+        )
+
+        assertFailsWith<CancellationException> {
+            provider.recognize(byteArrayOf(1, 2))
+        }
     }
 
     private class FakeMacOsSpeechBridge(

@@ -99,7 +99,6 @@ class VoiceInputUseCase(
                     }
                 }
 
-                .catch { l.error("Error in recognition: ${it.message}") }
                 .onEach(::onTextRecognizeSideEffects)
                 .filter { it.isNotBlank() }
 

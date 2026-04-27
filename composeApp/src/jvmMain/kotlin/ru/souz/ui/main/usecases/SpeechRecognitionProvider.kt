@@ -8,6 +8,7 @@ import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.openai.OpenAIVoiceAPI
 import java.nio.file.Files
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Provide locality specific Voice recognition, e.g. SaluteSpeech for Ru. */
 interface SpeechRecognitionProvider {
@@ -62,7 +63,7 @@ class AiTunnelSpeechRecognitionProvider(
 class MacOsSpeechRecognitionProvider(
     private val settingsProvider: SettingsProvider,
     private val bridge: MacOsSpeechBridgeApi,
-    private val isMacOsProvider: () -> Boolean = { isCurrentMacOsSpeechHost() },
+    private val isMacOsProvider: () -> Boolean = { MacOsSpeechBridgeLoader.isCurrentHost() },
 ) : SpeechRecognitionProvider {
     override val enabled: Boolean
         get() = isMacOsProvider()
@@ -75,10 +76,10 @@ class MacOsSpeechRecognitionProvider(
             throw LocalMacOsSpeechUnavailableException("Local macOS speech recognition is unavailable on this host.")
         }
 
-        ensureSpeechUsageDescription()
-        ensureAuthorization()
         val locale = localeFor(settingsProvider.regionProfile)
-        val wavPath = writePcmToTempWav(audio)
+        ensureSpeechUsageDescription(locale)
+        ensureAuthorization(locale)
+        val wavPath = MacOsSpeechWavWriter.writePcmToTempWav(audio)
         return try {
             bridge.recognizeWav(wavPath.toString(), locale).trim()
         } catch (error: Throwable) {
@@ -88,11 +89,11 @@ class MacOsSpeechRecognitionProvider(
         }
     }
 
-    private fun ensureSpeechUsageDescription() {
+    private fun ensureSpeechUsageDescription(locale: String) {
         val hasUsageDescription = try {
             bridge.hasSpeechRecognitionUsageDescription()
         } catch (error: Throwable) {
-            throw mapBridgeError(error, localeFor(settingsProvider.regionProfile))
+            throw mapBridgeError(error, locale)
         }
 
         if (!hasUsageDescription) {
@@ -100,24 +101,24 @@ class MacOsSpeechRecognitionProvider(
         }
     }
 
-    private fun ensureAuthorization() {
+    private fun ensureAuthorization(locale: String) {
         val status = try {
             bridge.authorizationStatus()
         } catch (error: Throwable) {
-            throw mapBridgeError(error, localeFor(settingsProvider.regionProfile))
+            throw mapBridgeError(error, locale)
         }
         if (status == MacOsSpeechAuthorizationStatus.NOT_DETERMINED) {
             try {
                 bridge.requestAuthorizationIfNeeded()
             } catch (error: Throwable) {
-                throw mapBridgeError(error, localeFor(settingsProvider.regionProfile))
+                throw mapBridgeError(error, locale)
             }
         }
 
         val resolvedStatus = try {
             bridge.authorizationStatus()
         } catch (error: Throwable) {
-            throw mapBridgeError(error, localeFor(settingsProvider.regionProfile))
+            throw mapBridgeError(error, locale)
         }
 
         when (resolvedStatus) {
@@ -142,6 +143,8 @@ class MacOsSpeechRecognitionProvider(
     }
 
     private fun mapBridgeError(error: Throwable, locale: String): Throwable {
+        if (error is CancellationException) return error
+
         val message = error.message.orEmpty()
         return when {
             message.startsWith(MacOsSpeechBridgeError.PERMISSION_DENIED.prefix) ->
