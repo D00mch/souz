@@ -39,6 +39,7 @@ SQLITE_ARM64_RELATIVE_PATH="Contents/app/resources/darwin-arm64/$SQLITE_LIBRARY_
 SQLITE_X64_RELATIVE_PATH="Contents/app/resources/darwin-x64/$SQLITE_LIBRARY_FILE"
 SQLITE_BUNDLED_RELATIVE_PATH="Contents/app/resources/$SQLITE_LIBRARY_FILE"
 SQLITE_BUNDLED_LIBRARY_PATH='$APPDIR/resources'
+MACOS_SPEECH_LIBRARY_FILE="libsouz_macos_speech_bridge.dylib"
 
 # =============================================================================
 # Helper functions
@@ -637,11 +638,13 @@ log_step "Validating native JNI resources"
 
 cd "$PROJECT_DIR"
 
-log_info "Checking TDLight/JNativeHook/JNA/sqlite macOS native binaries..."
+log_info "Checking TDLight/JNativeHook/JNA/sqlite/local speech macOS native binaries..."
 TDLIGHT_ARM64="$RESOURCES_DIR/darwin-arm64/libtdjni.macos_arm64.dylib"
 TDLIGHT_X64="$RESOURCES_DIR/darwin-x64/libtdjni.macos_amd64.dylib"
 JNATIVEHOOK_ARM64="$RESOURCES_DIR/darwin-arm64/libJNativeHook.dylib"
 JNATIVEHOOK_X64="$RESOURCES_DIR/darwin-x64/libJNativeHook.dylib"
+MACOS_SPEECH_ARM64="$RESOURCES_DIR/darwin-arm64/$MACOS_SPEECH_LIBRARY_FILE"
+MACOS_SPEECH_X64="$RESOURCES_DIR/darwin-x64/$MACOS_SPEECH_LIBRARY_FILE"
 JNA_ARM64="$RESOURCES_DIR/common/darwin-arm64/$JNA_LIBRARY_FILE"
 JNA_X64="$RESOURCES_DIR/common/darwin-x64/$JNA_LIBRARY_FILE"
 SQLITE_ARM64="$RESOURCES_DIR/common/darwin-arm64/$SQLITE_LIBRARY_FILE"
@@ -651,6 +654,7 @@ SQLITE_UNIVERSAL="$RESOURCES_DIR/common/$SQLITE_LIBRARY_FILE"
 for file in \
     "$TDLIGHT_ARM64" "$TDLIGHT_X64" \
     "$JNATIVEHOOK_ARM64" "$JNATIVEHOOK_X64" \
+    "$MACOS_SPEECH_ARM64" "$MACOS_SPEECH_X64" \
     "$JNA_ARM64" "$JNA_X64" \
     "$SQLITE_ARM64" "$SQLITE_X64"; do
     if [ ! -f "$file" ]; then
@@ -665,6 +669,8 @@ assert_file_arch "$TDLIGHT_ARM64" "arm64" "TDLight arm64 library"
 assert_file_arch "$TDLIGHT_X64" "x86_64" "TDLight x64 library"
 assert_file_arch "$JNATIVEHOOK_ARM64" "arm64" "JNativeHook arm64 library"
 assert_file_arch "$JNATIVEHOOK_X64" "x86_64" "JNativeHook x64 library"
+assert_file_arch "$MACOS_SPEECH_ARM64" "arm64" "Local speech bridge arm64 library"
+assert_file_arch "$MACOS_SPEECH_X64" "x86_64" "Local speech bridge x64 library"
 assert_file_arch "$JNA_ARM64" "arm64" "JNA arm64 library"
 assert_file_arch "$JNA_X64" "x86_64" "JNA x64 library"
 assert_file_arch "$SQLITE_ARM64" "arm64" "sqlite arm64 library"

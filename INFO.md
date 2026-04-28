@@ -22,11 +22,11 @@ If you are not sure about something, left a note for other developers to review.
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Local llama.cpp provider** with a thin native bridge, strict JSON tool contract, a RAM-gated local model catalog (Qwen plus Gemma 4 chat profiles), linked local EmbeddingGemma GGUF downloads/usage for embeddings, background preload/warmup on local chat model selection, prompt-family-aware rendering (Qwen ChatML and Gemma 4 turns), prompt-prefix/KV reuse inside the native runtime, settings-driven context windows for local inference within model caps, and model storage under `~/.local/state/souz/models/`.
-- **Key-aware model selection in Settings**: chat, embeddings, and voice recognition model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
+- **Key-aware model selection in Settings**: chat and embeddings remain filtered by configured provider keys, cloud voice recognition models stay key-aware, and macOS also exposes a built-in `Local MacOS STT` option without API keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop toolset**: files, browser, calendar, mail, notes, desktop automation, analytics, and presentations.
 - **Two-mode internet search**: quick-answer web lookup for simple factual questions and multi-step research mode with LLM-built strategy, broader source coverage, cited long-form synthesis, and automatic `.md` export for oversized reports.
-- **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
+- **Voice and desktop interaction** via audio recording/playback, global hotkeys, native media key bindings, and built-in macOS speech recognition routed through a thin Swift/JNI bridge.
 
 ## Project Structure
 
@@ -120,7 +120,7 @@ If you are not sure about something, left a note for other developers to review.
 │       │   │   ├── certs/                  # Trusted certificate bundles
 │       │   │   ├── darwin-arm64/           # macOS arm64 app-owned JNI/native binaries
 │       │   │   └── scripts/                # Helper scripts and native build helpers
-│       │   └── swift/                      # Swift source for native media keys bridge
+│       │   └── swift/                      # Swift source for native macOS bridges (media keys, speech recognition)
 │       └── jvmTest/                        # JVM test source set
 │           ├── kotlin/                     # Unit/integration tests by feature domain
 │           │   ├── agent/                  # Agent scenario/integration tests

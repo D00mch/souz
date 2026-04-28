@@ -126,6 +126,7 @@ enum class VoiceRecognitionProvider {
     SALUTE_SPEECH,
     AI_TUNNEL,
     OPENAI,
+    LOCAL_MACOS,
 }
 
 enum class LLMModel(
@@ -183,6 +184,7 @@ enum class VoiceRecognitionModel(
     AiTunnelGpt4oMiniTranscribe("AI-Tunnel: gpt-4o-mini-transcribe", "gpt-4o-mini-transcribe", VoiceRecognitionProvider.AI_TUNNEL),
     OpenAIGpt4oTranscribe("OpenAI: gpt-4o-transcribe", "gpt-4o-transcribe", VoiceRecognitionProvider.OPENAI),
     OpenAIGpt4oMiniTranscribe("OpenAI: gpt-4o-mini-transcribe", "gpt-4o-mini-transcribe", VoiceRecognitionProvider.OPENAI),
+    LocalMacOsStt("Local MacOS STT", "local-macos-stt", VoiceRecognitionProvider.LOCAL_MACOS),
 }
 
 object LLMRequest {
