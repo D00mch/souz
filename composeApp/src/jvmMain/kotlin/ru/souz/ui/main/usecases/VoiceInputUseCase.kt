@@ -3,6 +3,7 @@ package ru.souz.ui.main.usecases
 import com.github.kwhat.jnativehook.GlobalScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.service.audio.InMemoryAudioRecorder
 import ru.souz.llms.giga.MissingVoiceKeyException
@@ -176,7 +178,9 @@ class VoiceInputUseCase(
             )
         }
 
-        val started = audioRecorder.start()
+        val started = withContext(Dispatchers.IO) {
+            audioRecorder.start()
+        }
         if (!started) {
             val recorderState = audioRecorder.recordingState.value
             val errorMsg = (recorderState as? InMemoryAudioRecorder.State.Error)?.message.orEmpty()

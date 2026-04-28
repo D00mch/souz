@@ -53,23 +53,6 @@ class ActiveSoundRecorderImpl(
             val localLine = AudioSystem.getLine(info) as TargetDataLine
             localLine.open(format, maxOf(lineBufferBytes, frameBytes * 8))
             line = localLine
-
-            captureJob = scope.launch {
-                val buf = ByteArray(frameBytes)
-                var filled = 0
-                while (localLine.isOpen) {
-                    val r = localLine.read(buf, filled, buf.size - filled)
-                    if (r <= 0) continue
-                    filled += r
-                    if (filled == buf.size) {
-                        val frame = buf.copyOf()
-                        filled = 0
-                        channelLock.withLock {
-                            activeChannelRef.get()?.trySend(frame)
-                        }
-                    }
-                }
-            }
             prepared.set(true)
         }
     }
@@ -84,6 +67,28 @@ class ActiveSoundRecorderImpl(
         }
         localLine.flush()
         localLine.start()
+        startCaptureLoopIfNeeded(localLine)
+    }
+
+    private fun startCaptureLoopIfNeeded(localLine: TargetDataLine) {
+        if (captureJob?.isActive == true) return
+
+        captureJob = scope.launch {
+            val buf = ByteArray(frameBytes)
+            var filled = 0
+            while (localLine.isOpen) {
+                val r = localLine.read(buf, filled, buf.size - filled)
+                if (r <= 0) continue
+                filled += r
+                if (filled == buf.size) {
+                    val frame = buf.copyOf()
+                    filled = 0
+                    channelLock.withLock {
+                        activeChannelRef.get()?.trySend(frame)
+                    }
+                }
+            }
+        }
     }
 
     override suspend fun stopRecording(): ByteArray {

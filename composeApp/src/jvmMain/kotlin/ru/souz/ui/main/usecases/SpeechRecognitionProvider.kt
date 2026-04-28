@@ -1,5 +1,7 @@
 package ru.souz.ui.main.usecases
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
@@ -71,7 +73,7 @@ class MacOsSpeechRecognitionProvider(
     override val hasRequiredKey: Boolean
         get() = enabled
 
-    override suspend fun recognize(audio: ByteArray): String {
+    override suspend fun recognize(audio: ByteArray): String = withContext(Dispatchers.IO) {
         if (!enabled) {
             throw LocalMacOsSpeechUnavailableException("Local macOS speech recognition is unavailable on this host.")
         }
@@ -80,7 +82,7 @@ class MacOsSpeechRecognitionProvider(
         ensureSpeechUsageDescription(locale)
         ensureAuthorization(locale)
         val wavPath = MacOsSpeechWavWriter.writePcmToTempWav(audio)
-        return try {
+        try {
             bridge.recognizeWav(wavPath.toString(), locale).trim()
         } catch (error: Throwable) {
             throw mapBridgeError(error, locale)
