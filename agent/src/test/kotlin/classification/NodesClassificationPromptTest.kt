@@ -209,6 +209,41 @@ class NodesClassificationPromptTest {
         assertFalse(historyMessage.contains("Current date and time"))
     }
 
+    @Test
+    fun `classification drops categories with empty tool lists before prompting`() {
+        val localClassifier = CapturingClassifier(
+            UserMessageClassifier.Reply(
+                categories = listOf(ToolCategory.FILES),
+                confidence = 90.0,
+            )
+        )
+        val apiClassifier = CapturingClassifier(
+            UserMessageClassifier.Reply(
+                categories = listOf(ToolCategory.FILES),
+                confidence = 90.0,
+            )
+        )
+        val toolsWithEmptyCategory = mapOf(
+            ToolCategory.FILES to mapOf("Read" to dummySetup("Read")),
+            ToolCategory.BROWSER to emptyMap(),
+        )
+
+        executeClassification(
+            input = "Прочитай файл",
+            history = emptyList(),
+            tools = toolsWithEmptyCategory,
+            localClassifier = localClassifier,
+            apiClassifier = apiClassifier,
+        )
+
+        val body: LLMRequest.Chat = restJsonMapper.readValue(localClassifier.requireBody())
+        val prompt = body.messages.first().content
+
+        assertTrue(prompt.contains("- FILES:"))
+        assertFalse(prompt.contains("- BROWSER:"))
+        assertFalse(prompt.contains("\nBROWSER: "))
+    }
+
     private fun mockTelegramFilteredToolsSettings(telegramConnected: Boolean): AgentToolsFilter {
         return mockk<AgentToolsFilter>().also { toolsSettings ->
             every { toolsSettings.applyFilter(any()) } answers {
@@ -237,13 +272,14 @@ class NodesClassificationPromptTest {
     private fun executeClassification(
         input: String,
         history: List<LLMRequest.Message>,
+        tools: Map<ToolCategory, Map<String, LLMToolSetup>> = defaultTools,
         localClassifier: UserMessageClassifier,
         apiClassifier: UserMessageClassifier,
     ) {
         val settingsProvider = mockk<AgentSettingsProvider> {
             every { gigaModel } returns LLMModel.Max
         }
-        val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns defaultTools }
+        val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns tools }
         val toolsSettings = mockk<AgentToolsFilter> {
             every { applyFilter(any()) } answers { firstArg() }
         }
@@ -263,7 +299,7 @@ class NodesClassificationPromptTest {
                     settings = AgentSettings(
                         model = LLMModel.Max.alias,
                         temperature = 0.2f,
-                        toolsByCategory = defaultTools,
+                        toolsByCategory = tools,
                     ),
                     history = history,
                     activeTools = emptyList(),

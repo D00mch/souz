@@ -41,6 +41,7 @@ internal class NodesClassification(
     fun node(name: String = "select categories"): Node<String, String> = Node(name) { ctx: AgentContext<String> ->
         val categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>> =
             toolsFilter.applyFilter(toolCatalog.toolsByCategory)
+                .filterValues { it.isNotEmpty() }
         val categories: List<ToolCategory> = classify(ctx.input, ctx.history, categoryStates)
 
         val categoriesToChoseFrom = if (categories.isEmpty() || categories.contains(HELP)) {
