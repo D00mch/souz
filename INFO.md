@@ -60,7 +60,9 @@ If you are not sure about something, left a note for other developers to review.
 └── gradle/                                 # Gradle version catalog and wrapper configuration
 ```
 
-## Module Graph
+## Module Graphs
+
+### KMP/Desktop
 
 ```mermaid
 flowchart LR
@@ -69,10 +71,23 @@ flowchart LR
     composeApp --> llms[":llms\nProvider contracts and helpers"]
     composeApp --> native[":native\nLocal-model native bridge"]
 
-    backend[":backend\nKtor HTTP server"] --> runtime
-    backend --> agent
-    backend --> llms
-    backend --> native
+    runtime --> agent
+    runtime --> llms
+    runtime --> native
+
+    agent --> graphEngine[":graph-engine\nGraph DSL/runtime"]
+    agent --> llms
+    native --> llms
+```
+
+### Backend
+
+```mermaid
+flowchart LR
+    backend[":backend\nKtor HTTP server"] --> runtime[":runtime\nShared JVM runtime and backend-safe tools"]
+    backend --> agent[":agent\nShared agent runtime"]
+    backend --> llms[":llms\nProvider contracts and helpers"]
+    backend --> native[":native\nLocal-model native bridge"]
 
     runtime --> agent
     runtime --> llms
