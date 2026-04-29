@@ -12,8 +12,14 @@ It reuses shared runtime components from `:runtime` and exposes a small REST sur
 
 `POST /agent` requires `Content-Type: application/json`, `Authorization: Bearer <internal-agent-token>`, and `X-Request-Id: <uuid>`. The token is read from `SOUZ_BACKEND_AGENT_TOKEN` or `souz.backend.agentToken`. The request body `requestId` must match `X-Request-Id`.
 
-The backend keeps one legacy `/chat` conversation per process and keeps `/agent` session state in memory by `userId` + `conversationId`.
-`/agent` executes through the shared `:agent` graph/runtime logic with backend no-op implementations for desktop/tools SPI contracts.
+The backend keeps one legacy `/chat` conversation per process and keeps `/agent` conversation state in memory by `userId` + `conversationId`.
+`/agent` now uses a backend-specific conversation runtime cache keyed by `userId` + `conversationId`:
+
+- Process scope: shared settings/provider clients, backend no-op host adapters, object mappers, and runtime/cache factories.
+- Conversation scope: one live agent runtime per conversation, including the current `AgentContext`, active agent id, and per-conversation cancellation/execution state.
+- Request scope: validated request data, model/context overrides for the turn, usage tracking reset, and response assembly.
+
+The backend path still reuses the shared `:agent` execution kernel, but it bypasses desktop-only features that are irrelevant here: `AgentFacade`, graph session logging, side-effect/message streams, tool telemetry, and desktop/session logging infrastructure.
 
 ## Project Structure
 
@@ -30,9 +36,10 @@ backend/
     │           ├── BackendDiModule.kt          # Kodein module for backend settings/providers/services
     │           ├── BackendHttpServer.kt        # Ktor Netty server, routing, JSON, auth, and HTTP error mapping
     │           ├── ChatService.kt              # Legacy /chat direct LLM conversation service
-    │           ├── BackendAgentService.kt      # /agent shared-runtime execution and conflict handling
+    │           ├── BackendAgentService.kt      # /agent orchestration, conflict handling, and response assembly
     │           ├── BackendAgentModels.kt       # /agent request/response DTOs and validation
     │           ├── AgentSessionRepository.kt   # /agent session storage contract + in-memory impl
+    │           ├── BackendConversationRuntime.kt # /agent conversation runtime/cache/factory
     │           └── BackendAgentHostAdapters.kt # Backend SPI implementations for agent runtime
     └── test/
         └── kotlin/
@@ -87,3 +94,17 @@ Error mapping:
 - `404` user or conversation not found when a user/conversation resolver is configured.
 - `409` duplicate `requestId` or concurrent active request for the same user conversation.
 - `500` LLM/runtime failure.
+
+## Backend Agent Runtime Lifecycle
+
+For `/agent`, `BackendAgentService` is now mostly orchestration:
+
+- validate request
+- reject duplicate request ids
+- enforce one active request per conversation
+- resolve a cached `BackendConversationRuntime`
+- execute one turn and assemble the HTTP response
+
+`BackendConversationRuntimeFactory` assembles each conversation runtime explicitly instead of creating a fresh request-scoped DI container. The runtime loads the persisted in-memory session once, reuses the same graph agents across later turns for that conversation, and persists the updated `AgentContext` after every successful turn.
+
+Model and `contextSize` remain request-driven. Each turn can change them without losing the conversation history because the runtime reseeds the persisted context with the request’s current model/context window before execution.

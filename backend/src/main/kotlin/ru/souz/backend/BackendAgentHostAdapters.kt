@@ -17,31 +17,45 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
 
-class BackendRequestSettingsProvider(
+class BackendConversationSettingsProvider(
     private val delegate: SettingsProvider,
-    model: String,
-    override var contextSize: Int,
-    override var temperature: Float,
+    private val systemPrompt: String,
     locale: String,
 ) : SettingsProvider by delegate {
-    private val promptOverrides = HashMap<Pair<AgentId, LLMModel>, String>()
-
     override var defaultCalendar: String? = null
     override var regionProfile: String = localeToRegionProfile(locale)
     override var activeAgentId: AgentId = AgentId.default
-    override var gigaModel: LLMModel = parseModel(model) ?: delegate.gigaModel
+    override var gigaModel: LLMModel = delegate.gigaModel
     override var useStreaming: Boolean = false
+    override var contextSize: Int = delegate.contextSize
+    override var temperature: Float = delegate.temperature
 
-    override fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String? =
-        promptOverrides[agentId to model]
+    override fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String = systemPrompt
 
-    override fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?) {
-        val key = agentId to model
-        if (prompt.isNullOrBlank()) {
-            promptOverrides.remove(key)
-        } else {
-            promptOverrides[key] = prompt
-        }
+    override fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?) = Unit
+
+    fun restore(
+        activeAgentId: AgentId,
+        contextSize: Int,
+        temperature: Float,
+        locale: String,
+    ) {
+        this.activeAgentId = activeAgentId
+        this.contextSize = contextSize
+        this.temperature = temperature
+        this.regionProfile = localeToRegionProfile(locale)
+    }
+
+    internal fun applyRequest(
+        request: ValidatedAgentRequest,
+        activeAgentId: AgentId,
+        temperature: Float,
+    ) {
+        this.activeAgentId = activeAgentId
+        this.gigaModel = parseModel(request.model) ?: delegate.gigaModel
+        this.contextSize = request.contextSize
+        this.temperature = temperature
+        this.regionProfile = localeToRegionProfile(request.locale)
     }
 
     private fun parseModel(rawModel: String): LLMModel? =
@@ -107,6 +121,10 @@ object BackendAgentErrorMessages : AgentErrorMessages {
 class UsageTrackingChatApi(private val delegate: LLMChatAPI) : LLMChatAPI by delegate {
     @Volatile
     private var latestUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0)
+
+    fun resetUsage() {
+        latestUsage = LLMResponse.Usage(0, 0, 0, 0)
+    }
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
         val response = delegate.message(body)

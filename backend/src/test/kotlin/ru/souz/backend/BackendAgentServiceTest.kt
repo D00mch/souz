@@ -49,6 +49,19 @@ class BackendAgentServiceTest {
     }
 
     @Test
+    fun `conversation runtime is reused across turns`() = runTest {
+        val api = RecordingAgentApi()
+        val sessionRepository = CountingAgentSessionRepository()
+        val request = agentRequest(prompt = "Первая задача")
+        val service = createService(api, sessionRepository = sessionRepository)
+
+        service.sendAgentRequest(request)
+        service.sendAgentRequest(request.copy(requestId = uuid(), prompt = "Вторая задача"))
+
+        assertEquals(1, sessionRepository.loadCount)
+    }
+
+    @Test
     fun `session context persists across turns for same user and conversation`() = runTest {
         val api = RecordingAgentApi()
         val request = agentRequest(prompt = "Первая задача")
@@ -61,6 +74,51 @@ class BackendAgentServiceTest {
         val historyTexts = lastChatRequest.messages.map { it.content }
         assertTrue("Первая задача" in historyTexts)
         assertTrue(historyTexts.any { it.contains("agent reply to Первая задача") })
+    }
+
+    @Test
+    fun `model can change between turns in same conversation`() = runTest {
+        val api = RecordingAgentApi()
+        val request = agentRequest(prompt = "Первая задача", model = LLMModel.Max.alias)
+        val service = createService(api)
+
+        service.sendAgentRequest(request)
+        service.sendAgentRequest(
+                request.copy(
+                    requestId = uuid(),
+                    prompt = "Вторая задача",
+                    model = LLMModel.OpenAIGpt52.alias,
+                )
+        )
+
+        val finalChatRequests = api.finalChatRequests()
+        assertEquals(LLMModel.Max.alias, finalChatRequests.first().model)
+        assertEquals(LLMModel.OpenAIGpt52.alias, finalChatRequests.last().model)
+        val secondHistory = finalChatRequests.last().messages.map { it.content }
+        assertTrue("Первая задача" in secondHistory)
+    }
+
+    @Test
+    fun `context size can change between turns in same conversation`() = runTest {
+        val api = RecordingAgentApi()
+        val request = agentRequest(prompt = "Первая задача", contextSize = 8_000)
+        val service = createService(api)
+
+        service.sendAgentRequest(request)
+        service.sendAgentRequest(
+            request.copy(
+                requestId = uuid(),
+                prompt = "Вторая задача",
+                contextSize = 32_000,
+            )
+        )
+
+        val finalChatRequests = api.finalChatRequests()
+        assertEquals(8_000, finalChatRequests.first().maxTokens)
+        assertEquals(32_000, finalChatRequests.last().maxTokens)
+        val secondHistory = finalChatRequests.last().messages.map { it.content }
+        assertTrue(historyContainsConversationTurn(secondHistory, "Первая задача"))
+        assertTrue(secondHistory.any { it.contains("agent reply to Первая задача") })
     }
 
     @Test
@@ -95,11 +153,54 @@ class BackendAgentServiceTest {
     }
 
     @Test
+    fun `different conversations do not cancel each other`() = runTest {
+        val firstStarted = CompletableDeferred<Unit>()
+        val secondStarted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val api = RecordingAgentApi(
+            onFinalChatRequest = { request ->
+                when (request.conversationPrompt()) {
+                    "A1" -> firstStarted.complete(Unit)
+                    "B1" -> secondStarted.complete(Unit)
+                }
+                release.await()
+            }
+        )
+        val service = createService(api)
+
+        val firstCall = async {
+            service.sendAgentRequest(
+                agentRequest(
+                    userId = "11111111-1111-1111-1111-111111111111",
+                    conversationId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                    prompt = "A1",
+                )
+            )
+        }
+        val secondCall = async {
+            service.sendAgentRequest(
+                agentRequest(
+                    userId = "22222222-2222-2222-2222-222222222222",
+                    conversationId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                    prompt = "B1",
+                )
+            )
+        }
+
+        firstStarted.await()
+        secondStarted.await()
+        release.complete(Unit)
+
+        assertEquals("agent reply to A1", firstCall.await().content)
+        assertEquals("agent reply to B1", secondCall.await().content)
+    }
+
+    @Test
     fun `concurrent active request for same conversation still returns 409`() = runTest {
         val started = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val api = RecordingAgentApi(
-            onFinalChatRequest = {
+            onFinalChatRequest = { _ ->
                 started.complete(Unit)
                 release.await()
             }
@@ -121,17 +222,28 @@ class BackendAgentServiceTest {
         assertEquals(409, error.statusCode)
     }
 
-    private fun createService(api: RecordingAgentApi): BackendAgentService =
-        BackendAgentService(
-            baseSettingsProvider = FakeSettingsProvider(),
-            llmApiFactory = { api },
-            sessionRepository = InMemoryAgentSessionRepository(),
-            logObjectMapper = jacksonObjectMapper(),
+    private fun createService(
+        api: RecordingAgentApi,
+        sessionRepository: AgentSessionRepository = InMemoryAgentSessionRepository(),
+    ): BackendAgentService {
+        val settingsProvider = FakeSettingsProvider()
+        return BackendAgentService(
+            baseSettingsProvider = settingsProvider,
+            runtimeCache = BackendConversationRuntimeCache(
+                BackendConversationRuntimeFactory(
+                    baseSettingsProvider = settingsProvider,
+                    llmApiFactory = { api },
+                    sessionRepository = sessionRepository,
+                    logObjectMapper = jacksonObjectMapper(),
+                    systemPrompt = "You are Souz AI backend assistant. Answer directly and concisely in the user's language.",
+                )
+            ),
         )
+    }
 }
 
 private class RecordingAgentApi(
-    private val onFinalChatRequest: (suspend () -> Unit)? = null,
+    private val onFinalChatRequest: (suspend (LLMRequest.Chat) -> Unit)? = null,
 ) : LLMChatAPI {
     val requests = ArrayList<LLMRequest.Chat>()
     private var completionCount = 0
@@ -158,8 +270,8 @@ private class RecordingAgentApi(
             )
         }
 
-        onFinalChatRequest?.invoke()
-        val prompt = body.messages.lastOrNull { it.role == LLMMessageRole.user }?.content.orEmpty()
+        onFinalChatRequest?.invoke(body)
+        val prompt = body.conversationPrompt()
         completionCount += 1
         return LLMResponse.Chat.Ok(
             choices = listOf(
@@ -198,6 +310,14 @@ private class RecordingAgentApi(
 
 private fun RecordingAgentApi.finalChatRequests(): List<LLMRequest.Chat> =
     requests.filterNot { it.isClassificationRequest() }
+
+private fun LLMRequest.Chat.conversationPrompt(): String =
+    messages.lastOrNull { message ->
+        message.role == LLMMessageRole.user && !message.content.contains("<context>")
+    }?.content.orEmpty()
+
+private fun historyContainsConversationTurn(historyTexts: List<String>, turn: String): Boolean =
+    historyTexts.any { it == turn || it.endsWith("\n$turn") || it.contains("USER: $turn") }
 
 private fun LLMRequest.Chat.isClassificationRequest(): Boolean =
     messages.any { message ->
@@ -247,6 +367,21 @@ private class FakeSettingsProvider : SettingsProvider {
         } else {
             promptOverrides[key] = prompt
         }
+    }
+}
+
+private class CountingAgentSessionRepository : AgentSessionRepository {
+    private val delegate = InMemoryAgentSessionRepository()
+    var loadCount: Int = 0
+        private set
+
+    override suspend fun load(key: AgentConversationKey): AgentConversationSession? {
+        loadCount += 1
+        return delegate.load(key)
+    }
+
+    override suspend fun save(key: AgentConversationKey, session: AgentConversationSession) {
+        delegate.save(key, session)
     }
 }
 

@@ -69,6 +69,26 @@ fun backendDiModule(
 
     bindSingleton<AgentSessionRepository> { InMemoryAgentSessionRepository() }
     bindSingleton {
+        BackendConversationRuntimeFactory(
+            baseSettingsProvider = instance(),
+            llmApiFactory = { requestSettings ->
+                LLMFactory(
+                    settingsProvider = requestSettings,
+                    restApi = instance(),
+                    qwenApi = instance(),
+                    aiTunnelApi = instance(),
+                    anthropicApi = instance(),
+                    openAiApi = instance(),
+                    localApi = instance(),
+                )
+            },
+            sessionRepository = instance(),
+            logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
+            systemPrompt = systemPrompt,
+        )
+    }
+    bindSingleton { BackendConversationRuntimeCache(instance()) }
+    bindSingleton {
         val settingsProvider: SettingsProvider = instance()
         ChatService(
             chatApi = instance(),
@@ -87,19 +107,7 @@ fun backendDiModule(
     bindSingleton {
         BackendAgentService(
             baseSettingsProvider = instance(),
-            llmApiFactory = { requestSettings ->
-                LLMFactory(
-                    settingsProvider = requestSettings,
-                    restApi = instance(),
-                    qwenApi = instance(),
-                    aiTunnelApi = instance(),
-                    anthropicApi = instance(),
-                    openAiApi = instance(),
-                    localApi = instance(),
-                )
-            },
-            sessionRepository = instance(),
-            logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
+            runtimeCache = instance(),
         )
     }
 }

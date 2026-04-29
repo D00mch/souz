@@ -2,44 +2,44 @@ package ru.souz
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.flow.Flow
-import org.kodein.di.DI
-import org.kodein.di.instance
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.GraphStepCallback
 import ru.souz.agent.TraceableAgent
 import ru.souz.agent.graph.Graph
 import ru.souz.agent.graph.Node
 import ru.souz.agent.graph.buildGraph
+import ru.souz.agent.nodes.CLASSIFY_NODE_NAME
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLua
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
-import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMResponse
 
-class LuaGraphBasedAgent(
-    di: DI,
+class LuaGraphBasedAgent internal constructor(
     logObjectMapper: ObjectMapper,
+    private val nodesLua: NodesLua,
+    private val nodesCommon: NodesCommon,
+    private val nodesClassify: NodesClassification,
+    private val nodesErrorHandling: NodesErrorHandling,
+    private val nodesSummarization: NodesSummarization,
+    private val nodesMCP: NodesMCP,
+    private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegateImpl(
+        logObjectMapper = logObjectMapper,
+        loggerClass = LuaGraphBasedAgent::class.java,
+    ),
 ) : TraceableAgent {
-
-    private val nodesLua: NodesLua by di.instance()
-    private val nodesCommon: NodesCommon by di.instance()
-    private val nodesClassify: NodesClassification by di.instance()
-    private val nodesErrorHandling: NodesErrorHandling by di.instance()
-    private val nodesSummarization: NodesSummarization by di.instance()
-    private val nodesMCP: NodesMCP by di.instance()
-    private val executionDelegate = GraphExecutionDelegateImpl(logObjectMapper, LuaGraphBasedAgent::class.java)
 
     override val sideEffects: Flow<String> = nodesLua.sideEffects
 
     private val graph: Graph<String, String> = buildGraph(name = "LuaAgent") {
         val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
-        val nodeClassify: Node<String, String> = nodesClassify.node(GraphSessionService.NODE_NAME_CLASSIFY)
+        val nodeClassify: Node<String, String> = nodesClassify.node(CLASSIFY_NODE_NAME)
         val nodeMcp: Node<String, String> = nodesMCP.nodeProvideMcpTools("MCP Node")
         val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
         val planLua: Node<String, LLMResponse.Chat> = nodesLua.plan()

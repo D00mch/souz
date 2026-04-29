@@ -325,3 +325,5 @@ CATEGORY1,CATEGORY2 0-100
         )
     }
 }
+
+internal const val CLASSIFY_NODE_NAME = "classify"
