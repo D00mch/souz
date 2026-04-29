@@ -1,82 +1,101 @@
 package tool.files
 
 import com.fasterxml.jackson.module.kotlin.readValue
+import io.mockk.clearAllMocks
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
+import io.mockk.mockkObject
+import io.mockk.unmockkAll
 import ru.souz.llms.restJsonMapper
-import ru.souz.tool.ToolRunBashCommand
-import ru.souz.tool.files.ToolFindFolders
 import ru.souz.tool.files.FilesToolUtil
+import ru.souz.tool.files.ToolFindFolders
+import java.io.File
+import java.nio.file.Files
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ToolFindFoldersTest {
-    private val bash: ToolRunBashCommand = mockk()
     private val filesToolUtil: FilesToolUtil = mockk()
     private val tool = ToolFindFolders(filesToolUtil)
 
+    @AfterTest
+    fun clearMocks() {
+        clearAllMocks()
+        unmockkAll()
+    }
+
     @Test
     fun `filters forbidden paths and parses output`() {
-        val safePath = "/Users/souz/Documents"
-        val unsafePath = "/System/Library/Secret"
+        val homeDir = Files.createTempDirectory("souz-test-find-folders").toFile().canonicalFile
+        val safeDir = File(homeDir, "Documents").apply { mkdirs() }.canonicalFile
+        val forbiddenRoot = File(homeDir, "restricted").apply { mkdirs() }.canonicalFile
+        val unsafeDir = File(forbiddenRoot, "Documents Secret").apply { mkdirs() }.canonicalFile
 
-        every { bash.sh(any()) } returns "$safePath\n$unsafePath"
+        mockkObject(FilesToolUtil.Companion)
+        every { FilesToolUtil.homeDirectory } returns homeDir
+        every { filesToolUtil.isPathSafe(any()) } answers {
+            val file = firstArg<File>().canonicalFile
+            file.toPath().startsWith(homeDir.toPath()) && !file.toPath().startsWith(forbiddenRoot.toPath())
+        }
 
-        every { filesToolUtil.isPathSafe(match { it.absolutePath == safePath }) } returns true
-        every { filesToolUtil.isPathSafe(match { it.absolutePath == unsafePath }) } returns false
+        try {
+            val resultsJson = tool.invoke(ToolFindFolders.Input("Documents"))
+            val results: List<String> = restJsonMapper.readValue(resultsJson)
 
-        val resultsJson = tool.invoke(ToolFindFolders.Input("Documents"))
-        val results: List<String> = restJsonMapper.readValue(resultsJson)
-
-        assertTrue(results.contains(safePath), "Expected safe path in results")
-        assertFalse(results.contains(unsafePath), "Expected unsafe path to be filtered out")
+            assertTrue(results.contains(safeDir.absolutePath), "Expected safe path in results")
+            assertFalse(results.contains(unsafeDir.absolutePath), "Expected unsafe path to be filtered out")
+        } finally {
+            homeDir.deleteRecursively()
+        }
     }
 
     @Test
     fun `handles quotes and special characters safely (Anti-Injection)`() {
         val nastyFolderName = "John's \"Folder\""
+        val homeDir = Files.createTempDirectory("souz-test-folder-name").toFile().canonicalFile
+        val matchingDir = File(homeDir, nastyFolderName).apply { mkdirs() }.canonicalFile
 
-        every { bash.sh(any()) } returns ""
+        mockkObject(FilesToolUtil.Companion)
+        every { FilesToolUtil.homeDirectory } returns homeDir
+        every { filesToolUtil.isPathSafe(any()) } answers {
+            firstArg<File>().canonicalFile.toPath().startsWith(homeDir.toPath())
+        }
 
-        tool.invoke(ToolFindFolders.Input(nastyFolderName))
+        try {
+            val resultsJson = tool.invoke(ToolFindFolders.Input(nastyFolderName))
+            val results: List<String> = restJsonMapper.readValue(resultsJson)
 
-        val capturedCommands = mutableListOf<String>()
-
-        verify { bash.sh(capture(capturedCommands)) }
-
-        val executedCommand = capturedCommands.first()
-
-        assertTrue(executedCommand.startsWith("mdfind '"), "Command must start with mdfind '")
-
-        assertTrue(executedCommand.contains("\\\"Folder\\\""), "Double quotes should be escaped for Spotlight")
-
-        assertTrue(executedCommand.contains("John'\\''s"), "Single quotes should be escaped for Bash")
+            assertEquals(listOf(matchingDir.absolutePath), results)
+        } finally {
+            homeDir.deleteRecursively()
+        }
     }
 
     @Test
-    fun `falls back to partial search if exact match is empty`() {
+    fun `prefers exact matches before partial matches`() {
         val folderName = "Projects"
-        val partialMatchPath = "/Users/souz/Old_Projects_Archive"
+        val homeDir = Files.createTempDirectory("souz-test-folders").toFile().canonicalFile
+        val exactDir = File(homeDir, folderName).apply { mkdirs() }.canonicalFile
+        val partialDir = File(homeDir, "Old_Projects_Archive").apply { mkdirs() }.canonicalFile
 
-        every {
-            bash.sh(match { it.contains("== \"$folderName\"c") })
-        } returns ""
+        mockkObject(FilesToolUtil.Companion)
+        every { FilesToolUtil.homeDirectory } returns homeDir
+        every { filesToolUtil.isPathSafe(any()) } answers {
+            firstArg<File>().canonicalFile.toPath().startsWith(homeDir.toPath())
+        }
 
-        every {
-            bash.sh(match { it.contains("== \"*$folderName*\"c") })
-        } returns partialMatchPath
+        try {
+            val resultsJson = tool.invoke(ToolFindFolders.Input(folderName))
+            val results: List<String> = restJsonMapper.readValue(resultsJson)
 
-        every { filesToolUtil.isPathSafe(any()) } returns true
-
-        val resultsJson = tool.invoke(ToolFindFolders.Input(folderName))
-        val results: List<String> = restJsonMapper.readValue(resultsJson)
-
-        assertEquals(1, results.size)
-        assertEquals(partialMatchPath, results.first())
-
-        verify(exactly = 2) { bash.sh(any()) }
+            assertEquals(2, results.size)
+            assertEquals(exactDir.absolutePath, results.first())
+            assertTrue(results.contains(partialDir.absolutePath), "Expected partial match in results")
+        } finally {
+            homeDir.deleteRecursively()
+        }
     }
 }

@@ -14,6 +14,7 @@ import kotlin.test.assertNull
 class SecretPrefsCodecTest {
 
     private val masterKeyProperty = "SOUZ_MASTER_KEY"
+    private val prefs = Preferences.userNodeForPackage(ConfigStore::class.java)
     private var previousMasterKeyProperty: String? = null
 
     @BeforeTest
@@ -32,75 +33,83 @@ class SecretPrefsCodecTest {
     }
 
     @Test
-    fun `non-sensitive key values are stored without encryption`() = withTestPrefs { prefs ->
-        val key = "PUBLIC_VALUE"
+    fun `non-sensitive key values are stored without encryption`() = withStoredPreference("PUBLIC_VALUE_${UUID.randomUUID()}") { key ->
         val value = "plain-text"
 
-        val encoded = SecretPrefsCodec.encodeForStorage(key, value)
-        val decoded = SecretPrefsCodec.decodeForRead(key, encoded, prefs)
+        ConfigStore.put(key, value)
+        val stored = prefs.get(key, null)
+        val decoded = ConfigStore.get<String>(key)
 
-        assertEquals(value, encoded)
+        assertEquals(value, stored)
         assertEquals(value, decoded)
     }
 
     @Test
-    fun `sensitive key values are encrypted and can be decrypted`() = withTestPrefs { prefs ->
+    fun `sensitive key values are encrypted and can be decrypted`() = withStoredPreference(ConfigStore.TG_BOT_TOKEN) { key ->
         val value = "super-secret-token"
 
-        val encoded = SecretPrefsCodec.encodeForStorage(ConfigStore.TG_BOT_TOKEN, value)
-        val decoded = SecretPrefsCodec.decodeForRead(ConfigStore.TG_BOT_TOKEN, encoded, prefs)
+        ConfigStore.put(key, value)
+        val stored = prefs.get(key, null)
+        val decoded = ConfigStore.get<String>(key)
 
-        assertNotEquals(value, encoded)
+        assertNotNull(stored)
+        assertNotEquals(value, stored)
         assertEquals(value, decoded)
     }
 
     @Test
-    fun `oauth store keys are treated as sensitive`() = withTestPrefs { prefs ->
-        val key = "${OAUTH_STORE_PREFIX}github"
+    fun `oauth store keys are treated as sensitive`() = withStoredPreference("${OAUTH_STORE_PREFIX}github") { key ->
         val value = """{"accessToken":"abc"}"""
 
-        val encoded = SecretPrefsCodec.encodeForStorage(key, value)
-        val decoded = SecretPrefsCodec.decodeForRead(key, encoded, prefs)
+        ConfigStore.put(key, value)
+        val stored = prefs.get(key, null)
+        val decoded = ConfigStore.get<String>(key)
 
-        assertNotEquals(value, encoded)
+        assertNotNull(stored)
+        assertNotEquals(value, stored)
         assertEquals(value, decoded)
     }
 
     @Test
-    fun `legacy plaintext sensitive values are returned and migrated`() = withTestPrefs { prefs ->
-        val key = ConfigStore.TG_BOT_TOKEN
+    fun `legacy plaintext sensitive values are returned and migrated`() = withStoredPreference(ConfigStore.TG_BOT_TOKEN) { key ->
         val value = "legacy-secret"
         prefs.put(key, value)
 
-        val decoded = SecretPrefsCodec.decodeForRead(key, value, prefs)
+        val decoded = ConfigStore.get<String>(key)
         val migrated = prefs.get(key, null)
 
         assertEquals(value, decoded)
         assertNotNull(migrated)
         assertNotEquals(value, migrated)
-        assertEquals(value, SecretPrefsCodec.decodeForRead(key, migrated, prefs))
+        assertEquals(value, ConfigStore.get<String>(key))
     }
 
     @Test
-    fun `malformed encrypted payload returns null`() = withTestPrefs { prefs ->
-        val key = ConfigStore.TG_BOT_TOKEN
-        val encoded = SecretPrefsCodec.encodeForStorage(key, "secret")
+    fun `malformed encrypted payload returns null`() = withStoredPreference(ConfigStore.TG_BOT_TOKEN) { key ->
+        ConfigStore.put(key, "secret")
+        val encoded = prefs.get(key, null)
+        assertNotNull(encoded)
         val malformed = encoded.substringBeforeLast(':')
+        assertNotEquals(encoded, malformed)
+        prefs.put(key, malformed)
 
-        val decoded = SecretPrefsCodec.decodeForRead(key, malformed, prefs)
+        val decoded = ConfigStore.get<String>(key)
 
         assertNull(decoded)
     }
 
-    private fun withTestPrefs(block: (Preferences) -> Unit) {
-        val node = Preferences.userRoot().node("/souz-tests/secret-prefs-codec/${UUID.randomUUID()}")
+    private fun withStoredPreference(key: String, block: (String) -> Unit) {
+        val previousValue = prefs.get(key, null)
         try {
-            block(node)
+            block(key)
         } finally {
             runCatching {
-                node.clear()
-                node.removeNode()
-                node.flush()
+                if (previousValue == null) {
+                    prefs.remove(key)
+                } else {
+                    prefs.put(key, previousValue)
+                }
+                prefs.flush()
             }
         }
     }

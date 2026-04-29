@@ -2,18 +2,27 @@ package ru.souz.service.telegram
 
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.clearAllMocks
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.unmockkAll
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentFacade
 import ru.souz.ui.main.usecases.SpeechRecognitionProvider
 import java.nio.file.Files
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class TelegramBotControllerTest {
+
+    @AfterTest
+    fun clearMocks() {
+        clearAllMocks()
+        unmockkAll()
+    }
 
     @Test
     fun `processUpdates executes only owner private commands`() = runTest {
