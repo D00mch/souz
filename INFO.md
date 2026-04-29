@@ -48,6 +48,10 @@ If you are not sure about something, left a note for other developers to review.
 ├── native/                                 # Shared local-model runtime/native bridge module
 │   ├── src/main/resources/                 # Packaged llama bridge binaries by macOS architecture
 │   └── INFO.md                             # Module notes and internal layout
+├── backend/                                # JVM HTTP backend build with no UI/voice startup
+│   ├── src/main/kotlin/ru/souz/backend/    # REST server, chat service, and backend runtime wiring
+│   ├── src/test/kotlin/ru/souz/backend/    # Backend service tests
+│   └── INFO.md                             # Module notes and REST contract
 ├── composeApp/                             # Main desktop application module
 │   ├── build/                              # Build output for composeApp (generated)
 │   ├── composeApp/                         # Auxiliary nested folder with test resource skeleton
@@ -142,6 +146,12 @@ If you are not sure about something, left a note for other developers to review.
 ## Module Structure
 
 - `:composeApp` depends on `:agent`, `:llms`, and `:native`.
+- `:backend` is a JVM application that depends on `:composeApp`, `:agent`, `:llms`, and `:native` to reuse settings and chat providers while starting only an HTTP REST server.
 - `:agent` depends on `:graph-engine` and `:llms`.
 - `:native` depends on `:llms`.
 - `:graph-engine` and `:llms` do not depend on other project modules.
+
+## Builds
+
+- Desktop KMP app: `./gradlew :composeApp:jvmRun` or the existing Compose distribution tasks.
+- Backend JVM app: `./gradlew :backend:run`. It binds to `127.0.0.1:8080` by default, configurable with `SOUZ_BACKEND_HOST` and `SOUZ_BACKEND_PORT`.
