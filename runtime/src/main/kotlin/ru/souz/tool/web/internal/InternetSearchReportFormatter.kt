@@ -1,6 +1,6 @@
 package ru.souz.tool.web.internal
 
-internal class InternetSearchReportFormatter(
+class InternetSearchReportFormatter(
     private val support: InternetSearchSupport,
 ) {
     fun buildOutput(

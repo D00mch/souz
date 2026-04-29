@@ -1,23 +1,19 @@
 package ru.souz.tool.files
 
-import org.kodein.di.DI
-import org.kodein.di.instance
 import ru.souz.db.SettingsProvider
-import ru.souz.di.mainDiModule
-import ru.souz.service.permissions.MacAppEnvironment
 import ru.souz.service.files.FilesService
 import ru.souz.tool.BadInputException
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.nio.charset.CharacterCodingException
-import java.nio.charset.CodingErrorAction
-import java.nio.charset.StandardCharsets
 
 class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesService {
 
@@ -431,7 +427,11 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
             "zip",
         )
 
-        val homeStr: String get() = MacAppEnvironment.appDataHome
+        val homeStr: String
+            get() = listOf(
+                System.getProperty("user.home"),
+                System.getenv("HOME"),
+            ).firstOrNull { !it.isNullOrBlank() }?.trim().orEmpty()
         val homeDirectory: File get() = File(homeStr).canonicalFile
         val documentsDirectoryPath: Path
             get() {
@@ -516,13 +516,3 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
 @Suppress("FunctionName")
 fun ForbiddenFolder(fixedPath: String) =
     BadInputException("Forbidden directory: $fixedPath. User explicitly restricted this path. Inform him")
-
-fun main() {
-    val di = DI.invoke { import(mainDiModule) }
-    val filesToolUtil: FilesToolUtil by di.instance()
-
-    val result = filesToolUtil.isPathSafe(
-        File(filesToolUtil.applyDefaultEnvs("~/"))
-    )
-    println("Safe? $result")
-}

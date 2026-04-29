@@ -40,27 +40,27 @@ private val defaultSharedWebHttpClient by lazy {
     HttpClient(CIO) { WebHttpSupport.applyDefaults(this, webToolSupport) }
 }
 
-internal data class WebTextResponse(
+data class WebTextResponse(
     val statusCode: Int,
     val body: String,
     val headers: Map<String, List<String>>,
 )
 
-internal data class WebBinaryResponse(
+data class WebBinaryResponse(
     val statusCode: Int,
     val body: ByteArray,
     val headers: Map<String, List<String>>,
 )
 
-internal fun WebTextResponse.firstHeader(name: String): String? = headers.firstHeader(name)
+fun WebTextResponse.firstHeader(name: String): String? = headers.firstHeader(name)
 
-internal fun WebBinaryResponse.firstHeader(name: String): String? = headers.firstHeader(name)
+fun WebBinaryResponse.firstHeader(name: String): String? = headers.firstHeader(name)
 
-internal fun Map<String, List<String>>.firstHeader(name: String): String? {
+fun Map<String, List<String>>.firstHeader(name: String): String? {
     return entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value?.firstOrNull()
 }
 
-internal class WebHttpSupport(
+class WebHttpSupport(
     private val webToolSupport: WebToolSupport = WebToolSupport(),
     private val sharedWebHttpClient: HttpClient = defaultSharedWebHttpClient,
 ) {

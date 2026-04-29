@@ -2,9 +2,6 @@ package ru.souz.tool.files
 
 import org.slf4j.LoggerFactory
 import ru.souz.tool.*
-import souz.composeapp.generated.resources.Res
-import souz.composeapp.generated.resources.*
-import org.jetbrains.compose.resources.getString
 import java.awt.Desktop
 import java.io.File
 import java.nio.file.Files
@@ -38,7 +35,7 @@ class ToolDeleteFile(
     override suspend fun suspendInvoke(input: Input): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         val result = permissionBroker?.requestPermission(
-            getString(Res.string.permission_delete_file),
+            "Delete file or folder",
             linkedMapOf("path" to fixedPath)
         )
         if (result is ToolPermissionResult.No) return result.msg

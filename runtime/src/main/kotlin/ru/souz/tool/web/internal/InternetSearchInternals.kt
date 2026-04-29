@@ -2,7 +2,7 @@ package ru.souz.tool.web.internal
 
 import com.fasterxml.jackson.databind.ObjectMapper
 
-internal class InternetSearchInternals(
+class InternetSearchInternals(
     mapper: ObjectMapper,
 ) {
     private val webToolSupport = WebToolSupport()

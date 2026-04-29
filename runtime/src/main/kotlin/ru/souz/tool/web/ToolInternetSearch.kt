@@ -14,7 +14,7 @@ import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.web.internal.InternetSearchExecutor
 import ru.souz.tool.web.internal.WebResearchClient
 
-internal class ToolInternetResearch(
+class ToolInternetSearch(
     private val api: LLMChatAPI,
     private val settingsProvider: SettingsProvider,
     private val filesToolUtil: FilesToolUtil,
@@ -27,26 +27,26 @@ internal class ToolInternetResearch(
         webResearchClient = webResearchClient,
         mapper = mapper,
     ),
-) : ToolSetup<ToolInternetResearch.Input> {
+) : ToolSetup<ToolInternetSearch.Input> {
     data class Input(
-        @InputParamDescription("User's deep internet research request")
+        @InputParamDescription("User's short internet lookup request")
         val query: String,
-        @InputParamDescription("Maximum number of source pages to study (1..16). For serious research usually use 8..16.")
-        val maxSources: Int = 10,
+        @InputParamDescription("Maximum number of source pages to study.")
+        val maxSources: Int = 5,
     )
 
-    override val name: String = "InternetResearch"
+    override val name: String = "InternetSearch"
     override val description: String =
-        "Deep multi-source internet research. Returns a long-form cited answer plus the collected search results. Use this for comparisons, library/tool selection, thematic обзоры, market analysis, or requests that need planning, broader coverage, and a long-form cited report."
+        "Short factual internet lookup. Returns a concise answer plus raw search results and cited sources. Use this for direct questions, current facts, weather, dates, and concise answers from a few sources. Prefer `InternetResearch` for comparisons, tool selection, thematic обзоры, or multi-step analysis."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
-            request = "Проведи исследование про ИИ во Франции",
-            params = mapOf("query" to "Проведи исследование про ИИ во Франции", "maxSources" to 6)
+            request = "Какая погода в Таллине",
+            params = mapOf("query" to "Какая погода в Таллине", "maxSources" to 3)
         ),
         FewShotExample(
-            request = "Нужно найти подходящую библиотеку для создания презентаций",
-            params = mapOf("query" to "Нужно найти подходящую библиотеку для создания презентаций", "maxSources" to 5)
+            request = "Когда вышла Kotlin 2.0",
+            params = mapOf("query" to "Когда вышла Kotlin 2.0", "maxSources" to 3)
         ),
     )
 
@@ -54,17 +54,17 @@ internal class ToolInternetResearch(
         properties = mapOf(
             "status" to ReturnProperty("string", "Result status: COMPLETE, PARTIAL, NO_RESULTS, PROVIDER_BLOCKED, or PROVIDER_UNAVAILABLE"),
             "query" to ReturnProperty("string", "Original user query"),
-            "answer" to ReturnProperty("string", "Executive summary"),
-            "reportMarkdown" to ReturnProperty("string", "Detailed markdown report or inline preview when the full report was exported to a file"),
-            "reportFilePath" to ReturnProperty("string", "Absolute path to a saved .md report when the full research was exported"),
-            "results" to ReturnProperty("array", "Collected search results/pages studied during the research pass"),
+            "answer" to ReturnProperty("string", "Synthesized answer"),
+            "reportMarkdown" to ReturnProperty("string", "Ready-to-send markdown answer with sources"),
+            "reportFilePath" to ReturnProperty("string", "Always null for short internet lookup"),
+            "results" to ReturnProperty("array", "Collected search results/pages studied during the lookup"),
             "sources" to ReturnProperty("array", "Sources actually cited in the final answer"),
-            "strategy" to ReturnProperty("object", "Search strategy used for the research pass"),
+            "strategy" to ReturnProperty("object", "Always null for short internet lookup"),
         )
     )
 
     override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
 
     override suspend fun suspendInvoke(input: Input): String =
-        mapper.writeValueAsString(executor.runResearch(input.query, input.maxSources))
+        mapper.writeValueAsString(executor.runQuickSearch(input.query, input.maxSources))
 }

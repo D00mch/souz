@@ -1,6 +1,6 @@
 package ru.souz.tool.web.internal
 
-internal class InternetSearchPrompts(
+class InternetSearchPrompts(
     private val support: InternetSearchSupport,
 ) {
     val strategySystemPrompt: String = STRATEGY_SYSTEM_PROMPT

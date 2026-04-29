@@ -41,7 +41,7 @@ class BackendAgentService(
         }
 
         try {
-            val runtime = runtimeCache.getOrCreate(conversationKey, validated)
+            val runtime: BackendConversationRuntime = runtimeCache.getOrCreate(conversationKey, validated)
             val execution = runtime.execute(validated)
             rememberCompletedAgentRequestId(validated.requestId)
 

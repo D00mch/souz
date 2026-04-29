@@ -9,11 +9,6 @@ import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolPermissionResult
 import ru.souz.tool.ToolSetup
-import ru.souz.db.ConfigStore
-import ru.souz.db.SettingsProviderImpl
-import souz.composeapp.generated.resources.Res
-import souz.composeapp.generated.resources.*
-import org.jetbrains.compose.resources.getString
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -49,7 +44,7 @@ class ToolMoveFile(
         val fixedSourcePath = filesToolUtil.applyDefaultEnvs(input.sourcePath)
         val fixedDestinationPath = filesToolUtil.applyDefaultEnvs(input.destinationPath)
         val result = permissionBroker?.requestPermission(
-            getString(Res.string.permission_move_file),
+            "Move file",
             linkedMapOf(
                 "sourcePath" to fixedSourcePath,
                 "destinationPath" to fixedDestinationPath,
@@ -98,15 +93,4 @@ class ToolMoveFile(
         return "File moved to ${input.destinationPath}"
     }
 
-}
-
-fun main() {
-    val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
-    val result = ToolMoveFile(filesToolUtil).invoke(
-        ToolMoveFile.Input(
-            "~/Downloads/tmp.txt",
-            destinationPath = "~/Downloads/articles/tmp.txt",
-        )
-    )
-    println(result)
 }

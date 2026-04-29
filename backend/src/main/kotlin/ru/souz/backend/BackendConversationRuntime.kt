@@ -5,6 +5,8 @@ import java.util.concurrent.ConcurrentHashMap
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
+import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
@@ -89,6 +91,8 @@ class BackendConversationRuntimeFactory(
     private val sessionRepository: AgentSessionRepository,
     private val logObjectMapper: ObjectMapper,
     private val systemPrompt: String,
+    private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
+    private val toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
@@ -105,8 +109,8 @@ class BackendConversationRuntimeFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
             desktopInfoRepository = BackendNoopAgentDesktopInfoRepository,
-            toolCatalog = BackendNoopAgentToolCatalog,
-            toolsFilter = BackendNoopAgentToolsFilter,
+            toolCatalog = toolCatalog,
+            toolsFilter = toolsFilter,
             defaultBrowserProvider = BackendNoopDefaultBrowserProvider,
             mcpToolProvider = BackendNoopMcpToolProvider,
             telemetry = BackendNoopAgentTelemetry,

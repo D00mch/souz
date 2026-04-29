@@ -1,6 +1,6 @@
 # Backend
 
-The `:backend` module is a JVM HTTP build for Souz without Compose UI startup, voice capture, speech recognition, hotkeys, or desktop agent tools.
+The `:backend` module is a JVM HTTP build for Souz without Compose UI startup, voice capture, speech recognition, hotkeys, or desktop-only agent tools.
 
 It reuses shared runtime components from `:runtime` and exposes a small REST surface:
 
@@ -10,16 +10,18 @@ It reuses shared runtime components from `:runtime` and exposes a small REST sur
 - `DELETE /history` clears the in-memory conversation history.
 - `POST /agent` accepts authenticated internal agent requests and returns a single assistant response with message IDs and token usage.
 
+`/chat` remains a legacy direct-LLM route with no tool loop. `/agent` now exposes the shared runtime tool catalog for backend-safe tools (files, web, calculator, analytics, and non-UI config).
+
 `POST /agent` requires `Content-Type: application/json`, `Authorization: Bearer <internal-agent-token>`, and `X-Request-Id: <uuid>`. The token is read from `SOUZ_BACKEND_AGENT_TOKEN` or `souz.backend.agentToken`. The request body `requestId` must match `X-Request-Id`.
 
 The backend keeps one legacy `/chat` conversation per process and keeps `/agent` conversation state in memory by `userId` + `conversationId`.
 `/agent` now uses a backend-specific conversation runtime cache keyed by `userId` + `conversationId`:
 
-- Process scope: shared settings/provider clients, backend no-op host adapters, object mappers, and runtime/cache factories.
+- Process scope: shared settings/provider clients, shared runtime tool catalog/filter, backend no-op desktop/MCP host adapters, object mappers, and runtime/cache factories.
 - Conversation scope: one live agent runtime per conversation, including the current `AgentContext`, active agent id, and per-conversation cancellation/execution state.
 - Request scope: validated request data, model/context overrides for the turn, usage tracking reset, and response assembly.
 
-The backend path still reuses the shared `:agent` execution kernel, but it bypasses desktop-only features that are irrelevant here: `AgentFacade`, graph session logging, side-effect/message streams, tool telemetry, and desktop/session logging infrastructure.
+The backend path still reuses the shared `:agent` execution kernel, but it bypasses desktop-only features that are irrelevant here: `AgentFacade`, graph session logging, side-effect/message streams, MCP tool discovery, and desktop/session logging infrastructure.
 
 ## Project Structure
 

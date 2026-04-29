@@ -29,6 +29,7 @@ import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.qwen.QwenChatAPI
 import ru.souz.llms.runtime.LLMFactory
 import ru.souz.llms.tunnel.AiTunnelChatAPI
+import ru.souz.tool.runtimeToolsDiModule
 
 private object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
@@ -49,6 +50,7 @@ fun backendDiModule(
     bindSingleton { LocalBridgeLoader(instance()) }
     bindSingleton { LocalProviderAvailability(instance(), instance(), instance()) }
     bindSingleton<SettingsProvider> { SettingsProviderImpl(instance(), instance()) }
+    import(runtimeToolsDiModule())
     bindSingleton<TokenLogging> {
         SessionTokenLogging(logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER))
     }
@@ -85,6 +87,8 @@ fun backendDiModule(
             sessionRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
+            toolCatalog = instance(),
+            toolsFilter = instance(),
         )
     }
     bindSingleton { BackendConversationRuntimeCache(instance()) }

@@ -12,6 +12,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
+import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
@@ -19,8 +21,12 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.giga.toGiga
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
+import ru.souz.tool.ToolCategory
+import ru.souz.tool.math.ToolCalculator
 
 class BackendAgentServiceTest {
     @Test
@@ -222,9 +228,40 @@ class BackendAgentServiceTest {
         assertEquals(409, error.statusCode)
     }
 
+    @Test
+    fun `backend runtime executes shared tools`() = runTest {
+        val api = ToolCallingAgentApi()
+        val service = createService(
+            api = api,
+            toolCatalog = object : AgentToolCatalog {
+                override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = mapOf(
+                    ToolCategory.CALCULATOR to mapOf(
+                        "Calculator" to ToolCalculator().toGiga()
+                    )
+                )
+            },
+        )
+
+        val response = service.sendAgentRequest(agentRequest(prompt = "Сколько будет 2 + 3?"))
+
+        assertEquals("tool result: 5", response.content)
+        assertTrue(api.requests.any { request -> request.functions.any { fn -> fn.name == "Calculator" } })
+        assertTrue(
+            api.requests.any { request ->
+                request.messages.any { message ->
+                    message.role == LLMMessageRole.function &&
+                        message.name == "Calculator" &&
+                        message.content.contains("5")
+                }
+            }
+        )
+    }
+
     private fun createService(
-        api: RecordingAgentApi,
+        api: LLMChatAPI,
         sessionRepository: AgentSessionRepository = InMemoryAgentSessionRepository(),
+        toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
+        toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
     ): BackendAgentService {
         val settingsProvider = FakeSettingsProvider()
         return BackendAgentService(
@@ -236,6 +273,8 @@ class BackendAgentServiceTest {
                     sessionRepository = sessionRepository,
                     logObjectMapper = jacksonObjectMapper(),
                     systemPrompt = "You are Souz AI backend assistant. Answer directly and concisely in the user's language.",
+                    toolCatalog = toolCatalog,
+                    toolsFilter = toolsFilter,
                 )
             ),
         )
@@ -306,6 +345,77 @@ private class RecordingAgentApi(
 
     override suspend fun balance(): LLMResponse.Balance =
         error("Balance is not used in backend agent tests.")
+}
+
+private class ToolCallingAgentApi : LLMChatAPI {
+    val requests = ArrayList<LLMRequest.Chat>()
+
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+        requests += body
+        return when {
+            body.isClassificationRequest() -> reply("CALCULATOR 95")
+            body.messages.any { it.role == LLMMessageRole.function && it.name == "Calculator" } ->
+                reply("tool result: 5")
+
+            body.functions.any { it.name == "Calculator" } ->
+                LLMResponse.Chat.Ok(
+                    choices = listOf(
+                        LLMResponse.Choice(
+                            message = LLMResponse.Message(
+                                content = "",
+                                role = LLMMessageRole.assistant,
+                                functionCall = LLMResponse.FunctionCall(
+                                    name = "Calculator",
+                                    arguments = mapOf("expression" to "2 + 3"),
+                                ),
+                                functionsStateId = "call_1",
+                            ),
+                            index = 0,
+                            finishReason = LLMResponse.FinishReason.function_call,
+                        )
+                    ),
+                    created = System.currentTimeMillis(),
+                    model = body.model,
+                    usage = LLMResponse.Usage(4, 2, 6, 0),
+                )
+
+            else -> reply("unexpected")
+        }
+    }
+
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
+        error("Streaming is not used in backend agent tests.")
+
+    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
+        error("Embeddings are not used in backend agent tests.")
+
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
+        error("File upload is not used in backend agent tests.")
+
+    override suspend fun downloadFile(fileId: String): String? =
+        error("File download is not used in backend agent tests.")
+
+    override suspend fun balance(): LLMResponse.Balance =
+        error("Balance is not used in backend agent tests.")
+
+    private fun reply(content: String): LLMResponse.Chat.Ok =
+        LLMResponse.Chat.Ok(
+            choices = listOf(
+                LLMResponse.Choice(
+                    message = LLMResponse.Message(
+                        content = content,
+                        role = LLMMessageRole.assistant,
+                        functionCall = null,
+                        functionsStateId = null,
+                    ),
+                    index = 0,
+                    finishReason = LLMResponse.FinishReason.stop,
+                )
+            ),
+            created = System.currentTimeMillis(),
+            model = LLMModel.Max.alias,
+            usage = LLMResponse.Usage(4, 2, 6, 0),
+        )
 }
 
 private fun RecordingAgentApi.finalChatRequests(): List<LLMRequest.Chat> =

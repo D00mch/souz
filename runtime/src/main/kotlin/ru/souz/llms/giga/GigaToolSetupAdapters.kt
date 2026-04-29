@@ -7,7 +7,6 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.InputParamDescription
-import ru.souz.tool.ShellException
 import ru.souz.tool.ToolSetup
 import ru.souz.tool.ToolSetupWithAttachments
 import kotlin.reflect.KCallable
@@ -113,10 +112,7 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): LLMTo
 }
 
 fun Throwable.toGigaToolMessage(name: String?): LLMRequest.Message {
-    val msg = when (this) {
-        is ShellException -> "The function was executed with shell, the exit code: $exitCode, output: $message"
-        else -> "Can't invoke function: ${message ?: toString()}"
-    }
+    val msg = "Can't invoke function: ${message ?: toString()}"
     return LLMRequest.Message(
         role = LLMMessageRole.function,
         content = restJsonMapper.writeValueAsString(mapOf("result" to msg)),

@@ -14,7 +14,7 @@ import ru.souz.tool.files.FilesToolUtil
 import java.io.File
 import java.nio.charset.StandardCharsets
 
-internal class InternetSearchExecutor(
+class InternetSearchExecutor(
     private val api: LLMChatAPI,
     private val settingsProvider: SettingsProvider,
     private val filesToolUtil: FilesToolUtil,

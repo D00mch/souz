@@ -18,7 +18,7 @@ import ru.souz.tool.web.internal.WebToolSupport
  *
  * Searches for image candidates by topic and optionally downloads them to local files.
  */
-internal class ToolWebImageSearch(
+class ToolWebImageSearch(
     private val filesToolUtil: FilesToolUtil,
     private val webResearchClient: WebResearchClient = WebResearchClient(),
     private val webImageDownloader: WebImageDownloader = WebImageDownloader(filesToolUtil),

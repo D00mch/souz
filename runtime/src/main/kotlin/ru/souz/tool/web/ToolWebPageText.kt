@@ -10,7 +10,7 @@ import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
 import ru.souz.tool.web.internal.WebResearchClient
 
-internal class ToolWebPageText(
+class ToolWebPageText(
     private val webResearchClient: WebResearchClient = WebResearchClient(),
     private val mapper: ObjectMapper = restJsonMapper,
 ) : ToolSetup<ToolWebPageText.Input> {

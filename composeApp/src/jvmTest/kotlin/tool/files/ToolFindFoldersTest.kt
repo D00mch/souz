@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
 class ToolFindFoldersTest {
     private val bash: ToolRunBashCommand = mockk()
     private val filesToolUtil: FilesToolUtil = mockk()
-    private val tool = ToolFindFolders(bash, filesToolUtil)
+    private val tool = ToolFindFolders(filesToolUtil)
 
     @Test
     fun `filters forbidden paths and parses output`() {

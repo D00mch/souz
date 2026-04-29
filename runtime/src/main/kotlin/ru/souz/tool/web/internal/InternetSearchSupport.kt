@@ -1,11 +1,11 @@
 package ru.souz.tool.web.internal
 
-internal enum class InternetSearchKind {
+enum class InternetSearchKind {
     QUICK,
     RESEARCH,
 }
 
-internal enum class InternetSearchOutputStatus {
+enum class InternetSearchOutputStatus {
     COMPLETE,
     PARTIAL,
     NO_RESULTS,
@@ -13,7 +13,7 @@ internal enum class InternetSearchOutputStatus {
     PROVIDER_UNAVAILABLE,
 }
 
-internal data class InternetSearchToolOutput(
+data class InternetSearchToolOutput(
     val status: String,
     val query: String,
     val answer: String,
@@ -24,7 +24,7 @@ internal data class InternetSearchToolOutput(
     val strategy: InternetSearchToolOutputStrategy?,
 )
 
-internal data class InternetSearchToolOutputSource(
+data class InternetSearchToolOutputSource(
     val index: Int,
     val title: String,
     val url: String,
@@ -32,34 +32,34 @@ internal data class InternetSearchToolOutputSource(
     val snippet: String,
 )
 
-internal data class InternetSearchToolOutputStrategy(
+data class InternetSearchToolOutputStrategy(
     val goal: String,
     val searchQueries: List<String>,
     val subQuestions: List<String>,
     val answerSections: List<String>,
 )
 
-internal data class InternetSearchResearchStrategy(
+data class InternetSearchResearchStrategy(
     val goal: String,
     val searchQueries: List<String>,
     val subQuestions: List<String>,
     val answerSections: List<String>,
 )
 
-internal data class InternetSearchStrategyDraft(
+data class InternetSearchStrategyDraft(
     val goal: String? = null,
     val searchQueries: List<String> = emptyList(),
     val subQuestions: List<String> = emptyList(),
     val answerSections: List<String> = emptyList(),
 )
 
-internal data class InternetSearchSynthesisDraft(
+data class InternetSearchSynthesisDraft(
     val answer: String? = null,
     val reportMarkdown: String? = null,
     val usedSourceIndexes: List<Int> = emptyList(),
 )
 
-internal data class InternetSearchCollectedSource(
+data class InternetSearchCollectedSource(
     val index: Int,
     val title: String,
     val url: String,
@@ -68,24 +68,24 @@ internal data class InternetSearchCollectedSource(
     val pageText: String?,
 )
 
-internal data class InternetSearchCollectionResult(
+data class InternetSearchCollectionResult(
     val sources: List<InternetSearchCollectedSource>,
     val providerStatus: InternetSearchOutputStatus? = null,
 )
 
-internal data class InternetSearchSynthesisResult(
+data class InternetSearchSynthesisResult(
     val status: InternetSearchOutputStatus,
     val draft: InternetSearchSynthesisDraft,
 )
 
-internal data class InternetSearchPromptSpec(
+data class InternetSearchPromptSpec(
     val systemPrompt: String,
     val rescueSystemPrompt: String,
     val maxTokens: Int,
     val rescueMaxTokens: Int,
 )
 
-internal class InternetSearchSupport {
+class InternetSearchSupport {
     val maxSearchQueries: Int = 6
     val maxResearchSources: Int = 16
     val researchResultsPerQuery: Int = 8

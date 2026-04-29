@@ -201,7 +201,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolMailSearch(instance()) }
     bindSingleton { ToolTextReplace(instance()) }
     bindSingleton { ToolTextUnderSelection(instance(), instance()) }
-    bindSingleton { ToolFindFolders(instance(), instance()) }
+    bindSingleton { ToolFindFolders(instance()) }
     bindSingleton { ToolUploadFile(instance()) }
     bindSingleton { ToolDownloadFile(instance()) }
     bindSingleton { ToolTakeScreenshot(instance()) }

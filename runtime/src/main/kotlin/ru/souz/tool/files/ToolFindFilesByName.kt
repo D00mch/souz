@@ -1,24 +1,18 @@
 package ru.souz.tool.files
 
-import com.fasterxml.jackson.module.kotlin.readValue
-import kotlinx.coroutines.runBlocking
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
-import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
-import ru.souz.db.ConfigStore
-import ru.souz.db.SettingsProviderImpl
-import ru.souz.llms.restJsonMapper
 import java.io.File
 
 class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindFilesByName.Input> {
     data class Input(
         @InputParamDescription("Relative or absolute path to limit the search. Defaults to user HOME.")
         val path: String = FilesToolUtil.homeDirectory.absolutePath,
-
         @InputParamDescription("The name or partial name of the file we are searching for.")
         val fileName: String,
     )
@@ -28,8 +22,8 @@ class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<
         [PRIMARY TOOL for Finding Files]
         Search for the PATH of a file by its name (or partial name).
         Use this when the user asks "Find file X" or "Where is file Y".
-        
-        Mechanism: uses macOS Spotlight (mdfind). Fast and recursive.
+
+        Mechanism: recursive filesystem traversal inside the allowed home subtree.
     """.trimIndent()
 
     override val fewShotExamples: List<FewShotExample> = listOf(
@@ -56,50 +50,33 @@ class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<
         )
     )
 
-    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
-
-    override suspend fun suspendInvoke(input: Input): String {
+    override fun invoke(input: Input): String {
         val path = filesToolUtil.applyDefaultEnvs(input.path)
         val base = File(path)
         if (!filesToolUtil.isPathSafe(base)) {
             throw BadInputException("Forbidden directory: $path. User explicitly restricted this path. Inform him")
         }
+        if (!base.exists() || !base.isDirectory) {
+            throw BadInputException("Invalid directory path: ${input.path}")
+        }
+        val needle = input.fileName.trim().lowercase()
+        if (needle.isBlank()) {
+            throw BadInputException("fileName must not be empty")
+        }
 
-        val script = "mdfind -onlyin \"$1\" -name \"$2\""
-
-        val result = ToolRunBashCommand.sh(script, path, input.fileName)
-            .lineSequence()
-            .filter { it.isNotBlank() }
+        val result = base.walkTopDown()
+            .onEnter { file ->
+                file == base || (filesToolUtil.isPathSafe(file) && !file.name.startsWith('.'))
+            }
+            .filter { it.isFile && it.name.lowercase().contains(needle) }
+            .map { it.canonicalPath }
+            .take(MAX_RESULTS)
             .toList()
 
         return restJsonMapper.writeValueAsString(result)
     }
-}
 
-fun main() {
-    val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
-    val tool = ToolFindFilesByName(filesToolUtil)
-    val searchInput = ToolFindFilesByName.Input(
-        path = "~",
-        fileName = "родмап"
-    )
-
-    println("Running search for: ${searchInput.fileName} in ${searchInput.path}...")
-
-    val resultJson = tool.invoke(searchInput)
-    println("Raw JSON result: $resultJson")
-
-    try {
-        val fileList: List<String> = restJsonMapper.readValue(resultJson)
-
-        if (fileList.isEmpty()) {
-            println("No files found.")
-        } else {
-            println("Found ${fileList.size} files:")
-            fileList.take(5).forEach { println(" - $it") } // Показываем первые 5
-            if (fileList.size > 5) println("... and ${fileList.size - 5} more.")
-        }
-    } catch (e: Exception) {
-        println("Error parsing result: ${e.message}")
+    private companion object {
+        const val MAX_RESULTS = 200
     }
 }

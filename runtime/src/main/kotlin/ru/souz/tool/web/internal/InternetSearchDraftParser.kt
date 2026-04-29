@@ -3,7 +3,7 @@ package ru.souz.tool.web.internal
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 
-internal class InternetSearchDraftParser(
+class InternetSearchDraftParser(
     private val mapper: ObjectMapper,
 ) {
     fun readStrategyDraft(raw: String): InternetSearchStrategyDraft? = readJsonOrNull(raw)

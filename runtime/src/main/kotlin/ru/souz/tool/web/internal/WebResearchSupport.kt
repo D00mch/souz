@@ -18,12 +18,12 @@ private const val WEB_RESEARCH_MAX_SEARCH_VARIANTS = 2
 private const val WEB_RESEARCH_MAX_IMAGE_VARIANTS = 2
 private const val WEB_RESEARCH_MAX_UNAVAILABLE_VARIANTS_BEFORE_ABORT = 2
 
-internal enum class WebSearchProviderFailureKind {
+enum class WebSearchProviderFailureKind {
     BLOCKED,
     UNAVAILABLE,
 }
 
-internal class WebSearchProviderException(
+class WebSearchProviderException(
     val kind: WebSearchProviderFailureKind,
     message: String,
     cause: Throwable? = null,
@@ -38,7 +38,7 @@ internal class WebSearchProviderException(
  *
  * This keeps search/parsing heuristics and HTTP behavior in one place while tool contracts stay simple.
  */
-internal class WebResearchClient(
+class WebResearchClient(
     private val mapper: ObjectMapper = restJsonMapper,
     private val httpGet: suspend (String, Long, Boolean) -> WebTextResponse = { url, timeoutMillis, retry ->
         WebHttpSupport().getText(url, timeoutMillis, retry = retry)
