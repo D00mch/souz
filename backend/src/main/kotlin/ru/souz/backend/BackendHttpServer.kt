@@ -44,7 +44,7 @@ data class ErrorResponse(
 )
 
 class BackendHttpServer(
-    private val chatService: BackendChatService,
+    private val chatService: ChatService,
     private val selectedModel: () -> String,
     private val bindAddress: InetSocketAddress,
     private val internalAgentToken: () -> String? = { null },
@@ -83,7 +83,7 @@ class BackendHttpServer(
 }
 
 fun Application.backendApplication(
-    chatService: BackendChatService,
+    chatService: ChatService,
     selectedModel: () -> String,
     internalAgentToken: () -> String? = { null },
 ) {

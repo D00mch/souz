@@ -67,7 +67,7 @@ class BackendRequestException(
     override val message: String,
 ) : RuntimeException(message)
 
-class BackendChatService(
+class ChatService(
     private val chatApi: LLMChatAPI,
     private val settings: () -> BackendChatSettings,
     private val systemPrompt: String = DEFAULT_SYSTEM_PROMPT,

@@ -24,7 +24,7 @@ import ru.souz.llms.qwen.QwenChatAPI
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 
 class BackendRuntime private constructor(
-    val chatService: BackendChatService,
+    val chatService: ChatService,
     private val settingsProvider: SettingsProviderImpl,
     private val localRuntime: LocalLlamaRuntime,
 ) : AutoCloseable {
@@ -63,7 +63,7 @@ class BackendRuntime private constructor(
                 openAiApi = OpenAIChatAPI(settingsProvider, tokenLogging),
                 localApi = LocalChatAPI(localRuntime),
             )
-            val service = BackendChatService(
+            val service = ChatService(
                 chatApi = chatApi,
                 settings = {
                     BackendChatSettings(

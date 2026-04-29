@@ -18,7 +18,7 @@ import ru.souz.llms.LLMResponse
 class BackendChatServiceTest {
     @Test
     fun `sendMessage appends user and assistant messages and hides system prompt`() = runTest {
-        val service = BackendChatService(
+        val service = ChatService(
             chatApi = FakeChatApi { "reply to ${it.messages.last().content}" },
             settings = { BackendChatSettings(model = "test-model") },
             systemPrompt = "system",
@@ -38,7 +38,7 @@ class BackendChatServiceTest {
     @Test
     fun `sendMessage keeps prior history`() = runTest {
         val api = FakeChatApi { "reply ${it.messages.count { msg -> msg.role == LLMMessageRole.user }}" }
-        val service = BackendChatService(
+        val service = ChatService(
             chatApi = api,
             settings = { BackendChatSettings(model = "test-model") },
             systemPrompt = "system",
@@ -60,7 +60,7 @@ class BackendChatServiceTest {
 
     @Test
     fun `sendMessage rejects blank message`() = runTest {
-        val service = BackendChatService(
+        val service = ChatService(
             chatApi = FakeChatApi { "unused" },
             settings = { BackendChatSettings(model = "test-model") },
         )
@@ -75,7 +75,7 @@ class BackendChatServiceTest {
 
     @Test
     fun `LLM error does not mutate history`() = runTest {
-        val service = BackendChatService(
+        val service = ChatService(
             chatApi = FakeChatApi { error("unused") }.apply {
                 errorResponse = LLMResponse.Chat.Error(401, "bad key")
             },
@@ -94,7 +94,7 @@ class BackendChatServiceTest {
     fun `sendAgentRequest returns agent response contract`() = runTest {
         val api = FakeChatApi { "agent reply to ${it.messages.last().content}" }
         val request = agentRequest(contextSize = 16_000)
-        val service = BackendChatService(
+        val service = ChatService(
             chatApi = api,
             settings = { BackendChatSettings(model = "ignored") },
             systemPrompt = "system",
@@ -124,7 +124,7 @@ class BackendChatServiceTest {
     @Test
     fun `sendAgentRequest rejects duplicate requestId`() = runTest {
         val request = agentRequest()
-        val service = BackendChatService(
+        val service = ChatService(
             chatApi = FakeChatApi { "ok" },
             settings = { BackendChatSettings(model = "ignored") },
         )
@@ -146,7 +146,7 @@ class BackendChatServiceTest {
             userId = firstRequest.userId,
             conversationId = firstRequest.conversationId,
         )
-        val service = BackendChatService(
+        val service = ChatService(
             chatApi = FakeChatApi {
                 started.complete(Unit)
                 release.await()
@@ -168,7 +168,7 @@ class BackendChatServiceTest {
 
     @Test
     fun `sendAgentRequest rejects invalid payload`() = runTest {
-        val service = BackendChatService(
+        val service = ChatService(
             chatApi = FakeChatApi { "unused" },
             settings = { BackendChatSettings(model = "ignored") },
         )
@@ -182,7 +182,7 @@ class BackendChatServiceTest {
 
     @Test
     fun `sendAgentRequest returns 404 when user or conversation is missing`() = runTest {
-        val service = BackendChatService(
+        val service = ChatService(
             chatApi = FakeChatApi { "unused" },
             settings = { BackendChatSettings(model = "ignored") },
             agentConversationExists = { _, _ -> false },
