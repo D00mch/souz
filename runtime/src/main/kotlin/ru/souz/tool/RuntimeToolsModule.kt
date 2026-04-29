@@ -31,7 +31,9 @@ import ru.souz.tool.web.internal.WebResearchClient
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
 
-fun runtimeToolsDiModule(): DI.Module = DI.Module("runtimeTools") {
+fun runtimeToolsDiModule(
+    includeWebImageSearch: Boolean = true,
+): DI.Module = DI.Module("runtimeTools") {
     bindSingleton { FilesToolUtil(instance()) }
     bindSingleton { ToolListFiles(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
@@ -53,10 +55,12 @@ fun runtimeToolsDiModule(): DI.Module = DI.Module("runtimeTools") {
     bindSingleton { ExcelReport(instance()) }
 
     bindSingleton { WebResearchClient() }
-    bindSingleton { WebImageDownloader(instance()) }
     bindSingleton { ToolInternetSearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
     bindSingleton { ToolInternetResearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
-    bindSingleton { ToolWebImageSearch(filesToolUtil = instance(), webResearchClient = instance(), webImageDownloader = instance()) }
+    if (includeWebImageSearch) {
+        bindSingleton { WebImageDownloader(instance()) }
+        bindSingleton { ToolWebImageSearch(filesToolUtil = instance(), webResearchClient = instance(), webImageDownloader = instance()) }
+    }
     bindSingleton { ToolWebPageText(webResearchClient = instance()) }
 
     bindSingleton {
@@ -79,7 +83,7 @@ fun runtimeToolsDiModule(): DI.Module = DI.Module("runtimeTools") {
             excelReport = instance(),
             toolInternetSearch = instance(),
             toolInternetResearch = instance(),
-            toolWebImageSearch = instance(),
+            toolWebImageSearch = if (includeWebImageSearch) instance() else null,
             toolWebPageText = instance(),
         )
     }
@@ -112,7 +116,7 @@ class RuntimeToolsFactory(
     private val excelReport: ExcelReport,
     private val toolInternetSearch: ToolInternetSearch,
     private val toolInternetResearch: ToolInternetResearch,
-    private val toolWebImageSearch: ToolWebImageSearch,
+    private val toolWebImageSearch: ToolWebImageSearch?,
     private val toolWebPageText: ToolWebPageText,
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
@@ -135,12 +139,12 @@ class RuntimeToolsFactory(
             toolFindFolders.toGiga(),
         )
 
-        ToolCategory.WEB_SEARCH -> listOf(
-            toolInternetSearch.toGiga(),
-            toolInternetResearch.toGiga(),
-            toolWebImageSearch.toGiga(),
-            toolWebPageText.toGiga(),
-        )
+        ToolCategory.WEB_SEARCH -> buildList {
+            add(toolInternetSearch.toGiga())
+            add(toolInternetResearch.toGiga())
+            toolWebImageSearch?.let { add(it.toGiga()) }
+            add(toolWebPageText.toGiga())
+        }
 
         ToolCategory.CONFIG -> listOf(
             toolSoundConfig.toGiga(),

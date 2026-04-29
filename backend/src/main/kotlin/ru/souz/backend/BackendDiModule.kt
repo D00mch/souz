@@ -50,7 +50,7 @@ fun backendDiModule(
     bindSingleton { LocalBridgeLoader(instance()) }
     bindSingleton { LocalProviderAvailability(instance(), instance(), instance()) }
     bindSingleton<SettingsProvider> { SettingsProviderImpl(instance(), instance()) }
-    import(runtimeToolsDiModule())
+    import(runtimeToolsDiModule(includeWebImageSearch = false))
     bindSingleton<TokenLogging> {
         SessionTokenLogging(logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER))
     }

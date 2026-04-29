@@ -10,7 +10,7 @@ It reuses shared runtime components from `:runtime` and exposes a small REST sur
 - `DELETE /history` clears the in-memory conversation history.
 - `POST /agent` accepts authenticated internal agent requests and returns a single assistant response with message IDs and token usage.
 
-`/chat` remains a legacy direct-LLM route with no tool loop. `/agent` now exposes the shared runtime tool catalog for backend-safe tools (files, web, calculator, analytics, and non-UI config).
+`/chat` remains a legacy direct-LLM route with no tool loop. `/agent` now exposes the shared runtime tool catalog for backend-safe tools (files, text/web lookup, calculator, analytics, and non-UI config). The backend intentionally omits `WebImageSearch` so startup does not initialize Apache Tika's external parser probes for host binaries such as `ffmpeg`.
 
 `POST /agent` requires `Content-Type: application/json`, `Authorization: Bearer <internal-agent-token>`, and `X-Request-Id: <uuid>`. The token is read from `SOUZ_BACKEND_AGENT_TOKEN` or `souz.backend.agentToken`. The request body `requestId` must match `X-Request-Id`.
 

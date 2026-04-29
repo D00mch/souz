@@ -85,7 +85,7 @@ flowchart LR
 
 - `:runtime` owns the shared JVM wiring plus the reusable tool catalog that backend can execute without desktop integrations.
 - `:composeApp` layers desktop-only services and tools on top of the shared runtime modules.
-- `:backend` imports `runtimeToolsDiModule()` and exposes the shared agent runtime over HTTP.
+- `:backend` imports `runtimeToolsDiModule(includeWebImageSearch = false)` and exposes the shared agent runtime over HTTP without the image-search tool that would otherwise initialize Tika's external parser probes on startup.
 
 ## Backend `/agent` Flow
 
