@@ -14,6 +14,16 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.backend.agent.model.AgentConversationKey
+import ru.souz.backend.agent.model.AgentRequest
+import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
+import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
+import ru.souz.backend.agent.runtime.BackendNoopAgentToolsFilter
+import ru.souz.backend.agent.service.BackendAgentService
+import ru.souz.backend.agent.session.AgentConversationSession
+import ru.souz.backend.agent.session.AgentSessionRepository
+import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
+import ru.souz.backend.common.BackendRequestException
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
@@ -60,7 +70,7 @@ class BackendAgentServiceTest {
     }
 
     @Test
-    fun `conversation runtime is reused across turns`() = runTest {
+    fun `conversation snapshot is loaded on each turn`() = runTest {
         val api = RecordingAgentApi()
         val sessionRepository = CountingAgentSessionRepository()
         val request = agentRequest(prompt = "Первая задача")
@@ -69,7 +79,7 @@ class BackendAgentServiceTest {
         service.sendAgentRequest(request)
         service.sendAgentRequest(request.copy(requestId = uuid(), prompt = "Вторая задача"))
 
-        assertEquals(1, sessionRepository.loadCount)
+        assertEquals(2, sessionRepository.loadCount)
     }
 
     @Test
@@ -333,16 +343,14 @@ class BackendAgentServiceTest {
         val settingsProvider = FakeSettingsProvider()
         return BackendAgentService(
             baseSettingsProvider = settingsProvider,
-            runtimeCache = BackendConversationRuntimeCache(
-                BackendConversationRuntimeFactory(
-                    baseSettingsProvider = settingsProvider,
-                    llmApiFactory = { api },
-                    sessionRepository = sessionRepository,
-                    logObjectMapper = jacksonObjectMapper(),
-                    systemPrompt = "You are Souz AI backend assistant. Answer directly and concisely in the user's language.",
-                    toolCatalog = toolCatalog,
-                    toolsFilter = toolsFilter,
-                )
+            runtimeFactory = BackendConversationRuntimeFactory(
+                baseSettingsProvider = settingsProvider,
+                llmApiFactory = { api },
+                sessionRepository = sessionRepository,
+                logObjectMapper = jacksonObjectMapper(),
+                systemPrompt = "You are Souz AI backend assistant. Answer directly and concisely in the user's language.",
+                toolCatalog = toolCatalog,
+                toolsFilter = toolsFilter,
             ),
         )
     }

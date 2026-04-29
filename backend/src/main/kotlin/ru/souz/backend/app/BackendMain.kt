@@ -1,11 +1,13 @@
-package ru.souz.backend
+package ru.souz.backend.app
 
 import java.net.InetSocketAddress
 import java.util.concurrent.CountDownLatch
 import org.slf4j.LoggerFactory
+import ru.souz.backend.http.BackendHttpServer
 
 private val log = LoggerFactory.getLogger("SouzBackend")
 
+/** Starts the embedded Souz backend HTTP server. */
 fun main() {
     val host = configValue(envKey = "SOUZ_BACKEND_HOST", propertyKey = "souz.backend.host")
         ?: "127.0.0.1"
@@ -22,7 +24,6 @@ fun main() {
 
     val runtime = BackendRuntime.create()
     val server = BackendHttpServer(
-        chatService = runtime.chatService,
         agentService = runtime.agentService,
         selectedModel = runtime::selectedModel,
         bindAddress = InetSocketAddress(host, port),
@@ -37,7 +38,6 @@ fun main() {
     Runtime.getRuntime().addShutdownHook(Thread(shutdown, "souz-backend-shutdown"))
 
     server.start()
-    log.info("REST API: POST http://{}:{}/chat with JSON {\"message\":\"...\"}", host, port)
     log.info("Internal agent API: POST http://{}:{}/agent", host, port)
     CountDownLatch(1).await()
 }

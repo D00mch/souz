@@ -10,12 +10,14 @@ import ru.souz.agent.agentDiModule
 import ru.souz.db.SettingsProviderImpl
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
+import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
+import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.service.audio.ActiveSoundRecorderImpl
 import ru.souz.service.audio.InMemoryAudioRecorder
 import ru.souz.service.audio.Say
@@ -101,6 +103,8 @@ import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebImageDownloader
 import ru.souz.tool.web.internal.WebResearchClient
 import ru.souz.ui.common.ComposeAgentErrorMessages
+import ru.souz.runtime.di.runtimeCoreDiModule
+import ru.souz.runtime.di.runtimeLlmDiModule
 import java.nio.file.Path
 
 private object DiTags {
@@ -112,6 +116,9 @@ private object DiTags {
 }
 
 val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
+    import(runtimeCoreDiModule())
+    import(runtimeLlmDiModule(logObjectMapperTag = DiTags.TAG_LOG))
+
     // utils
     bindSingleton(tag = DiTags.TAG_LOG) {
         jacksonObjectMapper()
@@ -125,17 +132,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { Keys() }
 
     // DB
-    bindSingleton { ConfigStore }
     bindSingleton { VectorDB }
     bindSingleton { TelegramPlatformSupport }
-    bindSingleton { LocalHostInfoProvider() }
-    bindSingleton { LocalModelStore() }
-    bindSingleton { LocalBridgeLoader(instance()) }
-    bindSingleton { LocalNativeBridge(instance()) }
-    bindSingleton { LocalPromptRenderer() }
-    bindSingleton { LocalStrictJsonParser() }
-    bindSingleton { LocalProviderAvailability(instance(), instance(), instance()) }
-    bindSingleton<SettingsProvider> { SettingsProviderImpl(instance(), instance()) }
     bindSingleton { LlmBuildProfile(instance(), instance()) }
     bindSingleton { ApiKeyAvailabilityUseCase(instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
@@ -158,6 +156,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { TelegramService(instance()) }
     bindSingleton<DefaultBrowserProvider> { DefaultBrowserProviderImpl }
+    bindSingleton<AgentRuntimeEnvironment> { SystemAgentRuntimeEnvironment }
     bindSingleton<AgentErrorMessages> { ComposeAgentErrorMessages() }
 
     // Tools
@@ -238,21 +237,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<AgentTelemetry> { instance<TelemetryService>() }
 
     // API
-    bindSingleton { GigaAuth(instance()) }
-    bindSingleton<TokenLogging> {
-        SessionTokenLogging(logObjectMapper = instance(DiTags.TAG_LOG))
-    }
-    bindSingleton<GigaRestChatAPI> {
-        GigaRestChatAPI(instance(), instance(), instance())
-    }
-    bindSingleton<QwenChatAPI> { QwenChatAPI(instance(), instance()) }
-    bindSingleton<AiTunnelChatAPI> { AiTunnelChatAPI(instance(), instance()) }
-    bindSingleton<AnthropicChatAPI> { AnthropicChatAPI(instance(), instance()) }
-    bindSingleton<OpenAIChatAPI> { OpenAIChatAPI(instance(), instance()) }
-    bindSingleton { LocalLlamaRuntime(instance(), instance(), instance(), instance(), instance()) }
-    bindSingleton<LocalChatAPI> { LocalChatAPI(instance()) }
-    bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
-    bindSingleton<LLMChatAPI> { instance<LLMFactory>() }
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton { OpenAIVoiceAPI(instance()) }
     bindSingleton { AiTunnelVoiceAPI(instance()) }

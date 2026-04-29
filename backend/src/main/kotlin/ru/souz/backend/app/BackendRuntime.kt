@@ -1,15 +1,16 @@
-package ru.souz.backend
+package ru.souz.backend.app
 
 import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
+import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.local.LocalLlamaRuntime
 
+/** Process-wide backend runtime container with shared services and LLM resources. */
 class BackendRuntime private constructor(
     private val di: DI,
 ) : AutoCloseable {
-    val chatService: ChatService by lazy { di.direct.instance() }
     val agentService: BackendAgentService by lazy { di.direct.instance() }
     private val settingsProvider: SettingsProvider by lazy { di.direct.instance() }
     private val localRuntime: LocalLlamaRuntime by lazy { di.direct.instance() }

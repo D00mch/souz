@@ -6,6 +6,7 @@ import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.spi.AgentDesktopInfoRepository
+import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.db.StorredData
@@ -29,6 +30,7 @@ internal class NodesCommon(
     private val settingsProvider: AgentSettingsProvider,
     private val agentToolExecutor: AgentToolExecutor,
     private val defaultBrowserProvider: DefaultBrowserProvider,
+    private val runtimeEnvironment: AgentRuntimeEnvironment,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
@@ -142,8 +144,8 @@ internal class NodesCommon(
             additionalData.add(StorredData(geoFact, StorredType.GENERAL_FACT))
         }
 
-        val currentDateTime = LocalDateTime.now().format(
-            DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss")
+        val currentDateTime = ZonedDateTime.now(runtimeEnvironment.zoneId).format(
+            DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss", runtimeEnvironment.locale)
         )
         additionalData.add(StorredData("Текущие дата и время: $currentDateTime", StorredType.GENERAL_FACT))
 
@@ -168,8 +170,8 @@ internal class NodesCommon(
     }
 
     private fun buildUserGeoLocationFact(): String? = try {
-        val locale = Locale.getDefault()
-        val zoneId = ZoneId.systemDefault()
+        val locale = runtimeEnvironment.locale
+        val zoneId = runtimeEnvironment.zoneId
 
         val parts = mutableListOf<String>()
 

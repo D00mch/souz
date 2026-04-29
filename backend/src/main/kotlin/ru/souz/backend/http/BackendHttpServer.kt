@@ -1,4 +1,4 @@
-package ru.souz.backend
+package ru.souz.backend.http
 
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
@@ -24,27 +24,29 @@ import java.net.InetSocketAddress
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
+import ru.souz.backend.agent.model.AgentRequest
+import ru.souz.backend.agent.service.BackendAgentService
+import ru.souz.backend.common.BackendRequestException
 
-data class ChatRequest(
-    val message: String = "",
-)
-
+/** Health-check response returned by `GET /health`. */
 data class HealthResponse(
     val status: String,
     val model: String,
 )
 
+/** Root endpoint response describing the available backend routes. */
 data class RootResponse(
     val service: String,
     val endpoints: List<String>,
 )
 
+/** Minimal JSON error envelope used by backend routes. */
 data class ErrorResponse(
     val error: String,
 )
 
+/** Embedded Ktor server wrapper for the Souz backend HTTP API. */
 class BackendHttpServer(
-    private val chatService: ChatService,
     private val agentService: BackendAgentService,
     private val selectedModel: () -> String,
     private val bindAddress: InetSocketAddress,
@@ -57,7 +59,6 @@ class BackendHttpServer(
         port = bindAddress.port,
     ) {
         backendApplication(
-            chatService = chatService,
             agentService = agentService,
             selectedModel = selectedModel,
             internalAgentToken = internalAgentToken,
@@ -84,8 +85,8 @@ class BackendHttpServer(
     }
 }
 
+/** Installs backend HTTP routes into a Ktor application. */
 fun Application.backendApplication(
-    chatService: ChatService,
     agentService: BackendAgentService,
     selectedModel: () -> String,
     internalAgentToken: () -> String? = { null },
@@ -106,9 +107,6 @@ fun Application.backendApplication(
                     service = "souz-backend",
                     endpoints = listOf(
                         "GET /health",
-                        "POST /chat",
-                        "GET /history",
-                        "DELETE /history",
                         "POST /agent",
                     ),
                 )
@@ -118,25 +116,6 @@ fun Application.backendApplication(
         get("/health") {
             call.respondBackend(l) {
                 HealthResponse(status = "ok", model = selectedModel())
-            }
-        }
-
-        post("/chat") {
-            call.respondBackend(l) {
-                val request = receiveOrBadRequest<ChatRequest>()
-                chatService.sendMessage(request.message)
-            }
-        }
-
-        get("/history") {
-            call.respondBackend(l) {
-                chatService.history()
-            }
-        }
-
-        delete("/history") {
-            call.respondBackend(l) {
-                chatService.clearHistory()
             }
         }
 

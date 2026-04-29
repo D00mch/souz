@@ -1,16 +1,25 @@
-package ru.souz.backend
+package ru.souz.backend.agent.service
 
 import java.util.LinkedHashSet
 import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import ru.souz.backend.agent.model.AgentConversationKey
+import ru.souz.backend.agent.model.AgentRequest
+import ru.souz.backend.agent.model.AgentResponse
+import ru.souz.backend.agent.model.AgentUsage
+import ru.souz.backend.agent.model.validated
+import ru.souz.backend.agent.runtime.BackendConversationRuntime
+import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
+import ru.souz.backend.common.BackendRequestException
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
 
+/** Orchestrates one backend `/agent` turn from validation to response assembly. */
 class BackendAgentService(
     private val baseSettingsProvider: SettingsProvider,
-    private val runtimeCache: BackendConversationRuntimeCache,
+    private val runtimeFactory: BackendConversationRuntimeFactory,
     private val agentConversationExists: suspend (
         userId: String,
         conversationId: String,
@@ -41,7 +50,7 @@ class BackendAgentService(
         }
 
         try {
-            val runtime: BackendConversationRuntime = runtimeCache.getOrCreate(conversationKey, validated)
+            val runtime: BackendConversationRuntime = runtimeFactory.create(conversationKey, validated)
             val execution = runtime.execute(validated)
             rememberCompletedAgentRequestId(validated.requestId)
 

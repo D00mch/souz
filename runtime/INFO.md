@@ -6,6 +6,7 @@ The `:runtime` module contains shared JVM runtime pieces used by both desktop (`
 - provider chat clients (Giga, Qwen, AiTunnel, Anthropic, OpenAI);
 - shared LLM routing/classification (`LLMFactory`, `ApiClassifier`);
 - shared tool contracts/adapters plus the backend-safe tool catalog (`files`, `web`, `calculator`, `data analytics`, and non-UI config tools);
+- shared Kodein DI modules for JVM runtime settings/local-model services and provider/LLM wiring reused by both desktop and backend;
 - runtime resources required by shared clients (for example Giga trust certificates).
 
 ## Project Structure
@@ -28,6 +29,8 @@ runtime/
         │       │   ├── qwen/                     # Qwen chat API client
         │       │   ├── runtime/                  # Shared model routing/classification helpers
         │       │   └── tunnel/                   # AiTunnel chat API client
+        │       ├── runtime/
+        │       │   └── di/                       # Shared Kodein modules for JVM runtime/core LLM wiring
         │       ├── service/
         │       │   └── files/                    # Shared JVM file service implementations
         │       └── tool/

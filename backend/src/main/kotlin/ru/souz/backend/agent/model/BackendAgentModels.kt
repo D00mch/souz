@@ -1,9 +1,11 @@
-package ru.souz.backend
+package ru.souz.backend.agent.model
 
 import java.time.DateTimeException
 import java.time.ZoneId
 import java.util.UUID
+import ru.souz.backend.common.BackendRequestException
 
+/** HTTP request body for one backend `/agent` turn. */
 data class AgentRequest(
     val requestId: String = "",
     val userId: String = "",
@@ -16,6 +18,7 @@ data class AgentRequest(
     val timeZone: String = "",
 )
 
+/** Token usage block returned by backend `/agent`. */
 data class AgentUsage(
     val promptTokens: Int,
     val completionTokens: Int,
@@ -23,6 +26,7 @@ data class AgentUsage(
     val precachedTokens: Int,
 )
 
+/** HTTP success response for one backend `/agent` turn. */
 data class AgentResponse(
     val requestId: String,
     val conversationId: String,
@@ -35,11 +39,13 @@ data class AgentResponse(
     val usage: AgentUsage,
 )
 
+/** Stable backend conversation identifier composed from user and conversation ids. */
 data class AgentConversationKey(
     val userId: String,
     val conversationId: String,
 )
 
+/** Fully validated backend request passed into runtime orchestration. */
 internal data class ValidatedAgentRequest(
     val requestId: String,
     val userId: String,

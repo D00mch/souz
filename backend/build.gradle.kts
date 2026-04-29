@@ -29,7 +29,7 @@ dependencies {
 }
 
 application {
-    mainClass.set("ru.souz.backend.BackendMainKt")
+    mainClass.set("ru.souz.backend.app.BackendMainKt")
 }
 
 tasks.test {

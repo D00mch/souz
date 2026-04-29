@@ -1,23 +1,28 @@
-package ru.souz.backend
+package ru.souz.backend.agent.runtime
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import java.util.concurrent.ConcurrentHashMap
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.backend.agent.model.AgentConversationKey
+import ru.souz.backend.agent.model.ValidatedAgentRequest
+import ru.souz.backend.agent.session.AgentConversationSession
+import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.tool.LocalRegexClassifier
 
+/** Result of one backend agent execution turn plus final usage data. */
 internal data class BackendConversationExecution(
     val output: String,
     val usage: LLMResponse.Usage,
 )
 
+/** Request-scoped backend conversation runtime rebuilt from the stored snapshot. */
 internal class BackendConversationRuntime(
     private val key: AgentConversationKey,
     private val sessionRepository: AgentSessionRepository,
@@ -25,19 +30,18 @@ internal class BackendConversationRuntime(
     private val contextFactory: AgentContextFactory,
     private val executor: AgentExecutor,
     private val usageTrackingApi: UsageTrackingChatApi,
-    persistedSession: AgentConversationSession?,
+    private val persistedSession: AgentConversationSession?,
 ) {
-    private var activeAgentId = contextFactory.normalizeAgentId(
+    private val activeAgentId = contextFactory.normalizeAgentId(
         persistedSession?.activeAgentId ?: settingsProvider.activeAgentId
     )
-    private var currentContext = persistedSession?.context ?: contextFactory.create(activeAgentId)
+    private val currentTemperature = persistedSession?.temperature ?: settingsProvider.temperature
 
     init {
         persistedSession?.let { session ->
             settingsProvider.restore(
                 activeAgentId = activeAgentId,
-                contextSize = session.context.settings.contextSize,
-                temperature = session.context.settings.temperature,
+                temperature = currentTemperature,
                 locale = session.locale,
             )
         }
@@ -47,17 +51,16 @@ internal class BackendConversationRuntime(
         settingsProvider.applyRequest(
             request = request,
             activeAgentId = activeAgentId,
-            temperature = currentContext.settings.temperature,
+            temperature = currentTemperature,
         )
         usageTrackingApi.resetUsage()
 
-        val seedContext = currentContext.copy(
-            settings = currentContext.settings.copy(
-                model = settingsProvider.gigaModel.alias,
-                contextSize = request.contextSize,
-                temperature = settingsProvider.temperature,
-            ),
-            systemPrompt = contextFactory.systemPromptFor(activeAgentId, settingsProvider.gigaModel),
+        val seedContext = contextFactory.create(
+            agentId = activeAgentId,
+            history = persistedSession?.history.orEmpty(),
+            model = settingsProvider.gigaModel,
+            contextSize = request.contextSize,
+            temperature = settingsProvider.temperature,
         )
 
         val result = executor.execute(
@@ -65,14 +68,14 @@ internal class BackendConversationRuntime(
             context = seedContext,
             input = request.prompt,
         )
-        currentContext = result.context
-        activeAgentId = contextFactory.normalizeAgentId(settingsProvider.activeAgentId)
+        val nextAgentId = contextFactory.normalizeAgentId(settingsProvider.activeAgentId)
 
         sessionRepository.save(
             key,
             AgentConversationSession(
-                activeAgentId = activeAgentId,
-                context = currentContext,
+                activeAgentId = nextAgentId,
+                history = result.context.history,
+                temperature = result.context.settings.temperature,
                 locale = request.locale,
                 timeZone = request.timeZone,
             )
@@ -85,6 +88,7 @@ internal class BackendConversationRuntime(
     }
 }
 
+/** Builds a request-scoped backend runtime on top of the shared agent kernel. */
 class BackendConversationRuntimeFactory(
     private val baseSettingsProvider: SettingsProvider,
     private val llmApiFactory: (BackendConversationSettingsProvider) -> LLMChatAPI,
@@ -112,6 +116,10 @@ class BackendConversationRuntimeFactory(
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
             defaultBrowserProvider = BackendNoopDefaultBrowserProvider,
+            runtimeEnvironment = BackendRequestRuntimeEnvironment(
+                localeTag = request.locale,
+                timeZone = request.timeZone,
+            ),
             mcpToolProvider = BackendNoopMcpToolProvider,
             telemetry = BackendNoopAgentTelemetry,
             errorMessages = BackendAgentErrorMessages,
@@ -128,22 +136,5 @@ class BackendConversationRuntimeFactory(
             usageTrackingApi = usageTrackingApi,
             persistedSession = persistedSession,
         )
-    }
-}
-
-class BackendConversationRuntimeCache(
-    private val factory: BackendConversationRuntimeFactory,
-) {
-    private val runtimes = ConcurrentHashMap<AgentConversationKey, BackendConversationRuntime>()
-
-    internal suspend fun getOrCreate(
-        key: AgentConversationKey,
-        request: ValidatedAgentRequest,
-    ): BackendConversationRuntime {
-        val cached = runtimes[key]
-        if (cached != null) return cached
-
-        val created = factory.create(key, request)
-        return runtimes.putIfAbsent(key, created) ?: created
     }
 }

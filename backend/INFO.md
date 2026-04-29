@@ -5,21 +5,17 @@ The `:backend` module is a JVM HTTP build for Souz without Compose UI startup, v
 It reuses shared runtime components from `:runtime` and exposes a small REST surface:
 
 - `GET /health` returns process and selected-model status.
-- `POST /chat` accepts a JSON body with only `message` and returns the current conversation history.
-- `GET /history` returns the current in-memory conversation history.
-- `DELETE /history` clears the in-memory conversation history.
 - `POST /agent` accepts authenticated internal agent requests and returns a single assistant response with message IDs and token usage.
 
-`/chat` remains a legacy direct-LLM route with no tool loop. `/agent` now exposes the shared runtime tool catalog for backend-safe tools (files, text/web lookup, calculator, analytics, and non-UI config). The backend intentionally omits `WebImageSearch` so startup does not initialize Apache Tika's external parser probes for host binaries such as `ffmpeg`.
+`/agent` exposes the shared runtime tool catalog for backend-safe tools (files, text/web lookup, calculator, analytics, and non-UI config). The backend intentionally omits `WebImageSearch` so startup does not initialize Apache Tika's external parser probes for host binaries such as `ffmpeg`.
 
 `POST /agent` requires `Content-Type: application/json`, `Authorization: Bearer <internal-agent-token>`, and `X-Request-Id: <uuid>`. The token is read from `SOUZ_BACKEND_AGENT_TOKEN` or `souz.backend.agentToken`. The request body `requestId` must match `X-Request-Id`.
 
-The backend keeps one legacy `/chat` conversation per process and keeps `/agent` conversation state in memory by `userId` + `conversationId`.
-`/agent` now uses a backend-specific conversation runtime cache keyed by `userId` + `conversationId`:
+The backend keeps `/agent` conversation snapshots in memory by `userId` + `conversationId`. `/agent` executes each turn from a request-scoped runtime:
 
 - Process scope: shared settings/provider clients, shared runtime tool catalog/filter, backend no-op desktop/MCP host adapters, object mappers, and runtime/cache factories.
-- Conversation scope: one live agent runtime per conversation, including the current `AgentContext`, active agent id, and per-conversation cancellation/execution state.
-- Request scope: validated request data, model/context overrides for the turn, usage tracking reset, and response assembly.
+- Conversation scope: persisted snapshot only, including history, active agent id, temperature, locale, and time zone.
+- Request scope: validated request data, model/context/locale/time-zone overrides for the turn, usage tracking reset, and response assembly.
 
 The backend path still reuses the shared `:agent` execution kernel, but it bypasses desktop-only features that are irrelevant here: `AgentFacade`, graph session logging, side-effect/message streams, MCP tool discovery, and desktop/session logging infrastructure.
 
@@ -33,20 +29,22 @@ backend/
     ├── main/
     │   └── kotlin/
     │       └── ru/souz/backend/
-    │           ├── BackendMain.kt              # CLI entry point, host/port/token config, shutdown hook
-    │           ├── BackendRuntime.kt           # Backend DI container and runtime lifecycle
-    │           ├── BackendDiModule.kt          # Kodein module for backend settings/providers/services
-    │           ├── BackendHttpServer.kt        # Ktor Netty server, routing, JSON, auth, and HTTP error mapping
-    │           ├── ChatService.kt              # Legacy /chat direct LLM conversation service
-    │           ├── BackendAgentService.kt      # /agent orchestration, conflict handling, and response assembly
-    │           ├── BackendAgentModels.kt       # /agent request/response DTOs and validation
-    │           ├── AgentSessionRepository.kt   # /agent session storage contract + in-memory impl
-    │           ├── BackendConversationRuntime.kt # /agent conversation runtime/cache/factory
-    │           └── BackendAgentHostAdapters.kt # Backend SPI implementations for agent runtime
+    │           ├── app/                        # Entry point, runtime lifecycle, and backend DI wiring
+    │           │   ├── BackendMain.kt
+    │           │   ├── BackendRuntime.kt
+    │           │   └── BackendDiModule.kt
+    │           ├── http/                       # Ktor server wrapper, routes, and HTTP guards/errors mapping
+    │           │   └── BackendHttpServer.kt
+    │           ├── agent/                      # /agent feature internals
+    │           │   ├── model/                  # /agent request/response DTOs and validation
+    │           │   ├── service/                # Orchestration, dedupe, and concurrency guard
+    │           │   ├── runtime/                # Request-scoped runtime factory, adapters, usage tracking
+    │           │   └── session/                # Conversation key/snapshot store contract and in-memory impl
+    │           └── common/                     # Shared backend exception types
+    │               └── BackendRequestException.kt
     └── test/
         └── kotlin/
             └── ru/souz/backend/
-                ├── BackendChatServiceTest.kt
                 └── BackendAgentServiceTest.kt
 ```
 
@@ -107,6 +105,6 @@ For `/agent`, `BackendAgentService` is now mostly orchestration:
 - resolve a cached `BackendConversationRuntime`
 - execute one turn and assemble the HTTP response
 
-`BackendConversationRuntimeFactory` assembles each conversation runtime explicitly instead of creating a fresh request-scoped DI container. The runtime loads the persisted in-memory session once, reuses the same graph agents across later turns for that conversation, and persists the updated `AgentContext` after every successful turn.
+`BackendConversationRuntimeFactory` assembles each request runtime explicitly instead of creating a fresh request-scoped DI container. The runtime loads the persisted in-memory snapshot for the conversation, executes one turn through the shared kernel, and persists the updated snapshot after every successful turn.
 
-Model and `contextSize` remain request-driven. Each turn can change them without losing the conversation history because the runtime reseeds the persisted context with the request’s current model/context window before execution.
+Model and `contextSize` remain request-driven. Each turn can change them without losing the conversation history because the runtime reseeds a fresh `AgentContext` from the persisted snapshot and the request’s current model/context window before execution.
