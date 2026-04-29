@@ -1,8 +1,5 @@
 package ru.souz.llms.giga
 
-import ru.souz.tool.ToolRunBashCommand
-import ru.souz.tool.application.ToolOpen
-import ru.souz.tool.files.FilesToolUtil
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -17,14 +14,10 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import org.kodein.di.DI
-import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
-import ru.souz.di.mainDiModule
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.TokenLogging
@@ -265,17 +258,16 @@ class GigaRestChatAPI(
     }
 
     private fun uploadImageWithToken(file: File, accessToken: String): LLMResponse.UploadFile {
-        val result = ToolRunBashCommand.invoke(
-            ToolRunBashCommand.Input(
-                """
-                curl -X POST 'https://gigachat.devices.sberbank.ru/api/v1/files' \
-                     -H "Authorization: Bearer $accessToken" \
-                     -F "file=@${file.path};type=image/jpeg" \
-                     -F "purpose=general"
-                """.trimIndent(),
-            )
+        val result = runShellCommand(
+            """
+            curl -X POST 'https://gigachat.devices.sberbank.ru/api/v1/files' \
+                 -H "Authorization: Bearer $accessToken" \
+                 -F "file=@${file.path};type=image/jpeg" \
+                 -F "purpose=general"
+            """.trimIndent()
         )
-        val body = result.lines().last()
+        val body = result.lineSequence().lastOrNull()?.trim().orEmpty()
+        require(body.isNotEmpty()) { "Empty upload response" }
         return restJsonMapper.readValue(body)
     }
 
@@ -291,9 +283,8 @@ class GigaRestChatAPI(
             -H 'Authorization: Bearer $accessToken' \
             -OJ -w '%{filename_effective}' -o /dev/null
         """.trimIndent()
-        val fileName = ToolRunBashCommand.invoke(
-            ToolRunBashCommand.Input(command)
-        )
+        val fileName = runShellCommand(command).trim()
+        if (fileName.isEmpty()) return null
 
         return File(documentsDir, fileName).absolutePath
     }
@@ -315,35 +306,14 @@ class GigaRestChatAPI(
     }
 }
 
-suspend fun main() {
-    val di = DI.invoke { import(mainDiModule) }
-    val api: GigaRestChatAPI by di.instance()
-    val filesToolUtil: FilesToolUtil by di.instance()
-
-    val systemPrompt = LLMRequest.Message(
-        role = LLMMessageRole.system,
-        content = """
-                Ты — помощник человека с ограниченными возможностями. Будь полезным. Говори только по существу. 
-                Если какую-то за дачу можно решить c помощью имеющихся функций, сделай, 
-                а не проси пользователя сделать это. Если сомневаешься, уточни.
-            """.trimIndent()
-    )
-
-    val result = api.messageStream(
-        LLMRequest.Chat(
-            model = LLMModel.Pro.alias,
-            stream = true,
-            messages = listOf(
-                systemPrompt,
-                LLMRequest.Message(
-                    role = LLMMessageRole.user,
-                    content = "Открой приложение Telegram. Оно расположено по пути /Applications/Telegram.app",
-                ),
-            ),
-            functions = listOf(
-                ToolOpen(ToolRunBashCommand, filesToolUtil).toGiga(),
-            ).map { it.fn }
-        )
-    )
-    println(result.collect { value -> println(value) })
+private fun runShellCommand(command: String): String {
+    val process = ProcessBuilder("bash", "-lc", command)
+        .redirectErrorStream(true)
+        .start()
+    val output = process.inputStream.bufferedReader().readText()
+    val exitCode = process.waitFor()
+    if (exitCode != 0) {
+        throw IllegalStateException("Command failed with exit code $exitCode: $output")
+    }
+    return output.trim()
 }

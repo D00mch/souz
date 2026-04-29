@@ -48,8 +48,10 @@ If you are not sure about something, left a note for other developers to review.
 ├── native/                                 # Shared local-model runtime/native bridge module
 │   ├── src/main/resources/                 # Packaged llama bridge binaries by macOS architecture
 │   └── INFO.md                             # Module notes and internal layout
+├── runtime/                                # Shared JVM runtime layer (settings, provider clients, LLM routing)
+│   └── INFO.md                             # Module notes and internal layout
 ├── backend/                                # JVM HTTP backend build with no UI/voice startup
-│   ├── src/main/kotlin/ru/souz/backend/    # REST server, chat service, and backend runtime wiring
+│   ├── src/main/kotlin/ru/souz/backend/    # REST server, legacy chat service, shared-agent backend wiring
 │   ├── src/test/kotlin/ru/souz/backend/    # Backend service tests
 │   └── INFO.md                             # Module notes and REST contract
 ├── composeApp/                             # Main desktop application module
@@ -68,15 +70,12 @@ If you are not sure about something, left a note for other developers to review.
 │       │   │       ├── App.kt              # Compose desktop app shell
 │       │   │       ├── Main.kt             # JVM entry point
 │       │   │       ├── TextMain.kt         # Text-mode/dev entry point
-│       │   │       ├── db/                 # Settings, config store, desktop info, and vector DB layer
+│       │   │       ├── db/                 # Desktop info and vector DB layer
 │       │   │       ├── di/                 # Dependency wiring
-│       │   │       ├── llms/               # App-side LLM integrations and runtime wiring
-│       │   │       │   ├── anthropic/      # Anthropic chat client and Ktor defaults
-│       │   │       │   ├── giga/           # GigaChat auth, REST chat, tools, and voice clients
-│       │   │       │   ├── openai/         # OpenAI chat and voice clients
-│       │   │       │   ├── qwen/           # Qwen chat client
-│       │   │       │   ├── runtime/        # App-side LLMFactory and classifier wiring over shared/native modules
-│       │   │       │   └── tunnel/         # AiTunnel chat and voice clients
+│       │   │       ├── llms/               # App-side voice clients and tool adapters
+│       │   │       │   ├── giga/           # Giga tool adapters and voice client
+│       │   │       │   ├── openai/         # OpenAI voice client
+│       │   │       │   └── tunnel/         # AiTunnel voice client
 │       │   │       ├── service/            # Runtime integrations and OS-facing helpers
 │       │   │       │   ├── audio/          # Audio recording and playback services
 │       │   │       │   ├── files/          # File access service helpers
@@ -145,8 +144,9 @@ If you are not sure about something, left a note for other developers to review.
 
 ## Module Structure
 
-- `:composeApp` depends on `:agent`, `:llms`, and `:native`.
-- `:backend` is a JVM application that depends on `:composeApp`, `:agent`, `:llms`, and `:native` to reuse settings and chat providers while starting only an HTTP REST server.
+- `:runtime` depends on `:agent`, `:llms`, and `:native` and owns shared JVM runtime wiring (settings/config store, LLM factory/classifier, provider clients).
+- `:composeApp` depends on `:agent`, `:llms`, `:native`, and `:runtime`.
+- `:backend` is a JVM application that depends on `:agent`, `:llms`, `:native`, and `:runtime` while starting only an HTTP REST server.
 - `:agent` depends on `:graph-engine` and `:llms`.
 - `:native` depends on `:llms`.
 - `:graph-engine` and `:llms` do not depend on other project modules.

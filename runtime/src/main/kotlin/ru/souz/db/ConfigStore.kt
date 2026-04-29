@@ -9,8 +9,6 @@ import ru.souz.db.SettingsProviderImpl.Companion.OPENAI_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.QWEN_CHAT_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.SALUTE_SPEECH_KEY
 import ru.souz.llms.restJsonMapper
-import ru.souz.service.mcp.OAUTH_STORE_PREFIX
-import ru.souz.service.telemetry.TelemetryStorageKeys
 import java.security.SecureRandom
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
@@ -96,7 +94,7 @@ internal object SecretPrefsCodec {
         ANTHROPIC_KEY,
         OPENAI_KEY,
         SALUTE_SPEECH_KEY,
-        TelemetryStorageKeys.PRIVATE_KEY,
+        TELEMETRY_PRIVATE_KEY,
     )
 
     fun encodeForStorage(key: String, value: String): String {
@@ -275,9 +273,5 @@ internal object SecretPrefsCodec {
 
     private fun b64Decode(value: String): ByteArray = java.util.Base64.getDecoder().decode(value)
 }
-
-fun main() {
-    ConfigStore.put("abc", 1)
-    val result: Int? = ConfigStore.get<Int>("abc")
-    println("result $result")
-}
+    private const val OAUTH_STORE_PREFIX = "MCP_OAUTH_STATE_"
+    private const val TELEMETRY_PRIVATE_KEY = "TELEMETRY_PRIVATE_KEY"

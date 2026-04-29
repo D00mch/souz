@@ -50,7 +50,18 @@ fun agentDiModule(
         )
     }
     bindSingleton { SystemPromptResolver() }
+    bindSingleton { AgentContextFactory(instance(), instance(), instance()) }
     bindSingleton { GraphBasedAgent(di, instance<ObjectMapper>(tag = logObjectMapperTag)) }
     bindSingleton { LuaGraphBasedAgent(di, instance<ObjectMapper>(tag = logObjectMapperTag)) }
-    bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton {
+        AgentExecutor(
+            agentProvider = { id ->
+                when (id) {
+                    AgentId.GRAPH -> instance<GraphBasedAgent>()
+                    AgentId.LUA_GRAPH -> instance<LuaGraphBasedAgent>()
+                }
+            }
+        )
+    }
+    bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance()) }
 }

@@ -2,7 +2,7 @@
 
 The `:backend` module is a JVM HTTP build for Souz without Compose UI startup, voice capture, speech recognition, hotkeys, or desktop agent tools.
 
-It reuses the existing settings store and chat provider implementations from the desktop app and exposes a small REST surface:
+It reuses shared runtime components from `:runtime` and exposes a small REST surface:
 
 - `GET /health` returns process and selected-model status.
 - `POST /chat` accepts a JSON body with only `message` and returns the current conversation history.
@@ -12,26 +12,33 @@ It reuses the existing settings store and chat provider implementations from the
 
 `POST /agent` requires `Content-Type: application/json`, `Authorization: Bearer <internal-agent-token>`, and `X-Request-Id: <uuid>`. The token is read from `SOUZ_BACKEND_AGENT_TOKEN` or `souz.backend.agentToken`. The request body `requestId` must match `X-Request-Id`.
 
-The backend keeps one legacy `/chat` conversation per process and keeps `/agent` conversation history in memory by `userId` plus `conversationId`. It intentionally calls the chat LLM directly with no tool functions.
+The backend keeps one legacy `/chat` conversation per process and keeps `/agent` session state in memory by `userId` + `conversationId`.
+`/agent` executes through the shared `:agent` graph/runtime logic with backend no-op implementations for desktop/tools SPI contracts.
 
 ## Project Structure
 
 ```text
 backend/
-├── build.gradle.kts                         # JVM application build and Ktor server dependencies
-├── INFO.md                                  # Module notes, routes, and structure
+├── build.gradle.kts                            # JVM application build and Ktor server dependencies
+├── INFO.md                                     # Module notes, routes, and structure
 └── src/
     ├── main/
     │   └── kotlin/
     │       └── ru/souz/backend/
-    │           ├── BackendMain.kt           # CLI entry point, host/port/token config, shutdown hook
-    │           ├── BackendRuntime.kt        # Settings, provider factory, local runtime, and chat service wiring
-    │           ├── BackendHttpServer.kt     # Ktor Netty server, routing, JSON, auth, and HTTP error mapping
-    │           └── BackendChatService.kt    # Direct LLM chat, /agent DTOs, validation, history, and conflict tracking
+    │           ├── BackendMain.kt              # CLI entry point, host/port/token config, shutdown hook
+    │           ├── BackendRuntime.kt           # Backend DI container and runtime lifecycle
+    │           ├── BackendDiModule.kt          # Kodein module for backend settings/providers/services
+    │           ├── BackendHttpServer.kt        # Ktor Netty server, routing, JSON, auth, and HTTP error mapping
+    │           ├── ChatService.kt              # Legacy /chat direct LLM conversation service
+    │           ├── BackendAgentService.kt      # /agent shared-runtime execution and conflict handling
+    │           ├── BackendAgentModels.kt       # /agent request/response DTOs and validation
+    │           ├── AgentSessionRepository.kt   # /agent session storage contract + in-memory impl
+    │           └── BackendAgentHostAdapters.kt # Backend SPI implementations for agent runtime
     └── test/
         └── kotlin/
             └── ru/souz/backend/
-                └── BackendChatServiceTest.kt # Backend chat and internal agent service tests
+                ├── BackendChatServiceTest.kt
+                └── BackendAgentServiceTest.kt
 ```
 
 ## Internal Agent Route

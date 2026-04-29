@@ -45,6 +45,7 @@ data class ErrorResponse(
 
 class BackendHttpServer(
     private val chatService: ChatService,
+    private val agentService: BackendAgentService,
     private val selectedModel: () -> String,
     private val bindAddress: InetSocketAddress,
     private val internalAgentToken: () -> String? = { null },
@@ -57,6 +58,7 @@ class BackendHttpServer(
     ) {
         backendApplication(
             chatService = chatService,
+            agentService = agentService,
             selectedModel = selectedModel,
             internalAgentToken = internalAgentToken,
         )
@@ -84,6 +86,7 @@ class BackendHttpServer(
 
 fun Application.backendApplication(
     chatService: ChatService,
+    agentService: BackendAgentService,
     selectedModel: () -> String,
     internalAgentToken: () -> String? = { null },
 ) {
@@ -143,7 +146,7 @@ fun Application.backendApplication(
                 requireJsonContent()
                 val request = receiveOrBadRequest<AgentRequest>()
                 requireMatchingRequestId(request.requestId)
-                chatService.sendAgentRequest(request)
+                agentService.sendAgentRequest(request)
             }
         }
     }

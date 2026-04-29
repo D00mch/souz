@@ -25,8 +25,6 @@ import io.ktor.http.isSuccess
 import io.ktor.serialization.jackson.jackson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import org.kodein.di.DI
-import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
@@ -35,15 +33,10 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.toFinishReason
-import ru.souz.llms.giga.toGiga
-import ru.souz.di.mainDiModule
 import ru.souz.llms.restJsonMapper
-import ru.souz.tool.files.FilesToolUtil
-import ru.souz.tool.files.ToolListFiles
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.measureTime
 
 class QwenChatAPI(
     private val settingsProvider: SettingsProvider,
@@ -548,44 +541,4 @@ class QwenChatAPI(
             return resultChoices
         }
     }
-}
-
-suspend fun main() {
-    val di = DI.invoke { import(mainDiModule) }
-    val filesToolUtil: FilesToolUtil by di.instance()
-    val api: QwenChatAPI by di.instance()
-
-    val model = "qwen-plus"
-    val request = LLMRequest.Chat(
-        model = model,
-        stream = true,
-        messages = listOf(
-            LLMRequest.Message(
-                role = LLMMessageRole.system,
-                content = """
-                    Ты помощник, который при необходимости вызывает функции и отвечает по-русски.
-                """.trimIndent()
-            ),
-            LLMRequest.Message(
-                role = LLMMessageRole.user,
-                content = "Расскажи сказку",
-            ),
-        ),
-        functions = listOf(
-            ToolListFiles(filesToolUtil).toGiga(),
-        ).map { it.fn }
-    )
-
-    val allTime = measureTime {
-        val result = api.messageStream(request)
-        val millis = System.currentTimeMillis()
-        val first by lazy {
-            println("First response in ${System.currentTimeMillis() - millis}")
-        }
-        result.collect { response ->
-            first
-            println("Response: $response")
-        }
-    }
-    println("All time: $allTime")
 }

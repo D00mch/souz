@@ -415,12 +415,6 @@ fun SettingsProvider.hasKey(provider: VoiceRecognitionProvider): Boolean = when 
     VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
 }
 
-fun main() {
-    val s: SettingsProviderImpl = SettingsProviderImpl(ConfigStore)
-    s.needsOnboarding = false
-    s.onboardingCompleted = false
-}
-
 private fun defaultLocalProviderAvailability(): LocalProviderAvailability {
     val hostInfoProvider = LocalHostInfoProvider()
     return LocalProviderAvailability(

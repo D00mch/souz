@@ -5,6 +5,8 @@ GraphBasedAgent.kt                    # Standard tool-calling graph agent
 LuaGraphBasedAgent.kt                 # Lua-planning graph agent
 agent/
    ├── Agent.kt                       # Public agent contracts and execution result models
+   ├── AgentContextFactory.kt         # Stateless initial-context builder from host contracts
+   ├── AgentExecutor.kt               # Stateless graph execution entry point
    ├── AgentFacade.kt                 # Active-agent selection, context lifecycle, and top-level execution entry point
    ├── AgentId.kt                     # Supported agent identifiers and defaults
    ├── AgentModule.kt                 # Single DI module that wires agent internals
@@ -37,4 +39,4 @@ Notes:
 - `:agent` contains both the public agent contract layer and the concrete implementations.
 - `:graph-engine` is the lower-level boundary; the `agent/graph` package is an internal adapter over it.
 - Shared `ru.souz.llms` DTOs and chat/tool contracts now live in the separate `:llms` module.
-- `AgentFacade` is the intended entry point for UI and service layers that need to run the agent.
+- `AgentFacade` remains the intended stateful desktop entry point, now delegating to `AgentContextFactory` and `AgentExecutor`.

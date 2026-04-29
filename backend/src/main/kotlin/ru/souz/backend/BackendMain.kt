@@ -23,6 +23,7 @@ fun main() {
     val runtime = BackendRuntime.create()
     val server = BackendHttpServer(
         chatService = runtime.chatService,
+        agentService = runtime.agentService,
         selectedModel = runtime::selectedModel,
         bindAddress = InetSocketAddress(host, port),
         internalAgentToken = { internalAgentToken },

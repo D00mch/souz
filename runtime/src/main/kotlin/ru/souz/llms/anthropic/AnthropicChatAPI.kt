@@ -24,11 +24,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
-import org.kodein.di.DI
-import org.kodein.di.instance
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
-import ru.souz.di.mainDiModule
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
@@ -758,24 +755,4 @@ private fun String?.toAnthropicFinishReason(): LLMResponse.FinishReason? {
         "end_turn", "stop_sequence" -> LLMResponse.FinishReason.stop
         else -> this.toFinishReason()
     }
-}
-
-suspend fun main() {
-    val di = DI.invoke { import(mainDiModule) }
-    val api: AnthropicChatAPI by di.instance()
-
-    val request = LLMRequest.Chat(
-        model = System.getenv("ANTHROPIC_MODEL") ?: LLMModel.AnthropicHaiku45.alias,
-        temperature = 0f,
-        maxTokens = 128,
-        messages = listOf(
-            "You are a concise assistant.".toSystemPromptMessage(),
-            LLMRequest.Message(
-                role = LLMMessageRole.user,
-                content = "Reply with exactly: ANTHROPIC_OK",
-            ),
-        ),
-    )
-
-    println(api.message(request))
 }

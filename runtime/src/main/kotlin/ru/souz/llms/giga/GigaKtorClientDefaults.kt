@@ -9,7 +9,6 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
 import ru.souz.db.SettingsProvider
-import ru.souz.tool.files.FilesToolUtil.Companion.resourceStream
 import java.io.InputStream
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
@@ -58,3 +57,8 @@ fun trustManagerFromPem(vararg resourcePaths: String): X509TrustManager {
     }
     return tmf.trustManagers.filterIsInstance<X509TrustManager>().single()
 }
+
+private fun resourceStream(path: String): InputStream =
+    Thread.currentThread().contextClassLoader?.getResourceAsStream(path)
+        ?: GigaRestChatAPI::class.java.classLoader?.getResourceAsStream(path)
+        ?: error("Resource not found: $path")

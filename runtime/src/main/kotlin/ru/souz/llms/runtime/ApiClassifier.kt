@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
+import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
@@ -11,7 +12,7 @@ import ru.souz.tool.ToolCategory
 import ru.souz.tool.UserMessageClassifier
 
 class ApiClassifier(
-    private val api: LLMFactory,
+    private val api: LLMChatAPI,
 ) : UserMessageClassifier {
     private val l = LoggerFactory.getLogger(ApiClassifier::class.java)
     private val logObjectMapper = jacksonObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)

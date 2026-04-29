@@ -127,6 +127,7 @@ kotlin {
             implementation(projects.agent)
             implementation(projects.llms)
             implementation(projects.native)
+            implementation(projects.runtime)
             implementation(libs.compose.ui.tooling.preview.desktop)
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
