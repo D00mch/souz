@@ -34,6 +34,7 @@ If you are not sure about something, left a note for other developers to review.
 .
 ├── docs/                                   # Project docs extracted from top-level notes
 │   ├── config-store-security.md            # ConfigStore encryption and secret handling
+│   ├── cloud-multiuser-agent-spec.md       # Cloud multiuser web/agent architecture and API contracts
 │   ├── file-tools.md                       # File tool guarantees and path conventions
 │   ├── homebrew.md                         # Homebrew cask distribution and release notes
 │   ├── release.md                          # Release-specific notes
