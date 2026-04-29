@@ -25,7 +25,12 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
+import ru.souz.tool.FewShotExample
+import ru.souz.tool.InputParamDescription
+import ru.souz.tool.ReturnParameters
+import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolCategory
+import ru.souz.tool.ToolSetup
 import ru.souz.tool.math.ToolCalculator
 
 class BackendAgentServiceTest {
@@ -233,13 +238,7 @@ class BackendAgentServiceTest {
         val api = ToolCallingAgentApi()
         val service = createService(
             api = api,
-            toolCatalog = object : AgentToolCatalog {
-                override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = mapOf(
-                    ToolCategory.CALCULATOR to mapOf(
-                        "Calculator" to ToolCalculator().toGiga()
-                    )
-                )
-            },
+            toolCatalog = toolCatalog(ToolCategory.CALCULATOR to ToolCalculator().toGiga()),
         )
 
         val response = service.sendAgentRequest(agentRequest(prompt = "Сколько будет 2 + 3?"))
@@ -255,6 +254,74 @@ class BackendAgentServiceTest {
                 }
             }
         )
+    }
+
+    @Test
+    fun `tool results persist across turns in same backend conversation`() = runTest {
+        val api = ToolCallingAgentApi()
+        val request = agentRequest(prompt = "Сколько будет 2 + 3?")
+        val service = createService(
+            api = api,
+            toolCatalog = toolCatalog(ToolCategory.CALCULATOR to ToolCalculator().toGiga()),
+        )
+
+        service.sendAgentRequest(request)
+        val secondResponse = service.sendAgentRequest(
+            request.copy(
+                requestId = uuid(),
+                prompt = "А какой был прошлый результат?",
+            )
+        )
+
+        assertEquals("tool result: 5", secondResponse.content)
+
+        val secondTurnRequest = api.requests.finalChatRequests().last()
+        val persistedToolResult = secondTurnRequest.messages.lastOrNull { message ->
+            message.role == LLMMessageRole.function && message.name == "Calculator"
+        }
+        assertEquals("call_1", persistedToolResult?.functionsStateId)
+        assertTrue(persistedToolResult?.content?.contains("5") == true)
+    }
+
+    @Test
+    fun `backend runtime executes every tool call from one model reply`() = runTest {
+        val api = MultiToolCallingAgentApi()
+        val service = createService(
+            api = api,
+            toolCatalog = toolCatalog(ToolCategory.CALCULATOR to ToolCalculator().toGiga()),
+        )
+
+        val response = service.sendAgentRequest(agentRequest(prompt = "Посчитай 2 + 3 и 10 - 4"))
+
+        assertEquals("tool results: 5, 6", response.content)
+
+        val requestAfterTools = api.requests.finalChatRequests().last()
+        val toolResults = requestAfterTools.messages.filter { message ->
+            message.role == LLMMessageRole.function && message.name == "Calculator"
+        }
+        assertEquals(2, toolResults.size)
+        assertTrue(toolResults.any { it.functionsStateId == "call_1" && it.content.contains("5") })
+        assertTrue(toolResults.any { it.functionsStateId == "call_2" && it.content.contains("6") })
+    }
+
+    @Test
+    fun `tool execution failures are returned as function messages`() = runTest {
+        val api = FailingToolAgentApi()
+        val service = createService(
+            api = api,
+            toolCatalog = toolCatalog(ToolCategory.CALCULATOR to ThrowingTool().toGiga()),
+        )
+
+        val response = service.sendAgentRequest(agentRequest(prompt = "Попробуй вызвать аварийный инструмент"))
+
+        assertEquals("tool error handled", response.content)
+
+        val requestAfterFailure = api.requests.finalChatRequests().last()
+        val toolFailure = requestAfterFailure.messages.lastOrNull { message ->
+            message.role == LLMMessageRole.function && message.name == "ExplodeTool"
+        }
+        assertEquals("explode_1", toolFailure?.functionsStateId)
+        assertTrue(toolFailure?.content?.contains("Can't invoke function: boom") == true)
     }
 
     private fun createService(
@@ -280,6 +347,13 @@ class BackendAgentServiceTest {
         )
     }
 }
+
+private fun toolCatalog(vararg tools: Pair<ToolCategory, LLMToolSetup>): AgentToolCatalog =
+    object : AgentToolCatalog {
+        override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
+            tools.groupBy(keySelector = { it.first }, valueTransform = { it.second })
+                .mapValues { (_, setups) -> setups.associateBy { it.fn.name } }
+    }
 
 private class RecordingAgentApi(
     private val onFinalChatRequest: (suspend (LLMRequest.Chat) -> Unit)? = null,
@@ -418,8 +492,185 @@ private class ToolCallingAgentApi : LLMChatAPI {
         )
 }
 
+private class MultiToolCallingAgentApi : LLMChatAPI {
+    val requests = ArrayList<LLMRequest.Chat>()
+
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+        requests += body
+        return when {
+            body.isClassificationRequest() -> reply("CALCULATOR 95")
+            body.messages.count { it.role == LLMMessageRole.function && it.name == "Calculator" } >= 2 ->
+                reply("tool results: 5, 6")
+
+            body.functions.any { it.name == "Calculator" } ->
+                LLMResponse.Chat.Ok(
+                    choices = listOf(
+                        toolCallChoice(
+                            index = 0,
+                            stateId = "call_1",
+                            expression = "2 + 3",
+                        ),
+                        toolCallChoice(
+                            index = 1,
+                            stateId = "call_2",
+                            expression = "10 - 4",
+                        ),
+                    ),
+                    created = System.currentTimeMillis(),
+                    model = body.model,
+                    usage = LLMResponse.Usage(4, 2, 6, 0),
+                )
+
+            else -> reply("unexpected")
+        }
+    }
+
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
+        error("Streaming is not used in backend agent tests.")
+
+    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
+        error("Embeddings are not used in backend agent tests.")
+
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
+        error("File upload is not used in backend agent tests.")
+
+    override suspend fun downloadFile(fileId: String): String? =
+        error("File download is not used in backend agent tests.")
+
+    override suspend fun balance(): LLMResponse.Balance =
+        error("Balance is not used in backend agent tests.")
+
+    private fun toolCallChoice(
+        index: Int,
+        stateId: String,
+        expression: String,
+    ): LLMResponse.Choice =
+        LLMResponse.Choice(
+            message = LLMResponse.Message(
+                content = "",
+                role = LLMMessageRole.assistant,
+                functionCall = LLMResponse.FunctionCall(
+                    name = "Calculator",
+                    arguments = mapOf("expression" to expression),
+                ),
+                functionsStateId = stateId,
+            ),
+            index = index,
+            finishReason = LLMResponse.FinishReason.function_call,
+        )
+
+    private fun reply(content: String): LLMResponse.Chat.Ok =
+        LLMResponse.Chat.Ok(
+            choices = listOf(
+                LLMResponse.Choice(
+                    message = LLMResponse.Message(
+                        content = content,
+                        role = LLMMessageRole.assistant,
+                        functionCall = null,
+                        functionsStateId = null,
+                    ),
+                    index = 0,
+                    finishReason = LLMResponse.FinishReason.stop,
+                )
+            ),
+            created = System.currentTimeMillis(),
+            model = LLMModel.Max.alias,
+            usage = LLMResponse.Usage(4, 2, 6, 0),
+        )
+}
+
+private class FailingToolAgentApi : LLMChatAPI {
+    val requests = ArrayList<LLMRequest.Chat>()
+
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+        requests += body
+        return when {
+            body.isClassificationRequest() -> reply("CALCULATOR 95")
+            body.messages.any { it.role == LLMMessageRole.function && it.name == "ExplodeTool" } ->
+                reply("tool error handled")
+
+            body.functions.any { it.name == "ExplodeTool" } ->
+                LLMResponse.Chat.Ok(
+                    choices = listOf(
+                        LLMResponse.Choice(
+                            message = LLMResponse.Message(
+                                content = "",
+                                role = LLMMessageRole.assistant,
+                                functionCall = LLMResponse.FunctionCall(
+                                    name = "ExplodeTool",
+                                    arguments = mapOf("payload" to "boom"),
+                                ),
+                                functionsStateId = "explode_1",
+                            ),
+                            index = 0,
+                            finishReason = LLMResponse.FinishReason.function_call,
+                        )
+                    ),
+                    created = System.currentTimeMillis(),
+                    model = body.model,
+                    usage = LLMResponse.Usage(4, 2, 6, 0),
+                )
+
+            else -> reply("unexpected")
+        }
+    }
+
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
+        error("Streaming is not used in backend agent tests.")
+
+    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
+        error("Embeddings are not used in backend agent tests.")
+
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
+        error("File upload is not used in backend agent tests.")
+
+    override suspend fun downloadFile(fileId: String): String? =
+        error("File download is not used in backend agent tests.")
+
+    override suspend fun balance(): LLMResponse.Balance =
+        error("Balance is not used in backend agent tests.")
+
+    private fun reply(content: String): LLMResponse.Chat.Ok =
+        LLMResponse.Chat.Ok(
+            choices = listOf(
+                LLMResponse.Choice(
+                    message = LLMResponse.Message(
+                        content = content,
+                        role = LLMMessageRole.assistant,
+                        functionCall = null,
+                        functionsStateId = null,
+                    ),
+                    index = 0,
+                    finishReason = LLMResponse.FinishReason.stop,
+                )
+            ),
+            created = System.currentTimeMillis(),
+            model = LLMModel.Max.alias,
+            usage = LLMResponse.Usage(4, 2, 6, 0),
+        )
+}
+
+private class ThrowingTool : ToolSetup<ThrowingTool.Input> {
+    data class Input(
+        @InputParamDescription("Any payload that should trigger the tool")
+        val payload: String,
+    )
+
+    override val name: String = "ExplodeTool"
+    override val description: String = "Always fails so tests can verify tool error handling."
+    override val fewShotExamples: List<FewShotExample> = emptyList()
+    override val returnParameters: ReturnParameters = ReturnParameters(
+        properties = mapOf("result" to ReturnProperty("string"))
+    )
+
+    override fun invoke(input: Input): String = error(input.payload)
+}
+
 private fun RecordingAgentApi.finalChatRequests(): List<LLMRequest.Chat> =
-    requests.filterNot { it.isClassificationRequest() }
+    requests.finalChatRequests()
+
+private fun List<LLMRequest.Chat>.finalChatRequests(): List<LLMRequest.Chat> =
+    filterNot { it.isClassificationRequest() }
 
 private fun LLMRequest.Chat.conversationPrompt(): String =
     messages.lastOrNull { message ->
