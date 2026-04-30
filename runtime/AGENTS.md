@@ -33,6 +33,7 @@ runtime/
         │       │   └── di/                       # Shared Kodein modules for JVM runtime/core LLM wiring
         │       ├── service/
         │       │   └── files/                    # Shared JVM file service implementations
+        │       ├── skill/                        # Skill discovery, ClawHub install/update, and embeddings search index
         │       └── tool/
         │           ├── RuntimeToolsModule.kt     # DI wiring for backend-safe runtime tools
         │           ├── ToolPermissionBroker.kt   # Shared tool permission contract
@@ -50,3 +51,4 @@ runtime/
 
 - `:runtime` is JVM-only.
 - Backend no longer depends on `:composeApp`; both backend and desktop reuse these classes from `:runtime`.
+- Skills are shared runtime functionality: filesystem discovery, ClawHub-managed installs, and embedding-backed summary retrieval all live here.
