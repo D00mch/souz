@@ -10,7 +10,7 @@ service/telegram/
 ├── TelegramPlatformSupport.kt         # Platform gating and minimum macOS version checks
 ├── TelegramTdlightExtensions.kt       # Coroutine bridge for TDLight `CompletableFuture` APIs
 ├── BotFatherReplyParser.kt            # BotFather reply parsing helpers for setup/delete automation
-└── INFO.md                            # This file
+└── AGENTS.md                          # This file
 ```
 
 Notes:

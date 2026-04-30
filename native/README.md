@@ -42,4 +42,4 @@
 
 ## Structure
 
-See [INFO.md](INFO.md) for the module file tree and local maintenance notes.
+See [AGENTS.md](AGENTS.md) for the module file tree and local maintenance notes.

@@ -14,7 +14,7 @@ tool/telegram/
 ├── TelegramContactSelectionBroker.kt   # Contact selection broker/typealias for ambiguous contact matches
 ├── TelegramChatSelectionBroker.kt      # Chat selection broker/typealias for ambiguous chat matches
 ├── TelegramSelectionApprovalSources.kt # Convert broker requests into UI approval prompts
-└── INFO.md                             # This file
+└── AGENTS.md                           # This file
 ```
 
 Notes:

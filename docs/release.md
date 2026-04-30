@@ -1,6 +1,6 @@
 # Release
 
-Release-specific notes moved from `INFO.md`.
+Release-specific notes moved from `AGENTS.md`.
 
 ## macOS Packaging and Signing
 

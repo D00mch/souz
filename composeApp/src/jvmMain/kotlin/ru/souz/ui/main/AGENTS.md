@@ -8,7 +8,7 @@ ui/main/
 ├── ChatAttachmentUi.kt                # Attachment visuals (icons/colors), thumbnail decode, size formatting
 ├── ThinkingProcessPanel.kt            # Thinking/trace panel rendering from agent history
 ├── search/                            # Chat search projection, indexing, highlighting, and panel UI
-│   └── INFO.md                        # Local notes for the search related features
+│   └── AGENTS.md                      # Local notes for the search related features
 ├── usecases/                          # Use-case layer for business logic behind the main screen
 │   ├── MainUseCasesFactory.kt         # Builds and wires all use cases used by MainViewModel
 │   ├── MainUseCaseOutput.kt           # Shared use-case output contract (state reducer/effect)
@@ -20,7 +20,7 @@ ui/main/
 │   ├── SpeechUseCase.kt               # Speech queue and `isSpeaking` state synchronization
 │   ├── PermissionsUseCase.kt          # Onboarding + runtime approval orchestration (tool permissions + pluggable selection dialogs)
 │   └── SpeechRecognitionProvider.kt   # Speech recognition interface + enabled/disabled providers
-└── INFO.md                            # This file
+└── AGENTS.md                          # This file
 ```
 
 Notes:

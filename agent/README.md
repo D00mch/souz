@@ -29,4 +29,4 @@ The host application is expected to provide implementations for:
 
 ## Structure
 
-See [INFO.md](/Users/dumch/work/souz/agent/src/main/kotlin/ru/souz/agent/INFO.md) for the package layout.
+See [AGENTS.md](/Users/dumch/work/souz/agent/src/main/kotlin/ru/souz/agent/AGENTS.md) for the package layout.

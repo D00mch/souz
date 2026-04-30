@@ -8,7 +8,7 @@ ui/main/search/
 ├── MarkdownSearchTraversal.kt         # Converts rendered markdown content into visible searchable text with stable offsets
 ├── MarkdownSearchAnnotator.kt         # Markdown annotator that reapplies search highlights to rendered markdown leaves
 ├── CompactChatSearchPanel.kt          # Compact search UI, open/focus state, and keyboard navigation handling
-└── INFO.md                            # This file
+└── AGENTS.md                          # This file
 ```
 
 Notes:

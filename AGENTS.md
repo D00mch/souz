@@ -48,7 +48,7 @@ If you are not sure about something, left a note for other developers to review.
 ├── backend/                                # JVM HTTP backend with shared agent runtime reuse
 │   ├── src/main/kotlin/ru/souz/backend/    # app/http/agent/common layered backend packages
 │   ├── src/test/kotlin/ru/souz/backend/    # Backend service/runtime tests
-│   └── INFO.md                             # Module notes and REST contract
+│   └── AGENTS.md                           # Module notes and REST contract
 ├── composeApp/                             # Desktop application and OS-bound integrations
 │   ├── src/jvmMain/kotlin/ru/souz/di/      # Desktop DI wiring and agent host setup
 │   ├── src/jvmMain/kotlin/ru/souz/service/ # Audio, MCP, permissions, Telegram, telemetry, image, keys
