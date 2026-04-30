@@ -22,12 +22,19 @@ fun main() {
         log.warn("SOUZ_BACKEND_AGENT_TOKEN is not configured; POST /agent will reject all requests.")
     }
 
-    val runtime = BackendRuntime.create()
+    val appConfig = BackendAppConfig.load().validate()
+    if (appConfig.proxyToken.isNullOrBlank()) {
+        log.warn("SOUZ_BACKEND_PROXY_TOKEN is not configured; /v1 routes will reject all requests.")
+    }
+
+    val runtime = BackendRuntime.create(appConfig)
     val server = BackendHttpServer(
         agentService = runtime.agentService,
+        bootstrapService = runtime.bootstrapService,
         selectedModel = runtime::selectedModel,
         bindAddress = InetSocketAddress(host, port),
         internalAgentToken = { internalAgentToken },
+        trustedProxyToken = { appConfig.proxyToken },
     )
     val shutdown = Runnable {
         runCatching { server.close() }
@@ -39,6 +46,7 @@ fun main() {
 
     server.start()
     log.info("Internal agent API: POST http://{}:{}/agent", host, port)
+    log.info("Bootstrap API: GET http://{}:{}/v1/bootstrap", host, port)
     CountDownLatch(1).await()
 }
 

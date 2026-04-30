@@ -24,7 +24,7 @@ If you are not sure about something, left a note for other developers to review.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Local llama.cpp provider** with a thin native bridge, strict JSON tool contract, a RAM-gated local model catalog (Qwen plus Gemma 4 chat profiles), linked local EmbeddingGemma GGUF downloads/usage for embeddings, background preload/warmup on local chat model selection, prompt-family-aware rendering (Qwen ChatML and Gemma 4 turns), prompt-prefix/KV reuse inside the native runtime, settings-driven context windows for local inference within model caps, and model storage under `~/.local/state/souz/models/`.
 - **Shared JVM runtime layer** in `:runtime` for provider clients, config/settings access, file utilities, and backend-safe tool categories (`FILES`, `WEB_SEARCH`, `CONFIG`, `DATA_ANALYTICS`, `CALCULATOR`) reused by both desktop and backend agent execution.
-- **HTTP backend agent runtime** in `:backend` exposed via `POST /agent`, with request-scoped agent execution per `userId` + `conversationId`, persisted in-memory conversation snapshots across turns, and per-request model/context/locale/time-zone overrides.
+- **HTTP backend agent runtime** in `:backend` with trusted-proxy `GET /v1/bootstrap` foundation for web/server-mode clients plus legacy/debug `POST /agent`; agent turns still execute request-scoped per `userId` + `conversationId`, persist in-memory conversation snapshots across turns, and allow per-request model/context/locale/time-zone overrides on the legacy path.
 - **Key-aware model selection in Settings**: chat, embeddings, and voice recognition model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop toolset** in `:composeApp` on top of the shared runtime tools: browser, calendar, mail, notes, desktop automation, Telegram, presentations, app launch, and text/clipboard actions.
@@ -46,7 +46,7 @@ If you are not sure about something, left a note for other developers to review.
 │   ├── src/main/kotlin/ru/souz/service/    # Shared JVM services (currently file services)
 │   └── src/main/kotlin/ru/souz/tool/       # Shared tool catalog, file/web/config/data/math tools
 ├── backend/                                # JVM HTTP backend with shared agent runtime reuse
-│   ├── src/main/kotlin/ru/souz/backend/    # app/http/agent/common layered backend packages
+│   ├── src/main/kotlin/ru/souz/backend/    # app/http/agent/bootstrap/config/security/storage backend packages
 │   ├── src/test/kotlin/ru/souz/backend/    # Backend service/runtime tests
 │   └── AGENTS.md                           # Module notes and REST contract
 ├── composeApp/                             # Desktop application and OS-bound integrations
@@ -60,11 +60,14 @@ If you are not sure about something, left a note for other developers to review.
 └── gradle/                                 # Gradle version catalog and wrapper configuration
 ```
 
-## Backend `/agent` Flow
+## Backend Flow
 
 ```mermaid
 flowchart LR
-    request["POST /agent"] --> http["BackendHttpServer"]
+    bootstrap["GET /v1/bootstrap"] --> http["BackendHttpServer"]
+    bootstrap --> security["Trusted proxy headers\nX-User-Id + X-Souz-Proxy-Auth"]
+    security --> meta["Bootstrap service\nfeatures, storage, tools, models, settings"]
+    legacy["POST /agent (legacy/debug)"] --> http
     http --> service["BackendAgentService\nvalidate, dedupe, concurrency guard"]
     service --> runtime["BackendConversationRuntimeFactory\nbuild request-scoped runtime"]
     runtime --> repo["AgentSessionRepository\nload/save persisted session snapshot"]
@@ -74,7 +77,9 @@ flowchart LR
 ```
 
 - Backend host adapters intentionally replace desktop-only SPI pieces with no-op implementations while keeping the same graph execution kernel.
-- Conversation state is loaded and saved by `userId` + `conversationId` on each request, while each turn can override model alias, context window, locale, and time zone.
+- `/v1/**` trusts user identity only from proxy-managed headers and never from request bodies.
+- Stage-1 storage mode is explicitly `memory`; selecting `filesystem` or `postgres` fails fast at startup until later stages implement them.
+- Conversation state is loaded and saved by `userId` + `conversationId` on each legacy `/agent` request, while each turn can override model alias, context window, locale, and time zone.
 
 ## Builds
 

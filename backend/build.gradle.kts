@@ -20,12 +20,14 @@ dependencies {
     implementation("io.ktor:ktor-server-content-negotiation:${libs.versions.ktor.get()}")
     implementation("io.ktor:ktor-server-core:${libs.versions.ktor.get()}")
     implementation("io.ktor:ktor-server-netty:${libs.versions.ktor.get()}")
+    implementation("io.ktor:ktor-server-status-pages:${libs.versions.ktor.get()}")
     implementation(libs.logback)
     implementation(libs.slfj)
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlin.testJunit5)
     testImplementation(libs.kotlinx.coroutinesTest)
+    testImplementation("io.ktor:ktor-server-test-host:${libs.versions.ktor.get()}")
 }
 
 application {

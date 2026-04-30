@@ -5,9 +5,17 @@ The `:backend` module is a JVM HTTP build for Souz without Compose UI startup, v
 It reuses shared runtime components from `:runtime` and exposes a small REST surface:
 
 - `GET /health` returns process and selected-model status.
-- `POST /agent` accepts authenticated internal agent requests and returns a single assistant response with message IDs and token usage.
+- `GET /v1/bootstrap` returns trusted-proxy bootstrap metadata for web/server-mode clients.
+- `POST /agent` remains a legacy/debug internal route that accepts authenticated agent requests and returns a single assistant response with message IDs and token usage.
 
 `/agent` exposes the shared runtime tool catalog for backend-safe tools (files, text/web lookup, calculator, analytics, and non-UI config). The backend intentionally omits `WebImageSearch` so startup does not initialize Apache Tika's external parser probes for host binaries such as `ffmpeg`.
+
+`/v1/**` never accepts `userId` from body/query. Identity is accepted only from trusted proxy headers:
+
+- `X-User-Id` as an opaque non-blank string.
+- `X-Souz-Proxy-Auth` matched against `SOUZ_BACKEND_PROXY_TOKEN` or `souz.backend.proxyToken`.
+
+If the proxy token is missing, `/v1/**` rejects requests with a structured `backend_misconfigured` error instead of falling back to an unsafe mode.
 
 `POST /agent` requires `Content-Type: application/json`, `Authorization: Bearer <internal-agent-token>`, and `X-Request-Id: <uuid>`. The token is read from `SOUZ_BACKEND_AGENT_TOKEN` or `souz.backend.agentToken`. The request body `requestId` must match `X-Request-Id`.
 
@@ -19,6 +27,16 @@ The backend keeps `/agent` conversation snapshots in memory by `userId` + `conve
 
 The backend path still reuses the shared `:agent` execution kernel, but it bypasses desktop-only features that are irrelevant here: `AgentFacade`, graph session logging, side-effect/message streams, MCP tool discovery, and desktop/session logging infrastructure.
 
+Stage-1 backend foundation also adds:
+
+- feature flags from env/system properties:
+  - `SOUZ_FEATURE_WS_EVENTS` / `souz.backend.feature.wsEvents`
+  - `SOUZ_FEATURE_STREAMING_MESSAGES` / `souz.backend.feature.streamingMessages`
+  - `SOUZ_FEATURE_TOOL_EVENTS` / `souz.backend.feature.toolEvents`
+  - `SOUZ_FEATURE_CHOICES` / `souz.backend.feature.choices`
+  - `SOUZ_FEATURE_DURABLE_EVENT_REPLAY` / `souz.backend.feature.durableEventReplay`
+- storage mode from `SOUZ_STORAGE_MODE` / `souz.backend.storageMode`, with only `memory` currently supported; `filesystem` and `postgres` are rejected at startup.
+
 ## Project Structure
 
 ```text
@@ -29,24 +47,50 @@ backend/
     ├── main/
     │   └── kotlin/
     │       └── ru/souz/backend/
-    │           ├── app/                        # Entry point, runtime lifecycle, and backend DI wiring
-    │           │   ├── BackendMain.kt
-    │           │   ├── BackendRuntime.kt
-    │           │   └── BackendDiModule.kt
-    │           ├── http/                       # Ktor server wrapper, routes, and HTTP guards/errors mapping
-    │           │   └── BackendHttpServer.kt
-    │           ├── agent/                      # /agent feature internals
-    │           │   ├── model/                  # /agent request/response DTOs and validation
-    │           │   ├── service/                # Orchestration, dedupe, and concurrency guard
-    │           │   ├── runtime/                # Request-scoped runtime factory, adapters, usage tracking
-    │           │   └── session/                # Conversation key/snapshot store contract and in-memory impl
+    │           ├── app/                        # Entry point, runtime lifecycle, backend DI, process config
+    │           ├── http/                       # Ktor server wrapper, routes, and v1 error envelopes
+    │           ├── agent/                      # Legacy /agent feature internals
+    │           ├── bootstrap/                  # /v1/bootstrap response assembly from current backend state
+    │           ├── config/                     # Feature-flag and env/property config readers
+    │           ├── security/                   # Trusted proxy request identity extraction for /v1/**
+    │           ├── storage/                    # Storage mode enum and stage gating
     │           └── common/                     # Shared backend exception types
-    │               └── BackendRequestException.kt
     └── test/
         └── kotlin/
             └── ru/souz/backend/
-                └── BackendAgentServiceTest.kt
+                ├── BackendAgentServiceTest.kt
+                ├── config/BackendFeatureFlagsTest.kt
+                └── http/BackendBootstrapRouteTest.kt
 ```
+
+## Bootstrap Route
+
+`GET /v1/bootstrap` requires both trusted headers above and returns:
+
+- `user.id` from `X-User-Id`
+- `features` from backend feature flags
+- `storage.mode`
+- `capabilities.models` derived from the current `SettingsProvider` + `LlmBuildProfile` semantics, with `serverManagedKey` indicating whether the backend currently has provider access
+- `capabilities.tools` from the backend-safe runtime tool catalog only
+- `settings` from process-wide settings with safe defaults for locale/time zone
+
+Errors for `/v1/**` use a structured envelope:
+
+```json
+{
+  "error": {
+    "code": "untrusted_proxy",
+    "message": "Trusted proxy authentication is required."
+  }
+}
+```
+
+Stable stage-1 codes:
+
+- `untrusted_proxy`
+- `missing_user_identity`
+- `backend_misconfigured`
+- `internal_error`
 
 ## Internal Agent Route
 

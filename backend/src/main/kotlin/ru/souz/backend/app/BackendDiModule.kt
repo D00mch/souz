@@ -7,13 +7,18 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
+import ru.souz.backend.bootstrap.BackendBootstrapService
+import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.llms.runtime.LLMFactory
+import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
+import ru.souz.backend.storage.StorageMode
 import ru.souz.tool.runtimeToolsDiModule
 
 private object BackendDiTags {
@@ -23,6 +28,7 @@ private object BackendDiTags {
 /** Backend Kodein module that wires HTTP services to the shared JVM runtime. */
 fun backendDiModule(
     systemPrompt: String,
+    appConfig: BackendAppConfig,
 ): DI.Module = DI.Module("backend") {
     bindSingleton<ObjectMapper>(tag = BackendDiTags.LOG_OBJECT_MAPPER) {
         jacksonObjectMapper()
@@ -34,6 +40,8 @@ fun backendDiModule(
     import(runtimeToolsDiModule(includeWebImageSearch = false))
     import(runtimeLlmDiModule(logObjectMapperTag = BackendDiTags.LOG_OBJECT_MAPPER))
 
+    bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
+    bindSingleton<StorageMode> { appConfig.storageMode }
     bindSingleton<AgentSessionRepository> { InMemoryAgentSessionRepository() }
     bindSingleton {
         BackendConversationRuntimeFactory(
@@ -60,6 +68,15 @@ fun backendDiModule(
         BackendAgentService(
             baseSettingsProvider = instance(),
             runtimeFactory = instance(),
+        )
+    }
+    bindSingleton {
+        BackendBootstrapService(
+            settingsProvider = instance(),
+            toolCatalog = instance(),
+            featureFlags = instance(),
+            storageMode = instance(),
+            localModelAvailability = instance<LocalProviderAvailability>(),
         )
     }
 }

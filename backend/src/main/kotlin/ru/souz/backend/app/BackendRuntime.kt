@@ -4,6 +4,7 @@ import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
 import ru.souz.backend.agent.service.BackendAgentService
+import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.local.LocalLlamaRuntime
 
@@ -12,6 +13,7 @@ class BackendRuntime private constructor(
     private val di: DI,
 ) : AutoCloseable {
     val agentService: BackendAgentService by lazy { di.direct.instance() }
+    val bootstrapService: BackendBootstrapService by lazy { di.direct.instance() }
     private val settingsProvider: SettingsProvider by lazy { di.direct.instance() }
     private val localRuntime: LocalLlamaRuntime by lazy { di.direct.instance() }
 
@@ -22,9 +24,16 @@ class BackendRuntime private constructor(
     }
 
     companion object {
-        fun create(): BackendRuntime {
+        fun create(
+            appConfig: BackendAppConfig = BackendAppConfig.load().validate(),
+        ): BackendRuntime {
             val di = DI {
-                import(backendDiModule(systemPrompt = backendSystemPrompt()))
+                import(
+                    backendDiModule(
+                        systemPrompt = backendSystemPrompt(),
+                        appConfig = appConfig,
+                    )
+                )
             }
             return BackendRuntime(di = di)
         }

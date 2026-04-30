@@ -12,13 +12,16 @@ import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.contentType
 import io.ktor.server.request.header
+import io.ktor.server.request.path
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import java.net.InetSocketAddress
 import java.util.UUID
@@ -26,7 +29,10 @@ import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.backend.agent.model.AgentRequest
 import ru.souz.backend.agent.service.BackendAgentService
+import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.common.BackendRequestException
+import ru.souz.backend.security.RequestIdentityPlugin
+import ru.souz.backend.security.requestIdentity
 
 /** Health-check response returned by `GET /health`. */
 data class HealthResponse(
@@ -48,9 +54,11 @@ data class ErrorResponse(
 /** Embedded Ktor server wrapper for the Souz backend HTTP API. */
 class BackendHttpServer(
     private val agentService: BackendAgentService,
+    private val bootstrapService: BackendBootstrapService,
     private val selectedModel: () -> String,
     private val bindAddress: InetSocketAddress,
     private val internalAgentToken: () -> String? = { null },
+    private val trustedProxyToken: () -> String? = { null },
 ) : AutoCloseable {
     private val l = LoggerFactory.getLogger(BackendHttpServer::class.java)
     private val server = embeddedServer(
@@ -60,8 +68,10 @@ class BackendHttpServer(
     ) {
         backendApplication(
             agentService = agentService,
+            bootstrapService = bootstrapService,
             selectedModel = selectedModel,
             internalAgentToken = internalAgentToken,
+            trustedProxyToken = trustedProxyToken,
         )
     }
     private var startedAddress: InetSocketAddress? = null
@@ -88,8 +98,10 @@ class BackendHttpServer(
 /** Installs backend HTTP routes into a Ktor application. */
 fun Application.backendApplication(
     agentService: BackendAgentService,
+    bootstrapService: BackendBootstrapService,
     selectedModel: () -> String,
     internalAgentToken: () -> String? = { null },
+    trustedProxyToken: () -> String? = { null },
 ) {
     val l = LoggerFactory.getLogger("SouzBackendRoutes")
 
@@ -99,6 +111,38 @@ fun Application.backendApplication(
             disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
         }
     }
+    install(StatusPages) {
+        exception<BackendV1Exception> { call, cause ->
+            call.respond(
+                cause.status,
+                BackendV1ErrorEnvelope(
+                    error = BackendV1Error(code = cause.code, message = cause.message),
+                ),
+            )
+        }
+        exception<Throwable> { call, cause ->
+            if (cause is CancellationException) {
+                throw cause
+            }
+            l.error("Unhandled backend request failure", cause)
+            if (call.request.path().startsWith("/v1/")) {
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    BackendV1ErrorEnvelope(
+                        error = BackendV1Error(
+                            code = "internal_error",
+                            message = "Internal server error.",
+                        ),
+                    ),
+                )
+            } else {
+                call.respond(HttpStatusCode.InternalServerError, ErrorResponse("Internal server error."))
+            }
+        }
+    }
+    install(RequestIdentityPlugin) {
+        this.trustedProxyToken = trustedProxyToken
+    }
 
     routing {
         get("/") {
@@ -107,6 +151,7 @@ fun Application.backendApplication(
                     service = "souz-backend",
                     endpoints = listOf(
                         "GET /health",
+                        "GET /v1/bootstrap",
                         "POST /agent",
                     ),
                 )
@@ -116,6 +161,14 @@ fun Application.backendApplication(
         get("/health") {
             call.respondBackend(l) {
                 HealthResponse(status = "ok", model = selectedModel())
+            }
+        }
+
+        route("/v1") {
+            get("/bootstrap") {
+                call.respond(
+                    bootstrapService.response(call.requestIdentity())
+                )
             }
         }
 
@@ -157,7 +210,6 @@ private suspend inline fun <reified T : Any> ApplicationCall.receiveOrBadRequest
     }
 
 private fun ApplicationCall.requireAgentAuthorization(expectedToken: String?) {
-    return // TODO: setup proper auth
     val token = expectedToken?.trim().takeUnless { it.isNullOrEmpty() }
         ?: throw BackendRequestException(401, "Missing or invalid internal token.")
     val authorization = request.header(HttpHeaders.Authorization)?.trim().orEmpty()
