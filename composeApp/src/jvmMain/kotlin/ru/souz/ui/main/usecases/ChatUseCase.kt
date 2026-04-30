@@ -43,7 +43,7 @@ class ChatUseCase internal constructor(
     private val chatAttachmentsUseCase: ChatAttachmentsUseCase,
     private val toolModifyReviewUseCase: ToolModifyReviewUseCase,
     private val observabilityTracker: ChatObservabilityTracker,
-    private val structuredLogger: DesktopStructuredLogger,
+    private val log: DesktopStructuredLogger,
     private val tokenLogging: TokenLogging,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -271,7 +271,7 @@ class ChatUseCase internal constructor(
     ): ChatRequestSession {
         val requestId = activeChatRequestId.incrementAndGet()
         val conversationId = observabilityTracker.ensureConversation(requestSource)
-        val requestContext = structuredLogger.newChatRequestLogContext(
+        val requestContext = log.requestContext(
             conversationId = conversationId,
             source = requestSource,
             model = settingsProvider.gigaModel.alias,
@@ -279,7 +279,7 @@ class ChatUseCase internal constructor(
             inputLengthChars = userText.length,
             attachedFilesCount = attachedFiles.size,
         )
-        structuredLogger.logRequestStarted(requestContext)
+        log.requestStarted(requestContext)
         observabilityTracker.markConversationRequestStarted(conversationId)
         tokenLogging.startRequest(requestContext.requestId)
 
@@ -521,7 +521,7 @@ class ChatUseCase internal constructor(
             toolCallCount = session.requestContext.toolExecutionCount,
             requestTokenUsage = requestTokenUsage,
         )
-        structuredLogger.logRequestFinished(
+        log.requestFinished(
             context = session.requestContext,
             status = session.requestStatus,
             responseLengthChars = session.responseLengthChars,

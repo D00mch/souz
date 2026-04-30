@@ -32,7 +32,7 @@ class MainUseCasesFactory(
     private val selectionApprovalSources: Set<SelectionApprovalSource>,
     private val finderPathExtractor: FinderPathExtractor,
     private val tokenLogging: TokenLogging,
-    private val structuredLogger: DesktopStructuredLogger,
+    private val log: DesktopStructuredLogger,
 ) {
 
     fun create(ioDispatcher: CoroutineDispatcher): MainUseCases {
@@ -48,8 +48,8 @@ class MainUseCasesFactory(
             finderPathExtractor = finderPathExtractor,
             chatAttachmentsUseCase = attachmentsUseCase,
             toolModifyReviewUseCase = toolModifyReviewUseCase,
-            observabilityTracker = ChatObservabilityTracker(structuredLogger = structuredLogger),
-            structuredLogger = structuredLogger,
+            observabilityTracker = ChatObservabilityTracker(log = log),
+            log = log,
             tokenLogging = tokenLogging,
             ioDispatcher = ioDispatcher,
         )

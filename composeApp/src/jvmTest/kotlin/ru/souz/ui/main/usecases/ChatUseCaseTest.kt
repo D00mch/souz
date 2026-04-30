@@ -62,7 +62,7 @@ class ChatUseCaseTest {
             chatAttachmentsUseCase = ChatAttachmentsUseCase(UnconfinedTestDispatcher(testScheduler)),
             toolModifyReviewUseCase = mockk(relaxed = true),
             observabilityTracker = tracker,
-            structuredLogger = DesktopStructuredLogger(),
+            log = DesktopStructuredLogger(),
             tokenLogging = tokenLogging,
             ioDispatcher = UnconfinedTestDispatcher(testScheduler),
         )

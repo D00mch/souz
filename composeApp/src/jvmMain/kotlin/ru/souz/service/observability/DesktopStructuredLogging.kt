@@ -99,7 +99,7 @@ data class ChatRequestLogContext(
     fun asCoroutineContext(): CoroutineContext = executionContext.asCoroutineContext()
 }
 
-internal data class ChatConversationMetrics(
+data class ChatConversationMetrics(
     val startedAtMs: Long,
     val startSource: ChatRequestSource,
     val requestCount: Int = 0,
@@ -124,7 +124,7 @@ class DesktopStructuredLogger {
         defaultMessage = "request lifecycle",
     )
 
-    fun newChatRequestLogContext(
+    fun requestContext(
         conversationId: String,
         source: ChatRequestSource,
         model: String,
@@ -148,14 +148,14 @@ class DesktopStructuredLogger {
         startedAtMs = System.currentTimeMillis(),
     )
 
-    fun logAppOpened() {
+    fun appOpened() {
         appLifecycleLog.info {
             addKeyValue("app.lifecycle.state", "opened")
             addKeyValue("app.session.id", DesktopStructuredLoggingSession.appSessionId)
         }
     }
 
-    fun logAppClosed() {
+    fun appClosed() {
         appLifecycleLog.info {
             addKeyValue("app.lifecycle.state", "closed")
             addKeyValue("app.session.id", DesktopStructuredLoggingSession.appSessionId)
@@ -163,7 +163,7 @@ class DesktopStructuredLogger {
         }
     }
 
-    fun logConversationStarted(
+    fun conversationStarted(
         conversationId: String,
         source: ChatRequestSource,
     ) {
@@ -175,7 +175,7 @@ class DesktopStructuredLogger {
         }
     }
 
-    internal fun logConversationFinished(
+    fun conversationFinished(
         conversationId: String,
         metrics: ChatConversationMetrics,
         reason: ChatConversationCloseReason,
@@ -193,7 +193,7 @@ class DesktopStructuredLogger {
         }
     }
 
-    fun logRequestStarted(context: ChatRequestLogContext) {
+    fun requestStarted(context: ChatRequestLogContext) {
         requestLifecycleLog.info {
             addKeyValue("request.state", "started")
             withRequestContext(context)
@@ -202,7 +202,7 @@ class DesktopStructuredLogger {
         }
     }
 
-    fun logRequestFinished(
+    fun requestFinished(
         context: ChatRequestLogContext,
         status: ChatRequestStatus,
         responseLengthChars: Int?,
@@ -273,11 +273,11 @@ class StructuredLoggingAgentTelemetry : AgentTelemetry {
     }
 }
 
-internal class ChatObservabilityTracker(
-    structuredLogger: DesktopStructuredLogger = DesktopStructuredLogger(),
-    private val onConversationStarted: (String, ChatRequestSource) -> Unit = structuredLogger::logConversationStarted,
+class ChatObservabilityTracker(
+    log: DesktopStructuredLogger = DesktopStructuredLogger(),
+    private val onConversationStarted: (String, ChatRequestSource) -> Unit = log::conversationStarted,
     private val onConversationFinished: (String, ChatConversationMetrics, ChatConversationCloseReason) -> Unit =
-        structuredLogger::logConversationFinished,
+        log::conversationFinished,
 ) {
     private val state = MutableStateFlow(ConversationTrackingState())
 
