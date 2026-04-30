@@ -1,6 +1,7 @@
 package agent
 
 import io.mockk.*
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -54,6 +55,12 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @BeforeEach
     fun checkEnvironment() = support.checkEnvironment()
+
+    @AfterEach
+    fun clearMocks() {
+        clearAllMocks()
+        unmockkAll()
+    }
 
     @AfterAll
     fun finish() = support.finish()
@@ -803,9 +810,10 @@ class GraphAgentToolScenariosIntegrationTest {
         }
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
+                val filter = it.filter
                 it.path.contains("sales") &&
                         it.operation == ExcelRead.ReadOperation.QUERY &&
-                        it.filter != null && it.filter.contains(">") && it.filter.contains("1000")
+                        filter != null && filter.contains(">") && filter.contains("1000")
             })
         }
     }
@@ -837,9 +845,10 @@ class GraphAgentToolScenariosIntegrationTest {
         }
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
+                val sortBy = it.sortBy
                 it.path.contains("sales") &&
                         it.operation == ExcelRead.ReadOperation.QUERY &&
-                        it.sortBy != null && it.sortBy.contains("Amount", ignoreCase = true)
+                        sortBy != null && sortBy.contains("Amount", ignoreCase = true)
             })
         }
     }
@@ -868,10 +877,11 @@ class GraphAgentToolScenariosIntegrationTest {
         }
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
+                val range = it.range
                 it.path.contains("sales") &&
                         it.operation == ExcelRead.ReadOperation.CELL &&
-                        (it.range != null && it.range.contains("B5")) ||
-                        (it.returnColumn == "B5")
+                        ((range != null && range.contains("B5")) ||
+                                (it.returnColumn == "B5"))
             })
         }
     }
@@ -913,9 +923,10 @@ class GraphAgentToolScenariosIntegrationTest {
         }
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
+                val lookupValue = it.lookupValue
                 it.path.contains("price") &&
                         it.operation == ExcelRead.ReadOperation.LOOKUP &&
-                        it.lookupValue != null && it.lookupValue.contains("Ноутбук") &&
+                        lookupValue != null && lookupValue.contains("Ноутбук") &&
                         it.returnColumn != null
             })
         }
@@ -946,8 +957,9 @@ class GraphAgentToolScenariosIntegrationTest {
         }
         coVerify(atLeast = 1) {
             excelReport.invoke(match {
+                val headers = it.headers
                 it.path.contains("report") &&
-                        it.headers != null && it.headers.contains("Имя")
+                        headers != null && headers.contains("Имя")
             })
         }
     }

@@ -11,8 +11,10 @@ import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentDesktopInfoRepository
+import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.DefaultBrowserProvider
+import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.db.StorredData
@@ -47,6 +49,7 @@ class NodesCommonTest {
             defaultBrowserProvider = mockk<DefaultBrowserProvider> {
                 every { defaultBrowserDisplayName() } returns null
             },
+            runtimeEnvironment = SystemAgentRuntimeEnvironment,
         )
         val context = AgentContext(
             input = "Проверь Telegram",
@@ -91,6 +94,7 @@ class NodesCommonTest {
             defaultBrowserProvider = mockk<DefaultBrowserProvider> {
                 every { defaultBrowserDisplayName() } returns null
             },
+            runtimeEnvironment = SystemAgentRuntimeEnvironment,
         )
         val context = AgentContext(
             input = "Найди локальные данные",

@@ -1,6 +1,7 @@
 package agent
 
 import io.mockk.*
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.TestInstance
@@ -35,6 +36,12 @@ class GraphAgentComplexScenarios {
 
     @BeforeEach
     fun checkEnvironment() = support.checkEnvironment()
+
+    @AfterEach
+    fun clearMocks() {
+        clearAllMocks()
+        unmockkAll()
+    }
 
     @AfterAll
     fun finish() = support.finish()

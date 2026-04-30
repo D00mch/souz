@@ -7,7 +7,7 @@ import kotlin.test.Ignore
 
 class RagDatabaseTest {
     private fun reset() {
-        ConfigStore.prefs.remove("rag_db_initialized")
+        ConfigStore.rm("rag_db_initialized")
         File("build/rag_index").deleteRecursively()
     }
 

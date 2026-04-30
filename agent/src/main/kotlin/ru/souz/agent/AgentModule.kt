@@ -15,6 +15,8 @@ import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.runtime.LuaRuntime
+import ru.souz.agent.spi.AgentRuntimeEnvironment
+import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.tool.UserMessageClassifier
@@ -33,7 +35,7 @@ fun agentDiModule(
     }
     bindSingleton { AgentToolExecutor(instance()) }
     bindSingleton { NodesErrorHandling(instance()) }
-    bindSingleton { NodesCommon(instance(), instance(), instance(), instance()) }
+    bindSingleton { NodesCommon(instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { LuaRuntime(instance()) }
     bindSingleton { NodesLua(instance(), instance()) }
@@ -50,7 +52,39 @@ fun agentDiModule(
         )
     }
     bindSingleton { SystemPromptResolver() }
-    bindSingleton { GraphBasedAgent(di, instance<ObjectMapper>(tag = logObjectMapperTag)) }
-    bindSingleton { LuaGraphBasedAgent(di, instance<ObjectMapper>(tag = logObjectMapperTag)) }
-    bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton<AgentRuntimeEnvironment> { SystemAgentRuntimeEnvironment }
+    bindSingleton { AgentContextFactory(instance(), instance(), instance()) }
+    bindSingleton {
+        GraphBasedAgent(
+            logObjectMapper = instance<ObjectMapper>(tag = logObjectMapperTag),
+            nodesLLM = instance(),
+            nodesCommon = instance(),
+            nodesClassify = instance(),
+            nodesErrorHandling = instance(),
+            nodesSummarization = instance(),
+            nodesMCP = instance(),
+        )
+    }
+    bindSingleton {
+        LuaGraphBasedAgent(
+            logObjectMapper = instance<ObjectMapper>(tag = logObjectMapperTag),
+            nodesLua = instance(),
+            nodesCommon = instance(),
+            nodesClassify = instance(),
+            nodesErrorHandling = instance(),
+            nodesSummarization = instance(),
+            nodesMCP = instance(),
+        )
+    }
+    bindSingleton {
+        AgentExecutor(
+            agentProvider = { id ->
+                when (id) {
+                    AgentId.GRAPH -> instance<GraphBasedAgent>()
+                    AgentId.LUA_GRAPH -> instance<LuaGraphBasedAgent>()
+                }
+            }
+        )
+    }
+    bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance()) }
 }

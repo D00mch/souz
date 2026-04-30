@@ -301,8 +301,8 @@ class AgentScenarioTestSupport(
                 overrides()
             }
             val agent: Agent = when (agentType) {
-                AgentId.GRAPH -> GraphBasedAgent(di, restJsonMapper)
-                AgentId.LUA_GRAPH -> LuaGraphBasedAgent(di, restJsonMapper)
+                AgentId.GRAPH -> di.direct.instance<GraphBasedAgent>()
+                AgentId.LUA_GRAPH -> di.direct.instance<LuaGraphBasedAgent>()
             }
             runGraphAgent(agent, di, userPrompt)
         } finally {
