@@ -19,7 +19,7 @@ If the proxy token is missing, `/v1/**` rejects requests with a structured `back
 
 `POST /agent` requires `Content-Type: application/json`, `Authorization: Bearer <internal-agent-token>`, and `X-Request-Id: <uuid>`. The token is read from `SOUZ_BACKEND_AGENT_TOKEN` or `souz.backend.agentToken`. The request body `requestId` must match `X-Request-Id`.
 
-The backend keeps `/agent` conversation snapshots in memory by `userId` + `conversationId`. `/agent` executes each turn from a request-scoped runtime:
+The backend keeps `/agent` conversation snapshots through the legacy `AgentSessionRepository`, now backed by the stage-2 product `AgentStateRepository`. Stage-2 also adds in-memory product repositories for per-user settings, chats, messages, executions, choices, and events. `/agent` executes each turn from a request-scoped runtime:
 
 - Process scope: shared settings/provider clients, shared runtime tool catalog/filter, backend no-op desktop/MCP host adapters, object mappers, and runtime/cache factories.
 - Conversation scope: persisted snapshot only, including history, active agent id, temperature, locale, and time zone.
@@ -51,9 +51,14 @@ backend/
     │           ├── http/                       # Ktor server wrapper, routes, and v1 error envelopes
     │           ├── agent/                      # Legacy /agent feature internals
     │           ├── bootstrap/                  # /v1/bootstrap response assembly from current backend state
+    │           ├── chat/                       # Product chat/message models and repositories
+    │           ├── execution/                  # Product execution models and repositories
+    │           ├── choices/                    # Product choice models and repositories
+    │           ├── events/                     # Product event models and repositories
+    │           ├── settings/                   # Per-user settings models, repository, effective resolver
     │           ├── config/                     # Feature-flag and env/property config readers
     │           ├── security/                   # Trusted proxy request identity extraction for /v1/**
-    │           ├── storage/                    # Storage mode enum and stage gating
+    │           ├── storage/                    # Storage mode enum, stage gating, and memory repository impls
     │           └── common/                     # Shared backend exception types
     └── test/
         └── kotlin/
@@ -72,7 +77,7 @@ backend/
 - `storage.mode`
 - `capabilities.models` derived from the current `SettingsProvider` + `LlmBuildProfile` semantics, with `serverManagedKey` indicating whether the backend currently has provider access
 - `capabilities.tools` from the backend-safe runtime tool catalog only
-- `settings` from process-wide settings with safe defaults for locale/time zone
+- `settings` from per-user backend settings resolved as server defaults + persisted user settings + backend feature gating, with safe locale/time-zone/model fallbacks
 
 Errors for `/v1/**` use a structured envelope:
 

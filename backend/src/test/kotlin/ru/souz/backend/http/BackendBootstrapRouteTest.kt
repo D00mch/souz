@@ -15,6 +15,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.runBlocking
 import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -24,6 +25,8 @@ import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.bootstrap.BackendBootstrapService
+import ru.souz.backend.settings.service.EffectiveSettingsResolver
+import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
@@ -35,12 +38,14 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.backend.storage.StorageMode
+import ru.souz.backend.settings.model.UserSettings
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolSetup
+import java.util.Locale
 
 class BackendBootstrapRouteTest {
     private val json = jacksonObjectMapper()
@@ -243,6 +248,86 @@ class BackendBootstrapRouteTest {
     }
 
     @Test
+    fun `bootstrap resolves settings per user and preserves response shape`() = testApplication {
+        val settingsProvider = FakeSettingsProvider().apply {
+            gigaModel = LLMModel.Max
+            contextSize = 48_000
+            temperature = 0.4f
+            regionProfile = "ru"
+            useStreaming = true
+            qwenChatKey = "qwen-key"
+            gigaChatKey = "giga-key"
+        }
+        val userSettingsRepository = MemoryUserSettingsRepository().also { repository ->
+            runBlocking {
+                repository.save(
+                UserSettings(
+                    userId = "user-a",
+                    defaultModel = LLMModel.QwenMax,
+                    contextSize = 12_000,
+                    temperature = 0.15f,
+                    locale = Locale.forLanguageTag("en-US"),
+                    timeZone = ZoneId.of("Europe/Amsterdam"),
+                    enabledTools = setOf("ListFiles"),
+                    showToolEvents = false,
+                    streamingMessages = false,
+                )
+                )
+            }
+        }
+        application {
+            backendApplication(
+                agentService = unusedAgentService(settingsProvider),
+                selectedModel = { settingsProvider.gigaModel.alias },
+                internalAgentToken = { "legacy-token" },
+                bootstrapService = bootstrapService(
+                    settingsProvider = settingsProvider,
+                    userSettingsRepository = userSettingsRepository,
+                    featureFlags = BackendFeatureFlags(
+                        wsEvents = false,
+                        streamingMessages = true,
+                        toolEvents = true,
+                        choices = false,
+                        durableEventReplay = false,
+                    ),
+                ),
+                trustedProxyToken = { "proxy-secret" },
+            )
+        }
+
+        val persisted = client.get("/v1/bootstrap") {
+            header("X-User-Id", "user-a")
+            header("X-Souz-Proxy-Auth", "proxy-secret")
+        }
+        val persistedPayload = json.readTree(persisted.bodyAsText())
+        val defaults = client.get("/v1/bootstrap") {
+            header("X-User-Id", "user-b")
+            header("X-Souz-Proxy-Auth", "proxy-secret")
+        }
+        val defaultPayload = json.readTree(defaults.bodyAsText())
+
+        assertEquals(HttpStatusCode.OK, persisted.status)
+        assertEquals(LLMModel.QwenMax.alias, persistedPayload["settings"]["defaultModel"].asText())
+        assertEquals(12_000, persistedPayload["settings"]["contextSize"].asInt())
+        assertEquals(0.15, persistedPayload["settings"]["temperature"].asDouble())
+        assertEquals("en-US", persistedPayload["settings"]["locale"].asText())
+        assertEquals("Europe/Amsterdam", persistedPayload["settings"]["timeZone"].asText())
+        assertEquals(false, persistedPayload["settings"]["showToolEvents"].asBoolean())
+        assertEquals(false, persistedPayload["settings"]["streamingMessages"].asBoolean())
+
+        assertEquals(HttpStatusCode.OK, defaults.status)
+        assertEquals(LLMModel.Max.alias, defaultPayload["settings"]["defaultModel"].asText())
+        assertEquals(48_000, defaultPayload["settings"]["contextSize"].asInt())
+        assertEquals(0.4, defaultPayload["settings"]["temperature"].asDouble())
+        assertEquals("ru-RU", defaultPayload["settings"]["locale"].asText())
+        assertEquals(ZoneId.systemDefault().id, defaultPayload["settings"]["timeZone"].asText())
+        assertTrue(defaultPayload["settings"].has("defaultModel"))
+        assertTrue(defaultPayload["settings"].has("contextSize"))
+        assertTrue(defaultPayload["settings"].has("temperature"))
+        assertEquals(LLMModel.Max, userSettingsRepository.get("user-b")?.defaultModel)
+    }
+
+    @Test
     fun `legacy agent route remains mounted`() = testApplication {
         application {
             backendApplication(
@@ -268,9 +353,17 @@ private fun bootstrapService(
     ),
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     localModelAvailability: LocalModelAvailability = unavailableLocalModels(),
+    userSettingsRepository: MemoryUserSettingsRepository = MemoryUserSettingsRepository(),
 ): BackendBootstrapService =
     BackendBootstrapService(
         settingsProvider = settingsProvider,
+        effectiveSettingsResolver = EffectiveSettingsResolver(
+            baseSettingsProvider = settingsProvider,
+            userSettingsRepository = userSettingsRepository,
+            featureFlags = featureFlags,
+            toolCatalog = toolCatalog,
+            localModelAvailability = localModelAvailability,
+        ),
         toolCatalog = toolCatalog,
         featureFlags = featureFlags,
         storageMode = StorageMode.MEMORY,

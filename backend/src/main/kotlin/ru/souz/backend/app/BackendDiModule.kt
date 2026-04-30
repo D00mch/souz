@@ -7,13 +7,28 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.service.BackendAgentService
+import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
-import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
+import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.choices.repository.ChoiceRepository
+import ru.souz.backend.events.repository.AgentEventRepository
+import ru.souz.backend.execution.repository.AgentExecutionRepository
+import ru.souz.backend.settings.repository.UserSettingsRepository
+import ru.souz.backend.settings.service.EffectiveSettingsResolver
+import ru.souz.backend.storage.memory.MemoryAgentEventRepository
+import ru.souz.backend.storage.memory.MemoryAgentExecutionRepository
+import ru.souz.backend.storage.memory.MemoryAgentStateRepository
+import ru.souz.backend.storage.memory.MemoryChatRepository
+import ru.souz.backend.storage.memory.MemoryChoiceRepository
+import ru.souz.backend.storage.memory.MemoryMessageRepository
+import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
 import ru.souz.llms.runtime.LLMFactory
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.runtime.di.runtimeCoreDiModule
@@ -42,7 +57,25 @@ fun backendDiModule(
 
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
     bindSingleton<StorageMode> { appConfig.storageMode }
-    bindSingleton<AgentSessionRepository> { InMemoryAgentSessionRepository() }
+    bindSingleton<ChatRepository> { MemoryChatRepository() }
+    bindSingleton<MessageRepository> { MemoryMessageRepository() }
+    bindSingleton<AgentStateRepository> { MemoryAgentStateRepository() }
+    bindSingleton<AgentExecutionRepository> { MemoryAgentExecutionRepository() }
+    bindSingleton<ChoiceRepository> { MemoryChoiceRepository() }
+    bindSingleton<AgentEventRepository> { MemoryAgentEventRepository() }
+    bindSingleton<UserSettingsRepository> { MemoryUserSettingsRepository() }
+    bindSingleton {
+        EffectiveSettingsResolver(
+            baseSettingsProvider = instance(),
+            userSettingsRepository = instance(),
+            featureFlags = instance(),
+            toolCatalog = instance(),
+            localModelAvailability = instance<LocalProviderAvailability>(),
+        )
+    }
+    bindSingleton<AgentSessionRepository> {
+        AgentStateBackedSessionRepository(instance())
+    }
     bindSingleton {
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
@@ -73,6 +106,7 @@ fun backendDiModule(
     bindSingleton {
         BackendBootstrapService(
             settingsProvider = instance(),
+            effectiveSettingsResolver = instance(),
             toolCatalog = instance(),
             featureFlags = instance(),
             storageMode = instance(),
