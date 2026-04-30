@@ -27,7 +27,7 @@ If you are not sure about something, left a note for other developers to review.
 - **HTTP backend agent runtime** in `:backend` exposed via `POST /agent`, with request-scoped agent execution per `userId` + `conversationId`, persisted in-memory conversation snapshots across turns, and per-request model/context/locale/time-zone overrides.
 - **Key-aware model selection in Settings**: chat, embeddings, and voice recognition model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
-- **Skills system** with embedding-backed summary retrieval, lazy `SKILL.md` activation, workspace-local `./skills` override over managed `~/.local/state/souz/skills`, a bundled `weather` demo skill, and minimal ClawHub install/update/list support.
+- **PoC skills system** with embedding-backed summary retrieval, lazy `SKILL.md` activation, workspace-local `./skills` override over managed `~/.local/state/souz/skills`, a bundled `weather` demo skill, and minimal ClawHub install/update/list support.
 - **Rich desktop toolset** in `:composeApp` on top of the shared runtime tools: browser, calendar, mail, notes, desktop automation, Telegram, presentations, app launch, and text/clipboard actions.
 - **Two-mode internet search**: quick-answer web lookup for simple factual questions and multi-step research mode with LLM-built strategy, broader source coverage, cited long-form synthesis, and automatic `.md` export for oversized reports.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
