@@ -3,7 +3,6 @@ package ru.souz.agent.nodes
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.skill.AgentActivatedSkill
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.spi.AgentDesktopInfoRepository
@@ -42,8 +41,7 @@ internal class NodesCommon(
      */
     fun inputToHistory(name: String = "Input->History"): Node<String, String> =
         Node(name) { ctx ->
-            val historyInput = ctx.turnState.originalInput ?: ctx.input
-            val usrMsg = LLMRequest.Message(LLMMessageRole.user, historyInput)
+            val usrMsg = LLMRequest.Message(LLMMessageRole.user, ctx.input)
             val history = ArrayList(ctx.history).apply {
                 if (isEmpty()) add(ctx.systemPrompt.toSystemPromptMessage())
                 add(usrMsg)
@@ -97,8 +95,6 @@ internal class NodesCommon(
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
         val additionalMessage: LLMRequest.Message? = appendActualInformation(
             userText = ctx.input,
-            activeSkill = ctx.turnState.activeSkill,
-            relevantSkills = ctx.turnState.relevantSkills,
         )
 
         val newHistory = ArrayList<LLMRequest.Message>()
@@ -124,8 +120,6 @@ internal class NodesCommon(
 
     private suspend fun appendActualInformation(
         userText: String,
-        activeSkill: AgentActivatedSkill?,
-        relevantSkills: List<ru.souz.agent.skill.AgentSkillMatch>,
     ): LLMRequest.Message? {
         if (userText.isBlank()) return null
 
@@ -155,18 +149,12 @@ internal class NodesCommon(
         )
         additionalData.add(StorredData("Текущие дата и время: $currentDateTime", StorredType.GENERAL_FACT))
 
-        val skillsContext = buildSkillsContext(activeSkill, relevantSkills)
-        if (additionalData.isEmpty() && skillsContext == null) return null
+        if (additionalData.isEmpty()) return null
 
         val content = buildString {
             append("<context>\n")
             append("Background information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), IGNORE completely. Do NOT reference this data in output.\n")
             append("---\n")
-
-            skillsContext?.let {
-                append(it)
-                if (additionalData.isNotEmpty()) append('\n')
-            }
 
             additionalData.forEach { data ->
                 val typeReadable = data.type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
@@ -179,35 +167,6 @@ internal class NodesCommon(
             role = LLMMessageRole.user,
             content = content
         )
-    }
-
-    private fun buildSkillsContext(
-        activeSkill: AgentActivatedSkill?,
-        relevantSkills: List<ru.souz.agent.skill.AgentSkillMatch>,
-    ): String? = when {
-        activeSkill != null -> buildString {
-            append("Active skill for this turn. Follow it only if it helps solve the user's request.\n")
-            append("- Skill: /${activeSkill.skill.summary.name}\n")
-            if (activeSkill.remainingInput.isNotBlank()) {
-                append("- Skill arguments: ${activeSkill.remainingInput}\n")
-            }
-            append("<skill>\n")
-            append(activeSkill.skill.body.trim())
-            append("\n</skill>\n")
-        }
-
-        relevantSkills.isNotEmpty() -> buildString {
-            append("Relevant skills available for this turn (summaries only):\n")
-            relevantSkills.forEach { match ->
-                append("- /${match.summary.name}: ${match.summary.description}")
-                if (match.summary.whenToUse.isNotBlank()) {
-                    append(" When to use: ${match.summary.whenToUse}")
-                }
-                append(" [score=${match.score}]\n")
-            }
-        }
-
-        else -> null
     }
 
     private fun buildUserGeoLocationFact(): String? = try {

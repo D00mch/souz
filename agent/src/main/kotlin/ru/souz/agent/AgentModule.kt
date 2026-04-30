@@ -12,7 +12,6 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesLua
 import ru.souz.agent.nodes.NodesMCP
-import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.runtime.LuaRuntime
@@ -41,7 +40,6 @@ fun agentDiModule(
     bindSingleton { LuaRuntime(instance()) }
     bindSingleton { NodesLua(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
-    bindSingleton { NodesSkills(instance()) }
     bindSingleton { NodesSummarization(instance(), instance()) }
     bindSingleton {
         NodesClassification(
@@ -55,7 +53,7 @@ fun agentDiModule(
     }
     bindSingleton { SystemPromptResolver() }
     bindSingleton<AgentRuntimeEnvironment> { SystemAgentRuntimeEnvironment }
-    bindSingleton { AgentContextFactory(instance(), instance(), instance(), instance()) }
+    bindSingleton { AgentContextFactory(instance(), instance(), instance()) }
     bindSingleton {
         GraphBasedAgent(
             logObjectMapper = instance<ObjectMapper>(tag = logObjectMapperTag),
@@ -65,7 +63,6 @@ fun agentDiModule(
             nodesErrorHandling = instance(),
             nodesSummarization = instance(),
             nodesMCP = instance(),
-            nodesSkills = instance(),
         )
     }
     bindSingleton {
@@ -77,7 +74,6 @@ fun agentDiModule(
             nodesErrorHandling = instance(),
             nodesSummarization = instance(),
             nodesMCP = instance(),
-            nodesSkills = instance(),
         )
     }
     bindSingleton {

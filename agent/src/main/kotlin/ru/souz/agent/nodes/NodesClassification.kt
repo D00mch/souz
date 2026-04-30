@@ -3,13 +3,9 @@ package ru.souz.agent.nodes
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
-import ru.souz.agent.skill.requiredToolNames
 import ru.souz.agent.state.AgentContext
-import ru.souz.agent.state.AgentSettings
-import ru.souz.agent.state.AgentTools
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.agent.spi.AgentToolFilterContext
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -44,47 +40,26 @@ internal class NodesClassification(
      */
     fun node(name: String = "select categories"): Node<String, String> = Node(name) { ctx: AgentContext<String> ->
         val categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>> =
-            toolsFilter.applyFilter(
-                toolsByCategory = toolCatalog.toolsByCategory,
-                context = AgentToolFilterContext(activeSkill = ctx.turnState.activeSkill),
-            )
+            toolsFilter.applyFilter(toolCatalog.toolsByCategory)
                 .filterValues { it.isNotEmpty() }
-        val categories: List<ToolCategory> = classify(
-            userText = ctx.input,
-            currentTurnInput = ctx.turnState.originalInput ?: ctx.input,
-            history = ctx.history,
-            categoryStates = categoryStates,
-        )
+        val categories: List<ToolCategory> = classify(ctx.input, ctx.history, categoryStates)
 
         val categoriesToChoseFrom = if (categories.isEmpty() || categories.contains(HELP)) {
             categoryStates
         } else {
             categoryStates.filter { categories.contains(it.key) }
         }
-        val skillRequiredTools = ctx.turnState.activeSkill
-            ?.requiredToolNames()
-            .orEmpty()
-            .mapNotNull { toolName ->
-                categoryStates.values.asSequence().mapNotNull { tools -> tools[toolName] }.firstOrNull()
-            }
-        val functions: List<LLMRequest.Function> =
-            (categoriesToChoseFrom.flatMap { it.value.values } + skillRequiredTools)
-                .distinctBy { it.fn.name }
-                .map { it.fn }
-        ctx.map(
-            settings = ctx.settings.copy(tools = AgentTools(categoryStates)),
-            activeTools = functions,
-        ) { it }
+        val functions: List<LLMRequest.Function> = categoriesToChoseFrom.flatMap { it.value.values }.map { it.fn }
+        ctx.map(activeTools = functions) { it }
     }
 
     private suspend fun classify(
         userText: String,
-        currentTurnInput: String,
         history: List<LLMRequest.Message>,
         categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>>,
         retriesCount: Int = 2
     ): List<ToolCategory> {
-        val body = buildClassifierBody(userText, currentTurnInput, history, categoryStates)
+        val body = buildClassifierBody(userText, history, categoryStates)
         val bodyJson = restJsonMapper.writeValueAsString(body)
         l.debug("Classifying user message: {}, \nbody: \n{}", userText, logObjectMapper.writeValueAsString(body))
         try {
@@ -102,17 +77,16 @@ internal class NodesClassification(
             }
         } catch (e: Exception) {
             l.error("Error in apiClassifier: {}", e.message)
-            return classify(userText, currentTurnInput, history, categoryStates, retriesCount.dec())
+            return classify(userText, history, categoryStates, retriesCount.dec())
         }
     }
 
     private fun buildClassifierBody(
         userText: String,
-        currentTurnInput: String,
         history: List<LLMRequest.Message>,
         categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>>
     ): LLMRequest.Chat {
-        val formattedHistory = historyForClassification(userText, currentTurnInput, history)
+        val formattedHistory = historyForClassification(userText, history)
             .joinToString(separator = "\n\n") { message ->
                 "${message.role.name.uppercase()}: ${message.content.trim()}"
             }
@@ -130,13 +104,12 @@ internal class NodesClassification(
 
     private fun historyForClassification(
         userText: String,
-        currentTurnInput: String,
         history: List<LLMRequest.Message>,
     ): List<LLMRequest.Message> {
         val conversationHistory = history
             .filterNot { it.role == LLMMessageRole.system }
             .filterNot { it.isInjectedContext() }
-            .dropCurrentUserTurn(currentTurnInput)
+            .dropCurrentUserTurn(userText)
 
         val historyWindow = if (isUserPromptTooShort(userText)) {
             EXPANDED_HISTORY_WINDOW
@@ -253,6 +226,7 @@ CATEGORY1,CATEGORY2 0-100
         )
 
         WEB_SEARCH -> listOf(
+            "какая погода в Таллине",
             "проведи исследование про ИИ во Франции",
             "найди последние новости про ИИ",
             "собери источники по кибербезопасности",

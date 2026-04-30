@@ -14,7 +14,6 @@ import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
-import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.state.AgentContext
@@ -29,7 +28,6 @@ class GraphBasedAgent internal constructor(
     private val nodesErrorHandling: NodesErrorHandling,
     private val nodesSummarization: NodesSummarization,
     private val nodesMCP: NodesMCP,
-    private val nodesSkills: NodesSkills,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegateImpl(
         logObjectMapper = logObjectMapper,
         loggerClass = GraphBasedAgent::class.java,
@@ -47,13 +45,11 @@ class GraphBasedAgent internal constructor(
         val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
         val nodeClassify: Node<String, String> = nodesClassify.node(CLASSIFY_NODE_NAME)
         val nodeMcp: Node<String, String> = nodesMCP.nodeProvideMcpTools("MCP Node")
-        val nodeSkills: Node<String, String> = nodesSkills.resolve()
         val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
         val toolUse: Node<LLMResponse.Chat.Ok, String> = nodesCommon.toolUse()
         val summary: Node<LLMResponse.Chat.Ok, String> = nodesSummarization.summarize()
 
-        nodeInput.edgeTo(nodeSkills)
-        nodeSkills.edgeTo(inputToHistory)
+        nodeInput.edgeTo(inputToHistory)
         inputToHistory.edgeTo(nodeClassify)
         nodeClassify.edgeTo(nodeMcp)
         nodeMcp.edgeTo(contextEnrich)

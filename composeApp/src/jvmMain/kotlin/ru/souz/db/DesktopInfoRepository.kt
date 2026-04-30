@@ -12,7 +12,6 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalModelStore
-import ru.souz.skill.EmbeddingSkillSearch
 import java.time.LocalDate
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -28,11 +27,6 @@ class DesktopInfoRepository(
     private val extractor: DesktopDataExtractor,
     private val settingsProvider: SettingsProvider,
     private val localModelStore: LocalModelStore = LocalModelStore(),
-    private val skillSearch: EmbeddingSkillSearch = EmbeddingSkillSearch(
-        api = api,
-        settingsProvider = settingsProvider,
-        localModelStore = localModelStore,
-    ),
 ) : AgentDesktopInfoRepository {
     private val l = LoggerFactory.getLogger(DesktopInfoRepository::class.java)
     private val refreshMutex = Mutex()
@@ -93,10 +87,6 @@ class DesktopInfoRepository(
         }
         return db.searchSimilar(emb, limit)
     }
-
-    override suspend fun searchSkills(query: String, limit: Int) = skillSearch.searchRelevantSkills(query, limit)
-
-    override suspend fun loadSkill(name: String) = skillSearch.loadSkill(name)
 
     private suspend fun refreshDesktopData(force: Boolean) = refreshMutex.withLock {
         db.initializeOnce()

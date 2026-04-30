@@ -34,7 +34,6 @@ import ru.souz.llms.giga.toGiga
 fun runtimeToolsDiModule(
     includeWebImageSearch: Boolean = true,
 ): DI.Module = DI.Module("runtimeTools") {
-    bindSingleton { ToolRunBashCommand }
     bindSingleton { FilesToolUtil(instance()) }
     bindSingleton { ToolListFiles(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
@@ -66,7 +65,6 @@ fun runtimeToolsDiModule(
 
     bindSingleton {
         RuntimeToolsFactory(
-            toolRunBashCommand = instance(),
             toolListFiles = instance(),
             toolFindInFiles = instance(),
             toolNewFile = instance(),
@@ -90,19 +88,16 @@ fun runtimeToolsDiModule(
         )
     }
     bindSingleton<AgentToolCatalog> { instance<RuntimeToolsFactory>() }
-    bindSingleton { RuntimePassThroughToolsFilter }
-    bindSingleton<AgentToolsFilter> { ru.souz.skill.SkillAwareToolsFilter(instance<RuntimePassThroughToolsFilter>()) }
+    bindSingleton<AgentToolsFilter> { RuntimePassThroughToolsFilter }
 }
 
 object RuntimePassThroughToolsFilter : AgentToolsFilter {
     override fun applyFilter(
         toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
-        context: ru.souz.agent.spi.AgentToolFilterContext,
     ): Map<ToolCategory, Map<String, LLMToolSetup>> = toolsByCategory
 }
 
 class RuntimeToolsFactory(
-    private val toolRunBashCommand: ToolRunBashCommand,
     private val toolListFiles: ToolListFiles,
     private val toolFindInFiles: ToolFindInFiles,
     private val toolNewFile: ToolNewFile,
@@ -145,7 +140,6 @@ class RuntimeToolsFactory(
         )
 
         ToolCategory.WEB_SEARCH -> buildList {
-            add(toolRunBashCommand.toGiga())
             add(toolInternetSearch.toGiga())
             add(toolInternetResearch.toGiga())
             toolWebImageSearch?.let { add(it.toGiga()) }

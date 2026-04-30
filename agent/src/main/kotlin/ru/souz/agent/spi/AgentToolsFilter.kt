@@ -15,6 +15,5 @@ interface AgentToolsFilter {
      */
     fun applyFilter(
         toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
-        context: AgentToolFilterContext = AgentToolFilterContext(),
     ): Map<ToolCategory, Map<String, LLMToolSetup>>
 }

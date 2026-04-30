@@ -12,12 +12,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
-import ru.souz.agent.skill.AgentSkill
-import ru.souz.agent.skill.AgentSkillMatch
-import ru.souz.agent.skill.AgentSkillSource
-import ru.souz.agent.skill.AgentSkillSummary
-import ru.souz.agent.skill.matchesName
-import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.backend.agent.model.AgentConversationKey
@@ -46,10 +40,8 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 import ru.souz.tool.math.ToolCalculator
-import ru.souz.skill.SkillAwareToolsFilter
 
 class BackendAgentServiceTest {
     @Test
@@ -342,68 +334,9 @@ class BackendAgentServiceTest {
         assertTrue(toolFailure?.content?.contains("Can't invoke function: boom") == true)
     }
 
-    @Test
-    fun `backend keeps RunBashCommand unavailable without active requiring skill`() = runTest {
-        val api = BashSkillAgentApi()
-        val service = createService(
-            api = api,
-            toolCatalog = toolCatalog(ToolCategory.WEB_SEARCH to ToolRunBashCommand.toGiga()),
-            toolsFilter = SkillAwareToolsFilter(BackendNoopAgentToolsFilter),
-        )
-
-        val response = service.sendAgentRequest(agentRequest(prompt = "Какая погода в Москве?"))
-
-        assertEquals("no bash available", response.content)
-        assertTrue(
-            api.finalChatRequests().all { request ->
-                request.functions.none { function -> function.name == "RunBashCommand" }
-            }
-        )
-    }
-
-    @Test
-    fun `slash weather activates bash tool for the turn`() = runTest {
-        val api = BashSkillAgentApi()
-        val skill = AgentSkill(
-            summary = AgentSkillSummary(
-                name = "weather",
-                description = "Fetches current weather via curl",
-                whenToUse = "Use when the user asks for weather",
-                disableModelInvocation = true,
-                userInvocable = true,
-                allowedTools = setOf("Bash"),
-                requiresBins = listOf("curl"),
-                supportedOs = listOf("linux", "macos"),
-                source = AgentSkillSource.WORKSPACE,
-                folderName = "weather",
-            ),
-            body = "# Weather\nUse RunBashCommand with curl against wttr.in first.",
-        )
-        val service = createService(
-            api = api,
-            desktopInfoRepository = FakeSkillDesktopInfoRepository(
-                matches = emptyList(),
-                skills = listOf(skill),
-            ),
-            toolCatalog = toolCatalog(ToolCategory.WEB_SEARCH to ToolRunBashCommand.toGiga()),
-            toolsFilter = SkillAwareToolsFilter(BackendNoopAgentToolsFilter),
-        )
-
-        val response = service.sendAgentRequest(agentRequest(prompt = "/weather Moscow"))
-
-        assertEquals("tool result: weather-from-skill", response.content)
-        val chatRequest = api.finalChatRequests().first()
-        assertTrue(chatRequest.functions.any { it.name == "RunBashCommand" })
-        assertTrue(chatRequest.messages.any { it.content.contains("Skill arguments: Moscow") })
-        assertTrue(chatRequest.messages.any { it.content.contains("Use RunBashCommand with curl against wttr.in first.") })
-    }
-
     private fun createService(
         api: LLMChatAPI,
         sessionRepository: AgentSessionRepository = InMemoryAgentSessionRepository(),
-        desktopInfoRepository: AgentDesktopInfoRepository = object : AgentDesktopInfoRepository {
-            override suspend fun search(query: String, limit: Int) = emptyList<ru.souz.db.StorredData>()
-        },
         toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
         toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
     ): BackendAgentService {
@@ -416,7 +349,6 @@ class BackendAgentServiceTest {
                 sessionRepository = sessionRepository,
                 logObjectMapper = jacksonObjectMapper(),
                 systemPrompt = "You are Souz AI backend assistant. Answer directly and concisely in the user's language.",
-                desktopInfoRepository = desktopInfoRepository,
                 toolCatalog = toolCatalog,
                 toolsFilter = toolsFilter,
             ),
@@ -726,82 +658,6 @@ private class FailingToolAgentApi : LLMChatAPI {
         )
 }
 
-private class BashSkillAgentApi : LLMChatAPI {
-    val requests = ArrayList<LLMRequest.Chat>()
-
-    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        requests += body
-        return when {
-            body.isClassificationRequest() -> reply("WEB_SEARCH 95")
-            body.messages.any { it.role == LLMMessageRole.function && it.name == "RunBashCommand" } -> {
-                val toolResult = body.messages.last { it.role == LLMMessageRole.function && it.name == "RunBashCommand" }
-                    .content
-                    .removeSurrounding("\"")
-                reply("tool result: $toolResult")
-            }
-
-            body.functions.any { it.name == "RunBashCommand" } -> LLMResponse.Chat.Ok(
-                choices = listOf(
-                    LLMResponse.Choice(
-                        message = LLMResponse.Message(
-                            content = "",
-                            role = LLMMessageRole.assistant,
-                            functionCall = LLMResponse.FunctionCall(
-                                name = "RunBashCommand",
-                                arguments = mapOf("command" to "printf weather-from-skill"),
-                            ),
-                            functionsStateId = "bash_1",
-                        ),
-                        index = 0,
-                        finishReason = LLMResponse.FinishReason.function_call,
-                    )
-                ),
-                created = System.currentTimeMillis(),
-                model = body.model,
-                usage = LLMResponse.Usage(4, 2, 6, 0),
-            )
-
-            else -> reply("no bash available")
-        }
-    }
-
-    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
-        error("Streaming is not used in backend agent tests.")
-
-    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
-        error("Embeddings are not used in backend agent tests.")
-
-    override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
-        error("File upload is not used in backend agent tests.")
-
-    override suspend fun downloadFile(fileId: String): String? =
-        error("File download is not used in backend agent tests.")
-
-    override suspend fun balance(): LLMResponse.Balance =
-        error("Balance is not used in backend agent tests.")
-
-    fun finalChatRequests(): List<LLMRequest.Chat> = requests.finalChatRequests()
-
-    private fun reply(content: String): LLMResponse.Chat.Ok =
-        LLMResponse.Chat.Ok(
-            choices = listOf(
-                LLMResponse.Choice(
-                    message = LLMResponse.Message(
-                        content = content,
-                        role = LLMMessageRole.assistant,
-                        functionCall = null,
-                        functionsStateId = null,
-                    ),
-                    index = 0,
-                    finishReason = LLMResponse.FinishReason.stop,
-                )
-            ),
-            created = System.currentTimeMillis(),
-            model = LLMModel.Max.alias,
-            usage = LLMResponse.Usage(4, 2, 6, 0),
-        )
-}
-
 private class ThrowingTool : ToolSetup<ThrowingTool.Input> {
     data class Input(
         @InputParamDescription("Any payload that should trigger the tool")
@@ -881,18 +737,6 @@ private class FakeSettingsProvider : SettingsProvider {
             promptOverrides[key] = prompt
         }
     }
-}
-
-private class FakeSkillDesktopInfoRepository(
-    private val matches: List<AgentSkillMatch>,
-    private val skills: List<AgentSkill>,
-) : AgentDesktopInfoRepository {
-    override suspend fun search(query: String, limit: Int) = emptyList<ru.souz.db.StorredData>()
-
-    override suspend fun searchSkills(query: String, limit: Int): List<AgentSkillMatch> = matches.take(limit)
-
-    override suspend fun loadSkill(name: String): AgentSkill? =
-        skills.firstOrNull { it.summary.matchesName(name) }
 }
 
 private class CountingAgentSessionRepository : AgentSessionRepository {

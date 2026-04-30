@@ -1,7 +1,6 @@
 package ru.souz.db
 
 import ru.souz.tool.ToolRunBashCommand
-import ru.souz.tool.apple
 import ru.souz.tool.browser.ToolSafariInfo
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.kodein.di.DI

@@ -26,18 +26,9 @@ import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.qwen.QwenChatAPI
 import ru.souz.llms.runtime.LLMFactory
 import ru.souz.llms.tunnel.AiTunnelChatAPI
-import ru.souz.skill.ClawHubClient
-import ru.souz.skill.ClawHubManager
-import ru.souz.skill.FilesystemSkillCatalog
-import ru.souz.skill.HttpClawHubClient
-import ru.souz.skill.SkillDirectories
 
 fun runtimeCoreDiModule(): DI.Module = DI.Module("runtimeCore") {
     bindSingleton { ConfigStore }
-    bindSingleton { SkillDirectories.default() }
-    bindSingleton { FilesystemSkillCatalog(instance()) }
-    bindSingleton<ClawHubClient> { HttpClawHubClient() }
-    bindSingleton { ClawHubManager(directories = instance(), client = instance()) }
     bindSingleton { LocalHostInfoProvider() }
     bindSingleton { LocalModelStore() }
     bindSingleton { LocalBridgeLoader(instance()) }

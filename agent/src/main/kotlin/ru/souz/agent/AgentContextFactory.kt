@@ -2,7 +2,6 @@ package ru.souz.agent
 
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMModel
@@ -14,7 +13,6 @@ class AgentContextFactory(
     private val settingsProvider: AgentSettingsProvider,
     private val systemPromptResolver: SystemPromptResolver,
     private val toolCatalog: AgentToolCatalog,
-    private val toolsFilter: AgentToolsFilter,
     private val availableAgents: List<AgentId> = listOf(AgentId.LUA_GRAPH, AgentId.GRAPH),
 ) {
     fun normalizeAgentId(agentId: AgentId): AgentId =
@@ -48,11 +46,10 @@ class AgentContextFactory(
         temperature: Float,
     ): AgentContext<String> {
         val normalizedAgentId = normalizeAgentId(agentId)
-        val filteredTools = toolsFilter.applyFilter(toolCatalog.toolsByCategory)
         val settings = AgentSettings(
             model = model.alias,
             temperature = temperature,
-            toolsByCategory = filteredTools,
+            toolsByCategory = toolCatalog.toolsByCategory,
             contextSize = contextSize,
         )
         val allFunctions = settings.tools.byName.values.map { it.fn }

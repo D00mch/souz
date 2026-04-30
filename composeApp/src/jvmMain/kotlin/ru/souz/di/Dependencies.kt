@@ -7,71 +7,104 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.agentDiModule
-import ru.souz.agent.spi.*
-import ru.souz.db.ConfigStore
-import ru.souz.db.DesktopDataExtractor
-import ru.souz.db.DesktopInfoRepository
-import ru.souz.db.VectorDB
-import ru.souz.llms.LlmBuildProfile
-import ru.souz.llms.giga.GigaVoiceAPI
-import ru.souz.llms.openai.OpenAIVoiceAPI
-import ru.souz.llms.runtime.ApiClassifier
-import ru.souz.llms.tunnel.AiTunnelVoiceAPI
-import ru.souz.runtime.di.runtimeCoreDiModule
-import ru.souz.runtime.di.runtimeLlmDiModule
+import ru.souz.db.SettingsProviderImpl
+import ru.souz.agent.spi.AgentDesktopInfoRepository
+import ru.souz.agent.spi.AgentErrorMessages
+import ru.souz.agent.spi.AgentRuntimeEnvironment
+import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.AgentTelemetry
+import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.agent.spi.DefaultBrowserProvider
+import ru.souz.agent.spi.McpToolProvider
+import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.service.audio.ActiveSoundRecorderImpl
 import ru.souz.service.audio.InMemoryAudioRecorder
 import ru.souz.service.audio.Say
-import ru.souz.service.files.FilesService
+import ru.souz.db.ConfigStore
+import ru.souz.db.DesktopDataExtractor
+import ru.souz.db.DesktopInfoRepository
+import ru.souz.db.SettingsProvider
+import ru.souz.db.VectorDB
+import ru.souz.llms.giga.GigaAuth
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.giga.GigaRestChatAPI
+import ru.souz.llms.giga.GigaVoiceAPI
+import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.SessionTokenLogging
+import ru.souz.llms.TokenLogging
 import ru.souz.service.keys.Keys
+import ru.souz.llms.tunnel.AiTunnelChatAPI
+import ru.souz.llms.tunnel.AiTunnelVoiceAPI
+import ru.souz.llms.anthropic.AnthropicChatAPI
+import ru.souz.llms.openai.OpenAIChatAPI
+import ru.souz.llms.openai.OpenAIVoiceAPI
+import ru.souz.llms.qwen.QwenChatAPI
+import ru.souz.llms.local.LocalBridgeLoader
+import ru.souz.llms.local.LocalChatAPI
+import ru.souz.llms.local.LocalHostInfoProvider
+import ru.souz.llms.local.LocalLlamaRuntime
+import ru.souz.llms.local.LocalModelStore
+import ru.souz.llms.local.LocalNativeBridge
+import ru.souz.llms.local.LocalPromptRenderer
+import ru.souz.llms.local.LocalProviderAvailability
+import ru.souz.llms.local.LocalStrictJsonParser
+import ru.souz.llms.runtime.ApiClassifier
+import ru.souz.llms.runtime.LLMFactory
 import ru.souz.service.mcp.McpClientManager
 import ru.souz.service.mcp.McpConfigProvider
+import ru.souz.service.telegram.TelegramService
 import ru.souz.service.telegram.TelegramBotController
 import ru.souz.service.telegram.TelegramPlatformSupport
-import ru.souz.service.telegram.TelegramService
-import ru.souz.service.telemetry.TelemetryCryptoService
+import ru.souz.service.files.FilesService
 import ru.souz.service.telemetry.TelemetryOutboxRepository
+import ru.souz.service.telemetry.TelemetryCryptoService
 import ru.souz.service.telemetry.TelemetryRuntimeConfig
 import ru.souz.service.telemetry.TelemetryService
-import ru.souz.skill.EmbeddingSkillSearch
-import ru.souz.skill.SkillAwareToolsFilter
 import ru.souz.tool.*
-import ru.souz.tool.application.ToolOpen
-import ru.souz.tool.application.ToolShowApps
+import ru.souz.tool.application.*
 import ru.souz.tool.browser.*
-import ru.souz.tool.calendar.ToolCalendarCreateEvent
-import ru.souz.tool.calendar.ToolCalendarDeleteEvent
-import ru.souz.tool.calendar.ToolCalendarListCalendars
-import ru.souz.tool.calendar.ToolCalendarListEvents
-import ru.souz.tool.config.ToolInstructionStore
-import ru.souz.tool.config.ToolSoundConfig
-import ru.souz.tool.config.ToolSoundConfigDiff
-import ru.souz.tool.dataAnalytics.ToolCreatePlotFromCsv
-import ru.souz.tool.dataAnalytics.excel.ExcelRead
+import ru.souz.tool.calendar.*
+import ru.souz.tool.config.*
+import ru.souz.tool.dataAnalytics.*
 import ru.souz.tool.dataAnalytics.excel.ExcelReport
-import ru.souz.tool.desktop.ToolDownloadFile
-import ru.souz.tool.desktop.ToolStartScreenRecording
-import ru.souz.tool.desktop.ToolTakeScreenshot
-import ru.souz.tool.desktop.ToolUploadFile
+import ru.souz.tool.dataAnalytics.excel.ExcelRead
+import ru.souz.tool.desktop.*
 import ru.souz.tool.files.*
 import ru.souz.tool.mail.*
-import ru.souz.tool.math.ToolCalculator
 import ru.souz.tool.notes.*
+import ru.souz.tool.textReplace.*
+import ru.souz.tool.math.ToolCalculator
+import ru.souz.ui.main.usecases.MainUseCasesFactory
+import ru.souz.ui.main.usecases.AiTunnelSpeechRecognitionProvider
+import ru.souz.ui.main.usecases.FinderPathExtractor
+import ru.souz.ui.main.usecases.ModelAwareSpeechRecognitionProvider
+import ru.souz.ui.main.usecases.OpenAISpeechRecognitionProvider
+import ru.souz.ui.main.usecases.SaluteSpeechRecognitionProvider
+import ru.souz.ui.main.usecases.SpeechRecognitionProvider
+import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
-import ru.souz.tool.telegram.*
-import ru.souz.tool.textReplace.ToolGetClipboard
-import ru.souz.tool.textReplace.ToolTextReplace
-import ru.souz.tool.textReplace.ToolTextUnderSelection
-import ru.souz.tool.web.ToolInternetResearch
+import ru.souz.tool.telegram.ToolTelegramForward
+import ru.souz.tool.telegram.TelegramChatSelectionBroker
+import ru.souz.tool.telegram.TelegramContactSelectionBroker
+import ru.souz.tool.telegram.TelegramChatSelectionApprovalSource
+import ru.souz.tool.telegram.TelegramContactSelectionApprovalSource
+import ru.souz.tool.telegram.ToolTelegramGetHistory
+import ru.souz.tool.telegram.ToolTelegramReadInbox
+import ru.souz.tool.telegram.ToolTelegramSavedMessages
+import ru.souz.tool.telegram.ToolTelegramSearch
+import ru.souz.tool.telegram.ToolTelegramSend
+import ru.souz.tool.telegram.ToolTelegramSetState
 import ru.souz.tool.web.ToolInternetSearch
+import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolWebImageSearch
 import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebImageDownloader
 import ru.souz.tool.web.internal.WebResearchClient
 import ru.souz.ui.common.ComposeAgentErrorMessages
-import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
-import ru.souz.ui.main.usecases.*
+import ru.souz.runtime.di.runtimeCoreDiModule
+import ru.souz.runtime.di.runtimeLlmDiModule
 import java.nio.file.Path
 
 private object DiTags {
@@ -103,11 +136,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { TelegramPlatformSupport }
     bindSingleton { LlmBuildProfile(instance(), instance()) }
     bindSingleton { ApiKeyAvailabilityUseCase(instance()) }
-    bindSingleton { EmbeddingSkillSearch(catalog = instance(), api = instance(), settingsProvider = instance(), localModelStore = instance()) }
-    bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance(), skillSearch = instance()) }
+    bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
     bindSingleton<AgentDesktopInfoRepository> { instance<DesktopInfoRepository>() }
     bindSingleton { ToolsSettings(instance(), instance(), instance(), instance()) }
-    bindSingleton<AgentToolsFilter> { SkillAwareToolsFilter(instance<ToolsSettings>()) }
+    bindSingleton<AgentToolsFilter> { instance<ToolsSettings>() }
     bindSingleton { FilesToolUtil(instance()) }
     bindSingleton<FilesService> { instance<FilesToolUtil>() }
     bindSingleton<ToolPermissionBroker> { ImmediateToolPermissionBroker(instance()) }
@@ -124,6 +156,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { TelegramService(instance()) }
     bindSingleton<DefaultBrowserProvider> { DefaultBrowserProviderImpl }
+    bindSingleton<AgentRuntimeEnvironment> { SystemAgentRuntimeEnvironment }
     bindSingleton<AgentErrorMessages> { ComposeAgentErrorMessages() }
 
     // Tools
