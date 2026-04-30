@@ -156,7 +156,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { TelegramService(instance()) }
     bindSingleton<DefaultBrowserProvider> { DefaultBrowserProviderImpl }
-    bindSingleton<AgentRuntimeEnvironment> { SystemAgentRuntimeEnvironment }
     bindSingleton<AgentErrorMessages> { ComposeAgentErrorMessages() }
 
     // Tools
