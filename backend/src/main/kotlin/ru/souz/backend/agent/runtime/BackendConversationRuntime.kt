@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
+import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.backend.agent.model.AgentConversationKey
@@ -95,6 +96,7 @@ class BackendConversationRuntimeFactory(
     private val sessionRepository: AgentSessionRepository,
     private val logObjectMapper: ObjectMapper,
     private val systemPrompt: String,
+    private val desktopInfoRepository: AgentDesktopInfoRepository = BackendNoopDesktopInfoRepository,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
 ) {
@@ -112,7 +114,7 @@ class BackendConversationRuntimeFactory(
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
-            desktopInfoRepository = BackendNoopAgentDesktopInfoRepository,
+            desktopInfoRepository = desktopInfoRepository,
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
             defaultBrowserProvider = BackendNoopDefaultBrowserProvider,
@@ -137,4 +139,8 @@ class BackendConversationRuntimeFactory(
             persistedSession = persistedSession,
         )
     }
+}
+
+private object BackendNoopDesktopInfoRepository : AgentDesktopInfoRepository {
+    override suspend fun search(query: String, limit: Int) = emptyList<ru.souz.db.StorredData>()
 }

@@ -1,6 +1,7 @@
 package ru.souz.tool.notes
 
 import ru.souz.tool.*
+import ru.souz.tool.apple
 
 class ToolOpenNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenNote.Input> {
     data class Input(

@@ -7,6 +7,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.agent.session.AgentSessionRepository
@@ -14,6 +15,7 @@ import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.llms.runtime.LLMFactory
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
+import ru.souz.skill.EmbeddingSkillSearch
 import ru.souz.tool.runtimeToolsDiModule
 
 private object BackendDiTags {
@@ -35,6 +37,17 @@ fun backendDiModule(
     import(runtimeLlmDiModule(logObjectMapperTag = BackendDiTags.LOG_OBJECT_MAPPER))
 
     bindSingleton<AgentSessionRepository> { InMemoryAgentSessionRepository() }
+    bindSingleton { EmbeddingSkillSearch(catalog = instance(), api = instance(), settingsProvider = instance(), localModelStore = instance()) }
+    bindSingleton<AgentDesktopInfoRepository> {
+        val skillSearch: EmbeddingSkillSearch = instance()
+        object : AgentDesktopInfoRepository {
+            override suspend fun search(query: String, limit: Int) = emptyList<ru.souz.db.StorredData>()
+
+            override suspend fun searchSkills(query: String, limit: Int) = skillSearch.searchRelevantSkills(query, limit)
+
+            override suspend fun loadSkill(name: String) = skillSearch.loadSkill(name)
+        }
+    }
     bindSingleton {
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
@@ -52,6 +65,7 @@ fun backendDiModule(
             sessionRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
+            desktopInfoRepository = instance(),
             toolCatalog = instance(),
             toolsFilter = instance(),
         )

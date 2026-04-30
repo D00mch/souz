@@ -8,6 +8,7 @@ import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolFilterContext
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
@@ -93,11 +94,6 @@ private object SettingsProviderImpl {
     const val REGION_EN = "en"
 }
 
-/** Backend implementation for hosts without desktop indexing. */
-object BackendNoopAgentDesktopInfoRepository : AgentDesktopInfoRepository {
-    override suspend fun search(query: String, limit: Int) = emptyList<ru.souz.db.StorredData>()
-}
-
 /** Backend fallback tool catalog used when no shared catalog is bound. */
 object BackendNoopAgentToolCatalog : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = emptyMap()
@@ -107,6 +103,7 @@ object BackendNoopAgentToolCatalog : AgentToolCatalog {
 object BackendNoopAgentToolsFilter : AgentToolsFilter {
     override fun applyFilter(
         toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
+        context: AgentToolFilterContext,
     ): Map<ToolCategory, Map<String, LLMToolSetup>> = toolsByCategory
 }
 

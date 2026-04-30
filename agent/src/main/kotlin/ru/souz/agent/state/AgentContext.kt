@@ -1,5 +1,6 @@
 package ru.souz.agent.state
 
+import ru.souz.agent.skill.AgentTurnState
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
@@ -11,14 +12,16 @@ data class AgentContext<I>(
     val history: List<LLMRequest.Message>,
     val activeTools: List<LLMRequest.Function>,
     val systemPrompt: String,
+    val turnState: AgentTurnState = AgentTurnState(),
 ) {
     inline fun <reified O> map(
         settings: AgentSettings = this.settings,
         history: List<LLMRequest.Message> = this.history,
         activeTools: List<LLMRequest.Function> = this.activeTools,
         systemPrompt: String = this.systemPrompt,
+        turnState: AgentTurnState = this.turnState,
         transform: (I) -> O = { it as O },
-    ): AgentContext<O> = AgentContext(input = transform(input), settings, history, activeTools, systemPrompt)
+    ): AgentContext<O> = AgentContext(input = transform(input), settings, history, activeTools, systemPrompt, turnState)
 }
 
 data class AgentTools(

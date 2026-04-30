@@ -16,12 +16,18 @@ dependencies {
     implementation(libs.commons.csv)
     implementation(libs.tika.core)
     implementation(libs.tika.parsersStandardPackage)
+    implementation(libs.lucene.core)
     implementation(libs.java.diffUtils)
     implementation(libs.bundles.letsPlot)
     implementation(libs.poi)
     implementation(libs.poi.ooxml)
     implementation(libs.jsoup)
     implementation(libs.slfj)
+
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlin.testJunit5)
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutinesTest)
 }
 
 tasks.test {

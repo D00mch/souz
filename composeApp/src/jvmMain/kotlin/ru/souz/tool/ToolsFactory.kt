@@ -38,6 +38,7 @@ typealias FunctionName = String
 
 class ToolsFactory(di: DI) : AgentToolCatalog {
     private val settingsProvider: SettingsProvider by di.instance()
+    private val toolRunBashCommand: ToolRunBashCommand by di.instance()
 
     private val toolListFiles: ToolListFiles by di.instance()
     private val toolFindInFiles: ToolFindInFiles by di.instance()
@@ -135,6 +136,7 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
         )
 
         ToolCategory.WEB_SEARCH -> listOf(
+            toolRunBashCommand.toGiga(),
             toolInternetSearch.toGiga(),
             toolInternetResearch.toGiga(),
             toolWebImageSearch.toGiga(),

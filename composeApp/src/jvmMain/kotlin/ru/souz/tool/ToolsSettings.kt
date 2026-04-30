@@ -2,6 +2,7 @@
 
 package ru.souz.tool
 
+import ru.souz.agent.spi.AgentToolFilterContext
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.db.ConfigStore
 import ru.souz.llms.LLMRequest
@@ -59,6 +60,7 @@ class ToolsSettings(
 
     override fun applyFilter(
         toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
+        context: AgentToolFilterContext,
     ): Map<ToolCategory, Map<String, LLMToolSetup>> {
         val savedSettings = load(toolsByCategory)
         val result = HashMap<ToolCategory, Map<String, LLMToolSetup>>(toolsByCategory.size)

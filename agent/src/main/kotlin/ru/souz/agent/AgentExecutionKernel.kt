@@ -9,6 +9,7 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesLua
 import ru.souz.agent.nodes.NodesMCP
+import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.runtime.LuaRuntime
@@ -65,11 +66,13 @@ class AgentExecutionKernelFactory(
         val nodesLua = NodesLua(llmApi = llmApi, luaRuntime = LuaRuntime(agentToolExecutor))
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
         val nodesMcp = NodesMCP(mcpToolProvider)
+        val nodesSkills = NodesSkills(desktopInfoRepository)
         val nodesSummarization = NodesSummarization(llmApi = llmApi, nodesCommon = nodesCommon)
         val contextFactory = AgentContextFactory(
             settingsProvider = settingsProvider,
             systemPromptResolver = SystemPromptResolver(),
             toolCatalog = toolCatalog,
+            toolsFilter = toolsFilter,
         )
         val graphAgent = GraphBasedAgent(
             logObjectMapper = logObjectMapper,
@@ -79,6 +82,7 @@ class AgentExecutionKernelFactory(
             nodesErrorHandling = nodesErrorHandling,
             nodesSummarization = nodesSummarization,
             nodesMCP = nodesMcp,
+            nodesSkills = nodesSkills,
         )
         val luaGraphAgent = LuaGraphBasedAgent(
             logObjectMapper = logObjectMapper,
@@ -88,6 +92,7 @@ class AgentExecutionKernelFactory(
             nodesErrorHandling = nodesErrorHandling,
             nodesSummarization = nodesSummarization,
             nodesMCP = nodesMcp,
+            nodesSkills = nodesSkills,
         )
         val executor = AgentExecutor(
             agentProvider = { id ->

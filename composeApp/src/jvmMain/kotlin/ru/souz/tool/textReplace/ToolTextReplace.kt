@@ -2,6 +2,7 @@ package ru.souz.tool.textReplace
 
 import ru.souz.service.keys.MrRobot
 import ru.souz.tool.*
+import ru.souz.tool.apple
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.awt.datatransfer.Transferable

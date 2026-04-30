@@ -9,6 +9,7 @@ import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolPermissionResult
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
+import ru.souz.tool.apple
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString

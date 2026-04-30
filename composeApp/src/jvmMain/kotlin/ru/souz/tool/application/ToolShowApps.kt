@@ -6,6 +6,7 @@ import org.kodein.di.instance
 import ru.souz.di.mainDiModule
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.*
+import ru.souz.tool.apple
 import ru.souz.tool.files.FilesToolUtil
 
 class ToolShowApps(

@@ -1,6 +1,7 @@
 package ru.souz.tool.desktop
 
 import ru.souz.tool.*
+import ru.souz.tool.apple
 
 class ToolOpenTelegramSavedMessages(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenTelegramSavedMessages.Input> {
     data class Input(

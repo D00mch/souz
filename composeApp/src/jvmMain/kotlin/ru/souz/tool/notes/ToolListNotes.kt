@@ -5,6 +5,7 @@ import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
+import ru.souz.tool.apple
 
 class ToolListNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolListNotes.Input> {
     // No parameters required

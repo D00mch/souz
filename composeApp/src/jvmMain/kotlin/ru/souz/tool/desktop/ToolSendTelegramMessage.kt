@@ -3,6 +3,7 @@ package ru.souz.tool.desktop
 import ru.souz.service.keys.HotKey
 import ru.souz.service.keys.Keys
 import ru.souz.tool.*
+import ru.souz.tool.apple
 import java.lang.Thread.sleep
 
 class ToolSendTelegramMessage(
