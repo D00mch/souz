@@ -12,7 +12,7 @@ This package contains the standalone agent runtime extracted from `composeApp`.
 
 - `agent` depends on shared agent-facing contracts and DTOs moved into the `:agent` module.
 - `agent` does not depend on Compose UI, application DI wiring, or concrete host services from `composeApp`.
-- Host integrations such as settings, telemetry, MCP discovery, localization, and desktop context are accessed through `spi/`.
+- Host integrations such as settings, telemetry/observability, MCP discovery, localization, and desktop context are accessed through `spi/`.
 
 ## Host Contract
 

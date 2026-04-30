@@ -53,14 +53,11 @@ import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.llms.runtime.LLMFactory
 import ru.souz.service.mcp.McpClientManager
 import ru.souz.service.mcp.McpConfigProvider
+import ru.souz.service.observability.StructuredLoggingAgentTelemetry
 import ru.souz.service.telegram.TelegramService
 import ru.souz.service.telegram.TelegramBotController
 import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.service.files.FilesService
-import ru.souz.service.telemetry.TelemetryOutboxRepository
-import ru.souz.service.telemetry.TelemetryCryptoService
-import ru.souz.service.telemetry.TelemetryRuntimeConfig
-import ru.souz.service.telemetry.TelemetryService
 import ru.souz.tool.*
 import ru.souz.tool.application.*
 import ru.souz.tool.browser.*
@@ -105,7 +102,6 @@ import ru.souz.tool.web.internal.WebResearchClient
 import ru.souz.ui.common.ComposeAgentErrorMessages
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
-import java.nio.file.Path
 
 private object DiTags {
     const val MODULE_MAIN = "main"
@@ -224,16 +220,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolTelegramSavedMessages(instance()) }
 
     bindSingleton { DesktopDataExtractor(instance(), instance()) }
-    bindSingleton {
-        TelemetryOutboxRepository(
-            databasePath = Path.of(FilesToolUtil.homeDirectory.absolutePath, ".local", "state", "souz", "telemetry.db"),
-            objectMapper = instance(DiTags.TAG_LOG),
-        )
-    }
-    bindSingleton { TelemetryCryptoService() }
-    bindSingleton { TelemetryRuntimeConfig.production() }
-    bindSingleton { TelemetryService(instance(), instance(), instance(), instance()) }
-    bindSingleton<AgentTelemetry> { instance<TelemetryService>() }
+    bindSingleton<AgentTelemetry> { StructuredLoggingAgentTelemetry() }
 
     // API
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
@@ -261,7 +248,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { FinderPathExtractor(instance()) }
     bindSingleton {
         MainUseCasesFactory(
-            instance(),
             instance(),
             instance(),
             instance(),
