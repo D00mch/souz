@@ -13,8 +13,8 @@ The `:runtime` module contains shared JVM runtime pieces used by both desktop (`
 
 ```text
 runtime/
-├── build.gradle.kts                               # JVM module build and shared runtime dependencies
-├── INFO.md                                        # Module notes and structure
+├── build.gradle.kts                              # JVM module build and shared runtime dependencies
+├── AGENTS.md                                     # Module notes and structure
 └── src/
     └── main/
         ├── kotlin/

@@ -24,7 +24,7 @@ The backend path still reuses the shared `:agent` execution kernel, but it bypas
 ```text
 backend/
 ├── build.gradle.kts                            # JVM application build and Ktor server dependencies
-├── INFO.md                                     # Module notes, routes, and structure
+├── AGENTS.md                                   # Module notes, routes, and structure
 └── src/
     ├── main/
     │   └── kotlin/

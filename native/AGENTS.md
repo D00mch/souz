@@ -8,22 +8,22 @@ native/
 │   ├── darwin-arm64/libsouz_llama_bridge.dylib  # macOS arm64 packaged bridge binary
 │   └── darwin-x64/libsouz_llama_bridge.dylib    # macOS x64 packaged bridge binary
 ├── src/main/kotlin/ru/souz/llms/local/
-│   ├── LocalBridge.kt                 # JNA loader plus JVM-side bridge calls into the native library
-│   ├── LocalChatAPI.kt                # Local provider adapter that implements shared chat and embeddings APIs
-│   ├── LocalLlamaRuntime.kt           # Runtime lifecycle, model loading, preload, generation, embeddings, and cancellation
-│   ├── LocalModelSelection.kt         # Download prompt/state helpers for local model selection flows
-│   ├── LocalModels.kt                 # Local chat/embedding model catalogs, host/platform detection, and availability gating
-│   ├── LocalModelStore.kt             # Model storage paths plus single and linked GGUF download support
-│   ├── LocalPromptRenderer.kt         # Prompt-family rendering (Qwen ChatML and Gemma 4 turns) plus compact tool-guidance generation
-│   └── LocalStrictJson.kt             # Strict JSON contract plus recovery/parsing for local model output
+│   ├── LocalBridge.kt                           # JNA loader plus JVM-side bridge calls into the native library
+│   ├── LocalChatAPI.kt                          # Local provider adapter that implements shared chat and embeddings APIs
+│   ├── LocalLlamaRuntime.kt                     # Runtime lifecycle, model loading, preload, generation, embeddings, and cancellation
+│   ├── LocalModelSelection.kt                   # Download prompt/state helpers for local model selection flows
+│   ├── LocalModels.kt                           # Local chat/embedding model catalogs, host/platform detection, and availability gating
+│   ├── LocalModelStore.kt                       # Model storage paths plus single and linked GGUF download support
+│   ├── LocalPromptRenderer.kt                   # Prompt-family rendering (Qwen ChatML and Gemma 4 turns) plus compact tool-guidance generation
+│   └── LocalStrictJson.kt                       # Strict JSON contract plus recovery/parsing for local model output
 ├── src/test/kotlin/ru/souz/local/
-│   └── LocalInferenceSupportTest.kt   # Coverage for prompt rendering, parsing, availability, and local runtime helpers
+│   └── LocalInferenceSupportTest.kt             # Coverage for prompt rendering, parsing, availability, and local runtime helpers
 ├── llama-bridge/
-│   ├── CMakeLists.txt                 # Native bridge build definition against llama.cpp
-│   ├── include/souz_llama_bridge.h    # C ABI exported to the JVM bridge loader
-│   └── src/souz_llama_bridge.cpp      # llama.cpp-backed runtime, model, and generation bridge
-├── build.gradle.kts                   # Local-model runtime module build
-└── INFO.md                            # Local runtime and native bridge notes
+│   ├── CMakeLists.txt                           # Native bridge build definition against llama.cpp
+│   ├── include/souz_llama_bridge.h              # C ABI exported to the JVM bridge loader
+│   └── src/souz_llama_bridge.cpp                # llama.cpp-backed runtime, model, and generation bridge
+├── build.gradle.kts                             # Local-model runtime module build
+└── AGENTS.md                                    # Local runtime and native bridge notes
 ```
 
 Notes:

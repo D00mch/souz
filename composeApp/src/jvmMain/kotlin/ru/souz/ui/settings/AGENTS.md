@@ -12,7 +12,7 @@ ui/settings/
 ├── FoldersManagementViewModel.kt      # Forbidden folders logic
 ├── FoldersManagementScreen.kt         # Forbidden folders UI
 ├── TelegramLoginContent.kt            # Telegram login/authorization UI blocks
-└── INFO.md                            # This file
+└── AGENTS.md                          # This file
 ```
 
 Notes:

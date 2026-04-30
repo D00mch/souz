@@ -7,7 +7,7 @@ telemetry/
 ├── TelemetryCrypto.kt                # Crypto service for installation keypair handling and signing
 ├── TelemetryOutboxRepository.kt      # Local SQLite outbox used before sending batches
 ├── TelemetryService.kt               # Event capture, batching, registration, signing, and send flow
-└── INFO.md                           # This file
+└── AGENTS.md                         # This file
 ```
 
 Notes:
