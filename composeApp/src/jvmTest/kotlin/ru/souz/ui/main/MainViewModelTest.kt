@@ -59,6 +59,7 @@ import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.LocalProviderAvailability
+import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.service.telegram.TelegramBotController
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
@@ -1118,8 +1119,10 @@ class MainViewModelTest {
             bindSingleton { FinderPathExtractor(instance()) }
             bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
             bindSingleton<TokenLogging> { tokenLogging }
+            bindSingleton { DesktopStructuredLogger() }
             bindSingleton {
                 MainUseCasesFactory(
+                    instance(),
                     instance(),
                     instance(),
                     instance(),

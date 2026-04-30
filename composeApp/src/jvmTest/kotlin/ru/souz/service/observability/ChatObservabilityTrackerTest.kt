@@ -40,4 +40,35 @@ class ChatObservabilityTrackerTest {
         assertEquals(2, event.second.toolCallCount)
         assertEquals(8, event.second.tokenUsage.totalTokens)
     }
+
+    @Test
+    fun `view model cleared conversation finish is emitted after active request completes`() {
+        val finished = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
+        val tracker = ChatObservabilityTracker(
+            onConversationStarted = { _, _ -> },
+            onConversationFinished = { conversationId, metrics, reason ->
+                finished += Triple(conversationId, metrics, reason)
+            },
+        )
+
+        val conversationId = tracker.ensureConversation(ChatRequestSource.CHAT_UI)
+        tracker.markConversationRequestStarted(conversationId)
+        tracker.finishCurrentConversation(ChatConversationCloseReason.VIEW_MODEL_CLEARED)
+
+        assertTrue(finished.isEmpty())
+
+        tracker.recordConversationRequestFinished(
+            conversationId = conversationId,
+            toolCallCount = 1,
+            requestTokenUsage = LLMResponse.Usage(2, 3, 5, 0),
+        )
+        tracker.finishPendingConversationIfNeeded(conversationId)
+
+        val event = finished.single()
+        assertEquals(conversationId, event.first)
+        assertEquals(ChatConversationCloseReason.VIEW_MODEL_CLEARED, event.third)
+        assertEquals(1, event.second.requestCount)
+        assertEquals(1, event.second.toolCallCount)
+        assertEquals(5, event.second.tokenUsage.totalTokens)
+    }
 }

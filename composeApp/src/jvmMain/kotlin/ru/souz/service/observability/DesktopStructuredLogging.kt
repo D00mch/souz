@@ -17,6 +17,49 @@ private const val STRUCTURED_LOGGER_NAME = "ru.souz.telemetry.structured"
 private val telemetryLog = LoggerFactory.getLogger(STRUCTURED_LOGGER_NAME)
 private val ZERO_USAGE = LLMResponse.Usage(0, 0, 0, 0)
 
+private object StructuredEventDomains {
+    const val AGENT = "souz.agent"
+    const val CHAT = "souz.chat"
+    const val DESKTOP = "souz.desktop"
+}
+
+private object StructuredEventNames {
+    const val APP_LIFECYCLE = "app.lifecycle"
+    const val CONVERSATION_LIFECYCLE = "conversation.lifecycle"
+    const val REQUEST_LIFECYCLE = "request.lifecycle"
+    const val TOOL_EXECUTION = "tool.execution"
+}
+
+private class StructuredEventLog(
+    private val eventDomain: String,
+    private val eventName: String,
+    private val defaultMessage: String,
+) {
+    fun info(
+        message: String = defaultMessage,
+        configure: LoggingEventBuilder.() -> Unit = {},
+    ) {
+        telemetryLog.atInfo().emit(message, configure)
+    }
+
+    fun warn(
+        message: String = defaultMessage,
+        configure: LoggingEventBuilder.() -> Unit = {},
+    ) {
+        telemetryLog.atWarn().emit(message, configure)
+    }
+
+    private fun LoggingEventBuilder.emit(
+        message: String,
+        configure: LoggingEventBuilder.() -> Unit,
+    ) {
+        addKeyValue("event.domain", eventDomain)
+        addKeyValue("event.name", eventName)
+        configure()
+        log(message)
+    }
+}
+
 object DesktopStructuredLoggingSession {
     val appSessionId: String = UUID.randomUUID().toString()
     val appStartedAtMs: Long = System.currentTimeMillis()
@@ -64,32 +107,177 @@ internal data class ChatConversationMetrics(
     val tokenUsage: LLMResponse.Usage = ZERO_USAGE,
 )
 
+class DesktopStructuredLogger {
+    private val appLifecycleLog = StructuredEventLog(
+        eventDomain = StructuredEventDomains.DESKTOP,
+        eventName = StructuredEventNames.APP_LIFECYCLE,
+        defaultMessage = "app lifecycle",
+    )
+    private val conversationLifecycleLog = StructuredEventLog(
+        eventDomain = StructuredEventDomains.CHAT,
+        eventName = StructuredEventNames.CONVERSATION_LIFECYCLE,
+        defaultMessage = "conversation lifecycle",
+    )
+    private val requestLifecycleLog = StructuredEventLog(
+        eventDomain = StructuredEventDomains.CHAT,
+        eventName = StructuredEventNames.REQUEST_LIFECYCLE,
+        defaultMessage = "request lifecycle",
+    )
+
+    fun newChatRequestLogContext(
+        conversationId: String,
+        source: ChatRequestSource,
+        model: String,
+        provider: String,
+        inputLengthChars: Int,
+        attachedFilesCount: Int,
+    ): ChatRequestLogContext = ChatRequestLogContext(
+        executionContext = AgentExecutionLogContext(
+            appSessionId = DesktopStructuredLoggingSession.appSessionId,
+            requestId = UUID.randomUUID().toString(),
+            conversationId = conversationId,
+            requestSource = source.wireName,
+            model = model,
+            provider = provider,
+        ),
+        source = source,
+        model = model,
+        provider = provider,
+        inputLengthChars = inputLengthChars,
+        attachedFilesCount = attachedFilesCount,
+        startedAtMs = System.currentTimeMillis(),
+    )
+
+    fun logAppOpened() {
+        appLifecycleLog.info {
+            addKeyValue("app.lifecycle.state", "opened")
+            addKeyValue("app.session.id", DesktopStructuredLoggingSession.appSessionId)
+        }
+    }
+
+    fun logAppClosed() {
+        appLifecycleLog.info {
+            addKeyValue("app.lifecycle.state", "closed")
+            addKeyValue("app.session.id", DesktopStructuredLoggingSession.appSessionId)
+            addKeyValue("duration.ms", System.currentTimeMillis() - DesktopStructuredLoggingSession.appStartedAtMs)
+        }
+    }
+
+    fun logConversationStarted(
+        conversationId: String,
+        source: ChatRequestSource,
+    ) {
+        conversationLifecycleLog.info {
+            addKeyValue("conversation.state", "started")
+            addKeyValue("app.session.id", DesktopStructuredLoggingSession.appSessionId)
+            addKeyValue("conversation.id", conversationId)
+            addKeyValue("request.source", source.wireName)
+        }
+    }
+
+    internal fun logConversationFinished(
+        conversationId: String,
+        metrics: ChatConversationMetrics,
+        reason: ChatConversationCloseReason,
+    ) {
+        conversationLifecycleLog.info {
+            addKeyValue("conversation.state", "finished")
+            addKeyValue("app.session.id", DesktopStructuredLoggingSession.appSessionId)
+            addKeyValue("conversation.id", conversationId)
+            addKeyValue("conversation.close.reason", reason.wireName)
+            addKeyValue("conversation.start.source", metrics.startSource.wireName)
+            addKeyValue("conversation.request.count", metrics.requestCount)
+            addKeyValue("tool.calls.count", metrics.toolCallCount)
+            addKeyValue("duration.ms", System.currentTimeMillis() - metrics.startedAtMs)
+            withUsage("gen_ai.usage", metrics.tokenUsage)
+        }
+    }
+
+    fun logRequestStarted(context: ChatRequestLogContext) {
+        requestLifecycleLog.info {
+            addKeyValue("request.state", "started")
+            withRequestContext(context)
+            addKeyValue("request.input.length.chars", context.inputLengthChars)
+            addKeyValue("request.attached_files.count", context.attachedFilesCount)
+        }
+    }
+
+    fun logRequestFinished(
+        context: ChatRequestLogContext,
+        status: ChatRequestStatus,
+        responseLengthChars: Int?,
+        errorType: String?,
+        requestTokenUsage: LLMResponse.Usage,
+        sessionTokenUsage: LLMResponse.Usage,
+    ) {
+        val values: LoggingEventBuilder.() -> Unit = {
+            addKeyValue("request.state", "finished")
+            withRequestContext(context)
+            addKeyValue("request.status", status.wireName)
+            addKeyValue("duration.ms", System.currentTimeMillis() - context.startedAtMs)
+            addKeyValue("request.input.length.chars", context.inputLengthChars)
+            addIfPresent("request.output.length.chars", responseLengthChars)
+            addKeyValue("request.attached_files.count", context.attachedFilesCount)
+            addKeyValue("tool.calls.count", context.toolExecutionCount)
+            withUsage("gen_ai.usage", requestTokenUsage)
+            withUsage("session.gen_ai.usage", sessionTokenUsage)
+            addIfPresent("error.type", errorType)
+        }
+
+        when (status) {
+            ChatRequestStatus.ERROR -> requestLifecycleLog.warn(configure = values)
+            ChatRequestStatus.CANCELLED -> requestLifecycleLog.info(configure = values)
+            ChatRequestStatus.SUCCESS -> requestLifecycleLog.info(configure = values)
+        }
+    }
+
+    private fun LoggingEventBuilder.withRequestContext(context: ChatRequestLogContext): LoggingEventBuilder = apply {
+        addKeyValue("app.session.id", DesktopStructuredLoggingSession.appSessionId)
+        addKeyValue("conversation.id", context.conversationId)
+        addKeyValue("request.id", context.requestId)
+        addKeyValue("request.source", context.source.wireName)
+        addKeyValue("gen_ai.request.model", context.model)
+        addKeyValue("gen_ai.system", context.provider)
+    }
+}
+
 class StructuredLoggingAgentTelemetry : AgentTelemetry {
+    private val toolExecutionLog = StructuredEventLog(
+        eventDomain = StructuredEventDomains.AGENT,
+        eventName = StructuredEventNames.TOOL_EXECUTION,
+        defaultMessage = "tool execution",
+    )
+
     override fun recordToolExecution(event: AgentToolExecutionEvent) {
-        val builder = if (event.success) telemetryLog.atInfo() else telemetryLog.atWarn()
-        builder
-            .addKeyValue("event.domain", "souz.agent")
-            .addKeyValue("event.name", "tool.execution")
-            .addIfPresent("app.session.id", event.appSessionId)
-            .addIfPresent("conversation.id", event.conversationId)
-            .addIfPresent("request.id", event.requestId)
-            .addIfPresent("request.source", event.requestSource)
-            .addIfPresent("gen_ai.request.model", event.model)
-            .addIfPresent("gen_ai.system", event.provider)
-            .addKeyValue("tool.name", event.functionName)
-            .addIfPresent("tool.category", event.toolCategory)
-            .addKeyValue("tool.arguments.count", event.argumentKeys.size)
-            .addKeyValue("tool.arguments.keys", event.argumentKeys.joinToString(","))
-            .addKeyValue("tool.success", event.success)
-            .addKeyValue("tool.duration.ms", event.durationMs)
-            .addIfPresent("error.type", event.errorType)
-            .log(if (event.success) "tool execution" else "tool execution failed")
+        val values: LoggingEventBuilder.() -> Unit = {
+            addIfPresent("app.session.id", event.appSessionId)
+            addIfPresent("conversation.id", event.conversationId)
+            addIfPresent("request.id", event.requestId)
+            addIfPresent("request.source", event.requestSource)
+            addIfPresent("gen_ai.request.model", event.model)
+            addIfPresent("gen_ai.system", event.provider)
+            addKeyValue("tool.name", event.functionName)
+            addIfPresent("tool.category", event.toolCategory)
+            addKeyValue("tool.arguments.count", event.argumentKeys.size)
+            addKeyValue("tool.arguments.keys", event.argumentKeys.joinToString(","))
+            addKeyValue("tool.success", event.success)
+            addKeyValue("tool.duration.ms", event.durationMs)
+            addIfPresent("error.type", event.errorType)
+        }
+
+        if (event.success) {
+            toolExecutionLog.info(message = "tool execution", configure = values)
+        } else {
+            toolExecutionLog.warn(message = "tool execution failed", configure = values)
+        }
     }
 }
 
 internal class ChatObservabilityTracker(
-    private val onConversationStarted: (String, ChatRequestSource) -> Unit = ::logConversationStarted,
-    private val onConversationFinished: (String, ChatConversationMetrics, ChatConversationCloseReason) -> Unit = ::logConversationFinished,
+    structuredLogger: DesktopStructuredLogger = DesktopStructuredLogger(),
+    private val onConversationStarted: (String, ChatRequestSource) -> Unit = structuredLogger::logConversationStarted,
+    private val onConversationFinished: (String, ChatConversationMetrics, ChatConversationCloseReason) -> Unit =
+        structuredLogger::logConversationFinished,
 ) {
     private val state = MutableStateFlow(ConversationTrackingState())
 
@@ -195,134 +383,6 @@ internal class ChatObservabilityTracker(
             onConversationFinished(conversationId, metrics, reason)
         }
     }
-}
-
-fun newChatRequestLogContext(
-    conversationId: String,
-    source: ChatRequestSource,
-    model: String,
-    provider: String,
-    inputLengthChars: Int,
-    attachedFilesCount: Int,
-): ChatRequestLogContext = ChatRequestLogContext(
-    executionContext = AgentExecutionLogContext(
-        appSessionId = DesktopStructuredLoggingSession.appSessionId,
-        requestId = UUID.randomUUID().toString(),
-        conversationId = conversationId,
-        requestSource = source.wireName,
-        model = model,
-        provider = provider,
-    ),
-    source = source,
-    model = model,
-    provider = provider,
-    inputLengthChars = inputLengthChars,
-    attachedFilesCount = attachedFilesCount,
-    startedAtMs = System.currentTimeMillis(),
-)
-
-fun logAppOpened() {
-    telemetryLog.atInfo()
-        .addKeyValue("event.domain", "souz.desktop")
-        .addKeyValue("event.name", "app.lifecycle")
-        .addKeyValue("app.lifecycle.state", "opened")
-        .addKeyValue("app.session.id", DesktopStructuredLoggingSession.appSessionId)
-        .log("app lifecycle")
-}
-
-fun logAppClosed() {
-    telemetryLog.atInfo()
-        .addKeyValue("event.domain", "souz.desktop")
-        .addKeyValue("event.name", "app.lifecycle")
-        .addKeyValue("app.lifecycle.state", "closed")
-        .addKeyValue("app.session.id", DesktopStructuredLoggingSession.appSessionId)
-        .addKeyValue("duration.ms", System.currentTimeMillis() - DesktopStructuredLoggingSession.appStartedAtMs)
-        .log("app lifecycle")
-}
-
-fun logConversationStarted(
-    conversationId: String,
-    source: ChatRequestSource,
-) {
-    telemetryLog.atInfo()
-        .addKeyValue("event.domain", "souz.chat")
-        .addKeyValue("event.name", "conversation.lifecycle")
-        .addKeyValue("conversation.state", "started")
-        .addKeyValue("app.session.id", DesktopStructuredLoggingSession.appSessionId)
-        .addKeyValue("conversation.id", conversationId)
-        .addKeyValue("request.source", source.wireName)
-        .log("conversation lifecycle")
-}
-
-internal fun logConversationFinished(
-    conversationId: String,
-    metrics: ChatConversationMetrics,
-    reason: ChatConversationCloseReason,
-) {
-    telemetryLog.atInfo()
-        .addKeyValue("event.domain", "souz.chat")
-        .addKeyValue("event.name", "conversation.lifecycle")
-        .addKeyValue("conversation.state", "finished")
-        .addKeyValue("app.session.id", DesktopStructuredLoggingSession.appSessionId)
-        .addKeyValue("conversation.id", conversationId)
-        .addKeyValue("conversation.close.reason", reason.wireName)
-        .addKeyValue("conversation.start.source", metrics.startSource.wireName)
-        .addKeyValue("conversation.request.count", metrics.requestCount)
-        .addKeyValue("tool.calls.count", metrics.toolCallCount)
-        .addKeyValue("duration.ms", System.currentTimeMillis() - metrics.startedAtMs)
-        .withUsage("gen_ai.usage", metrics.tokenUsage)
-        .log("conversation lifecycle")
-}
-
-fun logRequestStarted(context: ChatRequestLogContext) {
-    telemetryLog.atInfo()
-        .addKeyValue("event.domain", "souz.chat")
-        .addKeyValue("event.name", "request.lifecycle")
-        .addKeyValue("request.state", "started")
-        .withRequestContext(context)
-        .addKeyValue("request.input.length.chars", context.inputLengthChars)
-        .addKeyValue("request.attached_files.count", context.attachedFilesCount)
-        .log("request lifecycle")
-}
-
-fun logRequestFinished(
-    context: ChatRequestLogContext,
-    status: ChatRequestStatus,
-    responseLengthChars: Int?,
-    errorType: String?,
-    requestTokenUsage: LLMResponse.Usage,
-    sessionTokenUsage: LLMResponse.Usage,
-) {
-    val builder = when (status) {
-        ChatRequestStatus.ERROR -> telemetryLog.atWarn()
-        ChatRequestStatus.CANCELLED -> telemetryLog.atInfo()
-        ChatRequestStatus.SUCCESS -> telemetryLog.atInfo()
-    }
-
-    builder
-        .addKeyValue("event.domain", "souz.chat")
-        .addKeyValue("event.name", "request.lifecycle")
-        .addKeyValue("request.state", "finished")
-        .withRequestContext(context)
-        .addKeyValue("request.status", status.wireName)
-        .addKeyValue("duration.ms", System.currentTimeMillis() - context.startedAtMs)
-        .addKeyValue("request.input.length.chars", context.inputLengthChars)
-        .addIfPresent("request.output.length.chars", responseLengthChars)
-        .addKeyValue("request.attached_files.count", context.attachedFilesCount)
-        .addKeyValue("tool.calls.count", context.toolExecutionCount)
-        .withUsage("gen_ai.usage", requestTokenUsage)
-        .withUsage("session.gen_ai.usage", sessionTokenUsage)
-        .addIfPresent("error.type", errorType)
-        .log("request lifecycle")
-}
-
-private fun LoggingEventBuilder.withRequestContext(context: ChatRequestLogContext): LoggingEventBuilder = apply {
-    addKeyValue("app.session.id", DesktopStructuredLoggingSession.appSessionId)
-    addKeyValue("conversation.id", context.conversationId)
-    addKeyValue("request.id", context.requestId)
-    addKeyValue("request.source", context.source.wireName)
-    addKeyValue("gen_ai.request.model", context.model)
-    addKeyValue("gen_ai.system", context.provider)
 }
 
 private fun LoggingEventBuilder.withUsage(prefix: String, usage: LLMResponse.Usage): LoggingEventBuilder = apply {

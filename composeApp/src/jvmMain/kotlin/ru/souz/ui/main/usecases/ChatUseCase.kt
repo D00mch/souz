@@ -25,9 +25,7 @@ import ru.souz.service.observability.ChatConversationCloseReason
 import ru.souz.service.observability.ChatRequestLogContext
 import ru.souz.service.observability.ChatRequestSource
 import ru.souz.service.observability.ChatRequestStatus
-import ru.souz.service.observability.logRequestFinished
-import ru.souz.service.observability.logRequestStarted
-import ru.souz.service.observability.newChatRequestLogContext
+import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.ui.main.ChatAgentActionFormatter
 import ru.souz.ui.main.ChatAttachedFile
 import ru.souz.ui.main.ChatMessage
@@ -45,6 +43,7 @@ class ChatUseCase internal constructor(
     private val chatAttachmentsUseCase: ChatAttachmentsUseCase,
     private val toolModifyReviewUseCase: ToolModifyReviewUseCase,
     private val observabilityTracker: ChatObservabilityTracker,
+    private val structuredLogger: DesktopStructuredLogger,
     private val tokenLogging: TokenLogging,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -272,7 +271,7 @@ class ChatUseCase internal constructor(
     ): ChatRequestSession {
         val requestId = activeChatRequestId.incrementAndGet()
         val conversationId = observabilityTracker.ensureConversation(requestSource)
-        val requestContext = newChatRequestLogContext(
+        val requestContext = structuredLogger.newChatRequestLogContext(
             conversationId = conversationId,
             source = requestSource,
             model = settingsProvider.gigaModel.alias,
@@ -280,7 +279,7 @@ class ChatUseCase internal constructor(
             inputLengthChars = userText.length,
             attachedFilesCount = attachedFiles.size,
         )
-        logRequestStarted(requestContext)
+        structuredLogger.logRequestStarted(requestContext)
         observabilityTracker.markConversationRequestStarted(conversationId)
         tokenLogging.startRequest(requestContext.requestId)
 
@@ -522,7 +521,7 @@ class ChatUseCase internal constructor(
             toolCallCount = session.requestContext.toolExecutionCount,
             requestTokenUsage = requestTokenUsage,
         )
-        logRequestFinished(
+        structuredLogger.logRequestFinished(
             context = session.requestContext,
             status = session.requestStatus,
             responseLengthChars = session.responseLengthChars,

@@ -53,6 +53,7 @@ import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.llms.runtime.LLMFactory
 import ru.souz.service.mcp.McpClientManager
 import ru.souz.service.mcp.McpConfigProvider
+import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.service.observability.StructuredLoggingAgentTelemetry
 import ru.souz.service.telegram.TelegramService
 import ru.souz.service.telegram.TelegramBotController
@@ -220,6 +221,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolTelegramSavedMessages(instance()) }
 
     bindSingleton { DesktopDataExtractor(instance(), instance()) }
+    bindSingleton { DesktopStructuredLogger() }
     bindSingleton<AgentTelemetry> { StructuredLoggingAgentTelemetry() }
 
     // API
@@ -248,6 +250,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { FinderPathExtractor(instance()) }
     bindSingleton {
         MainUseCasesFactory(
+            instance(),
             instance(),
             instance(),
             instance(),

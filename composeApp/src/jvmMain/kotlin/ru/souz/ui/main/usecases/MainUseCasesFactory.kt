@@ -7,6 +7,7 @@ import ru.souz.service.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.TokenLogging
 import ru.souz.service.observability.ChatObservabilityTracker
+import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
@@ -31,6 +32,7 @@ class MainUseCasesFactory(
     private val selectionApprovalSources: Set<SelectionApprovalSource>,
     private val finderPathExtractor: FinderPathExtractor,
     private val tokenLogging: TokenLogging,
+    private val structuredLogger: DesktopStructuredLogger,
 ) {
 
     fun create(ioDispatcher: CoroutineDispatcher): MainUseCases {
@@ -46,7 +48,8 @@ class MainUseCasesFactory(
             finderPathExtractor = finderPathExtractor,
             chatAttachmentsUseCase = attachmentsUseCase,
             toolModifyReviewUseCase = toolModifyReviewUseCase,
-            observabilityTracker = ChatObservabilityTracker(),
+            observabilityTracker = ChatObservabilityTracker(structuredLogger = structuredLogger),
+            structuredLogger = structuredLogger,
             tokenLogging = tokenLogging,
             ioDispatcher = ioDispatcher,
         )

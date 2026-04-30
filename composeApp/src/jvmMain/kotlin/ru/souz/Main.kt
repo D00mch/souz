@@ -27,8 +27,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.service.mcp.McpClientManager
-import ru.souz.service.observability.logAppClosed
-import ru.souz.service.observability.logAppOpened
+import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.ui.rememberDockWindowController
 import ru.souz.ui.macos.MacWindowVibrancy
 import java.awt.Dimension
@@ -50,10 +49,12 @@ fun main() {
             val mcpClientManager: McpClientManager by di.instance()
             val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
             val localLlamaRuntime: LocalLlamaRuntime by di.instance()
+            val structuredLogger: DesktopStructuredLogger by di.instance()
             val closeServices: () -> Unit = remember(
                 localLlamaRuntime,
                 mcpClientManager,
                 telegramBotController,
+                structuredLogger,
             ) {
                 val closed = AtomicBoolean(false)
                 ({
@@ -67,14 +68,14 @@ fun main() {
                             .onFailure { startupLog.warn("Failed to close MCP manager: {}", it.message) }
                         runCatching { telegramBotController.close() }
                             .onFailure { startupLog.warn("Failed to close Telegram bot controller: {}", it.message) }
-                        logAppClosed()
+                        structuredLogger.logAppClosed()
                     }
                 })
             }
 
             DisposableEffect(Unit) {
                 telegramBotController.start()
-                logAppOpened()
+                structuredLogger.logAppOpened()
                 val shutdownHook = Thread(Runnable { closeServices() }, "souz-shutdown-hook")
                 Runtime.getRuntime().addShutdownHook(shutdownHook)
 
