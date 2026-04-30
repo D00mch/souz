@@ -34,11 +34,10 @@ composeApp/
     │   │       │   ├── image/                     # Image utility helpers
     │   │       │   ├── keys/                      # Global hotkey and native key abstractions
     │   │       │   ├── mcp/                       # MCP config, OAuth, session, and client management
+    │   │       │   ├── observability/             # Structured local telemetry/observability logs
     │   │       │   ├── permissions/               # macOS permission checks and app relaunch helpers
     │   │       │   ├── telegram/
     │   │       │   │   └── AGENTS.md
-    │   │       │   └── telemetry/
-    │   │       │       └── AGENTS.md
     │   │       ├── tool/
     │   │       │   ├── ToolsFactory.kt            # Desktop tool registration and assembly
     │   │       │   ├── ToolsSettings.kt           # Desktop tool settings/state models
@@ -94,4 +93,4 @@ composeApp/
 - Keep UI composables presentation-only. Business logic and IO should stay in view models or delegated use cases.
 - `src/jvmMain/kotlin/ru/souz/di/Dependencies.kt` is the main desktop composition root.
 - `src/jvmMain/kotlin/ru/souz/tool/ToolsFactory.kt` is the main entry point for adding or removing desktop tools.
-- Before changing `ui/main`, `ui/settings`, `service/telegram`, `service/telemetry`, or `tool/telegram`, read the nested `AGENTS.md` in that directory first.
+- Before changing `ui/main`, `ui/settings`, `service/telegram`, `service/observability`, or `tool/telegram`, read the nested `AGENTS.md` in that directory first.

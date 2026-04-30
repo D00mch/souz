@@ -1,6 +1,5 @@
 package agent
 
-import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.luaj.vm2.LuaError
@@ -11,7 +10,6 @@ import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.math.ToolCalculator
 import ru.souz.llms.giga.toGiga
-import ru.souz.service.telemetry.TelemetryService
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -29,7 +27,7 @@ class LuaRuntimeTest {
             ),
         )
         val runtime = LuaRuntime(
-            toolExecutor = AgentToolExecutor(mockk<TelemetryService>(relaxed = true))
+            toolExecutor = AgentToolExecutor()
         )
 
         val result = runtime.execute(
@@ -47,7 +45,7 @@ class LuaRuntimeTest {
     @Test
     fun `invalid lua is wrapped with source preview`() = runBlocking {
         val runtime = LuaRuntime(
-            toolExecutor = AgentToolExecutor(mockk<TelemetryService>(relaxed = true))
+            toolExecutor = AgentToolExecutor()
         )
         val settings = AgentSettings(
             model = "test-model",
@@ -79,7 +77,7 @@ local file = io.open(path, "r")
 return file:read("*a")
     """.trimIndent()
 
-        val runtime = LuaRuntime(AgentToolExecutor(mockk<TelemetryService>(relaxed = true)))
+        val runtime = LuaRuntime(AgentToolExecutor())
         val error = assertFailsWith<LuaExecutionException> {
             runtime.execute(
                 code = code,
@@ -104,7 +102,7 @@ local total = 40 + 2
 return "answer=" .. total
     """.trimIndent()
 
-        val runtime = LuaRuntime(AgentToolExecutor(mockk<TelemetryService>(relaxed = true)))
+        val runtime = LuaRuntime(AgentToolExecutor())
         val result = runtime.execute(
             code = code,
             settings = AgentSettings(

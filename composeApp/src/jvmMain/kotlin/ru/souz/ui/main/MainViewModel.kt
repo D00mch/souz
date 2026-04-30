@@ -41,8 +41,8 @@ import ru.souz.ui.main.usecases.PermissionsUseCase
 import ru.souz.ui.main.usecases.SpeechUseCase
 import ru.souz.ui.main.usecases.ToolModifyReviewUseCase
 import ru.souz.ui.main.usecases.VoiceInputUseCase
-import ru.souz.service.telemetry.TelemetryConversationEndReason
-import ru.souz.service.telemetry.TelemetryRequestSource
+import ru.souz.service.observability.ChatConversationCloseReason
+import ru.souz.service.observability.ChatRequestSource
 import ru.souz.ui.settings.availableLlmModels
 import ru.souz.ui.settings.defaultLlmModel
 import kotlin.time.Duration.Companion.minutes
@@ -140,7 +140,7 @@ class MainViewModel(
                                 scope = viewModelScope,
                                 isVoice = true,
                                 chatMessage = recognizedText,
-                                requestSource = TelemetryRequestSource.VOICE_INPUT,
+                                requestSource = ChatRequestSource.VOICE_INPUT,
                             )
                         }
                     }
@@ -155,7 +155,7 @@ class MainViewModel(
                     scope = this,
                     isVoice = msg.isVoice,
                     chatMessage = msg.text,
-                    requestSource = TelemetryRequestSource.TELEGRAM_BOT,
+                    requestSource = ChatRequestSource.TELEGRAM_BOT,
                     onResult = { result ->
                         result.onSuccess { msg.responseDeferred.complete(it) }
                         result.onFailure { msg.responseDeferred.complete("Error: ${it.message}") }
@@ -242,7 +242,7 @@ class MainViewModel(
                     chatMessage = composedMessage,
                     displayMessage = inputText,
                     attachedFiles = attachments,
-                    requestSource = TelemetryRequestSource.CHAT_UI,
+                    requestSource = ChatRequestSource.CHAT_UI,
                 )
             }
 
@@ -397,7 +397,7 @@ class MainViewModel(
     }
 
     private suspend fun startNewConversation() {
-        chatUseCase.finishCurrentConversation(TelemetryConversationEndReason.NEW_CONVERSATION)
+        chatUseCase.finishCurrentConversation(ChatConversationCloseReason.NEW_CONVERSATION)
         chatUseCase.clearConversationContext()
 
         setStateAndRefreshChatSearch {
@@ -575,7 +575,7 @@ class MainViewModel(
 
     private suspend fun clearContext() {
         val lastKnownAgentContext: AgentContext<String>? = chatUseCase.snapshotContext()
-        chatUseCase.finishCurrentConversation(TelemetryConversationEndReason.CLEAR_CONTEXT)
+        chatUseCase.finishCurrentConversation(ChatConversationCloseReason.CLEAR_CONTEXT)
         chatUseCase.clearConversationContext()
 
         when (currentState.userExpectCloseOnX) {

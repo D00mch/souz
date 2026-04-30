@@ -51,7 +51,7 @@ If you are not sure about something, left a note for other developers to review.
 │   └── AGENTS.md                           # Module notes and REST contract
 ├── composeApp/                             # Desktop application and OS-bound integrations
 │   ├── src/jvmMain/kotlin/ru/souz/di/      # Desktop DI wiring and agent host setup
-│   ├── src/jvmMain/kotlin/ru/souz/service/ # Audio, MCP, permissions, Telegram, telemetry, image, keys
+│   ├── src/jvmMain/kotlin/ru/souz/service/ # Audio, MCP, permissions, Telegram, observability, image, keys
 │   ├── src/jvmMain/kotlin/ru/souz/tool/    # Desktop-only tools (browser, calendar, mail, notes, etc.)
 │   ├── src/jvmMain/kotlin/ru/souz/ui/      # Compose screens, view models, and tool/settings UI
 │   └── src/jvmTest/                        # JVM test source set

@@ -27,7 +27,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.di.mainDiModule
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.service.mcp.McpClientManager
-import ru.souz.service.telemetry.TelemetryService
+import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.ui.rememberDockWindowController
 import ru.souz.ui.macos.MacWindowVibrancy
 import java.awt.Dimension
@@ -48,13 +48,13 @@ fun main() {
             val settingsProvider: SettingsProvider by di.instance()
             val mcpClientManager: McpClientManager by di.instance()
             val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
-            val telemetryService: TelemetryService by di.instance()
             val localLlamaRuntime: LocalLlamaRuntime by di.instance()
+            val log: DesktopStructuredLogger by di.instance()
             val closeServices: () -> Unit = remember(
                 localLlamaRuntime,
                 mcpClientManager,
                 telegramBotController,
-                telemetryService,
+                log,
             ) {
                 val closed = AtomicBoolean(false)
                 ({
@@ -68,15 +68,14 @@ fun main() {
                             .onFailure { startupLog.warn("Failed to close MCP manager: {}", it.message) }
                         runCatching { telegramBotController.close() }
                             .onFailure { startupLog.warn("Failed to close Telegram bot controller: {}", it.message) }
-                        runCatching { telemetryService.close() }
-                            .onFailure { startupLog.warn("Failed to close telemetry service: {}", it.message) }
+                        log.appClosed()
                     }
                 })
             }
 
             DisposableEffect(Unit) {
                 telegramBotController.start()
-                telemetryService.start()
+                log.appOpened()
                 val shutdownHook = Thread(Runnable { closeServices() }, "souz-shutdown-hook")
                 Runtime.getRuntime().addShutdownHook(shutdownHook)
 

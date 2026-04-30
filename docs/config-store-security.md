@@ -14,7 +14,6 @@ This document summarizes how `ConfigStore` stores and encrypts sensitive setting
 - Sensitive keys are encrypted before write. The allowlist currently includes:
   - Telegram bot token
   - LLM/API keys
-  - telemetry private key storage
   - any key with the `MCP_OAUTH_STATE_` prefix
 - `MCP_SERVERS_JSON` is not currently in that allowlist, so it is not encrypted by the current implementation.
 

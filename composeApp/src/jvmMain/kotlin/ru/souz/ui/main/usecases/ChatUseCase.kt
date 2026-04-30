@@ -17,13 +17,15 @@ import ru.souz.agent.AgentSideEffect
 import ru.souz.agent.state.AgentContext
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.TokenLogging
-import ru.souz.service.telemetry.TelemetryConversationEndReason
-import ru.souz.service.telemetry.TelemetryConversationStartReason
-import ru.souz.service.telemetry.TelemetryRequestContext
-import ru.souz.service.telemetry.TelemetryRequestSource
-import ru.souz.service.telemetry.TelemetryRequestStatus
-import ru.souz.service.telemetry.TelemetryService
+import ru.souz.llms.plus
+import ru.souz.service.observability.ChatObservabilityTracker
+import ru.souz.service.observability.ChatConversationCloseReason
+import ru.souz.service.observability.ChatRequestLogContext
+import ru.souz.service.observability.ChatRequestSource
+import ru.souz.service.observability.ChatRequestStatus
+import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.ui.main.ChatAgentActionFormatter
 import ru.souz.ui.main.ChatAttachedFile
 import ru.souz.ui.main.ChatMessage
@@ -33,15 +35,16 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.collections.plus
 
-class ChatUseCase(
+class ChatUseCase internal constructor(
     private val agentFacade: AgentFacade,
     private val settingsProvider: SettingsProvider,
     private val speechUseCase: SpeechUseCase,
     private val finderPathExtractor: FinderPathExtractor,
     private val chatAttachmentsUseCase: ChatAttachmentsUseCase,
     private val toolModifyReviewUseCase: ToolModifyReviewUseCase,
+    private val observabilityTracker: ChatObservabilityTracker,
+    private val log: DesktopStructuredLogger,
     private val tokenLogging: TokenLogging,
-    private val telemetryService: TelemetryService,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val l = LoggerFactory.getLogger(ChatUseCase::class.java)
@@ -49,10 +52,6 @@ class ChatUseCase(
     private val taskSideEffectJobs = ArrayList<Job>()
     private val activeChatRequestId = AtomicLong(0L)
     private val activeRequestMessages = AtomicReference<ActiveRequestMessages?>(null)
-    private val conversationLock = Any()
-    private var currentConversationId: String? = null
-    private val pendingConversationClosures = LinkedHashMap<String, TelemetryConversationEndReason>()
-    private val activeConversationRequestCounts = LinkedHashMap<String, Int>()
 
     private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
     val outputs: Flow<MainUseCaseOutput> = _outputs.asSharedFlow()
@@ -71,7 +70,7 @@ class ChatUseCase(
         chatMessage: String,
         displayMessage: String = chatMessage,
         attachedFiles: List<ChatAttachedFile> = emptyList(),
-        requestSource: TelemetryRequestSource = TelemetryRequestSource.CHAT_UI,
+        requestSource: ChatRequestSource = ChatRequestSource.CHAT_UI,
         onResult: ((Result<String>) -> Unit)? = null,
     ) {
         resetBeforeSendingMessage()
@@ -106,12 +105,12 @@ class ChatUseCase(
                 onResult = onResult,
             )
         } catch (e: CancellationException) {
-            session.telemetryStatus = TelemetryRequestStatus.CANCELLED
-            session.telemetryErrorMessage = telemetryErrorLabel(e)
+            session.requestStatus = ChatRequestStatus.CANCELLED
+            session.requestErrorType = requestErrorType(e)
             handleRequestCancellation(session, e, onResult)
         } catch (e: Exception) {
-            session.telemetryStatus = TelemetryRequestStatus.ERROR
-            session.telemetryErrorMessage = telemetryErrorLabel(e)
+            session.requestStatus = ChatRequestStatus.ERROR
+            session.requestErrorType = requestErrorType(e)
             if (!handleRequestFailure(session, e, onResult)) {
                 return
             }
@@ -165,18 +164,8 @@ class ChatUseCase(
         agentFacade.clearContext()
     }
 
-    fun finishCurrentConversation(reason: TelemetryConversationEndReason) {
-        val conversationIdToFinish = synchronized(conversationLock) {
-            val conversationId = currentConversationId ?: return@synchronized null
-            currentConversationId = null
-            if ((activeConversationRequestCounts[conversationId] ?: 0) > 0) {
-                pendingConversationClosures[conversationId] = reason
-                null
-            } else {
-                conversationId
-            }
-        }
-        conversationIdToFinish?.let { telemetryService.finishConversation(it, reason) }
+    fun finishCurrentConversation(reason: ChatConversationCloseReason) {
+        observabilityTracker.finishCurrentConversation(reason)
     }
 
     fun setContext(ctx: AgentContext<String>) {
@@ -194,42 +183,10 @@ class ChatUseCase(
     }
 
     fun onCleared() {
-        finishCurrentConversation(TelemetryConversationEndReason.VIEW_MODEL_CLEARED)
+        finishCurrentConversation(ChatConversationCloseReason.VIEW_MODEL_CLEARED)
         killTaskSideEffectJobs()
         cancelActiveJob()
         toolModifyReviewUseCase.clearPendingReviewBlocking(discardBrokerState = true)
-    }
-
-    private fun ensureConversation(source: TelemetryRequestSource): String =
-        synchronized(conversationLock) {
-            currentConversationId ?: telemetryService.startConversation(
-                reason = when (source) {
-                    TelemetryRequestSource.CHAT_UI -> TelemetryConversationStartReason.CHAT_UI
-                    TelemetryRequestSource.VOICE_INPUT -> TelemetryConversationStartReason.VOICE_INPUT
-                    TelemetryRequestSource.TELEGRAM_BOT -> TelemetryConversationStartReason.TELEGRAM_BOT
-                }
-            ).also { currentConversationId = it }
-        }
-
-    private fun markConversationRequestStarted(conversationId: String) {
-        synchronized(conversationLock) {
-            activeConversationRequestCounts[conversationId] =
-                (activeConversationRequestCounts[conversationId] ?: 0) + 1
-        }
-    }
-
-    private fun finishPendingConversationIfNeeded(conversationId: String) {
-        val reason = synchronized(conversationLock) {
-            val remaining = (activeConversationRequestCounts[conversationId] ?: 1) - 1
-            if (remaining > 0) {
-                activeConversationRequestCounts[conversationId] = remaining
-                null
-            } else {
-                activeConversationRequestCounts.remove(conversationId)
-                pendingConversationClosures.remove(conversationId)
-            }
-        }
-        reason?.let { telemetryService.finishConversation(conversationId, it) }
     }
 
     private fun subscribeOnTaskSideEffects(scope: CoroutineScope, msg: ChatMessage): Job {
@@ -303,18 +260,18 @@ class ChatUseCase(
 
     /**
      * Creates a session object that carries chat request state through execution,
-     * telemetry, approval flow, and final cleanup.
+     * observability, approval flow, and final cleanup.
      */
     private fun createChatRequestSession(
         userText: String,
         displayMessage: String,
         isVoice: Boolean,
         attachedFiles: List<ChatAttachedFile>,
-        requestSource: TelemetryRequestSource,
+        requestSource: ChatRequestSource,
     ): ChatRequestSession {
         val requestId = activeChatRequestId.incrementAndGet()
-        val conversationId = ensureConversation(requestSource)
-        val requestContext = telemetryService.beginRequest(
+        val conversationId = observabilityTracker.ensureConversation(requestSource)
+        val requestContext = log.requestContext(
             conversationId = conversationId,
             source = requestSource,
             model = settingsProvider.gigaModel.alias,
@@ -322,7 +279,8 @@ class ChatUseCase(
             inputLengthChars = userText.length,
             attachedFilesCount = attachedFiles.size,
         )
-        markConversationRequestStarted(conversationId)
+        log.requestStarted(requestContext)
+        observabilityTracker.markConversationRequestStarted(conversationId)
         tokenLogging.startRequest(requestContext.requestId)
 
         val session = ChatRequestSession(
@@ -375,13 +333,13 @@ class ChatUseCase(
         }
     }
 
-    /** Executes the agent under the session's telemetry and token logging context. */
+    /** Executes the agent under the session's structured logging and token logging context. */
     private suspend fun executeAgentRequest(
         session: ChatRequestSession,
         userText: String,
     ): String = withContext(
         ioDispatcher +
-            telemetryService.requestContextElement(session.requestContext) +
+            session.requestContext.asCoroutineContext() +
             tokenLogging.requestContextElement(session.requestContext.requestId)
     ) {
         agentFacade.execute(userText)
@@ -446,8 +404,8 @@ class ChatUseCase(
         }
 
         l.info("Skipping stale chat response for request {}", session.requestId)
-        session.telemetryStatus = TelemetryRequestStatus.CANCELLED
-        session.telemetryErrorMessage = "StaleRequest"
+        session.requestStatus = ChatRequestStatus.CANCELLED
+        session.requestErrorType = "StaleRequest"
         toolModifyReviewUseCase.clearPendingReview(discardBrokerState = true)
         onResult?.invoke(Result.failure(CancellationException("Stale request")))
         return false
@@ -455,7 +413,7 @@ class ChatUseCase(
 
     /**
      * Commits a successful request into UI state, triggers completion side effects,
-     * and records response metrics on the session for final telemetry reporting.
+     * and records response metrics on the session for final structured logging.
      */
     private suspend fun handleRequestSuccess(
         scope: CoroutineScope,
@@ -484,7 +442,7 @@ class ChatUseCase(
         if (response.botMessage.isVoice && !settingsProvider.useStreaming) {
             speechUseCase.queuePrepared(response.botMessage.text)
         }
-        session.telemetryResponseLength = response.botMessage.text.length
+        session.responseLengthChars = response.botMessage.text.length
         onResult?.invoke(Result.success(response.botMessage.text))
     }
 
@@ -553,20 +511,26 @@ class ChatUseCase(
     }
 
     /**
-     * Completes telemetry, stops side-effect streaming, and clears the active request
+     * Completes structured logging, stops side-effect streaming, and clears the active request
      * bookkeeping for the finished session.
      */
     private fun finalizeRequestSession(session: ChatRequestSession) {
-        telemetryService.finishRequest(
+        val requestTokenUsage = tokenLogging.currentRequestTokenUsage(session.requestContext.requestId)
+        observabilityTracker.recordConversationRequestFinished(
+            conversationId = session.requestContext.conversationId,
+            toolCallCount = session.requestContext.toolExecutionCount,
+            requestTokenUsage = requestTokenUsage,
+        )
+        log.requestFinished(
             context = session.requestContext,
-            status = session.telemetryStatus,
-            responseLengthChars = session.telemetryResponseLength,
-            errorMessage = session.telemetryErrorMessage,
-            requestTokenUsage = tokenLogging.currentRequestTokenUsage(session.requestContext.requestId),
+            status = session.requestStatus,
+            responseLengthChars = session.responseLengthChars,
+            errorType = session.requestErrorType,
+            requestTokenUsage = requestTokenUsage,
             sessionTokenUsage = tokenLogging.sessionTokenUsage(),
         )
         tokenLogging.finishRequest(session.requestContext.requestId)
-        finishPendingConversationIfNeeded(session.requestContext.conversationId)
+        observabilityTracker.finishPendingConversationIfNeeded(session.requestContext.conversationId)
         session.sideEffectsJob?.cancel()
         session.sideEffectsJob?.let { taskSideEffectJobs.remove(it) }
         val currentActiveRequest = activeRequestMessages.get()
@@ -605,7 +569,7 @@ class ChatUseCase(
     private inline fun <T> List<T>.mapLast(transform: (T) -> T): List<T> =
         mapIndexed { index, value -> if (index == lastIndex) transform(value) else value }
 
-    private fun telemetryErrorLabel(error: Throwable): String =
+    private fun requestErrorType(error: Throwable): String =
         error::class.simpleName
             ?: error::class.qualifiedName?.substringAfterLast('.')
             ?: "UnknownError"
@@ -623,14 +587,14 @@ class ChatUseCase(
 
     private class ChatRequestSession(
         val requestId: Long,
-        val requestContext: TelemetryRequestContext,
+        val requestContext: ChatRequestLogContext,
         val userMessage: ChatMessage,
         val pendingBotMessage: ChatMessage,
     ) {
         var currentPendingMessageId: String = pendingBotMessage.id
-        var telemetryStatus: TelemetryRequestStatus = TelemetryRequestStatus.SUCCESS
-        var telemetryResponseLength: Int? = null
-        var telemetryErrorMessage: String? = null
+        var requestStatus: ChatRequestStatus = ChatRequestStatus.SUCCESS
+        var responseLengthChars: Int? = null
+        var requestErrorType: String? = null
         var sideEffectsJob: Job? = null
     }
 

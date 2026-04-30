@@ -59,10 +59,8 @@ import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.LocalProviderAvailability
+import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.service.telegram.TelegramBotController
-import ru.souz.service.telemetry.TelemetryRequestContext
-import ru.souz.service.telemetry.TelemetryRequestSource
-import ru.souz.service.telemetry.TelemetryService
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
@@ -1099,28 +1097,9 @@ class MainViewModelTest {
         every { telegramBotController.incomingMessages } returns incomingMessages
         every { telegramBotController.cleanCommands } returns cleanCommands
         val tokenLogging = mockk<TokenLogging>(relaxed = true)
-        val telemetryService = mockk<TelemetryService>(relaxed = true)
-        var telemetryRequestCounter = 0
-        var telemetryConversationCounter = 0
         every { tokenLogging.requestContextElement(any()) } returns EmptyCoroutineContext
         every { tokenLogging.currentRequestTokenUsage(any()) } returns LLMResponse.Usage(0, 0, 0, 0)
         every { tokenLogging.sessionTokenUsage() } returns LLMResponse.Usage(0, 0, 0, 0)
-        every { telemetryService.startConversation(any()) } answers {
-            "conversation-${++telemetryConversationCounter}"
-        }
-        every { telemetryService.beginRequest(any(), any(), any(), any(), any(), any()) } answers {
-            TelemetryRequestContext(
-                requestId = "request-${++telemetryRequestCounter}",
-                conversationId = firstArg(),
-                source = secondArg<TelemetryRequestSource>(),
-                model = thirdArg(),
-                provider = arg(3),
-                inputLengthChars = arg(4),
-                attachedFilesCount = arg(5),
-                startedAtMs = 0L,
-            )
-        }
-        every { telemetryService.requestContextElement(any()) } returns EmptyCoroutineContext
 
         val di = DI {
             bindSingleton<AgentFacade> { agentFacade }
@@ -1140,7 +1119,7 @@ class MainViewModelTest {
             bindSingleton { FinderPathExtractor(instance()) }
             bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
             bindSingleton<TokenLogging> { tokenLogging }
-            bindSingleton { telemetryService }
+            bindSingleton { DesktopStructuredLogger() }
             bindSingleton {
                 MainUseCasesFactory(
                     instance(),

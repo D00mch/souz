@@ -1,20 +1,20 @@
 package ru.souz.agent.runtime
 
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import org.slf4j.LoggerFactory
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.spi.AgentTelemetry
+import ru.souz.agent.spi.AgentToolExecutionEvent
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 
 class AgentToolExecutor(
-    private val telemetryService: AgentTelemetry,
+    private val telemetry: AgentTelemetry = AgentTelemetry.NONE,
 ) {
-    private val l = LoggerFactory.getLogger(AgentToolExecutor::class.java)
     private val _toolInvocations = MutableSharedFlow<LLMResponse.FunctionCall>(extraBufferCapacity = 32)
 
     val toolInvocations: Flow<LLMResponse.FunctionCall> = _toolInvocations.asSharedFlow()
@@ -23,37 +23,70 @@ class AgentToolExecutor(
         settings: AgentSettings,
         functionCall: LLMResponse.FunctionCall,
     ): LLMRequest.Message {
+        _toolInvocations.tryEmit(functionCall)
+        val startedAtMs = System.currentTimeMillis()
+        val toolCategoryName = settings.tools.categoryByName[functionCall.name]?.name
+        val logContext = currentCoroutineContext()[AgentExecutionLogContext.Element]?.value
+        logContext?.incrementToolExecutionCount()
         val fn: LLMToolSetup = settings.tools.byName[functionCall.name] ?: return LLMRequest.Message(
             role = LLMMessageRole.function,
             content = """{"result":"no such function ${functionCall.name}"}""",
-        )
-
-        _toolInvocations.tryEmit(functionCall)
-        l.info("Executing tool: ${fn.fn.name}, arguments: ${functionCall.arguments}")
-        val startedAtMs = System.currentTimeMillis()
-        val toolCategory = settings.tools.categoryByName[functionCall.name]
+        ).also {
+            recordToolExecution(
+                functionCall = functionCall,
+                toolCategoryName = toolCategoryName,
+                startedAtMs = startedAtMs,
+                logContext = logContext,
+                success = false,
+                errorType = "UnknownTool",
+            )
+        }
         return try {
             fn.invoke(functionCall).also {
-                telemetryService.recordToolExecution(
-                    functionName = functionCall.name,
-                    functionArguments = functionCall.arguments,
-                    toolCategory = toolCategory,
-                    durationMs = System.currentTimeMillis() - startedAtMs,
+                recordToolExecution(
+                    functionCall = functionCall,
+                    toolCategoryName = toolCategoryName,
+                    startedAtMs = startedAtMs,
+                    logContext = logContext,
                     success = true,
-                    errorMessage = null,
                 )
             }
         } catch (e: Exception) {
-            l.error("Tool execution failure: ${fn.fn.name}, arguments: ${functionCall.arguments}", e)
-            telemetryService.recordToolExecution(
-                functionName = functionCall.name,
-                functionArguments = functionCall.arguments,
-                toolCategory = toolCategory,
-                durationMs = System.currentTimeMillis() - startedAtMs,
+            recordToolExecution(
+                functionCall = functionCall,
+                toolCategoryName = toolCategoryName,
+                startedAtMs = startedAtMs,
+                logContext = logContext,
                 success = false,
-                errorMessage = e::class.simpleName ?: "UnknownError",
+                errorType = e::class.simpleName ?: e::class.qualifiedName?.substringAfterLast('.'),
             )
             throw e
         }
+    }
+
+    private fun recordToolExecution(
+        functionCall: LLMResponse.FunctionCall,
+        toolCategoryName: String?,
+        startedAtMs: Long,
+        logContext: AgentExecutionLogContext?,
+        success: Boolean,
+        errorType: String? = null,
+    ) {
+        telemetry.recordToolExecution(
+            AgentToolExecutionEvent(
+                appSessionId = logContext?.appSessionId,
+                conversationId = logContext?.conversationId,
+                requestId = logContext?.requestId,
+                requestSource = logContext?.requestSource,
+                model = logContext?.model,
+                provider = logContext?.provider,
+                functionName = functionCall.name,
+                toolCategory = toolCategoryName,
+                argumentKeys = functionCall.arguments.keys.sorted(),
+                durationMs = System.currentTimeMillis() - startedAtMs,
+                success = success,
+                errorType = errorType,
+            )
+        )
     }
 }

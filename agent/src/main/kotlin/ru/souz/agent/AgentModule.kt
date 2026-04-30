@@ -15,6 +15,7 @@ import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.runtime.LuaRuntime
+import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.agent.session.GraphSessionRepository
@@ -33,7 +34,7 @@ fun agentDiModule(
             logObjectMapper = instance<ObjectMapper>(tag = logObjectMapperTag),
         )
     }
-    bindSingleton { AgentToolExecutor(instance()) }
+    bindSingleton { AgentToolExecutor(instance<AgentTelemetry>()) }
     bindSingleton { NodesErrorHandling(instance()) }
     bindSingleton { NodesCommon(instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }

@@ -24,7 +24,7 @@ agent/
    │   ├── NodesMCP.kt                # MCP tool injection node
    │   └── NodesSummarization.kt      # History summarization and save-point logic
    ├── runtime/                       # Execution helpers used by agent nodes/impls
-   │   ├── AgentToolExecutor.kt       # Tool invocation bridge with telemetry hooks
+   │   ├── AgentToolExecutor.kt       # Tool invocation bridge with structured telemetry logging
    │   ├── GraphExecutionDelegate.kt  # Active job tracking and traced graph execution
    │   └── LuaRuntime.kt              # Sandboxed Lua runtime with exposed tools
    ├── session/                       # Persisted graph session models and services

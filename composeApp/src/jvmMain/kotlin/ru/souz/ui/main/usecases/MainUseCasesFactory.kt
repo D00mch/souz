@@ -6,7 +6,8 @@ import ru.souz.service.audio.InMemoryAudioRecorder
 import ru.souz.service.audio.Say
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.TokenLogging
-import ru.souz.service.telemetry.TelemetryService
+import ru.souz.service.observability.ChatObservabilityTracker
+import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
@@ -31,7 +32,7 @@ class MainUseCasesFactory(
     private val selectionApprovalSources: Set<SelectionApprovalSource>,
     private val finderPathExtractor: FinderPathExtractor,
     private val tokenLogging: TokenLogging,
-    private val telemetryService: TelemetryService,
+    private val log: DesktopStructuredLogger,
 ) {
 
     fun create(ioDispatcher: CoroutineDispatcher): MainUseCases {
@@ -47,8 +48,9 @@ class MainUseCasesFactory(
             finderPathExtractor = finderPathExtractor,
             chatAttachmentsUseCase = attachmentsUseCase,
             toolModifyReviewUseCase = toolModifyReviewUseCase,
+            observabilityTracker = ChatObservabilityTracker(log = log),
+            log = log,
             tokenLogging = tokenLogging,
-            telemetryService = telemetryService,
             ioDispatcher = ioDispatcher,
         )
         val permissionsUseCase = PermissionsUseCase(

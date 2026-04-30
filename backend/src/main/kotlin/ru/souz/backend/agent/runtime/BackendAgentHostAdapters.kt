@@ -6,7 +6,6 @@ import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
-import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
@@ -19,7 +18,6 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
-
 /** Request-scoped backend settings wrapper used by the shared agent/runtime code. */
 class BackendConversationSettingsProvider(
     private val delegate: SettingsProvider,
@@ -118,18 +116,6 @@ object BackendNoopDefaultBrowserProvider : DefaultBrowserProvider {
 /** Backend implementation for hosts without MCP discovery. */
 object BackendNoopMcpToolProvider : McpToolProvider {
     override suspend fun tools(): List<LLMToolSetup> = emptyList()
-}
-
-/** Backend telemetry sink used when no structured telemetry is configured. */
-object BackendNoopAgentTelemetry : AgentTelemetry {
-    override fun recordToolExecution(
-        functionName: String,
-        functionArguments: Map<String, Any>,
-        toolCategory: ToolCategory?,
-        durationMs: Long,
-        success: Boolean,
-        errorMessage: String?,
-    ) = Unit
 }
 
 /** Backend-owned user-facing error text for shared agent failure paths. */
