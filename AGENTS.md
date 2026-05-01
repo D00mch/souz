@@ -21,6 +21,7 @@ If you are not sure about something, left a note for other developers to review.
 ## Features
 
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
+- **Standalone ClawHub/OpenClaw skills support in `:agent`**: bundle parsing, canonical hashing, structural/static/LLM validation, validation caching by bundle hash + policy version, LLM-based skill selection, and replaceable skills-context history injection ready for later graph integration.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Local llama.cpp provider** with a thin native bridge, strict JSON tool contract, a RAM-gated local model catalog (Qwen plus Gemma 4 chat profiles), linked local EmbeddingGemma GGUF downloads/usage for embeddings, background preload/warmup on local chat model selection, prompt-family-aware rendering (Qwen ChatML and Gemma 4 turns), prompt-prefix/KV reuse inside the native runtime, settings-driven context windows for local inference within model caps, and model storage under `~/.local/state/souz/models/`.
 - **Shared JVM runtime layer** in `:runtime` for provider clients, config/settings access, file utilities, and backend-safe tool categories (`FILES`, `WEB_SEARCH`, `CONFIG`, `DATA_ANALYTICS`, `CALCULATOR`) reused by both desktop and backend agent execution.

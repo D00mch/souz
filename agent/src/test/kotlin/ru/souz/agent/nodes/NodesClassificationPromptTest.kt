@@ -1,6 +1,7 @@
-package classification
+package ru.souz.agent.nodes
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -8,14 +9,13 @@ import io.mockk.mockk
 import io.mockk.unmockkAll
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
-import ru.souz.agent.graph.GraphRuntime
-import ru.souz.agent.graph.RetryPolicy
-import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
+import ru.souz.graph.GraphRuntime
+import ru.souz.graph.RetryPolicy
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
@@ -24,7 +24,7 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.UserMessageClassifier
-import com.fasterxml.jackson.module.kotlin.readValue
+import kotlin.collections.minus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

@@ -13,7 +13,7 @@ agent/
    ├── SystemPromptResolver.kt        # Default system prompt selection by agent/model/profile
    ├── TraceableAgent.kt              # Internal tracing contract used by concrete agents
    ├── graph/                         # Internal adapter from agent state to :graph-engine
-   ├── spi/                           # Host-facing interfaces implemented by composeApp
+   ├── spi/                           # Host-facing service provider interfaces
    ├── state/                         # AgentContext and related state/settings wrappers
    ├── nodes/                         # Graph node implementations
    │   ├── NodesClassification.kt     # Category classification and tool narrowing
