@@ -1,5 +1,6 @@
 package ru.souz.agent.state
 
+import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
@@ -11,6 +12,7 @@ data class AgentContext<I>(
     val history: List<LLMRequest.Message>,
     val activeTools: List<LLMRequest.Function>,
     val systemPrompt: String,
+    val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
 ) {
     inline fun <reified O> map(
         settings: AgentSettings = this.settings,
@@ -18,7 +20,14 @@ data class AgentContext<I>(
         activeTools: List<LLMRequest.Function> = this.activeTools,
         systemPrompt: String = this.systemPrompt,
         transform: (I) -> O = { it as O },
-    ): AgentContext<O> = AgentContext(input = transform(input), settings, history, activeTools, systemPrompt)
+    ): AgentContext<O> = AgentContext(
+        input = transform(input),
+        settings = settings,
+        history = history,
+        activeTools = activeTools,
+        systemPrompt = systemPrompt,
+        runtimeEventSink = runtimeEventSink,
+    )
 }
 
 data class AgentTools(

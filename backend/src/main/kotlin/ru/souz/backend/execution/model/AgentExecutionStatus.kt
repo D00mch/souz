@@ -9,3 +9,9 @@ enum class AgentExecutionStatus(val value: String) {
     COMPLETED("completed"),
     FAILED("failed"),
 }
+
+fun AgentExecutionStatus.isActive(): Boolean =
+    this == AgentExecutionStatus.QUEUED ||
+        this == AgentExecutionStatus.RUNNING ||
+        this == AgentExecutionStatus.WAITING_CHOICE ||
+        this == AgentExecutionStatus.CANCELLING

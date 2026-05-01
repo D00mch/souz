@@ -214,7 +214,12 @@ internal class NodesCommon(
             val functionCall = msg.functionCall
             val functionsStateId = msg.functionsStateId
             if (functionCall != null && functionsStateId != null) {
-                executeTool(ctx.settings, functionCall).copy(functionsStateId = functionsStateId)
+                executeTool(
+                    settings = ctx.settings,
+                    functionCall = functionCall,
+                    toolCallId = functionsStateId,
+                    eventSink = ctx.runtimeEventSink,
+                ).copy(functionsStateId = functionsStateId)
             } else null
         }
         return fnCallMessages
@@ -223,7 +228,14 @@ internal class NodesCommon(
     private suspend fun executeTool(
         settings: AgentSettings,
         functionCall: LLMResponse.FunctionCall,
-    ): LLMRequest.Message = agentToolExecutor.execute(settings, functionCall)
+        toolCallId: String? = null,
+        eventSink: ru.souz.agent.runtime.AgentRuntimeEventSink = ru.souz.agent.runtime.AgentRuntimeEventSink.NONE,
+    ): LLMRequest.Message = agentToolExecutor.execute(
+        settings = settings,
+        functionCall = functionCall,
+        toolCallId = toolCallId,
+        eventSink = eventSink,
+    )
 }
 
 internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {

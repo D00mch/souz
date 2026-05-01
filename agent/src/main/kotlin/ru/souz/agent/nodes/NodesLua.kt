@@ -55,6 +55,7 @@ internal class NodesLua(
                 code = ctx.input,
                 settings = ctx.settings,
                 activeTools = ctx.activeTools,
+                eventSink = ctx.runtimeEventSink,
             )
             val history = ArrayList(ctx.history).apply {
                 add(

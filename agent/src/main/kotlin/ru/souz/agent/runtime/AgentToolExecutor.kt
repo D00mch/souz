@@ -4,6 +4,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import java.util.UUID
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolExecutionEvent
@@ -22,16 +23,34 @@ class AgentToolExecutor(
     suspend fun execute(
         settings: AgentSettings,
         functionCall: LLMResponse.FunctionCall,
+        toolCallId: String? = null,
+        eventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
     ): LLMRequest.Message {
         _toolInvocations.tryEmit(functionCall)
         val startedAtMs = System.currentTimeMillis()
+        val runtimeToolCallId = toolCallId ?: UUID.randomUUID().toString()
         val toolCategoryName = settings.tools.categoryByName[functionCall.name]?.name
         val logContext = currentCoroutineContext()[AgentExecutionLogContext.Element]?.value
         logContext?.incrementToolExecutionCount()
+        eventSink.emit(
+            AgentRuntimeEvent.ToolCallStarted(
+                toolCallId = runtimeToolCallId,
+                name = functionCall.name,
+                arguments = functionCall.arguments,
+            )
+        )
         val fn: LLMToolSetup = settings.tools.byName[functionCall.name] ?: return LLMRequest.Message(
             role = LLMMessageRole.function,
             content = """{"result":"no such function ${functionCall.name}"}""",
         ).also {
+            eventSink.emit(
+                AgentRuntimeEvent.ToolCallFailed(
+                    toolCallId = runtimeToolCallId,
+                    name = functionCall.name,
+                    error = "UnknownTool",
+                    durationMs = System.currentTimeMillis() - startedAtMs,
+                )
+            )
             recordToolExecution(
                 functionCall = functionCall,
                 toolCategoryName = toolCategoryName,
@@ -43,6 +62,14 @@ class AgentToolExecutor(
         }
         return try {
             fn.invoke(functionCall).also {
+                eventSink.emit(
+                    AgentRuntimeEvent.ToolCallFinished(
+                        toolCallId = runtimeToolCallId,
+                        name = functionCall.name,
+                        resultPreview = it.content,
+                        durationMs = System.currentTimeMillis() - startedAtMs,
+                    )
+                )
                 recordToolExecution(
                     functionCall = functionCall,
                     toolCategoryName = toolCategoryName,
@@ -52,6 +79,14 @@ class AgentToolExecutor(
                 )
             }
         } catch (e: Exception) {
+            eventSink.emit(
+                AgentRuntimeEvent.ToolCallFailed(
+                    toolCallId = runtimeToolCallId,
+                    name = functionCall.name,
+                    error = e.message ?: (e::class.simpleName ?: "ToolExecutionFailed"),
+                    durationMs = System.currentTimeMillis() - startedAtMs,
+                )
+            )
             recordToolExecution(
                 functionCall = functionCall,
                 toolCategoryName = toolCategoryName,

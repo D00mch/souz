@@ -8,6 +8,7 @@ import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.AgentRequest
 import ru.souz.backend.agent.model.AgentResponse
 import ru.souz.backend.agent.model.AgentUsage
+import ru.souz.backend.agent.model.toConversationTurnRequest
 import ru.souz.backend.agent.model.validated
 import ru.souz.backend.agent.runtime.BackendConversationRuntime
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
@@ -50,8 +51,9 @@ class BackendAgentService(
         }
 
         try {
-            val runtime: BackendConversationRuntime = runtimeFactory.create(conversationKey, validated)
-            val execution = runtime.execute(validated)
+            val turnRequest = validated.toConversationTurnRequest()
+            val runtime: BackendConversationRuntime = runtimeFactory.create(conversationKey, turnRequest)
+            val execution = runtime.execute(turnRequest)
             rememberCompletedAgentRequestId(validated.requestId)
 
             return AgentResponse(

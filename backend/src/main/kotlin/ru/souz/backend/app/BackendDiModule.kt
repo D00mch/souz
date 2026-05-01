@@ -16,12 +16,18 @@ import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.backend.chat.service.ChatService
+import ru.souz.backend.chat.service.MessageService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.choices.repository.ChoiceRepository
 import ru.souz.backend.events.repository.AgentEventRepository
+import ru.souz.backend.events.service.AgentEventBus
+import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.repository.AgentExecutionRepository
+import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
+import ru.souz.backend.settings.service.UserSettingsService
 import ru.souz.backend.storage.memory.MemoryAgentEventRepository
 import ru.souz.backend.storage.memory.MemoryAgentExecutionRepository
 import ru.souz.backend.storage.memory.MemoryAgentStateRepository
@@ -63,6 +69,14 @@ fun backendDiModule(
     bindSingleton<AgentExecutionRepository> { MemoryAgentExecutionRepository() }
     bindSingleton<ChoiceRepository> { MemoryChoiceRepository() }
     bindSingleton<AgentEventRepository> { MemoryAgentEventRepository() }
+    bindSingleton { AgentEventBus() }
+    bindSingleton {
+        AgentEventService(
+            chatRepository = instance(),
+            eventRepository = instance(),
+            eventBus = instance(),
+        )
+    }
     bindSingleton<UserSettingsRepository> { MemoryUserSettingsRepository() }
     bindSingleton {
         EffectiveSettingsResolver(
@@ -75,6 +89,18 @@ fun backendDiModule(
     }
     bindSingleton<AgentSessionRepository> {
         AgentStateBackedSessionRepository(instance())
+    }
+    bindSingleton {
+        UserSettingsService(
+            userSettingsRepository = instance(),
+            effectiveSettingsResolver = instance(),
+        )
+    }
+    bindSingleton {
+        ChatService(
+            chatRepository = instance(),
+            messageRepository = instance(),
+        )
     }
     bindSingleton {
         BackendConversationRuntimeFactory(
@@ -95,6 +121,26 @@ fun backendDiModule(
             systemPrompt = systemPrompt,
             toolCatalog = instance(),
             toolsFilter = instance(),
+        )
+    }
+    bindSingleton {
+        AgentExecutionService(
+            chatRepository = instance(),
+            messageRepository = instance(),
+            agentStateRepository = instance(),
+            effectiveSettingsResolver = instance(),
+            runtimeFactory = instance(),
+            executionRepository = instance(),
+            eventRepository = instance(),
+            eventService = instance(),
+            featureFlags = instance(),
+        )
+    }
+    bindSingleton {
+        MessageService(
+            chatRepository = instance(),
+            messageRepository = instance(),
+            executionService = instance(),
         )
     }
     bindSingleton {

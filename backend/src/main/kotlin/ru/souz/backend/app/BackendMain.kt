@@ -31,6 +31,12 @@ fun main() {
     val server = BackendHttpServer(
         agentService = runtime.agentService,
         bootstrapService = runtime.bootstrapService,
+        userSettingsService = runtime.userSettingsService,
+        chatService = runtime.chatService,
+        messageService = runtime.messageService,
+        executionService = runtime.executionService,
+        eventService = runtime.eventService,
+        featureFlags = runtime.featureFlags,
         selectedModel = runtime::selectedModel,
         bindAddress = InetSocketAddress(host, port),
         internalAgentToken = { internalAgentToken },

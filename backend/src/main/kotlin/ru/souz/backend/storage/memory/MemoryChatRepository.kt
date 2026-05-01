@@ -19,13 +19,23 @@ class MemoryChatRepository : ChatRepository {
         chats[ChatKey(userId, chatId)]
     }
 
-    override suspend fun list(userId: String, limit: Int): List<Chat> = mutex.withLock {
+    override suspend fun list(
+        userId: String,
+        limit: Int,
+        includeArchived: Boolean,
+    ): List<Chat> = mutex.withLock {
         chats.values
             .asSequence()
             .filter { it.userId == userId }
+            .filter { includeArchived || !it.archived }
             .sortedByDescending { it.updatedAt }
             .take(limit)
             .toList()
+    }
+
+    override suspend fun update(chat: Chat): Chat = mutex.withLock {
+        chats[ChatKey(chat.userId, chat.id)] = chat
+        chat
     }
 }
 

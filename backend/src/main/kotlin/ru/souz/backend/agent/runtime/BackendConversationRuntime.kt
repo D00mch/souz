@@ -4,11 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
+import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.backend.agent.model.AgentConversationKey
-import ru.souz.backend.agent.model.ValidatedAgentRequest
+import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.db.SettingsProvider
@@ -21,6 +22,7 @@ import ru.souz.tool.LocalRegexClassifier
 internal data class BackendConversationExecution(
     val output: String,
     val usage: LLMResponse.Usage,
+    val session: AgentConversationSession,
 )
 
 /** Request-scoped backend conversation runtime rebuilt from the stored snapshot. */
@@ -48,7 +50,11 @@ internal class BackendConversationRuntime(
         }
     }
 
-    internal suspend fun execute(request: ValidatedAgentRequest): BackendConversationExecution {
+    internal suspend fun execute(
+        request: BackendConversationTurnRequest,
+        persistSession: Boolean = true,
+        eventSink: AgentRuntimeEventSink? = null,
+    ): BackendConversationExecution {
         settingsProvider.applyRequest(
             request = request,
             activeAgentId = activeAgentId,
@@ -68,23 +74,25 @@ internal class BackendConversationRuntime(
             agentId = activeAgentId,
             context = seedContext,
             input = request.prompt,
+            eventSink = eventSink,
         )
         val nextAgentId = contextFactory.normalizeAgentId(settingsProvider.activeAgentId)
-
-        sessionRepository.save(
-            key,
-            AgentConversationSession(
-                activeAgentId = nextAgentId,
-                history = result.context.history,
-                temperature = result.context.settings.temperature,
-                locale = request.locale,
-                timeZone = request.timeZone,
-            )
+        val nextSession = AgentConversationSession(
+            activeAgentId = nextAgentId,
+            history = result.context.history,
+            temperature = result.context.settings.temperature,
+            locale = request.locale,
+            timeZone = request.timeZone,
         )
+
+        if (persistSession) {
+            sessionRepository.save(key, nextSession)
+        }
 
         return BackendConversationExecution(
             output = result.output,
             usage = usageTrackingApi.latestUsage(),
+            session = nextSession,
         )
     }
 }
@@ -101,12 +109,12 @@ class BackendConversationRuntimeFactory(
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
-        request: ValidatedAgentRequest,
+        request: BackendConversationTurnRequest,
     ): BackendConversationRuntime {
         val persistedSession = sessionRepository.load(key)
         val settingsProvider = BackendConversationSettingsProvider(
             delegate = baseSettingsProvider,
-            systemPrompt = systemPrompt,
+            defaultSystemPrompt = request.systemPrompt ?: systemPrompt,
             locale = persistedSession?.locale ?: request.locale,
         )
         val usageTrackingApi = UsageTrackingChatApi(llmApiFactory(settingsProvider))

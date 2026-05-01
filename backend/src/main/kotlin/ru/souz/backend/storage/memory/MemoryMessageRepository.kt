@@ -41,18 +41,43 @@ class MemoryMessageRepository : MessageRepository {
         messages[ConversationKey(userId, chatId)]?.firstOrNull { it.seq == seq }
     }
 
+    override suspend fun latest(userId: String, chatId: UUID): ChatMessage? = mutex.withLock {
+        messages[ConversationKey(userId, chatId)]?.lastOrNull()
+    }
+
+    override suspend fun updateContent(
+        userId: String,
+        chatId: UUID,
+        messageId: UUID,
+        content: String,
+    ): ChatMessage? = mutex.withLock {
+        val key = ConversationKey(userId, chatId)
+        val currentMessages = messages[key] ?: return@withLock null
+        val index = currentMessages.indexOfFirst { it.id == messageId }
+        if (index < 0) return@withLock null
+
+        currentMessages[index].copy(content = content).also { updated ->
+            currentMessages[index] = updated
+        }
+    }
+
     override suspend fun list(
         userId: String,
         chatId: UUID,
         afterSeq: Long?,
+        beforeSeq: Long?,
         limit: Int,
     ): List<ChatMessage> = mutex.withLock {
-        messages[ConversationKey(userId, chatId)]
+        val filtered = messages[ConversationKey(userId, chatId)]
             .orEmpty()
             .asSequence()
             .filter { message -> afterSeq == null || message.seq > afterSeq }
-            .take(limit)
+            .filter { message -> beforeSeq == null || message.seq < beforeSeq }
             .toList()
+        when {
+            beforeSeq != null -> filtered.takeLast(limit)
+            else -> filtered.take(limit)
+        }
     }
 }
 

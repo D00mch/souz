@@ -18,10 +18,20 @@ interface MessageRepository {
 
     suspend fun get(userId: String, chatId: UUID, seq: Long): ChatMessage?
 
+    suspend fun latest(userId: String, chatId: UUID): ChatMessage?
+
+    suspend fun updateContent(
+        userId: String,
+        chatId: UUID,
+        messageId: UUID,
+        content: String,
+    ): ChatMessage?
+
     suspend fun list(
         userId: String,
         chatId: UUID,
         afterSeq: Long? = null,
+        beforeSeq: Long? = null,
         limit: Int = DEFAULT_LIMIT,
     ): List<ChatMessage>
 

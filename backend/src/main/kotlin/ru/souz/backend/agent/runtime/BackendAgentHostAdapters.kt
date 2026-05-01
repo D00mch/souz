@@ -10,7 +10,7 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
-import ru.souz.backend.agent.model.ValidatedAgentRequest
+import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
@@ -21,9 +21,11 @@ import ru.souz.tool.ToolCategory
 /** Request-scoped backend settings wrapper used by the shared agent/runtime code. */
 class BackendConversationSettingsProvider(
     private val delegate: SettingsProvider,
-    private val systemPrompt: String,
+    private val defaultSystemPrompt: String,
     locale: String,
 ) : SettingsProvider by delegate {
+    private var overrideSystemPrompt: String? = null
+
     override var defaultCalendar: String? = null
     override var regionProfile: String = localeToRegionProfile(locale)
     override var activeAgentId: AgentId = AgentId.default
@@ -32,7 +34,8 @@ class BackendConversationSettingsProvider(
     override var contextSize: Int = delegate.contextSize
     override var temperature: Float = delegate.temperature
 
-    override fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String = systemPrompt
+    override fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String =
+        overrideSystemPrompt ?: defaultSystemPrompt
 
     override fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?) = Unit
 
@@ -47,15 +50,17 @@ class BackendConversationSettingsProvider(
     }
 
     internal fun applyRequest(
-        request: ValidatedAgentRequest,
+        request: BackendConversationTurnRequest,
         activeAgentId: AgentId,
         temperature: Float,
     ) {
         this.activeAgentId = activeAgentId
         this.gigaModel = parseModel(request.model) ?: delegate.gigaModel
         this.contextSize = request.contextSize
-        this.temperature = temperature
+        this.temperature = request.temperature ?: temperature
         this.regionProfile = localeToRegionProfile(request.locale)
+        this.overrideSystemPrompt = request.systemPrompt
+        this.useStreaming = request.streamingMessages == true
     }
 
     private fun parseModel(rawModel: String): LLMModel? =

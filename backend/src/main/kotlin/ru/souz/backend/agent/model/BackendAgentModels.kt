@@ -45,6 +45,18 @@ data class AgentConversationKey(
     val conversationId: String,
 )
 
+/** Internal request model shared by legacy `/agent` and stage-3 chat-oriented turns. */
+internal data class BackendConversationTurnRequest(
+    val prompt: String,
+    val model: String,
+    val contextSize: Int,
+    val locale: String,
+    val timeZone: String,
+    val temperature: Float? = null,
+    val systemPrompt: String? = null,
+    val streamingMessages: Boolean? = null,
+)
+
 /** Fully validated backend request passed into runtime orchestration. */
 internal data class ValidatedAgentRequest(
     val requestId: String,
@@ -79,6 +91,15 @@ internal fun AgentRequest.validated(): ValidatedAgentRequest {
         timeZone = timeZoneValue,
     )
 }
+
+internal fun ValidatedAgentRequest.toConversationTurnRequest(): BackendConversationTurnRequest =
+    BackendConversationTurnRequest(
+        prompt = prompt,
+        model = model,
+        contextSize = contextSize,
+        locale = locale,
+        timeZone = timeZone,
+    )
 
 private fun String.requireUuid(fieldName: String): String =
     trim().let { value ->
