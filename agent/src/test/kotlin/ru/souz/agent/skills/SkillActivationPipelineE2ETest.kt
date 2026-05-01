@@ -180,8 +180,8 @@ class SkillActivationPipelineE2ETest {
 }
 
 private fun selectAvailableModel(): LLMModel? = when {
-    !readEnv("OPENAI_API_KEY").isNullOrBlank() -> LLMModel.OpenAIGpt5Nano
-    !readEnv("AITUNNEL_KEY").isNullOrBlank() -> LLMModel.AiTunnelGpt5Nano
+    !readEnv("AITUNNEL_KEY").isNullOrBlank() -> LLMModel.AiTunnelClaudeHaiku
+    !readEnv("OPENAI_API_KEY").isNullOrBlank() -> LLMModel.OpenAIGpt52
     !readEnv("QWEN_KEY").isNullOrBlank() -> LLMModel.QwenFlash
     !readEnv("ANTHROPIC_API_KEY").isNullOrBlank() -> LLMModel.AnthropicHaiku45
     !readEnv("GIGA_KEY").isNullOrBlank() -> LLMModel.Lite
