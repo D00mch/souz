@@ -12,31 +12,37 @@ internal object SkillContextInjector {
         context: AgentContext<String>,
         activatedSkills: List<ActivatedSkill>,
     ): AgentContext<String> {
-        val cleanedHistory = context.history.filterNot(::isSkillsContextMessage)
-        if (activatedSkills.isEmpty()) {
-            return context.map(history = cleanedHistory) { it }
-        }
-
-        val message = LLMRequest.Message(
-            role = LLMMessageRole.user,
-            content = buildSkillsContext(activatedSkills),
+        val updatedSystemPrompt = buildSystemPrompt(
+            baseSystemPrompt = context.systemPrompt,
+            activatedSkills = activatedSkills,
         )
-        val insertionIndex = cleanedHistory.indexOfLast { it.role == LLMMessageRole.user }
-            .takeIf { it >= 0 }
-            ?: cleanedHistory.size
-
-        val updatedHistory = buildList {
-            addAll(cleanedHistory.take(insertionIndex))
-            add(message)
-            addAll(cleanedHistory.drop(insertionIndex))
-        }
-        return context.map(history = updatedHistory) { it }
+        return context.map(history = context.history.replaceSystemPrompt(updatedSystemPrompt)) { it }
     }
 
-    fun isSkillsContextMessage(message: LLMRequest.Message): Boolean =
-        message.role == LLMMessageRole.user &&
-            message.content.contains(START_MARKER) &&
-            message.content.contains(END_MARKER)
+    private fun buildSystemPrompt(
+        baseSystemPrompt: String,
+        activatedSkills: List<ActivatedSkill>,
+    ): String {
+        if (activatedSkills.isEmpty()) return baseSystemPrompt // early exit
+
+        val skillsContext = buildSkillsContext(activatedSkills)
+        return buildString {
+            if (baseSystemPrompt.isNotBlank()) {
+                append(baseSystemPrompt.trimEnd())
+                append("\n\n")
+            }
+            append(skillsContext)
+        }
+    }
+
+    private fun List<LLMRequest.Message>.replaceSystemPrompt(systemPrompt: String): List<LLMRequest.Message> {
+        if (isEmpty()) return emptyList()                      // early exit
+        val systemMessage = LLMRequest.Message(
+            role = LLMMessageRole.system,
+            content = systemPrompt,
+        )
+        return listOf(systemMessage) + drop(1)
+    }
 
     private fun buildSkillsContext(activatedSkills: List<ActivatedSkill>): String = buildString {
         appendLine(START_MARKER)

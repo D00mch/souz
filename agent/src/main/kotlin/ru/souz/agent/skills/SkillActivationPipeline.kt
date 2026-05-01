@@ -1,12 +1,13 @@
 package ru.souz.agent.skills
 
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.agent.skills.activation.ActivatedSkill
+import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.activation.SkillContextInjector
 import ru.souz.agent.skills.bundle.SKILL_MD_PATH
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleHasher
-import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.selection.SkillSelectionInput
 import ru.souz.agent.skills.selection.SkillSelector
@@ -41,6 +42,7 @@ class SkillActivationPipeline(
         data class Ready(
             val context: AgentContext<String>,
             val activatedSkills: List<ActivatedSkill>,
+            val rejectedSkills: List<RejectedSkill>,
             val selectedSkillIds: List<SkillId>,
         ) : Result
 
@@ -50,6 +52,12 @@ class SkillActivationPipeline(
             val selectedSkillIds: List<SkillId>,
         ) : Result
     }
+
+    data class RejectedSkill(
+        val skillId: SkillId,
+        val reason: String,
+        val findings: List<SkillValidationFinding>,
+    )
 
     private val logger = LoggerFactory.getLogger(SkillActivationPipeline::class.java)
 
@@ -70,6 +78,8 @@ class SkillActivationPipeline(
     private suspend fun advanceSafely(state: State): State {
         return try {
             advance(state)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (t: Throwable) {
             logger.warn(
                 "Skills phase {} failed for user={}, skill={}",
@@ -186,16 +196,15 @@ class SkillActivationPipeline(
             }
 
             SkillValidationStatus.REJECTED ->
-                state.finishBlocked(
+                rejectCurrentSkill(
+                    state = state,
                     reason = "Skill validation previously rejected for ${skillId.value}",
-                    findings = cached.findings.ifEmpty {
-                        listOf(
+                    findings = listOf(
                             errorFinding(
                                 code = "validation.cached_reject",
                                 message = "Skill validation previously rejected for ${skillId.value}",
                             )
-                        )
-                    },
+                        ),
                 )
 
             SkillValidationStatus.STALE, null ->
@@ -221,7 +230,8 @@ class SkillActivationPipeline(
                     createdAt = Instant.now(clock),
                 )
             )
-            return state.finishBlocked(
+            return rejectCurrentSkill(
+                state = state,
                 reason = "Skill validation blocked by structural validator for ${skillId.value}",
                 findings = structural.findings,
             )
@@ -251,7 +261,8 @@ class SkillActivationPipeline(
                     createdAt = Instant.now(clock),
                 )
             )
-            return state.finishBlocked(
+            return rejectCurrentSkill(
+                state = state,
                 reason = "Skill validation blocked by static validator for ${skillId.value}",
                 findings = static.findings,
             )
@@ -300,7 +311,8 @@ class SkillActivationPipeline(
         )
         registryRepository.saveValidation(record)
         if (record.status != SkillValidationStatus.APPROVED) {
-            return state.finishBlocked(
+            return rejectCurrentSkill(
+                state = state,
                 reason = "Skill validation rejected for ${skillId.value}",
                 findings = record.findings.ifEmpty {
                     listOf(
@@ -338,6 +350,24 @@ class SkillActivationPipeline(
         return state.finishReady(updatedContext)
     }
 
+    private fun rejectCurrentSkill(
+        state: State,
+        reason: String,
+        findings: List<SkillValidationFinding>,
+    ): State {
+        val skillId = state.requireCurrentSkillId()
+        return nextSkill(
+            state.copy(
+                rejectedSkills = state.rejectedSkills + RejectedSkill(
+                    skillId = skillId,
+                    reason = reason,
+                    findings = findings,
+                ),
+                phase = SkillActivationPhase.NEXT_SKILL,
+            )
+        )
+    }
+
     private fun blocked(
         reason: String,
         code: String,
@@ -372,6 +402,7 @@ class SkillActivationPipeline(
         val structural: SkillValidationResult? = null,
         val static: SkillValidationResult? = null,
         val activatedSkills: List<ActivatedSkill> = emptyList(),
+        val rejectedSkills: List<RejectedSkill> = emptyList(),
         val result: Result? = null,
     ) {
         val currentSkillId: SkillId?
@@ -384,6 +415,7 @@ class SkillActivationPipeline(
             result = Result.Ready(
                 context = context,
                 activatedSkills = activatedSkills,
+                rejectedSkills = rejectedSkills,
                 selectedSkillIds = selectedSkillIds,
             ),
         )

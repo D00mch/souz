@@ -8,8 +8,9 @@ package ru.souz.agent.skills
  * After all selected skills are processed, the pipeline moves to INJECT_CONTEXT and
  * then DONE.
  *
- * Any exception or rejection in a phase should be converted into
- * [SkillActivationPipeline.Result.Blocked], so public callers only observe either Ready or Blocked.
+ * Infrastructure failures in a phase should be converted into
+ * [SkillActivationPipeline.Result.Blocked]. Per-skill validation rejections should be recorded
+ * and the pipeline should continue processing the remaining selected skills.
  */
 internal enum class SkillActivationPhase {
     /** Ask the selector abstraction which skills are relevant for the current request. */
@@ -28,8 +29,9 @@ internal enum class SkillActivationPhase {
      * Check cached validation state for the current skill, bundle hash, and policy.
      *
      * Approved cached validations may skip validation and proceed directly to
-     * activation. Rejected cached validations should block. Missing or stale cache
-     * entries continue to validation.
+     * activation. Rejected cached validations should mark the current skill as rejected
+     * and continue with the remaining selected skills. Missing or stale cache entries
+     * continue to validation.
      */
     CHECK_CACHE,
 

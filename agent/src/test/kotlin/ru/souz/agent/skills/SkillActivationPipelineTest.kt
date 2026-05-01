@@ -1,30 +1,29 @@
 package ru.souz.agent.skills
 
-import io.mockk.every
-import io.mockk.mockkObject
-import io.mockk.unmockkObject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.skills.activation.SkillContextInjector
-import ru.souz.agent.skills.implementations.activation.FakeSkillLlmValidator
-import ru.souz.agent.skills.implementations.activation.FakeSkillSelector
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
-import ru.souz.agent.skills.bundle.SkillBundleHasher
-import ru.souz.agent.skills.implementations.bundle.SkillBundleLoader
 import ru.souz.agent.skills.bundle.skillFixturePath
+import ru.souz.agent.skills.implementations.activation.FakeSkillLlmValidator
+import ru.souz.agent.skills.implementations.activation.FakeSkillSelector
+import ru.souz.agent.skills.implementations.bundle.SkillBundleLoader
 import ru.souz.agent.skills.implementations.registry.InMemorySkillRegistryRepository
 import ru.souz.agent.skills.registry.SkillRegistryRepository
-import ru.souz.agent.skills.registry.StoredSkill
-import ru.souz.agent.skills.selection.SkillSelector
-import ru.souz.agent.skills.validation.SkillValidationRecord
-import ru.souz.agent.skills.validation.SkillValidationStatus
+import ru.souz.agent.skills.validation.SkillLlmValidationDecision
+import ru.souz.agent.skills.validation.SkillLlmValidationVerdict
+import ru.souz.agent.skills.validation.SkillLlmValidator
+import ru.souz.agent.skills.validation.SkillRiskLevel
+import ru.souz.agent.skills.validation.SkillValidationFinding
+import ru.souz.agent.skills.validation.SkillValidationSeverity
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
-import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -51,6 +50,8 @@ class SkillActivationPipelineTest {
 
         val ready = assertIs<SkillActivationPipeline.Result.Ready>(result)
         assertTrue(ready.activatedSkills.isEmpty())
+        assertTrue(ready.rejectedSkills.isEmpty())
+        assertEquals(ready.context.systemPrompt, "system")
         assertTrue(ready.context.history.none { it.content.contains(SkillContextInjector.START_MARKER) })
     }
 
@@ -78,10 +79,12 @@ class SkillActivationPipelineTest {
         val ready = assertIs<SkillActivationPipeline.Result.Ready>(result)
         assertEquals(1, validator.invocationCount)
         assertEquals(1, ready.activatedSkills.size)
-        val contextMessage = ready.context.history.single { it.content.contains(SkillContextInjector.START_MARKER) }
-        assertEquals(LLMMessageRole.user, contextMessage.role)
-        assertTrue(contextMessage.content.contains("paper_summarize"))
-        assertTrue(contextMessage.content.contains("Academic paper summarization"))
+        assertTrue(ready.rejectedSkills.isEmpty())
+        val systemMessage = ready.context.history.first()
+        assertTrue(systemMessage.content.contains(SkillContextInjector.START_MARKER))
+        assertEquals(LLMMessageRole.system, systemMessage.role)
+        assertTrue(systemMessage.content.contains("paper_summarize"))
+        assertTrue(systemMessage.content.contains("Academic paper summarization"))
     }
 
     @Test
@@ -195,6 +198,24 @@ class SkillActivationPipelineTest {
     }
 
     @Test
+    fun `pipeline rethrows cancellation instead of converting it into Blocked`() = runTest {
+        val pipeline = SkillActivationPipeline(
+            registryRepository = InMemorySkillRegistryRepository(),
+            selector = { throw CancellationException("cancelled") },
+            llmValidator = FakeSkillLlmValidator.approving(),
+        )
+
+        assertFailsWith<CancellationException> {
+            pipeline.run(
+                SkillActivationPipeline.Input(
+                    userId = USER_ID,
+                    context = baseContext("Summarize this paper."),
+                )
+            )
+        }
+    }
+
+    @Test
     fun `pipeline returns Blocked when bundle load phase throws`() = runTest {
         val repository = InMemorySkillRegistryRepository().also {
             it.saveSkillBundle(USER_ID, fixtureBundle())
@@ -223,7 +244,7 @@ class SkillActivationPipelineTest {
     }
 
     @Test
-    fun `pipeline returns Blocked when validation rejects`() = runTest {
+    fun `pipeline records a rejected skill instead of blocking the whole request`() = runTest {
         val repository = InMemorySkillRegistryRepository()
         repository.saveSkillBundle(USER_ID, fixtureBundle())
         val pipeline = SkillActivationPipeline(
@@ -239,9 +260,11 @@ class SkillActivationPipelineTest {
             )
         )
 
-        val blocked = assertIs<SkillActivationPipeline.Result.Blocked>(result)
-        assertTrue(blocked.findings.isNotEmpty())
-        assertTrue(blocked.reason.contains("validation", ignoreCase = true))
+        val ready = assertIs<SkillActivationPipeline.Result.Ready>(result)
+        assertTrue(ready.activatedSkills.isEmpty())
+        assertEquals(1, ready.rejectedSkills.size)
+        assertTrue(ready.rejectedSkills.single().findings.isNotEmpty())
+        assertTrue(ready.rejectedSkills.single().reason.contains("validation", ignoreCase = true))
     }
 
     @Test
@@ -261,7 +284,8 @@ class SkillActivationPipelineTest {
                 context = baseContext("Summarize this paper."),
             )
         )
-        assertIs<SkillActivationPipeline.Result.Blocked>(firstResult)
+        val firstReady = assertIs<SkillActivationPipeline.Result.Ready>(firstResult)
+        assertEquals(1, firstReady.rejectedSkills.size)
         assertEquals(1, rejectingValidator.invocationCount)
 
         val approvingValidator = FakeSkillLlmValidator.approving()
@@ -278,23 +302,29 @@ class SkillActivationPipelineTest {
             )
         )
 
-        val blocked = assertIs<SkillActivationPipeline.Result.Blocked>(secondResult)
+        val secondReady = assertIs<SkillActivationPipeline.Result.Ready>(secondResult)
         assertEquals(0, approvingValidator.invocationCount)
-        assertTrue(blocked.reason.contains("previously rejected", ignoreCase = true))
+        assertEquals(1, secondReady.rejectedSkills.size)
+        assertTrue(secondReady.rejectedSkills.single().reason.contains("previously rejected", ignoreCase = true))
     }
 
     @Test
-    fun `skills context history message replaces old skills context message on repeated pipeline pass`() = runTest {
+    fun `pipeline removes prior skills context when no skills are selected later`() = runTest {
         val repository = InMemorySkillRegistryRepository()
         repository.saveSkillBundle(USER_ID, fixtureBundle())
-        val pipeline = SkillActivationPipeline(
+        val activatingPipeline = SkillActivationPipeline(
             registryRepository = repository,
             selector = FakeSkillSelector(listOf(SkillId("paper-summarize-academic"))),
             llmValidator = FakeSkillLlmValidator.approving(),
         )
+        val removingPipeline = SkillActivationPipeline(
+            registryRepository = repository,
+            selector = FakeSkillSelector(emptyList()),
+            llmValidator = FakeSkillLlmValidator.approving(),
+        )
 
         val first = assertIs<SkillActivationPipeline.Result.Ready>(
-            pipeline.run(
+            activatingPipeline.run(
                 SkillActivationPipeline.Input(
                     userId = USER_ID,
                     context = baseContext("Summarize this paper."),
@@ -302,31 +332,62 @@ class SkillActivationPipelineTest {
             )
         )
         val second = assertIs<SkillActivationPipeline.Result.Ready>(
-            pipeline.run(
+            removingPipeline.run(
                 SkillActivationPipeline.Input(
                     userId = USER_ID,
                     context = first.context.map(
                         history = first.context.history +
                             LLMRequest.Message(
-                                role = LLMMessageRole.assistant,
-                                content = "Previous answer",
-                            ) +
-                            LLMRequest.Message(
                                 role = LLMMessageRole.user,
-                                content = "Summarize another paper.",
+                                content = "What is 2 + 2?",
                             )
-                    ) { "Summarize another paper." },
+                    ) { "What is 2 + 2?" },
                 )
             )
         )
 
-        val skillMessages = second.context.history.filter { it.content.contains(SkillContextInjector.START_MARKER) }
-        assertEquals(1, skillMessages.size)
-        assertTrue(second.context.history.last().content.contains("Summarize another paper."))
+        assertEquals("system", second.context.systemPrompt)
+        assertEquals("system", second.context.history.first().content)
+        assertTrue(second.context.history.none { it.content.contains(SkillContextInjector.START_MARKER) })
     }
 
-    private fun fixtureBundle(): SkillBundle = SkillBundleLoader().loadDirectory(
-        skillId = SkillId("paper-summarize-academic"),
+    @Test
+    fun `pipeline keeps approved skills when one selected skill is rejected`() = runTest {
+        val repository = InMemorySkillRegistryRepository()
+        val approvedA = SkillId("paper-a")
+        val rejected = SkillId("paper-b")
+        val approvedC = SkillId("paper-c")
+        repository.saveSkillBundle(USER_ID, fixtureBundle(approvedA))
+        repository.saveSkillBundle(USER_ID, fixtureBundle(rejected))
+        repository.saveSkillBundle(USER_ID, fixtureBundle(approvedC))
+        val validator = SkillLlmValidator { input ->
+            if (input.skillId == rejected) rejectingVerdict("Unsafe") else approvingVerdict()
+        }
+        val pipeline = SkillActivationPipeline(
+            registryRepository = repository,
+            selector = FakeSkillSelector(listOf(approvedA, rejected, approvedC)),
+            llmValidator = validator,
+        )
+
+        val result = pipeline.run(
+            SkillActivationPipeline.Input(
+                userId = USER_ID,
+                context = baseContext("Summarize this paper."),
+            )
+        )
+
+        val ready = assertIs<SkillActivationPipeline.Result.Ready>(result)
+        assertEquals(listOf(approvedA, approvedC), ready.activatedSkills.map { it.skillId })
+        assertEquals(listOf(rejected), ready.rejectedSkills.map { it.skillId })
+        val skillContext = ready.context.history.first()
+        assertTrue(skillContext.content.contains(SkillContextInjector.START_MARKER))
+        assertTrue(skillContext.content.contains(approvedA.value))
+        assertTrue(skillContext.content.contains(approvedC.value))
+        assertTrue(!skillContext.content.contains(rejected.value))
+    }
+
+    private fun fixtureBundle(skillId: SkillId = SkillId("paper-summarize-academic")): SkillBundle = SkillBundleLoader().loadDirectory(
+        skillId = skillId,
         rootDirectory = skillFixturePath("paper-summarize-academic"),
     )
 
@@ -343,6 +404,35 @@ class SkillActivationPipelineTest {
         ),
         activeTools = emptyList(),
         systemPrompt = "system",
+    )
+
+    private fun approvingVerdict(): SkillLlmValidationVerdict = SkillLlmValidationVerdict(
+        decision = SkillLlmValidationDecision.APPROVE,
+        confidence = 0.96,
+        riskLevel = SkillRiskLevel.LOW,
+        reasons = listOf("Benign"),
+        requestedCapabilities = listOf("paper summarization"),
+        suspiciousFiles = emptyList(),
+        findings = emptyList(),
+        model = "fake",
+    )
+
+    private fun rejectingVerdict(reason: String): SkillLlmValidationVerdict = SkillLlmValidationVerdict(
+        decision = SkillLlmValidationDecision.REJECT,
+        confidence = 0.99,
+        riskLevel = SkillRiskLevel.HIGH,
+        reasons = listOf(reason),
+        requestedCapabilities = listOf("unknown"),
+        suspiciousFiles = listOf("SKILL.md"),
+        findings = listOf(
+            SkillValidationFinding(
+                code = "llm.reject",
+                message = reason,
+                severity = SkillValidationSeverity.ERROR,
+                filePath = "SKILL.md",
+            )
+        ),
+        model = "fake",
     )
 }
 
