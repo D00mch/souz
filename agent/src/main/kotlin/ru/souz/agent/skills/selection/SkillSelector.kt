@@ -1,23 +1,15 @@
-package ru.souz.agent.skills
+package ru.souz.agent.skills.selection
 
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
+import ru.souz.agent.skills.bundle.SkillBundleException
+import ru.souz.agent.skills.activation.SkillId
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.restJsonMapper
-
-data class SkillSelectionInput(
-    val userMessage: String,
-    val availableSkills: List<StoredSkill>,
-)
-
-data class SkillSelectionResult(
-    val selectedSkillIds: List<SkillId>,
-    val rationale: String,
-)
 
 fun interface SkillSelector {
     suspend fun select(input: SkillSelectionInput): SkillSelectionResult

@@ -1,6 +1,6 @@
 package ru.souz.agent.skills.validation
 
-import ru.souz.agent.skills.SkillId
+import ru.souz.agent.skills.activation.SkillId
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals

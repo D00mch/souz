@@ -1,6 +1,5 @@
-package ru.souz.agent.skills.validation
+package ru.souz.agent.skills.bundle
 
-import ru.souz.agent.skills.SkillBundle
 import java.security.MessageDigest
 
 object SkillBundleHasher {

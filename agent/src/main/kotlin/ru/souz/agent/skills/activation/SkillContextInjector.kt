@@ -1,10 +1,10 @@
-package ru.souz.agent.skills
+package ru.souz.agent.skills.activation
 
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 
-internal object SkillsContextInjector {
+internal object SkillContextInjector {
     private const val START_MARKER = "<souz_skills_context>"
     private const val END_MARKER = "</souz_skills_context>"
 

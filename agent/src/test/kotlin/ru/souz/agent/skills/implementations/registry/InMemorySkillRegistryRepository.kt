@@ -1,6 +1,10 @@
-package ru.souz.agent.skills
+package ru.souz.agent.skills.implementations.registry
 
-import ru.souz.agent.skills.validation.SkillBundleHasher
+import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.agent.skills.bundle.SkillBundleHasher
+import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationStatus
 import java.time.Instant

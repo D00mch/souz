@@ -13,6 +13,13 @@ agent/
    ├── SystemPromptResolver.kt        # Default system prompt selection by agent/model/profile
    ├── TraceableAgent.kt              # Internal tracing contract used by concrete agents
    ├── graph/                         # Internal adapter from agent state to :graph-engine
+   ├── skills/                        # Skill bundle selection, validation, activation, and registry storage
+   │   ├── SkillActivationPipeline.kt # Explicit skill-selection/validation/activation state machine
+   │   ├── activation/                # Activated-skill models, skill ids, and history/context injection
+   │   ├── bundle/                    # Skill bundle parsing, normalization, and canonical hashing
+   │   ├── registry/                  # User-scoped stored skill metadata and validation-cache repository contracts
+   │   ├── selection/                 # Metadata-based and LLM-backed skill selection strategies
+   │   └── validation/                # Structural, static, and LLM validation with persisted verdict records
    ├── spi/                           # Host-facing service provider interfaces
    ├── state/                         # AgentContext and related state/settings wrappers
    ├── nodes/                         # Graph node implementations
@@ -38,5 +45,6 @@ tool/                                 # Shared tool enums and classifier contrac
 Notes:
 - `:agent` contains both the public agent contract layer and the concrete implementations.
 - `:graph-engine` is the lower-level boundary; the `agent/graph` package is an internal adapter over it.
+- The `skills` package owns standalone skill-bundle activation: selection runs on stored metadata, full bundles load only for selected ids, and validation approvals are cached by user + skill id + bundle hash + policy version.
 - Shared `ru.souz.llms` DTOs and chat/tool contracts now live in the separate `:llms` module.
 - `AgentFacade` remains the intended stateful desktop entry point, now delegating to `AgentContextFactory` and `AgentExecutor`.

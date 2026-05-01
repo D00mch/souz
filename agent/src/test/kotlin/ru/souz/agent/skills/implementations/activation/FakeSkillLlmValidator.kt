@@ -1,15 +1,12 @@
-package ru.souz.agent.skills
+package ru.souz.agent.skills.implementations.activation
 
-import ru.souz.agent.skills.validation.*
-
-class FakeSkillSelector(
-    private val selectedSkillIds: List<SkillId>,
-) : SkillSelector {
-    override suspend fun select(input: SkillSelectionInput): SkillSelectionResult = SkillSelectionResult(
-        selectedSkillIds = selectedSkillIds,
-        rationale = if (selectedSkillIds.isEmpty()) "No skill needed." else "Selected by test.",
-    )
-}
+import ru.souz.agent.skills.validation.SkillLlmValidationDecision
+import ru.souz.agent.skills.validation.SkillLlmValidationInput
+import ru.souz.agent.skills.validation.SkillLlmValidationVerdict
+import ru.souz.agent.skills.validation.SkillLlmValidator
+import ru.souz.agent.skills.validation.SkillRiskLevel
+import ru.souz.agent.skills.validation.SkillValidationFinding
+import ru.souz.agent.skills.validation.SkillValidationSeverity
 
 class FakeSkillLlmValidator private constructor(
     private val verdictFactory: () -> SkillLlmValidationVerdict,

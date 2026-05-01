@@ -11,6 +11,13 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
+import ru.souz.agent.skills.activation.ActivatedSkill
+import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.agent.skills.implementations.bundle.SkillBundleLoader
+import ru.souz.agent.skills.bundle.skillFixturePath
+import ru.souz.agent.skills.implementations.registry.InMemorySkillRegistryRepository
+import ru.souz.agent.skills.selection.LlmSkillSelector
 import ru.souz.agent.skills.validation.LlmSkillValidator
 import ru.souz.agent.skills.validation.SkillValidationPolicy
 import ru.souz.agent.state.AgentContext
@@ -23,21 +30,21 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.json.JsonUtils
-import ru.souz.llms.restJsonMapper
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.giga.GigaRestChatAPI
+import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.qwen.QwenChatAPI
+import ru.souz.llms.restJsonMapper
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
-import kotlin.time.Duration.Companion.minutes
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
 
-class SkillsGraphE2ETest {
+class SkillActivationPipelineE2ETest {
     private lateinit var selectedModel: LLMModel
 
     @BeforeEach
@@ -57,13 +64,14 @@ class SkillsGraphE2ETest {
     fun `real llm selector and validator approve benign skill and skip unrelated request`() = runTest(timeout = 5.minutes) {
         val bundle = loadFixtureBundle()
         assertTrue(bundle.files.size > 1, "Expected multi-file checked-in skill fixture.")
+        val integrationPolicy = SkillValidationPolicy.default().copy(minApprovalConfidence = 0.6)
 
         val repository = InMemorySkillRegistryRepository()
         repository.saveSkillBundle(USER_ID, bundle)
 
         val llmApi = realLlmApi(selectedModel)
         val jsonUtils = JsonUtils(restJsonMapper)
-        val graph = SkillsGraph(
+        val pipeline = SkillActivationPipeline(
             registryRepository = repository,
             selector = LlmSkillSelector(llmApi = llmApi, model = selectedModel.alias, jsonUtils),
             llmValidator = LlmSkillValidator(llmApi = llmApi, model = selectedModel.alias, jsonUtils),
@@ -77,19 +85,19 @@ class SkillsGraphE2ETest {
             Topic: method.
         """.trimIndent()
 
-        val firstResult = graph.run(
-            SkillsGraphInput(
+        val firstResult = pipeline.run(
+            SkillActivationPipeline.Input(
                 userId = USER_ID,
                 context = baseContext(skillRequest),
-                policy = SkillValidationPolicy.default(),
+                policy = integrationPolicy,
             )
         )
-        val firstReady = assertIs<SkillsGraphResult.Ready>(firstResult)
+        val firstReady = assertIs<SkillActivationPipeline.Result.Ready>(firstResult)
         assertEquals(1, firstReady.activatedSkills.size)
         assertActivatedPaperSummarize(firstReady.activatedSkills.single())
 
-        val secondResult = graph.run(
-            SkillsGraphInput(
+        val secondResult = pipeline.run(
+            SkillActivationPipeline.Input(
                 userId = USER_ID,
                 context = firstReady.context.map(
                     history = firstReady.context.history + LLMRequest.Message(
@@ -97,9 +105,10 @@ class SkillsGraphE2ETest {
                         content = skillRequest,
                     )
                 ) { skillRequest },
+                policy = integrationPolicy,
             )
         )
-        val secondReady = assertIs<SkillsGraphResult.Ready>(secondResult)
+        val secondReady = assertIs<SkillActivationPipeline.Result.Ready>(secondResult)
         val skillsMessages = secondReady.context.history.filter { it.content.contains("<souz_skills_context>") }
         assertEquals(1, skillsMessages.size)
         assertTrue(skillsMessages.single().content.contains("paper_summarize"))
@@ -108,14 +117,14 @@ class SkillsGraphE2ETest {
                 skillsMessages.single().content.contains("dynamic SOP selection"),
         )
 
-        val noSkillResult = graph.run(
-            SkillsGraphInput(
+        val noSkillResult = pipeline.run(
+            SkillActivationPipeline.Input(
                 userId = USER_ID,
                 context = baseContext("What is 2 + 2?"),
-                policy = SkillValidationPolicy.default(),
+                policy = integrationPolicy,
             )
         )
-        val noSkillReady = assertIs<SkillsGraphResult.Ready>(noSkillResult)
+        val noSkillReady = assertIs<SkillActivationPipeline.Result.Ready>(noSkillResult)
         assertTrue(noSkillReady.activatedSkills.isEmpty())
         assertTrue(noSkillReady.context.history.none { it.content.contains("<souz_skills_context>") })
     }

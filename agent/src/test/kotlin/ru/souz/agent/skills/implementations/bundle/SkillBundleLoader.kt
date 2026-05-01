@@ -1,7 +1,12 @@
-package ru.souz.agent.skills
+package ru.souz.agent.skills.implementations.bundle
 
 import java.nio.file.Files
 import java.nio.file.Path
+import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.agent.skills.bundle.SkillBundleException
+import ru.souz.agent.skills.bundle.SkillFile
+import ru.souz.agent.skills.bundle.SkillPathNormalizer
 import kotlin.io.path.isDirectory
 import kotlin.streams.asSequence
 
@@ -28,6 +33,6 @@ class SkillBundleLoader {
                 .toList()
         }
 
-        return SkillBundle.fromFiles(skillId = skillId, files = files)
+        return SkillBundle.Companion.fromFiles(skillId = skillId, files = files)
     }
 }
