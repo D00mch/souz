@@ -22,6 +22,9 @@ dependencies {
     implementation(libs.poi.ooxml)
     implementation(libs.jsoup)
     implementation(libs.slfj)
+
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlin.testJunit5)
 }
 
 tasks.test {

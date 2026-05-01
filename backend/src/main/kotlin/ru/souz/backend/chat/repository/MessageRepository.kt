@@ -17,6 +17,7 @@ interface MessageRepository {
     ): ChatMessage
 
     suspend fun get(userId: String, chatId: UUID, seq: Long): ChatMessage?
+    suspend fun getById(userId: String, chatId: UUID, messageId: UUID): ChatMessage?
 
     suspend fun latest(userId: String, chatId: UUID): ChatMessage?
 

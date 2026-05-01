@@ -17,18 +17,24 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.supervisorScope
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
-import ru.souz.backend.agent.runtime.BackendConversationExecution
-import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
+import ru.souz.backend.agent.runtime.BackendConversationTurnOutcome
+import ru.souz.backend.agent.runtime.BackendConversationTurnException
+import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
+import ru.souz.backend.agent.session.AgentStateConflictException
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
 import ru.souz.backend.chat.service.SendMessageResult
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.choices.model.Choice
+import ru.souz.backend.choices.repository.ChoiceRepository
 import ru.souz.backend.events.repository.AgentEventRepository
+import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -40,18 +46,20 @@ import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.restJsonMapper
 
 data class CancelExecutionResult(
     val execution: AgentExecution,
 )
 
-class AgentExecutionService(
+class AgentExecutionService internal constructor(
     private val chatRepository: ChatRepository,
     private val messageRepository: MessageRepository,
     private val agentStateRepository: AgentStateRepository,
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
-    private val runtimeFactory: BackendConversationRuntimeFactory,
+    private val turnRunner: BackendConversationTurnRunner,
     private val executionRepository: AgentExecutionRepository,
+    private val choiceRepository: ChoiceRepository,
     private val eventRepository: AgentEventRepository,
     private val eventService: AgentEventService,
     private val featureFlags: BackendFeatureFlags,
@@ -89,7 +97,15 @@ class AgentExecutionService(
                     errorCode = null,
                     errorMessage = null,
                     usage = null,
-                    metadata = emptyMap(),
+                    metadata = executionMetadata(
+                        contextSize = effectiveSettings.contextSize,
+                        temperature = effectiveSettings.temperature,
+                        locale = effectiveSettings.locale.toLanguageTag(),
+                        timeZone = effectiveSettings.timeZone.id,
+                        systemPrompt = effectiveSettings.systemPrompt,
+                        streamingMessages = effectiveSettings.streamingMessages,
+                        showToolEvents = effectiveSettings.showToolEvents,
+                    ),
                 )
             )
         } catch (e: ActiveAgentExecutionConflictException) {
@@ -124,6 +140,7 @@ class AgentExecutionService(
                 contextSize = effectiveSettings.contextSize,
                 locale = effectiveSettings.locale.toLanguageTag(),
                 timeZone = effectiveSettings.timeZone.id,
+                executionId = runningExecution.id.toString(),
                 temperature = effectiveSettings.temperature,
                 systemPrompt = effectiveSettings.systemPrompt,
                 streamingMessages = effectiveSettings.streamingMessages,
@@ -133,16 +150,19 @@ class AgentExecutionService(
                 chatId = chatId,
                 executionId = runningExecution.id,
                 messageRepository = messageRepository,
+                choiceRepository = choiceRepository,
+                executionRepository = executionRepository,
                 eventService = eventService,
                 streamingMessagesEnabled = effectiveSettings.streamingMessages,
                 toolEventsEnabled = effectiveSettings.showToolEvents,
+                choicesEnabled = featureFlags.choices,
+                assistantMessageId = runningExecution.assistantMessageId,
             )
             eventSink.emitExecutionStarted(runningExecution)
             val shouldReturnRunning = effectiveSettings.streamingMessages && featureFlags.wsEvents
             if (shouldReturnRunning) {
                 startBackgroundExecution(
                     chat = chat,
-                    userMessage = userMessage,
                     execution = runningExecution,
                     conversationKey = conversationKey,
                     turnRequest = turnRequest,
@@ -157,7 +177,6 @@ class AgentExecutionService(
             val executionJob = async(start = CoroutineStart.LAZY) {
                 runExecution(
                     chat = chat,
-                    userMessage = userMessage,
                     execution = runningExecution,
                     conversationKey = conversationKey,
                     turnRequest = turnRequest,
@@ -167,11 +186,16 @@ class AgentExecutionService(
 
             activeJobs.register(runningExecution.id, executionJob)
             executionJob.start()
-            try {
+            val executionResult = try {
                 executionJob.await()
             } finally {
                 activeJobs.unregister(runningExecution.id, executionJob)
             }
+            return@supervisorScope SendMessageResult(
+                userMessage = userMessage,
+                assistantMessage = executionResult.assistantMessage,
+                execution = executionResult.execution,
+            )
         } catch (e: BackendV1Exception) {
             throw e
         } catch (e: ExecutionCancelledException) {
@@ -187,6 +211,7 @@ class AgentExecutionService(
                 chatId = chatId,
                 errorCode = "agent_execution_failed",
                 errorMessage = e.message ?: "Agent execution failed.",
+                usage = queuedExecution.usage,
             )
             throw BackendV1Exception(
                 status = HttpStatusCode.InternalServerError,
@@ -198,18 +223,16 @@ class AgentExecutionService(
 
     private suspend fun startBackgroundExecution(
         chat: Chat,
-        userMessage: ru.souz.backend.chat.model.ChatMessage,
         execution: AgentExecution,
         conversationKey: AgentConversationKey,
         turnRequest: BackendConversationTurnRequest,
         eventSink: BackendAgentRuntimeEventSink,
     ) {
-        lateinit var executionJob: Deferred<SendMessageResult>
+        lateinit var executionJob: Deferred<PersistedExecutionResult>
         executionJob = executionScope.async(start = CoroutineStart.LAZY) {
             try {
                 runExecution(
                     chat = chat,
-                    userMessage = userMessage,
                     execution = execution,
                     conversationKey = conversationKey,
                     turnRequest = turnRequest,
@@ -221,6 +244,62 @@ class AgentExecutionService(
         }
         activeJobs.register(execution.id, executionJob)
         executionJob.start()
+    }
+
+    suspend fun resumeChoice(choice: Choice): AgentExecution {
+        val currentExecution = currentExecution(choice.executionId, choice.userId, choice.chatId)
+        if (currentExecution.status != AgentExecutionStatus.WAITING_CHOICE) {
+            throw invalidV1Request("Execution is not waiting for a choice.")
+        }
+        val chat = requireOwnedChat(choice.userId, choice.chatId)
+        val runningExecution = executionRepository.update(
+            currentExecution.copy(
+                status = AgentExecutionStatus.RUNNING,
+                finishedAt = null,
+                cancelRequested = false,
+                errorCode = null,
+                errorMessage = null,
+            )
+        )
+        eventService.append(
+            userId = choice.userId,
+            chatId = choice.chatId,
+            executionId = runningExecution.id,
+            type = AgentEventType.CHOICE_ANSWERED,
+            payload = mapOf(
+                "choiceId" to choice.id.toString(),
+                "status" to choice.status.value,
+                "selectedOptionIds" to restJsonMapper.writeValueAsString(choice.answer?.selectedOptionIds?.toList().orEmpty()),
+                "freeText" to (choice.answer?.freeText ?: ""),
+                "metadata" to restJsonMapper.writeValueAsString(choice.answer?.metadata.orEmpty()),
+            ),
+        )
+
+        val turnRequest = continuationTurnRequest(runningExecution, choice)
+        val eventSink = BackendAgentRuntimeEventSink(
+            userId = choice.userId,
+            chatId = choice.chatId,
+            executionId = runningExecution.id,
+            messageRepository = messageRepository,
+            choiceRepository = choiceRepository,
+            executionRepository = executionRepository,
+            eventService = eventService,
+            streamingMessagesEnabled = turnRequest.streamingMessages == true,
+            toolEventsEnabled = executionMetadataBoolean(runningExecution, METADATA_SHOW_TOOL_EVENTS) ?: false,
+            choicesEnabled = featureFlags.choices,
+            assistantMessageId = runningExecution.assistantMessageId,
+        )
+        startBackgroundExecution(
+            chat = chat,
+            execution = runningExecution,
+            conversationKey = AgentConversationKey(
+                userId = choice.userId,
+                conversationId = choice.chatId.toString(),
+            ),
+            turnRequest = turnRequest,
+            eventSink = eventSink,
+        )
+        return runningExecution
     }
 
     suspend fun cancelActive(
@@ -250,33 +329,119 @@ class AgentExecutionService(
 
     private suspend fun runExecution(
         chat: Chat,
-        userMessage: ru.souz.backend.chat.model.ChatMessage,
         execution: AgentExecution,
         conversationKey: AgentConversationKey,
         turnRequest: BackendConversationTurnRequest,
         eventSink: BackendAgentRuntimeEventSink,
-    ): SendMessageResult {
+    ): PersistedExecutionResult {
         try {
-            val runtime = runtimeFactory.create(conversationKey, turnRequest)
-            val runtimeExecution = runtime.execute(
-                request = turnRequest,
-                persistSession = false,
-                eventSink = eventSink,
-            )
-            return persistSuccessfulExecution(
-                chat = chat,
-                userMessage = userMessage,
-                execution = execution,
-                runtimeExecution = runtimeExecution,
+            val executionOutcome = turnRunner.run(
                 conversationKey = conversationKey,
+                request = turnRequest,
                 eventSink = eventSink,
+                initialUsage = execution.usage?.toLlmUsage() ?: LLMResponse.Usage(0, 0, 0, 0),
             )
+            if (eventSink.hasRequestedChoice && executionOutcome is BackendConversationTurnOutcome.Completed) {
+                throw BackendV1Exception(
+                    status = HttpStatusCode.InternalServerError,
+                    code = "internal_error",
+                    message = "Execution completed after requesting a choice.",
+                )
+            }
+            return when (executionOutcome) {
+                is BackendConversationTurnOutcome.Completed -> persistSuccessfulExecution(
+                    chat = chat,
+                    execution = execution,
+                    executionOutcome = executionOutcome,
+                    conversationKey = conversationKey,
+                    eventSink = eventSink,
+                )
+
+                is BackendConversationTurnOutcome.WaitingChoice -> persistWaitingChoiceExecution(
+                    execution = execution,
+                    executionOutcome = executionOutcome,
+                    conversationKey = conversationKey,
+                )
+            }
         } catch (e: CancellationException) {
             withContext(NonCancellable) {
-                markCancelled(execution.id, execution.userId, execution.chatId)
+                markCancelled(
+                    executionId = execution.id,
+                    userId = execution.userId,
+                    chatId = execution.chatId,
+                    usage = execution.usage,
+                )
                 eventSink.emitExecutionCancelled()
             }
             throw ExecutionCancelledException
+        } catch (e: BackendConversationTurnException) {
+            val cause = e.cause ?: e
+            if (cause is CancellationException) {
+                withContext(NonCancellable) {
+                    markCancelled(
+                        executionId = execution.id,
+                        userId = execution.userId,
+                        chatId = execution.chatId,
+                        usage = e.usage.toExecutionUsage(),
+                    )
+                    eventSink.emitExecutionCancelled()
+                }
+                throw ExecutionCancelledException
+            }
+            if (cause is BackendV1Exception) {
+                withContext(NonCancellable) {
+                    markFailed(
+                        executionId = execution.id,
+                        userId = execution.userId,
+                        chatId = execution.chatId,
+                        errorCode = cause.code,
+                        errorMessage = cause.message,
+                        usage = e.usage.toExecutionUsage(),
+                    )
+                    eventSink.emitExecutionFailed(cause.code, cause.message)
+                }
+                throw cause
+            }
+            if (cause is AgentStateConflictException) {
+                withContext(NonCancellable) {
+                    markFailed(
+                        executionId = execution.id,
+                        userId = execution.userId,
+                        chatId = execution.chatId,
+                        errorCode = "state_conflict",
+                        errorMessage = "Agent state changed before save.",
+                        usage = e.usage.toExecutionUsage(),
+                    )
+                    eventSink.emitExecutionFailed(
+                        errorCode = "state_conflict",
+                        errorMessage = "Agent state changed before save.",
+                    )
+                }
+                throw BackendV1Exception(
+                    status = HttpStatusCode.InternalServerError,
+                    code = "agent_execution_failed",
+                    message = "Agent execution failed.",
+                )
+            }
+            withContext(NonCancellable) {
+                markFailed(
+                    executionId = execution.id,
+                    userId = execution.userId,
+                    chatId = execution.chatId,
+                    errorCode = "agent_execution_failed",
+                    errorMessage = cause.message ?: "Agent execution failed.",
+                    usage = e.usage.toExecutionUsage(),
+                )
+                eventSink.emitExecutionFailed(
+                    errorCode = "agent_execution_failed",
+                    errorMessage = cause.message ?: "Agent execution failed.",
+                )
+            }
+            throw BackendV1Exception(
+                status = HttpStatusCode.InternalServerError,
+                code = "agent_execution_failed",
+                message = "Agent execution failed.",
+            )
         } catch (e: BackendV1Exception) {
             withContext(NonCancellable) {
                 markFailed(
@@ -285,10 +450,31 @@ class AgentExecutionService(
                     chatId = execution.chatId,
                     errorCode = e.code,
                     errorMessage = e.message,
+                    usage = execution.usage,
                 )
                 eventSink.emitExecutionFailed(e.code, e.message)
             }
             throw e
+        } catch (e: AgentStateConflictException) {
+            withContext(NonCancellable) {
+                markFailed(
+                    executionId = execution.id,
+                    userId = execution.userId,
+                    chatId = execution.chatId,
+                    errorCode = "state_conflict",
+                    errorMessage = "Agent state changed before save.",
+                    usage = execution.usage,
+                )
+                eventSink.emitExecutionFailed(
+                    errorCode = "state_conflict",
+                    errorMessage = "Agent state changed before save.",
+                )
+            }
+            throw BackendV1Exception(
+                status = HttpStatusCode.InternalServerError,
+                code = "agent_execution_failed",
+                message = "Agent execution failed.",
+            )
         } catch (e: Exception) {
             withContext(NonCancellable) {
                 markFailed(
@@ -297,6 +483,7 @@ class AgentExecutionService(
                     chatId = execution.chatId,
                     errorCode = "agent_execution_failed",
                     errorMessage = e.message ?: "Agent execution failed.",
+                    usage = execution.usage,
                 )
                 eventSink.emitExecutionFailed(
                     errorCode = "agent_execution_failed",
@@ -313,23 +500,18 @@ class AgentExecutionService(
 
     private suspend fun persistSuccessfulExecution(
         chat: Chat,
-        userMessage: ru.souz.backend.chat.model.ChatMessage,
         execution: AgentExecution,
-        runtimeExecution: BackendConversationExecution,
+        executionOutcome: BackendConversationTurnOutcome.Completed,
         conversationKey: AgentConversationKey,
         eventSink: BackendAgentRuntimeEventSink,
-    ): SendMessageResult {
-        val assistantMessage = eventSink.completeAssistantMessage(runtimeExecution.output)
-        sessionRepository.save(conversationKey, runtimeExecution.session)
-        agentStateRepository.get(execution.userId, execution.chatId)?.let { persistedState ->
-            agentStateRepository.save(
-                persistedState.copy(
-                    basedOnMessageSeq = assistantMessage.seq,
-                    updatedAt = Instant.now(),
-                    rowVersion = persistedState.rowVersion + 1,
-                )
+    ): PersistedExecutionResult {
+        val assistantMessage = eventSink.completeAssistantMessage(executionOutcome.output)
+        sessionRepository.save(
+            conversationKey,
+            executionOutcome.session.copy(
+                basedOnMessageSeq = assistantMessage.seq,
             )
-        }
+        )
         chatRepository.update(chat.copy(updatedAt = assistantMessage.createdAt))
 
         val finalExecution = executionRepository.update(
@@ -339,15 +521,40 @@ class AgentExecutionService(
                 finishedAt = Instant.now(),
                 errorCode = null,
                 errorMessage = null,
-                usage = runtimeExecution.usage.toExecutionUsage(),
+                usage = executionOutcome.usage.toExecutionUsage(),
             )
         )
         eventSink.emitExecutionFinished(finalExecution)
 
-        return SendMessageResult(
-            userMessage = userMessage,
+        return PersistedExecutionResult(
             assistantMessage = assistantMessage,
             execution = finalExecution,
+        )
+    }
+
+    private suspend fun persistWaitingChoiceExecution(
+        execution: AgentExecution,
+        executionOutcome: BackendConversationTurnOutcome.WaitingChoice,
+        conversationKey: AgentConversationKey,
+    ): PersistedExecutionResult {
+        sessionRepository.save(conversationKey, executionOutcome.session)
+        val waitingExecution = currentExecution(execution.id, execution.userId, execution.chatId)
+        return PersistedExecutionResult(
+            assistantMessage = null,
+            execution = if (waitingExecution.status == AgentExecutionStatus.WAITING_CHOICE) {
+                executionRepository.update(
+                    waitingExecution.copy(
+                        usage = executionOutcome.usage.toExecutionUsage(),
+                    )
+                )
+            } else {
+                executionRepository.update(
+                    waitingExecution.copy(
+                        status = AgentExecutionStatus.WAITING_CHOICE,
+                        usage = executionOutcome.usage.toExecutionUsage(),
+                    )
+                )
+            },
         )
     }
 
@@ -378,6 +585,7 @@ class AgentExecutionService(
         executionId: UUID,
         userId: String,
         chatId: UUID,
+        usage: AgentExecutionUsage?,
     ): AgentExecution {
         val currentExecution = currentExecution(executionId, userId, chatId)
         return executionRepository.update(
@@ -387,6 +595,7 @@ class AgentExecutionService(
                 finishedAt = Instant.now(),
                 errorCode = "agent_execution_cancelled",
                 errorMessage = "Agent execution was cancelled.",
+                usage = usage ?: currentExecution.usage,
             )
         )
     }
@@ -397,6 +606,7 @@ class AgentExecutionService(
         chatId: UUID,
         errorCode: String,
         errorMessage: String,
+        usage: AgentExecutionUsage?,
     ): AgentExecution {
         val currentExecution = executionRepository.getByChat(userId, chatId, executionId) ?: return AgentExecution(
             id = executionId,
@@ -414,7 +624,7 @@ class AgentExecutionService(
             cancelRequested = false,
             errorCode = errorCode,
             errorMessage = errorMessage,
-            usage = null,
+            usage = usage,
             metadata = emptyMap(),
         )
         return executionRepository.update(
@@ -423,6 +633,7 @@ class AgentExecutionService(
                 finishedAt = Instant.now(),
                 errorCode = errorCode,
                 errorMessage = errorMessage,
+                usage = usage ?: currentExecution.usage,
             )
         )
     }
@@ -450,6 +661,75 @@ class AgentExecutionService(
     private fun userMessageMetadata(clientMessageId: String?): Map<String, String> =
         clientMessageId?.let { linkedMapOf("clientMessageId" to it) } ?: emptyMap()
 
+    private fun continuationTurnRequest(
+        execution: AgentExecution,
+        choice: Choice,
+    ): BackendConversationTurnRequest =
+        BackendConversationTurnRequest(
+            prompt = choice.toContinuationInput(),
+            model = execution.model?.alias
+                ?: throw BackendV1Exception(
+                    status = HttpStatusCode.InternalServerError,
+                    code = "internal_error",
+                    message = "Execution model is missing.",
+                ),
+            contextSize = executionMetadataInt(execution, METADATA_CONTEXT_SIZE)
+                ?: throw BackendV1Exception(
+                    status = HttpStatusCode.InternalServerError,
+                    code = "internal_error",
+                    message = "Execution contextSize is missing.",
+                ),
+            locale = execution.metadata[METADATA_LOCALE]
+                ?: throw BackendV1Exception(
+                    status = HttpStatusCode.InternalServerError,
+                    code = "internal_error",
+                    message = "Execution locale is missing.",
+                ),
+            timeZone = execution.metadata[METADATA_TIME_ZONE]
+                ?: throw BackendV1Exception(
+                    status = HttpStatusCode.InternalServerError,
+                    code = "internal_error",
+                    message = "Execution timeZone is missing.",
+                ),
+            executionId = execution.id.toString(),
+            temperature = executionMetadataFloat(execution, METADATA_TEMPERATURE),
+            systemPrompt = execution.metadata[METADATA_SYSTEM_PROMPT]?.takeIf { it.isNotEmpty() },
+            streamingMessages = executionMetadataBoolean(execution, METADATA_STREAMING_MESSAGES),
+        )
+
+    private fun executionMetadata(
+        contextSize: Int,
+        temperature: Float,
+        locale: String,
+        timeZone: String,
+        systemPrompt: String?,
+        streamingMessages: Boolean,
+        showToolEvents: Boolean,
+    ): Map<String, String> = buildMap {
+        put(METADATA_CONTEXT_SIZE, contextSize.toString())
+        put(METADATA_TEMPERATURE, temperature.toString())
+        put(METADATA_LOCALE, locale)
+        put(METADATA_TIME_ZONE, timeZone)
+        put(METADATA_STREAMING_MESSAGES, streamingMessages.toString())
+        put(METADATA_SHOW_TOOL_EVENTS, showToolEvents.toString())
+        systemPrompt?.let { put(METADATA_SYSTEM_PROMPT, it) }
+    }
+
+    private fun executionMetadataInt(
+        execution: AgentExecution,
+        key: String,
+    ): Int? = execution.metadata[key]?.toIntOrNull()
+
+    private fun executionMetadataFloat(
+        execution: AgentExecution,
+        key: String,
+    ): Float? = execution.metadata[key]?.toFloatOrNull()
+
+    private fun executionMetadataBoolean(
+        execution: AgentExecution,
+        key: String,
+    ): Boolean? = execution.metadata[key]?.toBooleanStrictOrNull()
+
     private fun LLMResponse.Usage.toExecutionUsage(): AgentExecutionUsage =
         AgentExecutionUsage(
             promptTokens = promptTokens,
@@ -457,6 +737,42 @@ class AgentExecutionService(
             totalTokens = totalTokens,
             precachedTokens = precachedTokens,
         )
+
+    private fun AgentExecutionUsage.toLlmUsage(): LLMResponse.Usage =
+        LLMResponse.Usage(
+            promptTokens = promptTokens,
+            completionTokens = completionTokens,
+            totalTokens = totalTokens,
+            precachedTokens = precachedTokens,
+        )
+}
+
+private data class PersistedExecutionResult(
+    val assistantMessage: ChatMessage?,
+    val execution: AgentExecution,
+)
+
+private fun Choice.toContinuationInput(): String {
+    val answer = answer ?: error("Choice answer is required for continuation.")
+    val optionById = options.associateBy { it.id }
+    val selectedOptions = answer.selectedOptionIds.mapNotNull(optionById::get).map { option ->
+        linkedMapOf(
+            "id" to option.id,
+            "label" to option.label,
+            "content" to option.content,
+        )
+    }
+    val payload = linkedMapOf<String, Any?>(
+        "type" to "choice_answer",
+        "choiceId" to id.toString(),
+        "kind" to kind.value,
+        "selectionMode" to selectionMode,
+        "selectedOptionIds" to answer.selectedOptionIds.toList(),
+        "selectedOptions" to selectedOptions,
+        "freeText" to answer.freeText,
+        "metadata" to answer.metadata,
+    )
+    return "$CHOICE_CONTINUATION_PREFIX ${restJsonMapper.writeValueAsString(payload)}"
 }
 
 private fun AgentExecutionStatus.isActiveForCancellation(): Boolean =
@@ -466,6 +782,15 @@ private fun AgentExecutionStatus.isActiveForCancellation(): Boolean =
         this == AgentExecutionStatus.CANCELLING
 
 private object ExecutionCancelledException : RuntimeException()
+
+private const val METADATA_CONTEXT_SIZE = "contextSize"
+private const val METADATA_TEMPERATURE = "temperature"
+private const val METADATA_LOCALE = "locale"
+private const val METADATA_TIME_ZONE = "timeZone"
+private const val METADATA_SYSTEM_PROMPT = "systemPrompt"
+private const val METADATA_STREAMING_MESSAGES = "streamingMessages"
+private const val METADATA_SHOW_TOOL_EVENTS = "showToolEvents"
+private const val CHOICE_CONTINUATION_PREFIX = "__choice_answer__"
 
 private class ActiveExecutionJobRegistry {
     private val mutex = Mutex()

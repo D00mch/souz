@@ -43,11 +43,16 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
+import ru.souz.backend.choices.repository.ChoiceRepository
+import ru.souz.backend.choices.service.ChoiceService
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
+import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.events.service.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.service.AgentExecutionService
+import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
@@ -57,7 +62,9 @@ import ru.souz.backend.storage.memory.MemoryAgentExecutionRepository
 import ru.souz.backend.storage.memory.MemoryAgentEventRepository
 import ru.souz.backend.storage.memory.MemoryAgentStateRepository
 import ru.souz.backend.storage.memory.MemoryChatRepository
+import ru.souz.backend.storage.memory.MemoryChoiceRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
+import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
@@ -808,17 +815,21 @@ internal data class RouteTestContext(
     val featureFlags: BackendFeatureFlags,
     val settingsProvider: TestSettingsProvider,
     val userSettingsRepository: MemoryUserSettingsRepository,
+    val userProviderKeyRepository: MemoryUserProviderKeyRepository,
     val chatRepository: MemoryChatRepository,
     val messageRepository: MemoryMessageRepository,
     val executionRepository: MemoryAgentExecutionRepository,
+    val choiceRepository: MemoryChoiceRepository,
     val eventRepository: MemoryAgentEventRepository,
     val eventService: AgentEventService,
     val stateRepository: MemoryAgentStateRepository,
     val bootstrapService: BackendBootstrapService,
     val agentService: BackendAgentService,
     val userSettingsService: UserSettingsService,
+    val userProviderKeyService: UserProviderKeyService,
     val chatService: ChatService,
     val executionService: AgentExecutionService,
+    val choiceService: ChoiceService,
     val messageService: MessageService,
 )
 
@@ -832,9 +843,11 @@ internal fun routeTestContext(
         useStreaming = false
     },
     userSettingsRepository: MemoryUserSettingsRepository = MemoryUserSettingsRepository(),
+    userProviderKeyRepository: MemoryUserProviderKeyRepository = MemoryUserProviderKeyRepository(),
     chatRepository: MemoryChatRepository = MemoryChatRepository(),
     messageRepository: MemoryMessageRepository = MemoryMessageRepository(),
     executionRepository: MemoryAgentExecutionRepository = MemoryAgentExecutionRepository(),
+    choiceRepository: MemoryChoiceRepository = MemoryChoiceRepository(),
     eventRepository: MemoryAgentEventRepository = MemoryAgentEventRepository(),
     stateRepository: MemoryAgentStateRepository = MemoryAgentStateRepository(),
     toolCatalog: AgentToolCatalog = toolCatalog(
@@ -845,6 +858,7 @@ internal fun routeTestContext(
         streamingMessages = false,
         toolEvents = true,
     ),
+    turnRunner: BackendConversationTurnRunner? = null,
 ): RouteTestContext {
     val eventService = AgentEventService(
         chatRepository = chatRepository,
@@ -854,6 +868,7 @@ internal fun routeTestContext(
     val effectiveSettingsResolver = EffectiveSettingsResolver(
         baseSettingsProvider = settingsProvider,
         userSettingsRepository = userSettingsRepository,
+        userProviderKeyRepository = userProviderKeyRepository,
         featureFlags = featureFlags,
         toolCatalog = toolCatalog,
         localModelAvailability = unavailableLocalModels(),
@@ -866,24 +881,33 @@ internal fun routeTestContext(
         systemPrompt = "global backend prompt",
         toolCatalog = toolCatalog,
     )
+    val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory)
     val executionService = AgentExecutionService(
         chatRepository = chatRepository,
         messageRepository = messageRepository,
         agentStateRepository = stateRepository,
         effectiveSettingsResolver = effectiveSettingsResolver,
-        runtimeFactory = runtimeFactory,
+        turnRunner = conversationTurnRunner,
         executionRepository = executionRepository,
+        choiceRepository = choiceRepository,
         eventRepository = eventRepository,
         eventService = eventService,
+        featureFlags = featureFlags,
+    )
+    val choiceService = ChoiceService(
+        choiceRepository = choiceRepository,
+        executionService = executionService,
         featureFlags = featureFlags,
     )
     return RouteTestContext(
         featureFlags = featureFlags,
         settingsProvider = settingsProvider,
         userSettingsRepository = userSettingsRepository,
+        userProviderKeyRepository = userProviderKeyRepository,
         chatRepository = chatRepository,
         messageRepository = messageRepository,
         executionRepository = executionRepository,
+        choiceRepository = choiceRepository,
         eventRepository = eventRepository,
         eventService = eventService,
         stateRepository = stateRepository,
@@ -894,6 +918,7 @@ internal fun routeTestContext(
             featureFlags = featureFlags,
             storageMode = StorageMode.MEMORY,
             localModelAvailability = unavailableLocalModels(),
+            userProviderKeyRepository = userProviderKeyRepository,
         ),
         agentService = BackendAgentService(
             baseSettingsProvider = settingsProvider,
@@ -903,11 +928,16 @@ internal fun routeTestContext(
             userSettingsRepository = userSettingsRepository,
             effectiveSettingsResolver = effectiveSettingsResolver,
         ),
+        userProviderKeyService = UserProviderKeyService(
+            repository = userProviderKeyRepository,
+            masterKey = "test-master-key",
+        ),
         chatService = ChatService(
             chatRepository = chatRepository,
             messageRepository = messageRepository,
         ),
         executionService = executionService,
+        choiceService = choiceService,
         messageService = MessageService(
             chatRepository = chatRepository,
             messageRepository = messageRepository,

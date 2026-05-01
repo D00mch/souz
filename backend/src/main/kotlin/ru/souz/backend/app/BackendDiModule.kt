@@ -4,12 +4,14 @@ import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.zaxxer.hikari.HikariDataSource
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
+import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
@@ -20,11 +22,21 @@ import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.choices.repository.ChoiceRepository
+import ru.souz.backend.choices.service.ChoiceService
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.events.service.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.service.AgentExecutionService
+import ru.souz.backend.keys.repository.UserProviderKeyRepository
+import ru.souz.backend.keys.service.UserProviderKeyService
+import ru.souz.backend.llm.BackendLlmClientFactory
+import ru.souz.backend.llm.LlmClientFactory
+import ru.souz.backend.llm.ProviderChatApiBuilder
+import ru.souz.backend.llm.ProviderCredentialResolver
+import ru.souz.backend.llm.RuntimeProviderChatApiBuilder
+import ru.souz.backend.llm.StoredProviderCredentialResolver
+import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsService
@@ -34,8 +46,25 @@ import ru.souz.backend.storage.memory.MemoryAgentStateRepository
 import ru.souz.backend.storage.memory.MemoryChatRepository
 import ru.souz.backend.storage.memory.MemoryChoiceRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
+import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
-import ru.souz.llms.runtime.LLMFactory
+import ru.souz.backend.storage.filesystem.FilesystemAgentEventRepository
+import ru.souz.backend.storage.filesystem.FilesystemAgentExecutionRepository
+import ru.souz.backend.storage.filesystem.FilesystemAgentStateRepository
+import ru.souz.backend.storage.filesystem.FilesystemChatRepository
+import ru.souz.backend.storage.filesystem.FilesystemChoiceRepository
+import ru.souz.backend.storage.filesystem.FilesystemMessageRepository
+import ru.souz.backend.storage.filesystem.FilesystemUserProviderKeyRepository
+import ru.souz.backend.storage.filesystem.FilesystemUserSettingsRepository
+import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
+import ru.souz.backend.storage.postgres.PostgresAgentExecutionRepository
+import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
+import ru.souz.backend.storage.postgres.PostgresChatRepository
+import ru.souz.backend.storage.postgres.PostgresChoiceRepository
+import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
+import ru.souz.backend.storage.postgres.PostgresMessageRepository
+import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
+import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
@@ -63,13 +92,70 @@ fun backendDiModule(
 
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
     bindSingleton<StorageMode> { appConfig.storageMode }
-    bindSingleton<ChatRepository> { MemoryChatRepository() }
-    bindSingleton<MessageRepository> { MemoryMessageRepository() }
-    bindSingleton<AgentStateRepository> { MemoryAgentStateRepository() }
-    bindSingleton<AgentExecutionRepository> { MemoryAgentExecutionRepository() }
-    bindSingleton<ChoiceRepository> { MemoryChoiceRepository() }
-    bindSingleton<AgentEventRepository> { MemoryAgentEventRepository() }
+    when (appConfig.storageMode.requireSupported()) {
+        StorageMode.MEMORY -> {
+            bindSingleton<ChatRepository> { MemoryChatRepository() }
+            bindSingleton<MessageRepository> { MemoryMessageRepository() }
+            bindSingleton<AgentStateRepository> { MemoryAgentStateRepository() }
+            bindSingleton<AgentExecutionRepository> { MemoryAgentExecutionRepository() }
+            bindSingleton<ChoiceRepository> { MemoryChoiceRepository() }
+            bindSingleton<AgentEventRepository> { MemoryAgentEventRepository() }
+            bindSingleton<UserSettingsRepository> { MemoryUserSettingsRepository() }
+            bindSingleton<UserProviderKeyRepository> { MemoryUserProviderKeyRepository() }
+        }
+        StorageMode.FILESYSTEM -> {
+            bindSingleton<ChatRepository> { FilesystemChatRepository(appConfig.dataDir) }
+            bindSingleton<MessageRepository> { FilesystemMessageRepository(appConfig.dataDir) }
+            bindSingleton<AgentStateRepository> { FilesystemAgentStateRepository(appConfig.dataDir) }
+            bindSingleton<AgentExecutionRepository> { FilesystemAgentExecutionRepository(appConfig.dataDir) }
+            bindSingleton<ChoiceRepository> { FilesystemChoiceRepository(appConfig.dataDir) }
+            bindSingleton<AgentEventRepository> { FilesystemAgentEventRepository(appConfig.dataDir) }
+            bindSingleton<UserSettingsRepository> { FilesystemUserSettingsRepository(appConfig.dataDir) }
+            bindSingleton<UserProviderKeyRepository> {
+                FilesystemUserProviderKeyRepository(
+                    dataDir = appConfig.dataDir,
+                    masterKey = appConfig.masterKey ?: error("Master key is required."),
+                )
+            }
+        }
+        StorageMode.POSTGRES -> {
+            bindSingleton<HikariDataSource> {
+                PostgresDataSourceFactory.create(
+                    appConfig.postgres ?: error("Postgres configuration is required.")
+                )
+            }
+            bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
+            bindSingleton<MessageRepository> { PostgresMessageRepository(instance()) }
+            bindSingleton<AgentStateRepository> { PostgresAgentStateRepository(instance()) }
+            bindSingleton<AgentExecutionRepository> { PostgresAgentExecutionRepository(instance()) }
+            bindSingleton<ChoiceRepository> { PostgresChoiceRepository(instance()) }
+            bindSingleton<AgentEventRepository> {
+                if (appConfig.featureFlags.durableEventReplay) {
+                    PostgresAgentEventRepository(instance())
+                } else {
+                    MemoryAgentEventRepository()
+                }
+            }
+            bindSingleton<UserSettingsRepository> { PostgresUserSettingsRepository(instance()) }
+            bindSingleton<UserProviderKeyRepository> { PostgresUserProviderKeyRepository(instance()) }
+        }
+    }
+    bindSingleton {
+        BackendRuntimeResources(
+            closeables = buildList {
+                if (appConfig.storageMode == StorageMode.POSTGRES) {
+                    add(instance<HikariDataSource>())
+                }
+            }
+        )
+    }
     bindSingleton { AgentEventBus() }
+    bindSingleton {
+        UserProviderKeyService(
+            repository = instance(),
+            masterKey = appConfig.masterKey ?: error("Master key is required."),
+        )
+    }
     bindSingleton {
         AgentEventService(
             chatRepository = instance(),
@@ -77,11 +163,31 @@ fun backendDiModule(
             eventBus = instance(),
         )
     }
-    bindSingleton<UserSettingsRepository> { MemoryUserSettingsRepository() }
+    bindSingleton { ExecutionQuotaManager(appConfig.llmLimits) }
+    bindSingleton<ProviderCredentialResolver> {
+        StoredProviderCredentialResolver(
+            baseSettingsProvider = instance(),
+            userProviderKeyService = instance(),
+        )
+    }
+    bindSingleton<ProviderChatApiBuilder> {
+        RuntimeProviderChatApiBuilder(
+            tokenLogging = instance(),
+            retryPolicy = appConfig.providerRetryPolicy,
+        )
+    }
+    bindSingleton<LlmClientFactory> {
+        BackendLlmClientFactory(
+            credentialResolver = instance(),
+            providerClientFactory = instance(),
+            localChatApi = instance(),
+        )
+    }
     bindSingleton {
         EffectiveSettingsResolver(
             baseSettingsProvider = instance(),
             userSettingsRepository = instance(),
+            userProviderKeyRepository = instance(),
             featureFlags = instance(),
             toolCatalog = instance(),
             localModelAvailability = instance<LocalProviderAvailability>(),
@@ -105,17 +211,7 @@ fun backendDiModule(
     bindSingleton {
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
-            llmApiFactory = { requestSettings ->
-                LLMFactory(
-                    settingsProvider = requestSettings,
-                    restApi = instance(),
-                    qwenApi = instance(),
-                    aiTunnelApi = instance(),
-                    anthropicApi = instance(),
-                    openAiApi = instance(),
-                    localApi = instance(),
-                )
-            },
+            llmApiFactory = { executionContext -> instance<LlmClientFactory>().create(executionContext) },
             sessionRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
@@ -129,10 +225,18 @@ fun backendDiModule(
             messageRepository = instance(),
             agentStateRepository = instance(),
             effectiveSettingsResolver = instance(),
-            runtimeFactory = instance(),
+            turnRunner = BackendConversationRuntimeTurnRunner(instance()),
             executionRepository = instance(),
+            choiceRepository = instance(),
             eventRepository = instance(),
             eventService = instance(),
+            featureFlags = instance(),
+        )
+    }
+    bindSingleton {
+        ChoiceService(
+            choiceRepository = instance(),
+            executionService = instance(),
             featureFlags = instance(),
         )
     }
@@ -157,6 +261,7 @@ fun backendDiModule(
             featureFlags = instance(),
             storageMode = instance(),
             localModelAvailability = instance<LocalProviderAvailability>(),
+            userProviderKeyRepository = instance(),
         )
     }
 }

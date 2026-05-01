@@ -349,7 +349,7 @@ Production:
 
 ## Storage modes
 
-Нужны три режима:
+Реализованы три режима:
 
 ```text
 memory
@@ -366,6 +366,24 @@ postgres
 
 ```text
 SOUZ_STORAGE_MODE=memory|filesystem|postgres
+SOUZ_BACKEND_DATA_DIR=./data
+souz.backend.dataDir=./data
+SOUZ_BACKEND_DB_HOST=127.0.0.1
+SOUZ_BACKEND_DB_PORT=5432
+SOUZ_BACKEND_DB_NAME=souz
+SOUZ_BACKEND_DB_USER=souz
+SOUZ_BACKEND_DB_PASSWORD=...
+SOUZ_BACKEND_DB_SCHEMA=public
+SOUZ_BACKEND_DB_MAX_POOL_SIZE=10
+SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
+souz.backend.db.host=127.0.0.1
+souz.backend.db.port=5432
+souz.backend.db.name=souz
+souz.backend.db.user=souz
+souz.backend.db.password=...
+souz.backend.db.schema=public
+souz.backend.db.maxPoolSize=10
+souz.backend.db.connectionTimeoutMs=30000
 ```
 
 ## Memory mode
@@ -391,7 +409,7 @@ ConcurrentHashMap<ChatKey, RingBuffer<AgentEvent>>
 ```text
 data/
   users/
-    {userId}/
+    {encodedUserId}/
       settings.json
       provider-keys.json              // encrypted only, optional
       chats/
@@ -404,11 +422,13 @@ data/
           events.jsonl                // optional, can start disabled
 ```
 
+`{encodedUserId}` не должен быть raw opaque trusted `userId`. В текущей реализации это стабильный URL-safe base64 сегмент с префиксом, чтобы значение из `X-User-Id` не попадало напрямую в filesystem path.
+
 Правила:
 
 ```text
 messages.jsonl
-  append-only where possible
+  append-only snapshot log, last-write-wins on reload for updateContent
 
 agent-state.json
   write temp file -> fsync -> atomic rename
@@ -416,8 +436,19 @@ agent-state.json
 settings.json
   write temp file -> fsync -> atomic rename
 
+executions.jsonl / choices.jsonl
+  append-only snapshot log, last-write-wins on reload
+
 events.jsonl
-  optional durable replay/debug
+  append-only, seq continues after restart
+```
+
+Дополнительно:
+
+```text
+- corruption в agent-state.json не должен ломать чтение product messages;
+- backend может вернуть null + warning для agent state и продолжить работать с messages;
+- messages остаются независимыми от agent-state, чтобы state можно было пересобрать позже.
 ```
 
 ## Postgres schema
@@ -541,6 +572,9 @@ create table agent_conversation_state (
 ```
 
 В начале это может быть прямой аналог текущего `AgentConversationSession`, потому что сейчас он уже хранит `activeAgentId`, `history`, `temperature`, `locale`, `timeZone`. ([GitHub][5])
+
+Текущее stage-10 поведение для legacy `/agent`: postgres storage lazily materializes an archived `chats` row for unknown legacy conversation ids so `agent_conversation_state` can keep the documented foreign key to `chats(id)`.
+Note for review: если legacy `/agent` нужно полностью скрыть от product chat listing даже при `includeArchived=true`, стоит выделить отдельный sentinel-флаг или отдельную таблицу conversation roots.
 
 Optimistic locking:
 
@@ -761,6 +795,23 @@ X-Souz-Proxy-Auth: internal-secret
     "message": "Chat not found."
   }
 }
+```
+
+Стабильные backend error codes на текущих стадиях:
+
+```text
+untrusted_proxy
+missing_user_identity
+backend_misconfigured
+internal_error
+invalid_request
+feature_disabled
+chat_not_found
+choice_not_found
+agent_execution_failed
+chat_already_has_active_execution
+agent_execution_cancelled
+execution_not_found
 ```
 
 ## GET /v1/bootstrap
@@ -1879,26 +1930,35 @@ Acceptance criteria:
 
 ## Этап 9. Filesystem storage mode
 
-Независимые задачи:
+Статус: реализовано в `:backend`.
+
+Реализованные задачи:
 
 1. Реализовать filesystem repositories.
 2. JSONL для messages/executions/choices/events.
 3. Atomic write для settings/agent-state.
 4. Tests на restart/load.
+5. Config + DI support для `SOUZ_STORAGE_MODE=filesystem`.
+6. `SOUZ_BACKEND_DATA_DIR` / `souz.backend.dataDir` с default `data/`.
+7. Safe encoded user directory segment вместо raw opaque `userId`.
 
 Acceptance criteria:
 
 ```text
 - после restart чаты, messages, settings и agent state восстановлены;
 - повреждение agent-state не ломает product messages;
+- executions/choices/events и seq у messages/events переживают restart;
+- legacy /agent AgentStateRepository round-trip работает и в filesystem mode;
 - agent state можно будет пересобрать из messages в будущем.
 ```
 
 ## Этап 10. Postgres storage mode
 
-Независимые задачи:
+Статус: реализовано.
 
-1. Добавить JDBC/Hikari/R2DBC dependency.
+Состав реализации:
+
+1. Добавить JDBC/Hikari/Flyway/Testcontainers dependency stack.
 2. Добавить migrations.
 3. Реализовать Postgres repositories.
 4. Реализовать optimistic locking для `agent_conversation_state`.

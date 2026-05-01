@@ -6,6 +6,7 @@ import java.util.Locale
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.common.backendSafeToolNames
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.settings.model.ToolPermission
 import ru.souz.backend.settings.model.UserMcpServer
@@ -35,6 +36,7 @@ data class UserSettingsOverrides(
 class EffectiveSettingsResolver(
     private val baseSettingsProvider: SettingsProvider,
     private val userSettingsRepository: UserSettingsRepository,
+    private val userProviderKeyRepository: UserProviderKeyRepository,
     private val featureFlags: BackendFeatureFlags,
     private val toolCatalog: AgentToolCatalog,
     private val localModelAvailability: LocalModelAvailability,
@@ -48,6 +50,7 @@ class EffectiveSettingsResolver(
         val locale = normalizeLocale(requestOverrides?.locale ?: persisted.locale ?: defaultLocale())
         val timeZone = requestOverrides?.timeZone ?: persisted.timeZone ?: ZoneId.systemDefault()
         val defaultModel = normalizeModel(
+            userId = userId,
             model = requestOverrides?.defaultModel ?: persisted.defaultModel,
             locale = locale,
         )
@@ -78,7 +81,7 @@ class EffectiveSettingsResolver(
         val now = Instant.now()
         return UserSettings(
             userId = userId,
-            defaultModel = normalizeModel(baseSettingsProvider.gigaModel, locale),
+            defaultModel = baseSettingsProvider.gigaModel,
             contextSize = baseSettingsProvider.contextSize,
             temperature = baseSettingsProvider.temperature,
             locale = locale,
@@ -100,38 +103,48 @@ class EffectiveSettingsResolver(
         return requested.filterTo(linkedSetOf()) { it in supportedTools }
     }
 
-    private fun normalizeModel(model: LLMModel?, locale: Locale): LLMModel {
-        val fallback = fallbackModel(locale)
+    private suspend fun normalizeModel(
+        userId: String,
+        model: LLMModel?,
+        locale: Locale,
+    ): LLMModel {
+        val fallback = fallbackModel(userId, locale)
         val candidate = model ?: fallback
         val supportedProviders = LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion()).keys
         return when {
             candidate.provider == LlmProvider.LOCAL ->
                 candidate.takeIf { it in localModelAvailability.availableGigaModels() } ?: fallback
 
-            candidate.provider !in supportedProviders -> fallback
-            !hasConfiguredAccess(candidate.provider) -> fallback
+            candidate.provider !in supportedProviders && !hasConfiguredAccess(userId, candidate.provider) -> fallback
+            !hasConfiguredAccess(userId, candidate.provider) -> fallback
             else -> candidate
         }
     }
 
-    private fun fallbackModel(locale: Locale): LLMModel {
+    private suspend fun fallbackModel(
+        userId: String,
+        locale: Locale,
+    ): LLMModel {
         val defaults = LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion())
         val localDefault = localModelAvailability.defaultGigaModel()
         return LlmBuildProfile.providerPrioritiesForLanguage(locale.languageOrRegion())
             .firstNotNullOfOrNull { provider ->
                 when (provider) {
                     LlmProvider.LOCAL -> localDefault
-                    else -> defaults[provider]?.takeIf { hasConfiguredAccess(provider) }
+                    else -> defaults[provider]?.takeIf { hasConfiguredAccess(userId, provider) }
                 }
             }
             ?: localDefault
             ?: defaults.values.first()
     }
 
-    private fun hasConfiguredAccess(provider: LlmProvider): Boolean =
+    private suspend fun hasConfiguredAccess(
+        userId: String,
+        provider: LlmProvider,
+    ): Boolean =
         when (provider) {
             LlmProvider.LOCAL -> localModelAvailability.isProviderAvailable()
-            else -> baseSettingsProvider.hasKey(provider)
+            else -> baseSettingsProvider.hasKey(provider) || userProviderKeyRepository.get(userId, provider) != null
         }
 
     private fun defaultLocale(): Locale =

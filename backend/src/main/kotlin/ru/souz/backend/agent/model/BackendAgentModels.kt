@@ -52,6 +52,7 @@ internal data class BackendConversationTurnRequest(
     val contextSize: Int,
     val locale: String,
     val timeZone: String,
+    val executionId: String? = null,
     val temperature: Float? = null,
     val systemPrompt: String? = null,
     val streamingMessages: Boolean? = null,
@@ -99,6 +100,7 @@ internal fun ValidatedAgentRequest.toConversationTurnRequest(): BackendConversat
         contextSize = contextSize,
         locale = locale,
         timeZone = timeZone,
+        executionId = requestId,
     )
 
 private fun String.requireUuid(fieldName: String): String =

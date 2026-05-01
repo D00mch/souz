@@ -7,7 +7,7 @@ It reuses shared runtime components from `:runtime` and exposes a small REST sur
 - `GET /health` returns process and selected-model status.
 - `GET /v1/bootstrap` returns trusted-proxy bootstrap metadata for web/server-mode clients.
 - `GET /v1/me/settings` and `PATCH /v1/me/settings` expose effective per-user backend settings and persist user intent for the public settings subset.
-- `GET /v1/chats`, `POST /v1/chats`, `GET /v1/chats/{chatId}/messages`, `GET /v1/chats/{chatId}/events`, `POST /v1/chats/{chatId}/messages`, `POST /v1/chats/{chatId}/cancel-active`, `POST /v1/chats/{chatId}/executions/{executionId}/cancel`, and `WS /v1/chats/{chatId}/ws` provide the stage-6 chat-oriented REST/WebSocket API with strict ownership checks, explicit `AgentExecution` lifecycle persistence, replay/live event delivery, and cancellation.
+- `GET /v1/chats`, `POST /v1/chats`, `GET /v1/chats/{chatId}/messages`, `GET /v1/chats/{chatId}/events`, `POST /v1/chats/{chatId}/messages`, `POST /v1/choices/{choiceId}/answer`, `POST /v1/chats/{chatId}/cancel-active`, `POST /v1/chats/{chatId}/executions/{executionId}/cancel`, and `WS /v1/chats/{chatId}/ws` provide the stage-8 chat-oriented REST/WebSocket API with strict ownership checks, explicit `AgentExecution` + `Choice` lifecycle persistence, replay/live event delivery, same-execution continuation after a choice answer, and cancellation.
 - `POST /agent` remains a legacy/debug internal route that accepts authenticated agent requests and returns a single assistant response with message IDs and token usage.
 
 `/agent` exposes the shared runtime tool catalog for backend-safe tools (files, text/web lookup, calculator, analytics, and non-UI config). The backend intentionally omits `WebImageSearch` so startup does not initialize Apache Tika's external parser probes for host binaries such as `ffmpeg`.
@@ -21,7 +21,7 @@ If the proxy token is missing, `/v1/**` rejects requests with a structured `back
 
 `POST /agent` requires `Content-Type: application/json`, `Authorization: Bearer <internal-agent-token>`, and `X-Request-Id: <uuid>`. The token is read from `SOUZ_BACKEND_AGENT_TOKEN` or `souz.backend.agentToken`. The request body `requestId` must match `X-Request-Id`.
 
-The backend keeps `/agent` conversation snapshots through the legacy `AgentSessionRepository`, now backed by the stage-2 product `AgentStateRepository`. Stage-6 reuses the same shared runtime for `/v1/chats/{chatId}/messages`, but chat turns resolve effective settings from server defaults + persisted per-user settings + request overrides, persist visible `messages` separately from `agent state`, and use `conversationId = chatId.toString()` for runtime identity. In-memory product repositories remain the only supported storage for per-user settings, chats, messages, executions, choices, and events. `/agent` still executes each turn from a request-scoped runtime:
+The backend keeps `/agent` conversation snapshots through the legacy `AgentSessionRepository`, now backed by the stage-2 product `AgentStateRepository`. Stage-8/10 reuses the same shared runtime for `/v1/chats/{chatId}/messages`, but chat turns resolve effective settings from server defaults + persisted per-user settings + request overrides, persist visible `messages` separately from `agent state`, use `conversationId = chatId.toString()` for runtime identity, and keep synthetic choice-continuation input inside agent state only. Product repositories now support in-memory storage, filesystem storage under `SOUZ_BACKEND_DATA_DIR` / `souz.backend.dataDir` (default `data/` relative to the backend process working directory), and Postgres storage via JDBC + HikariCP + Flyway with `SOUZ_BACKEND_DB_*` / `souz.backend.db.*` settings. Filesystem mode stores `settings.json`, `chat.json`, `messages.jsonl`, `agent-state.json`, `executions.jsonl`, `choices.jsonl`, and `events.jsonl`, uses a stable URL-safe encoded directory name for opaque `userId` values instead of raw path injection, keeps `messages/executions/choices` as append-only snapshot logs with last-write-wins reload, and tolerates corrupted `agent-state.json` by returning `null` while leaving product message history readable. Postgres mode keeps DB ownership filtering by `userId`, allocates message/event `seq` per chat, updates assistant messages in place without changing `seq`, enforces one active execution per chat through `agent_executions_one_active_per_chat_idx`, persists durable replay only when `SOUZ_FEATURE_DURABLE_EVENT_REPLAY=true`, and uses `row_version` optimistic locking so stale state writes fail as `state_conflict` instead of overwriting `context_json`. `/agent` still executes each turn from a request-scoped runtime:
 
 - Process scope: shared settings/provider clients, shared runtime tool catalog/filter, backend no-op desktop/MCP host adapters, object mappers, and runtime/cache factories.
 - Conversation scope: persisted snapshot only, including history, active agent id, temperature, locale, and time zone.
@@ -29,7 +29,7 @@ The backend keeps `/agent` conversation snapshots through the legacy `AgentSessi
 
 The backend path still reuses the shared `:agent` execution kernel, but it bypasses desktop-only features that are irrelevant here: `AgentFacade`, graph session logging, shared desktop side-effect subscriptions, MCP tool discovery, and desktop/session logging infrastructure. Stage-5 adds a request-scoped runtime event sink instead, so backend event persistence never relies on shared desktop flows.
 
-Stage-1 backend foundation also adds:
+Stage-1/9 backend foundation also adds:
 
 - feature flags from env/system properties:
   - `SOUZ_FEATURE_WS_EVENTS` / `souz.backend.feature.wsEvents`
@@ -37,7 +37,17 @@ Stage-1 backend foundation also adds:
   - `SOUZ_FEATURE_TOOL_EVENTS` / `souz.backend.feature.toolEvents`
   - `SOUZ_FEATURE_CHOICES` / `souz.backend.feature.choices`
   - `SOUZ_FEATURE_DURABLE_EVENT_REPLAY` / `souz.backend.feature.durableEventReplay`
-- storage mode from `SOUZ_STORAGE_MODE` / `souz.backend.storageMode`, with only `memory` currently supported; `filesystem` and `postgres` are rejected at startup.
+- storage mode from `SOUZ_STORAGE_MODE` / `souz.backend.storageMode`, with `memory`, `filesystem`, and `postgres` supported.
+- filesystem data root from `SOUZ_BACKEND_DATA_DIR` / `souz.backend.dataDir`, defaulting to `data/` relative to the backend process working directory.
+- postgres config from env/system properties:
+  - `SOUZ_BACKEND_DB_HOST` / `souz.backend.db.host`, default `127.0.0.1`
+  - `SOUZ_BACKEND_DB_PORT` / `souz.backend.db.port`, default `5432`
+  - `SOUZ_BACKEND_DB_NAME` / `souz.backend.db.name`, default `souz`
+  - `SOUZ_BACKEND_DB_USER` / `souz.backend.db.user`, default `souz`
+  - `SOUZ_BACKEND_DB_PASSWORD` / `souz.backend.db.password`, optional
+  - `SOUZ_BACKEND_DB_SCHEMA` / `souz.backend.db.schema`, default `public`
+  - `SOUZ_BACKEND_DB_MAX_POOL_SIZE` / `souz.backend.db.maxPoolSize`, default `10`
+  - `SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS` / `souz.backend.db.connectionTimeoutMs`, default `30000`
 
 ## Project Structure
 
@@ -60,7 +70,7 @@ backend/
     │           ├── settings/                   # Per-user settings models, repository, effective resolver, and settings service
     │           ├── config/                     # Feature-flag and env/property config readers
     │           ├── security/                   # Trusted proxy request identity extraction for /v1/**
-    │           ├── storage/                    # Storage mode enum, stage gating, and memory repository impls
+    │           ├── storage/                    # Storage mode enum, stage gating, and memory/filesystem repository impls
     │           └── common/                     # Shared backend exception types
     └── test/
         └── kotlin/
@@ -101,14 +111,15 @@ Stable backend codes:
 - `invalid_request`
 - `feature_disabled`
 - `chat_not_found`
+- `choice_not_found`
 - `agent_execution_failed`
 - `chat_already_has_active_execution`
 - `agent_execution_cancelled`
 - `execution_not_found`
 
-## Stage-4/6 Chat Routes
+## Stage-4/8 Chat Routes
 
-Trusted `/v1/**` stage-6 routes are chat-oriented:
+Trusted `/v1/**` stage-8 routes are chat-oriented:
 
 - `GET /v1/me/settings` returns effective settings for the current trusted user.
 - `PATCH /v1/me/settings` persists user intent for `defaultModel`, `contextSize`, `temperature`, `locale`, `timeZone`, `systemPrompt`, `enabledTools`, `showToolEvents`, and `streamingMessages`, then returns the re-resolved effective settings.
@@ -119,14 +130,18 @@ Trusted `/v1/**` stage-6 routes are chat-oriented:
 - `WS /v1/chats/{chatId}/ws?afterSeq=` replays persisted events with `seq > afterSeq`, then subscribes the caller to live per-chat events from the in-process event bus.
 - `POST /v1/chats/{chatId}/messages` validates ownership and payload, resolves effective execution settings, creates a persisted `AgentExecution`, stores the user message, and then:
   - returns the old synchronous contract with `assistantMessage` when `streamingMessages=false` or `wsEvents=false`;
-  - returns fast with only `message` + `execution(status=running)` when both effective `streamingMessages=true` and `wsEvents=true`, leaving the final assistant output to the event stream.
-- Stage-6 keeps using the same request-scoped runtime event sink from stage-5, creates request-scoped assistant-message placeholders only when streaming deltas actually arrive, updates the persisted assistant message in place, appends `AgentEvent` rows such as `execution.started`, `message.created`, `message.delta`, `message.completed`, `execution.finished`, `execution.failed`, and `execution.cancelled`, and broadcasts exactly those persisted `AgentEvent` rows through the stage-6 event bus instead of creating a second event path.
+  - returns fast with only `message` + `execution(status=running)` when both effective `streamingMessages=true` and `wsEvents=true`, leaving the final assistant output to the event stream;
+  - returns `assistantMessage=null` + `execution(status=waiting_choice)` when the runtime requests a choice before producing a final assistant answer in the sync path.
+- `POST /v1/choices/{choiceId}/answer` is scoped only by trusted identity, validates pending choice ownership without leaking foreign existence, atomically transitions `pending -> answered`, appends canonical `choice.answered`, flips the same execution row back to `running`, and resumes continuation in background under the original `executionId`.
+- Stage-8 keeps using the same request-scoped runtime event sink from stage-5, creates request-scoped assistant-message placeholders only when streaming deltas actually arrive, updates the persisted assistant message in place, appends `AgentEvent` rows such as `execution.started`, `message.created`, `message.delta`, `message.completed`, `choice.requested`, `choice.answered`, `execution.finished`, `execution.failed`, and `execution.cancelled`, and broadcasts exactly those persisted `AgentEvent` rows through the stage-6 event bus instead of creating a second event path.
 - `POST /v1/chats/{chatId}/cancel-active` marks the caller's active execution as `cancelling`, cancels its tracked coroutine job, and returns the updated `execution`.
 - `POST /v1/chats/{chatId}/executions/{executionId}/cancel` applies the same cancellation flow for a specific execution scoped to an owned chat.
 
-Ownership is enforced on all stage-6 `/v1/chats/**` endpoints by resolving the chat through `userId + chatId`; foreign chats return structured `chat_not_found` instead of leaking existence details. Execution resources are always scoped through an owned chat and are never resolved from caller-controlled `userId`.
+Ownership is enforced on all stage-8 `/v1/chats/**` endpoints by resolving the chat through `userId + chatId`; foreign chats return structured `chat_not_found` instead of leaking existence details. Choice answer routes resolve only through `userId + choiceId` and return structured `choice_not_found` for both missing and foreign rows. Execution resources are always scoped through an owned chat and are never resolved from caller-controlled `userId`.
 
-`AgentExecutionRepository` is now part of the live request path rather than a stub. Each `/messages` request persists `queued -> running -> completed/failed` transitions, links `userMessageId` and `assistantMessageId`, stores `model/provider/usage/clientMessageId/startedAt/finishedAt`, and enforces one active execution per `userId + chatId`. Failed executions do not create assistant messages in the non-streaming path and do not overwrite persisted agent state. Cancelled executions transition through `cancelling -> cancelled`. Stage-6 also writes request-scoped runtime events into `AgentEventRepository`, replays them by `seq`, and exposes both HTTP replay and WebSocket live streaming, but still does not add continuation/choice answer APIs.
+`AgentExecutionRepository` is now part of the live request path rather than a stub. Each `/messages` request persists `queued -> running -> waiting_choice/completed/failed` transitions, links `userMessageId` and `assistantMessageId`, stores `model/provider/usage/clientMessageId/startedAt/finishedAt`, persists enough execution metadata to resume a paused turn with the same model/context/locale/time-zone/system-prompt/tool-event/streaming settings, and enforces one active execution per `userId + chatId`. Failed executions do not create assistant messages in the non-streaming path and do not overwrite persisted agent state; postgres mode now also marks stale `agent_conversation_state` writes as `state_conflict` and emits `execution.failed`. Cancelled executions transition through `cancelling -> cancelled`. `ChoiceRepository` is also on the live request path now: `choice.requested` persists a heavy `Choice` row and marks the execution `waiting_choice`, while `POST /v1/choices/{choiceId}/answer` atomically rejects double answers and resumes the same execution row instead of creating a second execution.
+
+Note for review: postgres mode currently preserves legacy `/agent` by lazily creating an archived `chats` row when a legacy conversation id has no product chat yet, so `agent_conversation_state.chat_id` can keep the documented FK to `chats(id)`.
 
 ## Internal Agent Route
 

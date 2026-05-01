@@ -16,6 +16,8 @@ data class AgentConversationSession(
     val temperature: Float,
     val locale: String,
     val timeZone: String,
+    val basedOnMessageSeq: Long = 0L,
+    val rowVersion: Long = 0L,
 )
 
 /** Storage contract for per-conversation backend agent state. */
@@ -31,20 +33,19 @@ class AgentStateBackedSessionRepository(
         stateRepository.get(key.userId, key.chatId())?.toLegacySession()
 
     override suspend fun save(key: AgentConversationKey, session: AgentConversationSession) {
-        val currentState = stateRepository.get(key.userId, key.chatId())
         stateRepository.save(
             AgentConversationState(
                 userId = key.userId,
                 chatId = key.chatId(),
-                schemaVersion = currentState?.schemaVersion ?: DEFAULT_SCHEMA_VERSION,
+                schemaVersion = DEFAULT_SCHEMA_VERSION,
                 activeAgentId = session.activeAgentId,
                 history = session.history,
                 temperature = session.temperature,
                 locale = session.locale.toLocale(),
                 timeZone = session.timeZone.toZoneId(),
-                basedOnMessageSeq = currentState?.basedOnMessageSeq ?: 0L,
+                basedOnMessageSeq = session.basedOnMessageSeq,
                 updatedAt = Instant.now(),
-                rowVersion = currentState?.rowVersion ?: 0L,
+                rowVersion = session.rowVersion,
             )
         )
     }
@@ -64,6 +65,8 @@ private fun AgentConversationState.toLegacySession(): AgentConversationSession =
         temperature = temperature,
         locale = locale.languageTagOrDefault(),
         timeZone = timeZone.id,
+        basedOnMessageSeq = basedOnMessageSeq,
+        rowVersion = rowVersion,
     )
 
 private fun String.toLocale(): Locale =

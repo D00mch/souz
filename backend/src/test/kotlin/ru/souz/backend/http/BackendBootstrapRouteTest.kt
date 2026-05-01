@@ -25,7 +25,9 @@ import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.bootstrap.BackendBootstrapService
+import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
+import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModel
@@ -36,6 +38,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LocalModelAvailability
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.backend.storage.StorageMode
 import ru.souz.backend.settings.model.UserSettings
@@ -248,6 +251,56 @@ class BackendBootstrapRouteTest {
     }
 
     @Test
+    fun `bootstrap marks user managed key access for current user without leaking plaintext`() = testApplication {
+        val settingsProvider = FakeSettingsProvider().apply {
+            gigaModel = LLMModel.Max
+            regionProfile = "ru"
+            gigaChatKey = "server-giga-key"
+            openaiKey = null
+        }
+        val userProviderKeyRepository = MemoryUserProviderKeyRepository().also { repository ->
+            runBlocking {
+                repository.save(
+                    UserProviderKey(
+                        userId = "user-a",
+                        provider = LlmProvider.OPENAI,
+                        encryptedApiKey = "enc-openai-user-a",
+                        keyHint = "...4321",
+                    )
+                )
+            }
+        }
+        application {
+            backendApplication(
+                agentService = unusedAgentService(settingsProvider),
+                selectedModel = { settingsProvider.gigaModel.alias },
+                internalAgentToken = { "legacy-token" },
+                bootstrapService = bootstrapService(
+                    settingsProvider = settingsProvider,
+                    userProviderKeyRepository = userProviderKeyRepository,
+                ),
+                trustedProxyToken = { "proxy-secret" },
+            )
+        }
+
+        val response = client.get("/v1/bootstrap") {
+            header("X-User-Id", "user-a")
+            header("X-Souz-Proxy-Auth", "proxy-secret")
+        }
+        val rawBody = response.bodyAsText()
+        val payload = json.readTree(rawBody)
+        val models = payload["capabilities"]["models"]
+        val openAiModel = models.first { it["model"].asText() == LLMModel.OpenAIGpt52.alias }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(false, openAiModel["serverManagedKey"].asBoolean())
+        assertEquals(true, openAiModel["userManagedKey"].asBoolean())
+        assertEquals(LLMModel.Max.alias, payload["settings"]["defaultModel"].asText())
+        assertFalse(rawBody.contains("enc-openai-user-a"))
+        assertFalse(rawBody.contains("...4321"))
+    }
+
+    @Test
     fun `bootstrap resolves settings per user and preserves response shape`() = testApplication {
         val settingsProvider = FakeSettingsProvider().apply {
             gigaModel = LLMModel.Max
@@ -354,12 +407,14 @@ private fun bootstrapService(
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     localModelAvailability: LocalModelAvailability = unavailableLocalModels(),
     userSettingsRepository: MemoryUserSettingsRepository = MemoryUserSettingsRepository(),
+    userProviderKeyRepository: MemoryUserProviderKeyRepository = MemoryUserProviderKeyRepository(),
 ): BackendBootstrapService =
     BackendBootstrapService(
         settingsProvider = settingsProvider,
         effectiveSettingsResolver = EffectiveSettingsResolver(
             baseSettingsProvider = settingsProvider,
             userSettingsRepository = userSettingsRepository,
+            userProviderKeyRepository = userProviderKeyRepository,
             featureFlags = featureFlags,
             toolCatalog = toolCatalog,
             localModelAvailability = localModelAvailability,
@@ -368,6 +423,7 @@ private fun bootstrapService(
         featureFlags = featureFlags,
         storageMode = StorageMode.MEMORY,
         localModelAvailability = localModelAvailability,
+        userProviderKeyRepository = userProviderKeyRepository,
     )
 
 private fun unusedAgentService(

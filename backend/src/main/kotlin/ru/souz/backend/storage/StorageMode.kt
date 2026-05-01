@@ -10,12 +10,7 @@ enum class StorageMode(val value: String) {
     POSTGRES("postgres");
 
     fun requireSupported(): StorageMode =
-        when (this) {
-            MEMORY -> this
-            FILESYSTEM, POSTGRES -> throw BackendConfigurationException(
-                "Storage mode '$value' is not implemented yet. Only 'memory' is supported in stage 1."
-            )
-        }
+        this
 
     companion object {
         fun load(source: BackendConfigSource = SystemBackendConfigSource): StorageMode {

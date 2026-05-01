@@ -41,6 +41,14 @@ class MemoryMessageRepository : MessageRepository {
         messages[ConversationKey(userId, chatId)]?.firstOrNull { it.seq == seq }
     }
 
+    override suspend fun getById(
+        userId: String,
+        chatId: UUID,
+        messageId: UUID,
+    ): ChatMessage? = mutex.withLock {
+        messages[ConversationKey(userId, chatId)]?.firstOrNull { it.id == messageId }
+    }
+
     override suspend fun latest(userId: String, chatId: UUID): ChatMessage? = mutex.withLock {
         messages[ConversationKey(userId, chatId)]?.lastOrNull()
     }

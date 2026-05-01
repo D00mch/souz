@@ -15,7 +15,11 @@ dependencies {
     implementation(kotlin("stdlib"))
     implementation(libs.kotlinx.coroutines)
     implementation(libs.jackson)
+    implementation(libs.flyway.core)
+    implementation(libs.flyway.database.postgresql)
+    implementation(libs.hikari.cp)
     implementation(libs.ktor.serializationJackson)
+    implementation(libs.postgresql.jdbc)
     implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
     implementation("io.ktor:ktor-server-content-negotiation:${libs.versions.ktor.get()}")
     implementation("io.ktor:ktor-server-core:${libs.versions.ktor.get()}")
@@ -30,6 +34,8 @@ dependencies {
     testImplementation(libs.kotlinx.coroutinesTest)
     testImplementation("io.ktor:ktor-client-websockets:${libs.versions.ktor.get()}")
     testImplementation("io.ktor:ktor-server-test-host:${libs.versions.ktor.get()}")
+    testImplementation(libs.testcontainers.junitJupiter)
+    testImplementation(libs.testcontainers.postgresql)
 }
 
 application {

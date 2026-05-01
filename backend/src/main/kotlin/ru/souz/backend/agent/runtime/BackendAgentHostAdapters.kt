@@ -130,32 +130,49 @@ object BackendAgentErrorMessages : AgentErrorMessages {
     override suspend fun noMoney(): String = "The configured provider has no available balance."
 }
 
-/** LLM API wrapper that remembers the latest usage block for the HTTP response. */
-class UsageTrackingChatApi(private val delegate: LLMChatAPI) : LLMChatAPI by delegate {
-    @Volatile
-    private var latestUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0)
-
-    fun resetUsage() {
-        latestUsage = LLMResponse.Usage(0, 0, 0, 0)
-    }
+/** LLM API wrapper that keeps cumulative usage for one backend execution. */
+class CumulativeUsageTrackingChatApi(
+    private val delegate: LLMChatAPI,
+    initialUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0),
+) : LLMChatAPI by delegate {
+    private var cumulativeUsage: LLMResponse.Usage = initialUsage
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
         val response = delegate.message(body)
         if (response is LLMResponse.Chat.Ok) {
-            latestUsage = response.usage
+            cumulativeUsage = cumulativeUsage.plus(response.usage)
         }
         return response
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): kotlinx.coroutines.flow.Flow<LLMResponse.Chat> =
         kotlinx.coroutines.flow.flow {
+            var previousUsage = LLMResponse.Usage(0, 0, 0, 0)
             delegate.messageStream(body).collect { response ->
                 if (response is LLMResponse.Chat.Ok) {
-                    latestUsage = response.usage
+                    val delta = response.usage.deltaFrom(previousUsage)
+                    cumulativeUsage = cumulativeUsage.plus(delta)
+                    previousUsage = response.usage
                 }
                 emit(response)
             }
         }
 
-    fun latestUsage(): LLMResponse.Usage = latestUsage
+    fun cumulativeUsage(): LLMResponse.Usage = cumulativeUsage
 }
+
+private fun LLMResponse.Usage.plus(other: LLMResponse.Usage): LLMResponse.Usage =
+    LLMResponse.Usage(
+        promptTokens = promptTokens + other.promptTokens,
+        completionTokens = completionTokens + other.completionTokens,
+        totalTokens = totalTokens + other.totalTokens,
+        precachedTokens = precachedTokens + other.precachedTokens,
+    )
+
+private fun LLMResponse.Usage.deltaFrom(previous: LLMResponse.Usage): LLMResponse.Usage =
+    LLMResponse.Usage(
+        promptTokens = (promptTokens - previous.promptTokens).coerceAtLeast(0),
+        completionTokens = (completionTokens - previous.completionTokens).coerceAtLeast(0),
+        totalTokens = (totalTokens - previous.totalTokens).coerceAtLeast(0),
+        precachedTokens = (precachedTokens - previous.precachedTokens).coerceAtLeast(0),
+    )

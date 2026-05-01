@@ -21,6 +21,7 @@ import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictException
+import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.settings.model.ToolPermission
 import ru.souz.backend.settings.model.ToolPermissionMode
 import ru.souz.backend.settings.model.UserMcpServer
@@ -28,6 +29,7 @@ import ru.souz.backend.settings.model.UserSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 
 class MemoryRepositoriesTest {
     @Test
@@ -61,6 +63,36 @@ class MemoryRepositoriesTest {
 
         assertEquals(0.4f, repository.get("user-a")?.temperature)
         assertEquals(0.8f, repository.get("user-b")?.temperature)
+    }
+
+    @Test
+    fun `user provider keys are stored per user and provider`() = runTest {
+        val repository = MemoryUserProviderKeyRepository()
+        val userAOpenAi = UserProviderKey(
+            userId = "user-a",
+            provider = LlmProvider.OPENAI,
+            encryptedApiKey = "enc-openai-user-a",
+            keyHint = "...1234",
+        )
+        val userAOpenAiUpdated = userAOpenAi.copy(
+            encryptedApiKey = "enc-openai-user-a-v2",
+            keyHint = "...9876",
+        )
+        val userBQwen = UserProviderKey(
+            userId = "user-b",
+            provider = LlmProvider.QWEN,
+            encryptedApiKey = "enc-qwen-user-b",
+            keyHint = "...5555",
+        )
+
+        repository.save(userAOpenAi)
+        repository.save(userBQwen)
+        repository.save(userAOpenAiUpdated)
+
+        assertEquals(userAOpenAiUpdated, repository.get("user-a", LlmProvider.OPENAI))
+        assertEquals(userBQwen, repository.get("user-b", LlmProvider.QWEN))
+        assertEquals(listOf(userAOpenAiUpdated), repository.list("user-a"))
+        assertEquals(listOf(userBQwen), repository.list("user-b"))
     }
 
     @Test

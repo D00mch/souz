@@ -4,12 +4,15 @@ import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.service.ChatSummary
 import ru.souz.backend.chat.service.SendMessageResult
+import ru.souz.backend.choices.service.AnswerChoiceResult
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionUsage
+import ru.souz.backend.keys.model.UserProviderKeyView
 import ru.souz.backend.execution.service.CancelExecutionResult
 import ru.souz.backend.settings.model.EffectiveUserSettings
+import ru.souz.llms.restJsonMapper
 
 internal data class BackendV1SettingsResponse(
     val settings: BackendV1SettingsDto,
@@ -37,6 +40,25 @@ internal data class BackendV1SettingsDto(
     val enabledTools: List<String>,
     val showToolEvents: Boolean,
     val streamingMessages: Boolean,
+)
+
+internal data class BackendV1ProviderKeysResponse(
+    val items: List<BackendV1ProviderKeyDto>,
+)
+
+internal data class BackendV1PutProviderKeyRequest(
+    val apiKey: String = "",
+)
+
+internal data class BackendV1PutProviderKeyResponse(
+    val providerKey: BackendV1ProviderKeyDto,
+)
+
+internal data class BackendV1ProviderKeyDto(
+    val provider: String,
+    val configured: Boolean,
+    val keyHint: String?,
+    val updatedAt: String?,
 )
 
 internal data class BackendV1ChatsResponse(
@@ -91,6 +113,22 @@ internal data class BackendV1CancelExecutionResponse(
     val execution: BackendV1ExecutionDto,
 )
 
+internal data class BackendV1AnswerChoiceRequest(
+    val selectedOptionIds: List<String> = emptyList(),
+    val freeText: String? = null,
+    val metadata: Map<String, String> = emptyMap(),
+)
+
+internal data class BackendV1AnswerChoiceResponse(
+    val choice: BackendV1ChoiceDto,
+    val execution: BackendV1ExecutionDto,
+)
+
+internal data class BackendV1ChoiceDto(
+    val id: String,
+    val status: String,
+)
+
 internal data class BackendV1EventsResponse(
     val items: List<BackendV1EventDto>,
 )
@@ -131,6 +169,12 @@ internal data class BackendV1ExecutionUsageDto(
     val precachedTokens: Int,
 )
 
+internal data class BackendV1ChoiceOptionDto(
+    val id: String,
+    val label: String,
+    val content: String? = null,
+)
+
 internal data class BackendV1EventDto(
     val seq: Long,
     val chatId: String,
@@ -151,6 +195,14 @@ internal fun EffectiveUserSettings.toDto(): BackendV1SettingsDto =
         enabledTools = enabledTools.toList(),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
+    )
+
+internal fun UserProviderKeyView.toDto(): BackendV1ProviderKeyDto =
+    BackendV1ProviderKeyDto(
+        provider = provider.name.lowercase(),
+        configured = configured,
+        keyHint = keyHint,
+        updatedAt = updatedAt?.toString(),
     )
 
 internal fun ChatSummary.toDto(): BackendV1ChatDto =
@@ -175,6 +227,15 @@ internal fun SendMessageResult.toResponse(): BackendV1CreateMessageResponse =
 
 internal fun CancelExecutionResult.toResponse(): BackendV1CancelExecutionResponse =
     BackendV1CancelExecutionResponse(
+        execution = execution.toDto(),
+    )
+
+internal fun AnswerChoiceResult.toResponse(): BackendV1AnswerChoiceResponse =
+    BackendV1AnswerChoiceResponse(
+        choice = BackendV1ChoiceDto(
+            id = choice.id.toString(),
+            status = choice.status.value,
+        ),
         execution = execution.toDto(),
     )
 
@@ -206,7 +267,7 @@ internal fun AgentExecution.toDto(): BackendV1ExecutionDto =
         errorCode = errorCode,
         errorMessage = errorMessage,
         usage = usage?.toDto(),
-        metadata = metadata,
+        metadata = emptyMap(),
     )
 
 internal fun AgentExecutionUsage.toDto(): BackendV1ExecutionUsageDto =
@@ -274,6 +335,42 @@ private fun Map<String, String>.toTransportPayload(type: AgentEventType): Map<St
             copyIfPresent("assistantMessageId")
         }
 
+        AgentEventType.CHOICE_REQUESTED -> buildPayload {
+            copyIfPresent("choiceId")
+            copyIfPresent("kind")
+            copyIfPresent("title")
+            copyIfPresent("selectionMode")
+            copyJsonIfPresent<List<BackendV1ChoiceOptionDto>>("options")
+        }
+
+        AgentEventType.CHOICE_ANSWERED -> buildPayload {
+            copyIfPresent("choiceId")
+            copyIfPresent("status")
+            copyJsonIfPresent<List<String>>("selectedOptionIds")
+            copyIfPresent("freeText")
+            copyJsonIfPresent<Map<String, String>>("metadata")
+        }
+
+        AgentEventType.TOOL_CALL_STARTED -> buildPayload {
+            copyIfPresent("toolCallId")
+            copyIfPresent("name")
+            copyIfPresent("arguments")
+        }
+
+        AgentEventType.TOOL_CALL_FINISHED -> buildPayload {
+            copyIfPresent("toolCallId")
+            copyIfPresent("name")
+            copyIfPresent("resultPreview")
+            copyLongIfPresent("durationMs")
+        }
+
+        AgentEventType.TOOL_CALL_FAILED -> buildPayload {
+            copyIfPresent("toolCallId")
+            copyIfPresent("name")
+            copyIfPresent("error")
+            copyLongIfPresent("durationMs")
+        }
+
         else -> this
     }
 
@@ -313,5 +410,14 @@ private class PayloadBuilder(
         sourceKey: String = key,
     ) {
         source[sourceKey]?.toBooleanStrictOrNull()?.let { values[key] = it }
+    }
+
+    inline fun <reified T> copyJsonIfPresent(
+        key: String,
+        sourceKey: String = key,
+    ) {
+        source[sourceKey]?.takeIf { it.isNotBlank() }?.let { rawValue ->
+            values[key] = restJsonMapper.readValue(rawValue, object : com.fasterxml.jackson.core.type.TypeReference<T>() {})
+        }
     }
 }

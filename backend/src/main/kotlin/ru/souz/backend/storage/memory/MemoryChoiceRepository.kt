@@ -1,9 +1,13 @@
 package ru.souz.backend.storage.memory
 
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.choices.model.Choice
+import ru.souz.backend.choices.model.ChoiceAnswer
+import ru.souz.backend.choices.model.ChoiceStatus
+import ru.souz.backend.choices.repository.ChoiceAnswerUpdateResult
 import ru.souz.backend.choices.repository.ChoiceRepository
 
 class MemoryChoiceRepository : ChoiceRepository {
@@ -17,6 +21,29 @@ class MemoryChoiceRepository : ChoiceRepository {
 
     override suspend fun get(userId: String, choiceId: UUID): Choice? = mutex.withLock {
         choices[ChoiceKey(userId, choiceId)]
+    }
+
+    override suspend fun answerPending(
+        userId: String,
+        choiceId: UUID,
+        answer: ChoiceAnswer,
+        answeredAt: Instant,
+    ): ChoiceAnswerUpdateResult {
+        return mutex.withLock {
+            val key = ChoiceKey(userId, choiceId)
+            val current = choices[key] ?: return@withLock ChoiceAnswerUpdateResult.NotFound
+            if (current.status != ChoiceStatus.PENDING) {
+                return@withLock ChoiceAnswerUpdateResult.NotPending(current)
+            }
+
+            val updated = current.copy(
+                status = ChoiceStatus.ANSWERED,
+                answer = answer,
+                answeredAt = answeredAt,
+            )
+            choices[key] = updated
+            ChoiceAnswerUpdateResult.Updated(updated)
+        }
     }
 
     override suspend fun listByExecution(

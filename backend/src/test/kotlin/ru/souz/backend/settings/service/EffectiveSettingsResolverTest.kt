@@ -10,12 +10,15 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.settings.model.UserSettings
+import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LocalModelAvailability
+import ru.souz.llms.LlmProvider
 import ru.souz.tool.ToolCategory
 
 class EffectiveSettingsResolverTest {
@@ -88,6 +91,39 @@ class EffectiveSettingsResolverTest {
     }
 
     @Test
+    fun `resolver treats user managed key as valid provider access during normalization`() = runTest {
+        val settingsProvider = TestSettingsProvider().apply {
+            regionProfile = "ru"
+            gigaChatKey = "giga-key"
+            openaiKey = null
+        }
+        val repository = MemoryUserSettingsRepository()
+        val providerKeyRepository = MemoryUserProviderKeyRepository()
+        repository.save(
+            UserSettings(
+                userId = "user-a",
+                defaultModel = LLMModel.OpenAIGpt52,
+            )
+        )
+        providerKeyRepository.save(
+            UserProviderKey(
+                userId = "user-a",
+                provider = LlmProvider.OPENAI,
+                encryptedApiKey = "enc-openai-user-a",
+                keyHint = "...1234",
+            )
+        )
+
+        val effective = resolver(
+            settingsProvider = settingsProvider,
+            repository = repository,
+            userProviderKeyRepository = providerKeyRepository,
+        ).resolve("user-a")
+
+        assertEquals(LLMModel.OpenAIGpt52, effective.defaultModel)
+    }
+
+    @Test
     fun `feature flags can disable streaming and tool events`() = runTest {
         val settingsProvider = TestSettingsProvider().apply {
             gigaChatKey = "giga-key"
@@ -145,6 +181,7 @@ class EffectiveSettingsResolverTest {
     private fun resolver(
         settingsProvider: TestSettingsProvider = TestSettingsProvider().apply { gigaChatKey = "giga-key" },
         repository: MemoryUserSettingsRepository = MemoryUserSettingsRepository(),
+        userProviderKeyRepository: MemoryUserProviderKeyRepository = MemoryUserProviderKeyRepository(),
         featureFlags: BackendFeatureFlags = BackendFeatureFlags(
             streamingMessages = true,
             toolEvents = true,
@@ -154,6 +191,7 @@ class EffectiveSettingsResolverTest {
         EffectiveSettingsResolver(
             baseSettingsProvider = settingsProvider,
             userSettingsRepository = repository,
+            userProviderKeyRepository = userProviderKeyRepository,
             featureFlags = featureFlags,
             toolCatalog = toolCatalog(
                 ToolCategory.FILES to fakeTool("ListFiles"),

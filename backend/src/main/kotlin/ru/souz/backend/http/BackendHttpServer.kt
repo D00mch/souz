@@ -23,6 +23,7 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
@@ -39,6 +40,7 @@ import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
+import ru.souz.backend.choices.service.ChoiceService
 import ru.souz.backend.common.BackendRequestException
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.service.AgentEventService
@@ -47,7 +49,9 @@ import ru.souz.backend.security.RequestIdentityPlugin
 import ru.souz.backend.security.requestIdentity
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.backend.settings.service.UserSettingsService
+import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LlmProvider
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
@@ -74,9 +78,11 @@ class BackendHttpServer(
     private val agentService: BackendAgentService,
     private val bootstrapService: BackendBootstrapService,
     private val userSettingsService: UserSettingsService? = null,
+    private val providerKeyService: UserProviderKeyService? = null,
     private val chatService: ChatService? = null,
     private val messageService: MessageService? = null,
     private val executionService: AgentExecutionService? = null,
+    private val choiceService: ChoiceService? = null,
     private val eventService: AgentEventService? = null,
     private val featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     private val selectedModel: () -> String,
@@ -94,9 +100,11 @@ class BackendHttpServer(
             agentService = agentService,
             bootstrapService = bootstrapService,
             userSettingsService = userSettingsService,
+            providerKeyService = providerKeyService,
             chatService = chatService,
             messageService = messageService,
             executionService = executionService,
+            choiceService = choiceService,
             eventService = eventService,
             featureFlags = featureFlags,
             selectedModel = selectedModel,
@@ -130,9 +138,11 @@ fun Application.backendApplication(
     agentService: BackendAgentService,
     bootstrapService: BackendBootstrapService,
     userSettingsService: UserSettingsService? = null,
+    providerKeyService: UserProviderKeyService? = null,
     chatService: ChatService? = null,
     messageService: MessageService? = null,
     executionService: AgentExecutionService? = null,
+    choiceService: ChoiceService? = null,
     eventService: AgentEventService? = null,
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     selectedModel: () -> String,
@@ -191,6 +201,9 @@ fun Application.backendApplication(
                         "GET /v1/bootstrap",
                         "GET /v1/me/settings",
                         "PATCH /v1/me/settings",
+                        "GET /v1/me/provider-keys",
+                        "PUT /v1/me/provider-keys/{provider}",
+                        "DELETE /v1/me/provider-keys/{provider}",
                         "GET /v1/chats",
                         "POST /v1/chats",
                         "GET /v1/chats/{chatId}/messages",
@@ -198,6 +211,7 @@ fun Application.backendApplication(
                         "POST /v1/chats/{chatId}/messages",
                         "POST /v1/chats/{chatId}/cancel-active",
                         "POST /v1/chats/{chatId}/executions/{executionId}/cancel",
+                        "POST /v1/choices/{choiceId}/answer",
                         "WS /v1/chats/{chatId}/ws",
                         "POST /agent",
                     ),
@@ -240,6 +254,41 @@ fun Application.backendApplication(
                             ).toDto(),
                         )
                     )
+                }
+
+                get("/provider-keys") {
+                    val service = requireV1Service(providerKeyService, "Provider keys")
+                    call.respond(
+                        BackendV1ProviderKeysResponse(
+                            items = service.list(call.requestIdentity().userId).map { it.toDto() },
+                        )
+                    )
+                }
+
+                put("/provider-keys/{provider}") {
+                    val service = requireV1Service(providerKeyService, "Provider keys")
+                    call.requireJsonContentV1()
+                    val request = call.receiveOrV1BadRequest<BackendV1PutProviderKeyRequest>()
+                    val apiKey = request.apiKey.trim().takeIf { it.isNotEmpty() }
+                        ?: throw invalidV1Request("apiKey must not be empty.")
+                    call.respond(
+                        BackendV1PutProviderKeyResponse(
+                            providerKey = service.put(
+                                userId = call.requestIdentity().userId,
+                                provider = call.requireProvider(),
+                                apiKey = apiKey,
+                            ).toDto()
+                        )
+                    )
+                }
+
+                delete("/provider-keys/{provider}") {
+                    val service = requireV1Service(providerKeyService, "Provider keys")
+                    service.delete(
+                        userId = call.requestIdentity().userId,
+                        provider = call.requireProvider(),
+                    )
+                    call.respond(HttpStatusCode.NoContent)
                 }
             }
 
@@ -405,6 +454,23 @@ fun Application.backendApplication(
                     )
                 }
             }
+
+            route("/choices") {
+                post("/{choiceId}/answer") {
+                    val service = requireV1Service(choiceService, "Choice")
+                    call.requireJsonContentV1()
+                    val request = call.receiveOrV1BadRequest<BackendV1AnswerChoiceRequest>()
+                    call.respond(
+                        service.answer(
+                            userId = call.requestIdentity().userId,
+                            choiceId = call.requireChoiceId(),
+                            selectedOptionIds = request.selectedOptionIds,
+                            freeText = request.freeText,
+                            metadata = request.metadata,
+                        ).toResponse()
+                    )
+                }
+            }
         }
 
         post("/agent") {
@@ -557,6 +623,15 @@ private fun ApplicationCall.requireChatId(): UUID =
         }
         ?: throw invalidV1Request("chatId must be a UUID.")
 
+private fun ApplicationCall.requireProvider(): LlmProvider {
+    val raw = parameters["provider"]?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: throw invalidV1Request("provider path parameter is required.")
+    val normalized = raw.replace('-', '_')
+    return LlmProvider.entries.firstOrNull { it.name.equals(normalized, ignoreCase = true) }
+        ?: throw invalidV1Request("Unsupported provider '$raw'.")
+}
+
 private fun ApplicationCall.requireExecutionId(): UUID =
     parameters["executionId"]?.trim()
         ?.takeIf { it.isNotEmpty() }
@@ -566,6 +641,16 @@ private fun ApplicationCall.requireExecutionId(): UUID =
             }
         }
         ?: throw invalidV1Request("executionId must be a UUID.")
+
+private fun ApplicationCall.requireChoiceId(): UUID =
+    parameters["choiceId"]?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { value ->
+            runCatching { UUID.fromString(value) }.getOrElse {
+                throw invalidV1Request("choiceId must be a UUID.")
+            }
+        }
+        ?: throw invalidV1Request("choiceId must be a UUID.")
 
 private fun ApplicationCall.queryPositiveInt(name: String, defaultValue: Int): Int {
     val rawValue = request.queryParameters[name] ?: return defaultValue
