@@ -38,32 +38,18 @@ class LlmSkillValidator(
         val ok = response as? LLMResponse.Chat.Ok
             ?: throw SkillBundleException("Skill validator LLM request failed: $response")
         val content = ok.choices.lastOrNull()?.message?.content.orEmpty()
-        val parsed: ValidatorResponse = restJsonMapper.readValue(jsonUtils.extractObject(content))
+        val parsed = parseValidatorResponse(
+            rawContent = content,
+            model = model,
+        )
         logger.info(
             "Skill validator decision={} confidence={} risk={} files={}",
-            parsed.decision,
+            parsed.decision.name,
             parsed.confidence,
             parsed.riskLevel,
             input.filePaths.size,
         )
-
-        return SkillLlmValidationVerdict(
-            decision = SkillLlmValidationDecision.valueOf(parsed.decision.uppercase()),
-            confidence = parsed.confidence,
-            riskLevel = SkillRiskLevel.valueOf(parsed.riskLevel.uppercase()),
-            reasons = parsed.reasons,
-            requestedCapabilities = parsed.requestedCapabilities,
-            suspiciousFiles = parsed.suspiciousFiles,
-            findings = parsed.findings.map { finding ->
-                SkillValidationFinding(
-                    code = finding.code,
-                    message = finding.message,
-                    severity = SkillValidationSeverity.valueOf(finding.severity.uppercase()),
-                    filePath = finding.filePath,
-                )
-            },
-            model = ok.model,
-        )
+        return parsed
     }
 
     private fun buildPrompt(input: SkillLlmValidationInput): String = buildString {
@@ -98,20 +84,115 @@ class LlmSkillValidator(
         }
     }
 
+    private fun parseValidatorResponse(
+        rawContent: String,
+        model: String,
+    ): SkillLlmValidationVerdict = runCatching {
+        val json = jsonUtils.extractObject(rawContent)
+        val parsed: ValidatorResponse = restJsonMapper.readValue(json)
+
+        val decision = parseDecision(parsed.decision)
+            ?: return rejectDueToBadValidatorOutput(model, "Unknown decision: ${parsed.decision}")
+        val confidence = parsed.confidence
+            ?: return rejectDueToBadValidatorOutput(model, "Missing confidence")
+        val riskLevel = parseRiskLevel(parsed.riskLevel)
+            ?: return rejectDueToBadValidatorOutput(model, "Unknown risk level: ${parsed.riskLevel}")
+
+        if (!confidence.isFinite() || confidence !in 0.0..1.0) {
+            return rejectDueToBadValidatorOutput(model, "Confidence out of range: $confidence")
+        }
+
+        val findings = parsed.findings.orEmpty().map { finding ->
+            val code = finding.code?.takeIf { it.isNotBlank() }
+                ?: return rejectDueToBadValidatorOutput(model, "Missing finding code")
+            val message = finding.message?.takeIf { it.isNotBlank() }
+                ?: return rejectDueToBadValidatorOutput(model, "Missing finding message")
+            val severity = parseSeverity(finding.severity)
+                ?: return rejectDueToBadValidatorOutput(
+                    model,
+                    "Unknown finding severity: ${finding.severity}",
+                )
+
+            SkillValidationFinding(
+                code = code,
+                message = message,
+                severity = severity,
+                filePath = finding.filePath,
+            )
+        }
+
+        SkillLlmValidationVerdict(
+            decision = decision,
+            confidence = confidence,
+            riskLevel = riskLevel,
+            reasons = parsed.reasons.orEmpty(),
+            requestedCapabilities = parsed.requestedCapabilities.orEmpty(),
+            suspiciousFiles = parsed.suspiciousFiles.orEmpty(),
+            findings = findings,
+            model = model,
+        )
+    }.getOrElse { error ->
+        rejectDueToBadValidatorOutput(model, error.message ?: error::class.simpleName.orEmpty())
+    }
+
+    private fun parseDecision(value: String?): SkillLlmValidationDecision? = when (value?.lowercase()) {
+        "approve" -> SkillLlmValidationDecision.APPROVE
+        "reject" -> SkillLlmValidationDecision.REJECT
+        else -> null
+    }
+
+    private fun parseRiskLevel(value: String?): SkillRiskLevel? = when (value?.lowercase()) {
+        "low" -> SkillRiskLevel.LOW
+        "medium" -> SkillRiskLevel.MEDIUM
+        "high" -> SkillRiskLevel.HIGH
+        else -> null
+    }
+
+    private fun parseSeverity(value: String?): SkillValidationSeverity? = when (value?.lowercase()) {
+        "info" -> SkillValidationSeverity.INFO
+        "warning" -> SkillValidationSeverity.WARNING
+        "error" -> SkillValidationSeverity.ERROR
+        else -> null
+    }
+
+    private fun rejectDueToBadValidatorOutput(
+        model: String,
+        reason: String,
+    ): SkillLlmValidationVerdict {
+        logger.warn("Rejecting validator output due to parse failure: {}", reason)
+        return SkillLlmValidationVerdict(
+            decision = SkillLlmValidationDecision.REJECT,
+            confidence = 1.0,
+            riskLevel = SkillRiskLevel.HIGH,
+            reasons = listOf("Validator returned malformed or unsupported output: $reason"),
+            requestedCapabilities = emptyList(),
+            suspiciousFiles = emptyList(),
+            findings = listOf(
+                SkillValidationFinding(
+                    code = "validator_parse_failed",
+                    message = "Could not safely parse validator output. Failing closed.",
+                    severity = SkillValidationSeverity.ERROR,
+                    filePath = null,
+                )
+            ),
+            model = model,
+        )
+    }
+
     private data class ValidatorResponse(
-        val decision: String,
-        val confidence: Double,
-        val riskLevel: String,
-        val reasons: List<String> = emptyList(),
-        val requestedCapabilities: List<String> = emptyList(),
-        val suspiciousFiles: List<String> = emptyList(),
-        val findings: List<ValidatorFinding> = emptyList(),
+        val decision: String? = null,
+        val confidence: Double? = null,
+        val riskLevel: String? = null,
+        val reasons: List<String>? = null,
+        val requestedCapabilities: List<String>? = null,
+        val suspiciousFiles: List<String>? = null,
+        val findings: List<ValidatorFinding>? = null,
     )
 
     private data class ValidatorFinding(
-        val code: String,
-        val message: String,
-        val severity: String,
+        val code: String? = null,
+        val message: String? = null,
+        val severity: String? = null,
         val filePath: String? = null,
     )
 
