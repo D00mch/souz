@@ -134,6 +134,28 @@ class SkillsGraphTest {
     }
 
     @Test
+    fun `graph returns Blocked when selector chooses unknown skill`() = runTest {
+        val repository = InMemorySkillRegistryRepository()
+        repository.saveSkillBundle(USER_ID, fixtureBundle())
+        val graph = SkillsGraph(
+            registryRepository = repository,
+            selector = FakeSkillSelector(listOf(SkillId("missing-skill"))),
+            llmValidator = FakeSkillLlmValidator.approving(),
+        )
+
+        val result = graph.run(
+            SkillsGraphInput(
+                userId = USER_ID,
+                context = baseContext("Summarize this paper."),
+            )
+        )
+
+        val blocked = assertIs<SkillsGraphResult.Blocked>(result)
+        assertEquals(listOf(SkillId("missing-skill")), blocked.selectedSkillIds)
+        assertTrue(blocked.reason.contains("unknown skill id", ignoreCase = true))
+    }
+
+    @Test
     fun `graph returns Blocked when validation rejects`() = runTest {
         val repository = InMemorySkillRegistryRepository()
         repository.saveSkillBundle(USER_ID, fixtureBundle())
@@ -153,6 +175,45 @@ class SkillsGraphTest {
         val blocked = assertIs<SkillsGraphResult.Blocked>(result)
         assertTrue(blocked.findings.isNotEmpty())
         assertTrue(blocked.reason.contains("validation", ignoreCase = true))
+    }
+
+    @Test
+    fun `graph uses cached rejected validation before revalidating`() = runTest {
+        val repository = InMemorySkillRegistryRepository()
+        repository.saveSkillBundle(USER_ID, fixtureBundle())
+        val rejectingValidator = FakeSkillLlmValidator.rejecting("Unsafe")
+        val rejectingGraph = SkillsGraph(
+            registryRepository = repository,
+            selector = FakeSkillSelector(listOf(SkillId("paper-summarize-academic"))),
+            llmValidator = rejectingValidator,
+        )
+
+        val firstResult = rejectingGraph.run(
+            SkillsGraphInput(
+                userId = USER_ID,
+                context = baseContext("Summarize this paper."),
+            )
+        )
+        assertIs<SkillsGraphResult.Blocked>(firstResult)
+        assertEquals(1, rejectingValidator.invocationCount)
+
+        val approvingValidator = FakeSkillLlmValidator.approving()
+        val approvingGraph = SkillsGraph(
+            registryRepository = repository,
+            selector = FakeSkillSelector(listOf(SkillId("paper-summarize-academic"))),
+            llmValidator = approvingValidator,
+        )
+
+        val secondResult = approvingGraph.run(
+            SkillsGraphInput(
+                userId = USER_ID,
+                context = baseContext("Summarize this paper again."),
+            )
+        )
+
+        val blocked = assertIs<SkillsGraphResult.Blocked>(secondResult)
+        assertEquals(0, approvingValidator.invocationCount)
+        assertTrue(blocked.reason.contains("previously rejected", ignoreCase = true))
     }
 
     @Test
@@ -197,7 +258,7 @@ class SkillsGraphTest {
         assertTrue(second.context.history.last().content.contains("Summarize another paper."))
     }
 
-    private fun fixtureBundle(): SkillBundle = SkillBundleLoader.loadDirectory(
+    private fun fixtureBundle(): SkillBundle = SkillBundleLoader().loadDirectory(
         skillId = SkillId("paper-summarize-academic"),
         rootDirectory = skillFixturePath("paper-summarize-academic"),
     )

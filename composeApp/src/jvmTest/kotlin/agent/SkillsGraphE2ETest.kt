@@ -164,7 +164,7 @@ class SkillsGraphE2ETest {
         assertTrue(skill.manifest.name == "paper_summarize")
     }
 
-    private fun loadFixtureBundle(): SkillBundle = SkillBundleLoader.loadDirectory(
+    private fun loadFixtureBundle(): SkillBundle = SkillBundleLoader().loadDirectory(
         skillId = SkillId("paper-summarize-academic"),
         rootDirectory = fixtureRoot(),
     )
