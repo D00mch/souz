@@ -3,8 +3,8 @@ package ru.souz.agent.skills.validation
 import ru.souz.agent.skills.activation.SkillId
 import java.time.Instant
 
-object SkillValidationReducer {
-    fun reduce(
+object SkillValidationRecordFactory {
+    fun build(
         userId: String,
         skillId: SkillId,
         bundleHash: String,

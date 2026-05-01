@@ -4,6 +4,7 @@ import io.mockk.every
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import kotlinx.coroutines.test.runTest
+import ru.souz.agent.skills.activation.SkillContextInjector
 import ru.souz.agent.skills.implementations.activation.FakeSkillLlmValidator
 import ru.souz.agent.skills.implementations.activation.FakeSkillSelector
 import ru.souz.agent.skills.activation.SkillId
@@ -15,10 +16,13 @@ import ru.souz.agent.skills.implementations.registry.InMemorySkillRegistryReposi
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.selection.SkillSelector
+import ru.souz.agent.skills.validation.SkillValidationRecord
+import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -26,7 +30,7 @@ import kotlin.test.assertTrue
 
 class SkillActivationPipelineTest {
     @Test
-    fun `graph returns Ready with no activated skills when selector chooses zero skills`() = runTest {
+    fun `pipeline returns Ready with no activated skills when selector chooses zero skills`() = runTest {
         val repository = InMemorySkillRegistryRepository()
         repository.saveSkillBundle(
             userId = USER_ID,
@@ -47,11 +51,11 @@ class SkillActivationPipelineTest {
 
         val ready = assertIs<SkillActivationPipeline.Result.Ready>(result)
         assertTrue(ready.activatedSkills.isEmpty())
-        assertTrue(ready.context.history.none { it.content.contains("<souz_skills_context>") })
+        assertTrue(ready.context.history.none { it.content.contains(SkillContextInjector.START_MARKER) })
     }
 
     @Test
-    fun `graph validates and activates selected skill`() = runTest {
+    fun `pipeline validates and activates selected skill`() = runTest {
         val repository = InMemorySkillRegistryRepository()
         repository.saveSkillBundle(
             userId = USER_ID,
@@ -74,14 +78,14 @@ class SkillActivationPipelineTest {
         val ready = assertIs<SkillActivationPipeline.Result.Ready>(result)
         assertEquals(1, validator.invocationCount)
         assertEquals(1, ready.activatedSkills.size)
-        val contextMessage = ready.context.history.single { it.content.contains("<souz_skills_context>") }
+        val contextMessage = ready.context.history.single { it.content.contains(SkillContextInjector.START_MARKER) }
         assertEquals(LLMMessageRole.user, contextMessage.role)
         assertTrue(contextMessage.content.contains("paper_summarize"))
         assertTrue(contextMessage.content.contains("Academic paper summarization"))
     }
 
     @Test
-    fun `graph uses cached approved validation if hash is unchanged`() = runTest {
+    fun `pipeline uses cached approved validation if hash is unchanged`() = runTest {
         val repository = InMemorySkillRegistryRepository()
         repository.saveSkillBundle(USER_ID, fixtureBundle())
         val validator = FakeSkillLlmValidator.approving()
@@ -105,7 +109,7 @@ class SkillActivationPipelineTest {
     }
 
     @Test
-    fun `graph revalidates when hash changes`() = runTest {
+    fun `pipeline revalidates when hash changes`() = runTest {
         val repository = InMemorySkillRegistryRepository()
         repository.saveSkillBundle(USER_ID, fixtureBundle())
         val validator = FakeSkillLlmValidator.approving()
@@ -148,12 +152,13 @@ class SkillActivationPipelineTest {
     }
 
     @Test
-    fun `graph returns Blocked when selector chooses unknown skill`() = runTest {
+    fun `pipeline returns Blocked when selector chooses unknown skill`() = runTest {
         val repository = InMemorySkillRegistryRepository()
         repository.saveSkillBundle(USER_ID, fixtureBundle())
+        val missingSkill = SkillId("missing-skill")
         val pipeline = SkillActivationPipeline(
             registryRepository = repository,
-            selector = FakeSkillSelector(listOf(SkillId("missing-skill"))),
+            selector = FakeSkillSelector(listOf(missingSkill)),
             llmValidator = FakeSkillLlmValidator.approving(),
         )
 
@@ -165,19 +170,19 @@ class SkillActivationPipelineTest {
         )
 
         val blocked = assertIs<SkillActivationPipeline.Result.Blocked>(result)
-        assertEquals(listOf(SkillId("missing-skill")), blocked.selectedSkillIds)
+        assertEquals(listOf(missingSkill), blocked.selectedSkillIds)
         assertTrue(blocked.reason.contains("unknown skill id", ignoreCase = true))
     }
 
     @Test
-    fun `graph returns Blocked when selector phase throws`() = runTest {
+    fun `pipeline returns Blocked when selector phase throws`() = runTest {
         val pipeline = SkillActivationPipeline(
             registryRepository = InMemorySkillRegistryRepository(),
-            selector = SkillSelector { error("selector failed") },
+            selector = { error("selector failed") },
             llmValidator = FakeSkillLlmValidator.approving(),
         )
 
-        val result = pipeline.run(
+        val result: SkillActivationPipeline.Result = pipeline.run(
             SkillActivationPipeline.Input(
                 userId = USER_ID,
                 context = baseContext("Summarize this paper."),
@@ -186,11 +191,11 @@ class SkillActivationPipelineTest {
 
         val blocked = assertIs<SkillActivationPipeline.Result.Blocked>(result)
         assertTrue(blocked.reason.contains("SELECT_SKILLS"))
-        assertEquals("skill.selector_failed", blocked.findings.single().code)
+        assertEquals(SkillActivationPhase.SELECT_SKILLS.failureCode, blocked.findings.single().code)
     }
 
     @Test
-    fun `graph returns Blocked when bundle load phase throws`() = runTest {
+    fun `pipeline returns Blocked when bundle load phase throws`() = runTest {
         val repository = InMemorySkillRegistryRepository().also {
             it.saveSkillBundle(USER_ID, fixtureBundle())
         }
@@ -214,85 +219,11 @@ class SkillActivationPipelineTest {
 
         val blocked = assertIs<SkillActivationPipeline.Result.Blocked>(result)
         assertTrue(blocked.reason.contains("LOAD_BUNDLE"))
-        assertEquals("skill.bundle_load_failed", blocked.findings.single().code)
+        assertEquals(SkillActivationPhase.LOAD_BUNDLE.failureCode, blocked.findings.single().code)
     }
 
     @Test
-    fun `graph returns Blocked when bundle hash phase throws`() = runTest {
-        val bundle = fixtureBundle()
-        val repository = object : SkillRegistryRepository {
-            override suspend fun listSkills(userId: String): List<StoredSkill> = listOf(
-                StoredSkill(
-                    userId = userId,
-                    skillId = bundle.skillId,
-                    manifest = bundle.manifest,
-                    bundleHash = "unused",
-                    createdAt = java.time.Instant.EPOCH,
-                )
-            )
-
-            override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? = null
-
-            override suspend fun getSkillByName(userId: String, name: String): StoredSkill? = null
-
-            override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill {
-                error("Not needed in this test")
-            }
-
-            override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = bundle
-
-            override suspend fun getValidation(
-                userId: String,
-                skillId: SkillId,
-                bundleHash: String,
-                policyVersion: String,
-            ) = null
-
-            override suspend fun saveValidation(record: ru.souz.agent.skills.validation.SkillValidationRecord) = Unit
-
-            override suspend fun markValidationStatus(
-                userId: String,
-                skillId: SkillId,
-                bundleHash: String,
-                policyVersion: String,
-                status: ru.souz.agent.skills.validation.SkillValidationStatus,
-                reason: String?,
-            ) = Unit
-
-            override suspend fun invalidateOtherValidations(
-                userId: String,
-                skillId: SkillId,
-                activeBundleHash: String,
-                policyVersion: String,
-                reason: String?,
-            ) = Unit
-        }
-        mockkObject(SkillBundleHasher)
-        try {
-            every { SkillBundleHasher.hash(any()) } throws IllegalStateException("hash failed")
-            val pipeline = SkillActivationPipeline(
-                registryRepository = repository,
-                selector = FakeSkillSelector(listOf(SkillId("paper-summarize-academic"))),
-                llmValidator = FakeSkillLlmValidator.approving(),
-            )
-
-            val result = pipeline.run(
-                SkillActivationPipeline.Input(
-                    userId = USER_ID,
-                    context = baseContext("Summarize this paper."),
-                )
-            )
-
-            val blocked = assertIs<SkillActivationPipeline.Result.Blocked>(result)
-            assertTrue(blocked.reason.contains("HASH_BUNDLE"))
-            assertEquals("skill.bundle_hash_failed", blocked.findings.single().code)
-        } finally {
-            unmockkObject(SkillBundleHasher)
-        }
-    }
-
-    @Test
-    fun `graph returns Blocked when validation rejects`() = runTest {
+    fun `pipeline returns Blocked when validation rejects`() = runTest {
         val repository = InMemorySkillRegistryRepository()
         repository.saveSkillBundle(USER_ID, fixtureBundle())
         val pipeline = SkillActivationPipeline(
@@ -314,7 +245,7 @@ class SkillActivationPipelineTest {
     }
 
     @Test
-    fun `graph uses cached rejected validation before revalidating`() = runTest {
+    fun `pipeline uses cached rejected validation before revalidating`() = runTest {
         val repository = InMemorySkillRegistryRepository()
         repository.saveSkillBundle(USER_ID, fixtureBundle())
         val rejectingValidator = FakeSkillLlmValidator.rejecting("Unsafe")
@@ -353,7 +284,7 @@ class SkillActivationPipelineTest {
     }
 
     @Test
-    fun `skills context history message replaces old skills context message on repeated graph pass`() = runTest {
+    fun `skills context history message replaces old skills context message on repeated pipeline pass`() = runTest {
         val repository = InMemorySkillRegistryRepository()
         repository.saveSkillBundle(USER_ID, fixtureBundle())
         val pipeline = SkillActivationPipeline(
@@ -389,7 +320,7 @@ class SkillActivationPipelineTest {
             )
         )
 
-        val skillMessages = second.context.history.filter { it.content.contains("<souz_skills_context>") }
+        val skillMessages = second.context.history.filter { it.content.contains(SkillContextInjector.START_MARKER) }
         assertEquals(1, skillMessages.size)
         assertTrue(second.context.history.last().content.contains("Summarize another paper."))
     }

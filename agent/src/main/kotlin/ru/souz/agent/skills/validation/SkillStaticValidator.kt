@@ -38,13 +38,19 @@ class SkillStaticValidator(
                 code = "static.prompt_injection",
                 message = "Prompt injection pattern detected.",
                 severity = SkillValidationSeverity.ERROR,
-                pattern = Regex("""ignore\b.{0,80}\b(previous|prior|system|developer)\b.{0,40}\binstructions?\b""", RegexOption.IGNORE_CASE),
+                pattern = Regex(
+                    """ignore\b.{0,80}\b(previous|prior|system|developer)\b.{0,40}\binstructions?\b""",
+                    RegexOption.IGNORE_CASE
+                ),
             ),
             StaticRule(
                 code = "static.credential_exfiltration",
                 message = "Credential exfiltration pattern detected.",
                 severity = SkillValidationSeverity.ERROR,
-                pattern = Regex("""(api[_ -]?key|token|secret|password).{0,80}(send|upload|exfiltrat|post|curl|wget)""", RegexOption.IGNORE_CASE),
+                pattern = Regex(
+                    """(api[_ -]?key|token|secret|password).{0,80}(send|upload|exfiltrat|post|curl|wget)""",
+                    RegexOption.IGNORE_CASE
+                ),
             ),
             StaticRule(
                 code = "static.private_key_reference",
@@ -56,7 +62,10 @@ class SkillStaticValidator(
                 code = "static.env_dump",
                 message = "Environment dumping pattern detected.",
                 severity = SkillValidationSeverity.ERROR,
-                pattern = Regex("""(\bprintenv\b|\benv\b|/proc/self/environ|System\.getenv|process\.env)""", RegexOption.IGNORE_CASE),
+                pattern = Regex(
+                    """(\bprintenv\b|\benv\b|/proc/self/environ|System\.getenv|process\.env)""",
+                    RegexOption.IGNORE_CASE
+                ),
             ),
             StaticRule(
                 code = "static.destructive_command",
@@ -68,13 +77,19 @@ class SkillStaticValidator(
                 code = "static.network_exfiltration",
                 message = "Suspicious network upload pattern detected.",
                 severity = SkillValidationSeverity.ERROR,
-                pattern = Regex("""(curl|wget).{0,120}(--data|--data-binary|--upload-file|-T\s|\b-F\b|--form|PUT\s+https?://|POST\s+https?://)""", RegexOption.IGNORE_CASE),
+                pattern = Regex(
+                    """(curl|wget).{0,120}(--data|--data-binary|--upload-file|-T\s|\b-F\b|--form|PUT\s+https?://|POST\s+https?://)""",
+                    RegexOption.IGNORE_CASE
+                ),
             ),
             StaticRule(
                 code = "static.shell_obfuscation",
                 message = "Shell obfuscation pattern detected.",
                 severity = SkillValidationSeverity.ERROR,
-                pattern = Regex("""(base64\s+-d|openssl\s+enc|python\s+-c).{0,120}\|\s*(sh|bash|zsh)""", RegexOption.IGNORE_CASE),
+                pattern = Regex(
+                    """(base64\s+-d|openssl\s+enc|python\s+-c).{0,120}\|\s*(sh|bash|zsh)""",
+                    RegexOption.IGNORE_CASE
+                ),
             ),
         )
     }

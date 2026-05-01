@@ -17,7 +17,7 @@ import ru.souz.agent.skills.validation.SkillStructuralValidator
 import ru.souz.agent.skills.validation.SkillValidationFinding
 import ru.souz.agent.skills.validation.SkillValidationPolicy
 import ru.souz.agent.skills.validation.SkillValidationRecord
-import ru.souz.agent.skills.validation.SkillValidationReducer
+import ru.souz.agent.skills.validation.SkillValidationRecordFactory
 import ru.souz.agent.skills.validation.SkillValidationResult
 import ru.souz.agent.skills.validation.SkillValidationSeverity
 import ru.souz.agent.skills.validation.SkillValidationStatus
@@ -56,7 +56,7 @@ class SkillActivationPipeline(
     suspend fun run(input: Input): Result {
         var state = State(input)
 
-        while (state.phase != Phase.DONE) {
+        while (state.phase != SkillActivationPhase.DONE) {
             state = advanceSafely(state)
         }
 
@@ -81,24 +81,24 @@ class SkillActivationPipeline(
 
             state.finishBlocked(
                 reason = "Skills processing failed during ${state.phase}.",
-                code = state.phase.failureCode(),
+                code = state.phase.failureCode,
             )
         }
     }
 
     private suspend fun advance(state: State): State =
         when (state.phase) {
-            Phase.SELECT_SKILLS -> selectSkills(state)
-            Phase.LOAD_BUNDLE -> loadBundle(state)
-            Phase.HASH_BUNDLE -> hashBundle(state)
-            Phase.CHECK_CACHE -> checkCache(state)
-            Phase.STRUCTURAL_VALIDATE -> validateStructurally(state)
-            Phase.STATIC_VALIDATE -> validateStatically(state)
-            Phase.LLM_VALIDATE -> validateWithLlm(state)
-            Phase.ACTIVATE_SKILL -> activateSkill(state)
-            Phase.NEXT_SKILL -> nextSkill(state)
-            Phase.INJECT_CONTEXT -> injectContext(state)
-            Phase.DONE -> state
+            SkillActivationPhase.SELECT_SKILLS -> selectSkills(state)
+            SkillActivationPhase.LOAD_BUNDLE -> loadBundle(state)
+            SkillActivationPhase.HASH_BUNDLE -> hashBundle(state)
+            SkillActivationPhase.CHECK_CACHE -> checkCache(state)
+            SkillActivationPhase.STRUCTURAL_VALIDATE -> validateStructurally(state)
+            SkillActivationPhase.STATIC_VALIDATE -> validateStatically(state)
+            SkillActivationPhase.LLM_VALIDATE -> validateWithLlm(state)
+            SkillActivationPhase.ACTIVATE_SKILL -> activateSkill(state)
+            SkillActivationPhase.NEXT_SKILL -> nextSkill(state)
+            SkillActivationPhase.INJECT_CONTEXT -> injectContext(state)
+            SkillActivationPhase.DONE -> state
         }
 
     private suspend fun selectSkills(state: State): State {
@@ -109,11 +109,11 @@ class SkillActivationPipeline(
                 availableSkills = availableSkills,
             )
         )
-        val selectedIds = selection.selectedSkillIds.distinct()
+        val selectedIds = selection.selectedSkillIds
         if (selectedIds.isEmpty()) {
             return state.copy(
                 selectedSkillIds = emptyList(),
-                phase = Phase.INJECT_CONTEXT,
+                phase = SkillActivationPhase.INJECT_CONTEXT,
             )
         }
 
@@ -134,7 +134,7 @@ class SkillActivationPipeline(
         return state.copy(
             selectedSkillIds = selectedIds,
             currentIndex = 0,
-            phase = Phase.LOAD_BUNDLE,
+            phase = SkillActivationPhase.LOAD_BUNDLE,
         )
     }
 
@@ -151,13 +151,13 @@ class SkillActivationPipeline(
             bundleHash = null,
             structural = null,
             static = null,
-            phase = Phase.HASH_BUNDLE,
+            phase = SkillActivationPhase.HASH_BUNDLE,
         )
     }
 
     private fun hashBundle(state: State): State = state.copy(
         bundleHash = SkillBundleHasher.hash(state.requireBundle()),
-        phase = Phase.CHECK_CACHE,
+        phase = SkillActivationPhase.CHECK_CACHE,
     )
 
     private suspend fun checkCache(state: State): State {
@@ -172,7 +172,7 @@ class SkillActivationPipeline(
             reason = "Bundle hash changed or newer bundle became active.",
         )
 
-        val cached = registryRepository.getValidation(
+        val cached: SkillValidationRecord? = registryRepository.getValidation(
             userId = state.input.userId,
             skillId = skillId,
             bundleHash = bundleHash,
@@ -182,7 +182,7 @@ class SkillActivationPipeline(
         return when (cached?.status) {
             SkillValidationStatus.APPROVED -> {
                 logger.info("Using cached skill validation for {} ({})", skillId.value, bundleHash.take(12))
-                state.copy(phase = Phase.ACTIVATE_SKILL)
+                state.copy(phase = SkillActivationPhase.ACTIVATE_SKILL)
             }
 
             SkillValidationStatus.REJECTED ->
@@ -199,7 +199,7 @@ class SkillActivationPipeline(
                 )
 
             SkillValidationStatus.STALE, null ->
-                state.copy(phase = Phase.STRUCTURAL_VALIDATE)
+                state.copy(phase = SkillActivationPhase.STRUCTURAL_VALIDATE)
         }
     }
 
@@ -229,7 +229,7 @@ class SkillActivationPipeline(
 
         return state.copy(
             structural = structural,
-            phase = Phase.STATIC_VALIDATE,
+            phase = SkillActivationPhase.STATIC_VALIDATE,
         )
     }
 
@@ -259,7 +259,7 @@ class SkillActivationPipeline(
 
         return state.copy(
             static = static,
-            phase = Phase.LLM_VALIDATE,
+            phase = SkillActivationPhase.LLM_VALIDATE,
         )
     }
 
@@ -288,7 +288,7 @@ class SkillActivationPipeline(
                 staticFindings = static.findings,
             )
         )
-        val record = SkillValidationReducer.reduce(
+        val record = SkillValidationRecordFactory.build(
             userId = state.input.userId,
             skillId = skillId,
             bundleHash = bundleHash,
@@ -313,12 +313,12 @@ class SkillActivationPipeline(
             )
         }
 
-        return state.copy(phase = Phase.ACTIVATE_SKILL)
+        return state.copy(phase = SkillActivationPhase.ACTIVATE_SKILL)
     }
 
     private fun activateSkill(state: State): State = state.copy(
         activatedSkills = state.activatedSkills + state.requireBundle().toActivatedSkill(state.requireBundleHash()),
-        phase = Phase.NEXT_SKILL,
+        phase = SkillActivationPhase.NEXT_SKILL,
     )
 
     private fun nextSkill(state: State): State {
@@ -329,7 +329,7 @@ class SkillActivationPipeline(
             bundleHash = null,
             structural = null,
             static = null,
-            phase = if (nextIndex < state.selectedSkillIds.size) Phase.LOAD_BUNDLE else Phase.INJECT_CONTEXT,
+            phase = if (nextIndex < state.selectedSkillIds.size) SkillActivationPhase.LOAD_BUNDLE else SkillActivationPhase.INJECT_CONTEXT,
         )
     }
 
@@ -364,7 +364,7 @@ class SkillActivationPipeline(
 
     private data class State(
         val input: Input,
-        val phase: Phase = Phase.SELECT_SKILLS,
+        val phase: SkillActivationPhase = SkillActivationPhase.SELECT_SKILLS,
         val selectedSkillIds: List<SkillId> = emptyList(),
         val currentIndex: Int = 0,
         val bundle: SkillBundle? = null,
@@ -380,7 +380,7 @@ class SkillActivationPipeline(
 
     private fun State.finishReady(context: AgentContext<String>): State =
         copy(
-            phase = Phase.DONE,
+            phase = SkillActivationPhase.DONE,
             result = Result.Ready(
                 context = context,
                 activatedSkills = activatedSkills,
@@ -393,18 +393,14 @@ class SkillActivationPipeline(
         code: String,
     ): State = finishBlocked(reason, listOf(errorFinding(code, reason)))
 
-    private fun State.finishBlocked(
-        reason: String,
-        findings: List<SkillValidationFinding>,
-    ): State =
-        copy(
-            phase = Phase.DONE,
-            result = Result.Blocked(
-                reason = reason,
-                findings = findings,
-                selectedSkillIds = selectedSkillIds,
-            ),
-        )
+    private fun State.finishBlocked(reason: String, findings: List<SkillValidationFinding>): State = copy(
+        phase = SkillActivationPhase.DONE,
+        result = Result.Blocked(
+            reason = reason,
+            findings = findings,
+            selectedSkillIds = selectedSkillIds,
+        ),
+    )
 
     private fun State.requireCurrentSkillId(): SkillId =
         currentSkillId ?: error("Current skill is missing in phase $phase")
@@ -420,105 +416,4 @@ class SkillActivationPipeline(
 
     private fun State.requireStatic(): SkillValidationResult =
         static ?: error("Static validation is missing in phase $phase")
-
-    private fun Phase.failureCode(): String =
-        when (this) {
-            Phase.SELECT_SKILLS -> "skill.selector_failed"
-            Phase.LOAD_BUNDLE -> "skill.bundle_load_failed"
-            Phase.HASH_BUNDLE -> "skill.bundle_hash_failed"
-            Phase.CHECK_CACHE -> "skill.validation_cache_failed"
-            Phase.STRUCTURAL_VALIDATE -> "skill.structural_validation_failed"
-            Phase.STATIC_VALIDATE -> "skill.static_validation_failed"
-            Phase.LLM_VALIDATE -> "skill.llm_validation_failed"
-            Phase.INJECT_CONTEXT -> "skill.context_injection_failed"
-            else -> "skill.unexpected_error"
-        }
-
-    /**
-     * Explicit execution phases for the skills pipeline.
-     *
-     * The state machine advances through these phases linearly for each selected skill:
-     *
-     * After all selected skills are processed, the pipeline moves to INJECT_CONTEXT and
-     * then DONE.
-     *
-     * Any exception or rejection in a phase should be converted into
-     * [Result.Blocked], so public callers only observe either Ready or Blocked.
-     */
-    private enum class Phase {
-        /** Ask the selector abstraction which skills are relevant for the current request. */
-        SELECT_SKILLS,
-
-        /** Load the currently selected skill bundle from its registered location. */
-        LOAD_BUNDLE,
-
-        /**
-         * The hash is used as part of the validation cache key, so any bundle content
-         * change must result in a different hash and force revalidation.
-         */
-        HASH_BUNDLE,
-
-        /**
-         * Check cached validation state for the current skill, bundle hash, and policy.
-         *
-         * Approved cached validations may skip validation and proceed directly to
-         * activation. Rejected cached validations should block. Missing or stale cache
-         * entries continue to validation.
-         */
-        CHECK_CACHE,
-
-        /**
-         * Run deterministic structural validation on the loaded bundle.
-         *
-         * This should cover bundle shape, required files, size limits, and other
-         * non-LLM checks that can be enforced locally.
-         */
-        STRUCTURAL_VALIDATE,
-
-        /**
-         * Run deterministic static policy validation.
-         *
-         * This should catch known unsafe patterns before any LLM-based validation is
-         * attempted. Static validation remains authoritative and must not be bypassed
-         * by LLM approval.
-         */
-        STATIC_VALIDATE,
-
-        /**
-         * Run LLM-assisted validation for checks that require semantic judgment.
-         *
-         * Skill content must be treated as untrusted data. Failures, malformed model
-         * responses, or rejected results should become Blocked rather than escaping.
-         */
-        LLM_VALIDATE,
-
-        /**
-         * Mark the current skill as activated after successful validation or cache approval.
-         *
-         * Only skills that reach this phase should be included in the injected skills
-         * context.
-         */
-        ACTIVATE_SKILL,
-
-        /**
-         * Advance to the next selected skill, or move to context injection if all
-         * selected skills have been processed.
-         */
-        NEXT_SKILL,
-
-        /**
-         * Inject activated skills into AgentContext.history.
-         *
-         * This phase must not modify systemPrompt. Skills context should be injected
-         * using the dedicated <souz_skills_context> history message.
-         */
-        INJECT_CONTEXT,
-
-        /**
-         * Terminal phase.
-         *
-         * Once reached, the state must contain a final [Result.Ready] or [Result.Blocked].
-         */
-        DONE,
-    }
 }

@@ -7,10 +7,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class SkillValidationReducerTest {
+class SkillValidationRecordFactoryTest {
     @Test
-    fun `reduce approves when validators are clean and confidence meets policy`() {
-        val record = SkillValidationReducer.reduce(
+    fun `approve when validators are clean and confidence meets policy`() {
+        val record = SkillValidationRecordFactory.build(
             userId = "user-1",
             skillId = SkillId("skill-1"),
             bundleHash = "hash-1",
@@ -36,7 +36,7 @@ class SkillValidationReducerTest {
     }
 
     @Test
-    fun `reduce rejects and aggregates findings when any validator fails`() {
+    fun `reject and aggregates findings when any validator fails`() {
         val structuralFinding = SkillValidationFinding(
             code = "struct.invalid",
             message = "Invalid bundle structure.",
@@ -56,7 +56,7 @@ class SkillValidationReducerTest {
             filePath = "SKILL.md",
         )
 
-        val record = SkillValidationReducer.reduce(
+        val record = SkillValidationRecordFactory.build(
             userId = "user-1",
             skillId = SkillId("skill-1"),
             bundleHash = "hash-1",

@@ -5,8 +5,8 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 
 internal object SkillContextInjector {
-    private const val START_MARKER = "<souz_skills_context>"
-    private const val END_MARKER = "</souz_skills_context>"
+    const val START_MARKER = "<souz_skills_context>"
+    const val END_MARKER = "</souz_skills_context>"
 
     fun inject(
         context: AgentContext<String>,

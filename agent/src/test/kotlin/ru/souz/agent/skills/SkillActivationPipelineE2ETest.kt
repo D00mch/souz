@@ -12,6 +12,7 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
 import ru.souz.agent.skills.activation.ActivatedSkill
+import ru.souz.agent.skills.activation.SkillContextInjector
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.implementations.bundle.SkillBundleLoader
@@ -109,7 +110,7 @@ class SkillActivationPipelineE2ETest {
             )
         )
         val secondReady = assertIs<SkillActivationPipeline.Result.Ready>(secondResult)
-        val skillsMessages = secondReady.context.history.filter { it.content.contains("<souz_skills_context>") }
+        val skillsMessages = secondReady.context.history.filter { it.content.contains(SkillContextInjector.START_MARKER) }
         assertEquals(1, skillsMessages.size)
         assertTrue(skillsMessages.single().content.contains("paper_summarize"))
         assertTrue(
@@ -126,7 +127,7 @@ class SkillActivationPipelineE2ETest {
         )
         val noSkillReady = assertIs<SkillActivationPipeline.Result.Ready>(noSkillResult)
         assertTrue(noSkillReady.activatedSkills.isEmpty())
-        assertTrue(noSkillReady.context.history.none { it.content.contains("<souz_skills_context>") })
+        assertTrue(noSkillReady.context.history.none { it.content.contains(SkillContextInjector.START_MARKER) })
     }
 
     private fun realLlmApi(model: LLMModel): LLMChatAPI {
