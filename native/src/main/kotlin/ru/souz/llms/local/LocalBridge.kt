@@ -9,6 +9,8 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.concurrent.atomic.AtomicReference
 import org.slf4j.LoggerFactory
+import ru.souz.paths.DefaultSouzPaths
+import ru.souz.paths.SouzPaths
 
 internal interface SouzLlamaBridgeLibrary : Library {
     fun souz_llama_healthcheck(): Pointer?
@@ -42,6 +44,7 @@ internal interface PosixCLibrary : Library {
 
 class LocalBridgeLoader(
     private val hostInfoProvider: LocalHostInfoProvider,
+    private val paths: SouzPaths = DefaultSouzPaths(),
 ) {
     private val l = LoggerFactory.getLogger(LocalBridgeLoader::class.java)
 
@@ -78,14 +81,7 @@ class LocalBridgeLoader(
         val resourceStream = javaClass.classLoader.getResourceAsStream(resourcePath)
             ?: error("Local bridge resource not found: $resourcePath")
 
-        val targetDir = Path.of(
-            System.getProperty("user.home"),
-            ".local",
-            "state",
-            "souz",
-            "native",
-            platform.resourceDirectory,
-        )
+        val targetDir = paths.nativeLibsDir.resolve(platform.resourceDirectory)
         Files.createDirectories(targetDir)
         val target = targetDir.resolve(platform.libraryFileName)
         resourceStream.use { input ->

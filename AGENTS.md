@@ -21,9 +21,9 @@ If you are not sure about something, left a note for other developers to review.
 ## Features
 
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
-- **Standalone ClawHub/OpenClaw skills support in `:agent`**: bundle parsing, canonical hashing, structural/static/LLM validation, validation caching by bundle hash + policy version, LLM-based skill selection, and replaceable skills-context history injection ready for later graph integration.
+- **Standalone ClawHub/OpenClaw skills support across `:agent` and `:runtime`**: bundle parsing, canonical hashing, safe filesystem bundle loading, per-user bundle persistence under `~/.local/state/souz/skills/`, separate file-backed validation caching under `~/.local/state/souz/skill-validations/`, LLM-based skill selection, and replaceable skills-context history injection ready for later graph integration.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
-- **Local llama.cpp provider** with a thin native bridge, strict JSON tool contract, a RAM-gated local model catalog (Qwen plus Gemma 4 chat profiles), linked local EmbeddingGemma GGUF downloads/usage for embeddings, background preload/warmup on local chat model selection, prompt-family-aware rendering (Qwen ChatML and Gemma 4 turns), prompt-prefix/KV reuse inside the native runtime, settings-driven context windows for local inference within model caps, and model storage under `~/.local/state/souz/models/`.
+- **Local llama.cpp provider** with a thin native bridge, strict JSON tool contract, a RAM-gated local model catalog (Qwen plus Gemma 4 chat profiles), linked local EmbeddingGemma GGUF downloads/usage for embeddings, background preload/warmup on local chat model selection, prompt-family-aware rendering (Qwen ChatML and Gemma 4 turns), prompt-prefix/KV reuse inside the native runtime, settings-driven context windows for local inference within model caps, model storage under `~/.local/state/souz/models/`, and extracted native bridge libraries under `~/.local/state/souz/native/`.
 - **Shared JVM runtime layer** in `:runtime` for provider clients, config/settings access, file utilities, and backend-safe tool categories (`FILES`, `WEB_SEARCH`, `CONFIG`, `DATA_ANALYTICS`, `CALCULATOR`) reused by both desktop and backend agent execution.
 - **HTTP backend agent runtime** in `:backend` exposed via `POST /agent`, with request-scoped agent execution per `userId` + `conversationId`, persisted in-memory conversation snapshots across turns, and per-request model/context/locale/time-zone overrides.
 - **Key-aware model selection in Settings**: chat, embeddings, and voice recognition model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
@@ -45,6 +45,7 @@ If you are not sure about something, left a note for other developers to review.
 │   ├── src/main/kotlin/ru/souz/db/         # Config store + settings provider
 │   ├── src/main/kotlin/ru/souz/llms/       # Provider APIs and runtime LLM helpers
 │   ├── src/main/kotlin/ru/souz/service/    # Shared JVM services (currently file services)
+│   ├── src/main/kotlin/ru/souz/skills/     # Safe skill bundle loading plus persistent skill/validation storage
 │   └── src/main/kotlin/ru/souz/tool/       # Shared tool catalog, file/web/config/data/math tools
 ├── backend/                                # JVM HTTP backend with shared agent runtime reuse
 │   ├── src/main/kotlin/ru/souz/backend/    # app/http/agent/common layered backend packages

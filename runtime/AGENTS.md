@@ -6,6 +6,7 @@ The `:runtime` module contains shared JVM runtime pieces used by both desktop (`
 - provider chat clients (Giga, Qwen, AiTunnel, Anthropic, OpenAI);
 - shared LLM routing/classification (`LLMFactory`, `ApiClassifier`);
 - shared tool contracts/adapters plus the backend-safe tool catalog (`files`, `web`, `calculator`, `data analytics`, and non-UI config tools);
+- production skills infrastructure: safe bundle filesystem access, per-user bundle persistence under `~/.local/state/souz/skills/`, and separate file-backed validation cache storage under `~/.local/state/souz/skill-validations/`;
 - shared Kodein DI modules for JVM runtime settings/local-model services and provider/LLM wiring reused by both desktop and backend;
 - runtime resources required by shared clients (for example Giga trust certificates).
 
@@ -29,6 +30,11 @@ runtime/
         │       │   ├── qwen/                     # Qwen chat API client
         │       │   ├── runtime/                  # Shared model routing/classification helpers
         │       │   └── tunnel/                   # AiTunnel chat API client
+        │       ├── skills/
+        │       │   ├── bundle/                   # Filesystem skill bundle loader
+        │       │   ├── filesystem/               # Safe local filesystem adapter for skill bundles
+        │       │   ├── registry/                 # Per-user skill bundle storage under specified path
+        │       │   └── validation/               # Persisted skill validation cache
         │       ├── runtime/
         │       │   └── di/                       # Shared Kodein modules for JVM runtime/core LLM wiring
         │       ├── service/
