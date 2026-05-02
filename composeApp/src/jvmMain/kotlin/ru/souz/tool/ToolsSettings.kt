@@ -5,7 +5,9 @@ package ru.souz.tool
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.db.ConfigStore
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.service.telegram.TelegramService
@@ -165,6 +167,11 @@ class ToolsSettings(
                 description = description,
                 fewShotExamples = examples + (setup.fn.fewShotExamples ?: emptyList()),
             )
+
+            override suspend fun invoke(
+                functionCall: LLMResponse.FunctionCall,
+                meta: ToolInvocationMeta,
+            ) = setup.invoke(functionCall, meta)
         }
     }
 }

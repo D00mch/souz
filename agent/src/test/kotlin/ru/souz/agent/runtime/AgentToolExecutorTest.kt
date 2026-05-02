@@ -9,6 +9,7 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.ToolCategory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -134,8 +135,36 @@ class AgentToolExecutorTest {
         assertFalse(event.success)
     }
 
+    @Test
+    fun `passes empty invocation metadata when no request metadata is available`() = runTest {
+        var receivedMeta: ToolInvocationMeta? = null
+        val executor = AgentToolExecutor()
+        val settings = settingsWithFileTool(
+            invokeWithMeta = { _, meta ->
+                receivedMeta = meta
+                LLMRequest.Message(
+                    role = LLMMessageRole.function,
+                    content = """{"ok":true}""",
+                )
+            }
+        )
+
+        executor.execute(
+            settings = settings,
+            functionCall = LLMResponse.FunctionCall(
+                name = "tool.read_file",
+                arguments = mapOf("path" to "/tmp/file.txt"),
+            ),
+        )
+
+        assertEquals(ToolInvocationMeta.Empty, receivedMeta)
+    }
+
     private fun settingsWithFileTool(
-        invoke: suspend (LLMResponse.FunctionCall) -> LLMRequest.Message,
+        invokeWithMeta: (suspend (LLMResponse.FunctionCall, ToolInvocationMeta) -> LLMRequest.Message)? = null,
+        invoke: suspend (LLMResponse.FunctionCall) -> LLMRequest.Message = {
+            error("Test callback was not configured.")
+        },
     ): AgentSettings = AgentSettings(
         model = "test-model",
         temperature = 0f,
@@ -153,6 +182,11 @@ class AgentToolExecutorTest {
 
                     override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
                         invoke.invoke(functionCall)
+
+                    override suspend fun invoke(
+                        functionCall: LLMResponse.FunctionCall,
+                        meta: ToolInvocationMeta,
+                    ): LLMRequest.Message = invokeWithMeta?.invoke(functionCall, meta) ?: invoke(functionCall)
                 }
             )
         )

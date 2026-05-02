@@ -32,6 +32,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.giga.toGiga
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
@@ -332,6 +333,38 @@ class BackendAgentServiceTest {
         }
         assertEquals("explode_1", toolFailure?.functionsStateId)
         assertTrue(toolFailure?.content?.contains("Can't invoke function: boom") == true)
+    }
+
+    @Test
+    fun `backend tool execution passes request metadata into tool invocation`() = runTest {
+        val tool = RecordingMetaTool()
+        val api = RecordingMetaToolAgentApi(tool.name)
+        val request = agentRequest(
+            requestId = "11111111-1111-1111-1111-111111111111",
+            userId = "22222222-2222-2222-2222-222222222222",
+            conversationId = "33333333-3333-3333-3333-333333333333",
+            prompt = "Запусти тестовый инструмент",
+            locale = "en-US",
+            timeZone = "America/New_York",
+        )
+        val service = createService(
+            api = api,
+            toolCatalog = toolCatalog(ToolCategory.CALCULATOR to tool.toGiga()),
+        )
+
+        val response = service.sendAgentRequest(request)
+
+        assertEquals("tool metadata captured", response.content)
+        assertEquals(
+            ToolInvocationMeta(
+                userId = request.userId,
+                conversationId = request.conversationId,
+                requestId = request.requestId,
+                locale = request.locale,
+                timeZone = request.timeZone,
+            ),
+            tool.receivedMeta,
+        )
     }
 
     private fun createService(
@@ -672,6 +705,100 @@ private class ThrowingTool : ToolSetup<ThrowingTool.Input> {
     )
 
     override fun invoke(input: Input): String = error(input.payload)
+}
+
+private class RecordingMetaTool : ToolSetup<RecordingMetaTool.Input> {
+    data class Input(
+        @InputParamDescription("Any payload that should trigger the tool")
+        val payload: String,
+    )
+
+    var receivedMeta: ToolInvocationMeta? = null
+        private set
+
+    override val name: String = "MetaTool"
+    override val description: String = "Captures invocation metadata for backend tests."
+    override val fewShotExamples: List<FewShotExample> = emptyList()
+    override val returnParameters: ReturnParameters = ReturnParameters(
+        properties = mapOf("result" to ReturnProperty("string"))
+    )
+
+    override fun invoke(input: Input): String = input.payload
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
+        receivedMeta = meta
+        return "metadata:${input.payload}"
+    }
+}
+
+private class RecordingMetaToolAgentApi(
+    private val toolName: String,
+) : LLMChatAPI {
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+        return when {
+            body.isClassificationRequest() -> reply("CALCULATOR 95")
+            body.messages.any { it.role == LLMMessageRole.function && it.name == toolName } ->
+                reply("tool metadata captured")
+
+            body.functions.any { it.name == toolName } ->
+                LLMResponse.Chat.Ok(
+                    choices = listOf(
+                        LLMResponse.Choice(
+                            message = LLMResponse.Message(
+                                content = "",
+                                role = LLMMessageRole.assistant,
+                                functionCall = LLMResponse.FunctionCall(
+                                    name = toolName,
+                                    arguments = mapOf("payload" to "backend"),
+                                ),
+                                functionsStateId = "meta_1",
+                            ),
+                            index = 0,
+                            finishReason = LLMResponse.FinishReason.function_call,
+                        )
+                    ),
+                    created = System.currentTimeMillis(),
+                    model = body.model,
+                    usage = LLMResponse.Usage(4, 2, 6, 0),
+                )
+
+            else -> reply("unexpected")
+        }
+    }
+
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
+        error("Streaming is not used in backend agent tests.")
+
+    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
+        error("Embeddings are not used in backend agent tests.")
+
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
+        error("File upload is not used in backend agent tests.")
+
+    override suspend fun downloadFile(fileId: String): String? =
+        error("File download is not used in backend agent tests.")
+
+    override suspend fun balance(): LLMResponse.Balance =
+        error("Balance is not used in backend agent tests.")
+
+    private fun reply(content: String): LLMResponse.Chat.Ok =
+        LLMResponse.Chat.Ok(
+            choices = listOf(
+                LLMResponse.Choice(
+                    message = LLMResponse.Message(
+                        content = content,
+                        role = LLMMessageRole.assistant,
+                        functionCall = null,
+                        functionsStateId = null,
+                    ),
+                    index = 0,
+                    finishReason = LLMResponse.FinishReason.stop,
+                )
+            ),
+            created = System.currentTimeMillis(),
+            model = LLMModel.Max.alias,
+            usage = LLMResponse.Usage(4, 2, 6, 0),
+        )
 }
 
 private fun RecordingAgentApi.finalChatRequests(): List<LLMRequest.Chat> =

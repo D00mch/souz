@@ -1,5 +1,7 @@
 package ru.souz.tool
 
+import ru.souz.llms.ToolInvocationMeta
+
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class InputParamDescription(val value: String)
@@ -25,8 +27,13 @@ interface ToolSetup<Input> {
     val fewShotExamples: List<FewShotExample>
     val returnParameters: ReturnParameters
 
+    @Deprecated("use overloaded function with ToolInvocationMeta")
     operator fun invoke(input: Input): String
+    operator fun invoke(input: Input, meta: ToolInvocationMeta): String = invoke(input)
+
+    @Deprecated("use overloaded function with ToolInvocationMeta")
     suspend fun suspendInvoke(input: Input): String = invoke(input)
+    suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 interface ToolSetupWithAttachments<Input> : ToolSetup<Input> {
