@@ -66,7 +66,7 @@ class BackendStage8OptionRouteTest {
             install(WebSockets)
         }
 
-        val response = client.post("/v1/chats/${chat.id}/messages") {
+        val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"need option"}""")
@@ -76,13 +76,13 @@ class BackendStage8OptionRouteTest {
         val storedOption = runBlocking {
             context.optionRepository.listByExecution("user-a", chat.id, storedExecution.id).single()
         }
-        val replayResponse = client.get("/v1/chats/${chat.id}/events?afterSeq=0") {
+        val replayResponse = client.get("${BackendHttpRoutes.chatEvents(chat.id)}?afterSeq=0") {
             trustedHeaders("user-a")
         }
         val replayPayload = stage8Json.readTree(replayResponse.bodyAsText())
         val optionRequestedEvent = replayPayload["items"].first { it["type"].asText() == "option.requested" }
         val reconnectSession = runBlocking {
-            wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=${optionRequestedEvent["seq"].asLong() - 1}") {
+            wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chat.id)}?afterSeq=${optionRequestedEvent["seq"].asLong() - 1}") {
                 trustedHeaders("user-a")
             }
         }
@@ -109,7 +109,7 @@ class BackendStage8OptionRouteTest {
         }
         installStage8Application(context)
 
-        client.post("/v1/chats/${chat.id}/messages") {
+        client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"need option"}""")
@@ -118,12 +118,12 @@ class BackendStage8OptionRouteTest {
         val option = runBlocking {
             context.optionRepository.listByExecution("user-a", chat.id, waitingExecution.id).single()
         }
-        val beforeAnswerEvents = client.get("/v1/chats/${chat.id}/events?afterSeq=0") {
+        val beforeAnswerEvents = client.get("${BackendHttpRoutes.chatEvents(chat.id)}?afterSeq=0") {
             trustedHeaders("user-a")
         }
         val beforeAnswerSeq = stage8Json.readTree(beforeAnswerEvents.bodyAsText())["items"].last()["seq"].asLong()
 
-        val answerResponse = client.post("/v1/options/${option.id}/answer") {
+        val answerResponse = client.post(BackendHttpRoutes.optionAnswer(option.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody(
@@ -139,7 +139,7 @@ class BackendStage8OptionRouteTest {
             )
         }
         val answerPayload = stage8Json.readTree(answerResponse.bodyAsText())
-        val replayAfterAnswer = client.get("/v1/chats/${chat.id}/events?afterSeq=$beforeAnswerSeq") {
+        val replayAfterAnswer = client.get("${BackendHttpRoutes.chatEvents(chat.id)}?afterSeq=$beforeAnswerSeq") {
             trustedHeaders("user-a")
         }
         val replayAfterAnswerPayload = stage8Json.readTree(replayAfterAnswer.bodyAsText())
@@ -184,7 +184,7 @@ class BackendStage8OptionRouteTest {
         }
         installStage8Application(context)
 
-        client.post("/v1/chats/${chat.id}/messages") {
+        client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"need option"}""")
@@ -196,7 +196,7 @@ class BackendStage8OptionRouteTest {
 
         assertEquals(5, waitingExecution.usage?.totalTokens)
 
-        client.post("/v1/options/${option.id}/answer") {
+        client.post(BackendHttpRoutes.optionAnswer(option.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
@@ -219,7 +219,7 @@ class BackendStage8OptionRouteTest {
         }
         installStage8Application(context)
 
-        client.post("/v1/chats/${chat.id}/messages") {
+        client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"need option"}""")
@@ -229,12 +229,12 @@ class BackendStage8OptionRouteTest {
             context.optionRepository.listByExecution("user-a", chat.id, execution.id).single()
         }
 
-        client.post("/v1/options/${option.id}/answer") {
+        client.post(BackendHttpRoutes.optionAnswer(option.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
         }
-        val secondResponse = client.post("/v1/options/${option.id}/answer") {
+        val secondResponse = client.post(BackendHttpRoutes.optionAnswer(option.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
@@ -255,7 +255,7 @@ class BackendStage8OptionRouteTest {
         }
         installStage8Application(context)
 
-        client.post("/v1/chats/${chat.id}/messages") {
+        client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"need option"}""")
@@ -265,13 +265,13 @@ class BackendStage8OptionRouteTest {
             context.optionRepository.listByExecution("user-a", chat.id, execution.id).single()
         }
 
-        val foreignResponse = client.post("/v1/options/${option.id}/answer") {
+        val foreignResponse = client.post(BackendHttpRoutes.optionAnswer(option.id)) {
             trustedHeaders("user-b")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
         }
         val foreignPayload = stage8Json.readTree(foreignResponse.bodyAsText())
-        val missingResponse = client.post("/v1/options/${UUID.randomUUID()}/answer") {
+        val missingResponse = client.post(BackendHttpRoutes.optionAnswer(UUID.randomUUID())) {
             trustedHeaders("user-b")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
@@ -291,7 +291,7 @@ class BackendStage8OptionRouteTest {
         installStage8Application(context)
 
         val singleOption = seedWaitingOption(context = context, userId = "user-a", selectionMode = "single")
-        val tooManyOptionsResponse = client.post("/v1/options/${singleOption.id}/answer") {
+        val tooManyOptionsResponse = client.post(BackendHttpRoutes.optionAnswer(singleOption.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a","b"]}""")
@@ -299,7 +299,7 @@ class BackendStage8OptionRouteTest {
         val tooManyOptionsPayload = stage8Json.readTree(tooManyOptionsResponse.bodyAsText())
 
         val invalidOption = seedWaitingOption(context = context, userId = "user-a", selectionMode = "single")
-        val invalidOptionResponse = client.post("/v1/options/${invalidOption.id}/answer") {
+        val invalidOptionResponse = client.post(BackendHttpRoutes.optionAnswer(invalidOption.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["missing"]}""")
@@ -307,7 +307,7 @@ class BackendStage8OptionRouteTest {
         val invalidOptionPayload = stage8Json.readTree(invalidOptionResponse.bodyAsText())
 
         val wrongModeOption = seedWaitingOption(context = context, userId = "user-a", selectionMode = "mystery")
-        val wrongModeResponse = client.post("/v1/options/${wrongModeOption.id}/answer") {
+        val wrongModeResponse = client.post(BackendHttpRoutes.optionAnswer(wrongModeOption.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
@@ -320,7 +320,7 @@ class BackendStage8OptionRouteTest {
             selectionMode = "single",
             expiresAt = Instant.parse("2026-04-30T09:59:00Z"),
         )
-        val expiredResponse = client.post("/v1/options/${expiredOption.id}/answer") {
+        val expiredResponse = client.post(BackendHttpRoutes.optionAnswer(expiredOption.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"],"freeText":"   "}""")
@@ -357,7 +357,7 @@ class BackendStage8OptionRouteTest {
         installStage8Application(context)
 
         val option = seedWaitingOption(context = context, userId = "user-a")
-        val response = client.post("/v1/options/${option.id}/answer") {
+        val response = client.post(BackendHttpRoutes.optionAnswer(option.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
@@ -393,7 +393,7 @@ class BackendStage8OptionRouteTest {
         }
         installStage8Application(context)
 
-        val response = client.post("/v1/chats/${chat.id}/messages") {
+        val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"need option"}""")

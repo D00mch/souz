@@ -5,7 +5,11 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentLiveEvent
@@ -67,6 +71,33 @@ class AgentEventBusTest {
             assertEquals(liveEvent, withTimeout(1_000) { subscription.events.receive() })
         } finally {
             subscription.close()
+        }
+    }
+
+    @Test
+    fun `concurrent subscribers on the same stream all receive the published event`() = runTest {
+        val userId = "user-a"
+        val chatId = UUID.randomUUID()
+        val bus = AgentEventBus()
+
+        val subscriptions = withContext(Dispatchers.Default) {
+            List(32) {
+                async {
+                    bus.subscribe(userId = userId, chatId = chatId)
+                }
+            }.awaitAll()
+        }
+
+        try {
+            val event = durableEvent(userId = userId, chatId = chatId, seq = 1L)
+
+            bus.publish(event)
+
+            subscriptions.forEach { subscription ->
+                assertEquals(event, withTimeout(1_000) { subscription.events.receive() })
+            }
+        } finally {
+            subscriptions.forEach { subscription -> subscription.close() }
         }
     }
 

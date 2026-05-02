@@ -56,7 +56,7 @@ class BackendProviderKeysRouteTest {
             )
         }
 
-        val response = client.get("/v1/me/provider-keys") {
+        val response = client.get(BackendHttpRoutes.PROVIDER_KEYS) {
             trustedHeaders("user-a")
         }
         val rawBody = response.bodyAsText()
@@ -88,7 +88,7 @@ class BackendProviderKeysRouteTest {
             )
         }
 
-        val response = client.put("/v1/me/provider-keys/openai") {
+        val response = client.put(BackendHttpRoutes.providerKey("openai")) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"apiKey":"sk-user-a-plain-123456"}""")
@@ -138,7 +138,7 @@ class BackendProviderKeysRouteTest {
             )
         }
 
-        val response = client.delete("/v1/me/provider-keys/openai") {
+        val response = client.delete(BackendHttpRoutes.providerKey("openai")) {
             trustedHeaders("user-a")
         }
 

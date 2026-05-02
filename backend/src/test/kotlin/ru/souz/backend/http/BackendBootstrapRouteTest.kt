@@ -65,7 +65,7 @@ class BackendBootstrapRouteTest {
             )
         }
 
-        val response = client.get("/v1/bootstrap")
+        val response = client.get(BackendHttpRoutes.BOOTSTRAP)
         val payload = json.readTree(response.bodyAsText())
 
         assertEquals(HttpStatusCode.Unauthorized, response.status)
@@ -84,10 +84,10 @@ class BackendBootstrapRouteTest {
             )
         }
 
-        val missing = client.get("/v1/bootstrap") {
+        val missing = client.get(BackendHttpRoutes.BOOTSTRAP) {
             header("X-User-Id", "opaque-user")
         }
-        val invalid = client.get("/v1/bootstrap") {
+        val invalid = client.get(BackendHttpRoutes.BOOTSTRAP) {
             header("X-User-Id", "opaque-user")
             header("X-Souz-Proxy-Auth", "wrong-secret")
         }
@@ -110,7 +110,7 @@ class BackendBootstrapRouteTest {
             )
         }
 
-        val response = client.get("/v1/bootstrap") {
+        val response = client.get(BackendHttpRoutes.BOOTSTRAP) {
             header("X-User-Id", "opaque-user")
             header("X-Souz-Proxy-Auth", "proxy-secret")
         }
@@ -132,10 +132,10 @@ class BackendBootstrapRouteTest {
             )
         }
 
-        val missingUser = client.get("/v1/bootstrap") {
+        val missingUser = client.get(BackendHttpRoutes.BOOTSTRAP) {
             header("X-Souz-Proxy-Auth", "proxy-secret")
         }
-        val success = client.get("/v1/bootstrap") {
+        val success = client.get(BackendHttpRoutes.BOOTSTRAP) {
             header("X-User-Id", "user-opaque-42")
             header("X-Souz-Proxy-Auth", "proxy-secret")
         }
@@ -175,7 +175,7 @@ class BackendBootstrapRouteTest {
             )
         }
 
-        val response = client.get("/v1/bootstrap") {
+        val response = client.get(BackendHttpRoutes.BOOTSTRAP) {
             header("X-User-Id", "user-123")
             header("X-Souz-Proxy-Auth", "proxy-secret")
         }
@@ -231,7 +231,7 @@ class BackendBootstrapRouteTest {
             )
         }
 
-        val response = client.get("/v1/bootstrap") {
+        val response = client.get(BackendHttpRoutes.BOOTSTRAP) {
             header("X-User-Id", "user-123")
             header("X-Souz-Proxy-Auth", "proxy-secret")
         }
@@ -283,7 +283,7 @@ class BackendBootstrapRouteTest {
             )
         }
 
-        val response = client.get("/v1/bootstrap") {
+        val response = client.get(BackendHttpRoutes.BOOTSTRAP) {
             header("X-User-Id", "user-a")
             header("X-Souz-Proxy-Auth", "proxy-secret")
         }
@@ -348,12 +348,12 @@ class BackendBootstrapRouteTest {
             )
         }
 
-        val persisted = client.get("/v1/bootstrap") {
+        val persisted = client.get(BackendHttpRoutes.BOOTSTRAP) {
             header("X-User-Id", "user-a")
             header("X-Souz-Proxy-Auth", "proxy-secret")
         }
         val persistedPayload = json.readTree(persisted.bodyAsText())
-        val defaults = client.get("/v1/bootstrap") {
+        val defaults = client.get(BackendHttpRoutes.BOOTSTRAP) {
             header("X-User-Id", "user-b")
             header("X-Souz-Proxy-Auth", "proxy-secret")
         }
@@ -392,7 +392,7 @@ class BackendBootstrapRouteTest {
             )
         }
 
-        val response = client.post("/agent")
+        val response = client.post(BackendHttpRoutes.LEGACY_AGENT)
 
         assertTrue(response.status != HttpStatusCode.NotFound)
     }

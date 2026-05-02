@@ -67,7 +67,7 @@ class BackendStage6EventRouteTest {
         }
 
         runBlocking {
-            val session = wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=0") {
+            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chat.id)}?afterSeq=0") {
                 trustedHeaders("user-a")
             }
             val replayEvent = session.receiveEvent()
@@ -76,7 +76,7 @@ class BackendStage6EventRouteTest {
             assertEquals("execution.started", replayEvent["type"].asText())
 
             val sendResponse = async {
-                client.post("/v1/chats/${chat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(chat.id)) {
                     trustedHeaders("user-a")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"hello ws"}""")
@@ -133,11 +133,11 @@ class BackendStage6EventRouteTest {
         }
 
         runBlocking {
-            val firstSession = wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=0") {
+            val firstSession = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chat.id)}?afterSeq=0") {
                 trustedHeaders("user-a")
             }
             val sendResponse = async {
-                client.post("/v1/chats/${chat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(chat.id)) {
                     trustedHeaders("user-a")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"reconnect me"}""")
@@ -158,7 +158,7 @@ class BackendStage6EventRouteTest {
             val lastSeenSeq = firstFour.last { it["durable"].asBoolean() }["seq"].asLong()
             firstSession.close()
 
-            val secondSession = wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=$lastSeenSeq") {
+            val secondSession = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chat.id)}?afterSeq=$lastSeenSeq") {
                 trustedHeaders("user-a")
             }
             val replayedEvents = buildList {
@@ -191,11 +191,11 @@ class BackendStage6EventRouteTest {
         }
 
         runBlocking {
-            val session = wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=0") {
+            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chat.id)}?afterSeq=0") {
                 trustedHeaders("user-a")
             }
 
-            val response = client.post("/v1/chats/${chat.id}/messages") {
+            val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
                 trustedHeaders("user-a")
                 contentType(ContentType.Application.Json)
                 setBody("""{"content":"fail after delta"}""")
@@ -242,11 +242,11 @@ class BackendStage6EventRouteTest {
         }
 
         runBlocking {
-            val session = wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=0") {
+            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chat.id)}?afterSeq=0") {
                 trustedHeaders("user-a")
             }
 
-            val response = client.post("/v1/chats/${chat.id}/messages") {
+            val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
                 trustedHeaders("user-a")
                 contentType(ContentType.Application.Json)
                 setBody("""{"content":"cancel after delta"}""")
@@ -256,7 +256,7 @@ class BackendStage6EventRouteTest {
             assertEquals("running", payload["execution"]["status"].asText())
 
             api.awaitDeltaSent("cancel after delta")
-            val cancelResponse = client.post("/v1/chats/${chat.id}/cancel-active") {
+            val cancelResponse = client.post(BackendHttpRoutes.cancelActive(chat.id)) {
                 trustedHeaders("user-a")
             }
             val cancelPayload = stage6Json.readTree(cancelResponse.bodyAsText())
@@ -322,7 +322,7 @@ class BackendStage6EventRouteTest {
         }
         installStage6Application(context)
 
-        val response = client.get("/v1/chats/${ownedChat.id}/events?afterSeq=1") {
+        val response = client.get("${BackendHttpRoutes.chatEvents(ownedChat.id)}?afterSeq=1") {
             trustedHeaders("user-a")
         }
         val payload = stage6Json.readTree(response.bodyAsText())
@@ -353,19 +353,19 @@ class BackendStage6EventRouteTest {
         }
         installStage6Application(context)
 
-        val defaultResponse = client.get("/v1/chats/${chat.id}/events") {
+        val defaultResponse = client.get(BackendHttpRoutes.chatEvents(chat.id)) {
             trustedHeaders("user-a")
         }
-        val clampedResponse = client.get("/v1/chats/${chat.id}/events?limit=9999") {
+        val clampedResponse = client.get("${BackendHttpRoutes.chatEvents(chat.id)}?limit=9999") {
             trustedHeaders("user-a")
         }
-        val pagedResponse = client.get("/v1/chats/${chat.id}/events?afterSeq=1000&limit=9999") {
+        val pagedResponse = client.get("${BackendHttpRoutes.chatEvents(chat.id)}?afterSeq=1000&limit=9999") {
             trustedHeaders("user-a")
         }
-        val zeroResponse = client.get("/v1/chats/${chat.id}/events?limit=0") {
+        val zeroResponse = client.get("${BackendHttpRoutes.chatEvents(chat.id)}?limit=0") {
             trustedHeaders("user-a")
         }
-        val negativeResponse = client.get("/v1/chats/${chat.id}/events?limit=-1") {
+        val negativeResponse = client.get("${BackendHttpRoutes.chatEvents(chat.id)}?limit=-1") {
             trustedHeaders("user-a")
         }
 
@@ -416,11 +416,11 @@ class BackendStage6EventRouteTest {
         }
         installStage6Application(context)
 
-        val replayResponse = client.get("/v1/chats/${chat.id}/events?afterSeq=0") {
+        val replayResponse = client.get("${BackendHttpRoutes.chatEvents(chat.id)}?afterSeq=0") {
             trustedHeaders("user-a")
         }
         val replayPayload = stage6Json.readTree(replayResponse.bodyAsText())
-        val wsRouteResponse = client.get("/v1/chats/${chat.id}/ws?afterSeq=0") {
+        val wsRouteResponse = client.get("${BackendHttpRoutes.chatWebSocket(chat.id)}?afterSeq=0") {
             trustedHeaders("user-a")
         }
         val wsRoutePayload = stage6Json.readTree(wsRouteResponse.bodyAsText())
@@ -445,12 +445,12 @@ class BackendStage6EventRouteTest {
         }
 
         runBlocking {
-            val session = wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=0") {
+            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chat.id)}?afterSeq=0") {
                 trustedHeaders("user-a")
             }
 
             val response = async {
-                client.post("/v1/chats/${chat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(chat.id)) {
                     trustedHeaders("user-a")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"async please"}""")
@@ -506,7 +506,7 @@ class BackendStage6EventRouteTest {
         }
         installStage6Application(context)
 
-        val response = client.post("/v1/chats/${chat.id}/messages") {
+        val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"keep sync"}""")
@@ -535,19 +535,19 @@ class BackendStage6EventRouteTest {
         }
 
         runBlocking {
-            val userASession = wsClient.webSocketSession("/v1/chats/${userAChat.id}/ws?afterSeq=0") {
+            val userASession = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(userAChat.id)}?afterSeq=0") {
                 trustedHeaders("user-a")
             }
 
             val sendA = async {
-                client.post("/v1/chats/${userAChat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(userAChat.id)) {
                     trustedHeaders("user-a")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"A-stream"}""")
                 }
             }
             val sendB = async {
-                client.post("/v1/chats/${userBChat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(userBChat.id)) {
                     trustedHeaders("user-b")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"B-stream"}""")

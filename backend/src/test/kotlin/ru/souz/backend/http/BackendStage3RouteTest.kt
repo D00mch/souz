@@ -54,6 +54,9 @@ import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.service.AgentExecutionFinalizer
+import ru.souz.backend.execution.service.AgentExecutionLauncher
+import ru.souz.backend.execution.service.AgentExecutionRequestFactory
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.settings.model.UserSettings
@@ -106,7 +109,7 @@ class BackendStage3RouteTest {
             )
         }
 
-        val response = client.get("/v1/me/settings")
+        val response = client.get(BackendHttpRoutes.SETTINGS)
         val payload = json.readTree(response.bodyAsText())
 
         assertEquals(HttpStatusCode.Unauthorized, response.status)
@@ -146,7 +149,7 @@ class BackendStage3RouteTest {
             )
         }
 
-        val response = client.get("/v1/me/settings") {
+        val response = client.get(BackendHttpRoutes.SETTINGS) {
             trustedHeaders("user-opaque-42")
         }
         val settings = json.readTree(response.bodyAsText())["settings"]
@@ -181,7 +184,7 @@ class BackendStage3RouteTest {
             )
         }
 
-        val response = client.patch("/v1/me/settings") {
+        val response = client.patch(BackendHttpRoutes.SETTINGS) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody(
@@ -269,10 +272,10 @@ class BackendStage3RouteTest {
             )
         }
 
-        val defaultResponse = client.get("/v1/chats?limit=10") {
+        val defaultResponse = client.get("${BackendHttpRoutes.CHATS}?limit=10") {
             trustedHeaders("user-a")
         }
-        val includeArchivedResponse = client.get("/v1/chats?includeArchived=true") {
+        val includeArchivedResponse = client.get("${BackendHttpRoutes.CHATS}?includeArchived=true") {
             trustedHeaders("user-a")
         }
         val defaultPayload = json.readTree(defaultResponse.bodyAsText())
@@ -320,16 +323,16 @@ class BackendStage3RouteTest {
             )
         }
 
-        val defaultResponse = client.get("/v1/chats") {
+        val defaultResponse = client.get(BackendHttpRoutes.CHATS) {
             trustedHeaders("user-a")
         }
-        val clampedResponse = client.get("/v1/chats?limit=9999") {
+        val clampedResponse = client.get("${BackendHttpRoutes.CHATS}?limit=9999") {
             trustedHeaders("user-a")
         }
-        val zeroResponse = client.get("/v1/chats?limit=0") {
+        val zeroResponse = client.get("${BackendHttpRoutes.CHATS}?limit=0") {
             trustedHeaders("user-a")
         }
-        val negativeResponse = client.get("/v1/chats?limit=-1") {
+        val negativeResponse = client.get("${BackendHttpRoutes.CHATS}?limit=-1") {
             trustedHeaders("user-a")
         }
 
@@ -363,7 +366,7 @@ class BackendStage3RouteTest {
             )
         }
 
-        val response = client.post("/v1/chats") {
+        val response = client.post(BackendHttpRoutes.CHATS) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"title":"Новый чат"}""")
@@ -416,13 +419,13 @@ class BackendStage3RouteTest {
             )
         }
 
-        val ownedResponse = client.get("/v1/chats/${ownedChat.id}/messages") {
+        val ownedResponse = client.get(BackendHttpRoutes.chatMessages(ownedChat.id)) {
             trustedHeaders("user-a")
         }
-        val foreignGet = client.get("/v1/chats/${foreignChat.id}/messages") {
+        val foreignGet = client.get(BackendHttpRoutes.chatMessages(foreignChat.id)) {
             trustedHeaders("user-a")
         }
-        val foreignPost = client.post("/v1/chats/${foreignChat.id}/messages") {
+        val foreignPost = client.post(BackendHttpRoutes.chatMessages(foreignChat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"nope"}""")
@@ -468,13 +471,13 @@ class BackendStage3RouteTest {
             )
         }
 
-        val defaultResponse = client.get("/v1/chats/${chat.id}/messages") {
+        val defaultResponse = client.get(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
         }
-        val clampedResponse = client.get("/v1/chats/${chat.id}/messages?limit=9999") {
+        val clampedResponse = client.get("${BackendHttpRoutes.chatMessages(chat.id)}?limit=9999") {
             trustedHeaders("user-a")
         }
-        val pagedResponse = client.get("/v1/chats/${chat.id}/messages?afterSeq=500&limit=9999") {
+        val pagedResponse = client.get("${BackendHttpRoutes.chatMessages(chat.id)}?afterSeq=500&limit=9999") {
             trustedHeaders("user-a")
         }
 
@@ -522,7 +525,7 @@ class BackendStage3RouteTest {
             )
         }
 
-        val response = client.post("/v1/chats/${chat.id}/messages") {
+        val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"Напиши ответ","clientMessageId":"client-42"}""")
@@ -580,7 +583,7 @@ class BackendStage3RouteTest {
             )
         }
 
-        val patchResponse = client.patch("/v1/me/settings") {
+        val patchResponse = client.patch(BackendHttpRoutes.SETTINGS) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody(
@@ -598,7 +601,7 @@ class BackendStage3RouteTest {
                 """.trimIndent()
             )
         }
-        val messageResponse = client.post("/v1/chats/${chat.id}/messages") {
+        val messageResponse = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"Hello"}""")
@@ -649,7 +652,7 @@ class BackendStage3RouteTest {
             )
         }
 
-        val response = client.post("/v1/chats/${chat.id}/messages") {
+        val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"trigger failure"}""")
@@ -693,7 +696,7 @@ class BackendStage3RouteTest {
 
         runBlocking {
             val firstResponse = async {
-                client.post("/v1/chats/${chat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(chat.id)) {
                     trustedHeaders("user-a")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"first"}""")
@@ -703,7 +706,7 @@ class BackendStage3RouteTest {
 
             assertNotNull(context.executionRepository.findActive("user-a", chat.id))
 
-            val secondResponse = client.post("/v1/chats/${chat.id}/messages") {
+            val secondResponse = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
                 trustedHeaders("user-a")
                 contentType(ContentType.Application.Json)
                 setBody("""{"content":"second"}""")
@@ -744,14 +747,14 @@ class BackendStage3RouteTest {
 
         runBlocking {
             val firstResponse = async {
-                client.post("/v1/chats/${userAChat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(userAChat.id)) {
                     trustedHeaders("user-a")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"A1"}""")
                 }
             }
             val secondResponse = async {
-                client.post("/v1/chats/${userBChat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(userBChat.id)) {
                     trustedHeaders("user-b")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"B1"}""")
@@ -795,7 +798,7 @@ class BackendStage3RouteTest {
 
         runBlocking {
             val sendResponse = async {
-                client.post("/v1/chats/${chat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(chat.id)) {
                     trustedHeaders("user-a")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"cancel me"}""")
@@ -804,7 +807,7 @@ class BackendStage3RouteTest {
             api.awaitStarted("cancel me")
             val activeExecution = assertNotNull(context.executionRepository.findActive("user-a", chat.id))
 
-            val cancelResponse = client.post("/v1/chats/${chat.id}/cancel-active") {
+            val cancelResponse = client.post(BackendHttpRoutes.cancelActive(chat.id)) {
                 trustedHeaders("user-a")
             }
             val cancelPayload = json.readTree(cancelResponse.bodyAsText())
@@ -850,7 +853,7 @@ class BackendStage3RouteTest {
 
         runBlocking {
             val sendResponse = async {
-                client.post("/v1/chats/${chat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(chat.id)) {
                     trustedHeaders("user-a")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"cancel exact execution"}""")
@@ -859,14 +862,14 @@ class BackendStage3RouteTest {
             api.awaitStarted("cancel exact execution")
             val activeExecution = assertNotNull(context.executionRepository.findActive("user-a", chat.id))
 
-            val foreignResponse = client.post("/v1/chats/${chat.id}/executions/${activeExecution.id}/cancel") {
+            val foreignResponse = client.post(BackendHttpRoutes.cancelExecution(chat.id, activeExecution.id)) {
                 trustedHeaders("user-b")
             }
             val foreignPayload = json.readTree(foreignResponse.bodyAsText())
             assertEquals(HttpStatusCode.NotFound, foreignResponse.status)
             assertEquals("chat_not_found", foreignPayload["error"]["code"].asText())
 
-            val ownerResponse = client.post("/v1/chats/${chat.id}/executions/${activeExecution.id}/cancel") {
+            val ownerResponse = client.post(BackendHttpRoutes.cancelExecution(chat.id, activeExecution.id)) {
                 trustedHeaders("user-a")
             }
             val ownerPayload = json.readTree(ownerResponse.bodyAsText())
@@ -900,7 +903,7 @@ class BackendStage3RouteTest {
         }
 
         val requestId = UUID.randomUUID().toString()
-        val response = client.post("/agent") {
+        val response = client.post(BackendHttpRoutes.LEGACY_AGENT) {
             header(HttpHeaders.Authorization, "Bearer legacy-token")
             header("X-Request-Id", requestId)
             contentType(ContentType.Application.Json)
@@ -1001,19 +1004,29 @@ internal fun routeTestContext(
         toolCatalog = toolCatalog,
     )
     val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory)
+    val requestFactory = AgentExecutionRequestFactory(
+        effectiveSettingsResolver = effectiveSettingsResolver,
+        featureFlags = featureFlags,
+    )
+    val finalizer = AgentExecutionFinalizer(
+        agentStateRepository = stateRepository,
+        chatRepository = chatRepository,
+        executionRepository = executionRepository,
+        turnRunner = conversationTurnRunner,
+    )
     val executionService = AgentExecutionService(
         chatRepository = chatRepository,
         messageRepository = messageRepository,
-        agentStateRepository = stateRepository,
-        effectiveSettingsResolver = effectiveSettingsResolver,
-        turnRunner = conversationTurnRunner,
         executionRepository = executionRepository,
         optionRepository = optionRepository,
-        eventRepository = eventRepository,
         eventService = eventService,
         toolCallRepository = toolCallRepository,
-        featureFlags = featureFlags,
-        executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        requestFactory = requestFactory,
+        finalizer = finalizer,
+        launcher = AgentExecutionLauncher(
+            executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            finalizer = finalizer,
+        ),
     )
     val optionService = OptionService(
         optionRepository = optionRepository,

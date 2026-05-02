@@ -98,41 +98,53 @@ class AgentExecutionServiceStateConflictTest {
         }
         val featureFlags = BackendFeatureFlags()
         val userProviderKeyRepository = MemoryUserProviderKeyRepository()
+        val effectiveSettingsResolver = EffectiveSettingsResolver(
+            baseSettingsProvider = settingsProvider,
+            userSettingsRepository = userSettingsRepository,
+            userProviderKeyRepository = userProviderKeyRepository,
+            featureFlags = featureFlags,
+            toolCatalog = BackendNoopAgentToolCatalog,
+            localModelAvailability = unavailableLocalModels(),
+        )
+        val turnRunner = CompletedTurnRunner(
+            session = AgentConversationSession(
+                activeAgentId = AgentId.default,
+                history = listOf(
+                    LLMRequest.Message(
+                        role = LLMMessageRole.user,
+                        content = "updated-state",
+                    )
+                ),
+                temperature = 0.6f,
+                locale = "ru-RU",
+                timeZone = "Europe/Moscow",
+                basedOnMessageSeq = 1L,
+                rowVersion = 0L,
+            ),
+        )
+        val toolCallRepository = MemoryToolCallRepository()
+        val finalizer = AgentExecutionFinalizer(
+            agentStateRepository = stateRepository,
+            chatRepository = chatRepository,
+            executionRepository = executionRepository,
+            turnRunner = turnRunner,
+        )
         val service = AgentExecutionService(
             chatRepository = chatRepository,
             messageRepository = messageRepository,
-            agentStateRepository = stateRepository,
-            effectiveSettingsResolver = EffectiveSettingsResolver(
-                baseSettingsProvider = settingsProvider,
-                userSettingsRepository = userSettingsRepository,
-                userProviderKeyRepository = userProviderKeyRepository,
-                featureFlags = featureFlags,
-                toolCatalog = BackendNoopAgentToolCatalog,
-                localModelAvailability = unavailableLocalModels(),
-            ),
-            turnRunner = CompletedTurnRunner(
-                session = AgentConversationSession(
-                    activeAgentId = AgentId.default,
-                    history = listOf(
-                        LLMRequest.Message(
-                            role = LLMMessageRole.user,
-                            content = "updated-state",
-                        )
-                    ),
-                    temperature = 0.6f,
-                    locale = "ru-RU",
-                    timeZone = "Europe/Moscow",
-                    basedOnMessageSeq = 1L,
-                    rowVersion = 0L,
-                ),
-            ),
             executionRepository = executionRepository,
             optionRepository = optionRepository,
-            eventRepository = eventRepository,
             eventService = eventService,
-            toolCallRepository = MemoryToolCallRepository(),
-            featureFlags = featureFlags,
-            executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            toolCallRepository = toolCallRepository,
+            requestFactory = AgentExecutionRequestFactory(
+                effectiveSettingsResolver = effectiveSettingsResolver,
+                featureFlags = featureFlags,
+            ),
+            finalizer = finalizer,
+            launcher = AgentExecutionLauncher(
+                executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+                finalizer = finalizer,
+            ),
         )
 
         val error = assertFailsWith<BackendV1Exception> {

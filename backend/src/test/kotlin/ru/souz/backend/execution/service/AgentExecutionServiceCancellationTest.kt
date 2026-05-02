@@ -97,26 +97,37 @@ private suspend fun cancellationTestContext(): CancellationTestContext {
         toolEvents = true,
     )
     val executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val effectiveSettingsResolver = EffectiveSettingsResolver(
+        baseSettingsProvider = settingsProvider,
+        userSettingsRepository = userSettingsRepository,
+        userProviderKeyRepository = userProviderKeyRepository,
+        featureFlags = featureFlags,
+        toolCatalog = BackendNoopAgentToolCatalog,
+        localModelAvailability = unavailableLocalModelsForCancellationTest(),
+    )
+    val toolCallRepository = MemoryToolCallRepository()
+    val finalizer = AgentExecutionFinalizer(
+        agentStateRepository = stateRepository,
+        chatRepository = chatRepository,
+        executionRepository = executionRepository,
+        turnRunner = CancellingTurnRunner(),
+    )
     val service = AgentExecutionService(
         chatRepository = chatRepository,
         messageRepository = messageRepository,
-        agentStateRepository = stateRepository,
-        effectiveSettingsResolver = EffectiveSettingsResolver(
-            baseSettingsProvider = settingsProvider,
-            userSettingsRepository = userSettingsRepository,
-            userProviderKeyRepository = userProviderKeyRepository,
-            featureFlags = featureFlags,
-            toolCatalog = BackendNoopAgentToolCatalog,
-            localModelAvailability = unavailableLocalModelsForCancellationTest(),
-        ),
-        turnRunner = CancellingTurnRunner(),
         executionRepository = executionRepository,
         optionRepository = optionRepository,
-        eventRepository = eventRepository,
         eventService = eventService,
-        toolCallRepository = MemoryToolCallRepository(),
-        featureFlags = featureFlags,
-        executionScope = executionScope,
+        toolCallRepository = toolCallRepository,
+        requestFactory = AgentExecutionRequestFactory(
+            effectiveSettingsResolver = effectiveSettingsResolver,
+            featureFlags = featureFlags,
+        ),
+        finalizer = finalizer,
+        launcher = AgentExecutionLauncher(
+            executionScope = executionScope,
+            finalizer = finalizer,
+        ),
     )
     val chat = Chat(
         id = UUID.randomUUID(),

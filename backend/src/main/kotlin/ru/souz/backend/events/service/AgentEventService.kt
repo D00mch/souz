@@ -106,18 +106,23 @@ class AgentEventService(
     ): AgentEventStream {
         requireOwnedChat(userId, chatId)
         val subscription = eventBus.subscribe(userId, chatId)
-        val normalizedLimit = normalizePositiveLimit(limit, AgentEventLimits.MAX_REPLAY_LIMIT)
-        val replay = eventRepository.listByChat(
-            userId = userId,
-            chatId = chatId,
-            afterSeq = afterSeq,
-            limit = normalizedLimit,
-        )
-        return AgentEventStream(
-            replay = replay,
-            liveEvents = subscription.events,
-            close = { subscription.close() },
-        )
+        try {
+            val normalizedLimit = normalizePositiveLimit(limit, AgentEventLimits.MAX_REPLAY_LIMIT)
+            val replay = eventRepository.listByChat(
+                userId = userId,
+                chatId = chatId,
+                afterSeq = afterSeq,
+                limit = normalizedLimit,
+            )
+            return AgentEventStream(
+                replay = replay,
+                liveEvents = subscription.events,
+                close = { subscription.close() },
+            )
+        } catch (e: Throwable) {
+            subscription.close()
+            throw e
+        }
     }
 
     private suspend fun requireOwnedChat(userId: String, chatId: UUID) {

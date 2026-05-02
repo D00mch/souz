@@ -1,15 +1,14 @@
 package ru.souz.backend.events.bus
 
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.events.model.AgentEventEnvelope
 
 class AgentEventBus {
-    private val mutex = Mutex()
-    private val subscribers = LinkedHashMap<AgentEventStreamKey, LinkedHashSet<Channel<AgentEventEnvelope>>>()
+    private val subscribers =
+        ConcurrentHashMap<AgentEventStreamKey, MutableSet<Channel<AgentEventEnvelope>>>()
 
     suspend fun subscribe(userId: String, chatId: UUID): AgentEventSubscription {
         val key = AgentEventStreamKey(userId = userId, chatId = chatId)
@@ -17,17 +16,17 @@ class AgentEventBus {
             capacity = AgentEventLimits.LIVE_BUFFER_SIZE,
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
-        mutex.withLock {
-            subscribers.getOrPut(key) { LinkedHashSet() }.add(channel)
+        subscribers.compute(key) { _, existing ->
+            (existing ?: ConcurrentHashMap.newKeySet()).apply {
+                add(channel)
+            }
         }
         return AgentEventSubscription(
             events = channel,
             close = {
-                mutex.withLock {
-                    subscribers[key]?.remove(channel)
-                    if (subscribers[key].isNullOrEmpty()) {
-                        subscribers.remove(key)
-                    }
+                subscribers.computeIfPresent(key) { _, existing ->
+                    existing.remove(channel)
+                    existing.takeUnless { it.isEmpty() }
                 }
                 channel.close()
             },
@@ -36,7 +35,7 @@ class AgentEventBus {
 
     suspend fun publish(event: AgentEventEnvelope) {
         val key = AgentEventStreamKey(userId = event.userId, chatId = event.chatId)
-        val targets = mutex.withLock { subscribers[key]?.toList().orEmpty() }
+        val targets = subscribers[key]?.toList().orEmpty()
         if (targets.isEmpty()) {
             return
         }
@@ -49,12 +48,9 @@ class AgentEventBus {
         if (closedTargets.isEmpty()) {
             return
         }
-        mutex.withLock {
-            val existing = subscribers[key] ?: return@withLock
+        subscribers.computeIfPresent(key) { _, existing ->
             existing.removeAll(closedTargets.toSet())
-            if (existing.isEmpty()) {
-                subscribers.remove(key)
-            }
+            existing.takeUnless { it.isEmpty() }
         }
     }
 }

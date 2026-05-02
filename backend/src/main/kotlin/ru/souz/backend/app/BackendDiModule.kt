@@ -27,6 +27,9 @@ import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.repository.AgentExecutionRepository
+import ru.souz.backend.execution.service.AgentExecutionFinalizer
+import ru.souz.backend.execution.service.AgentExecutionLauncher
+import ru.souz.backend.execution.service.AgentExecutionRequestFactory
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.keys.service.UserProviderKeyService
@@ -226,19 +229,36 @@ fun backendDiModule(
         )
     }
     bindSingleton {
+        AgentExecutionRequestFactory(
+            effectiveSettingsResolver = instance(),
+            featureFlags = instance(),
+        )
+    }
+    bindSingleton {
+        AgentExecutionFinalizer(
+            agentStateRepository = instance(),
+            chatRepository = instance(),
+            executionRepository = instance(),
+            turnRunner = BackendConversationRuntimeTurnRunner(instance()),
+        )
+    }
+    bindSingleton {
+        AgentExecutionLauncher(
+            executionScope = instance<BackendApplicationScope>(),
+            finalizer = instance(),
+        )
+    }
+    bindSingleton {
         AgentExecutionService(
             chatRepository = instance(),
             messageRepository = instance(),
-            agentStateRepository = instance(),
-            effectiveSettingsResolver = instance(),
-            turnRunner = BackendConversationRuntimeTurnRunner(instance()),
             executionRepository = instance(),
             optionRepository = instance(),
-            eventRepository = instance(),
             eventService = instance(),
             toolCallRepository = instance(),
-            featureFlags = instance(),
-            executionScope = instance<BackendApplicationScope>(),
+            requestFactory = instance(),
+            finalizer = instance(),
+            launcher = instance(),
         )
     }
     bindSingleton {

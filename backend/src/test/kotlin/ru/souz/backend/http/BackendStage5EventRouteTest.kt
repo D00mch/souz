@@ -65,7 +65,7 @@ class BackendStage5EventRouteTest {
             )
         }
 
-        val response = client.post("/v1/chats/${chat.id}/messages") {
+        val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"stream me"}""")
@@ -119,12 +119,12 @@ class BackendStage5EventRouteTest {
             )
         }
 
-        val patchResponse = client.patch("/v1/me/settings") {
+        val patchResponse = client.patch(BackendHttpRoutes.SETTINGS) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"streamingMessages":false}""")
         }
-        val response = client.post("/v1/chats/${chat.id}/messages") {
+        val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"plain reply"}""")
@@ -175,14 +175,14 @@ class BackendStage5EventRouteTest {
 
         runBlocking {
             val firstResponse = async {
-                client.post("/v1/chats/${userAChat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(userAChat.id)) {
                     trustedHeaders("user-a")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"A1"}""")
                 }
             }
             val secondResponse = async {
-                client.post("/v1/chats/${userBChat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(userBChat.id)) {
                     trustedHeaders("user-b")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"B1"}""")
@@ -230,7 +230,7 @@ class BackendStage5EventRouteTest {
             )
         }
 
-        val response = client.post("/v1/chats/${chat.id}/messages") {
+        val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"content":"trigger failure"}""")
@@ -272,7 +272,7 @@ class BackendStage5EventRouteTest {
 
         runBlocking {
             val sendResponse = async {
-                client.post("/v1/chats/${chat.id}/messages") {
+                client.post(BackendHttpRoutes.chatMessages(chat.id)) {
                     trustedHeaders("user-a")
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"cancel me"}""")
@@ -281,7 +281,7 @@ class BackendStage5EventRouteTest {
             api.awaitStarted("cancel me")
             val activeExecution = assertNotNull(context.executionRepository.findActive("user-a", chat.id))
 
-            val cancelResponse = client.post("/v1/chats/${chat.id}/cancel-active") {
+            val cancelResponse = client.post(BackendHttpRoutes.cancelActive(chat.id)) {
                 trustedHeaders("user-a")
             }
             val cancelPayload = json.readTree(cancelResponse.bodyAsText())
