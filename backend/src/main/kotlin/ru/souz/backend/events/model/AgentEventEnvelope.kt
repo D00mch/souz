@@ -10,7 +10,7 @@ sealed interface AgentEventEnvelope {
     val executionId: UUID?
     val seq: Long?
     val type: AgentEventType
-    val payload: Map<String, String>
+    val payload: AgentEventPayload
     val createdAt: Instant
     val durable: Boolean
 }

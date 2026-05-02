@@ -33,6 +33,7 @@ import kotlinx.coroutines.withTimeout
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.testutil.rawEventPayload
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -56,7 +57,7 @@ class BackendStage6EventRouteTest {
                 chatId = chat.id,
                 executionId = null,
                 type = ru.souz.backend.events.model.AgentEventType.EXECUTION_STARTED,
-                payload = mapOf("executionId" to "replay-execution"),
+                payload = rawEventPayload("executionId" to "replay-execution"),
                 createdAt = Instant.parse("2026-05-01T10:00:00Z"),
             )
         }
@@ -299,7 +300,7 @@ class BackendStage6EventRouteTest {
                 chatId = ownedChat.id,
                 executionId = null,
                 type = ru.souz.backend.events.model.AgentEventType.EXECUTION_STARTED,
-                payload = mapOf("executionId" to "a-1"),
+                payload = rawEventPayload("executionId" to "a-1"),
                 createdAt = Instant.parse("2026-05-01T10:00:00Z"),
             )
             context.eventRepository.append(
@@ -307,7 +308,7 @@ class BackendStage6EventRouteTest {
                 chatId = ownedChat.id,
                 executionId = null,
                 type = ru.souz.backend.events.model.AgentEventType.MESSAGE_CREATED,
-                payload = mapOf("messageId" to "m-2"),
+                payload = rawEventPayload("messageId" to "m-2"),
                 createdAt = Instant.parse("2026-05-01T10:00:01Z"),
             )
             context.eventRepository.append(
@@ -315,7 +316,7 @@ class BackendStage6EventRouteTest {
                 chatId = foreignChat.id,
                 executionId = null,
                 type = ru.souz.backend.events.model.AgentEventType.EXECUTION_STARTED,
-                payload = mapOf("executionId" to "b-1"),
+                payload = rawEventPayload("executionId" to "b-1"),
                 createdAt = Instant.parse("2026-05-01T10:00:02Z"),
             )
         }
@@ -345,7 +346,7 @@ class BackendStage6EventRouteTest {
                     chatId = chat.id,
                     executionId = null,
                     type = ru.souz.backend.events.model.AgentEventType.MESSAGE_CREATED,
-                    payload = mapOf("index" to index.toString()),
+                    payload = rawEventPayload("index" to index.toString()),
                     createdAt = Instant.parse("2026-05-01T10:00:00Z").plusSeconds(index.toLong()),
                 )
             }

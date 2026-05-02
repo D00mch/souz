@@ -13,8 +13,11 @@ import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.MessageCreatedPayload
+import ru.souz.backend.events.model.MessageDeltaPayload
 import ru.souz.backend.storage.memory.MemoryAgentEventRepository
 import ru.souz.backend.storage.memory.MemoryChatRepository
+import ru.souz.backend.testutil.rawEventPayload
 
 class AgentEventServiceTest {
     @Test
@@ -36,7 +39,12 @@ class AgentEventServiceTest {
                 chatId = chat.id,
                 executionId = null,
                 type = AgentEventType.MESSAGE_CREATED,
-                payload = mapOf("messageId" to "message-1"),
+                payload = MessageCreatedPayload(
+                    messageId = UUID.fromString("11111111-1111-1111-1111-111111111111"),
+                    seq = 1L,
+                    role = "assistant",
+                    content = "message-1",
+                ),
                 createdAt = Instant.parse("2026-05-01T10:00:00Z"),
             )
 
@@ -71,9 +79,9 @@ class AgentEventServiceTest {
                 chatId = chat.id,
                 executionId = null,
                 type = AgentEventType.MESSAGE_DELTA,
-                payload = mapOf(
-                    "messageId" to "message-1",
-                    "delta" to "chunk",
+                payload = MessageDeltaPayload(
+                    messageId = UUID.fromString("22222222-2222-2222-2222-222222222222"),
+                    delta = "chunk",
                 ),
                 createdAt = Instant.parse("2026-05-01T10:00:00Z"),
             )
@@ -107,7 +115,7 @@ class AgentEventServiceTest {
                 chatId = chat.id,
                 executionId = null,
                 type = AgentEventType.MESSAGE_CREATED,
-                payload = mapOf("index" to index.toString()),
+                payload = rawEventPayload("index" to index.toString()),
                 createdAt = Instant.parse("2026-05-01T10:00:00Z").plusSeconds(index.toLong()),
             )
         }

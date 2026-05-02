@@ -31,6 +31,7 @@ import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.http.BackendV1Exception
+import ru.souz.backend.http.toDto
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.storage.memory.MemoryAgentEventRepository
@@ -149,7 +150,7 @@ class AgentExecutionServiceStateConflictTest {
         assertEquals(AgentExecutionStatus.FAILED, execution.status)
         assertEquals("state_conflict", execution.errorCode)
         assertEquals(AgentEventType.EXECUTION_FAILED, failureEvent.type)
-        assertEquals("state_conflict", failureEvent.payload["errorCode"])
+        assertEquals("state_conflict", failureEvent.toDto().payload["errorCode"])
         assertEquals(
             listOf("persisted-state"),
             stateRepository.get(chat.userId, chat.id)?.history?.map { it.content },

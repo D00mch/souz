@@ -10,6 +10,7 @@ import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.bus.AgentEventStream
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentLiveEvent
+import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.http.BackendV1Exception
@@ -24,7 +25,7 @@ class AgentEventService(
         chatId: UUID,
         executionId: UUID?,
         type: AgentEventType,
-        payload: Map<String, String>,
+        payload: AgentEventPayload,
         id: UUID = UUID.randomUUID(),
         createdAt: Instant = Instant.now(),
     ): AgentEvent {
@@ -46,7 +47,7 @@ class AgentEventService(
         chatId: UUID,
         executionId: UUID?,
         type: AgentEventType,
-        payload: Map<String, String>,
+        payload: AgentEventPayload,
         id: UUID = UUID.randomUUID(),
         createdAt: Instant = Instant.now(),
     ): AgentEvent = appendDurable(
@@ -64,7 +65,7 @@ class AgentEventService(
         chatId: UUID,
         executionId: UUID?,
         type: AgentEventType,
-        payload: Map<String, String>,
+        payload: AgentEventPayload,
         id: UUID = UUID.randomUUID(),
         createdAt: Instant = Instant.now(),
     ): AgentLiveEvent {

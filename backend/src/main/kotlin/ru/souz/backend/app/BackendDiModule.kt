@@ -119,10 +119,7 @@ fun backendDiModule(
             bindSingleton<ToolCallRepository> { FilesystemToolCallRepository(appConfig.dataDir) }
             bindSingleton<UserSettingsRepository> { FilesystemUserSettingsRepository(appConfig.dataDir) }
             bindSingleton<UserProviderKeyRepository> {
-                FilesystemUserProviderKeyRepository(
-                    dataDir = appConfig.dataDir,
-                    masterKey = appConfig.masterKey ?: error("Master key is required."),
-                )
+                FilesystemUserProviderKeyRepository(dataDir = appConfig.dataDir)
             }
         }
         StorageMode.POSTGRES -> {

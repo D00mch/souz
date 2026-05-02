@@ -17,6 +17,7 @@ import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.MessageDeltaPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -49,7 +50,7 @@ class BackendAgentRuntimeEventSinkTest {
             assertEquals(AgentEventType.MESSAGE_DELTA, liveEvent.type)
             assertFalse(liveEvent.durable)
             assertNull(liveEvent.seq)
-            assertEquals("chunk-1", liveEvent.payload["delta"])
+            assertEquals("chunk-1", (liveEvent.payload as MessageDeltaPayload).delta)
             assertTrue(replayEvents.isEmpty())
             assertTrue(messages.isEmpty())
             assertNull(execution?.assistantMessageId)

@@ -32,6 +32,7 @@ import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.events.repository.AgentEventRepository
+import ru.souz.backend.events.model.ChoiceAnsweredPayload
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
@@ -316,12 +317,12 @@ class AgentExecutionService internal constructor(
             chatId = option.chatId,
             executionId = runningExecution.id,
             type = AgentEventType.OPTION_ANSWERED,
-            payload = mapOf(
-                "optionId" to option.id.toString(),
-                "status" to option.status.value,
-                "selectedOptionIds" to restJsonMapper.writeValueAsString(option.answer?.selectedOptionIds?.toList().orEmpty()),
-                "freeText" to (option.answer?.freeText ?: ""),
-                "metadata" to restJsonMapper.writeValueAsString(option.answer?.metadata.orEmpty()),
+            payload = ChoiceAnsweredPayload(
+                optionId = option.id,
+                status = option.status.value,
+                selectedOptionIds = option.answer?.selectedOptionIds?.toList().orEmpty(),
+                freeText = option.answer?.freeText,
+                metadata = option.answer?.metadata.orEmpty(),
             ),
         )
 

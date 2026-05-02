@@ -4,6 +4,7 @@ import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
 
 interface AgentEventRepository {
@@ -12,7 +13,7 @@ interface AgentEventRepository {
         chatId: UUID,
         executionId: UUID?,
         type: AgentEventType,
-        payload: Map<String, String>,
+        payload: AgentEventPayload,
         id: UUID = UUID.randomUUID(),
         createdAt: Instant = Instant.now(),
     ): AgentEvent

@@ -38,6 +38,7 @@ import ru.souz.backend.settings.model.ToolPermissionMode
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.testutil.rawEventPayload
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
@@ -106,10 +107,7 @@ class FilesystemRepositoriesTest {
         val eventRepository = FilesystemAgentEventRepository(dataDir)
         val toolCallRepository = FilesystemToolCallRepository(dataDir)
         val settingsRepository = FilesystemUserSettingsRepository(dataDir)
-        val providerKeyRepository = FilesystemUserProviderKeyRepository(
-            dataDir = dataDir,
-            masterKey = "test-master-key",
-        )
+        val providerKeyRepository = FilesystemUserProviderKeyRepository(dataDir = dataDir)
 
         chatRepository.create(chat)
         val firstMessage = messageRepository.append(
@@ -167,14 +165,14 @@ class FilesystemRepositoriesTest {
             chatId = chat.id,
             executionId = execution.id,
             type = AgentEventType.EXECUTION_STARTED,
-            payload = mapOf("requestId" to "req-1"),
+            payload = rawEventPayload("requestId" to "req-1"),
         )
         val secondEvent = eventRepository.append(
             userId = userId,
             chatId = chat.id,
             executionId = execution.id,
             type = AgentEventType.OPTION_REQUESTED,
-            payload = mapOf("optionId" to option.id.toString()),
+            payload = rawEventPayload("optionId" to option.id.toString()),
         )
         toolCallRepository.started(
             userId = userId,
@@ -209,10 +207,7 @@ class FilesystemRepositoriesTest {
         val reloadedEventRepository = FilesystemAgentEventRepository(dataDir)
         val reloadedToolCallRepository = FilesystemToolCallRepository(dataDir)
         val reloadedSettingsRepository = FilesystemUserSettingsRepository(dataDir)
-        val reloadedProviderKeyRepository = FilesystemUserProviderKeyRepository(
-            dataDir = dataDir,
-            masterKey = "test-master-key",
-        )
+        val reloadedProviderKeyRepository = FilesystemUserProviderKeyRepository(dataDir = dataDir)
 
         assertEquals(chat, reloadedChatRepository.get(userId, chat.id))
         assertEquals(listOf(chat), reloadedChatRepository.list(userId))
@@ -266,7 +261,7 @@ class FilesystemRepositoriesTest {
             chatId = chat.id,
             executionId = execution.id,
             type = AgentEventType.EXECUTION_FINISHED,
-            payload = mapOf("status" to "completed"),
+            payload = rawEventPayload("status" to "completed"),
         )
 
         assertEquals(assistantPlaceholder.copy(content = "assistant reply"), updatedAssistant)

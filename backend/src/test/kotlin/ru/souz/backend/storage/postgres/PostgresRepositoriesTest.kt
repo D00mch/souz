@@ -38,6 +38,7 @@ import ru.souz.backend.settings.model.ToolPermissionMode
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.testutil.rawEventPayload
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
@@ -152,14 +153,14 @@ class PostgresRepositoriesTest {
                 chatId = chat.id,
                 executionId = execution.id,
                 type = AgentEventType.EXECUTION_STARTED,
-                payload = mapOf("requestId" to "req-1"),
+                payload = rawEventPayload("requestId" to "req-1"),
             )
             val secondEvent = repositories.eventRepository.append(
                 userId = userId,
                 chatId = chat.id,
                 executionId = execution.id,
                 type = AgentEventType.OPTION_REQUESTED,
-                payload = mapOf("optionId" to option.id.toString()),
+                payload = rawEventPayload("optionId" to option.id.toString()),
             )
 
             assertEquals(chat, repositories.chatRepository.get(userId, chat.id))
@@ -219,7 +220,7 @@ class PostgresRepositoriesTest {
                 chatId = chat.id,
                 executionId = execution.id,
                 type = AgentEventType.EXECUTION_FINISHED,
-                payload = mapOf("status" to "completed"),
+                payload = rawEventPayload("status" to "completed"),
             )
 
             assertEquals(assistantPlaceholder.copy(content = "assistant reply"), updatedAssistant)
@@ -348,14 +349,14 @@ class PostgresRepositoriesTest {
                 chatId = chat.id,
                 executionId = executionId,
                 type = AgentEventType.EXECUTION_STARTED,
-                payload = mapOf("step" to "start"),
+                payload = rawEventPayload("step" to "start"),
             )
             repositories.eventRepository.append(
                 userId = userId,
                 chatId = chat.id,
                 executionId = executionId,
                 type = AgentEventType.MESSAGE_COMPLETED,
-                payload = mapOf("step" to "done"),
+                payload = rawEventPayload("step" to "done"),
             )
         }
 

@@ -4,6 +4,8 @@ import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentEventPayload
+import ru.souz.backend.events.model.AgentEventPayloadStorageCodec
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.repository.AgentEventRepository
 
@@ -15,7 +17,7 @@ class PostgresAgentEventRepository(
         chatId: UUID,
         executionId: UUID?,
         type: AgentEventType,
-        payload: Map<String, String>,
+        payload: AgentEventPayload,
         id: UUID,
         createdAt: Instant,
     ): AgentEvent = dataSource.write { connection ->
@@ -43,7 +45,7 @@ class PostgresAgentEventRepository(
             statement.setObject(4, executionId)
             statement.setLong(5, nextSeq)
             statement.setString(6, type.value)
-            statement.setJson(7, postgresStorageMapper.writeValueAsString(payload))
+            statement.setJson(7, postgresStorageMapper.writeValueAsString(AgentEventPayloadStorageCodec.toStorageJson(payload)))
             statement.setInstant(8, createdAt)
             statement.executeUpdate()
         }

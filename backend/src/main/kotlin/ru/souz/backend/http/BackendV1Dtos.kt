@@ -6,7 +6,21 @@ import ru.souz.backend.chat.service.ChatSummary
 import ru.souz.backend.chat.service.SendMessageResult
 import ru.souz.backend.options.service.AnswerOptionResult
 import ru.souz.backend.events.model.AgentEventEnvelope
+import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.ChoiceAnsweredPayload
+import ru.souz.backend.events.model.ChoiceRequestedPayload
+import ru.souz.backend.events.model.ExecutionCancelledPayload
+import ru.souz.backend.events.model.ExecutionFailedPayload
+import ru.souz.backend.events.model.ExecutionFinishedPayload
+import ru.souz.backend.events.model.ExecutionStartedPayload
+import ru.souz.backend.events.model.MessageCompletedPayload
+import ru.souz.backend.events.model.MessageCreatedPayload
+import ru.souz.backend.events.model.MessageDeltaPayload
+import ru.souz.backend.events.model.RawAgentEventPayload
+import ru.souz.backend.events.model.ToolCallFailedPayload
+import ru.souz.backend.events.model.ToolCallFinishedPayload
+import ru.souz.backend.events.model.ToolCallStartedPayload
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionUsage
 import ru.souz.backend.keys.model.UserProviderKeyView
@@ -290,24 +304,126 @@ internal fun AgentEventEnvelope.toDto(): BackendV1EventDto =
         createdAt = createdAt.toString(),
     )
 
-private fun Map<String, String>.toTransportPayload(type: AgentEventType): Map<String, Any?> =
+private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<String, Any?> =
+    when (this) {
+        is MessageCreatedPayload -> linkedMapOf(
+            "messageId" to messageId.toString(),
+            "seq" to seq,
+            "role" to role,
+            "content" to content,
+        )
+
+        is MessageDeltaPayload -> linkedMapOf(
+            "messageId" to messageId.toString(),
+            "delta" to delta,
+        )
+
+        is MessageCompletedPayload -> linkedMapOf(
+            "messageId" to messageId.toString(),
+            "seq" to seq,
+            "role" to role,
+            "content" to content,
+        )
+
+        is ExecutionStartedPayload -> linkedMapOf<String, Any?>(
+            "executionId" to executionId.toString(),
+            "userMessageId" to userMessageId?.toString(),
+            "model" to model,
+            "provider" to provider,
+            "streamingMessages" to streamingMessages,
+        ).withoutNulls()
+
+        is ExecutionFinishedPayload -> linkedMapOf<String, Any?>(
+            "executionId" to executionId.toString(),
+            "assistantMessageId" to assistantMessageId?.toString(),
+            "status" to status,
+            "promptTokens" to usage?.promptTokens,
+            "completionTokens" to usage?.completionTokens,
+            "totalTokens" to usage?.totalTokens,
+            "precachedTokens" to usage?.precachedTokens,
+        ).withoutNulls()
+
+        is ExecutionFailedPayload -> linkedMapOf<String, Any?>(
+            "executionId" to executionId.toString(),
+            "assistantMessageId" to assistantMessageId?.toString(),
+            "errorCode" to errorCode,
+            "errorMessage" to errorMessage,
+        ).withoutNulls()
+
+        is ExecutionCancelledPayload -> linkedMapOf<String, Any?>(
+            "executionId" to executionId.toString(),
+            "assistantMessageId" to assistantMessageId?.toString(),
+        ).withoutNulls()
+
+        is ChoiceRequestedPayload -> linkedMapOf<String, Any?>(
+            "optionId" to optionId.toString(),
+            "kind" to kind,
+            "title" to (title ?: ""),
+            "selectionMode" to selectionMode,
+            "options" to options.map { option ->
+                BackendV1OptionItemDto(
+                    id = option.id,
+                    label = option.label,
+                    content = option.content,
+                )
+            },
+        ).withoutNulls()
+
+        is ChoiceAnsweredPayload -> linkedMapOf<String, Any?>(
+            "optionId" to optionId.toString(),
+            "status" to status,
+            "selectedOptionIds" to selectedOptionIds,
+            "freeText" to (freeText ?: ""),
+            "metadata" to metadata,
+        )
+
+        is ToolCallStartedPayload -> linkedMapOf<String, Any?>(
+            "toolCallId" to toolCallId,
+            "name" to name,
+            "argumentKeys" to argumentKeys,
+            "argumentsPreview" to argumentsPreview,
+        ).withoutNulls()
+
+        is ToolCallFinishedPayload -> linkedMapOf<String, Any?>(
+            "toolCallId" to toolCallId,
+            "name" to name,
+            "status" to "finished",
+            "durationMs" to durationMs,
+            "resultPreview" to resultPreview,
+        ).withoutNulls()
+
+        is ToolCallFailedPayload -> linkedMapOf<String, Any?>(
+            "toolCallId" to toolCallId,
+            "name" to name,
+            "status" to "failed",
+            "error" to error,
+            "durationMs" to durationMs,
+        ).withoutNulls()
+
+        is RawAgentEventPayload -> values.toLegacyTransportPayload(type)
+    }
+
+private fun LinkedHashMap<String, Any?>.withoutNulls(): Map<String, Any?> =
+    entries.filter { it.value != null }.associateTo(LinkedHashMap()) { it.toPair() }
+
+private fun Map<String, String>.toLegacyTransportPayload(type: AgentEventType): Map<String, Any?> =
     when (type) {
         AgentEventType.MESSAGE_CREATED,
         AgentEventType.MESSAGE_COMPLETED,
-        -> buildPayload {
+        -> buildLegacyPayload {
             copyIfPresent("messageId")
             copyLongIfPresent("seq")
             copyIfPresent("role")
             copyIfPresent("content")
         }
 
-        AgentEventType.MESSAGE_DELTA -> buildPayload {
+        AgentEventType.MESSAGE_DELTA -> buildLegacyPayload {
             copyIfPresent("messageId")
             copyLongIfPresent("seq")
             copyIfPresent("delta")
         }
 
-        AgentEventType.EXECUTION_STARTED -> buildPayload {
+        AgentEventType.EXECUTION_STARTED -> buildLegacyPayload {
             copyIfPresent("executionId")
             copyIfPresent("userMessageId")
             copyIfPresent("model")
@@ -315,7 +431,7 @@ private fun Map<String, String>.toTransportPayload(type: AgentEventType): Map<St
             copyBooleanIfPresent("streamingMessages")
         }
 
-        AgentEventType.EXECUTION_FINISHED -> buildPayload {
+        AgentEventType.EXECUTION_FINISHED -> buildLegacyPayload {
             copyIfPresent("executionId")
             copyIfPresent("assistantMessageId")
             copyIfPresent("status")
@@ -325,19 +441,19 @@ private fun Map<String, String>.toTransportPayload(type: AgentEventType): Map<St
             copyIntIfPresent("precachedTokens")
         }
 
-        AgentEventType.EXECUTION_FAILED -> buildPayload {
+        AgentEventType.EXECUTION_FAILED -> buildLegacyPayload {
             copyIfPresent("executionId")
             copyIfPresent("assistantMessageId")
             copyIfPresent("errorCode")
             copyIfPresent("errorMessage")
         }
 
-        AgentEventType.EXECUTION_CANCELLED -> buildPayload {
+        AgentEventType.EXECUTION_CANCELLED -> buildLegacyPayload {
             copyIfPresent("executionId")
             copyIfPresent("assistantMessageId")
         }
 
-        AgentEventType.OPTION_REQUESTED -> buildPayload {
+        AgentEventType.OPTION_REQUESTED -> buildLegacyPayload {
             copyIfPresent("optionId")
             copyIfPresent("optionId", sourceKey = "choiceId")
             copyIfPresent("kind")
@@ -346,7 +462,7 @@ private fun Map<String, String>.toTransportPayload(type: AgentEventType): Map<St
             copyJsonIfPresent<List<BackendV1OptionItemDto>>("options")
         }
 
-        AgentEventType.OPTION_ANSWERED -> buildPayload {
+        AgentEventType.OPTION_ANSWERED -> buildLegacyPayload {
             copyIfPresent("optionId")
             copyIfPresent("optionId", sourceKey = "choiceId")
             copyIfPresent("status")
@@ -355,13 +471,13 @@ private fun Map<String, String>.toTransportPayload(type: AgentEventType): Map<St
             copyJsonIfPresent<Map<String, String>>("metadata")
         }
 
-        AgentEventType.TOOL_CALL_STARTED -> buildPayload {
+        AgentEventType.TOOL_CALL_STARTED -> buildLegacyPayload {
             copyIfPresent("toolCallId")
             copyIfPresent("name")
             copyJsonValueIfPresent("argumentsPreview")
         }
 
-        AgentEventType.TOOL_CALL_FINISHED -> buildPayload {
+        AgentEventType.TOOL_CALL_FINISHED -> buildLegacyPayload {
             copyIfPresent("toolCallId")
             copyIfPresent("name")
             copyIfPresent("status")
@@ -369,7 +485,7 @@ private fun Map<String, String>.toTransportPayload(type: AgentEventType): Map<St
             copyJsonValueIfPresent("resultPreview")
         }
 
-        AgentEventType.TOOL_CALL_FAILED -> buildPayload {
+        AgentEventType.TOOL_CALL_FAILED -> buildLegacyPayload {
             copyIfPresent("toolCallId")
             copyIfPresent("name")
             copyIfPresent("status")
@@ -378,12 +494,12 @@ private fun Map<String, String>.toTransportPayload(type: AgentEventType): Map<St
         }
     }
 
-private inline fun Map<String, String>.buildPayload(
-    block: PayloadBuilder.() -> Unit,
+private inline fun Map<String, String>.buildLegacyPayload(
+    block: LegacyPayloadBuilder.() -> Unit,
 ): Map<String, Any?> =
-    PayloadBuilder(this).apply(block).values
+    LegacyPayloadBuilder(this).apply(block).values
 
-private class PayloadBuilder(
+private class LegacyPayloadBuilder(
     private val source: Map<String, String>,
 ) {
     val values: MutableMap<String, Any?> = LinkedHashMap()

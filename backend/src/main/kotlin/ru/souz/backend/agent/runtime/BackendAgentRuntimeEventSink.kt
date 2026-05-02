@@ -9,18 +9,31 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.backend.events.model.AgentEventPayload
+import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.ChoiceOptionItemPayload
+import ru.souz.backend.events.model.ChoiceRequestedPayload
+import ru.souz.backend.events.model.ExecutionCancelledPayload
+import ru.souz.backend.events.model.ExecutionFailedPayload
+import ru.souz.backend.events.model.ExecutionFinishedPayload
+import ru.souz.backend.events.model.ExecutionStartedPayload
+import ru.souz.backend.events.model.ExecutionUsagePayload
+import ru.souz.backend.events.model.MessageCompletedPayload
+import ru.souz.backend.events.model.MessageCreatedPayload
+import ru.souz.backend.events.model.MessageDeltaPayload
+import ru.souz.backend.events.model.ToolCallFailedPayload
+import ru.souz.backend.events.model.ToolCallFinishedPayload
+import ru.souz.backend.events.model.ToolCallStartedPayload
+import ru.souz.backend.events.service.AgentEventService
+import ru.souz.backend.execution.model.AgentExecution
+import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.options.model.OptionItem
 import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.options.repository.OptionRepository
-import ru.souz.backend.events.model.AgentEventType
-import ru.souz.backend.events.service.AgentEventService
-import ru.souz.backend.execution.model.AgentExecution
-import ru.souz.backend.execution.model.AgentExecutionStatus
-import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.toolcall.repository.ToolCallRepository
-import ru.souz.llms.restJsonMapper
 
 /**
  * Not logically concurrent.
@@ -78,12 +91,18 @@ internal class BackendAgentRuntimeEventSink(
                 }
                 appendDurableEvent(
                     type = AgentEventType.OPTION_REQUESTED,
-                    payload = mapOf(
-                        "optionId" to option.id.toString(),
-                        "kind" to option.kind.value,
-                        "title" to (option.title ?: ""),
-                        "selectionMode" to option.selectionMode,
-                        "options" to restJsonMapper.writeValueAsString(option.options),
+                    payload = ChoiceRequestedPayload(
+                        optionId = option.id,
+                        kind = option.kind.value,
+                        title = option.title,
+                        selectionMode = option.selectionMode,
+                        options = option.options.map { item ->
+                            ChoiceOptionItemPayload(
+                                id = item.id,
+                                label = item.label,
+                                content = item.content,
+                            )
+                        },
                     ),
                 )
             }
@@ -93,17 +112,18 @@ internal class BackendAgentRuntimeEventSink(
     suspend fun emitExecutionStarted(execution: AgentExecution) {
         appendDurableEvent(
             type = AgentEventType.EXECUTION_STARTED,
-            payload = buildMap {
-                put("executionId", execution.id.toString())
-                execution.userMessageId?.let { put("userMessageId", it.toString()) }
-                execution.model?.let { put("model", it.alias) }
-                execution.provider?.let { put("provider", it.name) }
-                put("streamingMessages", streamingMessagesEnabled.toString())
-            },
+            payload = ExecutionStartedPayload(
+                executionId = execution.id,
+                userMessageId = execution.userMessageId,
+                model = execution.model?.alias,
+                provider = execution.provider?.name,
+                streamingMessages = streamingMessagesEnabled,
+            ),
         )
     }
 
     private suspend fun onToolCallStarted(event: AgentRuntimeEvent.ToolCallStarted) {
+        val argumentsPreviewNode = toolCallPreviewer.argumentsPreview(event.arguments)
         val argumentsPreview = toolCallPreviewer.argumentsPreviewJson(event.arguments)
         toolCallRepository.started(
             userId = userId,
@@ -118,15 +138,17 @@ internal class BackendAgentRuntimeEventSink(
         }
         appendDurableEvent(
             type = AgentEventType.TOOL_CALL_STARTED,
-            payload = mapOf(
-                "toolCallId" to event.toolCallId,
-                "name" to event.name,
-                "argumentsPreview" to argumentsPreview,
+            payload = ToolCallStartedPayload(
+                toolCallId = event.toolCallId,
+                name = event.name,
+                argumentKeys = event.arguments.keys.sorted(),
+                argumentsPreview = argumentsPreviewNode,
             ),
         )
     }
 
     private suspend fun onToolCallFinished(event: AgentRuntimeEvent.ToolCallFinished) {
+        val resultPreviewNode = toolCallPreviewer.resultPreview(event.result)
         val resultPreview = toolCallPreviewer.resultPreviewJson(event.result)
         toolCallRepository.finished(
             userId = userId,
@@ -142,12 +164,11 @@ internal class BackendAgentRuntimeEventSink(
         }
         appendDurableEvent(
             type = AgentEventType.TOOL_CALL_FINISHED,
-            payload = mapOf(
-                "toolCallId" to event.toolCallId,
-                "name" to event.name,
-                "status" to "finished",
-                "durationMs" to event.durationMs.toString(),
-                "resultPreview" to resultPreview,
+            payload = ToolCallFinishedPayload(
+                toolCallId = event.toolCallId,
+                name = event.name,
+                resultPreview = resultPreviewNode,
+                durationMs = event.durationMs,
             ),
         )
     }
@@ -168,12 +189,11 @@ internal class BackendAgentRuntimeEventSink(
         }
         appendDurableEvent(
             type = AgentEventType.TOOL_CALL_FAILED,
-            payload = mapOf(
-                "toolCallId" to event.toolCallId,
-                "name" to event.name,
-                "status" to "failed",
-                "durationMs" to event.durationMs.toString(),
-                "error" to safeError,
+            payload = ToolCallFailedPayload(
+                toolCallId = event.toolCallId,
+                name = event.name,
+                error = safeError,
+                durationMs = event.durationMs,
             ),
         )
     }
@@ -208,7 +228,12 @@ internal class BackendAgentRuntimeEventSink(
         assistantMessage = completedMessage
         appendDurableEvent(
             type = AgentEventType.MESSAGE_COMPLETED,
-            payload = messagePayload(completedMessage),
+            payload = MessageCompletedPayload(
+                messageId = completedMessage.id,
+                seq = completedMessage.seq,
+                role = completedMessage.role.value,
+                content = completedMessage.content,
+            ),
         )
         return completedMessage
     }
@@ -216,17 +241,19 @@ internal class BackendAgentRuntimeEventSink(
     suspend fun emitExecutionFinished(execution: AgentExecution) {
         appendDurableEvent(
             type = AgentEventType.EXECUTION_FINISHED,
-            payload = buildMap {
-                put("executionId", execution.id.toString())
-                execution.assistantMessageId?.let { put("assistantMessageId", it.toString()) }
-                put("status", execution.status.value)
-                execution.usage?.let { usage ->
-                    put("promptTokens", usage.promptTokens.toString())
-                    put("completionTokens", usage.completionTokens.toString())
-                    put("totalTokens", usage.totalTokens.toString())
-                    put("precachedTokens", usage.precachedTokens.toString())
-                }
-            },
+            payload = ExecutionFinishedPayload(
+                executionId = execution.id,
+                assistantMessageId = execution.assistantMessageId,
+                status = execution.status.value,
+                usage = execution.usage?.let { usage ->
+                    ExecutionUsagePayload(
+                        promptTokens = usage.promptTokens,
+                        completionTokens = usage.completionTokens,
+                        totalTokens = usage.totalTokens,
+                        precachedTokens = usage.precachedTokens,
+                    )
+                },
+            ),
         )
     }
 
@@ -236,22 +263,22 @@ internal class BackendAgentRuntimeEventSink(
     ) {
         appendDurableEvent(
             type = AgentEventType.EXECUTION_FAILED,
-            payload = buildMap {
-                put("executionId", executionId.toString())
-                put("errorCode", errorCode)
-                put("errorMessage", errorMessage)
-                assistantMessage?.id?.let { put("assistantMessageId", it.toString()) }
-            },
+            payload = ExecutionFailedPayload(
+                executionId = executionId,
+                assistantMessageId = assistantMessage?.id,
+                errorCode = errorCode,
+                errorMessage = errorMessage,
+            ),
         )
     }
 
     suspend fun emitExecutionCancelled() {
         appendDurableEvent(
             type = AgentEventType.EXECUTION_CANCELLED,
-            payload = buildMap {
-                put("executionId", executionId.toString())
-                assistantMessage?.id?.let { put("assistantMessageId", it.toString()) }
-            },
+            payload = ExecutionCancelledPayload(
+                executionId = executionId,
+                assistantMessageId = assistantMessage?.id,
+            ),
         )
     }
 
@@ -260,17 +287,22 @@ internal class BackendAgentRuntimeEventSink(
 
         publishLiveEvent(
             type = AgentEventType.MESSAGE_DELTA,
-            payload = buildMap {
-                put("messageId", finalAssistantMessageId.toString())
-                put("delta", event.text)
-            },
+            payload = MessageDeltaPayload(
+                messageId = finalAssistantMessageId,
+                delta = event.text,
+            ),
         )
     }
 
     private suspend fun emitMessageCreated(message: ChatMessage) {
         appendDurableEvent(
             type = AgentEventType.MESSAGE_CREATED,
-            payload = messagePayload(message),
+            payload = MessageCreatedPayload(
+                messageId = message.id,
+                seq = message.seq,
+                role = message.role.value,
+                content = message.content,
+            ),
         )
     }
 
@@ -324,7 +356,7 @@ internal class BackendAgentRuntimeEventSink(
 
     private suspend fun appendDurableEvent(
         type: AgentEventType,
-        payload: Map<String, String>,
+        payload: AgentEventPayload,
     ) {
         eventService.appendDurable(
             userId = userId,
@@ -337,7 +369,7 @@ internal class BackendAgentRuntimeEventSink(
 
     private suspend fun publishLiveEvent(
         type: AgentEventType,
-        payload: Map<String, String>,
+        payload: AgentEventPayload,
     ) {
         eventService.publishLive(
             userId = userId,
@@ -348,10 +380,4 @@ internal class BackendAgentRuntimeEventSink(
         )
     }
 
-    private fun messagePayload(message: ChatMessage): Map<String, String> = buildMap {
-        put("messageId", message.id.toString())
-        put("seq", message.seq.toString())
-        put("role", message.role.value)
-        put("content", message.content)
-    }
 }

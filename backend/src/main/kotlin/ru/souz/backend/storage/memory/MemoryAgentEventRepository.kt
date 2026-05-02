@@ -5,6 +5,7 @@ import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.repository.AgentEventRepository
 
@@ -22,7 +23,7 @@ class MemoryAgentEventRepository(
         chatId: UUID,
         executionId: UUID?,
         type: AgentEventType,
-        payload: Map<String, String>,
+        payload: AgentEventPayload,
         id: UUID,
         createdAt: Instant,
     ): AgentEvent = mutex.withLock {

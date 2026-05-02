@@ -26,6 +26,7 @@ import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.options.model.OptionItem
 import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentEventPayloadStorageCodec
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -270,16 +271,21 @@ internal fun ResultSet.toOption(): Option =
     )
 
 internal fun ResultSet.toEvent(): AgentEvent =
-    AgentEvent(
-        id = getObject("id", java.util.UUID::class.java),
-        userId = getString("user_id"),
-        chatId = getObject("chat_id", java.util.UUID::class.java),
-        executionId = getObject("execution_id", java.util.UUID::class.java),
-        seq = getLong("seq"),
-        type = parseEventType(getString("type")),
-        payload = postgresStorageMapper.readValue<Map<String, String>>(getString("payload")),
-        createdAt = instant("created_at"),
-    )
+    parseEventType(getString("type")).let { eventType ->
+        AgentEvent(
+            id = getObject("id", java.util.UUID::class.java),
+            userId = getString("user_id"),
+            chatId = getObject("chat_id", java.util.UUID::class.java),
+            executionId = getObject("execution_id", java.util.UUID::class.java),
+            seq = getLong("seq"),
+            type = eventType,
+            payload = AgentEventPayloadStorageCodec.fromStorageJson(
+                type = eventType,
+                payload = postgresStorageMapper.readTree(getString("payload")),
+            ),
+            createdAt = instant("created_at"),
+        )
+    }
 
 internal fun ResultSet.toToolCall(): ToolCall =
     ToolCall(

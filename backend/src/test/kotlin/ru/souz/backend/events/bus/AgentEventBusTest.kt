@@ -10,6 +10,8 @@ import kotlinx.coroutines.withTimeout
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentLiveEvent
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.MessageDeltaPayload
+import ru.souz.backend.events.model.RawAgentEventPayload
 
 class AgentEventBusTest {
     @Test
@@ -79,7 +81,7 @@ class AgentEventBusTest {
         executionId = null,
         seq = seq,
         type = AgentEventType.MESSAGE_DELTA,
-        payload = mapOf("seq" to seq.toString()),
+        payload = RawAgentEventPayload(mapOf("seq" to seq.toString())),
         createdAt = Instant.parse("2026-05-02T10:00:00Z"),
     )
 
@@ -92,7 +94,7 @@ class AgentEventBusTest {
         chatId = chatId,
         executionId = null,
         type = AgentEventType.MESSAGE_DELTA,
-        payload = mapOf("delta" to "chunk"),
+        payload = MessageDeltaPayload(messageId = UUID.randomUUID(), delta = "chunk"),
         createdAt = Instant.parse("2026-05-02T10:00:01Z"),
     )
 }

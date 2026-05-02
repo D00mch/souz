@@ -7,7 +7,6 @@ import ru.souz.llms.LlmProvider
 
 class FilesystemUserProviderKeyRepository(
     dataDir: java.nio.file.Path,
-    @Suppress("unused") private val masterKey: String,
     mapper: ObjectMapper = filesystemStorageObjectMapper(),
 ) : BaseFilesystemRepository(dataDir, mapper), UserProviderKeyRepository {
 

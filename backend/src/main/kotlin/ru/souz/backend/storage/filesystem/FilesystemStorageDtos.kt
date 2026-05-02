@@ -1,5 +1,6 @@
 package ru.souz.backend.storage.filesystem
 
+import com.fasterxml.jackson.databind.JsonNode
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
@@ -15,6 +16,7 @@ import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.options.model.OptionItem
 import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentEventPayloadStorageCodec
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -136,7 +138,7 @@ internal data class StoredAgentEvent(
     val executionId: String?,
     val seq: Long,
     val type: String,
-    val payload: Map<String, String>,
+    val payload: JsonNode,
     val createdAt: String,
 )
 
@@ -413,21 +415,23 @@ internal fun AgentEvent.toStored(): StoredAgentEvent =
         executionId = executionId?.toString(),
         seq = seq,
         type = type.value,
-        payload = payload,
+        payload = AgentEventPayloadStorageCodec.toStorageJson(payload),
         createdAt = createdAt.toString(),
     )
 
 internal fun StoredAgentEvent.toDomain(): AgentEvent =
-    AgentEvent(
-        id = UUID.fromString(id),
-        userId = userId,
-        chatId = UUID.fromString(chatId),
-        executionId = executionId?.let(UUID::fromString),
-        seq = seq,
-        type = parseEventType(type),
-        payload = payload,
-        createdAt = Instant.parse(createdAt),
-    )
+    parseEventType(type).let { eventType ->
+        AgentEvent(
+            id = UUID.fromString(id),
+            userId = userId,
+            chatId = UUID.fromString(chatId),
+            executionId = executionId?.let(UUID::fromString),
+            seq = seq,
+            type = eventType,
+            payload = AgentEventPayloadStorageCodec.fromStorageJson(eventType, payload),
+            createdAt = Instant.parse(createdAt),
+        )
+    }
 
 internal fun ToolCall.toStored(): StoredToolCall =
     StoredToolCall(

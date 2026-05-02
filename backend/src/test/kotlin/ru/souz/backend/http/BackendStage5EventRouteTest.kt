@@ -86,11 +86,11 @@ class BackendStage5EventRouteTest {
             events.map { it.type },
         )
         assertTrue(events.all { it.executionId == executionId })
-        assertEquals(assistantMessageId, events.first { it.type == AgentEventType.MESSAGE_CREATED }.payload["messageId"])
+        assertEquals(assistantMessageId, events.first { it.type == AgentEventType.MESSAGE_CREATED }.toDto().payload["messageId"])
         assertTrue(events.none { it.type == AgentEventType.MESSAGE_DELTA })
         assertEquals(
             "assistant reply to stream me",
-            events.first { it.type == AgentEventType.MESSAGE_COMPLETED }.payload["content"],
+            events.first { it.type == AgentEventType.MESSAGE_COMPLETED }.toDto().payload["content"],
         )
     }
 

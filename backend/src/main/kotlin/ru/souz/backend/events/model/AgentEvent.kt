@@ -10,7 +10,7 @@ data class AgentEvent(
     override val executionId: UUID?,
     override val seq: Long,
     override val type: AgentEventType,
-    override val payload: Map<String, String>,
+    override val payload: AgentEventPayload,
     override val createdAt: Instant,
 ) : AgentEventEnvelope {
     override val durable: Boolean = true

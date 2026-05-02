@@ -9,7 +9,7 @@ data class AgentLiveEvent(
     override val chatId: UUID,
     override val executionId: UUID?,
     override val type: AgentEventType,
-    override val payload: Map<String, String>,
+    override val payload: AgentEventPayload,
     override val createdAt: Instant,
 ) : AgentEventEnvelope {
     override val seq: Long? = null

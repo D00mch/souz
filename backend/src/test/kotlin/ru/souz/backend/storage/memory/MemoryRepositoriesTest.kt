@@ -29,6 +29,7 @@ import ru.souz.backend.settings.model.ToolPermissionMode
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.testutil.rawEventPayload
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
@@ -419,21 +420,21 @@ class MemoryRepositoriesTest {
             chatId = chatId,
             executionId = execution.id,
             type = AgentEventType.EXECUTION_STARTED,
-            payload = mapOf("requestId" to "req-1"),
+            payload = rawEventPayload("requestId" to "req-1"),
         )
         val secondEvent = eventRepository.append(
             userId = "user-a",
             chatId = chatId,
             executionId = execution.id,
             type = AgentEventType.MESSAGE_COMPLETED,
-            payload = mapOf("messageId" to UUID.randomUUID().toString()),
+            payload = rawEventPayload("messageId" to UUID.randomUUID().toString()),
         )
         val foreignEvent = eventRepository.append(
             userId = "user-b",
             chatId = otherChatId,
             executionId = otherExecution.id,
             type = AgentEventType.EXECUTION_STARTED,
-            payload = emptyMap(),
+            payload = rawEventPayload(emptyMap()),
         )
 
         assertEquals(execution, executionRepository.get("user-a", execution.id))
@@ -493,7 +494,7 @@ class MemoryRepositoriesTest {
                 chatId = chatId,
                 executionId = null,
                 type = AgentEventType.MESSAGE_CREATED,
-                payload = mapOf("index" to index.toString()),
+                payload = rawEventPayload("index" to index.toString()),
             ).id
         }
 
@@ -504,7 +505,7 @@ class MemoryRepositoriesTest {
             chatId = chatId,
             executionId = null,
             type = AgentEventType.MESSAGE_COMPLETED,
-            payload = mapOf("index" to "next"),
+            payload = rawEventPayload("index" to "next"),
         )
         val retained = repository.listByChat("user-a", chatId, limit = MEMORY_REPOSITORY_LIMIT * 2)
 

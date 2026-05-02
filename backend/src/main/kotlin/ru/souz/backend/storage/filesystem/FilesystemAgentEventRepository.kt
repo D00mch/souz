@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.repository.AgentEventRepository
 
@@ -17,7 +18,7 @@ class FilesystemAgentEventRepository(
         chatId: UUID,
         executionId: UUID?,
         type: AgentEventType,
-        payload: Map<String, String>,
+        payload: AgentEventPayload,
         id: UUID,
         createdAt: Instant,
     ): AgentEvent =
