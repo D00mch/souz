@@ -14,11 +14,11 @@ import ru.souz.agent.AgentId
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
-import ru.souz.backend.choices.model.Choice
-import ru.souz.backend.choices.model.ChoiceAnswer
-import ru.souz.backend.choices.model.ChoiceKind
-import ru.souz.backend.choices.model.ChoiceOption
-import ru.souz.backend.choices.model.ChoiceStatus
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.model.OptionAnswer
+import ru.souz.backend.options.model.OptionKind
+import ru.souz.backend.options.model.OptionItem
+import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -397,9 +397,9 @@ class MemoryRepositoriesTest {
     }
 
     @Test
-    fun `choice and event repositories stay isolated by user and execution`() = runTest {
+    fun `option and event repositories stay isolated by user and execution`() = runTest {
         val executionRepository = MemoryAgentExecutionRepository()
-        val choiceRepository = MemoryChoiceRepository()
+        val optionRepository = MemoryOptionRepository()
         val eventRepository = MemoryAgentEventRepository()
         val chatId = UUID.randomUUID()
         val otherChatId = UUID.randomUUID()
@@ -409,10 +409,10 @@ class MemoryRepositoriesTest {
         executionRepository.create(execution)
         executionRepository.create(otherExecution)
 
-        val choice = choice(userId = "user-a", chatId = chatId, executionId = execution.id)
-        val otherChoice = choice(userId = "user-b", chatId = chatId, executionId = otherExecution.id)
-        choiceRepository.save(choice)
-        choiceRepository.save(otherChoice)
+        val option = option(userId = "user-a", chatId = chatId, executionId = execution.id)
+        val otherOption = option(userId = "user-b", chatId = chatId, executionId = otherExecution.id)
+        optionRepository.save(option)
+        optionRepository.save(otherOption)
 
         val firstEvent = eventRepository.append(
             userId = "user-a",
@@ -440,9 +440,9 @@ class MemoryRepositoriesTest {
         assertNull(executionRepository.get("user-a", otherExecution.id))
         assertEquals(listOf(execution), executionRepository.listByChat("user-a", chatId))
 
-        assertEquals(choice, choiceRepository.get("user-a", choice.id))
-        assertNull(choiceRepository.get("user-a", otherChoice.id))
-        assertEquals(listOf(choice), choiceRepository.listByExecution("user-a", chatId, execution.id))
+        assertEquals(option, optionRepository.get("user-a", option.id))
+        assertNull(optionRepository.get("user-a", otherOption.id))
+        assertEquals(listOf(option), optionRepository.listByExecution("user-a", chatId, execution.id))
 
         assertEquals(1L, firstEvent.seq)
         assertEquals(2L, secondEvent.seq)
@@ -454,31 +454,31 @@ class MemoryRepositoriesTest {
     }
 
     @Test
-    fun `choice repository evicts oldest entries past hard limit`() = runTest {
-        val repository = MemoryChoiceRepository()
+    fun `option repository evicts oldest entries past hard limit`() = runTest {
+        val repository = MemoryOptionRepository()
         val chatId = UUID.randomUUID()
         val executionId = UUID.randomUUID()
-        val choiceIds = ArrayList<UUID>(MEMORY_REPOSITORY_LIMIT + 1)
+        val optionIds = ArrayList<UUID>(MEMORY_REPOSITORY_LIMIT + 1)
 
         repeat(MEMORY_REPOSITORY_LIMIT + 1) { index ->
-            val choice = choice(
+            val option = option(
                 userId = "user-a",
                 chatId = chatId,
                 executionId = executionId,
             ).copy(
                 createdAt = Instant.parse("2026-04-30T08:30:00Z").plusSeconds(index.toLong()),
-                status = ChoiceStatus.ANSWERED,
-                answer = ChoiceAnswer(selectedOptionIds = setOf("a")),
+                status = OptionStatus.ANSWERED,
+                answer = OptionAnswer(selectedOptionIds = setOf("a")),
                 answeredAt = Instant.parse("2026-04-30T08:31:00Z").plusSeconds(index.toLong()),
             )
-            choiceIds += choice.id
-            repository.save(choice)
+            optionIds += option.id
+            repository.save(option)
         }
 
-        assertNull(repository.get("user-a", choiceIds.first()))
-        val choices = repository.listByExecution("user-a", chatId, executionId, limit = MEMORY_REPOSITORY_LIMIT * 2)
-        assertEquals(MEMORY_REPOSITORY_LIMIT, choices.size)
-        assertEquals(choiceIds.last(), choices.first().id)
+        assertNull(repository.get("user-a", optionIds.first()))
+        val options = repository.listByExecution("user-a", chatId, executionId, limit = MEMORY_REPOSITORY_LIMIT * 2)
+        assertEquals(MEMORY_REPOSITORY_LIMIT, options.size)
+        assertEquals(optionIds.last(), options.first().id)
     }
 
     @Test
@@ -663,22 +663,22 @@ class MemoryRepositoriesTest {
             metadata = mapOf("source" to "test"),
         )
 
-    private fun choice(
+    private fun option(
         userId: String,
         chatId: UUID,
         executionId: UUID,
-    ): Choice =
-        Choice(
+    ): Option =
+        Option(
             id = UUID.randomUUID(),
             userId = userId,
             chatId = chatId,
             executionId = executionId,
-            kind = ChoiceKind.GENERIC_SELECTION,
+            kind = OptionKind.GENERIC_SELECTION,
             title = "Pick one",
             selectionMode = "single",
-            options = listOf(ChoiceOption(id = "a", label = "A", content = "alpha")),
+            options = listOf(OptionItem(id = "a", label = "A", content = "alpha")),
             payload = mapOf("origin" to "test"),
-            status = ChoiceStatus.PENDING,
+            status = OptionStatus.PENDING,
             answer = null,
             createdAt = Instant.parse("2026-04-30T08:30:00Z"),
             expiresAt = null,

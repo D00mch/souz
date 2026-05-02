@@ -6,7 +6,7 @@ data class BackendFeatureFlags(
     val wsEvents: Boolean = false,
     val streamingMessages: Boolean = false,
     val toolEvents: Boolean = false,
-    val choices: Boolean = false,
+    val options: Boolean = false,
     val durableEventReplay: Boolean = false,
 ) {
     companion object {
@@ -27,9 +27,9 @@ data class BackendFeatureFlags(
                     propertyKey = "souz.backend.feature.toolEvents",
                     default = false,
                 ),
-                choices = source.booleanValue(
-                    envKey = "SOUZ_FEATURE_CHOICES",
-                    propertyKey = "souz.backend.feature.choices",
+                options = source.booleanValue(
+                    envKey = "SOUZ_FEATURE_OPTIONS",
+                    propertyKey = "souz.backend.feature.options",
                     default = false,
                 ),
                 durableEventReplay = source.booleanValue(

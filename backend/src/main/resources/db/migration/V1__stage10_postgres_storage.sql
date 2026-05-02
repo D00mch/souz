@@ -73,9 +73,9 @@ on agent_executions(user_id, chat_id, started_at desc);
 
 create unique index agent_executions_one_active_per_chat_idx
 on agent_executions(user_id, chat_id)
-where status in ('queued', 'running', 'waiting_choice', 'cancelling');
+where status in ('queued', 'running', 'waiting_option', 'cancelling');
 
-create table choices (
+create table options (
   id uuid primary key,
   user_id text not null references users(id) on delete cascade,
   chat_id uuid not null references chats(id) on delete cascade,
@@ -92,11 +92,11 @@ create table choices (
   answered_at timestamptz
 );
 
-create index choices_execution_idx
-on choices(user_id, chat_id, execution_id);
+create index options_execution_idx
+on options(user_id, chat_id, execution_id);
 
-create index choices_status_idx
-on choices(user_id, status);
+create index options_status_idx
+on options(user_id, status);
 
 create table agent_events (
   id uuid primary key,

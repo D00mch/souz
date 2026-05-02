@@ -19,12 +19,12 @@ import ru.souz.backend.agent.session.AgentStateConflictException
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
-import ru.souz.backend.choices.model.Choice
-import ru.souz.backend.choices.model.ChoiceAnswer
-import ru.souz.backend.choices.model.ChoiceKind
-import ru.souz.backend.choices.model.ChoiceOption
-import ru.souz.backend.choices.model.ChoiceStatus
-import ru.souz.backend.choices.repository.ChoiceAnswerUpdateResult
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.model.OptionAnswer
+import ru.souz.backend.options.model.OptionKind
+import ru.souz.backend.options.model.OptionItem
+import ru.souz.backend.options.model.OptionStatus
+import ru.souz.backend.options.repository.OptionAnswerUpdateResult
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.service.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
@@ -141,12 +141,12 @@ class PostgresRepositoriesTest {
                 userId = userId,
                 chatId = chat.id,
                 assistantMessageId = assistantPlaceholder.id,
-                status = AgentExecutionStatus.WAITING_CHOICE,
+                status = AgentExecutionStatus.WAITING_OPTION,
                 startedAt = Instant.parse("2026-05-01T09:10:00Z"),
             )
             repositories.executionRepository.create(execution)
-            val choice = choice(userId = userId, chatId = chat.id, executionId = execution.id)
-            repositories.choiceRepository.save(choice)
+            val option = option(userId = userId, chatId = chat.id, executionId = execution.id)
+            repositories.optionRepository.save(option)
             val firstEvent = repositories.eventRepository.append(
                 userId = userId,
                 chatId = chat.id,
@@ -158,8 +158,8 @@ class PostgresRepositoriesTest {
                 userId = userId,
                 chatId = chat.id,
                 executionId = execution.id,
-                type = AgentEventType.CHOICE_REQUESTED,
-                payload = mapOf("choiceId" to choice.id.toString()),
+                type = AgentEventType.OPTION_REQUESTED,
+                payload = mapOf("optionId" to option.id.toString()),
             )
 
             assertEquals(chat, repositories.chatRepository.get(userId, chat.id))
@@ -171,14 +171,14 @@ class PostgresRepositoriesTest {
             assertEquals(assistantPlaceholder, repositories.messageRepository.getById(userId, chat.id, assistantPlaceholder.id))
             assertEquals(execution, repositories.executionRepository.get(userId, execution.id))
             assertEquals(execution, repositories.executionRepository.findActive(userId, chat.id))
-            assertEquals(listOf(choice), repositories.choiceRepository.listByExecution(userId, chat.id, execution.id))
+            assertEquals(listOf(option), repositories.optionRepository.listByExecution(userId, chat.id, execution.id))
             assertEquals(listOf(firstEvent, secondEvent), repositories.eventRepository.listByChat(userId, chat.id))
         }
 
         postgresRepositories(schema, durableEvents = true).use { repositories ->
             val assistantPlaceholder = repositories.messageRepository.list(userId, chat.id).single { it.role == ChatRole.ASSISTANT }
             val execution = repositories.executionRepository.findActive(userId, chat.id)
-            val choice = repositories.choiceRepository.listByExecution(userId, chat.id, execution!!.id).single()
+            val option = repositories.optionRepository.listByExecution(userId, chat.id, execution!!.id).single()
 
             val updatedAssistant = repositories.messageRepository.updateContent(
                 userId = userId,
@@ -192,10 +192,10 @@ class PostgresRepositoriesTest {
                 role = ChatRole.USER,
                 content = "follow up",
             )
-            val answerResult = repositories.choiceRepository.answerPending(
+            val answerResult = repositories.optionRepository.answerPending(
                 userId = userId,
-                choiceId = choice.id,
-                answer = ChoiceAnswer(
+                optionId = option.id,
+                answer = OptionAnswer(
                     selectedOptionIds = setOf("a"),
                     freeText = "because alpha",
                     metadata = mapOf("source" to "web-ui"),
@@ -224,14 +224,14 @@ class PostgresRepositoriesTest {
 
             assertEquals(assistantPlaceholder.copy(content = "assistant reply"), updatedAssistant)
             assertEquals(3L, nextUserMessage.seq)
-            assertIs<ChoiceAnswerUpdateResult.Updated>(answerResult)
+            assertIs<OptionAnswerUpdateResult.Updated>(answerResult)
             assertEquals(3L, thirdEvent.seq)
         }
 
         postgresRepositories(schema, durableEvents = true).use { repositories ->
             val storedState = repositories.stateRepository.get(userId, chat.id)
             val execution = repositories.executionRepository.listByChat(userId, chat.id).single()
-            val choice = repositories.choiceRepository.listByExecution(userId, chat.id, execution.id).single()
+            val option = repositories.optionRepository.listByExecution(userId, chat.id, execution.id).single()
 
             assertNotNull(storedState)
             assertEquals(
@@ -241,9 +241,9 @@ class PostgresRepositoriesTest {
             assertEquals("assistant reply", repositories.messageRepository.get(userId, chat.id, 2L)?.content)
             assertEquals(AgentExecutionStatus.COMPLETED, execution.status)
             assertNull(repositories.executionRepository.findActive(userId, chat.id))
-            assertEquals(ChoiceStatus.ANSWERED, choice.status)
+            assertEquals(OptionStatus.ANSWERED, option.status)
             assertEquals(
-                listOf("execution.started", "choice.requested", "execution.finished"),
+                listOf("execution.started", "option.requested", "execution.finished"),
                 repositories.eventRepository.listByChat(userId, chat.id).map { it.type.value },
             )
         }
@@ -439,7 +439,7 @@ class PostgresRepositoriesTest {
             messageRepository = PostgresMessageRepository(dataSource),
             stateRepository = PostgresAgentStateRepository(dataSource),
             executionRepository = PostgresAgentExecutionRepository(dataSource),
-            choiceRepository = PostgresChoiceRepository(dataSource),
+            optionRepository = PostgresOptionRepository(dataSource),
             eventRepository = PostgresAgentEventRepository(dataSource),
             toolCallRepository = PostgresToolCallRepository(dataSource),
             settingsRepository = PostgresUserSettingsRepository(dataSource),
@@ -531,22 +531,22 @@ class PostgresRepositoriesTest {
             ),
         )
 
-    private fun choice(
+    private fun option(
         userId: String,
         chatId: UUID,
         executionId: UUID,
-    ): Choice =
-        Choice(
+    ): Option =
+        Option(
             id = UUID.randomUUID(),
             userId = userId,
             chatId = chatId,
             executionId = executionId,
-            kind = ChoiceKind.GENERIC_SELECTION,
+            kind = OptionKind.GENERIC_SELECTION,
             title = "Pick one",
             selectionMode = "single",
-            options = listOf(ChoiceOption(id = "a", label = "A", content = "alpha")),
+            options = listOf(OptionItem(id = "a", label = "A", content = "alpha")),
             payload = mapOf("origin" to "test"),
-            status = ChoiceStatus.PENDING,
+            status = OptionStatus.PENDING,
             answer = null,
             createdAt = Instant.parse("2026-05-01T08:30:00Z"),
             expiresAt = null,
@@ -560,7 +560,7 @@ private data class PostgresRepositoryBundle(
     val messageRepository: PostgresMessageRepository,
     val stateRepository: PostgresAgentStateRepository,
     val executionRepository: PostgresAgentExecutionRepository,
-    val choiceRepository: PostgresChoiceRepository,
+    val optionRepository: PostgresOptionRepository,
     val eventRepository: PostgresAgentEventRepository,
     val toolCallRepository: PostgresToolCallRepository,
     val settingsRepository: PostgresUserSettingsRepository,

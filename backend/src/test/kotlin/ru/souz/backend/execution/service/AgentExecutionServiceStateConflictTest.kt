@@ -33,7 +33,7 @@ import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.storage.memory.MemoryAgentEventRepository
 import ru.souz.backend.storage.memory.MemoryAgentExecutionRepository
 import ru.souz.backend.storage.memory.MemoryChatRepository
-import ru.souz.backend.storage.memory.MemoryChoiceRepository
+import ru.souz.backend.storage.memory.MemoryOptionRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
 import ru.souz.backend.storage.memory.MemoryToolCallRepository
 import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
@@ -48,7 +48,7 @@ class AgentExecutionServiceStateConflictTest {
         val chatRepository = MemoryChatRepository()
         val messageRepository = MemoryMessageRepository()
         val executionRepository = MemoryAgentExecutionRepository()
-        val choiceRepository = MemoryChoiceRepository()
+        val optionRepository = MemoryOptionRepository()
         val eventRepository = MemoryAgentEventRepository()
         val userSettingsRepository = MemoryUserSettingsRepository()
         val stateRepository = ConflictOnSaveAgentStateRepository(
@@ -123,7 +123,7 @@ class AgentExecutionServiceStateConflictTest {
                 ),
             ),
             executionRepository = executionRepository,
-            choiceRepository = choiceRepository,
+            optionRepository = optionRepository,
             eventRepository = eventRepository,
             eventService = eventService,
             toolCallRepository = MemoryToolCallRepository(),

@@ -56,7 +56,10 @@ class FilesystemStorageLayout(
     fun executionsFile(userId: String, chatId: java.util.UUID): Path =
         chatDir(userId, chatId).resolve("executions.jsonl")
 
-    fun choicesFile(userId: String, chatId: java.util.UUID): Path =
+    fun optionsFile(userId: String, chatId: java.util.UUID): Path =
+        chatDir(userId, chatId).resolve("options.jsonl")
+
+    fun legacyOptionsFile(userId: String, chatId: java.util.UUID): Path =
         chatDir(userId, chatId).resolve("choices.jsonl")
 
     fun eventsFile(userId: String, chatId: java.util.UUID): Path =

@@ -38,10 +38,10 @@ import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.choices.model.Choice
-import ru.souz.backend.choices.model.ChoiceKind
-import ru.souz.backend.choices.model.ChoiceOption
-import ru.souz.backend.choices.model.ChoiceStatus
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.model.OptionKind
+import ru.souz.backend.options.model.OptionItem
+import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.llms.LLMMessageRole
@@ -52,12 +52,12 @@ import ru.souz.llms.LlmProvider
 
 private val stage8Json = jacksonObjectMapper()
 
-class BackendStage8ChoiceRouteTest {
+class BackendStage8OptionRouteTest {
     @Test
-    fun `choice request persists choice marks execution waiting and replays through event stream`() = testApplication {
-        val runner = ScriptedChoiceTurnRunner()
+    fun `option request persists option marks execution waiting and replays through event stream`() = testApplication {
+        val runner = ScriptedOptionTurnRunner()
         val context = stage8RouteTestContext(runner)
-        val chat = chat(userId = "user-a", title = "Choice replay")
+        val chat = chat(userId = "user-a", title = "Option replay")
         runBlocking {
             context.chatRepository.create(chat)
         }
@@ -69,20 +69,20 @@ class BackendStage8ChoiceRouteTest {
         val response = client.post("/v1/chats/${chat.id}/messages") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
-            setBody("""{"content":"need choice"}""")
+            setBody("""{"content":"need option"}""")
         }
         val payload = stage8Json.readTree(response.bodyAsText())
         val storedExecution = runBlocking { context.executionRepository.listByChat("user-a", chat.id).single() }
-        val storedChoice = runBlocking {
-            context.choiceRepository.listByExecution("user-a", chat.id, storedExecution.id).single()
+        val storedOption = runBlocking {
+            context.optionRepository.listByExecution("user-a", chat.id, storedExecution.id).single()
         }
         val replayResponse = client.get("/v1/chats/${chat.id}/events?afterSeq=0") {
             trustedHeaders("user-a")
         }
         val replayPayload = stage8Json.readTree(replayResponse.bodyAsText())
-        val choiceRequestedEvent = replayPayload["items"].first { it["type"].asText() == "choice.requested" }
+        val optionRequestedEvent = replayPayload["items"].first { it["type"].asText() == "option.requested" }
         val reconnectSession = runBlocking {
-            wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=${choiceRequestedEvent["seq"].asLong() - 1}") {
+            wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=${optionRequestedEvent["seq"].asLong() - 1}") {
                 trustedHeaders("user-a")
             }
         }
@@ -90,20 +90,20 @@ class BackendStage8ChoiceRouteTest {
         assertEquals(HttpStatusCode.OK, response.status)
         assertTrue(payload["assistantMessage"].isNull)
         assertEquals("running", payload["execution"]["status"].asText())
-        assertEquals(AgentExecutionStatus.WAITING_CHOICE, storedExecution.status)
-        assertEquals(ChoiceStatus.PENDING, storedChoice.status)
-        assertEquals(storedExecution.id, storedChoice.executionId)
-        assertEquals("single", choiceRequestedEvent["payload"]["selectionMode"].asText())
-        assertEquals("Alpha", choiceRequestedEvent["payload"]["options"][0]["label"].asText())
-        assertEquals(storedChoice.id.toString(), reconnectSession.receiveEvent()["payload"]["choiceId"].asText())
+        assertEquals(AgentExecutionStatus.WAITING_OPTION, storedExecution.status)
+        assertEquals(OptionStatus.PENDING, storedOption.status)
+        assertEquals(storedExecution.id, storedOption.executionId)
+        assertEquals("single", optionRequestedEvent["payload"]["selectionMode"].asText())
+        assertEquals("Alpha", optionRequestedEvent["payload"]["options"][0]["label"].asText())
+        assertEquals(storedOption.id.toString(), reconnectSession.receiveEvent()["payload"]["optionId"].asText())
         runBlocking { reconnectSession.close() }
     }
 
     @Test
-    fun `answer route emits choice answered resumes same execution and finishes under same id`() = testApplication {
-        val runner = ScriptedChoiceTurnRunner()
+    fun `answer route emits option answered resumes same execution and finishes under same id`() = testApplication {
+        val runner = ScriptedOptionTurnRunner()
         val context = stage8RouteTestContext(runner)
-        val chat = chat(userId = "user-a", title = "Choice answer")
+        val chat = chat(userId = "user-a", title = "Option answer")
         runBlocking {
             context.chatRepository.create(chat)
         }
@@ -112,18 +112,18 @@ class BackendStage8ChoiceRouteTest {
         client.post("/v1/chats/${chat.id}/messages") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
-            setBody("""{"content":"need choice"}""")
+            setBody("""{"content":"need option"}""")
         }
         val waitingExecution = runBlocking { context.executionRepository.listByChat("user-a", chat.id).single() }
-        val choice = runBlocking {
-            context.choiceRepository.listByExecution("user-a", chat.id, waitingExecution.id).single()
+        val option = runBlocking {
+            context.optionRepository.listByExecution("user-a", chat.id, waitingExecution.id).single()
         }
         val beforeAnswerEvents = client.get("/v1/chats/${chat.id}/events?afterSeq=0") {
             trustedHeaders("user-a")
         }
         val beforeAnswerSeq = stage8Json.readTree(beforeAnswerEvents.bodyAsText())["items"].last()["seq"].asLong()
 
-        val answerResponse = client.post("/v1/choices/${choice.id}/answer") {
+        val answerResponse = client.post("/v1/options/${option.id}/answer") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody(
@@ -143,30 +143,30 @@ class BackendStage8ChoiceRouteTest {
             trustedHeaders("user-a")
         }
         val replayAfterAnswerPayload = stage8Json.readTree(replayAfterAnswer.bodyAsText())
-        val answeredChoice = runBlocking { assertNotNull(context.choiceRepository.get("user-a", choice.id)) }
+        val answeredOption = runBlocking { assertNotNull(context.optionRepository.get("user-a", option.id)) }
         val storedExecution = runBlocking {
             assertNotNull(context.executionRepository.getByChat("user-a", chat.id, waitingExecution.id))
         }
         val visibleMessages = runBlocking { context.messageRepository.list("user-a", chat.id) }
 
         assertEquals(HttpStatusCode.OK, answerResponse.status)
-        assertEquals(choice.id.toString(), answerPayload["choice"]["id"].asText())
-        assertEquals("answered", answerPayload["choice"]["status"].asText())
+        assertEquals(option.id.toString(), answerPayload["option"]["id"].asText())
+        assertEquals("answered", answerPayload["option"]["status"].asText())
         assertEquals(waitingExecution.id.toString(), answerPayload["execution"]["id"].asText())
         assertEquals("running", answerPayload["execution"]["status"].asText())
-        assertEquals(ChoiceStatus.ANSWERED, answeredChoice.status)
-        assertEquals(setOf("a"), answeredChoice.answer?.selectedOptionIds)
-        assertEquals("because alpha", answeredChoice.answer?.freeText)
-        assertEquals("web-ui", answeredChoice.answer?.metadata?.get("source"))
+        assertEquals(OptionStatus.ANSWERED, answeredOption.status)
+        assertEquals(setOf("a"), answeredOption.answer?.selectedOptionIds)
+        assertEquals("because alpha", answeredOption.answer?.freeText)
+        assertEquals("web-ui", answeredOption.answer?.metadata?.get("source"))
         assertEquals(AgentExecutionStatus.COMPLETED, storedExecution.status)
         assertEquals(waitingExecution.id, storedExecution.id)
         assertEquals(
-            listOf("need choice", "continued after choosing Alpha"),
+            listOf("need option", "continued after choosing Alpha"),
             visibleMessages.map { it.content }
         )
         assertEquals(2, visibleMessages.size)
         assertEquals(
-            listOf("choice.answered", "message.created", "message.completed", "execution.finished"),
+            listOf("option.answered", "message.created", "message.completed", "execution.finished"),
             replayAfterAnswerPayload["items"].map { it["type"].asText() }
         )
         assertTrue(
@@ -175,10 +175,10 @@ class BackendStage8ChoiceRouteTest {
     }
 
     @Test
-    fun `execution usage stays cumulative across waiting choice and continuation`() = testApplication {
-        val runner = ScriptedChoiceTurnRunner()
+    fun `execution usage stays cumulative across waiting option and continuation`() = testApplication {
+        val runner = ScriptedOptionTurnRunner()
         val context = stage8RouteTestContext(runner)
-        val chat = chat(userId = "user-a", title = "Choice usage")
+        val chat = chat(userId = "user-a", title = "Option usage")
         runBlocking {
             context.chatRepository.create(chat)
         }
@@ -187,16 +187,16 @@ class BackendStage8ChoiceRouteTest {
         client.post("/v1/chats/${chat.id}/messages") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
-            setBody("""{"content":"need choice"}""")
+            setBody("""{"content":"need option"}""")
         }
         val waitingExecution = runBlocking { context.executionRepository.listByChat("user-a", chat.id).single() }
-        val choice = runBlocking {
-            context.choiceRepository.listByExecution("user-a", chat.id, waitingExecution.id).single()
+        val option = runBlocking {
+            context.optionRepository.listByExecution("user-a", chat.id, waitingExecution.id).single()
         }
 
         assertEquals(5, waitingExecution.usage?.totalTokens)
 
-        client.post("/v1/choices/${choice.id}/answer") {
+        client.post("/v1/options/${option.id}/answer") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
@@ -210,8 +210,8 @@ class BackendStage8ChoiceRouteTest {
     }
 
     @Test
-    fun `second answer for same choice is rejected`() = testApplication {
-        val runner = ScriptedChoiceTurnRunner()
+    fun `second answer for same option is rejected`() = testApplication {
+        val runner = ScriptedOptionTurnRunner()
         val context = stage8RouteTestContext(runner)
         val chat = chat(userId = "user-a", title = "Repeat answer")
         runBlocking {
@@ -222,19 +222,19 @@ class BackendStage8ChoiceRouteTest {
         client.post("/v1/chats/${chat.id}/messages") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
-            setBody("""{"content":"need choice"}""")
+            setBody("""{"content":"need option"}""")
         }
-        val choice = runBlocking {
+        val option = runBlocking {
             val execution = context.executionRepository.listByChat("user-a", chat.id).single()
-            context.choiceRepository.listByExecution("user-a", chat.id, execution.id).single()
+            context.optionRepository.listByExecution("user-a", chat.id, execution.id).single()
         }
 
-        client.post("/v1/choices/${choice.id}/answer") {
+        client.post("/v1/options/${option.id}/answer") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
         }
-        val secondResponse = client.post("/v1/choices/${choice.id}/answer") {
+        val secondResponse = client.post("/v1/options/${option.id}/answer") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
@@ -246,10 +246,10 @@ class BackendStage8ChoiceRouteTest {
     }
 
     @Test
-    fun `foreign choice answer returns not found without leaking ownership`() = testApplication {
-        val runner = ScriptedChoiceTurnRunner()
+    fun `foreign option answer returns not found without leaking ownership`() = testApplication {
+        val runner = ScriptedOptionTurnRunner()
         val context = stage8RouteTestContext(runner)
-        val chat = chat(userId = "user-a", title = "Owned choice")
+        val chat = chat(userId = "user-a", title = "Owned option")
         runBlocking {
             context.chatRepository.create(chat)
         }
@@ -258,20 +258,20 @@ class BackendStage8ChoiceRouteTest {
         client.post("/v1/chats/${chat.id}/messages") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
-            setBody("""{"content":"need choice"}""")
+            setBody("""{"content":"need option"}""")
         }
-        val choice = runBlocking {
+        val option = runBlocking {
             val execution = context.executionRepository.listByChat("user-a", chat.id).single()
-            context.choiceRepository.listByExecution("user-a", chat.id, execution.id).single()
+            context.optionRepository.listByExecution("user-a", chat.id, execution.id).single()
         }
 
-        val foreignResponse = client.post("/v1/choices/${choice.id}/answer") {
+        val foreignResponse = client.post("/v1/options/${option.id}/answer") {
             trustedHeaders("user-b")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
         }
         val foreignPayload = stage8Json.readTree(foreignResponse.bodyAsText())
-        val missingResponse = client.post("/v1/choices/${UUID.randomUUID()}/answer") {
+        val missingResponse = client.post("/v1/options/${UUID.randomUUID()}/answer") {
             trustedHeaders("user-b")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
@@ -279,48 +279,48 @@ class BackendStage8ChoiceRouteTest {
         val missingPayload = stage8Json.readTree(missingResponse.bodyAsText())
 
         assertEquals(HttpStatusCode.NotFound, foreignResponse.status)
-        assertEquals("choice_not_found", foreignPayload["error"]["code"].asText())
+        assertEquals("option_not_found", foreignPayload["error"]["code"].asText())
         assertEquals(HttpStatusCode.NotFound, missingResponse.status)
-        assertEquals("choice_not_found", missingPayload["error"]["code"].asText())
+        assertEquals("option_not_found", missingPayload["error"]["code"].asText())
     }
 
     @Test
-    fun `invalid option ids selection mode mismatches and expired choices are controlled errors`() = testApplication {
-        val runner = ScriptedChoiceTurnRunner()
+    fun `invalid option ids selection mode mismatches and expired options are controlled errors`() = testApplication {
+        val runner = ScriptedOptionTurnRunner()
         val context = stage8RouteTestContext(runner)
         installStage8Application(context)
 
-        val singleChoice = seedWaitingChoice(context = context, userId = "user-a", selectionMode = "single")
-        val tooManyOptionsResponse = client.post("/v1/choices/${singleChoice.id}/answer") {
+        val singleOption = seedWaitingOption(context = context, userId = "user-a", selectionMode = "single")
+        val tooManyOptionsResponse = client.post("/v1/options/${singleOption.id}/answer") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a","b"]}""")
         }
         val tooManyOptionsPayload = stage8Json.readTree(tooManyOptionsResponse.bodyAsText())
 
-        val invalidOptionChoice = seedWaitingChoice(context = context, userId = "user-a", selectionMode = "single")
-        val invalidOptionResponse = client.post("/v1/choices/${invalidOptionChoice.id}/answer") {
+        val invalidOption = seedWaitingOption(context = context, userId = "user-a", selectionMode = "single")
+        val invalidOptionResponse = client.post("/v1/options/${invalidOption.id}/answer") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["missing"]}""")
         }
         val invalidOptionPayload = stage8Json.readTree(invalidOptionResponse.bodyAsText())
 
-        val wrongModeChoice = seedWaitingChoice(context = context, userId = "user-a", selectionMode = "mystery")
-        val wrongModeResponse = client.post("/v1/choices/${wrongModeChoice.id}/answer") {
+        val wrongModeOption = seedWaitingOption(context = context, userId = "user-a", selectionMode = "mystery")
+        val wrongModeResponse = client.post("/v1/options/${wrongModeOption.id}/answer") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
         }
         val wrongModePayload = stage8Json.readTree(wrongModeResponse.bodyAsText())
 
-        val expiredChoice = seedWaitingChoice(
+        val expiredOption = seedWaitingOption(
             context = context,
             userId = "user-a",
             selectionMode = "single",
             expiresAt = Instant.parse("2026-04-30T09:59:00Z"),
         )
-        val expiredResponse = client.post("/v1/choices/${expiredChoice.id}/answer") {
+        val expiredResponse = client.post("/v1/options/${expiredOption.id}/answer") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"],"freeText":"   "}""")
@@ -338,7 +338,7 @@ class BackendStage8ChoiceRouteTest {
     }
 
     @Test
-    fun `answer route is disabled when choices feature flag is off`() = testApplication {
+    fun `answer route is disabled when options feature flag is off`() = testApplication {
         val context = routeTestContext(
             settingsProvider = TestSettingsProvider().apply {
                 gigaChatKey = "giga-key"
@@ -351,13 +351,13 @@ class BackendStage8ChoiceRouteTest {
                 wsEvents = true,
                 streamingMessages = true,
                 toolEvents = true,
-                choices = false,
+                options = false,
             ),
         )
         installStage8Application(context)
 
-        val choice = seedWaitingChoice(context = context, userId = "user-a")
-        val response = client.post("/v1/choices/${choice.id}/answer") {
+        val option = seedWaitingOption(context = context, userId = "user-a")
+        val response = client.post("/v1/options/${option.id}/answer") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
@@ -369,8 +369,8 @@ class BackendStage8ChoiceRouteTest {
     }
 
     @Test
-    fun `sync fallback returns waiting choice with no assistant message`() = testApplication {
-        val runner = ScriptedChoiceTurnRunner()
+    fun `sync fallback returns waiting option with no assistant message`() = testApplication {
+        val runner = ScriptedOptionTurnRunner()
         val context = routeTestContext(
             settingsProvider = TestSettingsProvider().apply {
                 gigaChatKey = "giga-key"
@@ -383,7 +383,7 @@ class BackendStage8ChoiceRouteTest {
                 wsEvents = false,
                 streamingMessages = true,
                 toolEvents = true,
-                choices = true,
+                options = true,
             ),
             turnRunner = runner,
         )
@@ -396,13 +396,13 @@ class BackendStage8ChoiceRouteTest {
         val response = client.post("/v1/chats/${chat.id}/messages") {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
-            setBody("""{"content":"need choice"}""")
+            setBody("""{"content":"need option"}""")
         }
         val payload = stage8Json.readTree(response.bodyAsText())
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertTrue(payload["assistantMessage"].isNull)
-        assertEquals("waiting_choice", payload["execution"]["status"].asText())
+        assertEquals("waiting_option", payload["execution"]["status"].asText())
     }
 }
 
@@ -418,7 +418,7 @@ private fun ApplicationTestBuilder.installStage8Application(context: RouteTestCo
             chatService = context.chatService,
             messageService = context.messageService,
             executionService = context.executionService,
-            choiceService = context.choiceService,
+            optionService = context.optionService,
             eventService = context.eventService,
             featureFlags = context.featureFlags,
         )
@@ -438,7 +438,7 @@ private fun stage8RouteTestContext(runner: BackendConversationTurnRunner): Route
             wsEvents = true,
             streamingMessages = true,
             toolEvents = true,
-            choices = true,
+            options = true,
         ),
         turnRunner = runner,
     )
@@ -446,20 +446,20 @@ private fun stage8RouteTestContext(runner: BackendConversationTurnRunner): Route
 private suspend fun DefaultClientWebSocketSession.receiveEvent(): JsonNode =
     stage8Json.readTree((incoming.receive() as Frame.Text).readText())
 
-private fun seedWaitingChoice(
+private fun seedWaitingOption(
     context: RouteTestContext,
     userId: String,
     selectionMode: String = "single",
     expiresAt: Instant? = null,
-): Choice {
-    val chat = chat(userId = userId, title = "Seeded choice ${UUID.randomUUID()}")
+): Option {
+    val chat = chat(userId = userId, title = "Seeded option ${UUID.randomUUID()}")
     val execution = AgentExecution(
         id = UUID.randomUUID(),
         userId = userId,
         chatId = chat.id,
         userMessageId = UUID.randomUUID(),
         assistantMessageId = null,
-        status = AgentExecutionStatus.WAITING_CHOICE,
+        status = AgentExecutionStatus.WAITING_OPTION,
         requestId = null,
         clientMessageId = null,
         model = LLMModel.Max,
@@ -478,20 +478,20 @@ private fun seedWaitingChoice(
             "streamingMessages" to "true",
         ),
     )
-    val choice = Choice(
+    val option = Option(
         id = UUID.randomUUID(),
         userId = userId,
         chatId = chat.id,
         executionId = execution.id,
-        kind = ChoiceKind.GENERIC_SELECTION,
+        kind = OptionKind.GENERIC_SELECTION,
         title = "Select variant",
         selectionMode = selectionMode,
         options = listOf(
-            ChoiceOption(id = "a", label = "Alpha", content = "alpha"),
-            ChoiceOption(id = "b", label = "Beta", content = "beta"),
+            OptionItem(id = "a", label = "Alpha", content = "alpha"),
+            OptionItem(id = "b", label = "Beta", content = "beta"),
         ),
         payload = mapOf("origin" to "seed"),
-        status = ChoiceStatus.PENDING,
+        status = OptionStatus.PENDING,
         answer = null,
         createdAt = Instant.parse("2026-05-01T10:01:00Z"),
         expiresAt = expiresAt,
@@ -501,7 +501,7 @@ private fun seedWaitingChoice(
     runBlocking {
         context.chatRepository.create(chat)
         context.executionRepository.create(execution)
-        context.choiceRepository.save(choice)
+        context.optionRepository.save(option)
         context.stateRepository.save(
             ru.souz.backend.agent.session.AgentConversationState(
                 userId = userId,
@@ -509,7 +509,7 @@ private fun seedWaitingChoice(
                 schemaVersion = 1,
                 activeAgentId = AgentId.default,
                 history = listOf(
-                    LLMRequest.Message(role = LLMMessageRole.user, content = "need choice")
+                    LLMRequest.Message(role = LLMMessageRole.user, content = "need option")
                 ),
                 temperature = 0.6f,
                 locale = Locale.forLanguageTag("ru-RU"),
@@ -520,10 +520,10 @@ private fun seedWaitingChoice(
             )
         )
     }
-    return choice
+    return option
 }
 
-private class ScriptedChoiceTurnRunner : BackendConversationTurnRunner {
+private class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
     private val conversationsWaitingForAnswer = LinkedHashSet<AgentConversationKey>()
 
     override suspend fun run(
@@ -535,8 +535,8 @@ private class ScriptedChoiceTurnRunner : BackendConversationTurnRunner {
         return if (conversationsWaitingForAnswer.add(conversationKey)) {
             eventSink.emit(
                 AgentRuntimeEvent.ChoiceRequested(
-                    choiceId = CHOICE_ID.toString(),
-                    kind = ChoiceKind.GENERIC_SELECTION.value,
+                    choiceId = OPTION_ID.toString(),
+                    kind = OptionKind.GENERIC_SELECTION.value,
                     title = "Select variant",
                     selectionMode = "single",
                     options = listOf(
@@ -553,7 +553,7 @@ private class ScriptedChoiceTurnRunner : BackendConversationTurnRunner {
                     ),
                 )
             )
-            BackendConversationTurnOutcome.WaitingChoice(
+            BackendConversationTurnOutcome.WaitingOption(
                 usage = LLMResponse.Usage(
                     promptTokens = 3,
                     completionTokens = 2,
@@ -562,7 +562,7 @@ private class ScriptedChoiceTurnRunner : BackendConversationTurnRunner {
                 ),
                 session = sessionFor(
                     prompt = request.prompt,
-                    assistant = "waiting for choice",
+                    assistant = "waiting for option",
                 )
             )
         } else {
@@ -599,4 +599,4 @@ private fun sessionFor(
         timeZone = "Europe/Moscow",
     )
 
-private val CHOICE_ID: UUID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+private val OPTION_ID: UUID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")

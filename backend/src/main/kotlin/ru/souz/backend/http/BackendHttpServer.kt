@@ -40,7 +40,7 @@ import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
-import ru.souz.backend.choices.service.ChoiceService
+import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.common.BackendRequestException
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.service.AgentEventService
@@ -82,7 +82,7 @@ class BackendHttpServer(
     private val chatService: ChatService? = null,
     private val messageService: MessageService? = null,
     private val executionService: AgentExecutionService? = null,
-    private val choiceService: ChoiceService? = null,
+    private val optionService: OptionService? = null,
     private val eventService: AgentEventService? = null,
     private val featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     private val selectedModel: () -> String,
@@ -104,7 +104,7 @@ class BackendHttpServer(
             chatService = chatService,
             messageService = messageService,
             executionService = executionService,
-            choiceService = choiceService,
+            optionService = optionService,
             eventService = eventService,
             featureFlags = featureFlags,
             selectedModel = selectedModel,
@@ -142,7 +142,7 @@ fun Application.backendApplication(
     chatService: ChatService? = null,
     messageService: MessageService? = null,
     executionService: AgentExecutionService? = null,
-    choiceService: ChoiceService? = null,
+    optionService: OptionService? = null,
     eventService: AgentEventService? = null,
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     selectedModel: () -> String,
@@ -211,7 +211,7 @@ fun Application.backendApplication(
                         "POST /v1/chats/{chatId}/messages",
                         "POST /v1/chats/{chatId}/cancel-active",
                         "POST /v1/chats/{chatId}/executions/{executionId}/cancel",
-                        "POST /v1/choices/{choiceId}/answer",
+                        "POST /v1/options/{optionId}/answer",
                         "WS /v1/chats/{chatId}/ws",
                         "POST /agent",
                     ),
@@ -455,15 +455,15 @@ fun Application.backendApplication(
                 }
             }
 
-            route("/choices") {
-                post("/{choiceId}/answer") {
-                    val service = requireV1Service(choiceService, "Choice")
+            route("/options") {
+                post("/{optionId}/answer") {
+                    val service = requireV1Service(optionService, "Option")
                     call.requireJsonContentV1()
-                    val request = call.receiveOrV1BadRequest<BackendV1AnswerChoiceRequest>()
+                    val request = call.receiveOrV1BadRequest<BackendV1AnswerOptionRequest>()
                     call.respond(
                         service.answer(
                             userId = call.requestIdentity().userId,
-                            choiceId = call.requireChoiceId(),
+                            optionId = call.requireOptionId(),
                             selectedOptionIds = request.selectedOptionIds,
                             freeText = request.freeText,
                             metadata = request.metadata,
@@ -642,15 +642,15 @@ private fun ApplicationCall.requireExecutionId(): UUID =
         }
         ?: throw invalidV1Request("executionId must be a UUID.")
 
-private fun ApplicationCall.requireChoiceId(): UUID =
-    parameters["choiceId"]?.trim()
+private fun ApplicationCall.requireOptionId(): UUID =
+    parameters["optionId"]?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { value ->
             runCatching { UUID.fromString(value) }.getOrElse {
-                throw invalidV1Request("choiceId must be a UUID.")
+                throw invalidV1Request("optionId must be a UUID.")
             }
         }
-        ?: throw invalidV1Request("choiceId must be a UUID.")
+        ?: throw invalidV1Request("optionId must be a UUID.")
 
 private fun ApplicationCall.queryPositiveInt(name: String, defaultValue: Int): Int {
     val rawValue = request.queryParameters[name] ?: return defaultValue

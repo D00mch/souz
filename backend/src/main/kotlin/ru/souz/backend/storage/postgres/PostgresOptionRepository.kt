@@ -3,20 +3,20 @@ package ru.souz.backend.storage.postgres
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
-import ru.souz.backend.choices.model.Choice
-import ru.souz.backend.choices.model.ChoiceAnswer
-import ru.souz.backend.choices.model.ChoiceStatus
-import ru.souz.backend.choices.repository.ChoiceAnswerUpdateResult
-import ru.souz.backend.choices.repository.ChoiceRepository
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.model.OptionAnswer
+import ru.souz.backend.options.model.OptionStatus
+import ru.souz.backend.options.repository.OptionAnswerUpdateResult
+import ru.souz.backend.options.repository.OptionRepository
 
-class PostgresChoiceRepository(
+class PostgresOptionRepository(
     private val dataSource: DataSource,
-) : ChoiceRepository {
-    override suspend fun save(choice: Choice): Choice = dataSource.write { connection ->
-        connection.ensureUser(choice.userId)
+) : OptionRepository {
+    override suspend fun save(option: Option): Option = dataSource.write { connection ->
+        connection.ensureUser(option.userId)
         connection.prepareStatement(
             """
-            insert into choices(
+            insert into options(
                 id,
                 user_id,
                 chat_id,
@@ -49,77 +49,77 @@ class PostgresChoiceRepository(
                 answered_at = excluded.answered_at
             """.trimIndent()
         ).use { statement ->
-            statement.setObject(1, choice.id)
-            statement.setString(2, choice.userId)
-            statement.setObject(3, choice.chatId)
-            statement.setObject(4, choice.executionId)
-            statement.setString(5, choice.kind.value)
-            statement.setString(6, choice.title)
-            statement.setString(7, choice.selectionMode)
-            statement.setJson(8, postgresStorageMapper.writeValueAsString(choice.options))
-            statement.setJson(9, postgresStorageMapper.writeValueAsString(choice.payload))
-            statement.setString(10, choice.status.value)
-            statement.setJson(11, choice.answer?.toStoredJson())
-            statement.setInstant(12, choice.createdAt)
-            statement.setInstant(13, choice.expiresAt)
-            statement.setInstant(14, choice.answeredAt)
+            statement.setObject(1, option.id)
+            statement.setString(2, option.userId)
+            statement.setObject(3, option.chatId)
+            statement.setObject(4, option.executionId)
+            statement.setString(5, option.kind.value)
+            statement.setString(6, option.title)
+            statement.setString(7, option.selectionMode)
+            statement.setJson(8, postgresStorageMapper.writeValueAsString(option.options))
+            statement.setJson(9, postgresStorageMapper.writeValueAsString(option.payload))
+            statement.setString(10, option.status.value)
+            statement.setJson(11, option.answer?.toStoredJson())
+            statement.setInstant(12, option.createdAt)
+            statement.setInstant(13, option.expiresAt)
+            statement.setInstant(14, option.answeredAt)
             statement.executeUpdate()
         }
-        choice
+        option
     }
 
-    override suspend fun get(userId: String, choiceId: UUID): Choice? = dataSource.read { connection ->
+    override suspend fun get(userId: String, optionId: UUID): Option? = dataSource.read { connection ->
         connection.prepareStatement(
-            "select * from choices where user_id = ? and id = ?"
+            "select * from options where user_id = ? and id = ?"
         ).use { statement ->
             statement.setString(1, userId)
-            statement.setObject(2, choiceId)
+            statement.setObject(2, optionId)
             statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) resultSet.toChoice() else null
+                if (resultSet.next()) resultSet.toOption() else null
             }
         }
     }
 
     override suspend fun answerPending(
         userId: String,
-        choiceId: UUID,
-        answer: ChoiceAnswer,
+        optionId: UUID,
+        answer: OptionAnswer,
         answeredAt: Instant,
-    ): ChoiceAnswerUpdateResult = dataSource.write { connection ->
+    ): OptionAnswerUpdateResult = dataSource.write { connection ->
         val updated = connection.prepareStatement(
             """
-            update choices
+            update options
             set status = ?, answer_json = ?, answered_at = ?
             where user_id = ? and id = ? and status = ?
             returning *
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, ChoiceStatus.ANSWERED.value)
+            statement.setString(1, OptionStatus.ANSWERED.value)
             statement.setJson(2, answer.toStoredJson())
             statement.setInstant(3, answeredAt)
             statement.setString(4, userId)
-            statement.setObject(5, choiceId)
-            statement.setString(6, ChoiceStatus.PENDING.value)
+            statement.setObject(5, optionId)
+            statement.setString(6, OptionStatus.PENDING.value)
             statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) resultSet.toChoice() else null
+                if (resultSet.next()) resultSet.toOption() else null
             }
         }
         when {
-            updated != null -> ChoiceAnswerUpdateResult.Updated(updated)
+            updated != null -> OptionAnswerUpdateResult.Updated(updated)
             else -> {
                 val current = connection.prepareStatement(
-                    "select * from choices where user_id = ? and id = ?"
+                    "select * from options where user_id = ? and id = ?"
                 ).use { statement ->
                     statement.setString(1, userId)
-                    statement.setObject(2, choiceId)
+                    statement.setObject(2, optionId)
                     statement.executeQuery().use { resultSet ->
-                        if (resultSet.next()) resultSet.toChoice() else null
+                        if (resultSet.next()) resultSet.toOption() else null
                     }
                 }
                 if (current == null) {
-                    ChoiceAnswerUpdateResult.NotFound
+                    OptionAnswerUpdateResult.NotFound
                 } else {
-                    ChoiceAnswerUpdateResult.NotPending(current)
+                    OptionAnswerUpdateResult.NotPending(current)
                 }
             }
         }
@@ -130,10 +130,10 @@ class PostgresChoiceRepository(
         chatId: UUID,
         executionId: UUID,
         limit: Int,
-    ): List<Choice> = dataSource.read { connection ->
+    ): List<Option> = dataSource.read { connection ->
         connection.prepareStatement(
             """
-            select * from choices
+            select * from options
             where user_id = ? and chat_id = ? and execution_id = ?
             order by created_at desc
             limit ?
@@ -146,7 +146,7 @@ class PostgresChoiceRepository(
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
-                        add(resultSet.toChoice())
+                        add(resultSet.toOption())
                     }
                 }
             }

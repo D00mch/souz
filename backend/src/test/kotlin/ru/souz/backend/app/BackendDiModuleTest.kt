@@ -10,7 +10,7 @@ import org.kodein.di.instance
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
-import ru.souz.backend.choices.repository.ChoiceRepository
+import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.execution.repository.AgentExecutionRepository
@@ -24,7 +24,7 @@ import ru.souz.backend.storage.filesystem.FilesystemAgentEventRepository
 import ru.souz.backend.storage.filesystem.FilesystemAgentExecutionRepository
 import ru.souz.backend.storage.filesystem.FilesystemAgentStateRepository
 import ru.souz.backend.storage.filesystem.FilesystemChatRepository
-import ru.souz.backend.storage.filesystem.FilesystemChoiceRepository
+import ru.souz.backend.storage.filesystem.FilesystemOptionRepository
 import ru.souz.backend.storage.filesystem.FilesystemMessageRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserProviderKeyRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserSettingsRepository
@@ -35,7 +35,7 @@ import ru.souz.backend.storage.postgres.PostgresAgentExecutionRepository
 import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
 import ru.souz.backend.storage.postgres.PostgresChatRepository
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
-import ru.souz.backend.storage.postgres.PostgresChoiceRepository
+import ru.souz.backend.storage.postgres.PostgresOptionRepository
 import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.storage.postgres.newPostgresSchema
@@ -64,7 +64,7 @@ class BackendDiModuleTest {
         assertIs<FilesystemMessageRepository>(di.direct.instance<MessageRepository>())
         assertIs<FilesystemAgentStateRepository>(di.direct.instance<AgentStateRepository>())
         assertIs<FilesystemAgentExecutionRepository>(di.direct.instance<AgentExecutionRepository>())
-        assertIs<FilesystemChoiceRepository>(di.direct.instance<ChoiceRepository>())
+        assertIs<FilesystemOptionRepository>(di.direct.instance<OptionRepository>())
         assertIs<FilesystemAgentEventRepository>(di.direct.instance<AgentEventRepository>())
         assertIs<FilesystemUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
         assertIs<FilesystemUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
@@ -94,7 +94,7 @@ class BackendDiModuleTest {
             assertIs<PostgresMessageRepository>(di.direct.instance<MessageRepository>())
             assertIs<PostgresAgentStateRepository>(di.direct.instance<AgentStateRepository>())
             assertIs<PostgresAgentExecutionRepository>(di.direct.instance<AgentExecutionRepository>())
-            assertIs<PostgresChoiceRepository>(di.direct.instance<ChoiceRepository>())
+            assertIs<PostgresOptionRepository>(di.direct.instance<OptionRepository>())
             assertIs<PostgresAgentEventRepository>(di.direct.instance<AgentEventRepository>())
             assertIs<PostgresUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
             assertIs<PostgresUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
@@ -127,7 +127,7 @@ class BackendDiModuleTest {
             assertIs<PostgresMessageRepository>(di.direct.instance<MessageRepository>())
             assertIs<PostgresAgentStateRepository>(di.direct.instance<AgentStateRepository>())
             assertIs<PostgresAgentExecutionRepository>(di.direct.instance<AgentExecutionRepository>())
-            assertIs<PostgresChoiceRepository>(di.direct.instance<ChoiceRepository>())
+            assertIs<PostgresOptionRepository>(di.direct.instance<OptionRepository>())
             assertIs<MemoryAgentEventRepository>(di.direct.instance<AgentEventRepository>())
             assertIs<PostgresUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
             assertIs<PostgresUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())

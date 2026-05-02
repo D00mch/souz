@@ -1,13 +1,13 @@
-package ru.souz.backend.choices.service
+package ru.souz.backend.options.service
 
 import io.ktor.http.HttpStatusCode
 import java.time.Instant
 import java.util.UUID
-import ru.souz.backend.choices.model.Choice
-import ru.souz.backend.choices.model.ChoiceAnswer
-import ru.souz.backend.choices.model.ChoiceStatus
-import ru.souz.backend.choices.repository.ChoiceAnswerUpdateResult
-import ru.souz.backend.choices.repository.ChoiceRepository
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.model.OptionAnswer
+import ru.souz.backend.options.model.OptionStatus
+import ru.souz.backend.options.repository.OptionAnswerUpdateResult
+import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.service.AgentExecutionService
@@ -15,75 +15,75 @@ import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.featureDisabledV1
 import ru.souz.backend.http.invalidV1Request
 
-data class AnswerChoiceResult(
-    val choice: Choice,
+data class AnswerOptionResult(
+    val option: Option,
     val execution: AgentExecution,
 )
 
-class ChoiceService(
-    private val choiceRepository: ChoiceRepository,
+class OptionService(
+    private val optionRepository: OptionRepository,
     private val executionService: AgentExecutionService,
     private val featureFlags: BackendFeatureFlags,
 ) {
     suspend fun answer(
         userId: String,
-        choiceId: UUID,
+        optionId: UUID,
         selectedOptionIds: Collection<String>,
         freeText: String?,
         metadata: Map<String, String>,
-    ): AnswerChoiceResult {
-        requireChoicesEnabled()
-        val choice = choiceRepository.get(userId, choiceId)
-            ?: throw choiceNotFound()
-        validatePendingChoice(choice)
+    ): AnswerOptionResult {
+        requireOptionsEnabled()
+        val option = optionRepository.get(userId, optionId)
+            ?: throw optionNotFound()
+        validatePendingOption(option)
 
-        val normalizedAnswer = ChoiceAnswer(
+        val normalizedAnswer = OptionAnswer(
             selectedOptionIds = normalizeSelectedOptionIds(selectedOptionIds),
             freeText = freeText?.trim()?.takeIf { it.isNotEmpty() },
             metadata = normalizeMetadata(metadata),
         )
-        validateAnswer(choice, normalizedAnswer)
+        validateAnswer(option, normalizedAnswer)
 
-        val updatedChoice = when (
-            val result = choiceRepository.answerPending(
+        val updatedOption = when (
+            val result = optionRepository.answerPending(
                 userId = userId,
-                choiceId = choiceId,
+                optionId = optionId,
                 answer = normalizedAnswer,
                 answeredAt = Instant.now(),
             )
         ) {
-            is ChoiceAnswerUpdateResult.Updated -> result.choice
-            ChoiceAnswerUpdateResult.NotFound -> throw choiceNotFound()
-            is ChoiceAnswerUpdateResult.NotPending -> throw invalidV1Request("Choice is not pending.")
+            is OptionAnswerUpdateResult.Updated -> result.option
+            OptionAnswerUpdateResult.NotFound -> throw optionNotFound()
+            is OptionAnswerUpdateResult.NotPending -> throw invalidV1Request("Option is not pending.")
         }
 
-        return AnswerChoiceResult(
-            choice = updatedChoice,
-            execution = executionService.resumeChoice(updatedChoice),
+        return AnswerOptionResult(
+            option = updatedOption,
+            execution = executionService.resumeOption(updatedOption),
         )
     }
 
-    private suspend fun validatePendingChoice(choice: Choice) {
-        if (choice.status != ChoiceStatus.PENDING) {
-            throw invalidV1Request("Choice is not pending.")
+    private suspend fun validatePendingOption(option: Option) {
+        if (option.status != OptionStatus.PENDING) {
+            throw invalidV1Request("Option is not pending.")
         }
-        val expiresAt = choice.expiresAt ?: return
+        val expiresAt = option.expiresAt ?: return
         if (!expiresAt.isAfter(Instant.now())) {
-            choiceRepository.save(choice.copy(status = ChoiceStatus.EXPIRED))
-            throw invalidV1Request("Choice has expired.")
+            optionRepository.save(option.copy(status = OptionStatus.EXPIRED))
+            throw invalidV1Request("Option has expired.")
         }
     }
 
     private fun validateAnswer(
-        choice: Choice,
-        answer: ChoiceAnswer,
+        option: Option,
+        answer: OptionAnswer,
     ) {
-        val validOptionIds = choice.options.map { it.id }.toSet()
+        val validOptionIds = option.options.map { it.id }.toSet()
         if (!answer.selectedOptionIds.all(validOptionIds::contains)) {
-            throw invalidV1Request("selectedOptionIds must reference known choice options.")
+            throw invalidV1Request("selectedOptionIds must reference known options.")
         }
 
-        when (choice.selectionMode) {
+        when (option.selectionMode) {
             "single" -> if (answer.selectedOptionIds.size != 1) {
                 throw invalidV1Request("selectionMode=single requires exactly one selected option.")
             }
@@ -122,16 +122,16 @@ class ChoiceService(
             }
         }
 
-    private fun requireChoicesEnabled() {
-        if (!featureFlags.choices) {
-            throw featureDisabledV1("Choices feature is disabled.")
+    private fun requireOptionsEnabled() {
+        if (!featureFlags.options) {
+            throw featureDisabledV1("Options feature is disabled.")
         }
     }
 
-    private fun choiceNotFound(): BackendV1Exception =
+    private fun optionNotFound(): BackendV1Exception =
         BackendV1Exception(
             status = HttpStatusCode.NotFound,
-            code = "choice_not_found",
-            message = "Choice not found.",
+            code = "option_not_found",
+            message = "Option not found.",
         )
 }

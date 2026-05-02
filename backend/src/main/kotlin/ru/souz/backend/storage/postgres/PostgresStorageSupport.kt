@@ -20,11 +20,11 @@ import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
-import ru.souz.backend.choices.model.Choice
-import ru.souz.backend.choices.model.ChoiceAnswer
-import ru.souz.backend.choices.model.ChoiceKind
-import ru.souz.backend.choices.model.ChoiceOption
-import ru.souz.backend.choices.model.ChoiceStatus
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.model.OptionAnswer
+import ru.souz.backend.options.model.OptionKind
+import ru.souz.backend.options.model.OptionItem
+import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.execution.model.AgentExecution
@@ -158,7 +158,7 @@ internal data class StoredConversationContext(
     val timeZone: String,
 )
 
-internal data class StoredChoiceAnswer(
+internal data class StoredOptionAnswer(
     val selectedOptionIds: Set<String>,
     val freeText: String?,
     val metadata: Map<String, String>,
@@ -243,21 +243,21 @@ internal fun ResultSet.toExecution(): AgentExecution =
         metadata = postgresStorageMapper.readValue<Map<String, String>>(getString("metadata")),
     )
 
-internal fun ResultSet.toChoice(): Choice =
-    Choice(
+internal fun ResultSet.toOption(): Option =
+    Option(
         id = getObject("id", java.util.UUID::class.java),
         userId = getString("user_id"),
         chatId = getObject("chat_id", java.util.UUID::class.java),
         executionId = getObject("execution_id", java.util.UUID::class.java),
-        kind = parseChoiceKind(getString("kind")),
+        kind = parseOptionKind(getString("kind")),
         title = getString("title"),
         selectionMode = getString("selection_mode"),
-        options = postgresStorageMapper.readValue<List<ChoiceOption>>(getString("options_json")),
+        options = postgresStorageMapper.readValue<List<OptionItem>>(getString("options_json")),
         payload = postgresStorageMapper.readValue<Map<String, String>>(getString("payload_json")),
-        status = parseChoiceStatus(getString("status")),
+        status = parseOptionStatus(getString("status")),
         answer = getString("answer_json")?.let { raw ->
-            postgresStorageMapper.readValue<StoredChoiceAnswer>(raw).let { answer ->
-                ChoiceAnswer(
+            postgresStorageMapper.readValue<StoredOptionAnswer>(raw).let { answer ->
+                OptionAnswer(
                     selectedOptionIds = answer.selectedOptionIds,
                     freeText = answer.freeText,
                     metadata = answer.metadata,
@@ -366,9 +366,9 @@ internal fun AgentExecutionUsage.toUsageJson(): String =
         )
     )
 
-internal fun ChoiceAnswer.toStoredJson(): String =
+internal fun OptionAnswer.toStoredJson(): String =
     postgresStorageMapper.writeValueAsString(
-        StoredChoiceAnswer(
+        StoredOptionAnswer(
             selectedOptionIds = selectedOptionIds,
             freeText = freeText,
             metadata = metadata,
@@ -379,16 +379,23 @@ internal fun parseChatRole(raw: String): ChatRole =
     ChatRole.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
 
 internal fun parseExecutionStatus(raw: String): AgentExecutionStatus =
-    AgentExecutionStatus.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
+    when {
+        raw == "waiting_choice" -> AgentExecutionStatus.WAITING_OPTION
+        else -> AgentExecutionStatus.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
+    }
 
-internal fun parseChoiceKind(raw: String): ChoiceKind =
-    ChoiceKind.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
+internal fun parseOptionKind(raw: String): OptionKind =
+    OptionKind.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
 
-internal fun parseChoiceStatus(raw: String): ChoiceStatus =
-    ChoiceStatus.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
+internal fun parseOptionStatus(raw: String): OptionStatus =
+    OptionStatus.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
 
 internal fun parseEventType(raw: String): AgentEventType =
-    AgentEventType.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
+    when {
+        raw == "choice.requested" -> AgentEventType.OPTION_REQUESTED
+        raw == "choice.answered" -> AgentEventType.OPTION_ANSWERED
+        else -> AgentEventType.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
+    }
 
 internal fun parseToolCallStatus(raw: String): ToolCallStatus =
     ToolCallStatus.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }

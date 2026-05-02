@@ -33,8 +33,8 @@ import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
 import ru.souz.backend.chat.service.SendMessageResult
 import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.choices.model.Choice
-import ru.souz.backend.choices.repository.ChoiceRepository
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.service.AgentEventService
@@ -62,7 +62,7 @@ class AgentExecutionService internal constructor(
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
     private val turnRunner: BackendConversationTurnRunner,
     private val executionRepository: AgentExecutionRepository,
-    private val choiceRepository: ChoiceRepository,
+    private val optionRepository: OptionRepository,
     private val eventRepository: AgentEventRepository,
     private val eventService: AgentEventService,
     private val toolCallRepository: ToolCallRepository,
@@ -154,13 +154,13 @@ class AgentExecutionService internal constructor(
                 chatId = chatId,
                 executionId = runningExecution.id,
                 messageRepository = messageRepository,
-                choiceRepository = choiceRepository,
+                optionRepository = optionRepository,
                 executionRepository = executionRepository,
                 eventService = eventService,
                 toolCallRepository = toolCallRepository,
                 streamingMessagesEnabled = effectiveSettings.streamingMessages,
                 toolEventsEnabled = effectiveSettings.showToolEvents,
-                choicesEnabled = featureFlags.choices,
+                optionsEnabled = featureFlags.options,
                 assistantMessageId = runningExecution.assistantMessageId,
             )
             eventSink.emitExecutionStarted(runningExecution)
@@ -251,12 +251,12 @@ class AgentExecutionService internal constructor(
         }
     }
 
-    suspend fun resumeChoice(choice: Choice): AgentExecution {
-        val currentExecution = currentExecution(choice.executionId, choice.userId, choice.chatId)
-        if (currentExecution.status != AgentExecutionStatus.WAITING_CHOICE) {
-            throw invalidV1Request("Execution is not waiting for a choice.")
+    suspend fun resumeOption(option: Option): AgentExecution {
+        val currentExecution = currentExecution(option.executionId, option.userId, option.chatId)
+        if (currentExecution.status != AgentExecutionStatus.WAITING_OPTION) {
+            throw invalidV1Request("Execution is not waiting for an option.")
         }
-        val chat = requireOwnedChat(choice.userId, choice.chatId)
+        val chat = requireOwnedChat(option.userId, option.chatId)
         val runningExecution = executionRepository.update(
             currentExecution.copy(
                 status = AgentExecutionStatus.RUNNING,
@@ -267,40 +267,40 @@ class AgentExecutionService internal constructor(
             )
         )
         eventService.append(
-            userId = choice.userId,
-            chatId = choice.chatId,
+            userId = option.userId,
+            chatId = option.chatId,
             executionId = runningExecution.id,
-            type = AgentEventType.CHOICE_ANSWERED,
+            type = AgentEventType.OPTION_ANSWERED,
             payload = mapOf(
-                "choiceId" to choice.id.toString(),
-                "status" to choice.status.value,
-                "selectedOptionIds" to restJsonMapper.writeValueAsString(choice.answer?.selectedOptionIds?.toList().orEmpty()),
-                "freeText" to (choice.answer?.freeText ?: ""),
-                "metadata" to restJsonMapper.writeValueAsString(choice.answer?.metadata.orEmpty()),
+                "optionId" to option.id.toString(),
+                "status" to option.status.value,
+                "selectedOptionIds" to restJsonMapper.writeValueAsString(option.answer?.selectedOptionIds?.toList().orEmpty()),
+                "freeText" to (option.answer?.freeText ?: ""),
+                "metadata" to restJsonMapper.writeValueAsString(option.answer?.metadata.orEmpty()),
             ),
         )
 
-        val turnRequest = continuationTurnRequest(runningExecution, choice)
+        val turnRequest = continuationTurnRequest(runningExecution, option)
         val eventSink = BackendAgentRuntimeEventSink(
-            userId = choice.userId,
-            chatId = choice.chatId,
+            userId = option.userId,
+            chatId = option.chatId,
             executionId = runningExecution.id,
             messageRepository = messageRepository,
-            choiceRepository = choiceRepository,
+            optionRepository = optionRepository,
             executionRepository = executionRepository,
             eventService = eventService,
             toolCallRepository = toolCallRepository,
             streamingMessagesEnabled = turnRequest.streamingMessages == true,
             toolEventsEnabled = executionMetadataBoolean(runningExecution, METADATA_SHOW_TOOL_EVENTS) ?: false,
-            choicesEnabled = featureFlags.choices,
+            optionsEnabled = featureFlags.options,
             assistantMessageId = runningExecution.assistantMessageId,
         )
         startBackgroundExecution(
             chat = chat,
             execution = runningExecution,
             conversationKey = AgentConversationKey(
-                userId = choice.userId,
-                conversationId = choice.chatId.toString(),
+                userId = option.userId,
+                conversationId = option.chatId.toString(),
             ),
             turnRequest = turnRequest,
             eventSink = eventSink,
@@ -347,11 +347,11 @@ class AgentExecutionService internal constructor(
                 eventSink = eventSink,
                 initialUsage = execution.usage?.toLlmUsage() ?: LLMResponse.Usage(0, 0, 0, 0),
             )
-            if (eventSink.hasRequestedChoice && executionOutcome is BackendConversationTurnOutcome.Completed) {
+            if (eventSink.hasRequestedOption && executionOutcome is BackendConversationTurnOutcome.Completed) {
                 throw BackendV1Exception(
                     status = HttpStatusCode.InternalServerError,
                     code = "internal_error",
-                    message = "Execution completed after requesting a choice.",
+                    message = "Execution completed after requesting an option.",
                 )
             }
             return when (executionOutcome) {
@@ -363,7 +363,7 @@ class AgentExecutionService internal constructor(
                     eventSink = eventSink,
                 )
 
-                is BackendConversationTurnOutcome.WaitingChoice -> persistWaitingChoiceExecution(
+                is BackendConversationTurnOutcome.WaitingOption -> persistWaitingOptionExecution(
                     execution = execution,
                     executionOutcome = executionOutcome,
                     conversationKey = conversationKey,
@@ -538,16 +538,16 @@ class AgentExecutionService internal constructor(
         )
     }
 
-    private suspend fun persistWaitingChoiceExecution(
+    private suspend fun persistWaitingOptionExecution(
         execution: AgentExecution,
-        executionOutcome: BackendConversationTurnOutcome.WaitingChoice,
+        executionOutcome: BackendConversationTurnOutcome.WaitingOption,
         conversationKey: AgentConversationKey,
     ): PersistedExecutionResult {
         sessionRepository.save(conversationKey, executionOutcome.session)
         val waitingExecution = currentExecution(execution.id, execution.userId, execution.chatId)
         return PersistedExecutionResult(
             assistantMessage = null,
-            execution = if (waitingExecution.status == AgentExecutionStatus.WAITING_CHOICE) {
+            execution = if (waitingExecution.status == AgentExecutionStatus.WAITING_OPTION) {
                 executionRepository.update(
                     waitingExecution.copy(
                         usage = executionOutcome.usage.toExecutionUsage(),
@@ -556,7 +556,7 @@ class AgentExecutionService internal constructor(
             } else {
                 executionRepository.update(
                     waitingExecution.copy(
-                        status = AgentExecutionStatus.WAITING_CHOICE,
+                        status = AgentExecutionStatus.WAITING_OPTION,
                         usage = executionOutcome.usage.toExecutionUsage(),
                     )
                 )
@@ -669,10 +669,10 @@ class AgentExecutionService internal constructor(
 
     private fun continuationTurnRequest(
         execution: AgentExecution,
-        choice: Choice,
+        option: Option,
     ): BackendConversationTurnRequest =
         BackendConversationTurnRequest(
-            prompt = choice.toContinuationInput(),
+            prompt = option.toContinuationInput(),
             model = execution.model?.alias
                 ?: throw BackendV1Exception(
                     status = HttpStatusCode.InternalServerError,
@@ -758,8 +758,8 @@ private data class PersistedExecutionResult(
     val execution: AgentExecution,
 )
 
-private fun Choice.toContinuationInput(): String {
-    val answer = answer ?: error("Choice answer is required for continuation.")
+private fun Option.toContinuationInput(): String {
+    val answer = answer ?: error("Option answer is required for continuation.")
     val optionById = options.associateBy { it.id }
     val selectedOptions = answer.selectedOptionIds.mapNotNull(optionById::get).map { option ->
         linkedMapOf(
@@ -769,8 +769,8 @@ private fun Choice.toContinuationInput(): String {
         )
     }
     val payload = linkedMapOf<String, Any?>(
-        "type" to "choice_answer",
-        "choiceId" to id.toString(),
+        "type" to "option_answer",
+        "optionId" to id.toString(),
         "kind" to kind.value,
         "selectionMode" to selectionMode,
         "selectedOptionIds" to answer.selectedOptionIds.toList(),
@@ -778,13 +778,13 @@ private fun Choice.toContinuationInput(): String {
         "freeText" to answer.freeText,
         "metadata" to answer.metadata,
     )
-    return "$CHOICE_CONTINUATION_PREFIX ${restJsonMapper.writeValueAsString(payload)}"
+    return "$OPTION_CONTINUATION_PREFIX ${restJsonMapper.writeValueAsString(payload)}"
 }
 
 private fun AgentExecutionStatus.isActiveForCancellation(): Boolean =
     this == AgentExecutionStatus.QUEUED ||
         this == AgentExecutionStatus.RUNNING ||
-        this == AgentExecutionStatus.WAITING_CHOICE ||
+        this == AgentExecutionStatus.WAITING_OPTION ||
         this == AgentExecutionStatus.CANCELLING
 
 private object ExecutionCancelledException : RuntimeException()
@@ -796,7 +796,7 @@ private const val METADATA_TIME_ZONE = "timeZone"
 private const val METADATA_SYSTEM_PROMPT = "systemPrompt"
 private const val METADATA_STREAMING_MESSAGES = "streamingMessages"
 private const val METADATA_SHOW_TOOL_EVENTS = "showToolEvents"
-private const val CHOICE_CONTINUATION_PREFIX = "__choice_answer__"
+private const val OPTION_CONTINUATION_PREFIX = "__option_answer__"
 
 private class ActiveExecutionJobRegistry {
     private val mutex = Mutex()

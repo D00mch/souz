@@ -7,11 +7,11 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.MessageRepository
-import ru.souz.backend.choices.model.Choice
-import ru.souz.backend.choices.model.ChoiceKind
-import ru.souz.backend.choices.model.ChoiceOption
-import ru.souz.backend.choices.model.ChoiceStatus
-import ru.souz.backend.choices.repository.ChoiceRepository
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.model.OptionKind
+import ru.souz.backend.options.model.OptionItem
+import ru.souz.backend.options.model.OptionStatus
+import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
@@ -25,22 +25,22 @@ internal class BackendAgentRuntimeEventSink(
     private val chatId: UUID,
     private val executionId: UUID,
     private val messageRepository: MessageRepository,
-    private val choiceRepository: ChoiceRepository,
+    private val optionRepository: OptionRepository,
     private val executionRepository: AgentExecutionRepository,
     private val eventService: AgentEventService,
     private val toolCallRepository: ToolCallRepository,
     private val streamingMessagesEnabled: Boolean,
     private val toolEventsEnabled: Boolean,
-    private val choicesEnabled: Boolean = false,
+    private val optionsEnabled: Boolean = false,
     private val assistantMessageId: UUID? = null,
     private val toolCallPreviewer: ToolCallPreviewer = ToolCallPreviewer(),
 ) : AgentRuntimeEventSink {
     private val accumulatedAssistantContent = StringBuilder()
     private var assistantMessage: ChatMessage? = null
-    private var requestedChoiceId: UUID? = null
+    private var requestedOptionId: UUID? = null
 
     val currentAssistantMessageId: UUID? get() = assistantMessage?.id
-    val hasRequestedChoice: Boolean get() = requestedChoiceId != null
+    val hasRequestedOption: Boolean get() = requestedOptionId != null
 
     override suspend fun emit(event: AgentRuntimeEvent) {
         when (event) {
@@ -51,25 +51,25 @@ internal class BackendAgentRuntimeEventSink(
 
             is AgentRuntimeEvent.ToolCallFailed -> onToolCallFailed(event)
 
-            is AgentRuntimeEvent.ChoiceRequested -> if (choicesEnabled) {
-                val choice = persistChoice(event)
-                requestedChoiceId = choice.id
+            is AgentRuntimeEvent.ChoiceRequested -> if (optionsEnabled) {
+                val option = persistOption(event)
+                requestedOptionId = option.id
                 executionRepository.get(userId, executionId)?.let { execution ->
                     executionRepository.update(
                         execution.copy(
-                            status = AgentExecutionStatus.WAITING_CHOICE,
+                            status = AgentExecutionStatus.WAITING_OPTION,
                             assistantMessageId = execution.assistantMessageId ?: assistantMessage?.id,
                         )
                     )
                 }
                 appendEvent(
-                    type = AgentEventType.CHOICE_REQUESTED,
+                    type = AgentEventType.OPTION_REQUESTED,
                     payload = mapOf(
-                        "choiceId" to choice.id.toString(),
-                        "kind" to choice.kind.value,
-                        "title" to (choice.title ?: ""),
-                        "selectionMode" to choice.selectionMode,
-                        "options" to restJsonMapper.writeValueAsString(choice.options),
+                        "optionId" to option.id.toString(),
+                        "kind" to option.kind.value,
+                        "title" to (option.title ?: ""),
+                        "selectionMode" to option.selectionMode,
+                        "options" to restJsonMapper.writeValueAsString(option.options),
                     ),
                 )
             }
@@ -302,31 +302,31 @@ internal class BackendAgentRuntimeEventSink(
         executionRepository.update(execution.copy(assistantMessageId = messageId))
     }
 
-    private suspend fun persistChoice(event: AgentRuntimeEvent.ChoiceRequested): Choice {
-        val choice = Choice(
+    private suspend fun persistOption(event: AgentRuntimeEvent.ChoiceRequested): Option {
+        val option = Option(
             id = UUID.fromString(event.choiceId),
             userId = userId,
             chatId = chatId,
             executionId = executionId,
-            kind = ChoiceKind.entries.firstOrNull { it.value == event.kind }
-                ?: error("Unsupported choice kind: ${event.kind}"),
+            kind = OptionKind.entries.firstOrNull { it.value == event.kind }
+                ?: error("Unsupported option kind: ${event.kind}"),
             title = event.title,
             selectionMode = event.selectionMode,
             options = event.options.map { option ->
-                ChoiceOption(
+                OptionItem(
                     id = option.id,
                     label = option.label,
                     content = option.content,
                 )
             },
             payload = emptyMap(),
-            status = ChoiceStatus.PENDING,
+            status = OptionStatus.PENDING,
             answer = null,
             createdAt = Instant.now(),
             expiresAt = null,
             answeredAt = null,
         )
-        return choiceRepository.save(choice)
+        return optionRepository.save(option)
     }
 
     private suspend fun appendEvent(

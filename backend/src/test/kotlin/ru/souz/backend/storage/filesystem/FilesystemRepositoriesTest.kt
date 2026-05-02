@@ -22,12 +22,12 @@ import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
-import ru.souz.backend.choices.model.Choice
-import ru.souz.backend.choices.model.ChoiceAnswer
-import ru.souz.backend.choices.model.ChoiceKind
-import ru.souz.backend.choices.model.ChoiceOption
-import ru.souz.backend.choices.model.ChoiceStatus
-import ru.souz.backend.choices.repository.ChoiceAnswerUpdateResult
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.model.OptionAnswer
+import ru.souz.backend.options.model.OptionKind
+import ru.souz.backend.options.model.OptionItem
+import ru.souz.backend.options.model.OptionStatus
+import ru.souz.backend.options.repository.OptionAnswerUpdateResult
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -102,7 +102,7 @@ class FilesystemRepositoriesTest {
         val messageRepository = FilesystemMessageRepository(dataDir)
         val stateRepository = FilesystemAgentStateRepository(dataDir)
         val executionRepository = FilesystemAgentExecutionRepository(dataDir)
-        val choiceRepository = FilesystemChoiceRepository(dataDir)
+        val optionRepository = FilesystemOptionRepository(dataDir)
         val eventRepository = FilesystemAgentEventRepository(dataDir)
         val toolCallRepository = FilesystemToolCallRepository(dataDir)
         val settingsRepository = FilesystemUserSettingsRepository(dataDir)
@@ -156,12 +156,12 @@ class FilesystemRepositoriesTest {
             userId = userId,
             chatId = chat.id,
             assistantMessageId = assistantPlaceholder.id,
-            status = AgentExecutionStatus.WAITING_CHOICE,
+            status = AgentExecutionStatus.WAITING_OPTION,
             startedAt = Instant.parse("2026-05-01T09:10:00Z"),
         )
         executionRepository.create(execution)
-        val choice = choice(userId = userId, chatId = chat.id, executionId = execution.id)
-        choiceRepository.save(choice)
+        val option = option(userId = userId, chatId = chat.id, executionId = execution.id)
+        optionRepository.save(option)
         val firstEvent = eventRepository.append(
             userId = userId,
             chatId = chat.id,
@@ -173,8 +173,8 @@ class FilesystemRepositoriesTest {
             userId = userId,
             chatId = chat.id,
             executionId = execution.id,
-            type = AgentEventType.CHOICE_REQUESTED,
-            payload = mapOf("choiceId" to choice.id.toString()),
+            type = AgentEventType.OPTION_REQUESTED,
+            payload = mapOf("optionId" to option.id.toString()),
         )
         toolCallRepository.started(
             userId = userId,
@@ -197,7 +197,7 @@ class FilesystemRepositoriesTest {
         assertTrue(Files.exists(chatDir.resolve("messages.jsonl")))
         assertTrue(Files.exists(chatDir.resolve("agent-state.json")))
         assertTrue(Files.exists(chatDir.resolve("executions.jsonl")))
-        assertTrue(Files.exists(chatDir.resolve("choices.jsonl")))
+        assertTrue(Files.exists(chatDir.resolve("options.jsonl")))
         assertTrue(Files.exists(chatDir.resolve("events.jsonl")))
         assertTrue(Files.exists(chatDir.resolve("tool-calls.jsonl")))
 
@@ -205,7 +205,7 @@ class FilesystemRepositoriesTest {
         val reloadedMessageRepository = FilesystemMessageRepository(dataDir)
         val reloadedStateRepository = FilesystemAgentStateRepository(dataDir)
         val reloadedExecutionRepository = FilesystemAgentExecutionRepository(dataDir)
-        val reloadedChoiceRepository = FilesystemChoiceRepository(dataDir)
+        val reloadedOptionRepository = FilesystemOptionRepository(dataDir)
         val reloadedEventRepository = FilesystemAgentEventRepository(dataDir)
         val reloadedToolCallRepository = FilesystemToolCallRepository(dataDir)
         val reloadedSettingsRepository = FilesystemUserSettingsRepository(dataDir)
@@ -223,7 +223,7 @@ class FilesystemRepositoriesTest {
         assertEquals(assistantPlaceholder, reloadedMessageRepository.getById(userId, chat.id, assistantPlaceholder.id))
         assertEquals(execution, reloadedExecutionRepository.get(userId, execution.id))
         assertEquals(execution, reloadedExecutionRepository.findActive(userId, chat.id))
-        assertEquals(listOf(choice), reloadedChoiceRepository.listByExecution(userId, chat.id, execution.id))
+        assertEquals(listOf(option), reloadedOptionRepository.listByExecution(userId, chat.id, execution.id))
         assertEquals(listOf(firstEvent, secondEvent), reloadedEventRepository.listByChat(userId, chat.id))
         assertEquals(listOf("tool-1"), reloadedToolCallRepository.listByExecution(userId, chat.id, execution.id).map { it.toolCallId })
 
@@ -239,10 +239,10 @@ class FilesystemRepositoriesTest {
             role = ChatRole.USER,
             content = "follow up",
         )
-        val answerResult = reloadedChoiceRepository.answerPending(
+        val answerResult = reloadedOptionRepository.answerPending(
             userId = userId,
-            choiceId = choice.id,
-            answer = ChoiceAnswer(
+            optionId = option.id,
+            answer = OptionAnswer(
                 selectedOptionIds = setOf("a"),
                 freeText = "because alpha",
                 metadata = mapOf("source" to "web-ui"),
@@ -271,13 +271,13 @@ class FilesystemRepositoriesTest {
 
         assertEquals(assistantPlaceholder.copy(content = "assistant reply"), updatedAssistant)
         assertEquals(3L, nextUserMessage.seq)
-        assertIs<ChoiceAnswerUpdateResult.Updated>(answerResult)
+        assertIs<OptionAnswerUpdateResult.Updated>(answerResult)
         assertEquals(3L, thirdEvent.seq)
 
         val restartedMessageRepository = FilesystemMessageRepository(dataDir)
         val restartedStateRepository = FilesystemAgentStateRepository(dataDir)
         val restartedExecutionRepository = FilesystemAgentExecutionRepository(dataDir)
-        val restartedChoiceRepository = FilesystemChoiceRepository(dataDir)
+        val restartedOptionRepository = FilesystemOptionRepository(dataDir)
         val restartedEventRepository = FilesystemAgentEventRepository(dataDir)
         val restartedToolCallRepository = FilesystemToolCallRepository(dataDir)
 
@@ -298,26 +298,26 @@ class FilesystemRepositoriesTest {
         assertEquals(completedExecution, restartedExecutionRepository.getByChat(userId, chat.id, execution.id))
         assertNull(restartedExecutionRepository.findActive(userId, chat.id))
         assertEquals(
-            listOf(choice.copy(
-                status = ChoiceStatus.ANSWERED,
-                answer = ChoiceAnswer(
+            listOf(option.copy(
+                status = OptionStatus.ANSWERED,
+                answer = OptionAnswer(
                     selectedOptionIds = setOf("a"),
                     freeText = "because alpha",
                     metadata = mapOf("source" to "web-ui"),
                 ),
                 answeredAt = Instant.parse("2026-05-01T09:15:00Z"),
             )),
-            restartedChoiceRepository.listByExecution(userId, chat.id, execution.id),
+            restartedOptionRepository.listByExecution(userId, chat.id, execution.id),
         )
         assertEquals(
             listOf(firstEvent, secondEvent, thirdEvent),
             restartedEventRepository.listByChat(userId, chat.id),
         )
         assertEquals(
-            ChoiceAnswerUpdateResult.NotPending(
-                choice.copy(
-                    status = ChoiceStatus.ANSWERED,
-                    answer = ChoiceAnswer(
+            OptionAnswerUpdateResult.NotPending(
+                option.copy(
+                    status = OptionStatus.ANSWERED,
+                    answer = OptionAnswer(
                         selectedOptionIds = setOf("a"),
                         freeText = "because alpha",
                         metadata = mapOf("source" to "web-ui"),
@@ -325,10 +325,10 @@ class FilesystemRepositoriesTest {
                     answeredAt = Instant.parse("2026-05-01T09:15:00Z"),
                 )
             ),
-            restartedChoiceRepository.answerPending(
+            restartedOptionRepository.answerPending(
                 userId = userId,
-                choiceId = choice.id,
-                answer = ChoiceAnswer(selectedOptionIds = setOf("a")),
+                optionId = option.id,
+                answer = OptionAnswer(selectedOptionIds = setOf("a")),
                 answeredAt = Instant.parse("2026-05-01T09:20:00Z"),
             ),
         )
@@ -504,22 +504,22 @@ class FilesystemRepositoriesTest {
             ),
         )
 
-    private fun choice(
+    private fun option(
         userId: String,
         chatId: UUID,
         executionId: UUID,
-    ): Choice =
-        Choice(
+    ): Option =
+        Option(
             id = UUID.randomUUID(),
             userId = userId,
             chatId = chatId,
             executionId = executionId,
-            kind = ChoiceKind.GENERIC_SELECTION,
+            kind = OptionKind.GENERIC_SELECTION,
             title = "Pick one",
             selectionMode = "single",
-            options = listOf(ChoiceOption(id = "a", label = "A", content = "alpha")),
+            options = listOf(OptionItem(id = "a", label = "A", content = "alpha")),
             payload = mapOf("origin" to "test"),
-            status = ChoiceStatus.PENDING,
+            status = OptionStatus.PENDING,
             answer = null,
             createdAt = Instant.parse("2026-05-01T08:30:00Z"),
             expiresAt = null,

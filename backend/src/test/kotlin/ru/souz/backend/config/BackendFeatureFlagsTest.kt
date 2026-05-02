@@ -22,7 +22,7 @@ class BackendFeatureFlagsTest {
         assertFalse(flags.wsEvents)
         assertFalse(flags.streamingMessages)
         assertFalse(flags.toolEvents)
-        assertFalse(flags.choices)
+        assertFalse(flags.options)
         assertFalse(flags.durableEventReplay)
     }
 
@@ -36,7 +36,7 @@ class BackendFeatureFlagsTest {
                 ),
                 properties = mapOf(
                     "souz.backend.feature.toolEvents" to "true",
-                    "souz.backend.feature.choices" to "true",
+                    "souz.backend.feature.options" to "true",
                     "souz.backend.feature.durableEventReplay" to "true",
                 ),
             )
@@ -45,7 +45,7 @@ class BackendFeatureFlagsTest {
         assertTrue(flags.wsEvents)
         assertTrue(flags.streamingMessages)
         assertTrue(flags.toolEvents)
-        assertTrue(flags.choices)
+        assertTrue(flags.options)
         assertTrue(flags.durableEventReplay)
     }
 }

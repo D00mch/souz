@@ -1,6 +1,6 @@
-package ru.souz.backend.choices.model
+package ru.souz.backend.options.model
 
-enum class ChoiceStatus(val value: String) {
+enum class OptionStatus(val value: String) {
     PENDING("pending"),
     ANSWERED("answered"),
     CANCELLED("cancelled"),

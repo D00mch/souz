@@ -36,7 +36,7 @@ fun main() {
         chatService = runtime.chatService,
         messageService = runtime.messageService,
         executionService = runtime.executionService,
-        choiceService = runtime.choiceService,
+        optionService = runtime.optionService,
         eventService = runtime.eventService,
         featureFlags = runtime.featureFlags,
         selectedModel = runtime::selectedModel,

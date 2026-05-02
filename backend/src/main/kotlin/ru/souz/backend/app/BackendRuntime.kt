@@ -7,7 +7,7 @@ import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
-import ru.souz.backend.choices.service.ChoiceService
+import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.service.AgentExecutionService
@@ -27,7 +27,7 @@ class BackendRuntime private constructor(
     val chatService: ChatService by lazy { di.direct.instance() }
     val messageService: MessageService by lazy { di.direct.instance() }
     val executionService: AgentExecutionService by lazy { di.direct.instance() }
-    val choiceService: ChoiceService by lazy { di.direct.instance() }
+    val optionService: OptionService by lazy { di.direct.instance() }
     val eventService: AgentEventService by lazy { di.direct.instance() }
     val featureFlags: BackendFeatureFlags by lazy { di.direct.instance() }
     private val resources: BackendRuntimeResources by lazy { di.direct.instance() }

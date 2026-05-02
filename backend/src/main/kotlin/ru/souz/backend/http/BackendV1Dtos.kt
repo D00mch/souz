@@ -4,7 +4,7 @@ import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.service.ChatSummary
 import ru.souz.backend.chat.service.SendMessageResult
-import ru.souz.backend.choices.service.AnswerChoiceResult
+import ru.souz.backend.options.service.AnswerOptionResult
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.execution.model.AgentExecution
@@ -113,18 +113,18 @@ internal data class BackendV1CancelExecutionResponse(
     val execution: BackendV1ExecutionDto,
 )
 
-internal data class BackendV1AnswerChoiceRequest(
+internal data class BackendV1AnswerOptionRequest(
     val selectedOptionIds: List<String> = emptyList(),
     val freeText: String? = null,
     val metadata: Map<String, String> = emptyMap(),
 )
 
-internal data class BackendV1AnswerChoiceResponse(
-    val choice: BackendV1ChoiceDto,
+internal data class BackendV1AnswerOptionResponse(
+    val option: BackendV1OptionDto,
     val execution: BackendV1ExecutionDto,
 )
 
-internal data class BackendV1ChoiceDto(
+internal data class BackendV1OptionDto(
     val id: String,
     val status: String,
 )
@@ -169,7 +169,7 @@ internal data class BackendV1ExecutionUsageDto(
     val precachedTokens: Int,
 )
 
-internal data class BackendV1ChoiceOptionDto(
+internal data class BackendV1OptionItemDto(
     val id: String,
     val label: String,
     val content: String? = null,
@@ -230,11 +230,11 @@ internal fun CancelExecutionResult.toResponse(): BackendV1CancelExecutionRespons
         execution = execution.toDto(),
     )
 
-internal fun AnswerChoiceResult.toResponse(): BackendV1AnswerChoiceResponse =
-    BackendV1AnswerChoiceResponse(
-        choice = BackendV1ChoiceDto(
-            id = choice.id.toString(),
-            status = choice.status.value,
+internal fun AnswerOptionResult.toResponse(): BackendV1AnswerOptionResponse =
+    BackendV1AnswerOptionResponse(
+        option = BackendV1OptionDto(
+            id = option.id.toString(),
+            status = option.status.value,
         ),
         execution = execution.toDto(),
     )
@@ -335,16 +335,18 @@ private fun Map<String, String>.toTransportPayload(type: AgentEventType): Map<St
             copyIfPresent("assistantMessageId")
         }
 
-        AgentEventType.CHOICE_REQUESTED -> buildPayload {
-            copyIfPresent("choiceId")
+        AgentEventType.OPTION_REQUESTED -> buildPayload {
+            copyIfPresent("optionId")
+            copyIfPresent("optionId", sourceKey = "choiceId")
             copyIfPresent("kind")
             copyIfPresent("title")
             copyIfPresent("selectionMode")
-            copyJsonIfPresent<List<BackendV1ChoiceOptionDto>>("options")
+            copyJsonIfPresent<List<BackendV1OptionItemDto>>("options")
         }
 
-        AgentEventType.CHOICE_ANSWERED -> buildPayload {
-            copyIfPresent("choiceId")
+        AgentEventType.OPTION_ANSWERED -> buildPayload {
+            copyIfPresent("optionId")
+            copyIfPresent("optionId", sourceKey = "choiceId")
             copyIfPresent("status")
             copyJsonIfPresent<List<String>>("selectedOptionIds")
             copyIfPresent("freeText")

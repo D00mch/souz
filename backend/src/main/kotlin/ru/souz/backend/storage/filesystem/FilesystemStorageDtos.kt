@@ -9,11 +9,11 @@ import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
-import ru.souz.backend.choices.model.Choice
-import ru.souz.backend.choices.model.ChoiceAnswer
-import ru.souz.backend.choices.model.ChoiceKind
-import ru.souz.backend.choices.model.ChoiceOption
-import ru.souz.backend.choices.model.ChoiceStatus
+import ru.souz.backend.options.model.Option
+import ru.souz.backend.options.model.OptionAnswer
+import ru.souz.backend.options.model.OptionKind
+import ru.souz.backend.options.model.OptionItem
+import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.execution.model.AgentExecution
@@ -100,7 +100,7 @@ internal data class StoredAgentExecutionUsage(
     val precachedTokens: Int,
 )
 
-internal data class StoredChoice(
+internal data class StoredOption(
     val id: String,
     val userId: String,
     val chatId: String,
@@ -108,22 +108,22 @@ internal data class StoredChoice(
     val kind: String,
     val title: String?,
     val selectionMode: String,
-    val options: List<StoredChoiceOption>,
+    val options: List<StoredOptionItem>,
     val payload: Map<String, String>,
     val status: String,
-    val answer: StoredChoiceAnswer?,
+    val answer: StoredOptionAnswer?,
     val createdAt: String,
     val expiresAt: String?,
     val answeredAt: String?,
 )
 
-internal data class StoredChoiceOption(
+internal data class StoredOptionItem(
     val id: String,
     val label: String,
     val content: String? = null,
 )
 
-internal data class StoredChoiceAnswer(
+internal data class StoredOptionAnswer(
     val selectedOptionIds: Set<String>,
     val freeText: String? = null,
     val metadata: Map<String, String> = emptyMap(),
@@ -341,8 +341,8 @@ internal fun StoredAgentExecutionUsage.toDomain(): AgentExecutionUsage =
         precachedTokens = precachedTokens,
     )
 
-internal fun Choice.toStored(): StoredChoice =
-    StoredChoice(
+internal fun Option.toStored(): StoredOption =
+    StoredOption(
         id = id.toString(),
         userId = userId,
         chatId = chatId.toString(),
@@ -359,47 +359,47 @@ internal fun Choice.toStored(): StoredChoice =
         answeredAt = answeredAt?.toString(),
     )
 
-internal fun StoredChoice.toDomain(): Choice =
-    Choice(
+internal fun StoredOption.toDomain(): Option =
+    Option(
         id = UUID.fromString(id),
         userId = userId,
         chatId = UUID.fromString(chatId),
         executionId = UUID.fromString(executionId),
-        kind = parseChoiceKind(kind),
+        kind = parseOptionKind(kind),
         title = title,
         selectionMode = selectionMode,
         options = options.map { it.toDomain() },
         payload = payload,
-        status = parseChoiceStatus(status),
+        status = parseOptionStatus(status),
         answer = answer?.toDomain(),
         createdAt = Instant.parse(createdAt),
         expiresAt = expiresAt?.let(Instant::parse),
         answeredAt = answeredAt?.let(Instant::parse),
     )
 
-internal fun ChoiceOption.toStored(): StoredChoiceOption =
-    StoredChoiceOption(
+internal fun OptionItem.toStored(): StoredOptionItem =
+    StoredOptionItem(
         id = id,
         label = label,
         content = content,
     )
 
-internal fun StoredChoiceOption.toDomain(): ChoiceOption =
-    ChoiceOption(
+internal fun StoredOptionItem.toDomain(): OptionItem =
+    OptionItem(
         id = id,
         label = label,
         content = content,
     )
 
-internal fun ChoiceAnswer.toStored(): StoredChoiceAnswer =
-    StoredChoiceAnswer(
+internal fun OptionAnswer.toStored(): StoredOptionAnswer =
+    StoredOptionAnswer(
         selectedOptionIds = selectedOptionIds,
         freeText = freeText,
         metadata = metadata,
     )
 
-internal fun StoredChoiceAnswer.toDomain(): ChoiceAnswer =
-    ChoiceAnswer(
+internal fun StoredOptionAnswer.toDomain(): OptionAnswer =
+    OptionAnswer(
         selectedOptionIds = selectedOptionIds,
         freeText = freeText,
         metadata = metadata,
@@ -543,21 +543,28 @@ private fun parseChatRole(raw: String): ChatRole =
     ChatRole.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }
         ?: error("Unsupported chat role '$raw'.")
 
-private fun parseChoiceKind(raw: String): ChoiceKind =
-    ChoiceKind.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }
-        ?: error("Unsupported choice kind '$raw'.")
+private fun parseOptionKind(raw: String): OptionKind =
+    OptionKind.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }
+        ?: error("Unsupported option kind '$raw'.")
 
-private fun parseChoiceStatus(raw: String): ChoiceStatus =
-    ChoiceStatus.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }
-        ?: error("Unsupported choice status '$raw'.")
+private fun parseOptionStatus(raw: String): OptionStatus =
+    OptionStatus.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }
+        ?: error("Unsupported option status '$raw'.")
 
 private fun parseExecutionStatus(raw: String): AgentExecutionStatus =
-    AgentExecutionStatus.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }
-        ?: error("Unsupported execution status '$raw'.")
+    when {
+        raw == "waiting_choice" -> AgentExecutionStatus.WAITING_OPTION
+        else -> AgentExecutionStatus.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }
+            ?: error("Unsupported execution status '$raw'.")
+    }
 
 private fun parseEventType(raw: String): AgentEventType =
-    AgentEventType.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }
-        ?: error("Unsupported event type '$raw'.")
+    when {
+        raw == "choice.requested" -> AgentEventType.OPTION_REQUESTED
+        raw == "choice.answered" -> AgentEventType.OPTION_ANSWERED
+        else -> AgentEventType.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }
+            ?: error("Unsupported event type '$raw'.")
+    }
 
 private fun parseToolCallStatus(raw: String): ToolCallStatus =
     ToolCallStatus.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }

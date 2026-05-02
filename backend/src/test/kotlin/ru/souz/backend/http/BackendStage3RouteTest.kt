@@ -43,8 +43,8 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
-import ru.souz.backend.choices.repository.ChoiceRepository
-import ru.souz.backend.choices.service.ChoiceService
+import ru.souz.backend.options.repository.OptionRepository
+import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
@@ -62,7 +62,7 @@ import ru.souz.backend.storage.memory.MemoryAgentExecutionRepository
 import ru.souz.backend.storage.memory.MemoryAgentEventRepository
 import ru.souz.backend.storage.memory.MemoryAgentStateRepository
 import ru.souz.backend.storage.memory.MemoryChatRepository
-import ru.souz.backend.storage.memory.MemoryChoiceRepository
+import ru.souz.backend.storage.memory.MemoryOptionRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
 import ru.souz.backend.storage.memory.MemoryToolCallRepository
 import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
@@ -820,7 +820,7 @@ internal data class RouteTestContext(
     val chatRepository: MemoryChatRepository,
     val messageRepository: MemoryMessageRepository,
     val executionRepository: MemoryAgentExecutionRepository,
-    val choiceRepository: MemoryChoiceRepository,
+    val optionRepository: MemoryOptionRepository,
     val eventRepository: MemoryAgentEventRepository,
     val toolCallRepository: MemoryToolCallRepository,
     val eventService: AgentEventService,
@@ -831,7 +831,7 @@ internal data class RouteTestContext(
     val userProviderKeyService: UserProviderKeyService,
     val chatService: ChatService,
     val executionService: AgentExecutionService,
-    val choiceService: ChoiceService,
+    val optionService: OptionService,
     val messageService: MessageService,
 )
 
@@ -849,7 +849,7 @@ internal fun routeTestContext(
     chatRepository: MemoryChatRepository = MemoryChatRepository(),
     messageRepository: MemoryMessageRepository = MemoryMessageRepository(),
     executionRepository: MemoryAgentExecutionRepository = MemoryAgentExecutionRepository(),
-    choiceRepository: MemoryChoiceRepository = MemoryChoiceRepository(),
+    optionRepository: MemoryOptionRepository = MemoryOptionRepository(),
     eventRepository: MemoryAgentEventRepository = MemoryAgentEventRepository(),
     toolCallRepository: MemoryToolCallRepository = MemoryToolCallRepository(),
     stateRepository: MemoryAgentStateRepository = MemoryAgentStateRepository(),
@@ -892,14 +892,14 @@ internal fun routeTestContext(
         effectiveSettingsResolver = effectiveSettingsResolver,
         turnRunner = conversationTurnRunner,
         executionRepository = executionRepository,
-        choiceRepository = choiceRepository,
+        optionRepository = optionRepository,
         eventRepository = eventRepository,
         eventService = eventService,
         toolCallRepository = toolCallRepository,
         featureFlags = featureFlags,
     )
-    val choiceService = ChoiceService(
-        choiceRepository = choiceRepository,
+    val optionService = OptionService(
+        optionRepository = optionRepository,
         executionService = executionService,
         featureFlags = featureFlags,
     )
@@ -911,7 +911,7 @@ internal fun routeTestContext(
         chatRepository = chatRepository,
         messageRepository = messageRepository,
         executionRepository = executionRepository,
-        choiceRepository = choiceRepository,
+        optionRepository = optionRepository,
         eventRepository = eventRepository,
         toolCallRepository = toolCallRepository,
         eventService = eventService,
@@ -942,7 +942,7 @@ internal fun routeTestContext(
             messageRepository = messageRepository,
         ),
         executionService = executionService,
-        choiceService = choiceService,
+        optionService = optionService,
         messageService = MessageService(
             chatRepository = chatRepository,
             messageRepository = messageRepository,

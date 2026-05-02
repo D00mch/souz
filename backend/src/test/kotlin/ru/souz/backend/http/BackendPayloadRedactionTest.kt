@@ -22,7 +22,7 @@ import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.storage.memory.MemoryAgentEventRepository
 import ru.souz.backend.storage.memory.MemoryAgentExecutionRepository
 import ru.souz.backend.storage.memory.MemoryChatRepository
-import ru.souz.backend.storage.memory.MemoryChoiceRepository
+import ru.souz.backend.storage.memory.MemoryOptionRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
 import ru.souz.backend.storage.memory.MemoryToolCallRepository
 import ru.souz.backend.toolcall.model.ToolCallStatus
@@ -257,7 +257,7 @@ class BackendPayloadRedactionTest {
                 chatId = chat.id,
                 executionId = execution.id,
                 messageRepository = messageRepository,
-                choiceRepository = MemoryChoiceRepository(),
+                optionRepository = MemoryOptionRepository(),
                 executionRepository = executionRepository,
                 eventService = AgentEventService(
                     chatRepository = chatRepository,

@@ -15,7 +15,7 @@ internal sealed interface BackendConversationTurnOutcome {
         override val session: AgentConversationSession,
     ) : BackendConversationTurnOutcome
 
-    data class WaitingChoice(
+    data class WaitingOption(
         val usage: LLMResponse.Usage,
         override val session: AgentConversationSession,
     ) : BackendConversationTurnOutcome
@@ -51,8 +51,8 @@ internal class BackendConversationRuntimeTurnRunner(
                 persistSession = false,
                 eventSink = eventSink,
             )
-            if (eventSink is BackendAgentRuntimeEventSink && eventSink.hasRequestedChoice) {
-                BackendConversationTurnOutcome.WaitingChoice(
+            if (eventSink is BackendAgentRuntimeEventSink && eventSink.hasRequestedOption) {
+                BackendConversationTurnOutcome.WaitingOption(
                     usage = execution.usage,
                     session = execution.session,
                 )
