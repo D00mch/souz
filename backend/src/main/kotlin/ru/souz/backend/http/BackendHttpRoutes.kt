@@ -3,7 +3,6 @@ package ru.souz.backend.http
 internal object BackendHttpRoutes {
     const val ROOT = "/"
     const val HEALTH = "/health"
-    const val LEGACY_AGENT = "/agent"
     const val V1 = "/v1"
     const val BOOTSTRAP = "$V1/bootstrap"
     const val SETTINGS = "$V1/me/settings"

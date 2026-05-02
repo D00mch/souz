@@ -1,211 +1,87 @@
 # Backend
 
-The `:backend` module is a JVM HTTP build for Souz without Compose UI startup, voice capture, speech recognition, hotkeys, or desktop-only agent tools.
+The `:backend` module is a JVM HTTP server build for Souz without Compose UI startup, audio capture, hotkeys, or desktop-only tools. It exposes `/health` plus a trusted-proxy `/v1/**` API and reuses the shared `:agent` execution kernel for chat turns.
 
-It reuses shared runtime components from `:runtime` and exposes a small REST surface:
+## Routes
 
 - `GET /health` returns process and selected-model status.
-- `GET /v1/bootstrap` returns trusted-proxy bootstrap metadata for web/server-mode clients.
-- `GET /v1/me/settings` and `PATCH /v1/me/settings` expose effective per-user backend settings and persist user intent for the public settings subset.
-- `GET /v1/chats`, `POST /v1/chats`, `PATCH /v1/chats/{chatId}/title`, `POST /v1/chats/{chatId}/archive`, `POST /v1/chats/{chatId}/unarchive`, `GET /v1/chats/{chatId}/messages`, `GET /v1/chats/{chatId}/events`, `POST /v1/chats/{chatId}/messages`, `POST /v1/options/{optionId}/answer`, `POST /v1/chats/{chatId}/cancel-active`, `POST /v1/chats/{chatId}/executions/{executionId}/cancel`, and `WS /v1/chats/{chatId}/ws` provide the stage-8 chat-oriented REST/WebSocket API with strict ownership checks, explicit `AgentExecution` + `Option` lifecycle persistence, replay/live event delivery, same-execution continuation after an option answer, and cancellation.
-- `POST /agent` remains a legacy/debug internal route that accepts authenticated agent requests and returns a single assistant response with message IDs and token usage.
+- `GET /v1/bootstrap` returns backend features, storage mode, server-visible models/tools, and effective settings for the trusted user.
+- `GET /v1/me/settings` and `PATCH /v1/me/settings` read and persist public user settings.
+- `GET /v1/me/provider-keys`, `PUT /v1/me/provider-keys/{provider}`, and `DELETE /v1/me/provider-keys/{provider}` manage encrypted per-user provider keys.
+- `GET /v1/chats`, `POST /v1/chats`, `PATCH /v1/chats/{chatId}/title`, `POST /v1/chats/{chatId}/archive`, and `POST /v1/chats/{chatId}/unarchive` manage owned chats.
+- `GET /v1/chats/{chatId}/messages` lists visible product messages only.
+- `POST /v1/chats/{chatId}/messages` creates a user message, persists an `AgentExecution`, and either completes synchronously or returns `running` for WS-driven streaming.
+- `GET /v1/chats/{chatId}/events` and `WS /v1/chats/{chatId}/ws` replay durable events and subscribe to live per-chat updates.
+- `POST /v1/options/{optionId}/answer` resumes the original execution after a pending option is answered.
+- `POST /v1/chats/{chatId}/cancel-active` and `POST /v1/chats/{chatId}/executions/{executionId}/cancel` cancel active executions.
 
-`/agent` exposes the shared runtime tool catalog for backend-safe tools (files, text/web lookup, calculator, analytics, and non-UI config). The backend intentionally omits `WebImageSearch` so startup does not initialize Apache Tika's external parser probes for host binaries such as `ffmpeg`.
+## Identity And Safety
 
-`/v1/**` never accepts `userId` from body/query. Identity is accepted only from trusted proxy headers:
+- `/v1/**` trusts identity only from `X-User-Id` and `X-Souz-Proxy-Auth`.
+- `X-User-Id` is treated as an opaque string, validated for shape, and provisioned through `UserRepository.ensureUser(userId)` before the request reaches settings/chat/provider-key services.
+- Missing proxy configuration returns structured `backend_misconfigured`; invalid or missing trusted headers return `untrusted_proxy`, `missing_user_identity`, or `invalid_user_identity`.
+- The backend tool catalog is restricted to backend-safe categories and intentionally excludes desktop-only tools and `WebImageSearch`.
 
-- `X-User-Id` as an opaque non-blank string.
-- `X-Souz-Proxy-Auth` matched against `SOUZ_BACKEND_PROXY_TOKEN` or `souz.backend.proxyToken`.
+## Runtime Model
 
-After trusted proxy auth succeeds, the backend validates the trusted `X-User-Id` shape (non-blank, max 256 chars, no ISO control chars), calls `UserRepository.ensureUser(userId)` at the request identity boundary, and only then continues into settings/chat/message/provider-key flows.
+- Chat turns resolve effective settings from server defaults, persisted user intent, feature flags, and per-request overrides.
+- Execution persists product messages separately from `agent_conversation_state`; runtime-only continuation state stays inside `AgentStateRepository`.
+- `conversationId = chatId.toString()` is the stable runtime identity for chat execution.
+- `BackendConversationRuntimeFactory` rebuilds a request-scoped runtime from persisted session state, while `AgentExecutionService` owns product execution lifecycle, cancellation, and option continuation.
+- `message.delta` stays live-only, while durable events such as `execution.started`, `message.created`, `message.completed`, `tool.call.*`, `option.*`, `execution.finished`, `execution.failed`, and `execution.cancelled` are persisted and replayable.
 
-If the proxy token is missing, `/v1/**` rejects requests with a structured `backend_misconfigured` error instead of falling back to an unsafe mode.
+## Storage
 
-`POST /agent` requires `Content-Type: application/json`, `Authorization: Bearer <internal-agent-token>`, and `X-Request-Id: <uuid>`. The token is read from `SOUZ_BACKEND_AGENT_TOKEN` or `souz.backend.agentToken`. The request body `requestId` must match `X-Request-Id`.
+- Storage modes: `memory`, `filesystem`, `postgres`.
+- `memory` uses bounded LRU repositories to reduce accidental OOM risk.
+- `filesystem` stores per-user data under `SOUZ_BACKEND_DATA_DIR` / `souz.backend.dataDir` using URL-safe user path segments and append-only logs for messages, executions, options, events, and tool calls.
+- `postgres` uses JDBC + HikariCP + Flyway, allocates message/event sequence numbers per chat, enforces one active execution per chat, persists durable replay only when `SOUZ_FEATURE_DURABLE_EVENT_REPLAY=true`, and uses optimistic locking on `agent_conversation_state`.
 
-The backend keeps `/agent` conversation snapshots through the legacy `AgentSessionRepository`, now backed by the stage-2 product `AgentStateRepository`. Stage-8/10 reuses the same shared runtime for `/v1/chats/{chatId}/messages`, but chat turns resolve effective settings from server defaults + persisted per-user settings + request overrides, persist visible `messages` separately from `agent state`, use `conversationId = chatId.toString()` for runtime identity, and keep synthetic option-continuation input inside agent state only. Product repositories now support in-memory storage, filesystem storage under `SOUZ_BACKEND_DATA_DIR` / `souz.backend.dataDir` (default `data/` relative to the backend process working directory), and Postgres storage via JDBC + HikariCP + Flyway with `SOUZ_BACKEND_DB_*` / `souz.backend.db.*` settings. Memory mode keeps bounded LRU snapshots (10_000 entities per repository) so an accidental prod launch in `memory` mode is less likely to OOM and now includes a dedicated `UserRepository`. Filesystem mode stores `user.json`, `settings.json`, `chat.json`, `messages.jsonl`, `agent-state.json`, `executions.jsonl`, `options.jsonl`, `events.jsonl`, and `tool-calls.jsonl`, uses a stable URL-safe encoded directory name for opaque `userId` values instead of raw path injection, keeps `messages/executions/options/tool-calls` as append-only snapshot logs with last-write-wins reload, and tolerates corrupted `agent-state.json` by returning `null` while leaving product message history readable. Postgres mode keeps DB ownership filtering by `userId`, allocates message/event `seq` per chat, updates assistant messages in place without changing `seq`, enforces one active execution per chat through `agent_executions_one_active_per_chat_idx`, persists durable replay only when `SOUZ_FEATURE_DURABLE_EVENT_REPLAY=true`, stores `tool_calls` audit rows with redacted/truncated argument/result/error previews only, and uses `row_version` optimistic locking so stale state writes fail as `state_conflict` instead of overwriting `context_json`. `/agent` still executes each turn from a request-scoped runtime:
+## Config
 
-- Process scope: shared settings/provider clients, shared runtime tool catalog/filter, backend no-op desktop/MCP host adapters, object mappers, runtime/cache factories, and the application coroutine scope used for async execution jobs.
-- Conversation scope: persisted snapshot only, including history, active agent id, temperature, locale, and time zone.
-- Request scope: validated request data, model/context/locale/time-zone overrides for the turn, usage tracking reset, and response assembly.
-
-The backend path still reuses the shared `:agent` execution kernel, but it bypasses desktop-only features that are irrelevant here: `AgentFacade`, graph session logging, shared desktop side-effect subscriptions, MCP tool discovery, and desktop/session logging infrastructure. Stage-5 adds a request-scoped runtime event sink instead, so backend event persistence never relies on shared desktop flows.
-
-Stage-1/9 backend foundation also adds:
-
-- feature flags from env/system properties:
+- Feature flags:
   - `SOUZ_FEATURE_WS_EVENTS` / `souz.backend.feature.wsEvents`
   - `SOUZ_FEATURE_STREAMING_MESSAGES` / `souz.backend.feature.streamingMessages`
   - `SOUZ_FEATURE_TOOL_EVENTS` / `souz.backend.feature.toolEvents`
   - `SOUZ_FEATURE_OPTIONS` / `souz.backend.feature.options`
   - `SOUZ_FEATURE_DURABLE_EVENT_REPLAY` / `souz.backend.feature.durableEventReplay`
-- storage mode from `SOUZ_STORAGE_MODE` / `souz.backend.storageMode`, with `memory`, `filesystem`, and `postgres` supported.
-- filesystem data root from `SOUZ_BACKEND_DATA_DIR` / `souz.backend.dataDir`, defaulting to `data/` relative to the backend process working directory.
-- postgres config from env/system properties:
-  - `SOUZ_BACKEND_DB_HOST` / `souz.backend.db.host`, default `127.0.0.1`
-  - `SOUZ_BACKEND_DB_PORT` / `souz.backend.db.port`, default `5432`
-  - `SOUZ_BACKEND_DB_NAME` / `souz.backend.db.name`, default `souz`
-  - `SOUZ_BACKEND_DB_USER` / `souz.backend.db.user`, default `souz`
-  - `SOUZ_BACKEND_DB_PASSWORD` / `souz.backend.db.password`, optional
-  - `SOUZ_BACKEND_DB_SCHEMA` / `souz.backend.db.schema`, default `public`
-  - `SOUZ_BACKEND_DB_MAX_POOL_SIZE` / `souz.backend.db.maxPoolSize`, default `10`
-  - `SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS` / `souz.backend.db.connectionTimeoutMs`, default `30000`
+- Storage mode:
+  - `SOUZ_STORAGE_MODE` / `souz.backend.storageMode`
+- Filesystem root:
+  - `SOUZ_BACKEND_DATA_DIR` / `souz.backend.dataDir`
+- Postgres:
+  - `SOUZ_BACKEND_DB_HOST` / `souz.backend.db.host`
+  - `SOUZ_BACKEND_DB_PORT` / `souz.backend.db.port`
+  - `SOUZ_BACKEND_DB_NAME` / `souz.backend.db.name`
+  - `SOUZ_BACKEND_DB_USER` / `souz.backend.db.user`
+  - `SOUZ_BACKEND_DB_PASSWORD` / `souz.backend.db.password`
+  - `SOUZ_BACKEND_DB_SCHEMA` / `souz.backend.db.schema`
+  - `SOUZ_BACKEND_DB_MAX_POOL_SIZE` / `souz.backend.db.maxPoolSize`
+  - `SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS` / `souz.backend.db.connectionTimeoutMs`
 
-## Project Structure
+## Structure
 
 ```text
 backend/
-├── build.gradle.kts                            # JVM application build and Ktor server dependencies
-├── AGENTS.md                                   # Module notes, routes, and structure
+├── build.gradle.kts
+├── AGENTS.md
 └── src/
-    ├── main/
-    │   └── kotlin/
-    │       └── ru/souz/backend/
-    │           ├── app/                        # Entry point, runtime lifecycle, backend DI, process config
-    │           ├── http/                       # Ktor server wrapper, routes, DTOs, and v1 error envelopes
-    │           ├── agent/                      # Legacy /agent feature internals
-    │           ├── bootstrap/                  # /v1/bootstrap response assembly from current backend state
-    │           ├── chat/                       # Product chat/message models, repositories, and stage-3 services
-    │           ├── execution/                  # Product execution models and repositories
-    │           ├── options/                    # Product option models and repositories
-    │           ├── events/                     # Product event models and repositories
-    │           ├── toolcall/                  # Tool call audit models and repositories
-    │           ├── settings/                   # Per-user settings models, repository, effective resolver, and settings service
-    │           ├── config/                     # Feature-flag and env/property config readers
-    │           ├── security/                   # Trusted proxy request identity extraction for /v1/**
-    │           ├── storage/                    # Storage mode enum, stage gating, and memory/filesystem repository impls
-    │           └── common/                     # Shared backend exception types
-    └── test/
-        └── kotlin/
-            └── ru/souz/backend/
-                ├── BackendAgentServiceTest.kt
-                ├── config/BackendFeatureFlagsTest.kt
-                └── http/BackendBootstrapRouteTest.kt
+    ├── main/kotlin/ru/souz/backend/
+    │   ├── agent/        # Runtime glue, event sink, persisted session adapters
+    │   ├── app/          # Entry point, lifecycle, DI, process config
+    │   ├── bootstrap/    # /v1/bootstrap assembly
+    │   ├── chat/         # Chat/message models, repositories, services
+    │   ├── common/       # Shared backend exception types
+    │   ├── config/       # Feature-flag and env/property readers
+    │   ├── events/       # Durable/live event models, bus, services
+    │   ├── execution/    # Execution models, repositories, lifecycle services
+    │   ├── http/         # Ktor server, DTOs, routes, validation
+    │   ├── keys/         # Provider-key models, repositories, services
+    │   ├── options/      # Option models, repositories, services
+    │   ├── security/     # Trusted proxy request identity
+    │   ├── settings/     # User settings models, repositories, resolver, service
+    │   ├── storage/      # Memory/filesystem/postgres implementations
+    │   ├── toolcall/     # Tool-call audit models and repositories
+    │   └── user/         # User repository abstraction
+    └── test/kotlin/ru/souz/backend/
 ```
-
-## Bootstrap Route
-
-`GET /v1/bootstrap` requires both trusted headers above and returns:
-
-- `user.id` from `X-User-Id`
-- `features` from backend feature flags
-- `storage.mode`
-- `capabilities.models` derived from the current `SettingsProvider` + `LlmBuildProfile` semantics, with `serverManagedKey` indicating whether the backend currently has provider access
-- `capabilities.tools` from the backend-safe runtime tool catalog only
-- `settings` from per-user backend settings resolved as server defaults + persisted user settings + backend feature gating, with safe locale/time-zone/model fallbacks
-
-Errors for `/v1/**` use a structured envelope:
-
-```json
-{
-  "error": {
-    "code": "untrusted_proxy",
-    "message": "Trusted proxy authentication is required."
-  }
-}
-```
-
-Stable backend codes:
-
-- `untrusted_proxy`
-- `missing_user_identity`
-- `invalid_user_identity`
-- `backend_misconfigured`
-- `internal_error`
-- `invalid_request`
-- `feature_disabled`
-- `chat_not_found`
-- `option_not_found`
-- `agent_execution_failed`
-- `chat_already_has_active_execution`
-- `agent_execution_cancelled`
-- `execution_not_found`
-
-## Stage-4/8 Chat Routes
-
-Trusted `/v1/**` stage-8 routes are chat-oriented:
-
-- `GET /v1/me/settings` returns effective settings for the current trusted user.
-- `PATCH /v1/me/settings` persists user intent for `defaultModel`, `contextSize`, `temperature`, `locale`, `timeZone`, `systemPrompt`, `enabledTools`, `showToolEvents`, and `streamingMessages`, then returns the re-resolved effective settings.
-- `GET /v1/chats` lists only the caller's chats, supports `limit` and `includeArchived`, clamps `limit` to a hard cap (`default=50`, `max=100`), and returns `lastMessagePreview` from stored chat messages.
-- `POST /v1/chats` creates a new chat owned by the caller.
-- `PATCH /v1/chats/{chatId}/title` renames an owned chat, trims the requested title, rejects blank values, and returns the updated chat DTO.
-- `POST /v1/chats/{chatId}/archive` and `POST /v1/chats/{chatId}/unarchive` toggle the owned chat `archived` flag and return the updated chat DTO.
-- `GET /v1/chats/{chatId}/messages` lists only the caller's messages for that chat, never exposes persisted agent runtime state directly, and clamps `limit` to a hard cap (`default=100`, `max=500`).
-- `GET /v1/chats/{chatId}/events?afterSeq=` replays only the caller's persisted backend events for that chat using the canonical `AgentEvent.seq` and clamps `limit` to a hard cap (`default=100`, `max=1000`).
-- `WS /v1/chats/{chatId}/ws?afterSeq=` replays persisted events with `seq > afterSeq`, then subscribes the caller to live per-chat events from the in-process event bus.
-- `POST /v1/chats/{chatId}/messages` validates ownership and payload, resolves effective execution settings, creates a persisted `AgentExecution`, stores the user message, and then:
-  - returns the old synchronous contract with `assistantMessage` when `streamingMessages=false` or `wsEvents=false`;
-  - returns fast with only `message` + `execution(status=running)` when both effective `streamingMessages=true` and `wsEvents=true`, leaving the final assistant output to the event stream;
-  - returns `assistantMessage=null` + `execution(status=waiting_option)` when the runtime requests an option before producing a final assistant answer in the sync path.
-- `POST /v1/options/{optionId}/answer` is scoped only by trusted identity, validates pending option ownership without leaking foreign existence, atomically transitions `pending -> answered`, appends canonical `option.answered`, flips the same execution row back to `running`, and resumes continuation in background under the original `executionId`.
-- Stage-8 keeps using the same request-scoped runtime event sink from stage-5, treats `message.delta` as live-only stream output with no assistant-message placeholder, no message content updates, and no durable `agent_events` row, creates the assistant message only once on successful completion, appends durable `AgentEvent` rows such as `execution.started`, `message.created`, `message.completed`, `tool.call.started`, `tool.call.finished`, `tool.call.failed`, `option.requested`, `option.answered`, `execution.finished`, `execution.failed`, and `execution.cancelled`, persists tool-call audit rows separately with redacted/truncated previews only, and broadcasts both durable and live-only event envelopes through the stage-6 event bus while keeping HTTP/WS replay backed only by durable repository rows.
-- `POST /v1/chats/{chatId}/cancel-active` marks the caller's active execution as `cancelling`, cancels its tracked coroutine job, and returns the updated `execution`.
-- `POST /v1/chats/{chatId}/executions/{executionId}/cancel` applies the same cancellation flow for a specific execution scoped to an owned chat.
-
-Ownership is enforced on all stage-8 `/v1/chats/**` endpoints by resolving the chat through `userId + chatId`; foreign chats return structured `chat_not_found` instead of leaking existence details. Option answer routes resolve only through `userId + optionId` and return structured `option_not_found` for both missing and foreign rows. Execution resources are always scoped through an owned chat and are never resolved from caller-controlled `userId`.
-
-`AgentExecutionRepository` is now part of the live request path rather than a stub. Each `/messages` request persists `queued -> running -> waiting_option/completed/failed` transitions, links `userMessageId` and `assistantMessageId`, stores `model/provider/usage/clientMessageId/startedAt/finishedAt`, persists enough execution metadata to resume a paused turn with the same model/context/locale/time-zone/system-prompt/tool-event/streaming settings, and enforces one active execution per `userId + chatId`. Failed executions do not create assistant messages in the non-streaming path and do not overwrite persisted agent state; postgres mode now also marks stale `agent_conversation_state` writes as `state_conflict` and emits `execution.failed`. Cancelled executions transition through `cancelling -> cancelled`. `OptionRepository` is also on the live request path now: `option.requested` persists a heavy `Option` row and marks the execution `waiting_option`, while `POST /v1/options/{optionId}/answer` atomically rejects double answers and resumes the same execution row instead of creating a second execution.
-
-Note for review: postgres mode currently preserves legacy `/agent` by lazily creating an archived `chats` row when a legacy conversation id has no product chat yet, so `agent_conversation_state.chat_id` can keep the documented FK to `chats(id)`.
-
-## Internal Agent Route
-
-`POST /agent` request body:
-
-```json
-{
-  "requestId": "3addc960-3b7c-4f3b-acf5-eb687c39a7cb",
-  "userId": "9d243496-4c5e-4f53-a55e-4fe65092613e",
-  "conversationId": "5be87fa3-9b57-4cc8-91ea-02f093851a29",
-  "prompt": "Напиши короткое резюме проекта",
-  "model": "GigaChat-Max",
-  "contextSize": 16000,
-  "source": "web",
-  "locale": "ru-RU",
-  "timeZone": "Europe/Moscow"
-}
-```
-
-Success response:
-
-```json
-{
-  "requestId": "3addc960-3b7c-4f3b-acf5-eb687c39a7cb",
-  "conversationId": "5be87fa3-9b57-4cc8-91ea-02f093851a29",
-  "userMessageId": "834820cb-d9ae-4ce6-aa90-d4676a13d625",
-  "assistantMessageId": "2f3694ee-dc58-4aa1-9aa5-9c5c02c9c9a1",
-  "content": "Souz — это AI-ассистент...",
-  "model": "GigaChat-Max",
-  "provider": "GIGA",
-  "contextSize": 16000,
-  "usage": {
-    "promptTokens": 1200,
-    "completionTokens": 340,
-    "totalTokens": 1540,
-    "precachedTokens": 0
-  }
-}
-```
-
-Error mapping:
-
-- `401` missing or invalid internal token.
-- `400` invalid JSON, missing required fields, invalid UUIDs, mismatched request id header, invalid `contextSize`, or invalid `timeZone`.
-- `404` user or conversation not found when a user/conversation resolver is configured.
-- `409` duplicate `requestId` or concurrent active request for the same user conversation.
-- `500` LLM/runtime failure.
-
-## Backend Agent Runtime Lifecycle
-
-For `/agent`, `BackendAgentService` is now mostly orchestration:
-
-- validate request
-- reject duplicate request ids
-- enforce one active request per conversation
-- resolve a cached `BackendConversationRuntime`
-- execute one turn and assemble the HTTP response
-
-`BackendConversationRuntimeFactory` assembles each request runtime explicitly instead of creating a fresh request-scoped DI container. The runtime loads the persisted in-memory snapshot for the conversation, executes one turn through the shared kernel, and persists the updated snapshot after every successful turn.
-
-Model and `contextSize` remain request-driven. Each turn can change them without losing the conversation history because the runtime reseeds a fresh `AgentContext` from the persisted snapshot and the request’s current model/context window before execution.

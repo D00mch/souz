@@ -46,10 +46,8 @@ class BackendProviderKeysRouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 providerKeyService = context.userProviderKeyService,
@@ -78,10 +76,8 @@ class BackendProviderKeysRouteTest {
         val context = routeTestContext()
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 providerKeyService = context.userProviderKeyService,
@@ -128,10 +124,8 @@ class BackendProviderKeysRouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 providerKeyService = context.userProviderKeyService,

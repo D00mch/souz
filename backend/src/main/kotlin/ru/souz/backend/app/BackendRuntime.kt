@@ -3,7 +3,6 @@ package ru.souz.backend.app
 import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
-import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
@@ -21,7 +20,6 @@ import ru.souz.llms.local.LocalLlamaRuntime
 class BackendRuntime private constructor(
     private val di: DI,
 ) : AutoCloseable {
-    val agentService: BackendAgentService by lazy { di.direct.instance() }
     val bootstrapService: BackendBootstrapService by lazy { di.direct.instance() }
     val userSettingsService: UserSettingsService by lazy { di.direct.instance() }
     val userProviderKeyService: UserProviderKeyService by lazy { di.direct.instance() }

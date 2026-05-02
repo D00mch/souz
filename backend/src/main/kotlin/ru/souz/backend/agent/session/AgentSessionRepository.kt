@@ -30,7 +30,7 @@ class AgentStateBackedSessionRepository(
     private val stateRepository: AgentStateRepository,
 ) : AgentSessionRepository {
     override suspend fun load(key: AgentConversationKey): AgentConversationSession? =
-        stateRepository.get(key.userId, key.chatId())?.toLegacySession()
+        stateRepository.get(key.userId, key.chatId())?.toConversationSession()
 
     override suspend fun save(key: AgentConversationKey, session: AgentConversationSession) {
         stateRepository.save(
@@ -51,14 +51,14 @@ class AgentStateBackedSessionRepository(
     }
 }
 
-/** Legacy-compatible in-memory implementation backed by the new agent state repository. */
+/** In-memory implementation backed by the current agent state repository. */
 class InMemoryAgentSessionRepository(
     stateRepository: AgentStateRepository = MemoryAgentStateRepository(),
 ) : AgentSessionRepository by AgentStateBackedSessionRepository(stateRepository)
 
 private fun AgentConversationKey.chatId(): UUID = UUID.fromString(conversationId)
 
-private fun AgentConversationState.toLegacySession(): AgentConversationSession =
+private fun AgentConversationState.toConversationSession(): AgentConversationSession =
     AgentConversationSession(
         activeAgentId = activeAgentId,
         history = history,

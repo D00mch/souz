@@ -12,7 +12,6 @@ import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
-import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
@@ -233,13 +232,6 @@ fun backendDiModule(
             systemPrompt = systemPrompt,
             toolCatalog = instance(),
             toolsFilter = instance(),
-        )
-    }
-    bindSingleton {
-        BackendAgentService(
-            baseSettingsProvider = instance(),
-            runtimeFactory = instance(),
-            ensureUser = instance<UserRepository>()::ensureUser,
         )
     }
     bindSingleton {

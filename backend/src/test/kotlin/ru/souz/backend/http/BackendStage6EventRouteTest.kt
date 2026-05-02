@@ -576,10 +576,8 @@ class BackendStage6EventRouteTest {
 private fun ApplicationTestBuilder.installStage6Application(context: RouteTestContext) {
     this.application {
         backendApplication(
-            agentService = context.agentService,
             bootstrapService = context.bootstrapService,
             selectedModel = { context.settingsProvider.gigaModel.alias },
-            internalAgentToken = { "legacy-token" },
             trustedProxyToken = { "proxy-secret" },
             userSettingsService = context.userSettingsService,
             chatService = context.chatService,

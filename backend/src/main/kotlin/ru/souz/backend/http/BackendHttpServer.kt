@@ -19,14 +19,12 @@ import io.ktor.server.websocket.WebSockets
 import java.net.InetSocketAddress
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
-import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.service.AgentExecutionService
-import ru.souz.backend.http.routes.legacyAgentRoutes
 import ru.souz.backend.http.routes.v1Routes
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.options.service.OptionService
@@ -47,7 +45,6 @@ data class RootResponse(
 
 /** Embedded Ktor server wrapper for the Souz backend HTTP API. */
 class BackendHttpServer(
-    agentService: BackendAgentService,
     bootstrapService: BackendBootstrapService,
     userSettingsService: UserSettingsService? = null,
     providerKeyService: UserProviderKeyService? = null,
@@ -59,13 +56,11 @@ class BackendHttpServer(
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     selectedModel: () -> String,
     private val bindAddress: InetSocketAddress,
-    internalAgentToken: () -> String? = { null },
     trustedProxyToken: () -> String? = { null },
     ensureTrustedUser: suspend (String) -> Unit = { _ -> },
 ) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(BackendHttpServer::class.java)
     private val dependencies = BackendHttpDependencies(
-        agentService = agentService,
         bootstrapService = bootstrapService,
         userSettingsService = userSettingsService,
         providerKeyService = providerKeyService,
@@ -76,7 +71,6 @@ class BackendHttpServer(
         eventService = eventService,
         featureFlags = featureFlags,
         selectedModel = selectedModel,
-        internalAgentToken = internalAgentToken,
         trustedProxyToken = trustedProxyToken,
         ensureTrustedUser = ensureTrustedUser,
     )
@@ -110,7 +104,6 @@ class BackendHttpServer(
 
 /** Installs backend HTTP routes into a Ktor application. */
 fun Application.backendApplication(
-    agentService: BackendAgentService,
     bootstrapService: BackendBootstrapService,
     userSettingsService: UserSettingsService? = null,
     providerKeyService: UserProviderKeyService? = null,
@@ -121,13 +114,11 @@ fun Application.backendApplication(
     eventService: AgentEventService? = null,
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     selectedModel: () -> String,
-    internalAgentToken: () -> String? = { null },
     trustedProxyToken: () -> String? = { null },
     ensureTrustedUser: suspend (String) -> Unit = { _ -> },
 ) {
     configureBackendHttpServer(
         BackendHttpDependencies(
-            agentService = agentService,
             bootstrapService = bootstrapService,
             userSettingsService = userSettingsService,
             providerKeyService = providerKeyService,
@@ -138,7 +129,6 @@ fun Application.backendApplication(
             eventService = eventService,
             featureFlags = featureFlags,
             selectedModel = selectedModel,
-            internalAgentToken = internalAgentToken,
             trustedProxyToken = trustedProxyToken,
             ensureTrustedUser = ensureTrustedUser,
         )
@@ -206,7 +196,6 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
         }
 
         v1Routes(dependencies)
-        legacyAgentRoutes(dependencies)
     }
 }
 
@@ -230,5 +219,4 @@ private val ROOT_ENDPOINTS = listOf(
     "POST ${BackendHttpRoutes.CHAT_EXECUTION_CANCEL_PATTERN}",
     "POST ${BackendHttpRoutes.OPTION_ANSWER_PATTERN}",
     "WS ${BackendHttpRoutes.CHAT_WS_PATTERN}",
-    "POST ${BackendHttpRoutes.LEGACY_AGENT}",
 )

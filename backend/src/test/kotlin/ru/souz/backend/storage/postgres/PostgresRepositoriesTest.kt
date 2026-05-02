@@ -469,7 +469,7 @@ class PostgresRepositoriesTest {
     }
 
     @Test
-    fun `legacy agent session repository round trips through postgres agent state repository`() = runTest {
+    fun `agent session repository round trips through postgres agent state repository`() = runTest {
         val schema = newPostgresSchema("postgres_legacy_session")
 
         postgresRepositories(schema).use { repositories ->

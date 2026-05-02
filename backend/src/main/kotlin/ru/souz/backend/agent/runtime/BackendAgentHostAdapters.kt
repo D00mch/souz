@@ -79,7 +79,7 @@ class BackendConversationSettingsProvider(
     }
 }
 
-/** Backend runtime environment derived from one validated `/agent` request. */
+/** Backend runtime environment derived from one validated execution request. */
 class BackendRequestRuntimeEnvironment(
     localeTag: String,
     timeZone: String,

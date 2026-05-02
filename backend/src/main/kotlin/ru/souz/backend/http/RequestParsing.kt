@@ -6,12 +6,8 @@ import java.time.DateTimeException
 import java.time.ZoneId
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
-import ru.souz.backend.common.BackendRequestException
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.llms.LLMModel
-
-internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrBadRequest(): T =
-    receiveOrRequestError { message -> BackendRequestException(400, message) }
 
 internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrV1BadRequest(): T =
     receiveOrRequestError(::invalidV1Request)

@@ -3,26 +3,18 @@ package ru.souz.backend.http
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.ktor.client.request.get
 import io.ktor.client.request.header
-import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
-import java.io.File
 import java.time.ZoneId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.runBlocking
 import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
-import ru.souz.backend.agent.runtime.BackendNoopAgentToolsFilter
-import ru.souz.backend.agent.service.BackendAgentService
-import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.keys.model.UserProviderKey
@@ -31,14 +23,13 @@ import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModel
-import ru.souz.llms.LLMChatAPI
-import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
-import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.backend.storage.StorageMode
 import ru.souz.backend.settings.model.UserSettings
@@ -57,9 +48,7 @@ class BackendBootstrapRouteTest {
     fun `bootstrap rejects requests without trusted headers`() = testApplication {
         application {
             backendApplication(
-                agentService = unusedAgentService(),
                 selectedModel = { LLMModel.Max.alias },
-                internalAgentToken = { "legacy-token" },
                 bootstrapService = bootstrapService(),
                 trustedProxyToken = { "proxy-secret" },
             )
@@ -76,9 +65,7 @@ class BackendBootstrapRouteTest {
     fun `bootstrap rejects missing or invalid proxy auth`() = testApplication {
         application {
             backendApplication(
-                agentService = unusedAgentService(),
                 selectedModel = { LLMModel.Max.alias },
-                internalAgentToken = { "legacy-token" },
                 bootstrapService = bootstrapService(),
                 trustedProxyToken = { "proxy-secret" },
             )
@@ -102,9 +89,7 @@ class BackendBootstrapRouteTest {
     fun `bootstrap rejects requests when proxy token is not configured`() = testApplication {
         application {
             backendApplication(
-                agentService = unusedAgentService(),
                 selectedModel = { LLMModel.Max.alias },
-                internalAgentToken = { "legacy-token" },
                 bootstrapService = bootstrapService(),
                 trustedProxyToken = { null },
             )
@@ -124,9 +109,7 @@ class BackendBootstrapRouteTest {
     fun `bootstrap requires user identity header but does not require uuid format`() = testApplication {
         application {
             backendApplication(
-                agentService = unusedAgentService(),
                 selectedModel = { LLMModel.Max.alias },
-                internalAgentToken = { "legacy-token" },
                 bootstrapService = bootstrapService(),
                 trustedProxyToken = { "proxy-secret" },
             )
@@ -158,9 +141,7 @@ class BackendBootstrapRouteTest {
         }
         application {
             backendApplication(
-                agentService = unusedAgentService(settingsProvider),
                 selectedModel = { settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 bootstrapService = bootstrapService(
                     settingsProvider = settingsProvider,
                     featureFlags = BackendFeatureFlags(
@@ -209,9 +190,7 @@ class BackendBootstrapRouteTest {
         }
         application {
             backendApplication(
-                agentService = unusedAgentService(settingsProvider),
                 selectedModel = { settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 bootstrapService = bootstrapService(
                     settingsProvider = settingsProvider,
                     toolCatalog = toolCatalog(
@@ -272,9 +251,7 @@ class BackendBootstrapRouteTest {
         }
         application {
             backendApplication(
-                agentService = unusedAgentService(settingsProvider),
                 selectedModel = { settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 bootstrapService = bootstrapService(
                     settingsProvider = settingsProvider,
                     userProviderKeyRepository = userProviderKeyRepository,
@@ -330,9 +307,7 @@ class BackendBootstrapRouteTest {
         }
         application {
             backendApplication(
-                agentService = unusedAgentService(settingsProvider),
                 selectedModel = { settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 bootstrapService = bootstrapService(
                     settingsProvider = settingsProvider,
                     userSettingsRepository = userSettingsRepository,
@@ -380,22 +355,6 @@ class BackendBootstrapRouteTest {
         assertEquals(LLMModel.Max, userSettingsRepository.get("user-b")?.defaultModel)
     }
 
-    @Test
-    fun `legacy agent route remains mounted`() = testApplication {
-        application {
-            backendApplication(
-                agentService = unusedAgentService(),
-                selectedModel = { LLMModel.Max.alias },
-                internalAgentToken = { "legacy-token" },
-                bootstrapService = bootstrapService(),
-                trustedProxyToken = { "proxy-secret" },
-            )
-        }
-
-        val response = client.post(BackendHttpRoutes.LEGACY_AGENT)
-
-        assertTrue(response.status != HttpStatusCode.NotFound)
-    }
 }
 
 private fun bootstrapService(
@@ -426,34 +385,11 @@ private fun bootstrapService(
         userProviderKeyRepository = userProviderKeyRepository,
     )
 
-private fun unusedAgentService(
-    settingsProvider: SettingsProvider = FakeSettingsProvider(),
-    toolCatalog: AgentToolCatalog = emptyToolCatalog(),
-    toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
-): BackendAgentService =
-    BackendAgentService(
-        baseSettingsProvider = settingsProvider,
-        runtimeFactory = BackendConversationRuntimeFactory(
-            baseSettingsProvider = settingsProvider,
-            llmApiFactory = { UnusedChatApi() },
-            sessionRepository = InMemoryAgentSessionRepository(),
-            logObjectMapper = jacksonObjectMapper(),
-            systemPrompt = "test system prompt",
-            toolCatalog = toolCatalog,
-            toolsFilter = toolsFilter,
-        ),
-    )
-
 private fun toolCatalog(vararg tools: Pair<ToolCategory, LLMToolSetup>): AgentToolCatalog =
     object : AgentToolCatalog {
         override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
             tools.groupBy(keySelector = { it.first }, valueTransform = { it.second })
                 .mapValues { (_, setups) -> setups.associateBy { it.fn.name } }
-    }
-
-private fun emptyToolCatalog(): AgentToolCatalog =
-    object : AgentToolCatalog {
-        override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = emptyMap()
     }
 
 private fun fakeTool(name: String): LLMToolSetup =
@@ -476,26 +412,6 @@ private fun unavailableLocalModels(): LocalModelAvailability =
 
         override fun isProviderAvailable(): Boolean = false
     }
-
-private class UnusedChatApi : LLMChatAPI {
-    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
-        error("Legacy smoke tests should not execute agent runtime.")
-
-    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
-        error("Streaming is not used in backend route tests.")
-
-    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
-        error("Embeddings are not used in backend route tests.")
-
-    override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
-        error("File upload is not used in backend route tests.")
-
-    override suspend fun downloadFile(fileId: String): String? =
-        error("File download is not used in backend route tests.")
-
-    override suspend fun balance(): LLMResponse.Balance =
-        error("Balance is not used in backend route tests.")
-}
 
 private class FakeSettingsProvider : SettingsProvider {
     private val promptOverrides = HashMap<Pair<AgentId, LLMModel>, String>()

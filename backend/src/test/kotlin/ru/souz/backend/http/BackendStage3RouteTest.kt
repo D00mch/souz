@@ -8,7 +8,6 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
@@ -34,9 +33,7 @@ import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.model.AgentConversationKey
-import ru.souz.backend.agent.model.AgentRequest
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
-import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
@@ -98,10 +95,8 @@ class BackendStage3RouteTest {
         val context = routeTestContext()
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -138,10 +133,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -173,10 +166,8 @@ class BackendStage3RouteTest {
         context.settingsProvider.qwenChatKey = null
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -261,10 +252,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -312,10 +301,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -336,6 +323,9 @@ class BackendStage3RouteTest {
         val negativeResponse = client.get("${BackendHttpRoutes.CHATS}?limit=-1") {
             trustedHeaders("user-a")
         }
+        val invalidBooleanResponse = client.get("${BackendHttpRoutes.CHATS}?includeArchived=nope") {
+            trustedHeaders("user-a")
+        }
 
         assertEquals(HttpStatusCode.OK, defaultResponse.status)
         assertEquals(50, json.readTree(defaultResponse.bodyAsText())["items"].size())
@@ -348,6 +338,13 @@ class BackendStage3RouteTest {
 
         assertEquals(HttpStatusCode.BadRequest, negativeResponse.status)
         assertEquals("invalid_request", json.readTree(negativeResponse.bodyAsText())["error"]["code"].asText())
+
+        assertEquals(HttpStatusCode.BadRequest, invalidBooleanResponse.status)
+        assertEquals("invalid_request", json.readTree(invalidBooleanResponse.bodyAsText())["error"]["code"].asText())
+        assertEquals(
+            "includeArchived must be true or false.",
+            json.readTree(invalidBooleanResponse.bodyAsText())["error"]["message"].asText(),
+        )
     }
 
     @Test
@@ -355,10 +352,8 @@ class BackendStage3RouteTest {
         val context = routeTestContext()
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -398,10 +393,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -446,10 +439,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -488,10 +479,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -537,10 +526,8 @@ class BackendStage3RouteTest {
         val context = routeTestContext()
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 ensureTrustedUser = context.userRepository::ensureUser,
                 userSettingsService = context.userSettingsService,
@@ -606,10 +593,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -658,10 +643,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -712,10 +695,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -770,10 +751,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -839,10 +818,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -881,10 +858,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -932,10 +907,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -983,10 +956,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -1038,10 +1009,8 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                agentService = context.agentService,
                 bootstrapService = context.bootstrapService,
                 selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
                 trustedProxyToken = { "proxy-secret" },
                 userSettingsService = context.userSettingsService,
                 chatService = context.chatService,
@@ -1084,50 +1053,6 @@ class BackendStage3RouteTest {
         }
     }
 
-    @Test
-    fun `legacy agent route remains functional after stage 3 changes`() = testApplication {
-        val api = CapturingChatApi()
-        val context = routeTestContext(llmApi = api)
-        application {
-            backendApplication(
-                agentService = context.agentService,
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                internalAgentToken = { "legacy-token" },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-            )
-        }
-
-        val requestId = UUID.randomUUID().toString()
-        val response = client.post(BackendHttpRoutes.LEGACY_AGENT) {
-            header(HttpHeaders.Authorization, "Bearer legacy-token")
-            header("X-Request-Id", requestId)
-            contentType(ContentType.Application.Json)
-            setBody(
-                """
-                {
-                  "requestId": "$requestId",
-                  "userId": "11111111-1111-1111-1111-111111111111",
-                  "conversationId": "22222222-2222-2222-2222-222222222222",
-                  "prompt": "Напиши короткое резюме",
-                  "model": "${LLMModel.Max.alias}",
-                  "contextSize": 16000,
-                  "source": "web",
-                  "locale": "ru-RU",
-                  "timeZone": "Europe/Moscow"
-                }
-                """.trimIndent()
-            )
-        }
-        val payload = json.readTree(response.bodyAsText())
-
-        assertEquals(HttpStatusCode.OK, response.status)
-        assertEquals("assistant reply to Напиши короткое резюме", payload["content"].asText())
-        assertEquals(LLMModel.Max.alias, payload["model"].asText())
-    }
 }
 
 internal data class RouteTestContext(
@@ -1145,7 +1070,6 @@ internal data class RouteTestContext(
     val eventService: AgentEventService,
     val stateRepository: MemoryAgentStateRepository,
     val bootstrapService: BackendBootstrapService,
-    val agentService: BackendAgentService,
     val userSettingsService: UserSettingsService,
     val userProviderKeyService: UserProviderKeyService,
     val chatService: ChatService,
@@ -1256,10 +1180,6 @@ internal fun routeTestContext(
             storageMode = StorageMode.MEMORY,
             localModelAvailability = unavailableLocalModels(),
             userProviderKeyRepository = userProviderKeyRepository,
-        ),
-        agentService = BackendAgentService(
-            baseSettingsProvider = settingsProvider,
-            runtimeFactory = runtimeFactory,
         ),
         userSettingsService = UserSettingsService(
             userSettingsRepository = userSettingsRepository,

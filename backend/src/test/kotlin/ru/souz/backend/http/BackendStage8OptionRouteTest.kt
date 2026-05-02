@@ -409,10 +409,8 @@ class BackendStage8OptionRouteTest {
 private fun ApplicationTestBuilder.installStage8Application(context: RouteTestContext) {
     this.application {
         backendApplication(
-            agentService = context.agentService,
             bootstrapService = context.bootstrapService,
             selectedModel = { context.settingsProvider.gigaModel.alias },
-            internalAgentToken = { "legacy-token" },
             trustedProxyToken = { "proxy-secret" },
             userSettingsService = context.userSettingsService,
             chatService = context.chatService,

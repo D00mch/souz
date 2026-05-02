@@ -1,11 +1,9 @@
 package ru.souz.backend.http
 
 import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.contentType
-import io.ktor.server.request.header
 import java.util.UUID
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
@@ -16,18 +14,6 @@ import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.security.requestIdentity
 import ru.souz.llms.LlmProvider
 
-internal fun ApplicationCall.requireAgentAuthorization(expectedToken: String?) {
-    val token = expectedToken?.trim().takeUnless { it.isNullOrEmpty() }
-        ?: throw BackendRequestException(401, "Missing or invalid internal token.")
-    val authorization = request.header(HttpHeaders.Authorization)?.trim().orEmpty()
-    val actualToken = authorization.removePrefix(BEARER_PREFIX).takeIf {
-        authorization.startsWith(BEARER_PREFIX)
-    }?.trim()
-    if (actualToken != token) {
-        throw BackendRequestException(401, "Missing or invalid internal token.")
-    }
-}
-
 internal fun ApplicationCall.requireJsonContent() {
     requireJsonContent { message -> BackendRequestException(400, message) }
 }
@@ -37,18 +23,6 @@ internal fun ApplicationCall.requireJsonContentV1() {
 }
 
 internal fun ApplicationCall.requireUserIdFromTrustedProxy(): String = requestIdentity().userId
-
-internal fun ApplicationCall.requireRequestId(bodyRequestId: String) {
-    val headerRequestId = request.header(REQUEST_ID_HEADER)?.trim()
-    val headerUuid = headerRequestId?.toUuidOrNull()
-    val bodyUuid = bodyRequestId.toUuidOrNull()
-    if (headerUuid == null) {
-        throw BackendRequestException(400, "$REQUEST_ID_HEADER must be a UUID.")
-    }
-    if (bodyUuid == null || headerUuid != bodyUuid) {
-        throw BackendRequestException(400, "$REQUEST_ID_HEADER must match requestId.")
-    }
-}
 
 internal fun ApplicationCall.requireChatId(): UUID = requireUuidParameter("chatId", "chatId must be a UUID.")
 
@@ -136,9 +110,3 @@ private fun ApplicationCall.requireUuidParameter(name: String, errorMessage: Str
             }
         }
         ?: throw invalidV1Request(errorMessage)
-
-private fun String.toUuidOrNull(): UUID? =
-    runCatching { UUID.fromString(this) }.getOrNull()
-
-private const val BEARER_PREFIX = "Bearer "
-private const val REQUEST_ID_HEADER = "X-Request-Id"

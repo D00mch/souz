@@ -449,7 +449,7 @@ class FilesystemRepositoriesTest {
     }
 
     @Test
-    fun `legacy session repository round trips through filesystem agent state repository`() = runTest {
+    fun `agent session repository round trips through filesystem agent state repository`() = runTest {
         val dataDir = Files.createTempDirectory("filesystem-agent-session")
         val repository = AgentStateBackedSessionRepository(FilesystemAgentStateRepository(dataDir))
         val key = AgentConversationKey(
