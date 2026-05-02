@@ -13,7 +13,7 @@ class AgentContextFactory(
     private val settingsProvider: AgentSettingsProvider,
     private val systemPromptResolver: SystemPromptResolver,
     private val toolCatalog: AgentToolCatalog,
-    private val availableAgents: List<AgentId> = listOf(AgentId.LUA_GRAPH, AgentId.GRAPH),
+    private val availableAgents: List<AgentId> = listOf(AgentId.GRAPH),
 ) {
     fun normalizeAgentId(agentId: AgentId): AgentId =
         if (agentId in availableAgents) agentId else AgentId.default

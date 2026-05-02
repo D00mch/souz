@@ -1031,8 +1031,8 @@ class MainViewModelTest {
         coEvery { agentFacade.execute(any()) } coAnswers {
             executeBehavior.invoke(firstArg())
         }
-        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.LUA_GRAPH)
-        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.LUA_GRAPH, ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
 
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         var gigaModelState = configuredModel

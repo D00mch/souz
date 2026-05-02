@@ -5,7 +5,7 @@ import ru.souz.agent.state.AgentContext
 
 class AgentExecutor internal constructor(
     private val agentProvider: (AgentId) -> TraceableAgent,
-    val availableAgents: List<AgentId> = listOf(AgentId.LUA_GRAPH, AgentId.GRAPH),
+    val availableAgents: List<AgentId> = listOf(AgentId.GRAPH),
 ) {
     fun sideEffects(agentId: AgentId): Flow<String> = agentById(agentId).sideEffects
 
@@ -34,10 +34,7 @@ class AgentExecutor internal constructor(
         return agentById(agentId).executeWithTrace(seed, onStep)
     }
 
-    private fun agentById(agentId: AgentId): TraceableAgent = when (normalizeAgentId(agentId)) {
-        AgentId.GRAPH -> agentProvider(AgentId.GRAPH)
-        AgentId.LUA_GRAPH -> agentProvider(AgentId.LUA_GRAPH)
-    }
+    private fun agentById(agentId: AgentId): TraceableAgent = agentProvider(normalizeAgentId(agentId))
 
     private fun normalizeAgentId(agentId: AgentId): AgentId =
         if (agentId in availableAgents) agentId else AgentId.default

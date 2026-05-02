@@ -65,7 +65,6 @@ private val KnownFenceLanguages = listOf(
     "php",
     "ruby",
     "perl",
-    "lua",
     "xml",
     "html",
     "css",

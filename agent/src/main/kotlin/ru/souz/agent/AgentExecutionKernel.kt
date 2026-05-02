@@ -2,16 +2,13 @@ package ru.souz.agent
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import ru.souz.GraphBasedAgent
-import ru.souz.LuaGraphBasedAgent
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
-import ru.souz.agent.nodes.NodesLua
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
@@ -62,7 +59,6 @@ class AgentExecutionKernelFactory(
             toolsFilter = toolsFilter,
         )
         val nodesLLM = NodesLLM(llmApi = llmApi, settingsProvider = settingsProvider)
-        val nodesLua = NodesLua(llmApi = llmApi, luaRuntime = LuaRuntime(agentToolExecutor))
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
         val nodesMcp = NodesMCP(mcpToolProvider)
         val nodesSummarization = NodesSummarization(llmApi = llmApi, nodesCommon = nodesCommon)
@@ -80,22 +76,8 @@ class AgentExecutionKernelFactory(
             nodesSummarization = nodesSummarization,
             nodesMCP = nodesMcp,
         )
-        val luaGraphAgent = LuaGraphBasedAgent(
-            logObjectMapper = logObjectMapper,
-            nodesLua = nodesLua,
-            nodesCommon = nodesCommon,
-            nodesClassify = nodesClassification,
-            nodesErrorHandling = nodesErrorHandling,
-            nodesSummarization = nodesSummarization,
-            nodesMCP = nodesMcp,
-        )
         val executor = AgentExecutor(
-            agentProvider = { id ->
-                when (id) {
-                    AgentId.GRAPH -> graphAgent
-                    AgentId.LUA_GRAPH -> luaGraphAgent
-                }
-            }
+            agentProvider = { graphAgent }
         )
         return AgentExecutionKernel(
             contextFactory = contextFactory,

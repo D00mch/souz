@@ -18,7 +18,6 @@ import ru.souz.agent.SystemPromptResolver
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.GraphBasedAgent
-import ru.souz.LuaGraphBasedAgent
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
@@ -302,7 +301,6 @@ class AgentScenarioTestSupport(
             }
             val agent: Agent = when (agentType) {
                 AgentId.GRAPH -> di.direct.instance<GraphBasedAgent>()
-                AgentId.LUA_GRAPH -> di.direct.instance<LuaGraphBasedAgent>()
             }
             runGraphAgent(agent, di, userPrompt)
         } finally {

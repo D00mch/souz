@@ -146,8 +146,6 @@
     <string name="setting_fewshot_title">Few-Shot Examples</string>
     <string name="setting_fewshot_desc">Класть примеры использования тулов в контекст</string>
     <string name="label_agent">Агент</string>
-    <string name="agent_option_lua_title">Писатель скриптов</string>
-    <string name="agent_option_lua_description">Строит планы и решает задачи безопасными скриптами. Экономит токены</string>
     <string name="agent_option_graph_title">Graph-агент</string>
     <string name="agent_option_graph_description">Классический графовый поток с итеративными вызовами инструментов и суммаризацией.</string>
     <string name="agent_switch_dialog_title">Сменить активного агента?</string>

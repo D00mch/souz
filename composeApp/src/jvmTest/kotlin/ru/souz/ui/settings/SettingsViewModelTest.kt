@@ -129,8 +129,8 @@ class SettingsViewModelTest {
             val model = firstArg<LLMModel>()
             "prompt-for-${model.alias}"
         }
-        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.LUA_GRAPH)
-        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.LUA_GRAPH, ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
 
         val chatApi = mockk<LLMChatAPI>(relaxed = true)
         val telegramService = mockk<TelegramService>(relaxed = true)
@@ -216,8 +216,8 @@ class SettingsViewModelTest {
 
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         every { agentFacade.setModel(any()) } answers { "prompt-for-${firstArg<LLMModel>().alias}" }
-        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.LUA_GRAPH)
-        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.LUA_GRAPH, ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
 
         val chatApi = mockk<LLMChatAPI>(relaxed = true)
         val telegramService = mockk<TelegramService>(relaxed = true)
@@ -309,8 +309,8 @@ class SettingsViewModelTest {
                 systemPrompt = "current-prompt",
             )
         )
-        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.LUA_GRAPH)
-        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.LUA_GRAPH, ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
 
         val chatApi = mockk<LLMChatAPI>(relaxed = true)
         val telegramService = mockk<TelegramService>(relaxed = true)

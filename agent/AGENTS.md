@@ -2,7 +2,6 @@
 
 ```text
 GraphBasedAgent.kt                    # Standard tool-calling graph agent
-LuaGraphBasedAgent.kt                 # Lua-planning graph agent
 agent/
    ├── Agent.kt                       # Public agent contracts and execution result models
    ├── AgentContextFactory.kt         # Stateless initial-context builder from host contracts
@@ -27,13 +26,11 @@ agent/
    │   ├── NodesCommon.kt             # History shaping, tool execution, and prompt enrichment
    │   ├── NodesErrorHandling.kt      # User-facing error mapping
    │   ├── NodesLLM.kt                # LLM request and streaming response handling
-   │   ├── NodesLua.kt                # Lua planning, execution, and repair loop nodes
    │   ├── NodesMCP.kt                # MCP tool injection node
    │   └── NodesSummarization.kt      # History summarization and save-point logic
    ├── runtime/                       # Execution helpers used by agent nodes/impls
    │   ├── AgentToolExecutor.kt       # Tool invocation bridge with structured telemetry logging
    │   ├── GraphExecutionDelegate.kt  # Active job tracking and traced graph execution
-   │   └── LuaRuntime.kt              # Sandboxed Lua runtime with exposed tools
    ├── session/                       # Persisted graph session models and services
    │   ├── GraphSession.kt            # Session and per-step persistence models
    │   ├── GraphSessionRepository.kt  # Filesystem-backed session storage

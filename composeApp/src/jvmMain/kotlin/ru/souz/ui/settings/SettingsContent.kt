@@ -1744,12 +1744,10 @@ fun AgentDropdown(
 
 private fun AgentId.titleRes() = when (this) {
     AgentId.GRAPH -> Res.string.agent_option_graph_title
-    AgentId.LUA_GRAPH -> Res.string.agent_option_lua_title
 }
 
 private fun AgentId.descriptionRes() = when (this) {
     AgentId.GRAPH -> Res.string.agent_option_graph_description
-    AgentId.LUA_GRAPH -> Res.string.agent_option_lua_description
 }
 
 @Composable
