@@ -7,6 +7,9 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentToolCatalog
@@ -128,6 +131,7 @@ class AgentExecutionServiceStateConflictTest {
             eventService = eventService,
             toolCallRepository = MemoryToolCallRepository(),
             featureFlags = featureFlags,
+            executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         )
 
         val error = assertFailsWith<BackendV1Exception> {

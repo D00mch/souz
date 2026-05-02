@@ -94,6 +94,7 @@ fun backendDiModule(
     import(runtimeToolsDiModule(includeWebImageSearch = false))
     import(runtimeLlmDiModule(logObjectMapperTag = BackendDiTags.LOG_OBJECT_MAPPER))
 
+    bindSingleton { BackendApplicationScope() }
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
     bindSingleton<StorageMode> { appConfig.storageMode }
     when (appConfig.storageMode.requireSupported()) {
@@ -150,6 +151,7 @@ fun backendDiModule(
     bindSingleton {
         BackendRuntimeResources(
             closeables = buildList {
+                add(instance<BackendApplicationScope>())
                 if (appConfig.storageMode == StorageMode.POSTGRES) {
                     add(instance<HikariDataSource>())
                 }
@@ -239,6 +241,7 @@ fun backendDiModule(
             eventService = instance(),
             toolCallRepository = instance(),
             featureFlags = instance(),
+            executionScope = instance<BackendApplicationScope>(),
         )
     }
     bindSingleton {

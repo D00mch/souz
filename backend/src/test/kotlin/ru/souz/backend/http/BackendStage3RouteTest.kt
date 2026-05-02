@@ -23,6 +23,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
@@ -1010,6 +1013,7 @@ internal fun routeTestContext(
         eventService = eventService,
         toolCallRepository = toolCallRepository,
         featureFlags = featureFlags,
+        executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
     val optionService = OptionService(
         optionRepository = optionRepository,

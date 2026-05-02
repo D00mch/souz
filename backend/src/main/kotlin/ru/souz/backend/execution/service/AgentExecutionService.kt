@@ -6,14 +6,10 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.supervisorScope
@@ -67,7 +63,7 @@ class AgentExecutionService internal constructor(
     private val eventService: AgentEventService,
     private val toolCallRepository: ToolCallRepository,
     private val featureFlags: BackendFeatureFlags,
-    private val executionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val executionScope: CoroutineScope,
 ) {
     private val sessionRepository = AgentStateBackedSessionRepository(agentStateRepository)
     private val activeJobs = ActiveExecutionJobRegistry()
@@ -192,7 +188,24 @@ class AgentExecutionService internal constructor(
             activeJobs.register(runningExecution.id, executionJob)
             executionJob.start()
             val executionResult = try {
-                executionJob.await()
+                try {
+                    executionJob.await()
+                } catch (e: CancellationException) {
+                    if (!currentCoroutineContext().isActive) {
+                        throw e
+                    }
+                    finalizeCancelledExecutionIfNeeded(
+                        executionId = runningExecution.id,
+                        userId = userId,
+                        chatId = chatId,
+                        eventSink = eventSink,
+                    )
+                    throw BackendV1Exception(
+                        status = HttpStatusCode.Conflict,
+                        code = "agent_execution_cancelled",
+                        message = "Agent execution was cancelled.",
+                    )
+                }
             } finally {
                 activeJobs.unregister(runningExecution.id, executionJob)
             }
@@ -203,12 +216,8 @@ class AgentExecutionService internal constructor(
             )
         } catch (e: BackendV1Exception) {
             throw e
-        } catch (e: ExecutionCancelledException) {
-            throw BackendV1Exception(
-                status = HttpStatusCode.Conflict,
-                code = "agent_execution_cancelled",
-                message = "Agent execution was cancelled.",
-            )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             markFailed(
                 executionId = queuedExecution.id,
@@ -233,7 +242,7 @@ class AgentExecutionService internal constructor(
         turnRequest: BackendConversationTurnRequest,
         eventSink: BackendAgentRuntimeEventSink,
     ) {
-        val executionJob = executionScope.async(start = CoroutineStart.UNDISPATCHED) {
+        val executionJob = executionScope.launch(start = CoroutineStart.LAZY) {
             try {
                 runExecution(
                     chat = chat,
@@ -242,13 +251,49 @@ class AgentExecutionService internal constructor(
                     turnRequest = turnRequest,
                     eventSink = eventSink,
                 )
-            } finally {
-                activeJobs.unregister(execution.id, currentCoroutineContext()[Job] ?: return@async)
+            } catch (_: BackendV1Exception) {
+                // Background failures are already persisted by runExecution.
             }
         }
-        if (!executionJob.isCompleted) {
-            activeJobs.register(execution.id, executionJob)
+        executionJob.invokeOnCompletion { cause ->
+            executionScope.launch(NonCancellable) {
+                activeJobs.unregister(execution.id, executionJob)
+                if (cause is CancellationException) {
+                    finalizeCancelledExecutionIfNeeded(
+                        executionId = execution.id,
+                        userId = execution.userId,
+                        chatId = execution.chatId,
+                        eventSink = eventSink,
+                    )
+                }
+            }
         }
+        activeJobs.register(execution.id, executionJob)
+        executionJob.start()
+    }
+
+    private suspend fun finalizeCancelledExecutionIfNeeded(
+        executionId: UUID,
+        userId: String,
+        chatId: UUID,
+        eventSink: BackendAgentRuntimeEventSink,
+    ) {
+        val currentExecution = executionRepository.getByChat(userId, chatId, executionId) ?: return
+        if (
+            currentExecution.status == AgentExecutionStatus.CANCELLED ||
+            currentExecution.status == AgentExecutionStatus.COMPLETED ||
+            currentExecution.status == AgentExecutionStatus.FAILED ||
+            currentExecution.status == AgentExecutionStatus.WAITING_OPTION
+        ) {
+            return
+        }
+        markCancelled(
+            executionId = executionId,
+            userId = userId,
+            chatId = chatId,
+            usage = currentExecution.usage,
+        )
+        eventSink.emitExecutionCancelled()
     }
 
     suspend fun resumeOption(option: Option): AgentExecution {
@@ -382,18 +427,6 @@ class AgentExecutionService internal constructor(
             throw ExecutionCancelledException
         } catch (e: BackendConversationTurnException) {
             val cause = e.cause ?: e
-            if (cause is CancellationException) {
-                withContext(NonCancellable) {
-                    markCancelled(
-                        executionId = execution.id,
-                        userId = execution.userId,
-                        chatId = execution.chatId,
-                        usage = e.usage.toExecutionUsage(),
-                    )
-                    eventSink.emitExecutionCancelled()
-                }
-                throw ExecutionCancelledException
-            }
             if (cause is BackendV1Exception) {
                 withContext(NonCancellable) {
                     markFailed(
@@ -787,7 +820,7 @@ private fun AgentExecutionStatus.isActiveForCancellation(): Boolean =
         this == AgentExecutionStatus.WAITING_OPTION ||
         this == AgentExecutionStatus.CANCELLING
 
-private object ExecutionCancelledException : RuntimeException()
+private object ExecutionCancelledException : CancellationException("Agent execution was cancelled.")
 
 private const val METADATA_CONTEXT_SIZE = "contextSize"
 private const val METADATA_TEMPERATURE = "temperature"
@@ -797,24 +830,3 @@ private const val METADATA_SYSTEM_PROMPT = "systemPrompt"
 private const val METADATA_STREAMING_MESSAGES = "streamingMessages"
 private const val METADATA_SHOW_TOOL_EVENTS = "showToolEvents"
 private const val OPTION_CONTINUATION_PREFIX = "__option_answer__"
-
-private class ActiveExecutionJobRegistry {
-    private val mutex = Mutex()
-    private val jobs = LinkedHashMap<UUID, Job>()
-
-    suspend fun register(executionId: UUID, job: Job) = mutex.withLock {
-        jobs[executionId] = job
-    }
-
-    suspend fun unregister(executionId: UUID, job: Job) = mutex.withLock {
-        if (jobs[executionId] == job) {
-            jobs.remove(executionId)
-        }
-    }
-
-    suspend fun cancel(executionId: UUID): Boolean = mutex.withLock {
-        val job = jobs[executionId] ?: return@withLock false
-        job.cancel(CancellationException("Execution cancelled by user request."))
-        true
-    }
-}

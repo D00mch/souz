@@ -1,5 +1,6 @@
 package ru.souz.backend.agent.runtime
 
+import kotlinx.coroutines.CancellationException
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -63,9 +64,11 @@ internal class BackendConversationRuntimeTurnRunner(
                     session = execution.session,
                 )
             }
-        } catch (error: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             throw BackendConversationTurnException(
-                cause = error,
+                cause = e,
                 usage = runtime.currentUsage(),
             )
         }

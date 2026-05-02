@@ -1,5 +1,12 @@
 package ru.souz.agent.runtime
 
+/**
+ * Execution-scoped runtime event sink.
+ *
+ * Implementations are expected to receive events sequentially for a single
+ * execution. Concurrent calls are not part of the contract unless an
+ * implementation explicitly documents support for them.
+ */
 interface AgentRuntimeEventSink {
     suspend fun emit(event: AgentRuntimeEvent)
 

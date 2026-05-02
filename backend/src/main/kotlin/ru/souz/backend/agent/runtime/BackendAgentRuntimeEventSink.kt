@@ -2,6 +2,8 @@ package ru.souz.backend.agent.runtime
 
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.chat.model.ChatMessage
@@ -20,6 +22,13 @@ import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.restJsonMapper
 
+/**
+ * Not logically concurrent.
+ *
+ * This sink keeps mutable per-execution state and expects events for one
+ * execution to be processed in order. A Mutex is used as a defensive guard
+ * against accidental concurrent emit calls.
+ */
 internal class BackendAgentRuntimeEventSink(
     private val userId: String,
     private val chatId: UUID,
@@ -35,6 +44,7 @@ internal class BackendAgentRuntimeEventSink(
     private val assistantMessageId: UUID? = null,
     private val toolCallPreviewer: ToolCallPreviewer = ToolCallPreviewer(),
 ) : AgentRuntimeEventSink {
+    private val emitMutex = Mutex()
     private val finalAssistantMessageId = assistantMessageId ?: UUID.randomUUID()
     private var assistantMessage: ChatMessage? = null
     private var requestedOptionId: UUID? = null
@@ -42,7 +52,11 @@ internal class BackendAgentRuntimeEventSink(
     val currentAssistantMessageId: UUID? get() = assistantMessage?.id
     val hasRequestedOption: Boolean get() = requestedOptionId != null
 
-    override suspend fun emit(event: AgentRuntimeEvent) {
+    override suspend fun emit(event: AgentRuntimeEvent) = emitMutex.withLock {
+        handleEvent(event)
+    }
+
+    private suspend fun handleEvent(event: AgentRuntimeEvent) {
         when (event) {
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
             is AgentRuntimeEvent.ToolCallStarted -> onToolCallStarted(event)

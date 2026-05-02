@@ -7,8 +7,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.events.bus.AgentEventBus
@@ -16,12 +20,16 @@ import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.storage.memory.MemoryAgentEventRepository
 import ru.souz.backend.storage.memory.MemoryAgentExecutionRepository
 import ru.souz.backend.storage.memory.MemoryChatRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
 import ru.souz.backend.storage.memory.MemoryOptionRepository
 import ru.souz.backend.storage.memory.MemoryToolCallRepository
+import ru.souz.backend.toolcall.model.ToolCall
+import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.LLMModel
 
 class BackendAgentRuntimeEventSinkTest {
@@ -124,6 +132,45 @@ class BackendAgentRuntimeEventSinkTest {
         assertTrue(messages.isEmpty())
         assertNull(execution?.assistantMessageId)
     }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `concurrent emit calls are serialized per sink instance`() = runTest {
+        val toolCallRepository = BlockingToolCallRepository()
+        val fixture = sinkFixture(toolCallRepository = toolCallRepository)
+
+        val firstEmit = async {
+            fixture.sink.emit(
+                AgentRuntimeEvent.ToolCallStarted(
+                    toolCallId = "call-1",
+                    name = "search",
+                    arguments = emptyMap(),
+                )
+            )
+        }
+        toolCallRepository.awaitFirstCallEntered()
+
+        val secondEmit = async {
+            fixture.sink.emit(
+                AgentRuntimeEvent.ToolCallStarted(
+                    toolCallId = "call-2",
+                    name = "search",
+                    arguments = emptyMap(),
+                )
+            )
+        }
+        runCurrent()
+
+        assertEquals(listOf("call-1"), toolCallRepository.startedToolCallIds)
+        assertFalse(toolCallRepository.overlapDetected)
+
+        toolCallRepository.releaseFirstCall()
+        firstEmit.await()
+        secondEmit.await()
+
+        assertEquals(listOf("call-1", "call-2"), toolCallRepository.startedToolCallIds)
+        assertFalse(toolCallRepository.overlapDetected)
+    }
 }
 
 private suspend fun assertNoLiveEvent(stream: ru.souz.backend.events.bus.AgentEventStream) {
@@ -131,7 +178,10 @@ private suspend fun assertNoLiveEvent(stream: ru.souz.backend.events.bus.AgentEv
     assertNull(result)
 }
 
-private suspend fun sinkFixture(): SinkFixture {
+private suspend fun sinkFixture(
+    optionRepository: OptionRepository = MemoryOptionRepository(),
+    toolCallRepository: ToolCallRepository = MemoryToolCallRepository(),
+): SinkFixture {
     val chatRepository = MemoryChatRepository()
     val messageRepository = MemoryMessageRepository()
     val executionRepository = MemoryAgentExecutionRepository()
@@ -182,10 +232,10 @@ private suspend fun sinkFixture(): SinkFixture {
             chatId = chat.id,
             executionId = execution.id,
             messageRepository = messageRepository,
-            optionRepository = MemoryOptionRepository(),
+            optionRepository = optionRepository,
             executionRepository = executionRepository,
             eventService = eventService,
-            toolCallRepository = MemoryToolCallRepository(),
+            toolCallRepository = toolCallRepository,
             streamingMessagesEnabled = true,
             toolEventsEnabled = false,
         ),
@@ -201,3 +251,88 @@ private data class SinkFixture(
     val eventService: AgentEventService,
     val sink: BackendAgentRuntimeEventSink,
 )
+
+private class BlockingToolCallRepository : ToolCallRepository {
+    private val firstCallEntered = CompletableDeferred<Unit>()
+    private val allowFirstCallToFinish = CompletableDeferred<Unit>()
+    private var startedCallActive = false
+
+    val startedToolCallIds = mutableListOf<String>()
+    var overlapDetected: Boolean = false
+        private set
+
+    suspend fun awaitFirstCallEntered() {
+        withTimeout(1_000) { firstCallEntered.await() }
+    }
+
+    fun releaseFirstCall() {
+        allowFirstCallToFinish.complete(Unit)
+    }
+
+    override suspend fun started(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+        toolCallId: String,
+        name: String,
+        argumentsJson: String,
+        startedAt: Instant,
+    ): ToolCall {
+        if (startedCallActive) {
+            overlapDetected = true
+        }
+        startedCallActive = true
+        startedToolCallIds += toolCallId
+        if (toolCallId == "call-1") {
+            firstCallEntered.complete(Unit)
+            allowFirstCallToFinish.await()
+        }
+        startedCallActive = false
+        return ToolCall(
+            userId = userId,
+            chatId = chatId,
+            executionId = executionId,
+            toolCallId = toolCallId,
+            name = name,
+            status = ToolCallStatus.RUNNING,
+            argumentsJson = argumentsJson,
+            startedAt = startedAt,
+        )
+    }
+
+    override suspend fun finished(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+        toolCallId: String,
+        name: String,
+        resultPreview: String?,
+        finishedAt: Instant,
+        durationMs: Long,
+    ): ToolCall = error("Not used in this test")
+
+    override suspend fun failed(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+        toolCallId: String,
+        name: String,
+        error: String,
+        finishedAt: Instant,
+        durationMs: Long,
+    ): ToolCall = error("Not used in this test")
+
+    override suspend fun get(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+        toolCallId: String,
+    ): ToolCall? = error("Not used in this test")
+
+    override suspend fun listByExecution(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+        limit: Int,
+    ): List<ToolCall> = error("Not used in this test")
+}
