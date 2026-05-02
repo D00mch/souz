@@ -2,10 +2,10 @@ package ru.souz.backend.storage.filesystem
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import java.time.Instant
-import java.util.UUID
 import java.util.LinkedHashMap
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 
 class FilesystemToolCallRepository(
@@ -14,47 +14,41 @@ class FilesystemToolCallRepository(
 ) : BaseFilesystemRepository(dataDir, mapper), ToolCallRepository {
 
     override suspend fun started(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
-        argumentsJson: String,
+        argumentsPreview: String,
         startedAt: Instant,
     ): ToolCall =
         withFileLock {
             val record = ToolCall(
-                userId = userId,
-                chatId = chatId,
-                executionId = executionId,
-                toolCallId = toolCallId,
+                userId = context.userId,
+                chatId = context.chatId,
+                executionId = context.executionId,
+                toolCallId = context.toolCallId,
                 name = name,
                 status = ToolCallStatus.RUNNING,
-                argumentsJson = argumentsJson,
+                argumentsJson = argumentsPreview,
                 startedAt = startedAt,
             )
-            mapper.appendJsonValue(layout.toolCallsFile(userId, chatId), record.toStored())
+            mapper.appendJsonValue(layout.toolCallsFile(context.userId, context.chatId), record.toStored())
             record
         }
 
     override suspend fun finished(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
         resultPreview: String?,
         finishedAt: Instant,
         durationMs: Long,
     ): ToolCall =
         withFileLock {
-            val current = loadToolCalls(userId, chatId)
-                .firstOrNull { it.executionId == executionId && it.toolCallId == toolCallId }
+            val current = loadToolCalls(context.userId, context.chatId)
+                .firstOrNull { it.executionId == context.executionId && it.toolCallId == context.toolCallId }
             val record = (current ?: ToolCall(
-                userId = userId,
-                chatId = chatId,
-                executionId = executionId,
-                toolCallId = toolCallId,
+                userId = context.userId,
+                chatId = context.chatId,
+                executionId = context.executionId,
+                toolCallId = context.toolCallId,
                 name = name,
                 status = ToolCallStatus.RUNNING,
                 argumentsJson = "{}",
@@ -67,28 +61,25 @@ class FilesystemToolCallRepository(
                 finishedAt = finishedAt,
                 durationMs = durationMs,
             )
-            mapper.appendJsonValue(layout.toolCallsFile(userId, chatId), record.toStored())
+            mapper.appendJsonValue(layout.toolCallsFile(context.userId, context.chatId), record.toStored())
             record
         }
 
     override suspend fun failed(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
         error: String,
         finishedAt: Instant,
         durationMs: Long,
     ): ToolCall =
         withFileLock {
-            val current = loadToolCalls(userId, chatId)
-                .firstOrNull { it.executionId == executionId && it.toolCallId == toolCallId }
+            val current = loadToolCalls(context.userId, context.chatId)
+                .firstOrNull { it.executionId == context.executionId && it.toolCallId == context.toolCallId }
             val record = (current ?: ToolCall(
-                userId = userId,
-                chatId = chatId,
-                executionId = executionId,
-                toolCallId = toolCallId,
+                userId = context.userId,
+                chatId = context.chatId,
+                executionId = context.executionId,
+                toolCallId = context.toolCallId,
                 name = name,
                 status = ToolCallStatus.RUNNING,
                 argumentsJson = "{}",
@@ -101,41 +92,34 @@ class FilesystemToolCallRepository(
                 finishedAt = finishedAt,
                 durationMs = durationMs,
             )
-            mapper.appendJsonValue(layout.toolCallsFile(userId, chatId), record.toStored())
+            mapper.appendJsonValue(layout.toolCallsFile(context.userId, context.chatId), record.toStored())
             record
         }
 
-    override suspend fun get(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
-    ): ToolCall? =
+    override suspend fun get(context: ToolCallContext): ToolCall? =
         withFileLock {
-            loadToolCalls(userId, chatId)
-                .firstOrNull { it.executionId == executionId && it.toolCallId == toolCallId }
+            loadToolCalls(context.userId, context.chatId)
+                .firstOrNull { it.executionId == context.executionId && it.toolCallId == context.toolCallId }
         }
 
     override suspend fun listByExecution(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
+        context: ToolCallContext,
         limit: Int,
     ): List<ToolCall> =
         withFileLock {
-            loadToolCalls(userId, chatId)
-                .filter { it.executionId == executionId }
+            loadToolCalls(context.userId, context.chatId)
+                .filter { it.executionId == context.executionId }
                 .sortedWith(compareBy<ToolCall> { it.startedAt }.thenBy { it.toolCallId })
                 .take(limit)
         }
 
     private fun loadToolCalls(
         userId: String,
-        chatId: UUID,
+        chatId: String,
     ): List<ToolCall> {
         val snapshots = mapper.readJsonLines<StoredToolCall>(layout.toolCallsFile(userId, chatId))
             .map(StoredToolCall::toDomain)
-        val latestByKey = LinkedHashMap<Pair<UUID, String>, ToolCall>()
+        val latestByKey = LinkedHashMap<Pair<String, String>, ToolCall>()
         snapshots.forEach { toolCall ->
             latestByKey[toolCall.executionId to toolCall.toolCallId] = toolCall
         }

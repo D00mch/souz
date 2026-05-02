@@ -61,6 +61,7 @@ class BackendHttpServer(
     private val bindAddress: InetSocketAddress,
     internalAgentToken: () -> String? = { null },
     trustedProxyToken: () -> String? = { null },
+    ensureTrustedUser: suspend (String) -> Unit = { _ -> },
 ) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(BackendHttpServer::class.java)
     private val dependencies = BackendHttpDependencies(
@@ -77,6 +78,7 @@ class BackendHttpServer(
         selectedModel = selectedModel,
         internalAgentToken = internalAgentToken,
         trustedProxyToken = trustedProxyToken,
+        ensureTrustedUser = ensureTrustedUser,
     )
     private val server = embeddedServer(
         factory = Netty,
@@ -121,6 +123,7 @@ fun Application.backendApplication(
     selectedModel: () -> String,
     internalAgentToken: () -> String? = { null },
     trustedProxyToken: () -> String? = { null },
+    ensureTrustedUser: suspend (String) -> Unit = { _ -> },
 ) {
     configureBackendHttpServer(
         BackendHttpDependencies(
@@ -137,6 +140,7 @@ fun Application.backendApplication(
             selectedModel = selectedModel,
             internalAgentToken = internalAgentToken,
             trustedProxyToken = trustedProxyToken,
+            ensureTrustedUser = ensureTrustedUser,
         )
     )
 }
@@ -182,6 +186,7 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
     }
     install(RequestIdentityPlugin) {
         trustedProxyToken = dependencies.trustedProxyToken
+        ensureUser = dependencies.ensureTrustedUser
     }
 
     routing {

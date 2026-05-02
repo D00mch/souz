@@ -4,10 +4,12 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
+import javax.sql.DataSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
@@ -38,7 +40,9 @@ import ru.souz.backend.settings.model.ToolPermissionMode
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.testutil.rawEventPayload
+import ru.souz.backend.user.model.UserRecord
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
@@ -46,11 +50,43 @@ import ru.souz.llms.LlmProvider
 
 class PostgresRepositoriesTest {
     @Test
+    fun `fresh schema bootstrap applies postgres migrations in unique order and creates tool_calls`() {
+        val schema = newPostgresSchema("postgres_fresh_bootstrap")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+
+        dataSource.use {
+            assertEquals(
+                listOf("1", "2", "3", "4"),
+                appliedMigrationVersions(it),
+            )
+            assertTrue(tableExists(it, "tool_calls"))
+        }
+    }
+
+    @Test
+    fun `user repository upserts single user row and throttles last seen updates`() = runTest {
+        val schema = newPostgresSchema("postgres_users")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+        val repository = PostgresUserRepository(dataSource)
+
+        dataSource.use {
+            val first = repository.ensureUser("user-a")
+            val second = repository.ensureUser("user-a")
+
+            assertEquals("user-a", first.id)
+            assertEquals(first.createdAt, second.createdAt)
+            assertEquals(first.lastSeenAt, second.lastSeenAt)
+            assertEquals(1, userCount(it))
+        }
+    }
+
+    @Test
     fun `tool call repository round trips lifecycle rows`() = runTest {
         val schema = newPostgresSchema("postgres_tool_calls")
 
         postgresRepositories(schema).use { repositories ->
             val chat = chat(userId = "user-tools", updatedAt = Instant.parse("2026-05-01T10:00:00Z"))
+            repositories.userRepository.ensureUser(chat.userId)
             repositories.chatRepository.create(chat)
             val execution = execution(
                 userId = chat.userId,
@@ -62,26 +98,37 @@ class PostgresRepositoriesTest {
             repositories.executionRepository.create(execution)
 
             repositories.toolCallRepository.started(
-                userId = chat.userId,
-                chatId = chat.id,
-                executionId = execution.id,
-                toolCallId = "tool-1",
+                context = ToolCallContext(
+                    userId = chat.userId,
+                    chatId = chat.id.toString(),
+                    executionId = execution.id.toString(),
+                    toolCallId = "tool-1",
+                ),
                 name = "OpenBrowser",
-                argumentsJson = """{"url":"https://example.com"}""",
+                argumentsPreview = """{"url":"https://example.com"}""",
                 startedAt = Instant.parse("2026-05-01T10:01:01Z"),
             )
             repositories.toolCallRepository.failed(
-                userId = chat.userId,
-                chatId = chat.id,
-                executionId = execution.id,
-                toolCallId = "tool-1",
+                context = ToolCallContext(
+                    userId = chat.userId,
+                    chatId = chat.id.toString(),
+                    executionId = execution.id.toString(),
+                    toolCallId = "tool-1",
+                ),
                 name = "OpenBrowser",
                 error = "IllegalStateException: [REDACTED]",
                 finishedAt = Instant.parse("2026-05-01T10:01:02Z"),
                 durationMs = 1_000,
             )
 
-            val stored = repositories.toolCallRepository.get(chat.userId, chat.id, execution.id, "tool-1")
+            val stored = repositories.toolCallRepository.get(
+                ToolCallContext(
+                    userId = chat.userId,
+                    chatId = chat.id.toString(),
+                    executionId = execution.id.toString(),
+                    toolCallId = "tool-1",
+                )
+            )
 
             assertNotNull(stored)
             assertEquals(ToolCallStatus.FAILED, stored.status)
@@ -97,6 +144,7 @@ class PostgresRepositoriesTest {
         val chat = chat(userId = userId, updatedAt = Instant.parse("2026-05-01T09:00:00Z"))
 
         postgresRepositories(schema, durableEvents = true).use { repositories ->
+            repositories.userRepository.ensureUser(userId)
             repositories.chatRepository.create(chat)
             val firstMessage = repositories.messageRepository.append(
                 userId = userId,
@@ -256,6 +304,7 @@ class PostgresRepositoriesTest {
 
         postgresRepositories(schema).use { repositories ->
             val chat = chat(userId = "user-active", updatedAt = Instant.parse("2026-05-01T10:00:00Z"))
+            repositories.userRepository.ensureUser(chat.userId)
             repositories.chatRepository.create(chat)
             repositories.executionRepository.create(
                 execution(
@@ -287,6 +336,7 @@ class PostgresRepositoriesTest {
 
         postgresRepositories(schema).use { repositories ->
             val chat = chat(userId = "user-lock", updatedAt = Instant.parse("2026-05-01T11:00:00Z"))
+            repositories.userRepository.ensureUser(chat.userId)
             repositories.chatRepository.create(chat)
 
             val inserted = repositories.stateRepository.save(
@@ -343,6 +393,7 @@ class PostgresRepositoriesTest {
         val executionId = UUID.randomUUID()
 
         postgresRepositories(schema, durableEvents = true).use { repositories ->
+            repositories.userRepository.ensureUser(userId)
             repositories.chatRepository.create(chat)
             repositories.eventRepository.append(
                 userId = userId,
@@ -386,6 +437,7 @@ class PostgresRepositoriesTest {
 
         postgresRepositories(schema).use { repositories ->
             val chatId = UUID.randomUUID()
+            repositories.userRepository.ensureUser("opaque/user:session")
             repositories.chatRepository.create(
                 chat(
                     userId = "opaque/user:session",
@@ -436,6 +488,7 @@ class PostgresRepositoriesTest {
         val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema, durableEvents).postgres!!)
         return PostgresRepositoryBundle(
             dataSource = dataSource,
+            userRepository = PostgresUserRepository(dataSource),
             chatRepository = PostgresChatRepository(dataSource),
             messageRepository = PostgresMessageRepository(dataSource),
             stateRepository = PostgresAgentStateRepository(dataSource),
@@ -502,6 +555,59 @@ class PostgresRepositoriesTest {
             rowVersion = 7L,
         )
 
+    private fun appliedMigrationVersions(dataSource: DataSource): List<String> =
+        dataSource.connection.use { connection ->
+            connection.prepareStatement(
+                """
+                select version
+                from flyway_schema_history
+                where success = true
+                order by installed_rank
+                """.trimIndent()
+            ).use { statement ->
+                statement.executeQuery().use { resultSet ->
+                    buildList {
+                        while (resultSet.next()) {
+                            add(resultSet.getString("version"))
+                        }
+                    }
+                }
+            }
+        }
+
+    private fun userCount(dataSource: DataSource): Int =
+        dataSource.connection.use { connection ->
+            connection.prepareStatement("select count(*) from users").use { statement ->
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    resultSet.getInt(1)
+                }
+            }
+        }
+
+    private fun tableExists(
+        dataSource: DataSource,
+        tableName: String,
+    ): Boolean =
+        dataSource.connection.use { connection ->
+            connection.prepareStatement(
+                """
+                select exists(
+                  select 1
+                  from information_schema.tables
+                  where table_schema = current_schema()
+                    and table_name = ?
+                )
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, tableName)
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    resultSet.getBoolean(1)
+                }
+            }
+        }
+
     private fun execution(
         userId: String,
         chatId: UUID,
@@ -557,6 +663,7 @@ class PostgresRepositoriesTest {
 
 private data class PostgresRepositoryBundle(
     val dataSource: com.zaxxer.hikari.HikariDataSource,
+    val userRepository: PostgresUserRepository,
     val chatRepository: PostgresChatRepository,
     val messageRepository: PostgresMessageRepository,
     val stateRepository: PostgresAgentStateRepository,

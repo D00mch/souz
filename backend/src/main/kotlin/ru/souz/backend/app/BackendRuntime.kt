@@ -13,6 +13,7 @@ import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.settings.service.UserSettingsService
+import ru.souz.backend.user.repository.UserRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.local.LocalLlamaRuntime
 
@@ -30,6 +31,7 @@ class BackendRuntime private constructor(
     val optionService: OptionService by lazy { di.direct.instance() }
     val eventService: AgentEventService by lazy { di.direct.instance() }
     val featureFlags: BackendFeatureFlags by lazy { di.direct.instance() }
+    val userRepository: UserRepository by lazy { di.direct.instance() }
     private val resources: BackendRuntimeResources by lazy { di.direct.instance() }
     private val settingsProvider: SettingsProvider by lazy { di.direct.instance() }
     private val localRuntime: LocalLlamaRuntime by lazy { di.direct.instance() }

@@ -19,7 +19,6 @@ class PostgresUserSettingsRepository(
     }
 
     override suspend fun save(settings: UserSettings): UserSettings = dataSource.write { connection ->
-        connection.ensureUser(settings.userId)
         connection.prepareStatement(
             """
             insert into user_settings(user_id, settings_json, created_at, updated_at)

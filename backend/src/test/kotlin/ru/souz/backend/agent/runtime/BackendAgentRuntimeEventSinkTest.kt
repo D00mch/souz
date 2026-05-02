@@ -30,6 +30,7 @@ import ru.souz.backend.storage.memory.MemoryOptionRepository
 import ru.souz.backend.storage.memory.MemoryToolCallRepository
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.LLMModel
 
@@ -172,6 +173,43 @@ class BackendAgentRuntimeEventSinkTest {
         assertEquals(listOf("call-1", "call-2"), toolCallRepository.startedToolCallIds)
         assertFalse(toolCallRepository.overlapDetected)
     }
+
+    @Test
+    fun `tool call lifecycle uses the same repository context values`() = runTest {
+        val toolCallRepository = RecordingToolCallRepository()
+        val fixture = sinkFixture(toolCallRepository = toolCallRepository)
+
+        fixture.sink.emit(
+            AgentRuntimeEvent.ToolCallStarted(
+                toolCallId = "call-1",
+                name = "search",
+                arguments = emptyMap(),
+            )
+        )
+        fixture.sink.emit(
+            AgentRuntimeEvent.ToolCallFinished(
+                toolCallId = "call-1",
+                name = "search",
+                result = "ok",
+                durationMs = 12,
+            )
+        )
+        fixture.sink.emit(
+            AgentRuntimeEvent.ToolCallFailed(
+                toolCallId = "call-2",
+                name = "search",
+                error = IllegalStateException("boom"),
+                durationMs = 34,
+            )
+        )
+
+        val startedContext = toolCallRepository.startedContexts.single()
+        assertEquals(startedContext, toolCallRepository.finishedContexts.single())
+        assertEquals(
+            startedContext.copy(toolCallId = "call-2"),
+            toolCallRepository.failedContexts.single(),
+        )
+    }
 }
 
 private suspend fun assertNoLiveEvent(stream: ru.souz.backend.events.bus.AgentEventStream) {
@@ -271,41 +309,35 @@ private class BlockingToolCallRepository : ToolCallRepository {
     }
 
     override suspend fun started(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
-        argumentsJson: String,
+        argumentsPreview: String,
         startedAt: Instant,
     ): ToolCall {
         if (startedCallActive) {
             overlapDetected = true
         }
         startedCallActive = true
-        startedToolCallIds += toolCallId
-        if (toolCallId == "call-1") {
+        startedToolCallIds += context.toolCallId
+        if (context.toolCallId == "call-1") {
             firstCallEntered.complete(Unit)
             allowFirstCallToFinish.await()
         }
         startedCallActive = false
         return ToolCall(
-            userId = userId,
-            chatId = chatId,
-            executionId = executionId,
-            toolCallId = toolCallId,
+            userId = context.userId,
+            chatId = context.chatId,
+            executionId = context.executionId,
+            toolCallId = context.toolCallId,
             name = name,
             status = ToolCallStatus.RUNNING,
-            argumentsJson = argumentsJson,
+            argumentsJson = argumentsPreview,
             startedAt = startedAt,
         )
     }
 
     override suspend fun finished(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
         resultPreview: String?,
         finishedAt: Instant,
@@ -313,27 +345,95 @@ private class BlockingToolCallRepository : ToolCallRepository {
     ): ToolCall = error("Not used in this test")
 
     override suspend fun failed(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
         error: String,
         finishedAt: Instant,
         durationMs: Long,
     ): ToolCall = error("Not used in this test")
 
-    override suspend fun get(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
-    ): ToolCall? = error("Not used in this test")
+    override suspend fun get(context: ToolCallContext): ToolCall? = error("Not used in this test")
 
     override suspend fun listByExecution(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
+        context: ToolCallContext,
+        limit: Int,
+    ): List<ToolCall> = error("Not used in this test")
+}
+
+private class RecordingToolCallRepository : ToolCallRepository {
+    val startedContexts = mutableListOf<ToolCallContext>()
+    val finishedContexts = mutableListOf<ToolCallContext>()
+    val failedContexts = mutableListOf<ToolCallContext>()
+
+    override suspend fun started(
+        context: ToolCallContext,
+        name: String,
+        argumentsPreview: String,
+        startedAt: Instant,
+    ): ToolCall {
+        startedContexts += context
+        return ToolCall(
+            userId = context.userId,
+            chatId = context.chatId,
+            executionId = context.executionId,
+            toolCallId = context.toolCallId,
+            name = name,
+            status = ToolCallStatus.RUNNING,
+            argumentsJson = argumentsPreview,
+            startedAt = startedAt,
+        )
+    }
+
+    override suspend fun finished(
+        context: ToolCallContext,
+        name: String,
+        resultPreview: String?,
+        finishedAt: Instant,
+        durationMs: Long,
+    ): ToolCall {
+        finishedContexts += context
+        return ToolCall(
+            userId = context.userId,
+            chatId = context.chatId,
+            executionId = context.executionId,
+            toolCallId = context.toolCallId,
+            name = name,
+            status = ToolCallStatus.FINISHED,
+            argumentsJson = "{}",
+            resultPreview = resultPreview,
+            startedAt = finishedAt,
+            finishedAt = finishedAt,
+            durationMs = durationMs,
+        )
+    }
+
+    override suspend fun failed(
+        context: ToolCallContext,
+        name: String,
+        error: String,
+        finishedAt: Instant,
+        durationMs: Long,
+    ): ToolCall {
+        failedContexts += context
+        return ToolCall(
+            userId = context.userId,
+            chatId = context.chatId,
+            executionId = context.executionId,
+            toolCallId = context.toolCallId,
+            name = name,
+            status = ToolCallStatus.FAILED,
+            argumentsJson = "{}",
+            error = error,
+            startedAt = finishedAt,
+            finishedAt = finishedAt,
+            durationMs = durationMs,
+        )
+    }
+
+    override suspend fun get(context: ToolCallContext): ToolCall? = error("Not used in this test")
+
+    override suspend fun listByExecution(
+        context: ToolCallContext,
         limit: Int,
     ): List<ToolCall> = error("Not used in this test")
 }

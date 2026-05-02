@@ -26,6 +26,7 @@ import ru.souz.backend.storage.memory.MemoryOptionRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
 import ru.souz.backend.storage.memory.MemoryToolCallRepository
 import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.llms.LLMModel
 import ru.souz.llms.restJsonMapper
 
@@ -53,12 +54,7 @@ class BackendPayloadRedactionTest {
             )
         )
 
-        val storedToolCall = fixture.toolCallRepository.get(
-            userId = fixture.userId,
-            chatId = fixture.chat.id,
-            executionId = fixture.execution.id,
-            toolCallId = "tool-1",
-        )
+        val storedToolCall = fixture.toolCallRepository.get(fixture.toolCallContext("tool-1"))
         val event = fixture.eventRepository.listByChat(fixture.userId, fixture.chat.id).single()
         val transportPayload = event.toDto().payload
         val argumentsPreview = transportPayload["argumentsPreview"]
@@ -120,12 +116,7 @@ class BackendPayloadRedactionTest {
         val events = fixture.eventRepository.listByChat(fixture.userId, fixture.chat.id)
         val finishedEvent = events.last()
         val transportPayload = finishedEvent.toDto().payload
-        val storedToolCall = fixture.toolCallRepository.get(
-            userId = fixture.userId,
-            chatId = fixture.chat.id,
-            executionId = fixture.execution.id,
-            toolCallId = "tool-2",
-        )
+        val storedToolCall = fixture.toolCallRepository.get(fixture.toolCallContext("tool-2"))
 
         assertNotNull(storedToolCall)
         assertEquals(ToolCallStatus.FINISHED, storedToolCall.status)
@@ -172,12 +163,7 @@ class BackendPayloadRedactionTest {
         val events = fixture.eventRepository.listByChat(fixture.userId, fixture.chat.id)
         val failedEvent = events.last()
         val transportPayload = failedEvent.toDto().payload
-        val storedToolCall = fixture.toolCallRepository.get(
-            userId = fixture.userId,
-            chatId = fixture.chat.id,
-            executionId = fixture.execution.id,
-            toolCallId = "tool-3",
-        )
+        val storedToolCall = fixture.toolCallRepository.get(fixture.toolCallContext("tool-3"))
 
         assertNotNull(storedToolCall)
         assertEquals(ToolCallStatus.FAILED, storedToolCall.status)
@@ -212,12 +198,7 @@ class BackendPayloadRedactionTest {
             )
         )
 
-        val storedToolCall = fixture.toolCallRepository.get(
-            userId = fixture.userId,
-            chatId = fixture.chat.id,
-            executionId = fixture.execution.id,
-            toolCallId = "tool-4",
-        )
+        val storedToolCall = fixture.toolCallRepository.get(fixture.toolCallContext("tool-4"))
 
         assertNotNull(storedToolCall)
         assertEquals(ToolCallStatus.FINISHED, storedToolCall.status)
@@ -321,7 +302,15 @@ class BackendPayloadRedactionTest {
         val eventRepository: MemoryAgentEventRepository,
         val toolCallRepository: MemoryToolCallRepository,
         val sink: BackendAgentRuntimeEventSink,
-    )
+    ) {
+        fun toolCallContext(toolCallId: String): ToolCallContext =
+            ToolCallContext(
+                userId = userId,
+                chatId = chat.id.toString(),
+                executionId = execution.id.toString(),
+                toolCallId = toolCallId,
+            )
+    }
 
     private companion object {
         const val SK_TEST_SECRET = "sk-test-secret-123"

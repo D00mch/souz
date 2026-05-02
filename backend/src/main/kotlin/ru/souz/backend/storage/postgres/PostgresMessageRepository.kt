@@ -19,7 +19,6 @@ class PostgresMessageRepository(
         id: UUID,
         createdAt: Instant,
     ): ChatMessage = dataSource.write { connection ->
-        connection.ensureUser(userId)
         connection.lockChat(userId, chatId)
         val nextSeq = connection.prepareStatement(
             "select coalesce(max(seq), 0) + 1 from messages where user_id = ? and chat_id = ?"

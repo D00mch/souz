@@ -13,7 +13,6 @@ class PostgresOptionRepository(
     private val dataSource: DataSource,
 ) : OptionRepository {
     override suspend fun save(option: Option): Option = dataSource.write { connection ->
-        connection.ensureUser(option.userId)
         connection.prepareStatement(
             """
             insert into options(

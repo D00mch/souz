@@ -43,6 +43,7 @@ fun main() {
         bindAddress = InetSocketAddress(host, port),
         internalAgentToken = { internalAgentToken },
         trustedProxyToken = { appConfig.proxyToken },
+        ensureTrustedUser = runtime.userRepository::ensureUser,
     )
     val shutdown = Runnable {
         runCatching { server.close() }

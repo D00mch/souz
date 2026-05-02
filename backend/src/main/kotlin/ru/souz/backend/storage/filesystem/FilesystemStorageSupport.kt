@@ -32,6 +32,9 @@ class FilesystemStorageLayout(
     fun userDir(userId: String): Path =
         dataDir.resolve("users").resolve(FilesystemPathSegmentCodec.encode(userId))
 
+    fun userFile(userId: String): Path =
+        userDir(userId).resolve("user.json")
+
     fun settingsFile(userId: String): Path =
         userDir(userId).resolve("settings.json")
 
@@ -65,8 +68,8 @@ class FilesystemStorageLayout(
     fun eventsFile(userId: String, chatId: java.util.UUID): Path =
         chatDir(userId, chatId).resolve("events.jsonl")
 
-    fun toolCallsFile(userId: String, chatId: java.util.UUID): Path =
-        chatDir(userId, chatId).resolve("tool-calls.jsonl")
+    fun toolCallsFile(userId: String, chatId: String): Path =
+        chatsDir(userId).resolve(chatId).resolve("tool-calls.jsonl")
 
     fun chatDirectories(userId: String): List<Path> {
         val chatsRoot = chatsDir(userId)

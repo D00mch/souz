@@ -14,6 +14,7 @@ data class RequestIdentity(
 
 class RequestIdentityPluginConfig {
     var trustedProxyToken: () -> String? = { null }
+    var ensureUser: suspend (String) -> Unit = { _ -> }
     var protectedPathPrefix: String = "/v1/"
 }
 
@@ -25,7 +26,11 @@ val RequestIdentityPlugin = createApplicationPlugin(
         if (!call.request.path().startsWith(pluginConfig.protectedPathPrefix)) {
             return@onCall
         }
-        val identity = resolveRequestIdentity(call, pluginConfig.trustedProxyToken())
+        val identity = resolveRequestIdentity(
+            call = call,
+            trustedProxyToken = pluginConfig.trustedProxyToken(),
+            ensureUser = pluginConfig.ensureUser,
+        )
         call.attributes.put(RequestIdentityAttributeKey, identity)
     }
 }
@@ -38,9 +43,10 @@ fun ApplicationCall.requestIdentity(): RequestIdentity =
             message = "Trusted request identity is unavailable.",
         )
 
-private fun resolveRequestIdentity(
+private suspend fun resolveRequestIdentity(
     call: ApplicationCall,
     trustedProxyToken: String?,
+    ensureUser: suspend (String) -> Unit,
 ): RequestIdentity {
     val configuredToken = trustedProxyToken?.trim()?.takeIf { it.isNotEmpty() }
         ?: throw BackendV1Exception(
@@ -56,17 +62,37 @@ private fun resolveRequestIdentity(
             message = "Trusted proxy authentication is required.",
         )
     }
-    val userId = call.request.header(USER_ID_HEADER)?.trim()
-        ?.takeIf { it.isNotEmpty() }
+    val userId = call.request.header(USER_ID_HEADER)
         ?: throw BackendV1Exception(
             status = HttpStatusCode.Unauthorized,
             code = "missing_user_identity",
             message = "Trusted user identity is required.",
         )
-    return RequestIdentity(userId = userId)
+    val normalizedUserId = userId.trim()
+    validateTrustedUserIdShape(normalizedUserId)
+    ensureUser(normalizedUserId)
+    return RequestIdentity(userId = normalizedUserId)
 }
 
 private val RequestIdentityAttributeKey = AttributeKey<RequestIdentity>("requestIdentity")
 
 private const val USER_ID_HEADER = "X-User-Id"
 private const val PROXY_AUTH_HEADER = "X-Souz-Proxy-Auth"
+private const val MAX_TRUSTED_USER_ID_LENGTH: Int = 256
+
+internal fun validateTrustedUserIdShape(userId: String) {
+    when {
+        userId.isBlank() -> throw invalidTrustedIdentity("Trusted user identity must not be blank.")
+        userId.length > MAX_TRUSTED_USER_ID_LENGTH ->
+            throw invalidTrustedIdentity("Trusted user identity must be at most 256 characters long.")
+        userId.any { it.isISOControl() } ->
+            throw invalidTrustedIdentity("Trusted user identity must not contain control characters.")
+    }
+}
+
+private fun invalidTrustedIdentity(message: String): Nothing =
+    throw BackendV1Exception(
+        status = HttpStatusCode.Unauthorized,
+        code = "invalid_user_identity",
+        message = message,
+    )

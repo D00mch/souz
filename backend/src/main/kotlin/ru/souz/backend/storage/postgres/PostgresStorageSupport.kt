@@ -37,6 +37,7 @@ import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.user.model.UserRecord
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
@@ -67,23 +68,6 @@ internal suspend fun <T> DataSource.write(block: (Connection) -> T): T =
             }
         }
     }
-
-internal fun Connection.ensureUser(userId: String) {
-    prepareStatement(
-        """
-        insert into users(id, created_at, last_seen_at)
-        values (?, ?, ?)
-        on conflict (id) do update
-        set last_seen_at = excluded.last_seen_at
-        """.trimIndent()
-    ).use { statement ->
-        val now = Instant.now()
-        statement.setString(1, userId)
-        statement.setInstant(2, now)
-        statement.setInstant(3, now)
-        statement.executeUpdate()
-    }
-}
 
 internal fun Connection.ensureStateChat(userId: String, chatId: java.util.UUID, updatedAt: Instant) {
     prepareStatement(
@@ -131,6 +115,13 @@ internal fun PreparedStatement.setJson(index: Int, value: String?) {
 
 internal fun ResultSet.instant(column: String): Instant =
     getObject(column, OffsetDateTime::class.java).toInstant()
+
+internal fun ResultSet.toUserRecord(): UserRecord =
+    UserRecord(
+        id = getString("id"),
+        createdAt = instant("created_at"),
+        lastSeenAt = getObject("last_seen_at", OffsetDateTime::class.java)?.toInstant(),
+    )
 
 internal fun SQLException.isConstraintViolation(constraintName: String): Boolean =
     sqlState == "23505" && ((this as? PSQLException)?.serverErrorMessage?.constraint == constraintName ||
@@ -290,8 +281,8 @@ internal fun ResultSet.toEvent(): AgentEvent =
 internal fun ResultSet.toToolCall(): ToolCall =
     ToolCall(
         userId = getString("user_id"),
-        chatId = getObject("chat_id", java.util.UUID::class.java),
-        executionId = getObject("execution_id", java.util.UUID::class.java),
+        chatId = getObject("chat_id", java.util.UUID::class.java).toString(),
+        executionId = getObject("execution_id", java.util.UUID::class.java).toString(),
         toolCallId = getString("tool_call_id"),
         name = getString("name"),
         status = parseToolCallStatus(getString("status")),

@@ -22,6 +22,7 @@ import ru.souz.llms.LlmProvider
 class BackendAgentService(
     private val baseSettingsProvider: SettingsProvider,
     private val runtimeFactory: BackendConversationRuntimeFactory,
+    private val ensureUser: suspend (String) -> Unit = { _ -> },
     private val agentConversationExists: suspend (
         userId: String,
         conversationId: String,
@@ -42,6 +43,7 @@ class BackendAgentService(
         if (!agentConversationExists(validated.userId, validated.conversationId)) {
             throw BackendRequestException(404, "User or conversation not found.")
         }
+        ensureUser(validated.userId)
         val conversationKey = AgentConversationKey(validated.userId, validated.conversationId)
         agentMutex.withLock {
             when {

@@ -25,4 +25,5 @@ internal data class BackendHttpDependencies(
     val selectedModel: () -> String,
     val internalAgentToken: () -> String?,
     val trustedProxyToken: () -> String?,
+    val ensureTrustedUser: suspend (String) -> Unit,
 )

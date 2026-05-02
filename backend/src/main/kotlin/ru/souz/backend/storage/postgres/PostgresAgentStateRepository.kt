@@ -23,7 +23,6 @@ class PostgresAgentStateRepository(
     }
 
     override suspend fun save(state: AgentConversationState): AgentConversationState = dataSource.write { connection ->
-        connection.ensureUser(state.userId)
         connection.ensureStateChat(state.userId, state.chatId, state.updatedAt)
         val updated = connection.prepareStatement(
             """

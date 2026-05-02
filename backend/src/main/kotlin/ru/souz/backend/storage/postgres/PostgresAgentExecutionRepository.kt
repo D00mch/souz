@@ -12,7 +12,6 @@ class PostgresAgentExecutionRepository(
     private val dataSource: DataSource,
 ) : AgentExecutionRepository {
     override suspend fun create(execution: AgentExecution): AgentExecution = dataSource.write { connection ->
-        connection.ensureUser(execution.userId)
         try {
             connection.prepareStatement(
                 """

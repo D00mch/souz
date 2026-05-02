@@ -1,25 +1,25 @@
 package ru.souz.backend.toolcall.repository
 
 import java.time.Instant
-import java.util.UUID
 import ru.souz.backend.toolcall.model.ToolCall
+
+data class ToolCallContext(
+    val userId: String,
+    val chatId: String,
+    val executionId: String,
+    val toolCallId: String,
+)
 
 interface ToolCallRepository {
     suspend fun started(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
-        argumentsJson: String,
+        argumentsPreview: String,
         startedAt: Instant = Instant.now(),
     ): ToolCall
 
     suspend fun finished(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
         resultPreview: String?,
         finishedAt: Instant = Instant.now(),
@@ -27,27 +27,17 @@ interface ToolCallRepository {
     ): ToolCall
 
     suspend fun failed(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
         error: String,
         finishedAt: Instant = Instant.now(),
         durationMs: Long,
     ): ToolCall
 
-    suspend fun get(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
-    ): ToolCall?
+    suspend fun get(context: ToolCallContext): ToolCall?
 
     suspend fun listByExecution(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
+        context: ToolCallContext,
         limit: Int = DEFAULT_LIMIT,
     ): List<ToolCall>
 

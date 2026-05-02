@@ -48,7 +48,6 @@ class PostgresUserProviderKeyRepository(
     }
 
     override suspend fun save(key: UserProviderKey): UserProviderKey = dataSource.write { connection ->
-        connection.ensureUser(key.userId)
         connection.prepareStatement(
             """
             insert into user_provider_keys(

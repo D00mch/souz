@@ -71,6 +71,7 @@ import ru.souz.backend.storage.memory.MemoryChatRepository
 import ru.souz.backend.storage.memory.MemoryOptionRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
 import ru.souz.backend.storage.memory.MemoryToolCallRepository
+import ru.souz.backend.storage.memory.MemoryUserRepository
 import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
 import ru.souz.llms.EmbeddingsModel
@@ -380,6 +381,55 @@ class BackendStage3RouteTest {
         assertEquals(false, chat["archived"].asBoolean())
         assertNotNull(storedChat)
         assertEquals("user-a", storedChat.userId)
+    }
+
+    @Test
+    fun `first trusted user request provisions namespace before chats messages and settings`() = testApplication {
+        val context = routeTestContext()
+        application {
+            backendApplication(
+                agentService = context.agentService,
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                internalAgentToken = { "legacy-token" },
+                trustedProxyToken = { "proxy-secret" },
+                ensureTrustedUser = context.userRepository::ensureUser,
+                userSettingsService = context.userSettingsService,
+                chatService = context.chatService,
+                messageService = context.messageService,
+                executionService = context.executionService,
+            )
+        }
+
+        val createChatResponse = client.post(BackendHttpRoutes.CHATS) {
+            trustedHeaders("fresh-user")
+            contentType(ContentType.Application.Json)
+            setBody("""{"title":"Provisioned"}""")
+        }
+        val createChatPayload = json.readTree(createChatResponse.bodyAsText())
+        val chatId = UUID.fromString(createChatPayload["chat"]["id"].asText())
+        val createMessageResponse = client.post(BackendHttpRoutes.chatMessages(chatId)) {
+            trustedHeaders("fresh-user")
+            contentType(ContentType.Application.Json)
+            setBody("""{"content":"hello"}""")
+        }
+        val settingsResponse = client.get(BackendHttpRoutes.SETTINGS) {
+            trustedHeaders("fresh-user")
+        }
+
+        val userRecord = runBlocking { context.userRepository.get("fresh-user") }
+        val storedChat = runBlocking { context.chatRepository.get("fresh-user", chatId) }
+        val storedMessages = runBlocking { context.messageRepository.list("fresh-user", chatId) }
+        val storedSettings = runBlocking { context.userSettingsRepository.get("fresh-user") }
+
+        assertEquals(HttpStatusCode.Created, createChatResponse.status)
+        assertEquals(HttpStatusCode.OK, createMessageResponse.status)
+        assertEquals(HttpStatusCode.OK, settingsResponse.status)
+        assertNotNull(userRecord)
+        assertNotNull(storedSettings)
+        assertEquals("fresh-user", storedChat?.userId)
+        assertEquals(listOf("fresh-user"), storedMessages.map { it.userId }.distinct())
+        assertEquals(1, runBlocking { context.userRepository.count() })
     }
 
     @Test
@@ -934,6 +984,7 @@ class BackendStage3RouteTest {
 internal data class RouteTestContext(
     val featureFlags: BackendFeatureFlags,
     val settingsProvider: TestSettingsProvider,
+    val userRepository: MemoryUserRepository,
     val userSettingsRepository: MemoryUserSettingsRepository,
     val userProviderKeyRepository: MemoryUserProviderKeyRepository,
     val chatRepository: MemoryChatRepository,
@@ -963,6 +1014,7 @@ internal fun routeTestContext(
         temperature = 0.6f
         useStreaming = false
     },
+    userRepository: MemoryUserRepository = MemoryUserRepository(),
     userSettingsRepository: MemoryUserSettingsRepository = MemoryUserSettingsRepository(),
     userProviderKeyRepository: MemoryUserProviderKeyRepository = MemoryUserProviderKeyRepository(),
     chatRepository: MemoryChatRepository = MemoryChatRepository(),
@@ -1036,6 +1088,7 @@ internal fun routeTestContext(
     return RouteTestContext(
         featureFlags = featureFlags,
         settingsProvider = settingsProvider,
+        userRepository = userRepository,
         userSettingsRepository = userSettingsRepository,
         userProviderKeyRepository = userProviderKeyRepository,
         chatRepository = chatRepository,

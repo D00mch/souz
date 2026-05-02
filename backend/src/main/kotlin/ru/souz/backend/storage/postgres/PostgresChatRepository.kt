@@ -9,7 +9,6 @@ class PostgresChatRepository(
     private val dataSource: DataSource,
 ) : ChatRepository {
     override suspend fun create(chat: Chat): Chat = dataSource.write { connection ->
-        connection.ensureUser(chat.userId)
         connection.prepareStatement(
             """
             insert into chats(id, user_id, title, archived, created_at, updated_at)
@@ -67,7 +66,6 @@ class PostgresChatRepository(
     }
 
     override suspend fun update(chat: Chat): Chat = dataSource.write { connection ->
-        connection.ensureUser(chat.userId)
         connection.prepareStatement(
             """
             update chats

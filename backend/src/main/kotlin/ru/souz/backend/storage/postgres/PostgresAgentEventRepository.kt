@@ -21,7 +21,6 @@ class PostgresAgentEventRepository(
         id: UUID,
         createdAt: Instant,
     ): AgentEvent = dataSource.write { connection ->
-        connection.ensureUser(userId)
         connection.lockChat(userId, chatId)
         val nextSeq = connection.prepareStatement(
             "select coalesce(max(seq), 0) + 1 from agent_events where user_id = ? and chat_id = ?"

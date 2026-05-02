@@ -38,6 +38,7 @@ import ru.souz.backend.settings.model.ToolPermissionMode
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.testutil.rawEventPayload
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
@@ -65,19 +66,23 @@ class FilesystemRepositoriesTest {
         executionRepository.create(execution)
 
         toolCallRepository.started(
-            userId = userId,
-            chatId = chat.id,
-            executionId = execution.id,
-            toolCallId = "tool-1",
+            context = ToolCallContext(
+                userId = userId,
+                chatId = chat.id.toString(),
+                executionId = execution.id.toString(),
+                toolCallId = "tool-1",
+            ),
             name = "CalendarRead",
-            argumentsJson = """{"token":"[REDACTED]"}""",
+            argumentsPreview = """{"token":"[REDACTED]"}""",
             startedAt = Instant.parse("2026-05-01T09:10:01Z"),
         )
         toolCallRepository.finished(
-            userId = userId,
-            chatId = chat.id,
-            executionId = execution.id,
-            toolCallId = "tool-1",
+            context = ToolCallContext(
+                userId = userId,
+                chatId = chat.id.toString(),
+                executionId = execution.id.toString(),
+                toolCallId = "tool-1",
+            ),
             name = "CalendarRead",
             resultPreview = """{"items":["ok"]}""",
             finishedAt = Instant.parse("2026-05-01T09:10:02Z"),
@@ -85,7 +90,14 @@ class FilesystemRepositoriesTest {
         )
 
         val restartedRepository = FilesystemToolCallRepository(dataDir)
-        val stored = restartedRepository.get(userId, chat.id, execution.id, "tool-1")
+        val stored = restartedRepository.get(
+            ToolCallContext(
+                userId = userId,
+                chatId = chat.id.toString(),
+                executionId = execution.id.toString(),
+                toolCallId = "tool-1",
+            )
+        )
 
         assertNotNull(stored)
         assertEquals(ToolCallStatus.FINISHED, stored.status)
@@ -175,12 +187,14 @@ class FilesystemRepositoriesTest {
             payload = rawEventPayload("optionId" to option.id.toString()),
         )
         toolCallRepository.started(
-            userId = userId,
-            chatId = chat.id,
-            executionId = execution.id,
-            toolCallId = "tool-1",
+            context = ToolCallContext(
+                userId = userId,
+                chatId = chat.id.toString(),
+                executionId = execution.id.toString(),
+                toolCallId = "tool-1",
+            ),
             name = "ListFiles",
-            argumentsJson = """{"path":"/tmp"}""",
+            argumentsPreview = """{"path":"/tmp"}""",
             startedAt = Instant.parse("2026-05-01T09:10:01Z"),
         )
 
@@ -220,7 +234,17 @@ class FilesystemRepositoriesTest {
         assertEquals(execution, reloadedExecutionRepository.findActive(userId, chat.id))
         assertEquals(listOf(option), reloadedOptionRepository.listByExecution(userId, chat.id, execution.id))
         assertEquals(listOf(firstEvent, secondEvent), reloadedEventRepository.listByChat(userId, chat.id))
-        assertEquals(listOf("tool-1"), reloadedToolCallRepository.listByExecution(userId, chat.id, execution.id).map { it.toolCallId })
+        assertEquals(
+            listOf("tool-1"),
+            reloadedToolCallRepository.listByExecution(
+                ToolCallContext(
+                    userId = userId,
+                    chatId = chat.id.toString(),
+                    executionId = execution.id.toString(),
+                    toolCallId = "ignored",
+                )
+            ).map { it.toolCallId },
+        )
 
         val updatedAssistant = reloadedMessageRepository.updateContent(
             userId = userId,
@@ -289,7 +313,17 @@ class FilesystemRepositoriesTest {
             assistantPlaceholder.copy(content = "assistant reply"),
             restartedMessageRepository.getById(userId, chat.id, assistantPlaceholder.id),
         )
-        assertEquals(listOf("tool-1"), restartedToolCallRepository.listByExecution(userId, chat.id, execution.id).map { it.toolCallId })
+        assertEquals(
+            listOf("tool-1"),
+            restartedToolCallRepository.listByExecution(
+                ToolCallContext(
+                    userId = userId,
+                    chatId = chat.id.toString(),
+                    executionId = execution.id.toString(),
+                    toolCallId = "ignored",
+                )
+            ).map { it.toolCallId },
+        )
         assertEquals(completedExecution, restartedExecutionRepository.getByChat(userId, chat.id, execution.id))
         assertNull(restartedExecutionRepository.findActive(userId, chat.id))
         assertEquals(

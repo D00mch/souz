@@ -26,9 +26,11 @@ import ru.souz.backend.storage.filesystem.FilesystemAgentStateRepository
 import ru.souz.backend.storage.filesystem.FilesystemChatRepository
 import ru.souz.backend.storage.filesystem.FilesystemOptionRepository
 import ru.souz.backend.storage.filesystem.FilesystemMessageRepository
+import ru.souz.backend.storage.filesystem.FilesystemUserRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserProviderKeyRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserSettingsRepository
 import ru.souz.backend.storage.memory.MemoryAgentEventRepository
+import ru.souz.backend.storage.memory.MemoryUserRepository
 import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
 import ru.souz.backend.storage.postgres.PostgresAgentExecutionRepository
@@ -36,10 +38,12 @@ import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
 import ru.souz.backend.storage.postgres.PostgresChatRepository
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
+import ru.souz.backend.storage.postgres.PostgresUserRepository
 import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.backend.storage.postgres.postgresAppConfig
+import ru.souz.backend.user.repository.UserRepository
 
 class BackendDiModuleTest {
     @Test
@@ -60,6 +64,7 @@ class BackendDiModuleTest {
             )
         }
 
+        assertIs<FilesystemUserRepository>(di.direct.instance<UserRepository>())
         assertIs<FilesystemChatRepository>(di.direct.instance<ChatRepository>())
         assertIs<FilesystemMessageRepository>(di.direct.instance<MessageRepository>())
         assertIs<FilesystemAgentStateRepository>(di.direct.instance<AgentStateRepository>())
@@ -90,6 +95,7 @@ class BackendDiModuleTest {
         val dataSource = di.direct.instance<HikariDataSource>()
 
         try {
+            assertIs<PostgresUserRepository>(di.direct.instance<UserRepository>())
             assertIs<PostgresChatRepository>(di.direct.instance<ChatRepository>())
             assertIs<PostgresMessageRepository>(di.direct.instance<MessageRepository>())
             assertIs<PostgresAgentStateRepository>(di.direct.instance<AgentStateRepository>())
@@ -123,6 +129,7 @@ class BackendDiModuleTest {
         val dataSource = di.direct.instance<HikariDataSource>()
 
         try {
+            assertIs<PostgresUserRepository>(di.direct.instance<UserRepository>())
             assertIs<PostgresChatRepository>(di.direct.instance<ChatRepository>())
             assertIs<PostgresMessageRepository>(di.direct.instance<MessageRepository>())
             assertIs<PostgresAgentStateRepository>(di.direct.instance<AgentStateRepository>())
@@ -157,6 +164,7 @@ class BackendDiModuleTest {
             )
         }
 
+        assertIs<MemoryUserRepository>(di.direct.instance<UserRepository>())
         assertIs<MemoryUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
         assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
         assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())

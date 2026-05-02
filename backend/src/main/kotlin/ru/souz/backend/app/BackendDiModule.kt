@@ -50,6 +50,7 @@ import ru.souz.backend.storage.memory.MemoryChatRepository
 import ru.souz.backend.storage.memory.MemoryOptionRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
 import ru.souz.backend.storage.memory.MemoryToolCallRepository
+import ru.souz.backend.storage.memory.MemoryUserRepository
 import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
 import ru.souz.backend.storage.filesystem.FilesystemAgentEventRepository
@@ -58,6 +59,7 @@ import ru.souz.backend.storage.filesystem.FilesystemAgentStateRepository
 import ru.souz.backend.storage.filesystem.FilesystemChatRepository
 import ru.souz.backend.storage.filesystem.FilesystemOptionRepository
 import ru.souz.backend.storage.filesystem.FilesystemMessageRepository
+import ru.souz.backend.storage.filesystem.FilesystemUserRepository
 import ru.souz.backend.storage.filesystem.FilesystemToolCallRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserProviderKeyRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserSettingsRepository
@@ -69,9 +71,11 @@ import ru.souz.backend.storage.postgres.PostgresOptionRepository
 import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.backend.storage.postgres.PostgresToolCallRepository
+import ru.souz.backend.storage.postgres.PostgresUserRepository
 import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.toolcall.repository.ToolCallRepository
+import ru.souz.backend.user.repository.UserRepository
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
@@ -102,6 +106,7 @@ fun backendDiModule(
     bindSingleton<StorageMode> { appConfig.storageMode }
     when (appConfig.storageMode.requireSupported()) {
         StorageMode.MEMORY -> {
+            bindSingleton<UserRepository> { MemoryUserRepository() }
             bindSingleton<ChatRepository> { MemoryChatRepository() }
             bindSingleton<MessageRepository> { MemoryMessageRepository() }
             bindSingleton<AgentStateRepository> { MemoryAgentStateRepository() }
@@ -113,6 +118,7 @@ fun backendDiModule(
             bindSingleton<UserProviderKeyRepository> { MemoryUserProviderKeyRepository() }
         }
         StorageMode.FILESYSTEM -> {
+            bindSingleton<UserRepository> { FilesystemUserRepository(appConfig.dataDir) }
             bindSingleton<ChatRepository> { FilesystemChatRepository(appConfig.dataDir) }
             bindSingleton<MessageRepository> { FilesystemMessageRepository(appConfig.dataDir) }
             bindSingleton<AgentStateRepository> { FilesystemAgentStateRepository(appConfig.dataDir) }
@@ -131,6 +137,7 @@ fun backendDiModule(
                     appConfig.postgres ?: error("Postgres configuration is required.")
                 )
             }
+            bindSingleton<UserRepository> { PostgresUserRepository(instance()) }
             bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
             bindSingleton<MessageRepository> { PostgresMessageRepository(instance()) }
             bindSingleton<AgentStateRepository> { PostgresAgentStateRepository(instance()) }
@@ -229,6 +236,13 @@ fun backendDiModule(
         )
     }
     bindSingleton {
+        BackendAgentService(
+            baseSettingsProvider = instance(),
+            runtimeFactory = instance(),
+            ensureUser = instance<UserRepository>()::ensureUser,
+        )
+    }
+    bindSingleton {
         AgentExecutionRequestFactory(
             effectiveSettingsResolver = instance(),
             featureFlags = instance(),
@@ -273,12 +287,6 @@ fun backendDiModule(
             chatRepository = instance(),
             messageRepository = instance(),
             executionService = instance(),
-        )
-    }
-    bindSingleton {
-        BackendAgentService(
-            baseSettingsProvider = instance(),
-            runtimeFactory = instance(),
         )
     }
     bindSingleton {

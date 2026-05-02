@@ -1,11 +1,11 @@
 package ru.souz.backend.storage.memory
 
 import java.time.Instant
-import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 
 class MemoryToolCallRepository(
@@ -17,45 +17,39 @@ class MemoryToolCallRepository(
     constructor() : this(DEFAULT_MEMORY_REPOSITORY_MAX_ENTRIES)
 
     override suspend fun started(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
-        argumentsJson: String,
+        argumentsPreview: String,
         startedAt: Instant,
     ): ToolCall = mutex.withLock {
         val record = ToolCall(
-            userId = userId,
-            chatId = chatId,
-            executionId = executionId,
-            toolCallId = toolCallId,
+            userId = context.userId,
+            chatId = context.chatId,
+            executionId = context.executionId,
+            toolCallId = context.toolCallId,
             name = name,
             status = ToolCallStatus.RUNNING,
-            argumentsJson = argumentsJson,
+            argumentsJson = argumentsPreview,
             startedAt = startedAt,
         )
-        toolCalls[ToolCallKey(userId, chatId, executionId, toolCallId)] = record
+        toolCalls[context.toKey()] = record
         record
     }
 
     override suspend fun finished(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
         resultPreview: String?,
         finishedAt: Instant,
         durationMs: Long,
     ): ToolCall = mutex.withLock {
-        val key = ToolCallKey(userId, chatId, executionId, toolCallId)
+        val key = context.toKey()
         val current = toolCalls[key]
         val record = (current ?: ToolCall(
-            userId = userId,
-            chatId = chatId,
-            executionId = executionId,
-            toolCallId = toolCallId,
+            userId = context.userId,
+            chatId = context.chatId,
+            executionId = context.executionId,
+            toolCallId = context.toolCallId,
             name = name,
             status = ToolCallStatus.RUNNING,
             argumentsJson = "{}",
@@ -73,22 +67,19 @@ class MemoryToolCallRepository(
     }
 
     override suspend fun failed(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
         error: String,
         finishedAt: Instant,
         durationMs: Long,
     ): ToolCall = mutex.withLock {
-        val key = ToolCallKey(userId, chatId, executionId, toolCallId)
+        val key = context.toKey()
         val current = toolCalls[key]
         val record = (current ?: ToolCall(
-            userId = userId,
-            chatId = chatId,
-            executionId = executionId,
-            toolCallId = toolCallId,
+            userId = context.userId,
+            chatId = context.chatId,
+            executionId = context.executionId,
+            toolCallId = context.toolCallId,
             name = name,
             status = ToolCallStatus.RUNNING,
             argumentsJson = "{}",
@@ -105,27 +96,20 @@ class MemoryToolCallRepository(
         record
     }
 
-    override suspend fun get(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
-    ): ToolCall? = mutex.withLock {
-        toolCalls[ToolCallKey(userId, chatId, executionId, toolCallId)]
+    override suspend fun get(context: ToolCallContext): ToolCall? = mutex.withLock {
+        toolCalls[context.toKey()]
     }
 
     override suspend fun listByExecution(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
+        context: ToolCallContext,
         limit: Int,
     ): List<ToolCall> = mutex.withLock {
         toolCalls.values
             .asSequence()
             .filter { toolCall ->
-                toolCall.userId == userId &&
-                    toolCall.chatId == chatId &&
-                    toolCall.executionId == executionId
+                toolCall.userId == context.userId &&
+                    toolCall.chatId == context.chatId &&
+                    toolCall.executionId == context.executionId
             }
             .sortedWith(compareBy<ToolCall> { it.startedAt }.thenBy { it.toolCallId })
             .take(limit)
@@ -135,7 +119,15 @@ class MemoryToolCallRepository(
 
 private data class ToolCallKey(
     val userId: String,
-    val chatId: UUID,
-    val executionId: UUID,
+    val chatId: String,
+    val executionId: String,
     val toolCallId: String,
 )
+
+private fun ToolCallContext.toKey(): ToolCallKey =
+    ToolCallKey(
+        userId = userId,
+        chatId = chatId,
+        executionId = executionId,
+        toolCallId = toolCallId,
+    )

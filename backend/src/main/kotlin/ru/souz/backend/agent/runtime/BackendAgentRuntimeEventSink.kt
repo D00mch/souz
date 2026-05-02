@@ -33,6 +33,7 @@ import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.options.model.OptionItem
 import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.options.repository.OptionRepository
+import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 
 /**
@@ -126,12 +127,9 @@ internal class BackendAgentRuntimeEventSink(
         val argumentsPreviewNode = toolCallPreviewer.argumentsPreview(event.arguments)
         val argumentsPreview = toolCallPreviewer.argumentsPreviewJson(event.arguments)
         toolCallRepository.started(
-            userId = userId,
-            chatId = chatId,
-            executionId = executionId,
-            toolCallId = event.toolCallId,
+            context = toolCallContext(event.toolCallId.toString()),
             name = event.name,
-            argumentsJson = argumentsPreview,
+            argumentsPreview = argumentsPreview,
         )
         if (!toolEventsEnabled) {
             return
@@ -151,10 +149,7 @@ internal class BackendAgentRuntimeEventSink(
         val resultPreviewNode = toolCallPreviewer.resultPreview(event.result)
         val resultPreview = toolCallPreviewer.resultPreviewJson(event.result)
         toolCallRepository.finished(
-            userId = userId,
-            chatId = chatId,
-            executionId = executionId,
-            toolCallId = event.toolCallId,
+            context = toolCallContext(event.toolCallId.toString()),
             name = event.name,
             resultPreview = resultPreview,
             durationMs = event.durationMs,
@@ -176,10 +171,7 @@ internal class BackendAgentRuntimeEventSink(
     private suspend fun onToolCallFailed(event: AgentRuntimeEvent.ToolCallFailed) {
         val safeError = toolCallPreviewer.safeErrorPreview(event.error)
         toolCallRepository.failed(
-            userId = userId,
-            chatId = chatId,
-            executionId = executionId,
-            toolCallId = event.toolCallId,
+            context = toolCallContext(event.toolCallId.toString()),
             name = event.name,
             error = safeError,
             durationMs = event.durationMs,
@@ -305,6 +297,14 @@ internal class BackendAgentRuntimeEventSink(
             ),
         )
     }
+
+    private fun toolCallContext(toolCallId: String): ToolCallContext =
+        ToolCallContext(
+            userId = userId,
+            chatId = chatId.toString(),
+            executionId = executionId.toString(),
+            toolCallId = toolCallId,
+        )
 
     private suspend fun loadExistingAssistantMessageIfPresent(): ChatMessage? {
         if (assistantMessage != null || assistantMessageId == null) {

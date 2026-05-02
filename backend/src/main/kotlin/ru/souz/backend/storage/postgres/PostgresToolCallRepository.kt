@@ -4,22 +4,21 @@ import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.toolcall.model.ToolCall
+import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 
 class PostgresToolCallRepository(
     private val dataSource: DataSource,
 ) : ToolCallRepository {
     override suspend fun started(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
-        argumentsJson: String,
+        argumentsPreview: String,
         startedAt: Instant,
     ): ToolCall = dataSource.write { connection ->
-        connection.ensureUser(userId)
-        connection.lockChat(userId, chatId)
+        val chatId = context.chatId.toUuid()
+        val executionId = context.executionId.toUuid()
+        connection.lockChat(context.userId, chatId)
         connection.prepareStatement(
             """
             insert into tool_calls(
@@ -38,13 +37,13 @@ class PostgresToolCallRepository(
                 duration_ms = excluded.duration_ms
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, userId)
+            statement.setString(1, context.userId)
             statement.setObject(2, chatId)
             statement.setObject(3, executionId)
-            statement.setString(4, toolCallId)
+            statement.setString(4, context.toolCallId)
             statement.setString(5, name)
             statement.setString(6, "running")
-            statement.setJson(7, argumentsJson)
+            statement.setJson(7, argumentsPreview)
             statement.setString(8, null)
             statement.setString(9, null)
             statement.setInstant(10, startedAt)
@@ -58,10 +57,10 @@ class PostgresToolCallRepository(
             where user_id = ? and chat_id = ? and execution_id = ? and tool_call_id = ?
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, userId)
+            statement.setString(1, context.userId)
             statement.setObject(2, chatId)
             statement.setObject(3, executionId)
-            statement.setString(4, toolCallId)
+            statement.setString(4, context.toolCallId)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 resultSet.toToolCall()
@@ -70,19 +69,13 @@ class PostgresToolCallRepository(
     }
 
     override suspend fun finished(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
         resultPreview: String?,
         finishedAt: Instant,
         durationMs: Long,
     ): ToolCall = upsertTerminal(
-        userId = userId,
-        chatId = chatId,
-        executionId = executionId,
-        toolCallId = toolCallId,
+        context = context,
         name = name,
         status = "finished",
         resultPreview = resultPreview,
@@ -92,19 +85,13 @@ class PostgresToolCallRepository(
     )
 
     override suspend fun failed(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
         error: String,
         finishedAt: Instant,
         durationMs: Long,
     ): ToolCall = upsertTerminal(
-        userId = userId,
-        chatId = chatId,
-        executionId = executionId,
-        toolCallId = toolCallId,
+        context = context,
         name = name,
         status = "failed",
         resultPreview = null,
@@ -113,22 +100,19 @@ class PostgresToolCallRepository(
         durationMs = durationMs,
     )
 
-    override suspend fun get(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
-    ): ToolCall? = dataSource.read { connection ->
+    override suspend fun get(context: ToolCallContext): ToolCall? = dataSource.read { connection ->
+        val chatId = context.chatId.toUuid()
+        val executionId = context.executionId.toUuid()
         connection.prepareStatement(
             """
             select * from tool_calls
             where user_id = ? and chat_id = ? and execution_id = ? and tool_call_id = ?
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, userId)
+            statement.setString(1, context.userId)
             statement.setObject(2, chatId)
             statement.setObject(3, executionId)
-            statement.setString(4, toolCallId)
+            statement.setString(4, context.toolCallId)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toToolCall() else null
             }
@@ -136,11 +120,11 @@ class PostgresToolCallRepository(
     }
 
     override suspend fun listByExecution(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
+        context: ToolCallContext,
         limit: Int,
     ): List<ToolCall> = dataSource.read { connection ->
+        val chatId = context.chatId.toUuid()
+        val executionId = context.executionId.toUuid()
         connection.prepareStatement(
             """
             select * from tool_calls
@@ -149,7 +133,7 @@ class PostgresToolCallRepository(
             limit ?
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, userId)
+            statement.setString(1, context.userId)
             statement.setObject(2, chatId)
             statement.setObject(3, executionId)
             statement.setInt(4, limit)
@@ -164,10 +148,7 @@ class PostgresToolCallRepository(
     }
 
     private suspend fun upsertTerminal(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-        toolCallId: String,
+        context: ToolCallContext,
         name: String,
         status: String,
         resultPreview: String?,
@@ -175,8 +156,9 @@ class PostgresToolCallRepository(
         finishedAt: Instant,
         durationMs: Long,
     ): ToolCall = dataSource.write { connection ->
-        connection.ensureUser(userId)
-        connection.lockChat(userId, chatId)
+        val chatId = context.chatId.toUuid()
+        val executionId = context.executionId.toUuid()
+        connection.lockChat(context.userId, chatId)
         connection.prepareStatement(
             """
             insert into tool_calls(
@@ -193,10 +175,10 @@ class PostgresToolCallRepository(
                 duration_ms = excluded.duration_ms
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, userId)
+            statement.setString(1, context.userId)
             statement.setObject(2, chatId)
             statement.setObject(3, executionId)
-            statement.setString(4, toolCallId)
+            statement.setString(4, context.toolCallId)
             statement.setString(5, name)
             statement.setString(6, status)
             statement.setJson(7, "{}")
@@ -213,10 +195,10 @@ class PostgresToolCallRepository(
             where user_id = ? and chat_id = ? and execution_id = ? and tool_call_id = ?
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, userId)
+            statement.setString(1, context.userId)
             statement.setObject(2, chatId)
             statement.setObject(3, executionId)
-            statement.setString(4, toolCallId)
+            statement.setString(4, context.toolCallId)
             statement.executeQuery().use { resultSet ->
                 resultSet.next()
                 resultSet.toToolCall()
@@ -224,3 +206,5 @@ class PostgresToolCallRepository(
         }
     }
 }
+
+private fun String.toUuid(): UUID = UUID.fromString(this)

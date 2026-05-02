@@ -1,12 +1,11 @@
 package ru.souz.backend.toolcall.model
 
 import java.time.Instant
-import java.util.UUID
 
 data class ToolCall(
     val userId: String,
-    val chatId: UUID,
-    val executionId: UUID,
+    val chatId: String,
+    val executionId: String,
     val toolCallId: String,
     val name: String,
     val status: ToolCallStatus,

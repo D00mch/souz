@@ -28,10 +28,17 @@ import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.user.model.UserRecord
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
+
+internal data class StoredUserRecord(
+    val id: String,
+    val createdAt: String,
+    val lastSeenAt: String?,
+)
 
 internal data class StoredChat(
     val id: String,
@@ -436,8 +443,8 @@ internal fun StoredAgentEvent.toDomain(): AgentEvent =
 internal fun ToolCall.toStored(): StoredToolCall =
     StoredToolCall(
         userId = userId,
-        chatId = chatId.toString(),
-        executionId = executionId.toString(),
+        chatId = chatId,
+        executionId = executionId,
         toolCallId = toolCallId,
         name = name,
         status = status.value,
@@ -452,8 +459,8 @@ internal fun ToolCall.toStored(): StoredToolCall =
 internal fun StoredToolCall.toDomain(): ToolCall =
     ToolCall(
         userId = userId,
-        chatId = UUID.fromString(chatId),
-        executionId = UUID.fromString(executionId),
+        chatId = chatId,
+        executionId = executionId,
         toolCallId = toolCallId,
         name = name,
         status = parseToolCallStatus(status),
@@ -463,6 +470,20 @@ internal fun StoredToolCall.toDomain(): ToolCall =
         startedAt = Instant.parse(startedAt),
         finishedAt = finishedAt?.let(Instant::parse),
         durationMs = durationMs,
+    )
+
+internal fun UserRecord.toStored(): StoredUserRecord =
+    StoredUserRecord(
+        id = id,
+        createdAt = createdAt.toString(),
+        lastSeenAt = lastSeenAt?.toString(),
+    )
+
+internal fun StoredUserRecord.toDomain(): UserRecord =
+    UserRecord(
+        id = id,
+        createdAt = Instant.parse(createdAt),
+        lastSeenAt = lastSeenAt?.let(Instant::parse),
     )
 
 internal fun UserSettings.toStored(): StoredUserSettings =
