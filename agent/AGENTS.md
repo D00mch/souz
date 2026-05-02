@@ -2,7 +2,7 @@
 
 ```text
 GraphBasedAgent.kt                    # Standard tool-calling graph agent
-LuaGraphBasedAgent.kt                 # Lua-planning graph agent
+LuaGraphBasedAgent.kt                 # Lua-planning graph agent (deprecated)
 agent/
    ├── Agent.kt                       # Public agent contracts and execution result models
    ├── AgentContextFactory.kt         # Stateless initial-context builder from host contracts
