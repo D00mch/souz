@@ -24,6 +24,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -31,6 +32,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.events.model.AgentEventType
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -98,10 +100,10 @@ class BackendStage6EventRouteTest {
             assertEquals(
                 listOf(
                     "execution.started",
+                    "message.delta",
+                    "message.delta",
+                    "message.delta",
                     "message.created",
-                    "message.delta",
-                    "message.delta",
-                    "message.delta",
                     "message.completed",
                     "execution.finished",
                 ),
@@ -147,11 +149,12 @@ class BackendStage6EventRouteTest {
 
             api.release("reconnect me")
 
-            val firstTwo: List<JsonNode> = listOf(
-                firstSession.receiveEvent(),
-                firstSession.receiveEvent(),
-            )
-            val lastSeenSeq = firstTwo.last()["seq"].asLong()
+            val firstFour = buildList {
+                repeat(4) {
+                    add(firstSession.receiveEvent())
+                }
+            }
+            val lastSeenSeq = firstFour.last { it["durable"].asBoolean() }["seq"].asLong()
             firstSession.close()
 
             val secondSession = wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=$lastSeenSeq") {
@@ -171,6 +174,115 @@ class BackendStage6EventRouteTest {
             assertTrue(replayedEvents.all { it["seq"].isNumber })
             assertTrue(replayedEvents.none { it["type"].asText() == "message.delta" })
             secondSession.close()
+        }
+    }
+
+    @Test
+    fun `streaming failure after live delta does not persist partial assistant message`() = testApplication {
+        val context = stage6RouteTestContext(FailingAfterDeltaStage6StreamingChatApi())
+        val chat = chat(userId = "user-a", title = "Fail after delta")
+        runBlocking {
+            context.chatRepository.create(chat)
+        }
+        installStage6Application(context)
+        val wsClient = createClient {
+            install(WebSockets)
+        }
+
+        runBlocking {
+            val session = wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=0") {
+                trustedHeaders("user-a")
+            }
+
+            val response = client.post("/v1/chats/${chat.id}/messages") {
+                trustedHeaders("user-a")
+                contentType(ContentType.Application.Json)
+                setBody("""{"content":"fail after delta"}""")
+            }
+            val payload = stage6Json.readTree(response.bodyAsText())
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals("running", payload["execution"]["status"].asText())
+
+            val liveEvents = buildList {
+                repeat(3) {
+                    add(session.receiveEvent())
+                }
+            }
+            val durableEvents = context.eventRepository.listByChat("user-a", chat.id)
+            val storedMessages = context.messageRepository.list("user-a", chat.id)
+            val storedExecution = context.executionRepository.listByChat("user-a", chat.id).single()
+
+            assertEquals(
+                listOf("execution.started", "message.delta", "execution.failed"),
+                liveEvents.map { it["type"].asText() },
+            )
+            assertEquals(
+                listOf(AgentEventType.EXECUTION_STARTED, AgentEventType.EXECUTION_FAILED),
+                durableEvents.map { it.type },
+            )
+            assertEquals(listOf("fail after delta"), storedMessages.map { it.content })
+            assertEquals("failed", storedExecution.status.value)
+            assertNull(storedExecution.assistantMessageId)
+            session.close()
+        }
+    }
+
+    @Test
+    fun `streaming cancel after live delta does not persist partial assistant message`() = testApplication {
+        val api = CancellableAfterDeltaStage6StreamingChatApi()
+        val context = stage6RouteTestContext(api)
+        val chat = chat(userId = "user-a", title = "Cancel after delta")
+        runBlocking {
+            context.chatRepository.create(chat)
+        }
+        installStage6Application(context)
+        val wsClient = createClient {
+            install(WebSockets)
+        }
+
+        runBlocking {
+            val session = wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=0") {
+                trustedHeaders("user-a")
+            }
+
+            val response = client.post("/v1/chats/${chat.id}/messages") {
+                trustedHeaders("user-a")
+                contentType(ContentType.Application.Json)
+                setBody("""{"content":"cancel after delta"}""")
+            }
+            val payload = stage6Json.readTree(response.bodyAsText())
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals("running", payload["execution"]["status"].asText())
+
+            api.awaitDeltaSent("cancel after delta")
+            val cancelResponse = client.post("/v1/chats/${chat.id}/cancel-active") {
+                trustedHeaders("user-a")
+            }
+            val cancelPayload = stage6Json.readTree(cancelResponse.bodyAsText())
+
+            val liveEvents = buildList {
+                repeat(3) {
+                    add(session.receiveEvent())
+                }
+            }
+            val durableEvents = context.eventRepository.listByChat("user-a", chat.id)
+            val storedMessages = context.messageRepository.list("user-a", chat.id)
+            val storedExecution = context.executionRepository.listByChat("user-a", chat.id).single()
+
+            assertEquals(HttpStatusCode.OK, cancelResponse.status)
+            assertEquals("cancelling", cancelPayload["execution"]["status"].asText())
+            assertEquals(
+                listOf("execution.started", "message.delta", "execution.cancelled"),
+                liveEvents.map { it["type"].asText() },
+            )
+            assertEquals(
+                listOf(AgentEventType.EXECUTION_STARTED, AgentEventType.EXECUTION_CANCELLED),
+                durableEvents.map { it.type },
+            )
+            assertEquals(listOf("cancel after delta"), storedMessages.map { it.content })
+            assertEquals("cancelled", storedExecution.status.value)
+            assertNull(storedExecution.assistantMessageId)
+            session.close()
         }
     }
 
@@ -598,6 +710,100 @@ private class GateControlledStage6StreamingChatApi(
                 )
             )
         }
+    }
+
+    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
+        error("Embeddings are not used in this test.")
+
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
+        error("File upload is not used in this test.")
+
+    override suspend fun downloadFile(fileId: String): String? =
+        error("File download is not used in this test.")
+
+    override suspend fun balance(): LLMResponse.Balance =
+        error("Balance is not used in this test.")
+}
+
+private class FailingAfterDeltaStage6StreamingChatApi : LLMChatAPI {
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+        if (body.isClassificationRequest()) {
+            return reply(body, "HELP 90")
+        }
+        return reply(body, "assistant reply to ${body.conversationPrompt()}")
+    }
+
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
+        emit(
+            LLMResponse.Chat.Ok(
+                choices = listOf(
+                    LLMResponse.Choice(
+                        message = LLMResponse.Message(
+                            content = "partial ",
+                            role = LLMMessageRole.assistant,
+                            functionsStateId = null,
+                        ),
+                        index = 0,
+                        finishReason = null,
+                    )
+                ),
+                created = 0L,
+                model = body.model,
+                usage = LLMResponse.Usage(7, 1, 8, 0),
+            )
+        )
+        error("simulated streaming failure")
+    }
+
+    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
+        error("Embeddings are not used in this test.")
+
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
+        error("File upload is not used in this test.")
+
+    override suspend fun downloadFile(fileId: String): String? =
+        error("File download is not used in this test.")
+
+    override suspend fun balance(): LLMResponse.Balance =
+        error("Balance is not used in this test.")
+}
+
+private class CancellableAfterDeltaStage6StreamingChatApi : LLMChatAPI {
+    private val deltaSentByPrompt = LinkedHashMap<String, CompletableDeferred<Unit>>()
+
+    suspend fun awaitDeltaSent(prompt: String) {
+        deltaSentByPrompt.getOrPut(prompt) { CompletableDeferred() }.await()
+    }
+
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+        if (body.isClassificationRequest()) {
+            return reply(body, "HELP 90")
+        }
+        return reply(body, "assistant reply to ${body.conversationPrompt()}")
+    }
+
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
+        val prompt = body.conversationPrompt()
+        emit(
+            LLMResponse.Chat.Ok(
+                choices = listOf(
+                    LLMResponse.Choice(
+                        message = LLMResponse.Message(
+                            content = "partial ",
+                            role = LLMMessageRole.assistant,
+                            functionsStateId = null,
+                        ),
+                        index = 0,
+                        finishReason = null,
+                    )
+                ),
+                created = 0L,
+                model = body.model,
+                usage = LLMResponse.Usage(7, 1, 8, 0),
+            )
+        )
+        deltaSentByPrompt.getOrPut(prompt) { CompletableDeferred() }.complete(Unit)
+        awaitCancellation()
     }
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =

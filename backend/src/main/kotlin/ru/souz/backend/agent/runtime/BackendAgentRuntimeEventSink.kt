@@ -35,7 +35,7 @@ internal class BackendAgentRuntimeEventSink(
     private val assistantMessageId: UUID? = null,
     private val toolCallPreviewer: ToolCallPreviewer = ToolCallPreviewer(),
 ) : AgentRuntimeEventSink {
-    private val accumulatedAssistantContent = StringBuilder()
+    private val finalAssistantMessageId = assistantMessageId ?: UUID.randomUUID()
     private var assistantMessage: ChatMessage? = null
     private var requestedOptionId: UUID? = null
 
@@ -172,12 +172,19 @@ internal class BackendAgentRuntimeEventSink(
                 messageId = existing.id,
                 content = content,
             ) ?: existing.copy(content = content)
+        } ?: loadExistingAssistantMessageIfPresent()?.let { existing ->
+            messageRepository.updateContent(
+                userId = userId,
+                chatId = chatId,
+                messageId = existing.id,
+                content = content,
+            ) ?: existing.copy(content = content)
         } ?: messageRepository.append(
             userId = userId,
             chatId = chatId,
             role = ChatRole.ASSISTANT,
             content = content,
-            id = assistantMessageId ?: UUID.randomUUID(),
+            id = finalAssistantMessageId,
         ).also { created ->
             assistantMessage = created
             emitMessageCreated(created)
@@ -237,39 +244,14 @@ internal class BackendAgentRuntimeEventSink(
     private suspend fun onLlmMessageDelta(event: AgentRuntimeEvent.LlmMessageDelta) {
         if (!streamingMessagesEnabled || event.text.isEmpty()) return
 
-        loadExistingAssistantMessageIfPresent()
-        accumulatedAssistantContent.append(event.text)
-        val message = ensureAssistantMessageCreated()
-        assistantMessage = messageRepository.updateContent(
-            userId = userId,
-            chatId = chatId,
-            messageId = message.id,
-            content = accumulatedAssistantContent.toString(),
-        ) ?: message
-
         publishLiveEvent(
             type = AgentEventType.MESSAGE_DELTA,
             payload = buildMap {
-                put("messageId", message.id.toString())
-                put("seq", message.seq.toString())
+                put("messageId", finalAssistantMessageId.toString())
                 put("delta", event.text)
             },
         )
     }
-
-    private suspend fun ensureAssistantMessageCreated(): ChatMessage =
-        assistantMessage ?: loadExistingAssistantMessageIfPresent()
-        ?: messageRepository.append(
-            userId = userId,
-            chatId = chatId,
-            role = ChatRole.ASSISTANT,
-            content = "",
-            id = assistantMessageId ?: UUID.randomUUID(),
-        ).also { created ->
-            assistantMessage = created
-            emitMessageCreated(created)
-            linkAssistantMessage(created.id)
-        }
 
     private suspend fun emitMessageCreated(message: ChatMessage) {
         appendDurableEvent(
@@ -288,9 +270,6 @@ internal class BackendAgentRuntimeEventSink(
             messageId = assistantMessageId,
         ) ?: return null
         assistantMessage = existing
-        if (accumulatedAssistantContent.isEmpty()) {
-            accumulatedAssistantContent.append(existing.content)
-        }
         return existing
     }
 
