@@ -21,6 +21,7 @@ import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMResponse
 
+@Deprecated("Will be removed in the future")
 class LuaGraphBasedAgent internal constructor(
     logObjectMapper: ObjectMapper,
     private val nodesLua: NodesLua,
