@@ -1,15 +1,12 @@
 package ru.souz.agent.session
 
+import ru.souz.paths.DefaultSouzPaths
 import java.nio.file.Files
 import java.nio.file.Path
-import ru.souz.llms.restJsonMapper
-import ru.souz.paths.DefaultSouzPaths
 import kotlin.io.path.exists
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class GraphSessionRepositoryTest {
@@ -21,25 +18,6 @@ class GraphSessionRepositoryTest {
             runCatching { path.toFile().deleteRecursively() }
         }
         createdPaths.clear()
-    }
-
-    @Test
-    fun `migrates legacy root session json files into sessions dir`() {
-        val stateRoot = createTempDirectory("graph-session-migrate-")
-        val paths = DefaultSouzPaths(stateRoot = stateRoot)
-        val legacyFile = paths.stateRoot.resolve("legacy-session.json")
-        val session = sampleSession(id = "legacy-session")
-        Files.createDirectories(paths.stateRoot)
-        restJsonMapper.writerWithDefaultPrettyPrinter().writeValue(legacyFile.toFile(), session)
-
-        val repository = GraphSessionRepository(paths = paths)
-
-        val loaded = repository.loadById("legacy-session")
-
-        assertNotNull(loaded)
-        assertEquals(session, loaded)
-        assertTrue(paths.sessionsDir.resolve("legacy-session.json").exists())
-        assertFalse(legacyFile.exists())
     }
 
     @Test

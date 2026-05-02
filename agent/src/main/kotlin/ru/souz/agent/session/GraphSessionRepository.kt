@@ -3,7 +3,6 @@ package ru.souz.agent.session
 import com.fasterxml.jackson.module.kotlin.readValue
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import org.slf4j.LoggerFactory
 import ru.souz.llms.restJsonMapper
 import ru.souz.paths.DefaultSouzPaths
@@ -21,7 +20,6 @@ class GraphSessionRepository(
     private val sessionsDir: Path by lazy {
         Files.createDirectories(paths.stateRoot)
         Files.createDirectories(paths.sessionsDir)
-        migrateLegacySessions()
         paths.sessionsDir
     }
 
@@ -79,28 +77,5 @@ class GraphSessionRepository(
         return Files.list(sessionsDir).use { stream ->
             stream.filter { path -> Files.isRegularFile(path) && path.fileName.toString().endsWith(".json") }.count()
         }.toInt()
-    }
-
-    private fun migrateLegacySessions() {
-        Files.list(paths.stateRoot).use { stream ->
-            stream.asSequence()
-                .filter { path ->
-                    Files.isRegularFile(path) &&
-                        path.parent == paths.stateRoot &&
-                        path.fileName.toString().endsWith(".json")
-                }
-                .forEach { legacyPath ->
-                    val target = paths.sessionsDir.resolve(legacyPath.fileName.toString())
-                    runCatching {
-                        if (Files.exists(target)) {
-                            Files.deleteIfExists(legacyPath)
-                        } else {
-                            Files.move(legacyPath, target, StandardCopyOption.ATOMIC_MOVE)
-                        }
-                    }.onFailure { error ->
-                        l.warn("Failed to migrate legacy graph session {}: {}", legacyPath, error.message)
-                    }
-                }
-        }
     }
 }
