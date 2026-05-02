@@ -28,6 +28,7 @@ import ru.souz.backend.settings.model.ToolPermission
 import ru.souz.backend.settings.model.ToolPermissionMode
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
+import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
@@ -512,6 +513,70 @@ class MemoryRepositoriesTest {
         assertEquals(3L, retained.first().seq)
         assertEquals(next.seq, retained.last().seq)
         assertTrue(retained.all { it.seq >= 3L })
+    }
+
+    @Test
+    fun `tool call repository tracks started finished and failed lifecycle per execution`() = runTest {
+        val repository = MemoryToolCallRepository()
+        val chatId = UUID.randomUUID()
+        val executionId = UUID.randomUUID()
+        val startedAt = Instant.parse("2026-04-30T08:40:00Z")
+        val finishedAt = Instant.parse("2026-04-30T08:40:01Z")
+        val failedAt = Instant.parse("2026-04-30T08:40:02Z")
+
+        repository.started(
+            userId = "user-a",
+            chatId = chatId,
+            executionId = executionId,
+            toolCallId = "tool-1",
+            name = "SendHttpRequest",
+            argumentsJson = """{"token":"[REDACTED]"}""",
+            startedAt = startedAt,
+        )
+        repository.finished(
+            userId = "user-a",
+            chatId = chatId,
+            executionId = executionId,
+            toolCallId = "tool-1",
+            name = "SendHttpRequest",
+            resultPreview = """"done"""",
+            finishedAt = finishedAt,
+            durationMs = 1_000,
+        )
+        repository.started(
+            userId = "user-a",
+            chatId = chatId,
+            executionId = executionId,
+            toolCallId = "tool-2",
+            name = "ExplodeTool",
+            argumentsJson = """{"auth":"[REDACTED]"}""",
+            startedAt = startedAt,
+        )
+        repository.failed(
+            userId = "user-a",
+            chatId = chatId,
+            executionId = executionId,
+            toolCallId = "tool-2",
+            name = "ExplodeTool",
+            error = "IllegalStateException: [REDACTED]",
+            finishedAt = failedAt,
+            durationMs = 2_000,
+        )
+
+        val finished = repository.get("user-a", chatId, executionId, "tool-1")
+        val failed = repository.get("user-a", chatId, executionId, "tool-2")
+
+        assertEquals(ToolCallStatus.FINISHED, finished?.status)
+        assertEquals("SendHttpRequest", finished?.name)
+        assertEquals(startedAt, finished?.startedAt)
+        assertEquals(finishedAt, finished?.finishedAt)
+        assertEquals(1_000L, finished?.durationMs)
+        assertEquals(""""done"""", finished?.resultPreview)
+        assertEquals(ToolCallStatus.FAILED, failed?.status)
+        assertEquals(failedAt, failed?.finishedAt)
+        assertEquals(2_000L, failed?.durationMs)
+        assertEquals("IllegalStateException: [REDACTED]", failed?.error)
+        assertEquals(listOf("tool-1", "tool-2"), repository.listByExecution("user-a", chatId, executionId).map { it.toolCallId })
     }
 
     private fun userSettings(

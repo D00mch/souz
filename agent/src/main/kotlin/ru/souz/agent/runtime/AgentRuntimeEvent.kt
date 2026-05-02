@@ -24,14 +24,14 @@ sealed interface AgentRuntimeEvent {
     data class ToolCallFinished(
         val toolCallId: String,
         val name: String,
-        val resultPreview: String?,
+        val result: Any?,
         val durationMs: Long,
     ) : AgentRuntimeEvent
 
     data class ToolCallFailed(
         val toolCallId: String,
         val name: String,
-        val error: String,
+        val error: Throwable,
         val durationMs: Long,
     ) : AgentRuntimeEvent
 

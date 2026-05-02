@@ -76,7 +76,7 @@ class AgentToolExecutorTest {
                 AgentRuntimeEvent.ToolCallFinished(
                     toolCallId = "call-1",
                     name = "tool.read_file",
-                    resultPreview = """{"path":"/tmp/file.txt"}""",
+                    result = """{"path":"/tmp/file.txt"}""",
                     durationMs = runtimeEvents.filterIsInstance<AgentRuntimeEvent.ToolCallFinished>().single().durationMs,
                 ),
             ),
@@ -131,7 +131,7 @@ class AgentToolExecutorTest {
         val failedEvent = runtimeEvents[1] as AgentRuntimeEvent.ToolCallFailed
         assertEquals("call-missing", failedEvent.toolCallId)
         assertEquals("tool.missing", failedEvent.name)
-        assertEquals("UnknownTool", failedEvent.error)
+        assertEquals("UnknownTool", failedEvent.error::class.simpleName)
         assertTrue(failedEvent.durationMs >= 0L)
     }
 
@@ -170,7 +170,7 @@ class AgentToolExecutorTest {
         val failedEvent = runtimeEvents[1] as AgentRuntimeEvent.ToolCallFailed
         assertEquals("call-error", failedEvent.toolCallId)
         assertEquals("tool.read_file", failedEvent.name)
-        assertEquals("secret path: /tmp/private.txt", failedEvent.error)
+        assertEquals("secret path: /tmp/private.txt", failedEvent.error.message)
         assertTrue(failedEvent.durationMs >= 0L)
     }
 

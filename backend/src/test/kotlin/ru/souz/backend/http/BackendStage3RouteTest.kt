@@ -64,6 +64,7 @@ import ru.souz.backend.storage.memory.MemoryAgentStateRepository
 import ru.souz.backend.storage.memory.MemoryChatRepository
 import ru.souz.backend.storage.memory.MemoryChoiceRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
+import ru.souz.backend.storage.memory.MemoryToolCallRepository
 import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
 import ru.souz.llms.EmbeddingsModel
@@ -821,6 +822,7 @@ internal data class RouteTestContext(
     val executionRepository: MemoryAgentExecutionRepository,
     val choiceRepository: MemoryChoiceRepository,
     val eventRepository: MemoryAgentEventRepository,
+    val toolCallRepository: MemoryToolCallRepository,
     val eventService: AgentEventService,
     val stateRepository: MemoryAgentStateRepository,
     val bootstrapService: BackendBootstrapService,
@@ -849,6 +851,7 @@ internal fun routeTestContext(
     executionRepository: MemoryAgentExecutionRepository = MemoryAgentExecutionRepository(),
     choiceRepository: MemoryChoiceRepository = MemoryChoiceRepository(),
     eventRepository: MemoryAgentEventRepository = MemoryAgentEventRepository(),
+    toolCallRepository: MemoryToolCallRepository = MemoryToolCallRepository(),
     stateRepository: MemoryAgentStateRepository = MemoryAgentStateRepository(),
     toolCatalog: AgentToolCatalog = toolCatalog(
         ToolCategory.FILES to fakeTool("ListFiles"),
@@ -892,6 +895,7 @@ internal fun routeTestContext(
         choiceRepository = choiceRepository,
         eventRepository = eventRepository,
         eventService = eventService,
+        toolCallRepository = toolCallRepository,
         featureFlags = featureFlags,
     )
     val choiceService = ChoiceService(
@@ -909,6 +913,7 @@ internal fun routeTestContext(
         executionRepository = executionRepository,
         choiceRepository = choiceRepository,
         eventRepository = eventRepository,
+        toolCallRepository = toolCallRepository,
         eventService = eventService,
         stateRepository = stateRepository,
         bootstrapService = BackendBootstrapService(

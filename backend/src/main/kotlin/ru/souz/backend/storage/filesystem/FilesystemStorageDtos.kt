@@ -24,6 +24,8 @@ import ru.souz.backend.settings.model.ToolPermission
 import ru.souz.backend.settings.model.ToolPermissionMode
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
+import ru.souz.backend.toolcall.model.ToolCall
+import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
@@ -136,6 +138,21 @@ internal data class StoredAgentEvent(
     val type: String,
     val payload: Map<String, String>,
     val createdAt: String,
+)
+
+internal data class StoredToolCall(
+    val userId: String,
+    val chatId: String,
+    val executionId: String,
+    val toolCallId: String,
+    val name: String,
+    val status: String,
+    val argumentsJson: String,
+    val resultPreview: String?,
+    val error: String?,
+    val startedAt: String,
+    val finishedAt: String?,
+    val durationMs: Long?,
 )
 
 internal data class StoredUserSettings(
@@ -412,6 +429,38 @@ internal fun StoredAgentEvent.toDomain(): AgentEvent =
         createdAt = Instant.parse(createdAt),
     )
 
+internal fun ToolCall.toStored(): StoredToolCall =
+    StoredToolCall(
+        userId = userId,
+        chatId = chatId.toString(),
+        executionId = executionId.toString(),
+        toolCallId = toolCallId,
+        name = name,
+        status = status.value,
+        argumentsJson = argumentsJson,
+        resultPreview = resultPreview,
+        error = error,
+        startedAt = startedAt.toString(),
+        finishedAt = finishedAt?.toString(),
+        durationMs = durationMs,
+    )
+
+internal fun StoredToolCall.toDomain(): ToolCall =
+    ToolCall(
+        userId = userId,
+        chatId = UUID.fromString(chatId),
+        executionId = UUID.fromString(executionId),
+        toolCallId = toolCallId,
+        name = name,
+        status = parseToolCallStatus(status),
+        argumentsJson = argumentsJson,
+        resultPreview = resultPreview,
+        error = error,
+        startedAt = Instant.parse(startedAt),
+        finishedAt = finishedAt?.let(Instant::parse),
+        durationMs = durationMs,
+    )
+
 internal fun UserSettings.toStored(): StoredUserSettings =
     StoredUserSettings(
         userId = userId,
@@ -509,6 +558,10 @@ private fun parseExecutionStatus(raw: String): AgentExecutionStatus =
 private fun parseEventType(raw: String): AgentEventType =
     AgentEventType.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }
         ?: error("Unsupported event type '$raw'.")
+
+private fun parseToolCallStatus(raw: String): ToolCallStatus =
+    ToolCallStatus.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }
+        ?: error("Unsupported tool call status '$raw'.")
 
 private fun String?.toModelOrNull(): LLMModel? =
     this?.let { raw ->

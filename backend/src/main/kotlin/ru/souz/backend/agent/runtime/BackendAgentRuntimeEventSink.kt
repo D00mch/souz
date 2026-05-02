@@ -17,6 +17,7 @@ import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.repository.AgentExecutionRepository
+import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.restJsonMapper
 
 internal class BackendAgentRuntimeEventSink(
@@ -27,10 +28,12 @@ internal class BackendAgentRuntimeEventSink(
     private val choiceRepository: ChoiceRepository,
     private val executionRepository: AgentExecutionRepository,
     private val eventService: AgentEventService,
+    private val toolCallRepository: ToolCallRepository,
     private val streamingMessagesEnabled: Boolean,
     private val toolEventsEnabled: Boolean,
     private val choicesEnabled: Boolean = false,
     private val assistantMessageId: UUID? = null,
+    private val toolCallPreviewer: ToolCallPreviewer = ToolCallPreviewer(),
 ) : AgentRuntimeEventSink {
     private val accumulatedAssistantContent = StringBuilder()
     private var assistantMessage: ChatMessage? = null
@@ -42,40 +45,11 @@ internal class BackendAgentRuntimeEventSink(
     override suspend fun emit(event: AgentRuntimeEvent) {
         when (event) {
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
-            is AgentRuntimeEvent.ToolCallStarted -> if (toolEventsEnabled) {
-                appendEvent(
-                    type = AgentEventType.TOOL_CALL_STARTED,
-                    payload = mapOf(
-                        "toolCallId" to event.toolCallId,
-                        "name" to event.name,
-                        "arguments" to restJsonMapper.writeValueAsString(event.arguments),
-                    ),
-                )
-            }
+            is AgentRuntimeEvent.ToolCallStarted -> onToolCallStarted(event)
 
-            is AgentRuntimeEvent.ToolCallFinished -> if (toolEventsEnabled) {
-                appendEvent(
-                    type = AgentEventType.TOOL_CALL_FINISHED,
-                    payload = mapOf(
-                        "toolCallId" to event.toolCallId,
-                        "name" to event.name,
-                        "resultPreview" to (event.resultPreview ?: ""),
-                        "durationMs" to event.durationMs.toString(),
-                    ),
-                )
-            }
+            is AgentRuntimeEvent.ToolCallFinished -> onToolCallFinished(event)
 
-            is AgentRuntimeEvent.ToolCallFailed -> if (toolEventsEnabled) {
-                appendEvent(
-                    type = AgentEventType.TOOL_CALL_FAILED,
-                    payload = mapOf(
-                        "toolCallId" to event.toolCallId,
-                        "name" to event.name,
-                        "error" to event.error,
-                        "durationMs" to event.durationMs.toString(),
-                    ),
-                )
-            }
+            is AgentRuntimeEvent.ToolCallFailed -> onToolCallFailed(event)
 
             is AgentRuntimeEvent.ChoiceRequested -> if (choicesEnabled) {
                 val choice = persistChoice(event)
@@ -112,6 +86,81 @@ internal class BackendAgentRuntimeEventSink(
                 execution.provider?.let { put("provider", it.name) }
                 put("streamingMessages", streamingMessagesEnabled.toString())
             },
+        )
+    }
+
+    private suspend fun onToolCallStarted(event: AgentRuntimeEvent.ToolCallStarted) {
+        val argumentsPreview = toolCallPreviewer.argumentsPreviewJson(event.arguments)
+        toolCallRepository.started(
+            userId = userId,
+            chatId = chatId,
+            executionId = executionId,
+            toolCallId = event.toolCallId,
+            name = event.name,
+            argumentsJson = argumentsPreview,
+        )
+        if (!toolEventsEnabled) {
+            return
+        }
+        appendEvent(
+            type = AgentEventType.TOOL_CALL_STARTED,
+            payload = mapOf(
+                "toolCallId" to event.toolCallId,
+                "name" to event.name,
+                "argumentsPreview" to argumentsPreview,
+            ),
+        )
+    }
+
+    private suspend fun onToolCallFinished(event: AgentRuntimeEvent.ToolCallFinished) {
+        val resultPreview = toolCallPreviewer.resultPreviewJson(event.result)
+        toolCallRepository.finished(
+            userId = userId,
+            chatId = chatId,
+            executionId = executionId,
+            toolCallId = event.toolCallId,
+            name = event.name,
+            resultPreview = resultPreview,
+            durationMs = event.durationMs,
+        )
+        if (!toolEventsEnabled) {
+            return
+        }
+        appendEvent(
+            type = AgentEventType.TOOL_CALL_FINISHED,
+            payload = mapOf(
+                "toolCallId" to event.toolCallId,
+                "name" to event.name,
+                "status" to "finished",
+                "durationMs" to event.durationMs.toString(),
+                "resultPreview" to resultPreview,
+            ),
+        )
+    }
+
+    private suspend fun onToolCallFailed(event: AgentRuntimeEvent.ToolCallFailed) {
+        val safeError = toolCallPreviewer.safeErrorPreview(event.error)
+        toolCallRepository.failed(
+            userId = userId,
+            chatId = chatId,
+            executionId = executionId,
+            toolCallId = event.toolCallId,
+            name = event.name,
+            error = safeError,
+            durationMs = event.durationMs,
+        )
+        if (!toolEventsEnabled) {
+            return
+        }
+        appendEvent(
+            type = AgentEventType.TOOL_CALL_FAILED,
+            payload = mapOf(
+                "toolCallId" to event.toolCallId,
+                "name" to event.name,
+                "status" to "failed",
+                "durationMs" to event.durationMs.toString(),
+                "error" to safeError,
+            ),
         )
     }
 
@@ -289,7 +338,7 @@ internal class BackendAgentRuntimeEventSink(
             chatId = chatId,
             executionId = executionId,
             type = type,
-            payload = payload.sanitizedForStorage(type),
+            payload = payload,
         )
     }
 
@@ -300,38 +349,3 @@ internal class BackendAgentRuntimeEventSink(
         put("content", message.content)
     }
 }
-
-private fun Map<String, String>.sanitizedForStorage(type: AgentEventType): Map<String, String> =
-    if (type.isToolEvent()) {
-        mapValues { (_, value) -> sanitizeEventValue(value) }
-    } else {
-        this
-    }
-
-private fun AgentEventType.isToolEvent(): Boolean =
-    this == AgentEventType.TOOL_CALL_STARTED ||
-        this == AgentEventType.TOOL_CALL_FINISHED ||
-        this == AgentEventType.TOOL_CALL_FAILED
-
-private fun sanitizeEventValue(value: String): String {
-    val sanitized = value
-        .replace(SENSITIVE_JSON_FIELD_REGEX) { match ->
-            "${match.groupValues[1]}[REDACTED]${match.groupValues[4]}"
-        }
-        .replace(SENSITIVE_KEY_VALUE_REGEX) { match ->
-            "${match.groupValues[1]}=[REDACTED]"
-        }
-    return if (sanitized.length <= MAX_EVENT_VALUE_LENGTH) {
-        sanitized
-    } else {
-        sanitized.take(MAX_EVENT_VALUE_LENGTH - 3) + "..."
-    }
-}
-
-private val SENSITIVE_JSON_FIELD_REGEX =
-    Regex("""(?i)("(authorization|cookie|password|api[_-]?key|token|secret)"\s*:\s*")([^"]*)(")""")
-
-private val SENSITIVE_KEY_VALUE_REGEX =
-    Regex("""(?i)\b(authorization|cookie|password|api[_-]?key|token|secret)\b\s*=\s*([^\s,;]+)""")
-
-private const val MAX_EVENT_VALUE_LENGTH = 256

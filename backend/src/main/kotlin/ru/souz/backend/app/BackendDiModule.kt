@@ -46,6 +46,7 @@ import ru.souz.backend.storage.memory.MemoryAgentStateRepository
 import ru.souz.backend.storage.memory.MemoryChatRepository
 import ru.souz.backend.storage.memory.MemoryChoiceRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
+import ru.souz.backend.storage.memory.MemoryToolCallRepository
 import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
 import ru.souz.backend.storage.filesystem.FilesystemAgentEventRepository
@@ -54,6 +55,7 @@ import ru.souz.backend.storage.filesystem.FilesystemAgentStateRepository
 import ru.souz.backend.storage.filesystem.FilesystemChatRepository
 import ru.souz.backend.storage.filesystem.FilesystemChoiceRepository
 import ru.souz.backend.storage.filesystem.FilesystemMessageRepository
+import ru.souz.backend.storage.filesystem.FilesystemToolCallRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserProviderKeyRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserSettingsRepository
 import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
@@ -63,8 +65,10 @@ import ru.souz.backend.storage.postgres.PostgresChatRepository
 import ru.souz.backend.storage.postgres.PostgresChoiceRepository
 import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
+import ru.souz.backend.storage.postgres.PostgresToolCallRepository
 import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
+import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
@@ -100,6 +104,7 @@ fun backendDiModule(
             bindSingleton<AgentExecutionRepository> { MemoryAgentExecutionRepository() }
             bindSingleton<ChoiceRepository> { MemoryChoiceRepository() }
             bindSingleton<AgentEventRepository> { MemoryAgentEventRepository() }
+            bindSingleton<ToolCallRepository> { MemoryToolCallRepository() }
             bindSingleton<UserSettingsRepository> { MemoryUserSettingsRepository() }
             bindSingleton<UserProviderKeyRepository> { MemoryUserProviderKeyRepository() }
         }
@@ -110,6 +115,7 @@ fun backendDiModule(
             bindSingleton<AgentExecutionRepository> { FilesystemAgentExecutionRepository(appConfig.dataDir) }
             bindSingleton<ChoiceRepository> { FilesystemChoiceRepository(appConfig.dataDir) }
             bindSingleton<AgentEventRepository> { FilesystemAgentEventRepository(appConfig.dataDir) }
+            bindSingleton<ToolCallRepository> { FilesystemToolCallRepository(appConfig.dataDir) }
             bindSingleton<UserSettingsRepository> { FilesystemUserSettingsRepository(appConfig.dataDir) }
             bindSingleton<UserProviderKeyRepository> {
                 FilesystemUserProviderKeyRepository(
@@ -136,6 +142,7 @@ fun backendDiModule(
                     MemoryAgentEventRepository()
                 }
             }
+            bindSingleton<ToolCallRepository> { PostgresToolCallRepository(instance()) }
             bindSingleton<UserSettingsRepository> { PostgresUserSettingsRepository(instance()) }
             bindSingleton<UserProviderKeyRepository> { PostgresUserProviderKeyRepository(instance()) }
         }
@@ -230,6 +237,7 @@ fun backendDiModule(
             choiceRepository = instance(),
             eventRepository = instance(),
             eventService = instance(),
+            toolCallRepository = instance(),
             featureFlags = instance(),
         )
     }

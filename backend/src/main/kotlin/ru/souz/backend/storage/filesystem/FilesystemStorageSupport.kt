@@ -62,6 +62,9 @@ class FilesystemStorageLayout(
     fun eventsFile(userId: String, chatId: java.util.UUID): Path =
         chatDir(userId, chatId).resolve("events.jsonl")
 
+    fun toolCallsFile(userId: String, chatId: java.util.UUID): Path =
+        chatDir(userId, chatId).resolve("tool-calls.jsonl")
+
     fun chatDirectories(userId: String): List<Path> {
         val chatsRoot = chatsDir(userId)
         if (!Files.isDirectory(chatsRoot)) {

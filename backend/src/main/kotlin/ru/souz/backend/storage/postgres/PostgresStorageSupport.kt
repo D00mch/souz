@@ -34,6 +34,8 @@ import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.settings.model.ToolPermission
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
+import ru.souz.backend.toolcall.model.ToolCall
+import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
@@ -279,6 +281,22 @@ internal fun ResultSet.toEvent(): AgentEvent =
         createdAt = instant("created_at"),
     )
 
+internal fun ResultSet.toToolCall(): ToolCall =
+    ToolCall(
+        userId = getString("user_id"),
+        chatId = getObject("chat_id", java.util.UUID::class.java),
+        executionId = getObject("execution_id", java.util.UUID::class.java),
+        toolCallId = getString("tool_call_id"),
+        name = getString("name"),
+        status = parseToolCallStatus(getString("status")),
+        argumentsJson = getString("arguments_json"),
+        resultPreview = getString("result_preview"),
+        error = getString("error"),
+        startedAt = instant("started_at"),
+        finishedAt = getObject("finished_at", OffsetDateTime::class.java)?.toInstant(),
+        durationMs = getObject("duration_ms", java.lang.Long::class.java)?.toLong(),
+    )
+
 internal fun ResultSet.toUserSettings(): UserSettings {
     val payload = postgresStorageMapper.readValue<StoredSettingsPayload>(getString("settings_json"))
     return UserSettings(
@@ -371,6 +389,9 @@ internal fun parseChoiceStatus(raw: String): ChoiceStatus =
 
 internal fun parseEventType(raw: String): AgentEventType =
     AgentEventType.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
+
+internal fun parseToolCallStatus(raw: String): ToolCallStatus =
+    ToolCallStatus.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
 
 internal fun String?.toModelOrNull(): LLMModel? =
     this?.let { raw ->

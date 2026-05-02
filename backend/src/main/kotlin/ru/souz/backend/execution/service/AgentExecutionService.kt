@@ -47,6 +47,7 @@ import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsOverrides
+import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
 
@@ -64,6 +65,7 @@ class AgentExecutionService internal constructor(
     private val choiceRepository: ChoiceRepository,
     private val eventRepository: AgentEventRepository,
     private val eventService: AgentEventService,
+    private val toolCallRepository: ToolCallRepository,
     private val featureFlags: BackendFeatureFlags,
     private val executionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
@@ -155,6 +157,7 @@ class AgentExecutionService internal constructor(
                 choiceRepository = choiceRepository,
                 executionRepository = executionRepository,
                 eventService = eventService,
+                toolCallRepository = toolCallRepository,
                 streamingMessagesEnabled = effectiveSettings.streamingMessages,
                 toolEventsEnabled = effectiveSettings.showToolEvents,
                 choicesEnabled = featureFlags.choices,
@@ -286,6 +289,7 @@ class AgentExecutionService internal constructor(
             choiceRepository = choiceRepository,
             executionRepository = executionRepository,
             eventService = eventService,
+            toolCallRepository = toolCallRepository,
             streamingMessagesEnabled = turnRequest.streamingMessages == true,
             toolEventsEnabled = executionMetadataBoolean(runningExecution, METADATA_SHOW_TOOL_EVENTS) ?: false,
             choicesEnabled = featureFlags.choices,

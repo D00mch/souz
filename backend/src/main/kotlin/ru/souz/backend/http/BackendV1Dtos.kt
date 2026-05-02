@@ -354,24 +354,24 @@ private fun Map<String, String>.toTransportPayload(type: AgentEventType): Map<St
         AgentEventType.TOOL_CALL_STARTED -> buildPayload {
             copyIfPresent("toolCallId")
             copyIfPresent("name")
-            copyIfPresent("arguments")
+            copyJsonValueIfPresent("argumentsPreview")
         }
 
         AgentEventType.TOOL_CALL_FINISHED -> buildPayload {
             copyIfPresent("toolCallId")
             copyIfPresent("name")
-            copyIfPresent("resultPreview")
+            copyIfPresent("status")
             copyLongIfPresent("durationMs")
+            copyJsonValueIfPresent("resultPreview")
         }
 
         AgentEventType.TOOL_CALL_FAILED -> buildPayload {
             copyIfPresent("toolCallId")
             copyIfPresent("name")
+            copyIfPresent("status")
             copyIfPresent("error")
             copyLongIfPresent("durationMs")
         }
-
-        else -> this
     }
 
 private inline fun Map<String, String>.buildPayload(
@@ -418,6 +418,16 @@ private class PayloadBuilder(
     ) {
         source[sourceKey]?.takeIf { it.isNotBlank() }?.let { rawValue ->
             values[key] = restJsonMapper.readValue(rawValue, object : com.fasterxml.jackson.core.type.TypeReference<T>() {})
+        }
+    }
+
+    fun copyJsonValueIfPresent(
+        key: String,
+        sourceKey: String = key,
+    ) {
+        source[sourceKey]?.takeIf { it.isNotBlank() }?.let { rawValue ->
+            values[key] = runCatching { restJsonMapper.readValue(rawValue, Any::class.java) }
+                .getOrElse { rawValue }
         }
     }
 }

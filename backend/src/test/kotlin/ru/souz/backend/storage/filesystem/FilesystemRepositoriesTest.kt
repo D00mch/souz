@@ -37,12 +37,61 @@ import ru.souz.backend.settings.model.ToolPermission
 import ru.souz.backend.settings.model.ToolPermissionMode
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
+import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 
 class FilesystemRepositoriesTest {
+    @Test
+    fun `tool call repository survives restart`() = runTest {
+        val dataDir = Files.createTempDirectory("filesystem-tool-calls")
+        val userId = "opaque/user:42@example.com"
+        val chat = chat(userId = userId, updatedAt = Instant.parse("2026-05-01T09:00:00Z"))
+
+        val chatRepository = FilesystemChatRepository(dataDir)
+        val executionRepository = FilesystemAgentExecutionRepository(dataDir)
+        val toolCallRepository = FilesystemToolCallRepository(dataDir)
+        chatRepository.create(chat)
+        val execution = execution(
+            userId = userId,
+            chatId = chat.id,
+            assistantMessageId = null,
+            status = AgentExecutionStatus.RUNNING,
+            startedAt = Instant.parse("2026-05-01T09:10:00Z"),
+        )
+        executionRepository.create(execution)
+
+        toolCallRepository.started(
+            userId = userId,
+            chatId = chat.id,
+            executionId = execution.id,
+            toolCallId = "tool-1",
+            name = "CalendarRead",
+            argumentsJson = """{"token":"[REDACTED]"}""",
+            startedAt = Instant.parse("2026-05-01T09:10:01Z"),
+        )
+        toolCallRepository.finished(
+            userId = userId,
+            chatId = chat.id,
+            executionId = execution.id,
+            toolCallId = "tool-1",
+            name = "CalendarRead",
+            resultPreview = """{"items":["ok"]}""",
+            finishedAt = Instant.parse("2026-05-01T09:10:02Z"),
+            durationMs = 1_000,
+        )
+
+        val restartedRepository = FilesystemToolCallRepository(dataDir)
+        val stored = restartedRepository.get(userId, chat.id, execution.id, "tool-1")
+
+        assertNotNull(stored)
+        assertEquals(ToolCallStatus.FINISHED, stored.status)
+        assertEquals("""{"items":["ok"]}""", stored.resultPreview)
+        assertTrue(Files.exists(dataDir.resolve("users").resolve(listDirectories(dataDir.resolve("users")).single().name).resolve("chats").resolve(chat.id.toString()).resolve("tool-calls.jsonl")))
+    }
+
     @Test
     fun `repositories restore product and runtime state after restart and continue sequences`() = runTest {
         val dataDir = Files.createTempDirectory("filesystem-repositories")
@@ -55,6 +104,7 @@ class FilesystemRepositoriesTest {
         val executionRepository = FilesystemAgentExecutionRepository(dataDir)
         val choiceRepository = FilesystemChoiceRepository(dataDir)
         val eventRepository = FilesystemAgentEventRepository(dataDir)
+        val toolCallRepository = FilesystemToolCallRepository(dataDir)
         val settingsRepository = FilesystemUserSettingsRepository(dataDir)
         val providerKeyRepository = FilesystemUserProviderKeyRepository(
             dataDir = dataDir,
@@ -126,6 +176,15 @@ class FilesystemRepositoriesTest {
             type = AgentEventType.CHOICE_REQUESTED,
             payload = mapOf("choiceId" to choice.id.toString()),
         )
+        toolCallRepository.started(
+            userId = userId,
+            chatId = chat.id,
+            executionId = execution.id,
+            toolCallId = "tool-1",
+            name = "ListFiles",
+            argumentsJson = """{"path":"/tmp"}""",
+            startedAt = Instant.parse("2026-05-01T09:10:01Z"),
+        )
 
         val userDirectories = listDirectories(dataDir.resolve("users"))
         val chatDir = userDirectories.single().resolve("chats").resolve(chat.id.toString())
@@ -140,6 +199,7 @@ class FilesystemRepositoriesTest {
         assertTrue(Files.exists(chatDir.resolve("executions.jsonl")))
         assertTrue(Files.exists(chatDir.resolve("choices.jsonl")))
         assertTrue(Files.exists(chatDir.resolve("events.jsonl")))
+        assertTrue(Files.exists(chatDir.resolve("tool-calls.jsonl")))
 
         val reloadedChatRepository = FilesystemChatRepository(dataDir)
         val reloadedMessageRepository = FilesystemMessageRepository(dataDir)
@@ -147,6 +207,7 @@ class FilesystemRepositoriesTest {
         val reloadedExecutionRepository = FilesystemAgentExecutionRepository(dataDir)
         val reloadedChoiceRepository = FilesystemChoiceRepository(dataDir)
         val reloadedEventRepository = FilesystemAgentEventRepository(dataDir)
+        val reloadedToolCallRepository = FilesystemToolCallRepository(dataDir)
         val reloadedSettingsRepository = FilesystemUserSettingsRepository(dataDir)
         val reloadedProviderKeyRepository = FilesystemUserProviderKeyRepository(
             dataDir = dataDir,
@@ -164,6 +225,7 @@ class FilesystemRepositoriesTest {
         assertEquals(execution, reloadedExecutionRepository.findActive(userId, chat.id))
         assertEquals(listOf(choice), reloadedChoiceRepository.listByExecution(userId, chat.id, execution.id))
         assertEquals(listOf(firstEvent, secondEvent), reloadedEventRepository.listByChat(userId, chat.id))
+        assertEquals(listOf("tool-1"), reloadedToolCallRepository.listByExecution(userId, chat.id, execution.id).map { it.toolCallId })
 
         val updatedAssistant = reloadedMessageRepository.updateContent(
             userId = userId,
@@ -217,6 +279,7 @@ class FilesystemRepositoriesTest {
         val restartedExecutionRepository = FilesystemAgentExecutionRepository(dataDir)
         val restartedChoiceRepository = FilesystemChoiceRepository(dataDir)
         val restartedEventRepository = FilesystemAgentEventRepository(dataDir)
+        val restartedToolCallRepository = FilesystemToolCallRepository(dataDir)
 
         assertEquals(state, restartedStateRepository.get(userId, chat.id))
         assertEquals(
@@ -231,6 +294,7 @@ class FilesystemRepositoriesTest {
             assistantPlaceholder.copy(content = "assistant reply"),
             restartedMessageRepository.getById(userId, chat.id, assistantPlaceholder.id),
         )
+        assertEquals(listOf("tool-1"), restartedToolCallRepository.listByExecution(userId, chat.id, execution.id).map { it.toolCallId })
         assertEquals(completedExecution, restartedExecutionRepository.getByChat(userId, chat.id, execution.id))
         assertNull(restartedExecutionRepository.findActive(userId, chat.id))
         assertEquals(

@@ -35,6 +35,7 @@ import ru.souz.backend.storage.memory.MemoryAgentExecutionRepository
 import ru.souz.backend.storage.memory.MemoryChatRepository
 import ru.souz.backend.storage.memory.MemoryChoiceRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
+import ru.souz.backend.storage.memory.MemoryToolCallRepository
 import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
 import ru.souz.llms.LLMMessageRole
@@ -125,6 +126,7 @@ class AgentExecutionServiceStateConflictTest {
             choiceRepository = choiceRepository,
             eventRepository = eventRepository,
             eventService = eventService,
+            toolCallRepository = MemoryToolCallRepository(),
             featureFlags = featureFlags,
         )
 

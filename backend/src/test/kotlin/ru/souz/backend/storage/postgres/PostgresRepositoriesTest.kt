@@ -37,12 +37,58 @@ import ru.souz.backend.settings.model.ToolPermission
 import ru.souz.backend.settings.model.ToolPermissionMode
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
+import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 
 class PostgresRepositoriesTest {
+    @Test
+    fun `tool call repository round trips lifecycle rows`() = runTest {
+        val schema = newPostgresSchema("postgres_tool_calls")
+
+        postgresRepositories(schema).use { repositories ->
+            val chat = chat(userId = "user-tools", updatedAt = Instant.parse("2026-05-01T10:00:00Z"))
+            repositories.chatRepository.create(chat)
+            val execution = execution(
+                userId = chat.userId,
+                chatId = chat.id,
+                assistantMessageId = null,
+                status = AgentExecutionStatus.RUNNING,
+                startedAt = Instant.parse("2026-05-01T10:01:00Z"),
+            )
+            repositories.executionRepository.create(execution)
+
+            repositories.toolCallRepository.started(
+                userId = chat.userId,
+                chatId = chat.id,
+                executionId = execution.id,
+                toolCallId = "tool-1",
+                name = "OpenBrowser",
+                argumentsJson = """{"url":"https://example.com"}""",
+                startedAt = Instant.parse("2026-05-01T10:01:01Z"),
+            )
+            repositories.toolCallRepository.failed(
+                userId = chat.userId,
+                chatId = chat.id,
+                executionId = execution.id,
+                toolCallId = "tool-1",
+                name = "OpenBrowser",
+                error = "IllegalStateException: [REDACTED]",
+                finishedAt = Instant.parse("2026-05-01T10:01:02Z"),
+                durationMs = 1_000,
+            )
+
+            val stored = repositories.toolCallRepository.get(chat.userId, chat.id, execution.id, "tool-1")
+
+            assertNotNull(stored)
+            assertEquals(ToolCallStatus.FAILED, stored.status)
+            assertEquals("OpenBrowser", stored.name)
+            assertEquals(1_000L, stored.durationMs)
+        }
+    }
+
     @Test
     fun `repositories restore product and runtime state after restart and continue sequences`() = runTest {
         val schema = newPostgresSchema("postgres_repositories_roundtrip")
@@ -395,6 +441,7 @@ class PostgresRepositoriesTest {
             executionRepository = PostgresAgentExecutionRepository(dataSource),
             choiceRepository = PostgresChoiceRepository(dataSource),
             eventRepository = PostgresAgentEventRepository(dataSource),
+            toolCallRepository = PostgresToolCallRepository(dataSource),
             settingsRepository = PostgresUserSettingsRepository(dataSource),
             providerKeyRepository = PostgresUserProviderKeyRepository(dataSource),
         )
@@ -515,6 +562,7 @@ private data class PostgresRepositoryBundle(
     val executionRepository: PostgresAgentExecutionRepository,
     val choiceRepository: PostgresChoiceRepository,
     val eventRepository: PostgresAgentEventRepository,
+    val toolCallRepository: PostgresToolCallRepository,
     val settingsRepository: PostgresUserSettingsRepository,
     val providerKeyRepository: PostgresUserProviderKeyRepository,
 ) : AutoCloseable {
