@@ -2,6 +2,7 @@ package ru.souz.backend.events.repository
 
 import java.time.Instant
 import java.util.UUID
+import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventType
 
@@ -26,7 +27,7 @@ interface AgentEventRepository {
     ): List<AgentEvent>
 
     companion object {
-        // Durable replay read default only. Live subscription buffering is defined in AgentEventLimits.
-        const val DEFAULT_LIMIT: Int = 100
+        const val DEFAULT_LIMIT: Int = AgentEventLimits.DEFAULT_REPLAY_LIMIT
+        const val MAX_LIMIT: Int = AgentEventLimits.MAX_REPLAY_LIMIT
     }
 }

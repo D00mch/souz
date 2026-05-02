@@ -4,7 +4,9 @@ import io.ktor.http.HttpStatusCode
 import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.common.normalizePositiveLimit
 import ru.souz.backend.events.bus.AgentEventBus
+import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.bus.AgentEventStream
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventType
@@ -42,14 +44,15 @@ class AgentEventService(
         userId: String,
         chatId: UUID,
         afterSeq: Long? = null,
-        limit: Int = Int.MAX_VALUE,
+        limit: Int = AgentEventLimits.DEFAULT_REPLAY_LIMIT,
     ): List<AgentEvent> {
         requireOwnedChat(userId, chatId)
+        val normalizedLimit = normalizePositiveLimit(limit, AgentEventLimits.MAX_REPLAY_LIMIT)
         return eventRepository.listByChat(
             userId = userId,
             chatId = chatId,
             afterSeq = afterSeq,
-            limit = limit,
+            limit = normalizedLimit,
         )
     }
 
@@ -57,14 +60,16 @@ class AgentEventService(
         userId: String,
         chatId: UUID,
         afterSeq: Long? = null,
+        limit: Int = AgentEventLimits.DEFAULT_REPLAY_LIMIT,
     ): AgentEventStream {
         requireOwnedChat(userId, chatId)
         val subscription = eventBus.subscribe(userId, chatId)
+        val normalizedLimit = normalizePositiveLimit(limit, AgentEventLimits.MAX_REPLAY_LIMIT)
         val replay = eventRepository.listByChat(
             userId = userId,
             chatId = chatId,
             afterSeq = afterSeq,
-            limit = Int.MAX_VALUE,
+            limit = normalizedLimit,
         )
         return AgentEventStream(
             replay = replay,

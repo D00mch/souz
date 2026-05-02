@@ -5,6 +5,7 @@ import java.util.UUID
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.backend.common.normalizePositiveLimit
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.settings.service.UserSettingsOverrides
@@ -22,13 +23,14 @@ class MessageService(
         limit: Int = MessageRepository.DEFAULT_LIMIT,
     ): MessageListPage {
         requireOwnedChat(userId, chatId)
+        val normalizedLimit = normalizePositiveLimit(limit, MessageRepository.MAX_LIMIT)
         return MessageListPage(
             items = messageRepository.list(
                 userId = userId,
                 chatId = chatId,
                 afterSeq = afterSeq,
                 beforeSeq = beforeSeq,
-                limit = limit,
+                limit = normalizedLimit,
             ),
             nextBeforeSeq = null,
         )

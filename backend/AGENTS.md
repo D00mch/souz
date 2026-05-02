@@ -124,10 +124,10 @@ Trusted `/v1/**` stage-8 routes are chat-oriented:
 
 - `GET /v1/me/settings` returns effective settings for the current trusted user.
 - `PATCH /v1/me/settings` persists user intent for `defaultModel`, `contextSize`, `temperature`, `locale`, `timeZone`, `systemPrompt`, `enabledTools`, `showToolEvents`, and `streamingMessages`, then returns the re-resolved effective settings.
-- `GET /v1/chats` lists only the caller's chats, supports `limit` and `includeArchived`, and returns `lastMessagePreview` from stored chat messages.
+- `GET /v1/chats` lists only the caller's chats, supports `limit` and `includeArchived`, clamps `limit` to a hard cap (`default=50`, `max=100`), and returns `lastMessagePreview` from stored chat messages.
 - `POST /v1/chats` creates a new chat owned by the caller.
-- `GET /v1/chats/{chatId}/messages` lists only the caller's messages for that chat and never exposes persisted agent runtime state directly.
-- `GET /v1/chats/{chatId}/events?afterSeq=` replays only the caller's persisted backend events for that chat using the canonical `AgentEvent.seq`.
+- `GET /v1/chats/{chatId}/messages` lists only the caller's messages for that chat, never exposes persisted agent runtime state directly, and clamps `limit` to a hard cap (`default=100`, `max=500`).
+- `GET /v1/chats/{chatId}/events?afterSeq=` replays only the caller's persisted backend events for that chat using the canonical `AgentEvent.seq` and clamps `limit` to a hard cap (`default=100`, `max=1000`).
 - `WS /v1/chats/{chatId}/ws?afterSeq=` replays persisted events with `seq > afterSeq`, then subscribes the caller to live per-chat events from the in-process event bus.
 - `POST /v1/chats/{chatId}/messages` validates ownership and payload, resolves effective execution settings, creates a persisted `AgentExecution`, stores the user message, and then:
   - returns the old synchronous contract with `assistantMessage` when `streamingMessages=false` or `wsEvents=false`;

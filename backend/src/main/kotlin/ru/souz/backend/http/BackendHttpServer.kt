@@ -38,11 +38,15 @@ import org.slf4j.LoggerFactory
 import ru.souz.backend.agent.model.AgentRequest
 import ru.souz.backend.agent.service.BackendAgentService
 import ru.souz.backend.bootstrap.BackendBootstrapService
+import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
+import ru.souz.backend.common.normalizePositiveLimit
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.common.BackendRequestException
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.security.RequestIdentityPlugin
@@ -295,7 +299,7 @@ fun Application.backendApplication(
             route("/chats") {
                 get {
                     val service = requireV1Service(chatService, "Chat")
-                    val limit = call.queryPositiveInt("limit", DEFAULT_CHAT_LIMIT)
+                    val limit = call.queryPositiveInt("limit", DEFAULT_CHAT_LIMIT, MAX_CHAT_LIMIT)
                     val includeArchived = call.queryBoolean("includeArchived", defaultValue = false)
                     call.respond(
                         service.list(
@@ -330,7 +334,7 @@ fun Application.backendApplication(
                     get {
                         val service = requireV1Service(messageService, "Message")
                         val chatId = call.requireChatId()
-                        val limit = call.queryPositiveInt("limit", DEFAULT_MESSAGE_LIMIT)
+                        val limit = call.queryPositiveInt("limit", DEFAULT_MESSAGE_LIMIT, MAX_MESSAGE_LIMIT)
                         call.respond(
                             service.list(
                                 userId = call.requestIdentity().userId,
@@ -369,12 +373,14 @@ fun Application.backendApplication(
                 get("/{chatId}/events") {
                     requireWsEventsEnabled(featureFlags)
                     val service = requireV1Service(eventService, "Event")
+                    val limit = call.queryPositiveInt("limit", DEFAULT_EVENT_LIMIT, MAX_EVENT_LIMIT)
                     call.respond(
                         BackendV1EventsResponse(
                             items = service.listByChat(
                                 userId = call.requestIdentity().userId,
                                 chatId = call.requireChatId(),
                                 afterSeq = call.queryNonNegativeLong("afterSeq"),
+                                limit = limit,
                             ).map { it.toDto() },
                         )
                     )
@@ -652,9 +658,15 @@ private fun ApplicationCall.requireOptionId(): UUID =
         }
         ?: throw invalidV1Request("optionId must be a UUID.")
 
-private fun ApplicationCall.queryPositiveInt(name: String, defaultValue: Int): Int {
-    val rawValue = request.queryParameters[name] ?: return defaultValue
-    return rawValue.toIntOrNull()?.takeIf { it > 0 }
+private fun ApplicationCall.queryPositiveInt(name: String, defaultValue: Int, max: Int): Int {
+    val rawValue = request.queryParameters[name] ?: return normalizePositiveLimit(defaultValue, max)
+    return rawValue.toIntOrNull()
+        ?.let { value ->
+            if (value <= 0) {
+                throw invalidV1Request("$name must be positive.")
+            }
+            normalizePositiveLimit(value, max)
+        }
         ?: throw invalidV1Request("$name must be positive.")
 }
 
@@ -691,6 +703,10 @@ private fun requireWsEventsEnabled(featureFlags: BackendFeatureFlags) {
 
 private const val BEARER_PREFIX = "Bearer "
 private const val REQUEST_ID_HEADER = "X-Request-Id"
-private const val DEFAULT_CHAT_LIMIT = 50
-private const val DEFAULT_MESSAGE_LIMIT = 100
+private const val DEFAULT_CHAT_LIMIT = ChatRepository.DEFAULT_LIMIT
+private const val MAX_CHAT_LIMIT = ChatRepository.MAX_LIMIT
+private const val DEFAULT_MESSAGE_LIMIT = MessageRepository.DEFAULT_LIMIT
+private const val MAX_MESSAGE_LIMIT = MessageRepository.MAX_LIMIT
+private const val DEFAULT_EVENT_LIMIT = AgentEventLimits.DEFAULT_REPLAY_LIMIT
+private const val MAX_EVENT_LIMIT = AgentEventLimits.MAX_REPLAY_LIMIT
 private val websocketEventMapper = jacksonObjectMapper().registerKotlinModule()

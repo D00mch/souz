@@ -38,5 +38,6 @@ interface MessageRepository {
 
     companion object {
         const val DEFAULT_LIMIT: Int = 100
+        const val MAX_LIMIT: Int = 500
     }
 }

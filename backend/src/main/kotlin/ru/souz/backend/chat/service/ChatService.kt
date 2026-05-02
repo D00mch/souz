@@ -5,6 +5,7 @@ import java.util.UUID
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.backend.common.normalizePositiveLimit
 
 data class ChatSummary(
     val chat: Chat,
@@ -25,9 +26,10 @@ class ChatService(
         limit: Int = ChatRepository.DEFAULT_LIMIT,
         includeArchived: Boolean = false,
     ): ChatListPage {
+        val normalizedLimit = normalizePositiveLimit(limit, ChatRepository.MAX_LIMIT)
         val chats = chatRepository.list(
             userId = userId,
-            limit = limit,
+            limit = normalizedLimit,
             includeArchived = includeArchived,
         )
         return ChatListPage(

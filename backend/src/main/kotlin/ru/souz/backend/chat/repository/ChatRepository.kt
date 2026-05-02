@@ -15,5 +15,6 @@ interface ChatRepository {
 
     companion object {
         const val DEFAULT_LIMIT: Int = 50
+        const val MAX_LIMIT: Int = 100
     }
 }

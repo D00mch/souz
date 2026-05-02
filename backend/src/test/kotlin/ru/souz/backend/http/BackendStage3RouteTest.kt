@@ -288,6 +288,62 @@ class BackendStage3RouteTest {
     }
 
     @Test
+    fun `get chats route defaults clamps and validates limit`() = testApplication {
+        val context = routeTestContext()
+        val baseTime = Instant.parse("2026-04-30T12:00:00Z")
+        runBlocking {
+            repeat(120) { index ->
+                context.chatRepository.create(
+                    chat(
+                        userId = "user-a",
+                        title = "Chat $index",
+                        createdAt = baseTime.plusSeconds(index.toLong()),
+                        updatedAt = baseTime.plusSeconds(index.toLong()),
+                    )
+                )
+            }
+        }
+        application {
+            backendApplication(
+                agentService = context.agentService,
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                internalAgentToken = { "legacy-token" },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                chatService = context.chatService,
+                messageService = context.messageService,
+                executionService = context.executionService,
+            )
+        }
+
+        val defaultResponse = client.get("/v1/chats") {
+            trustedHeaders("user-a")
+        }
+        val clampedResponse = client.get("/v1/chats?limit=9999") {
+            trustedHeaders("user-a")
+        }
+        val zeroResponse = client.get("/v1/chats?limit=0") {
+            trustedHeaders("user-a")
+        }
+        val negativeResponse = client.get("/v1/chats?limit=-1") {
+            trustedHeaders("user-a")
+        }
+
+        assertEquals(HttpStatusCode.OK, defaultResponse.status)
+        assertEquals(50, json.readTree(defaultResponse.bodyAsText())["items"].size())
+
+        assertEquals(HttpStatusCode.OK, clampedResponse.status)
+        assertEquals(100, json.readTree(clampedResponse.bodyAsText())["items"].size())
+
+        assertEquals(HttpStatusCode.BadRequest, zeroResponse.status)
+        assertEquals("invalid_request", json.readTree(zeroResponse.bodyAsText())["error"]["code"].asText())
+
+        assertEquals(HttpStatusCode.BadRequest, negativeResponse.status)
+        assertEquals("invalid_request", json.readTree(negativeResponse.bodyAsText())["error"]["code"].asText())
+    }
+
+    @Test
     fun `post chats creates chat for current user`() = testApplication {
         val context = routeTestContext()
         application {
@@ -378,6 +434,63 @@ class BackendStage3RouteTest {
         assertEquals("chat_not_found", json.readTree(foreignGet.bodyAsText())["error"]["code"].asText())
         assertEquals(HttpStatusCode.NotFound, foreignPost.status)
         assertEquals("chat_not_found", json.readTree(foreignPost.bodyAsText())["error"]["code"].asText())
+    }
+
+    @Test
+    fun `get chat messages route defaults clamps and keeps afterSeq pagination`() = testApplication {
+        val context = routeTestContext()
+        val chat = chat(userId = "user-a", title = "Many messages")
+        runBlocking {
+            context.chatRepository.create(chat)
+            repeat(520) { index ->
+                context.messageRepository.append(
+                    userId = "user-a",
+                    chatId = chat.id,
+                    role = ChatRole.USER,
+                    content = "message-$index",
+                )
+            }
+        }
+        application {
+            backendApplication(
+                agentService = context.agentService,
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                internalAgentToken = { "legacy-token" },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                chatService = context.chatService,
+                messageService = context.messageService,
+                executionService = context.executionService,
+            )
+        }
+
+        val defaultResponse = client.get("/v1/chats/${chat.id}/messages") {
+            trustedHeaders("user-a")
+        }
+        val clampedResponse = client.get("/v1/chats/${chat.id}/messages?limit=9999") {
+            trustedHeaders("user-a")
+        }
+        val pagedResponse = client.get("/v1/chats/${chat.id}/messages?afterSeq=500&limit=9999") {
+            trustedHeaders("user-a")
+        }
+
+        val defaultItems = json.readTree(defaultResponse.bodyAsText())["items"]
+        val clampedItems = json.readTree(clampedResponse.bodyAsText())["items"]
+        val pagedItems = json.readTree(pagedResponse.bodyAsText())["items"]
+
+        assertEquals(HttpStatusCode.OK, defaultResponse.status)
+        assertEquals(100, defaultItems.size())
+        assertEquals(100L, defaultItems.last()["seq"].asLong())
+
+        assertEquals(HttpStatusCode.OK, clampedResponse.status)
+        assertEquals(500, clampedItems.size())
+        assertEquals(500L, clampedItems.last()["seq"].asLong())
+
+        assertEquals(HttpStatusCode.OK, pagedResponse.status)
+        assertEquals(20, pagedItems.size())
+        assertEquals(501L, pagedItems.first()["seq"].asLong())
+        assertEquals(520L, pagedItems.last()["seq"].asLong())
     }
 
     @Test

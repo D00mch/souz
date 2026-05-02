@@ -209,6 +209,65 @@ class BackendStage6EventRouteTest {
     }
 
     @Test
+    fun `http replay route defaults clamps and validates limit`() = testApplication {
+        val context = stage6RouteTestContext(ImmediateStage6StreamingChatApi())
+        val chat = chat(userId = "user-a", title = "Many events")
+        runBlocking {
+            context.chatRepository.create(chat)
+            repeat(1_005) { index ->
+                context.eventRepository.append(
+                    userId = "user-a",
+                    chatId = chat.id,
+                    executionId = null,
+                    type = ru.souz.backend.events.model.AgentEventType.MESSAGE_CREATED,
+                    payload = mapOf("index" to index.toString()),
+                    createdAt = Instant.parse("2026-05-01T10:00:00Z").plusSeconds(index.toLong()),
+                )
+            }
+        }
+        installStage6Application(context)
+
+        val defaultResponse = client.get("/v1/chats/${chat.id}/events") {
+            trustedHeaders("user-a")
+        }
+        val clampedResponse = client.get("/v1/chats/${chat.id}/events?limit=9999") {
+            trustedHeaders("user-a")
+        }
+        val pagedResponse = client.get("/v1/chats/${chat.id}/events?afterSeq=1000&limit=9999") {
+            trustedHeaders("user-a")
+        }
+        val zeroResponse = client.get("/v1/chats/${chat.id}/events?limit=0") {
+            trustedHeaders("user-a")
+        }
+        val negativeResponse = client.get("/v1/chats/${chat.id}/events?limit=-1") {
+            trustedHeaders("user-a")
+        }
+
+        val defaultItems = stage6Json.readTree(defaultResponse.bodyAsText())["items"]
+        val clampedItems = stage6Json.readTree(clampedResponse.bodyAsText())["items"]
+        val pagedItems = stage6Json.readTree(pagedResponse.bodyAsText())["items"]
+
+        assertEquals(HttpStatusCode.OK, defaultResponse.status)
+        assertEquals(100, defaultItems.size())
+        assertEquals(100L, defaultItems.last()["seq"].asLong())
+
+        assertEquals(HttpStatusCode.OK, clampedResponse.status)
+        assertEquals(1_000, clampedItems.size())
+        assertEquals(1_000L, clampedItems.last()["seq"].asLong())
+
+        assertEquals(HttpStatusCode.OK, pagedResponse.status)
+        assertEquals(5, pagedItems.size())
+        assertEquals(1_001L, pagedItems.first()["seq"].asLong())
+        assertEquals(1_005L, pagedItems.last()["seq"].asLong())
+
+        assertEquals(HttpStatusCode.BadRequest, zeroResponse.status)
+        assertEquals("invalid_request", stage6Json.readTree(zeroResponse.bodyAsText())["error"]["code"].asText())
+
+        assertEquals(HttpStatusCode.BadRequest, negativeResponse.status)
+        assertEquals("invalid_request", stage6Json.readTree(negativeResponse.bodyAsText())["error"]["code"].asText())
+    }
+
+    @Test
     fun `websocket and http replay routes are controlled errors when ws events are disabled`() = testApplication {
         val context = routeTestContext(
             llmApi = ImmediateStage6StreamingChatApi(),
