@@ -9,6 +9,7 @@ import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.bus.AgentEventStream
 import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentLiveEvent
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.http.BackendV1Exception
@@ -18,7 +19,7 @@ class AgentEventService(
     private val eventRepository: AgentEventRepository,
     private val eventBus: AgentEventBus,
 ) {
-    suspend fun append(
+    suspend fun appendDurable(
         userId: String,
         chatId: UUID,
         executionId: UUID?,
@@ -34,6 +35,46 @@ class AgentEventService(
             type = type,
             payload = payload,
             id = id,
+            createdAt = createdAt,
+        )
+        eventBus.publish(event)
+        return event
+    }
+
+    suspend fun append(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID?,
+        type: AgentEventType,
+        payload: Map<String, String>,
+        id: UUID = UUID.randomUUID(),
+        createdAt: Instant = Instant.now(),
+    ): AgentEvent = appendDurable(
+        userId = userId,
+        chatId = chatId,
+        executionId = executionId,
+        type = type,
+        payload = payload,
+        id = id,
+        createdAt = createdAt,
+    )
+
+    suspend fun publishLive(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID?,
+        type: AgentEventType,
+        payload: Map<String, String>,
+        id: UUID = UUID.randomUUID(),
+        createdAt: Instant = Instant.now(),
+    ): AgentLiveEvent {
+        val event = AgentLiveEvent(
+            id = id,
+            userId = userId,
+            chatId = chatId,
+            executionId = executionId,
+            type = type,
+            payload = payload,
             createdAt = createdAt,
         )
         eventBus.publish(event)

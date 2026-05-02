@@ -5,15 +5,15 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentEventEnvelope
 
 class AgentEventBus {
     private val mutex = Mutex()
-    private val subscribers = LinkedHashMap<AgentEventStreamKey, LinkedHashSet<Channel<AgentEvent>>>()
+    private val subscribers = LinkedHashMap<AgentEventStreamKey, LinkedHashSet<Channel<AgentEventEnvelope>>>()
 
     suspend fun subscribe(userId: String, chatId: UUID): AgentEventSubscription {
         val key = AgentEventStreamKey(userId = userId, chatId = chatId)
-        val channel = Channel<AgentEvent>(
+        val channel = Channel<AgentEventEnvelope>(
             capacity = AgentEventLimits.LIVE_BUFFER_SIZE,
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
@@ -34,13 +34,13 @@ class AgentEventBus {
         )
     }
 
-    suspend fun publish(event: AgentEvent) {
+    suspend fun publish(event: AgentEventEnvelope) {
         val key = AgentEventStreamKey(userId = event.userId, chatId = event.chatId)
         val targets = mutex.withLock { subscribers[key]?.toList().orEmpty() }
         if (targets.isEmpty()) {
             return
         }
-        val closedTargets = ArrayList<Channel<AgentEvent>>()
+        val closedTargets = ArrayList<Channel<AgentEventEnvelope>>()
         targets.forEach { channel ->
             if (channel.trySend(event).isFailure) {
                 closedTargets += channel

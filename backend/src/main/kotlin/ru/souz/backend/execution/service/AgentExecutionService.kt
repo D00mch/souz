@@ -266,7 +266,7 @@ class AgentExecutionService internal constructor(
                 errorMessage = null,
             )
         )
-        eventService.append(
+        eventService.appendDurable(
             userId = option.userId,
             chatId = option.chatId,
             executionId = runningExecution.id,

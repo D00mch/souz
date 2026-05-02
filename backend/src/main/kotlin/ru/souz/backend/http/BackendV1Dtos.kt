@@ -5,7 +5,7 @@ import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.service.ChatSummary
 import ru.souz.backend.chat.service.SendMessageResult
 import ru.souz.backend.options.service.AnswerOptionResult
-import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionUsage
@@ -176,7 +176,8 @@ internal data class BackendV1OptionItemDto(
 )
 
 internal data class BackendV1EventDto(
-    val seq: Long,
+    val seq: Long?,
+    val durable: Boolean,
     val chatId: String,
     val executionId: String?,
     val type: String,
@@ -278,9 +279,10 @@ internal fun AgentExecutionUsage.toDto(): BackendV1ExecutionUsageDto =
         precachedTokens = precachedTokens,
     )
 
-internal fun AgentEvent.toDto(): BackendV1EventDto =
+internal fun AgentEventEnvelope.toDto(): BackendV1EventDto =
     BackendV1EventDto(
         seq = seq,
+        durable = durable,
         chatId = chatId.toString(),
         executionId = executionId?.toString(),
         type = type.value,

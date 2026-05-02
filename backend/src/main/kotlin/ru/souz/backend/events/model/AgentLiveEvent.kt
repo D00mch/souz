@@ -3,15 +3,15 @@ package ru.souz.backend.events.model
 import java.time.Instant
 import java.util.UUID
 
-data class AgentEvent(
+data class AgentLiveEvent(
     override val id: UUID,
     override val userId: String,
     override val chatId: UUID,
     override val executionId: UUID?,
-    override val seq: Long,
     override val type: AgentEventType,
     override val payload: Map<String, String>,
     override val createdAt: Instant,
 ) : AgentEventEnvelope {
-    override val durable: Boolean = true
+    override val seq: Long? = null
+    override val durable: Boolean = false
 }

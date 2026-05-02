@@ -62,7 +62,7 @@ internal class BackendAgentRuntimeEventSink(
                         )
                     )
                 }
-                appendEvent(
+                appendDurableEvent(
                     type = AgentEventType.OPTION_REQUESTED,
                     payload = mapOf(
                         "optionId" to option.id.toString(),
@@ -77,7 +77,7 @@ internal class BackendAgentRuntimeEventSink(
     }
 
     suspend fun emitExecutionStarted(execution: AgentExecution) {
-        appendEvent(
+        appendDurableEvent(
             type = AgentEventType.EXECUTION_STARTED,
             payload = buildMap {
                 put("executionId", execution.id.toString())
@@ -102,7 +102,7 @@ internal class BackendAgentRuntimeEventSink(
         if (!toolEventsEnabled) {
             return
         }
-        appendEvent(
+        appendDurableEvent(
             type = AgentEventType.TOOL_CALL_STARTED,
             payload = mapOf(
                 "toolCallId" to event.toolCallId,
@@ -126,7 +126,7 @@ internal class BackendAgentRuntimeEventSink(
         if (!toolEventsEnabled) {
             return
         }
-        appendEvent(
+        appendDurableEvent(
             type = AgentEventType.TOOL_CALL_FINISHED,
             payload = mapOf(
                 "toolCallId" to event.toolCallId,
@@ -152,7 +152,7 @@ internal class BackendAgentRuntimeEventSink(
         if (!toolEventsEnabled) {
             return
         }
-        appendEvent(
+        appendDurableEvent(
             type = AgentEventType.TOOL_CALL_FAILED,
             payload = mapOf(
                 "toolCallId" to event.toolCallId,
@@ -185,7 +185,7 @@ internal class BackendAgentRuntimeEventSink(
         }
 
         assistantMessage = completedMessage
-        appendEvent(
+        appendDurableEvent(
             type = AgentEventType.MESSAGE_COMPLETED,
             payload = messagePayload(completedMessage),
         )
@@ -193,7 +193,7 @@ internal class BackendAgentRuntimeEventSink(
     }
 
     suspend fun emitExecutionFinished(execution: AgentExecution) {
-        appendEvent(
+        appendDurableEvent(
             type = AgentEventType.EXECUTION_FINISHED,
             payload = buildMap {
                 put("executionId", execution.id.toString())
@@ -213,7 +213,7 @@ internal class BackendAgentRuntimeEventSink(
         errorCode: String,
         errorMessage: String,
     ) {
-        appendEvent(
+        appendDurableEvent(
             type = AgentEventType.EXECUTION_FAILED,
             payload = buildMap {
                 put("executionId", executionId.toString())
@@ -225,7 +225,7 @@ internal class BackendAgentRuntimeEventSink(
     }
 
     suspend fun emitExecutionCancelled() {
-        appendEvent(
+        appendDurableEvent(
             type = AgentEventType.EXECUTION_CANCELLED,
             payload = buildMap {
                 put("executionId", executionId.toString())
@@ -247,7 +247,7 @@ internal class BackendAgentRuntimeEventSink(
             content = accumulatedAssistantContent.toString(),
         ) ?: message
 
-        appendEvent(
+        publishLiveEvent(
             type = AgentEventType.MESSAGE_DELTA,
             payload = buildMap {
                 put("messageId", message.id.toString())
@@ -272,7 +272,7 @@ internal class BackendAgentRuntimeEventSink(
         }
 
     private suspend fun emitMessageCreated(message: ChatMessage) {
-        appendEvent(
+        appendDurableEvent(
             type = AgentEventType.MESSAGE_CREATED,
             payload = messagePayload(message),
         )
@@ -329,11 +329,24 @@ internal class BackendAgentRuntimeEventSink(
         return optionRepository.save(option)
     }
 
-    private suspend fun appendEvent(
+    private suspend fun appendDurableEvent(
         type: AgentEventType,
         payload: Map<String, String>,
     ) {
-        eventService.append(
+        eventService.appendDurable(
+            userId = userId,
+            chatId = chatId,
+            executionId = executionId,
+            type = type,
+            payload = payload,
+        )
+    }
+
+    private suspend fun publishLiveEvent(
+        type: AgentEventType,
+        payload: Map<String, String>,
+    ) {
+        eventService.publishLive(
             userId = userId,
             chatId = chatId,
             executionId = executionId,

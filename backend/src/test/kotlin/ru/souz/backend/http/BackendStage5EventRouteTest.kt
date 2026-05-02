@@ -36,7 +36,7 @@ class BackendStage5EventRouteTest {
     private val json = jacksonObjectMapper()
 
     @Test
-    fun `streaming path persists created delta completed events for correct execution`() = testApplication {
+    fun `streaming path persists only durable events while delta stays live only`() = testApplication {
         val context = streamingRouteTestContext(
             llmApi = StreamingEventChatApi(
                 chunksByPrompt = mapOf("stream me" to listOf("assistant ", "reply ", "to stream me")),
@@ -80,9 +80,6 @@ class BackendStage5EventRouteTest {
             listOf(
                 AgentEventType.EXECUTION_STARTED,
                 AgentEventType.MESSAGE_CREATED,
-                AgentEventType.MESSAGE_DELTA,
-                AgentEventType.MESSAGE_DELTA,
-                AgentEventType.MESSAGE_DELTA,
                 AgentEventType.MESSAGE_COMPLETED,
                 AgentEventType.EXECUTION_FINISHED,
             ),
@@ -90,10 +87,7 @@ class BackendStage5EventRouteTest {
         )
         assertTrue(events.all { it.executionId == executionId })
         assertEquals(assistantMessageId, events.first { it.type == AgentEventType.MESSAGE_CREATED }.payload["messageId"])
-        assertEquals(
-            listOf("assistant ", "reply ", "to stream me"),
-            events.filter { it.type == AgentEventType.MESSAGE_DELTA }.map { it.payload.getValue("delta") },
-        )
+        assertTrue(events.none { it.type == AgentEventType.MESSAGE_DELTA })
         assertEquals(
             "assistant reply to stream me",
             events.first { it.type == AgentEventType.MESSAGE_COMPLETED }.payload["content"],

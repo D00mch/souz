@@ -69,6 +69,7 @@ class BackendStage6EventRouteTest {
             }
             val replayEvent = session.receiveEvent()
             assertEquals(1L, replayEvent["seq"].asLong())
+            assertTrue(replayEvent["durable"].asBoolean())
             assertEquals("execution.started", replayEvent["type"].asText())
 
             val sendResponse = async {
@@ -86,11 +87,13 @@ class BackendStage6EventRouteTest {
 
             api.release("hello ws")
 
-            val liveTypes = buildList {
+            val liveEvents = buildList {
                 repeat(7) {
-                    add(session.receiveEvent()["type"].asText())
+                    add(session.receiveEvent())
                 }
             }
+            val liveTypes = liveEvents.map { it["type"].asText() }
+            val deltaEvents = liveEvents.filter { it["type"].asText() == "message.delta" }
 
             assertEquals(
                 listOf(
@@ -104,6 +107,11 @@ class BackendStage6EventRouteTest {
                 ),
                 liveTypes,
             )
+            assertEquals(3, deltaEvents.size)
+            assertTrue(deltaEvents.all { it["durable"].asBoolean().not() })
+            assertTrue(deltaEvents.all { it["seq"].isNull })
+            assertTrue(liveEvents.filterNot { it["type"].asText() == "message.delta" }.all { it["durable"].asBoolean() })
+            assertTrue(liveEvents.filterNot { it["type"].asText() == "message.delta" }.all { it["seq"].isNumber })
             session.close()
         }
     }
@@ -149,14 +157,19 @@ class BackendStage6EventRouteTest {
             val secondSession = wsClient.webSocketSession("/v1/chats/${chat.id}/ws?afterSeq=$lastSeenSeq") {
                 trustedHeaders("user-a")
             }
-            val replayedTypes = ArrayList<String>()
-            repeat(4) {
-                replayedTypes += secondSession.receiveEvent()["type"].asText()
+            val replayedEvents = buildList {
+                repeat(2) {
+                    add(secondSession.receiveEvent())
+                }
             }
+            val replayedTypes = replayedEvents.map { it["type"].asText() }
             assertEquals(
-                listOf("message.delta", "message.delta", "message.completed", "execution.finished"),
+                listOf("message.completed", "execution.finished"),
                 replayedTypes,
             )
+            assertTrue(replayedEvents.all { it["durable"].asBoolean() })
+            assertTrue(replayedEvents.all { it["seq"].isNumber })
+            assertTrue(replayedEvents.none { it["type"].asText() == "message.delta" })
             secondSession.close()
         }
     }

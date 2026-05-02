@@ -429,9 +429,14 @@ fun Application.backendApplication(
                             }
                         }
                         for (event in stream.liveEvents) {
-                            if (event.seq > lastSeq) {
+                            val seq = event.seq
+                            if (!event.durable) {
                                 send(Frame.Text(websocketEventMapper.writeValueAsString(event.toDto())))
-                                lastSeq = event.seq
+                                continue
+                            }
+                            if (seq != null && seq > lastSeq) {
+                                send(Frame.Text(websocketEventMapper.writeValueAsString(event.toDto())))
+                                lastSeq = seq
                             }
                         }
                     } finally {
