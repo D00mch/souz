@@ -84,6 +84,10 @@ internal data class BackendV1CreateChatRequest(
     val title: String? = null,
 )
 
+internal data class BackendV1UpdateChatTitleRequest(
+    val title: String = "",
+)
+
 internal data class BackendV1CreateChatResponse(
     val chat: BackendV1ChatDto,
 )

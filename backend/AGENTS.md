@@ -7,7 +7,7 @@ It reuses shared runtime components from `:runtime` and exposes a small REST sur
 - `GET /health` returns process and selected-model status.
 - `GET /v1/bootstrap` returns trusted-proxy bootstrap metadata for web/server-mode clients.
 - `GET /v1/me/settings` and `PATCH /v1/me/settings` expose effective per-user backend settings and persist user intent for the public settings subset.
-- `GET /v1/chats`, `POST /v1/chats`, `GET /v1/chats/{chatId}/messages`, `GET /v1/chats/{chatId}/events`, `POST /v1/chats/{chatId}/messages`, `POST /v1/options/{optionId}/answer`, `POST /v1/chats/{chatId}/cancel-active`, `POST /v1/chats/{chatId}/executions/{executionId}/cancel`, and `WS /v1/chats/{chatId}/ws` provide the stage-8 chat-oriented REST/WebSocket API with strict ownership checks, explicit `AgentExecution` + `Option` lifecycle persistence, replay/live event delivery, same-execution continuation after an option answer, and cancellation.
+- `GET /v1/chats`, `POST /v1/chats`, `PATCH /v1/chats/{chatId}/title`, `POST /v1/chats/{chatId}/archive`, `POST /v1/chats/{chatId}/unarchive`, `GET /v1/chats/{chatId}/messages`, `GET /v1/chats/{chatId}/events`, `POST /v1/chats/{chatId}/messages`, `POST /v1/options/{optionId}/answer`, `POST /v1/chats/{chatId}/cancel-active`, `POST /v1/chats/{chatId}/executions/{executionId}/cancel`, and `WS /v1/chats/{chatId}/ws` provide the stage-8 chat-oriented REST/WebSocket API with strict ownership checks, explicit `AgentExecution` + `Option` lifecycle persistence, replay/live event delivery, same-execution continuation after an option answer, and cancellation.
 - `POST /agent` remains a legacy/debug internal route that accepts authenticated agent requests and returns a single assistant response with message IDs and token usage.
 
 `/agent` exposes the shared runtime tool catalog for backend-safe tools (files, text/web lookup, calculator, analytics, and non-UI config). The backend intentionally omits `WebImageSearch` so startup does not initialize Apache Tika's external parser probes for host binaries such as `ffmpeg`.
@@ -129,6 +129,8 @@ Trusted `/v1/**` stage-8 routes are chat-oriented:
 - `PATCH /v1/me/settings` persists user intent for `defaultModel`, `contextSize`, `temperature`, `locale`, `timeZone`, `systemPrompt`, `enabledTools`, `showToolEvents`, and `streamingMessages`, then returns the re-resolved effective settings.
 - `GET /v1/chats` lists only the caller's chats, supports `limit` and `includeArchived`, clamps `limit` to a hard cap (`default=50`, `max=100`), and returns `lastMessagePreview` from stored chat messages.
 - `POST /v1/chats` creates a new chat owned by the caller.
+- `PATCH /v1/chats/{chatId}/title` renames an owned chat, trims the requested title, rejects blank values, and returns the updated chat DTO.
+- `POST /v1/chats/{chatId}/archive` and `POST /v1/chats/{chatId}/unarchive` toggle the owned chat `archived` flag and return the updated chat DTO.
 - `GET /v1/chats/{chatId}/messages` lists only the caller's messages for that chat, never exposes persisted agent runtime state directly, and clamps `limit` to a hard cap (`default=100`, `max=500`).
 - `GET /v1/chats/{chatId}/events?afterSeq=` replays only the caller's persisted backend events for that chat using the canonical `AgentEvent.seq` and clamps `limit` to a hard cap (`default=100`, `max=1000`).
 - `WS /v1/chats/{chatId}/ws?afterSeq=` replays persisted events with `seq > afterSeq`, then subscribes the caller to live per-chat events from the in-process event bus.

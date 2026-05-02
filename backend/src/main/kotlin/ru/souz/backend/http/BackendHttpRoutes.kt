@@ -17,6 +17,9 @@ internal object BackendHttpRoutes {
     private const val OPTION_ID_PARAMETER = "{optionId}"
 
     const val PROVIDER_KEY_PATTERN = "$PROVIDER_KEYS/$PROVIDER_PARAMETER"
+    const val CHAT_TITLE_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/title"
+    const val CHAT_ARCHIVE_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/archive"
+    const val CHAT_UNARCHIVE_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/unarchive"
     const val CHAT_MESSAGES_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/messages"
     const val CHAT_EVENTS_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/events"
     const val CHAT_WS_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/ws"
@@ -28,6 +31,12 @@ internal object BackendHttpRoutes {
     fun providerKey(provider: String): String = "$PROVIDER_KEYS/$provider"
 
     fun chatMessages(chatId: Any): String = "$CHATS/$chatId/messages"
+
+    fun chatTitle(chatId: Any): String = "$CHATS/$chatId/title"
+
+    fun archiveChat(chatId: Any): String = "$CHATS/$chatId/archive"
+
+    fun unarchiveChat(chatId: Any): String = "$CHATS/$chatId/unarchive"
 
     fun chatEvents(chatId: Any): String = "$CHATS/$chatId/events"
 

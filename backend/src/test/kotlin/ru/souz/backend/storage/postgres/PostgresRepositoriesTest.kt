@@ -138,6 +138,43 @@ class PostgresRepositoriesTest {
     }
 
     @Test
+    fun `chat repository updates title and archived fields`() = runTest {
+        val schema = newPostgresSchema("postgres_chat_updates")
+        val userId = "opaque/user:42@example.com"
+        val chat = chat(
+            userId = userId,
+            updatedAt = Instant.parse("2026-05-01T09:00:00Z"),
+        ).copy(
+            title = "Original",
+            archived = false,
+        )
+
+        postgresRepositories(schema).use { repositories ->
+            repositories.userRepository.ensureUser(userId)
+            repositories.chatRepository.create(chat)
+
+            val renamed = repositories.chatRepository.updateTitle(
+                userId = userId,
+                chatId = chat.id,
+                title = "Renamed",
+            )
+            assertEquals("Renamed", renamed?.title)
+            assertTrue(renamed!!.updatedAt.isAfter(chat.updatedAt))
+
+            val archived = repositories.chatRepository.updateArchived(
+                userId = userId,
+                chatId = chat.id,
+                archived = true,
+            )
+            assertEquals(true, archived?.archived)
+            assertTrue(archived!!.updatedAt.isAfter(renamed.updatedAt))
+            assertEquals(archived, repositories.chatRepository.get(userId, chat.id))
+            assertNull(repositories.chatRepository.updateTitle("user-b", chat.id, "Foreign"))
+            assertNull(repositories.chatRepository.updateArchived("user-b", chat.id, archived = false))
+        }
+    }
+
+    @Test
     fun `repositories restore product and runtime state after restart and continue sequences`() = runTest {
         val schema = newPostgresSchema("postgres_repositories_roundtrip")
         val userId = "opaque/user:42@example.com"

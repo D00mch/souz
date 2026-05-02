@@ -154,6 +154,37 @@ class MemoryRepositoriesTest {
     }
 
     @Test
+    fun `chat repository updates title and archived fields in place`() = runTest {
+        val repository = MemoryChatRepository()
+        val chat = chat(
+            userId = "user-a",
+            updatedAt = Instant.parse("2026-04-30T08:00:00Z"),
+        ).copy(
+            title = "Original",
+            archived = false,
+        )
+        repository.create(chat)
+
+        val renamed = repository.updateTitle(
+            userId = "user-a",
+            chatId = chat.id,
+            title = "Renamed",
+        )
+        assertEquals("Renamed", renamed?.title)
+        assertTrue(renamed!!.updatedAt.isAfter(chat.updatedAt))
+
+        val archived = repository.updateArchived(
+            userId = "user-a",
+            chatId = chat.id,
+            archived = true,
+        )
+        assertEquals(true, archived?.archived)
+        assertTrue(archived!!.updatedAt.isAfter(renamed.updatedAt))
+        assertNull(repository.updateTitle("user-b", chat.id, "Foreign"))
+        assertNull(repository.updateArchived("user-b", chat.id, archived = false))
+    }
+
+    @Test
     fun `chat repository evicts oldest entries past hard limit`() = runTest {
         val repository = MemoryChatRepository()
         val chatIds = ArrayList<UUID>(MEMORY_REPOSITORY_LIMIT + 1)

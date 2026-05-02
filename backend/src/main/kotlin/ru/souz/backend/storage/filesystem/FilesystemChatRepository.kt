@@ -1,6 +1,7 @@
 package ru.souz.backend.storage.filesystem
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
@@ -40,4 +41,42 @@ class FilesystemChatRepository(
         }
 
     override suspend fun update(chat: Chat): Chat = create(chat)
+
+    override suspend fun updateTitle(
+        userId: String,
+        chatId: UUID,
+        title: String,
+        updatedAt: Instant,
+    ): Chat? = withFileLock {
+        val chatFile = layout.chatFile(userId, chatId)
+        val current = mapper.readJsonIfExists<StoredChat>(chatFile)?.toDomain() ?: return@withFileLock null
+        val updated = current.copy(
+            title = title,
+            updatedAt = updatedAt,
+        )
+        mapper.writeJsonFile(
+            target = chatFile,
+            value = updated.toStored(),
+        )
+        updated
+    }
+
+    override suspend fun updateArchived(
+        userId: String,
+        chatId: UUID,
+        archived: Boolean,
+        updatedAt: Instant,
+    ): Chat? = withFileLock {
+        val chatFile = layout.chatFile(userId, chatId)
+        val current = mapper.readJsonIfExists<StoredChat>(chatFile)?.toDomain() ?: return@withFileLock null
+        val updated = current.copy(
+            archived = archived,
+            updatedAt = updatedAt,
+        )
+        mapper.writeJsonFile(
+            target = chatFile,
+            value = updated.toStored(),
+        )
+        updated
+    }
 }

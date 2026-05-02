@@ -5,12 +5,14 @@ import io.ktor.server.application.call
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.http.BackendV1ChatsResponse
 import ru.souz.backend.http.BackendV1CreateChatRequest
 import ru.souz.backend.http.BackendV1CreateChatResponse
+import ru.souz.backend.http.BackendV1UpdateChatTitleRequest
 import ru.souz.backend.http.DEFAULT_CHAT_LIMIT
 import ru.souz.backend.http.MAX_CHAT_LIMIT
 import ru.souz.backend.http.queryBoolean
@@ -55,6 +57,41 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
                     title = request.title,
                 ).toDto(),
             ),
+        )
+    }
+
+    patch(BackendHttpRoutes.CHAT_TITLE_PATTERN) {
+        val service = requireV1Service(deps.chatService, "Chat")
+        call.requireJsonContentV1()
+        val request = call.receiveOrV1BadRequest<BackendV1UpdateChatTitleRequest>()
+        call.respond(
+            service.updateTitle(
+                userId = call.requireUserIdFromTrustedProxy(),
+                chatId = call.requireChatId(),
+                title = request.title,
+            ).toDto(),
+        )
+    }
+
+    post(BackendHttpRoutes.CHAT_ARCHIVE_PATTERN) {
+        val service = requireV1Service(deps.chatService, "Chat")
+        call.respond(
+            service.setArchived(
+                userId = call.requireUserIdFromTrustedProxy(),
+                chatId = call.requireChatId(),
+                archived = true,
+            ).toDto(),
+        )
+    }
+
+    post(BackendHttpRoutes.CHAT_UNARCHIVE_PATTERN) {
+        val service = requireV1Service(deps.chatService, "Chat")
+        call.respond(
+            service.setArchived(
+                userId = call.requireUserIdFromTrustedProxy(),
+                chatId = call.requireChatId(),
+                archived = false,
+            ).toDto(),
         )
     }
 

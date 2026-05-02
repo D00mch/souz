@@ -384,6 +384,155 @@ class BackendStage3RouteTest {
     }
 
     @Test
+    fun `patch chat title trims updates timestamp and enforces ownership`() = testApplication {
+        val context = routeTestContext()
+        val ownedChat = chat(
+            userId = "user-a",
+            title = "Original",
+            updatedAt = Instant.parse("2026-04-30T08:00:00Z"),
+        )
+        val foreignChat = chat(userId = "user-b", title = "Foreign")
+        runBlocking {
+            context.chatRepository.create(ownedChat)
+            context.chatRepository.create(foreignChat)
+        }
+        application {
+            backendApplication(
+                agentService = context.agentService,
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                internalAgentToken = { "legacy-token" },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                chatService = context.chatService,
+                messageService = context.messageService,
+                executionService = context.executionService,
+            )
+        }
+
+        val response = client.patch(BackendHttpRoutes.chatTitle(ownedChat.id)) {
+            trustedHeaders("user-a")
+            contentType(ContentType.Application.Json)
+            setBody("""{"title":"  Переименованный чат  "}""")
+        }
+        val payload = json.readTree(response.bodyAsText())
+        val storedChat = runBlocking { context.chatRepository.get("user-a", ownedChat.id) }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(ownedChat.id.toString(), payload["id"].asText())
+        assertEquals("Переименованный чат", payload["title"].asText())
+        assertEquals(false, payload["archived"].asBoolean())
+        assertTrue(Instant.parse(payload["updatedAt"].asText()).isAfter(ownedChat.updatedAt))
+        assertEquals("Переименованный чат", storedChat?.title)
+        assertTrue(storedChat!!.updatedAt.isAfter(ownedChat.updatedAt))
+
+        val foreignResponse = client.patch(BackendHttpRoutes.chatTitle(foreignChat.id)) {
+            trustedHeaders("user-a")
+            contentType(ContentType.Application.Json)
+            setBody("""{"title":"Nope"}""")
+        }
+        val foreignPayload = json.readTree(foreignResponse.bodyAsText())
+
+        assertEquals(HttpStatusCode.NotFound, foreignResponse.status)
+        assertEquals("chat_not_found", foreignPayload["error"]["code"].asText())
+    }
+
+    @Test
+    fun `patch chat title rejects blank title`() = testApplication {
+        val context = routeTestContext()
+        val ownedChat = chat(userId = "user-a", title = "Original")
+        runBlocking {
+            context.chatRepository.create(ownedChat)
+        }
+        application {
+            backendApplication(
+                agentService = context.agentService,
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                internalAgentToken = { "legacy-token" },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                chatService = context.chatService,
+                messageService = context.messageService,
+                executionService = context.executionService,
+            )
+        }
+
+        val response = client.patch(BackendHttpRoutes.chatTitle(ownedChat.id)) {
+            trustedHeaders("user-a")
+            contentType(ContentType.Application.Json)
+            setBody("""{"title":"   "}""")
+        }
+        val payload = json.readTree(response.bodyAsText())
+        val storedChat = runBlocking { context.chatRepository.get("user-a", ownedChat.id) }
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertEquals("title must not be empty.", payload["error"]["message"].asText())
+        assertEquals("Original", storedChat?.title)
+    }
+
+    @Test
+    fun `archive and unarchive routes toggle archived flag and update timestamp`() = testApplication {
+        val context = routeTestContext()
+        val ownedChat = chat(
+            userId = "user-a",
+            title = "Archivable",
+            archived = false,
+            updatedAt = Instant.parse("2026-04-30T08:00:00Z"),
+        )
+        val foreignChat = chat(userId = "user-b", title = "Foreign")
+        runBlocking {
+            context.chatRepository.create(ownedChat)
+            context.chatRepository.create(foreignChat)
+        }
+        application {
+            backendApplication(
+                agentService = context.agentService,
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                internalAgentToken = { "legacy-token" },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                chatService = context.chatService,
+                messageService = context.messageService,
+                executionService = context.executionService,
+            )
+        }
+
+        val archiveResponse = client.post(BackendHttpRoutes.archiveChat(ownedChat.id)) {
+            trustedHeaders("user-a")
+        }
+        val archivePayload = json.readTree(archiveResponse.bodyAsText())
+        val archivedChat = runBlocking { context.chatRepository.get("user-a", ownedChat.id) }
+
+        assertEquals(HttpStatusCode.OK, archiveResponse.status)
+        assertEquals(true, archivePayload["archived"].asBoolean())
+        assertTrue(Instant.parse(archivePayload["updatedAt"].asText()).isAfter(ownedChat.updatedAt))
+        assertEquals(true, archivedChat?.archived)
+        assertTrue(archivedChat!!.updatedAt.isAfter(ownedChat.updatedAt))
+
+        val unarchiveResponse = client.post(BackendHttpRoutes.unarchiveChat(ownedChat.id)) {
+            trustedHeaders("user-a")
+        }
+        val unarchivePayload = json.readTree(unarchiveResponse.bodyAsText())
+        val unarchivedChat = runBlocking { context.chatRepository.get("user-a", ownedChat.id) }
+
+        assertEquals(HttpStatusCode.OK, unarchiveResponse.status)
+        assertEquals(false, unarchivePayload["archived"].asBoolean())
+        assertEquals(false, unarchivedChat?.archived)
+        assertTrue(unarchivedChat!!.updatedAt.isAfter(archivedChat.updatedAt))
+
+        val foreignResponse = client.post(BackendHttpRoutes.archiveChat(foreignChat.id)) {
+            trustedHeaders("user-a")
+        }
+        val foreignPayload = json.readTree(foreignResponse.bodyAsText())
+
+        assertEquals(HttpStatusCode.NotFound, foreignResponse.status)
+        assertEquals("chat_not_found", foreignPayload["error"]["code"].asText())
+    }
+
+    @Test
     fun `first trusted user request provisions namespace before chats messages and settings`() = testApplication {
         val context = routeTestContext()
         application {

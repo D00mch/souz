@@ -106,6 +106,43 @@ class FilesystemRepositoriesTest {
     }
 
     @Test
+    fun `chat repository persists title and archived updates`() = runTest {
+        val dataDir = Files.createTempDirectory("filesystem-chat-updates")
+        val userId = "opaque/user:42@example.com"
+        val chat = chat(
+            userId = userId,
+            updatedAt = Instant.parse("2026-05-01T09:00:00Z"),
+        ).copy(
+            title = "Original",
+            archived = false,
+        )
+
+        val repository = FilesystemChatRepository(dataDir)
+        repository.create(chat)
+
+        val renamed = repository.updateTitle(
+            userId = userId,
+            chatId = chat.id,
+            title = "Renamed",
+        )
+        assertEquals("Renamed", renamed?.title)
+        assertTrue(renamed!!.updatedAt.isAfter(chat.updatedAt))
+
+        val archived = repository.updateArchived(
+            userId = userId,
+            chatId = chat.id,
+            archived = true,
+        )
+        assertEquals(true, archived?.archived)
+        assertTrue(archived!!.updatedAt.isAfter(renamed.updatedAt))
+
+        val reloaded = FilesystemChatRepository(dataDir).get(userId, chat.id)
+        assertEquals(archived, reloaded)
+        assertNull(repository.updateTitle("user-b", chat.id, "Foreign"))
+        assertNull(repository.updateArchived("user-b", chat.id, archived = false))
+    }
+
+    @Test
     fun `repositories restore product and runtime state after restart and continue sequences`() = runTest {
         val dataDir = Files.createTempDirectory("filesystem-repositories")
         val userId = "opaque/user:42@example.com"

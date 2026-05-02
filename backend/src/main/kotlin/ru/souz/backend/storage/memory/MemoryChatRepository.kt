@@ -1,5 +1,6 @@
 package ru.souz.backend.storage.memory
 
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -40,6 +41,38 @@ class MemoryChatRepository(
     override suspend fun update(chat: Chat): Chat = mutex.withLock {
         chats[ChatKey(chat.userId, chat.id)] = chat
         chat
+    }
+
+    override suspend fun updateTitle(
+        userId: String,
+        chatId: UUID,
+        title: String,
+        updatedAt: Instant,
+    ): Chat? = mutex.withLock {
+        val key = ChatKey(userId, chatId)
+        val current = chats[key] ?: return@withLock null
+        current.copy(
+            title = title,
+            updatedAt = updatedAt,
+        ).also { updated ->
+            chats[key] = updated
+        }
+    }
+
+    override suspend fun updateArchived(
+        userId: String,
+        chatId: UUID,
+        archived: Boolean,
+        updatedAt: Instant,
+    ): Chat? = mutex.withLock {
+        val key = ChatKey(userId, chatId)
+        val current = chats[key] ?: return@withLock null
+        current.copy(
+            archived = archived,
+            updatedAt = updatedAt,
+        ).also { updated ->
+            chats[key] = updated
+        }
     }
 }
 

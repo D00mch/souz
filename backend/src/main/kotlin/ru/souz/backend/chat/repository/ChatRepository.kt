@@ -1,5 +1,6 @@
 package ru.souz.backend.chat.repository
 
+import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.chat.model.Chat
 
@@ -12,6 +13,18 @@ interface ChatRepository {
         includeArchived: Boolean = false,
     ): List<Chat>
     suspend fun update(chat: Chat): Chat
+    suspend fun updateTitle(
+        userId: String,
+        chatId: UUID,
+        title: String,
+        updatedAt: Instant = Instant.now(),
+    ): Chat?
+    suspend fun updateArchived(
+        userId: String,
+        chatId: UUID,
+        archived: Boolean,
+        updatedAt: Instant = Instant.now(),
+    ): Chat?
 
     companion object {
         const val DEFAULT_LIMIT: Int = 50
