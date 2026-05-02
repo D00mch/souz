@@ -8,9 +8,14 @@ import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.MessageRepository
 
-class MemoryMessageRepository : MessageRepository {
+class MemoryMessageRepository(
+    maxEntries: Int,
+) : MessageRepository {
     private val mutex = Mutex()
-    private val messages = LinkedHashMap<ConversationKey, MutableList<ChatMessage>>()
+    private val messages = boundedLruMap<MessageKey, ChatMessage>(maxEntries)
+    private val nextSeqByConversation = boundedLruMap<ConversationKey, Long>(maxEntries)
+
+    constructor() : this(DEFAULT_MEMORY_REPOSITORY_MAX_ENTRIES)
 
     override suspend fun append(
         userId: String,
@@ -21,8 +26,9 @@ class MemoryMessageRepository : MessageRepository {
         id: UUID,
         createdAt: Instant,
     ): ChatMessage = mutex.withLock {
-        val key = ConversationKey(userId, chatId)
-        val nextSeq = messages[key]?.lastOrNull()?.seq?.plus(1) ?: 1L
+        val conversationKey = ConversationKey(userId, chatId)
+        val nextSeq = (nextSeqByConversation[conversationKey] ?: 0L) + 1L
+        nextSeqByConversation[conversationKey] = nextSeq
         val message = ChatMessage(
             id = id,
             userId = userId,
@@ -33,12 +39,12 @@ class MemoryMessageRepository : MessageRepository {
             metadata = metadata,
             createdAt = createdAt,
         )
-        messages.getOrPut(key) { ArrayList() } += message
+        messages[MessageKey(userId, chatId, id)] = message
         message
     }
 
     override suspend fun get(userId: String, chatId: UUID, seq: Long): ChatMessage? = mutex.withLock {
-        messages[ConversationKey(userId, chatId)]?.firstOrNull { it.seq == seq }
+        messagesForConversation(userId, chatId).firstOrNull { it.seq == seq }
     }
 
     override suspend fun getById(
@@ -46,11 +52,11 @@ class MemoryMessageRepository : MessageRepository {
         chatId: UUID,
         messageId: UUID,
     ): ChatMessage? = mutex.withLock {
-        messages[ConversationKey(userId, chatId)]?.firstOrNull { it.id == messageId }
+        messages[MessageKey(userId, chatId, messageId)]
     }
 
     override suspend fun latest(userId: String, chatId: UUID): ChatMessage? = mutex.withLock {
-        messages[ConversationKey(userId, chatId)]?.lastOrNull()
+        messagesForConversation(userId, chatId).lastOrNull()
     }
 
     override suspend fun updateContent(
@@ -59,13 +65,9 @@ class MemoryMessageRepository : MessageRepository {
         messageId: UUID,
         content: String,
     ): ChatMessage? = mutex.withLock {
-        val key = ConversationKey(userId, chatId)
-        val currentMessages = messages[key] ?: return@withLock null
-        val index = currentMessages.indexOfFirst { it.id == messageId }
-        if (index < 0) return@withLock null
-
-        currentMessages[index].copy(content = content).also { updated ->
-            currentMessages[index] = updated
+        val key = MessageKey(userId, chatId, messageId)
+        messages[key]?.copy(content = content)?.also { updated ->
+            messages[key] = updated
         }
     }
 
@@ -76,8 +78,7 @@ class MemoryMessageRepository : MessageRepository {
         beforeSeq: Long?,
         limit: Int,
     ): List<ChatMessage> = mutex.withLock {
-        val filtered = messages[ConversationKey(userId, chatId)]
-            .orEmpty()
+        val filtered = messagesForConversation(userId, chatId)
             .asSequence()
             .filter { message -> afterSeq == null || message.seq > afterSeq }
             .filter { message -> beforeSeq == null || message.seq < beforeSeq }
@@ -87,9 +88,22 @@ class MemoryMessageRepository : MessageRepository {
             else -> filtered.take(limit)
         }
     }
+
+    private fun messagesForConversation(userId: String, chatId: UUID): List<ChatMessage> =
+        messages.values
+            .asSequence()
+            .filter { it.userId == userId && it.chatId == chatId }
+            .sortedBy { it.seq }
+            .toList()
 }
 
 private data class ConversationKey(
     val userId: String,
     val chatId: UUID,
+)
+
+private data class MessageKey(
+    val userId: String,
+    val chatId: UUID,
+    val messageId: UUID,
 )

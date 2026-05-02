@@ -68,9 +68,9 @@ class BackendDiModuleTest {
         assertIs<FilesystemAgentEventRepository>(di.direct.instance<AgentEventRepository>())
         assertIs<FilesystemUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
         assertIs<FilesystemUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
-        assertIs<UserProviderKeyService>(di.direct.instance())
-        assertIs<ExecutionQuotaManager>(di.direct.instance())
-        assertIs<LlmClientFactory>(di.direct.instance())
+        assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
+        assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
+        assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
     }
 
     @Test
@@ -98,9 +98,9 @@ class BackendDiModuleTest {
             assertIs<PostgresAgentEventRepository>(di.direct.instance<AgentEventRepository>())
             assertIs<PostgresUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
             assertIs<PostgresUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
-            assertIs<UserProviderKeyService>(di.direct.instance())
-            assertIs<ExecutionQuotaManager>(di.direct.instance())
-            assertIs<LlmClientFactory>(di.direct.instance())
+            assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
+            assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
+            assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
         } finally {
             dataSource.close()
         }
@@ -131,9 +131,9 @@ class BackendDiModuleTest {
             assertIs<MemoryAgentEventRepository>(di.direct.instance<AgentEventRepository>())
             assertIs<PostgresUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
             assertIs<PostgresUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
-            assertIs<UserProviderKeyService>(di.direct.instance())
-            assertIs<ExecutionQuotaManager>(di.direct.instance())
-            assertIs<LlmClientFactory>(di.direct.instance())
+            assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
+            assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
+            assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
         } finally {
             dataSource.close()
         }
@@ -158,8 +158,8 @@ class BackendDiModuleTest {
         }
 
         assertIs<MemoryUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
-        assertIs<UserProviderKeyService>(di.direct.instance())
-        assertIs<ExecutionQuotaManager>(di.direct.instance())
-        assertIs<LlmClientFactory>(di.direct.instance())
+        assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
+        assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
+        assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
     }
 }

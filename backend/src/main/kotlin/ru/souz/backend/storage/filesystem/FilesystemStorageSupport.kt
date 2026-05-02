@@ -3,6 +3,7 @@ package ru.souz.backend.storage.filesystem
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.AtomicMoveNotSupportedException
@@ -18,12 +19,14 @@ import java.nio.file.StandardOpenOption.WRITE
 import java.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 internal fun filesystemStorageObjectMapper(): ObjectMapper =
     jacksonObjectMapper()
         .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
 
-internal class FilesystemStorageLayout(
+class FilesystemStorageLayout(
     private val dataDir: Path,
 ) {
     fun userDir(userId: String): Path =
@@ -77,6 +80,40 @@ internal object FilesystemPathSegmentCodec {
 
 internal suspend fun <T> filesystemIo(block: () -> T): T =
     withContext(Dispatchers.IO) { block() }
+
+abstract class BaseFilesystemRepository(
+    dataDir: Path,
+    protected val mapper: ObjectMapper,
+) {
+    protected val mutex = Mutex()
+    protected val layout = FilesystemStorageLayout(dataDir)
+
+    protected suspend fun <T> withFileLock(block: () -> T): T =
+        mutex.withLock { filesystemIo(block) }
+}
+
+internal inline fun <reified T> ObjectMapper.readJsonIfExists(path: Path): T? =
+    readTextIfExists(path)?.let { readValue<T>(it) }
+
+internal inline fun <reified T> ObjectMapper.readJsonLines(path: Path): List<T> =
+    readLinesIfExists(path).map { readValue<T>(it) }
+
+internal inline fun <reified T> ObjectMapper.readJsonLinesFromChatDirectories(
+    layout: FilesystemStorageLayout,
+    userId: String,
+    fileName: String,
+): List<T> =
+    layout.chatDirectories(userId).flatMap { chatDirectory ->
+        readJsonLines<T>(chatDirectory.resolve(fileName))
+    }
+
+internal fun ObjectMapper.writeJsonFile(target: Path, value: Any) {
+    writeAtomicString(target, writeValueAsString(value))
+}
+
+internal fun ObjectMapper.appendJsonValue(target: Path, value: Any) {
+    appendJsonLine(target, writeValueAsString(value))
+}
 
 internal fun writeAtomicString(target: Path, content: String) {
     Files.createDirectories(target.parent)

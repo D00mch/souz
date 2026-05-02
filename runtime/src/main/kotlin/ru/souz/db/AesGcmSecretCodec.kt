@@ -9,7 +9,7 @@ import javax.crypto.spec.SecretKeySpec
 
 object AesGcmSecretCodec {
     private const val PAYLOAD_PREFIX = "enc:v1:"
-    private const val PBKDF2_ITERATIONS = 120_000
+    private const val PBKDF2_ITERATIONS = 600_000
     private const val GCM_TAG_BITS = 128
     private const val AES_KEY_BITS = 256
     private const val SALT_SIZE = 16

@@ -122,14 +122,15 @@ class BackendConversationRuntimeFactory(
             defaultSystemPrompt = request.systemPrompt ?: systemPrompt,
             locale = persistedSession?.locale ?: request.locale,
         )
+        val delegateApi = llmApiFactory(
+            BackendLlmExecutionContext(
+                userId = key.userId,
+                executionId = request.executionId ?: key.conversationId,
+                settingsProvider = settingsProvider,
+            )
+        )
         val usageTrackingApi = CumulativeUsageTrackingChatApi(
-            delegate = llmApiFactory(
-                BackendLlmExecutionContext(
-                    userId = key.userId,
-                    executionId = request.executionId ?: key.conversationId,
-                    settingsProvider = settingsProvider,
-                )
-            ),
+            delegate = delegateApi,
             initialUsage = initialUsage,
         )
         val kernel = AgentExecutionKernelFactory(
@@ -147,7 +148,7 @@ class BackendConversationRuntimeFactory(
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,
             llmApi = usageTrackingApi,
-            apiClassifier = ApiClassifier(usageTrackingApi),
+            apiClassifier = ApiClassifier(delegateApi),
             localClassifier = LocalRegexClassifier,
         ).create()
         return BackendConversationRuntime(

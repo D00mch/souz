@@ -8,12 +8,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.choices.model.Choice
+import ru.souz.backend.choices.model.ChoiceAnswer
 import ru.souz.backend.choices.model.ChoiceKind
 import ru.souz.backend.choices.model.ChoiceOption
 import ru.souz.backend.choices.model.ChoiceStatus
@@ -66,6 +68,18 @@ class MemoryRepositoriesTest {
     }
 
     @Test
+    fun `user settings repository evicts oldest entries past hard limit`() = runTest {
+        val repository = MemoryUserSettingsRepository()
+
+        repeat(MEMORY_REPOSITORY_LIMIT + 1) { index ->
+            repository.save(userSettings(userId = "user-$index", temperature = index.toFloat()))
+        }
+
+        assertNull(repository.get("user-0"))
+        assertEquals(MEMORY_REPOSITORY_LIMIT.toFloat(), repository.get("user-$MEMORY_REPOSITORY_LIMIT")?.temperature)
+    }
+
+    @Test
     fun `user provider keys are stored per user and provider`() = runTest {
         val repository = MemoryUserProviderKeyRepository()
         val userAOpenAi = UserProviderKey(
@@ -96,6 +110,25 @@ class MemoryRepositoriesTest {
     }
 
     @Test
+    fun `user provider key repository evicts oldest entries past hard limit`() = runTest {
+        val repository = MemoryUserProviderKeyRepository()
+
+        repeat(MEMORY_REPOSITORY_LIMIT + 1) { index ->
+            repository.save(
+                UserProviderKey(
+                    userId = "user-$index",
+                    provider = LlmProvider.OPENAI,
+                    encryptedApiKey = "enc-$index",
+                    keyHint = "...$index",
+                )
+            )
+        }
+
+        assertNull(repository.get("user-0", LlmProvider.OPENAI))
+        assertEquals("enc-$MEMORY_REPOSITORY_LIMIT", repository.get("user-$MEMORY_REPOSITORY_LIMIT", LlmProvider.OPENAI)?.encryptedApiKey)
+    }
+
+    @Test
     fun `chats can be created read and listed per user`() = runTest {
         val repository = MemoryChatRepository()
         val older = chat(userId = "user-a", updatedAt = Instant.parse("2026-04-30T08:00:00Z"))
@@ -115,6 +148,26 @@ class MemoryRepositoriesTest {
 
         assertEquals(touched, repository.get("user-a", newer.id))
         assertEquals(listOf(touched, older), repository.list("user-a"))
+    }
+
+    @Test
+    fun `chat repository evicts oldest entries past hard limit`() = runTest {
+        val repository = MemoryChatRepository()
+        val chatIds = ArrayList<UUID>(MEMORY_REPOSITORY_LIMIT + 1)
+
+        repeat(MEMORY_REPOSITORY_LIMIT + 1) { index ->
+            val chat = chat(
+                userId = "user-a",
+                updatedAt = Instant.parse("2026-04-30T08:00:00Z").plusSeconds(index.toLong()),
+            )
+            chatIds += chat.id
+            repository.create(chat)
+        }
+
+        assertNull(repository.get("user-a", chatIds.first()))
+        val chats = repository.list("user-a", limit = MEMORY_REPOSITORY_LIMIT * 2)
+        assertEquals(MEMORY_REPOSITORY_LIMIT, chats.size)
+        assertEquals(chatIds.last(), chats.first().id)
     }
 
     @Test
@@ -171,6 +224,38 @@ class MemoryRepositoriesTest {
     }
 
     @Test
+    fun `message repository evicts oldest entries and keeps sequence monotonic`() = runTest {
+        val repository = MemoryMessageRepository()
+        val chatId = UUID.randomUUID()
+        val messageIds = ArrayList<UUID>(MEMORY_REPOSITORY_LIMIT + 1)
+
+        repeat(MEMORY_REPOSITORY_LIMIT + 1) { index ->
+            messageIds += repository.append(
+                userId = "user-a",
+                chatId = chatId,
+                role = ChatRole.USER,
+                content = "message-$index",
+            ).id
+        }
+
+        assertNull(repository.getById("user-a", chatId, messageIds.first()))
+        assertNull(repository.get("user-a", chatId, seq = 1L))
+
+        val next = repository.append(
+            userId = "user-a",
+            chatId = chatId,
+            role = ChatRole.ASSISTANT,
+            content = "message-next",
+        )
+        val retained = repository.list("user-a", chatId, limit = MEMORY_REPOSITORY_LIMIT * 2)
+
+        assertEquals((MEMORY_REPOSITORY_LIMIT + 2).toLong(), next.seq)
+        assertEquals(MEMORY_REPOSITORY_LIMIT, retained.size)
+        assertEquals(3L, retained.first().seq)
+        assertEquals(next.seq, retained.last().seq)
+    }
+
+    @Test
     fun `agent state is stored separately from messages`() = runTest {
         val messageRepository = MemoryMessageRepository()
         val stateRepository = MemoryAgentStateRepository()
@@ -195,6 +280,31 @@ class MemoryRepositoriesTest {
             listOf("visible message"),
             messageRepository.list("user-a", chatId).map { it.content }
         )
+    }
+
+    @Test
+    fun `agent state repository evicts oldest entries past hard limit`() = runTest {
+        val repository = MemoryAgentStateRepository()
+        val firstChatId = UUID.randomUUID()
+        var lastState: AgentConversationState? = null
+
+        repeat(MEMORY_REPOSITORY_LIMIT + 1) { index ->
+            val state = agentState(
+                userId = "user-$index",
+                chatId = if (index == 0) firstChatId else UUID.randomUUID(),
+                basedOnMessageSeq = index.toLong(),
+                history = listOf(
+                    LLMRequest.Message(
+                        role = LLMMessageRole.user,
+                        content = "history-$index",
+                    )
+                ),
+            )
+            lastState = repository.save(state)
+        }
+
+        assertNull(repository.get("user-0", firstChatId))
+        assertEquals(lastState, repository.get("user-$MEMORY_REPOSITORY_LIMIT", lastState!!.chatId))
     }
 
     @Test
@@ -263,6 +373,29 @@ class MemoryRepositoriesTest {
     }
 
     @Test
+    fun `execution repository evicts oldest completed entries past hard limit`() = runTest {
+        val repository = MemoryAgentExecutionRepository()
+        val chatId = UUID.randomUUID()
+        val executionIds = ArrayList<UUID>(MEMORY_REPOSITORY_LIMIT + 1)
+
+        repeat(MEMORY_REPOSITORY_LIMIT + 1) { index ->
+            val execution = execution(
+                userId = "user-a",
+                chatId = chatId,
+                status = AgentExecutionStatus.COMPLETED,
+                startedAt = Instant.parse("2026-04-30T08:20:00Z").plusSeconds(index.toLong()),
+            )
+            executionIds += execution.id
+            repository.create(execution)
+        }
+
+        assertNull(repository.get("user-a", executionIds.first()))
+        val executions = repository.listByChat("user-a", chatId, limit = MEMORY_REPOSITORY_LIMIT * 2)
+        assertEquals(MEMORY_REPOSITORY_LIMIT, executions.size)
+        assertEquals(executionIds.last(), executions.first().id)
+    }
+
+    @Test
     fun `choice and event repositories stay isolated by user and execution`() = runTest {
         val executionRepository = MemoryAgentExecutionRepository()
         val choiceRepository = MemoryChoiceRepository()
@@ -317,6 +450,68 @@ class MemoryRepositoriesTest {
         assertEquals(listOf(firstEvent, secondEvent), eventRepository.listByChat("user-a", chatId))
         assertEquals(listOf(secondEvent), eventRepository.listByChat("user-a", chatId, afterSeq = 1L))
         assertEquals(listOf(foreignEvent), eventRepository.listByChat("user-b", otherChatId))
+    }
+
+    @Test
+    fun `choice repository evicts oldest entries past hard limit`() = runTest {
+        val repository = MemoryChoiceRepository()
+        val chatId = UUID.randomUUID()
+        val executionId = UUID.randomUUID()
+        val choiceIds = ArrayList<UUID>(MEMORY_REPOSITORY_LIMIT + 1)
+
+        repeat(MEMORY_REPOSITORY_LIMIT + 1) { index ->
+            val choice = choice(
+                userId = "user-a",
+                chatId = chatId,
+                executionId = executionId,
+            ).copy(
+                createdAt = Instant.parse("2026-04-30T08:30:00Z").plusSeconds(index.toLong()),
+                status = ChoiceStatus.ANSWERED,
+                answer = ChoiceAnswer(selectedOptionIds = setOf("a")),
+                answeredAt = Instant.parse("2026-04-30T08:31:00Z").plusSeconds(index.toLong()),
+            )
+            choiceIds += choice.id
+            repository.save(choice)
+        }
+
+        assertNull(repository.get("user-a", choiceIds.first()))
+        val choices = repository.listByExecution("user-a", chatId, executionId, limit = MEMORY_REPOSITORY_LIMIT * 2)
+        assertEquals(MEMORY_REPOSITORY_LIMIT, choices.size)
+        assertEquals(choiceIds.last(), choices.first().id)
+    }
+
+    @Test
+    fun `event repository evicts oldest entries and keeps sequence monotonic`() = runTest {
+        val repository = MemoryAgentEventRepository()
+        val chatId = UUID.randomUUID()
+        val eventIds = ArrayList<UUID>(MEMORY_REPOSITORY_LIMIT + 1)
+
+        repeat(MEMORY_REPOSITORY_LIMIT + 1) { index ->
+            eventIds += repository.append(
+                userId = "user-a",
+                chatId = chatId,
+                executionId = null,
+                type = AgentEventType.MESSAGE_CREATED,
+                payload = mapOf("index" to index.toString()),
+            ).id
+        }
+
+        assertNull(repository.get("user-a", eventIds.first()))
+
+        val next = repository.append(
+            userId = "user-a",
+            chatId = chatId,
+            executionId = null,
+            type = AgentEventType.MESSAGE_COMPLETED,
+            payload = mapOf("index" to "next"),
+        )
+        val retained = repository.listByChat("user-a", chatId, limit = MEMORY_REPOSITORY_LIMIT * 2)
+
+        assertEquals((MEMORY_REPOSITORY_LIMIT + 2).toLong(), next.seq)
+        assertEquals(MEMORY_REPOSITORY_LIMIT, retained.size)
+        assertEquals(3L, retained.first().seq)
+        assertEquals(next.seq, retained.last().seq)
+        assertTrue(retained.all { it.seq >= 3L })
     }
 
     private fun userSettings(
@@ -424,4 +619,8 @@ class MemoryRepositoriesTest {
             expiresAt = null,
             answeredAt = null,
         )
+
+    private companion object {
+        const val MEMORY_REPOSITORY_LIMIT = 10_000
+    }
 }

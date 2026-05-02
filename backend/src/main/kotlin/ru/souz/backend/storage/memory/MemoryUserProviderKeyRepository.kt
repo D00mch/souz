@@ -6,9 +6,13 @@ import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.llms.LlmProvider
 
-class MemoryUserProviderKeyRepository : UserProviderKeyRepository {
+class MemoryUserProviderKeyRepository(
+    maxEntries: Int,
+) : UserProviderKeyRepository {
     private val mutex = Mutex()
-    private val keys = LinkedHashMap<Pair<String, LlmProvider>, UserProviderKey>()
+    private val keys = boundedLruMap<Pair<String, LlmProvider>, UserProviderKey>(maxEntries)
+
+    constructor() : this(DEFAULT_MEMORY_REPOSITORY_MAX_ENTRIES)
 
     override suspend fun get(
         userId: String,

@@ -1,6 +1,7 @@
 package ru.souz.backend.agent.service
 
-import java.util.LinkedHashSet
+import java.util.Collections
+import java.util.LinkedHashMap
 import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -29,7 +30,12 @@ class BackendAgentService(
     private val agentMutex = Mutex()
     private val activeAgentRequestIds = LinkedHashSet<String>()
     private val activeAgentConversations = LinkedHashSet<AgentConversationKey>()
-    private val completedAgentRequestIds = LinkedHashSet<String>()
+    private val completedAgentRequestIds = Collections.newSetFromMap(
+        object : LinkedHashMap<String, Boolean>(MAX_COMPLETED_AGENT_REQUEST_IDS, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>) =
+                size > MAX_COMPLETED_AGENT_REQUEST_IDS
+        }
+    )
 
     suspend fun sendAgentRequest(request: AgentRequest): AgentResponse {
         val validated = request.validated()
@@ -82,10 +88,6 @@ class BackendAgentService(
 
     private fun rememberCompletedAgentRequestId(requestId: String) {
         completedAgentRequestIds += requestId
-        while (completedAgentRequestIds.size > MAX_COMPLETED_AGENT_REQUEST_IDS) {
-            val oldestRequestId = completedAgentRequestIds.iterator().next()
-            completedAgentRequestIds -= oldestRequestId
-        }
     }
 
     private fun providerForModel(model: String, fallback: LlmProvider): String =

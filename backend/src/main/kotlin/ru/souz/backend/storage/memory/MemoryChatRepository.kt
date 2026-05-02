@@ -6,9 +6,13 @@ import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
 
-class MemoryChatRepository : ChatRepository {
+class MemoryChatRepository(
+    maxEntries: Int,
+) : ChatRepository {
     private val mutex = Mutex()
-    private val chats = LinkedHashMap<ChatKey, Chat>()
+    private val chats = boundedLruMap<ChatKey, Chat>(maxEntries)
+
+    constructor() : this(DEFAULT_MEMORY_REPOSITORY_MAX_ENTRIES)
 
     override suspend fun create(chat: Chat): Chat = mutex.withLock {
         chats[ChatKey(chat.userId, chat.id)] = chat

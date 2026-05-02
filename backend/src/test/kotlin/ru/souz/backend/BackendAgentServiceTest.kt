@@ -174,6 +174,31 @@ class BackendAgentServiceTest {
     }
 
     @Test
+    fun `completed request ids refresh recency before eviction`() = runTest {
+        val service = createService(RecordingAgentApi())
+        val rememberCompletedRequestId = BackendAgentService::class.java
+            .getDeclaredMethod("rememberCompletedAgentRequestId", String::class.java)
+            .apply { isAccessible = true }
+        val completedRequestIdsField = BackendAgentService::class.java
+            .getDeclaredField("completedAgentRequestIds")
+            .apply { isAccessible = true }
+
+        repeat(10_000) { index ->
+            rememberCompletedRequestId.invoke(service, "req-$index")
+        }
+        rememberCompletedRequestId.invoke(service, "req-0")
+        rememberCompletedRequestId.invoke(service, "req-10000")
+
+        @Suppress("UNCHECKED_CAST")
+        val completedRequestIds = completedRequestIdsField.get(service) as Set<String>
+
+        assertEquals(10_000, completedRequestIds.size)
+        assertTrue("req-0" in completedRequestIds)
+        assertTrue("req-10000" in completedRequestIds)
+        assertTrue("req-1" !in completedRequestIds)
+    }
+
+    @Test
     fun `different conversations do not cancel each other`() = runTest {
         val firstStarted = CompletableDeferred<Unit>()
         val secondStarted = CompletableDeferred<Unit>()

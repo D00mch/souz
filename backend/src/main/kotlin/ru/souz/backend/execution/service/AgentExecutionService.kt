@@ -8,8 +8,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -228,8 +230,7 @@ class AgentExecutionService internal constructor(
         turnRequest: BackendConversationTurnRequest,
         eventSink: BackendAgentRuntimeEventSink,
     ) {
-        lateinit var executionJob: Deferred<PersistedExecutionResult>
-        executionJob = executionScope.async(start = CoroutineStart.LAZY) {
+        val executionJob = executionScope.async(start = CoroutineStart.UNDISPATCHED) {
             try {
                 runExecution(
                     chat = chat,
@@ -239,11 +240,12 @@ class AgentExecutionService internal constructor(
                     eventSink = eventSink,
                 )
             } finally {
-                activeJobs.unregister(execution.id, executionJob)
+                activeJobs.unregister(execution.id, currentCoroutineContext()[Job] ?: return@async)
             }
         }
-        activeJobs.register(execution.id, executionJob)
-        executionJob.start()
+        if (!executionJob.isCompleted) {
+            activeJobs.register(execution.id, executionJob)
+        }
     }
 
     suspend fun resumeChoice(choice: Choice): AgentExecution {
@@ -794,13 +796,13 @@ private const val CHOICE_CONTINUATION_PREFIX = "__choice_answer__"
 
 private class ActiveExecutionJobRegistry {
     private val mutex = Mutex()
-    private val jobs = LinkedHashMap<UUID, Deferred<*>>()
+    private val jobs = LinkedHashMap<UUID, Job>()
 
-    suspend fun register(executionId: UUID, job: Deferred<*>) = mutex.withLock {
+    suspend fun register(executionId: UUID, job: Job) = mutex.withLock {
         jobs[executionId] = job
     }
 
-    suspend fun unregister(executionId: UUID, job: Deferred<*>) = mutex.withLock {
+    suspend fun unregister(executionId: UUID, job: Job) = mutex.withLock {
         if (jobs[executionId] == job) {
             jobs.remove(executionId)
         }

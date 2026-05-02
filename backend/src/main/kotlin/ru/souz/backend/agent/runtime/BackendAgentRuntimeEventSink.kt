@@ -289,7 +289,7 @@ internal class BackendAgentRuntimeEventSink(
             chatId = chatId,
             executionId = executionId,
             type = type,
-            payload = payload,
+            payload = payload.sanitizedForStorage(type),
         )
     }
 
@@ -300,3 +300,38 @@ internal class BackendAgentRuntimeEventSink(
         put("content", message.content)
     }
 }
+
+private fun Map<String, String>.sanitizedForStorage(type: AgentEventType): Map<String, String> =
+    if (type.isToolEvent()) {
+        mapValues { (_, value) -> sanitizeEventValue(value) }
+    } else {
+        this
+    }
+
+private fun AgentEventType.isToolEvent(): Boolean =
+    this == AgentEventType.TOOL_CALL_STARTED ||
+        this == AgentEventType.TOOL_CALL_FINISHED ||
+        this == AgentEventType.TOOL_CALL_FAILED
+
+private fun sanitizeEventValue(value: String): String {
+    val sanitized = value
+        .replace(SENSITIVE_JSON_FIELD_REGEX) { match ->
+            "${match.groupValues[1]}[REDACTED]${match.groupValues[4]}"
+        }
+        .replace(SENSITIVE_KEY_VALUE_REGEX) { match ->
+            "${match.groupValues[1]}=[REDACTED]"
+        }
+    return if (sanitized.length <= MAX_EVENT_VALUE_LENGTH) {
+        sanitized
+    } else {
+        sanitized.take(MAX_EVENT_VALUE_LENGTH - 3) + "..."
+    }
+}
+
+private val SENSITIVE_JSON_FIELD_REGEX =
+    Regex("""(?i)("(authorization|cookie|password|api[_-]?key|token|secret)"\s*:\s*")([^"]*)(")""")
+
+private val SENSITIVE_KEY_VALUE_REGEX =
+    Regex("""(?i)\b(authorization|cookie|password|api[_-]?key|token|secret)\b\s*=\s*([^\s,;]+)""")
+
+private const val MAX_EVENT_VALUE_LENGTH = 256

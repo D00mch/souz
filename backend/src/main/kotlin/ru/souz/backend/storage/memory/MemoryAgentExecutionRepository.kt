@@ -8,39 +8,28 @@ import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictException
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 
-class MemoryAgentExecutionRepository : AgentExecutionRepository {
+class MemoryAgentExecutionRepository(
+    maxEntries: Int,
+) : AgentExecutionRepository {
     private val mutex = Mutex()
-    private val executions = LinkedHashMap<ExecutionKey, AgentExecution>()
-    private val activeExecutions = LinkedHashMap<ActiveConversationKey, UUID>()
+    private val executions = boundedLruMap<ExecutionKey, AgentExecution>(maxEntries)
+    private val activeExecutionIds = HashMap<ActiveConversationKey, UUID>()
+    private val activeExecutions = HashMap<ExecutionKey, AgentExecution>()
+
+    constructor() : this(DEFAULT_MEMORY_REPOSITORY_MAX_ENTRIES)
 
     override suspend fun create(execution: AgentExecution): AgentExecution = mutex.withLock {
-        registerActiveExecution(execution)
-        executions[ExecutionKey(execution.userId, execution.id)] = execution
-        execution
+        ensureNoActiveExecutionConflict(execution)
+        storeExecution(execution)
     }
 
     override suspend fun update(execution: AgentExecution): AgentExecution = mutex.withLock {
-        registerActiveExecution(execution)
-        executions[ExecutionKey(execution.userId, execution.id)]
-            ?.takeIf { !execution.status.isActive() }
-            ?.let { existing ->
-                if (activeExecutions[ActiveConversationKey(existing.userId, existing.chatId)] == existing.id) {
-                    activeExecutions.remove(ActiveConversationKey(existing.userId, existing.chatId))
-                }
-            }
-
-        executions[ExecutionKey(execution.userId, execution.id)] = execution
-        if (!execution.status.isActive()) {
-            val conversationKey = ActiveConversationKey(execution.userId, execution.chatId)
-            if (activeExecutions[conversationKey] == execution.id) {
-                activeExecutions.remove(conversationKey)
-            }
-        }
-        execution
+        ensureNoActiveExecutionConflict(execution)
+        storeExecution(execution)
     }
 
     override suspend fun get(userId: String, executionId: UUID): AgentExecution? = mutex.withLock {
-        executions[ExecutionKey(userId, executionId)]
+        executionFor(ExecutionKey(userId, executionId))
     }
 
     override suspend fun getByChat(
@@ -48,12 +37,12 @@ class MemoryAgentExecutionRepository : AgentExecutionRepository {
         chatId: UUID,
         executionId: UUID,
     ): AgentExecution? = mutex.withLock {
-        executions[ExecutionKey(userId, executionId)]?.takeIf { it.chatId == chatId }
+        executionFor(ExecutionKey(userId, executionId))?.takeIf { it.chatId == chatId }
     }
 
     override suspend fun findActive(userId: String, chatId: UUID): AgentExecution? = mutex.withLock {
-        activeExecutions[ActiveConversationKey(userId, chatId)]
-            ?.let { executionId -> executions[ExecutionKey(userId, executionId)] }
+        activeExecutionIds[ActiveConversationKey(userId, chatId)]
+            ?.let { executionId -> executionFor(ExecutionKey(userId, executionId)) }
     }
 
     override suspend fun listByChat(
@@ -61,7 +50,8 @@ class MemoryAgentExecutionRepository : AgentExecutionRepository {
         chatId: UUID,
         limit: Int,
     ): List<AgentExecution> = mutex.withLock {
-        executions.values
+        (executions.values + activeExecutions.values)
+            .distinctBy { it.id }
             .asSequence()
             .filter { it.userId == userId && it.chatId == chatId }
             .sortedByDescending { it.startedAt }
@@ -69,19 +59,44 @@ class MemoryAgentExecutionRepository : AgentExecutionRepository {
             .toList()
     }
 
-    private fun registerActiveExecution(execution: AgentExecution) {
+    private fun ensureNoActiveExecutionConflict(execution: AgentExecution) {
         if (!execution.status.isActive()) {
             return
         }
         val conversationKey = ActiveConversationKey(execution.userId, execution.chatId)
-        val activeExecutionId = activeExecutions[conversationKey]
+        val activeExecutionId = activeExecutionIds[conversationKey]
         if (activeExecutionId != null && activeExecutionId != execution.id) {
             throw ActiveAgentExecutionConflictException(
                 userId = execution.userId,
                 chatId = execution.chatId,
             )
         }
-        activeExecutions[conversationKey] = execution.id
+    }
+
+    private fun storeExecution(execution: AgentExecution): AgentExecution {
+        val key = ExecutionKey(execution.userId, execution.id)
+        executions[key] = execution
+        syncActiveExecution(key, execution)
+        return execution
+    }
+
+    private fun executionFor(key: ExecutionKey): AgentExecution? =
+        executions[key] ?: activeExecutions[key]
+
+    private fun syncActiveExecution(
+        key: ExecutionKey,
+        execution: AgentExecution,
+    ) {
+        val conversationKey = ActiveConversationKey(execution.userId, execution.chatId)
+        if (execution.status.isActive()) {
+            activeExecutionIds[conversationKey] = execution.id
+            activeExecutions[key] = execution
+        } else {
+            if (activeExecutionIds[conversationKey] == execution.id) {
+                activeExecutionIds.remove(conversationKey)
+            }
+            activeExecutions.remove(key)
+        }
     }
 }
 
