@@ -4,12 +4,13 @@ import java.nio.charset.StandardCharsets
 import java.util.Base64
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.paths.SouzPaths
+import java.nio.file.Path
 
 internal object SkillStoragePaths {
     fun userSkillsRoot(
         paths: SouzPaths,
         userId: String,
-    ) = paths.skillsDir
+    ): Path = paths.skillsDir
         .resolve("users")
         .resolve(encodeSegment(userId))
         .resolve("skills")
@@ -18,27 +19,34 @@ internal object SkillStoragePaths {
         paths: SouzPaths,
         userId: String,
         skillId: SkillId,
-    ) = userSkillsRoot(paths, userId)
+    ): Path = userSkillsRoot(paths, userId)
         .resolve(encodeSegment(skillId.value))
+
+    fun bundleDirectoryRoot(
+        paths: SouzPaths,
+        userId: String,
+        skillId: SkillId,
+    ): Path = skillRoot(paths, userId, skillId).resolve("bundles")
 
     fun bundleRoot(
         paths: SouzPaths,
         userId: String,
         skillId: SkillId,
-    ) = skillRoot(paths, userId, skillId).resolve("bundle")
+        bundleHash: String,
+    ): Path = bundleDirectoryRoot(paths, userId, skillId).resolve(requireSafeBundleHash(bundleHash))
 
     fun metadataPath(
         paths: SouzPaths,
         userId: String,
         skillId: SkillId,
-    ) = skillRoot(paths, userId, skillId).resolve("stored-skill.json")
+    ): Path = skillRoot(paths, userId, skillId).resolve("stored-skill.json")
 
     fun validationPolicyRoot(
         paths: SouzPaths,
         userId: String,
         skillId: SkillId,
         policyVersion: String,
-    ) = paths.skillValidationsDir
+    ): Path = paths.skillValidationsDir
         .resolve("users")
         .resolve(encodeSegment(userId))
         .resolve("skills")
@@ -52,7 +60,15 @@ internal object SkillStoragePaths {
         skillId: SkillId,
         policyVersion: String,
         bundleHash: String,
-    ) = validationPolicyRoot(paths, userId, skillId, policyVersion).resolve("$bundleHash.json")
+    ): Path = validationPolicyRoot(paths, userId, skillId, policyVersion)
+        .resolve("${requireSafeBundleHash(bundleHash)}.json")
+
+    private fun requireSafeBundleHash(bundleHash: String): String {
+        require(bundleHash.matches(BUNDLE_HASH_REGEX)) {
+            "Skill bundle hash must be a 64-character hex SHA-256 string."
+        }
+        return bundleHash
+    }
 
     private fun encodeSegment(raw: String): String {
         require(raw.isNotBlank()) { "Storage path segment must not be blank." }
@@ -60,4 +76,6 @@ internal object SkillStoragePaths {
             .withoutPadding()
             .encodeToString(raw.toByteArray(StandardCharsets.UTF_8))
     }
+
+    private val BUNDLE_HASH_REGEX = Regex("^[a-fA-F0-9]{64}$")
 }

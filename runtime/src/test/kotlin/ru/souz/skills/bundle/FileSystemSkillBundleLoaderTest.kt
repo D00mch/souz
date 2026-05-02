@@ -120,7 +120,52 @@ class FileSystemSkillBundleLoaderTest {
             )
         }
 
-        assertContains(error.message.orEmpty(), "escapes")
+        assertContains(error.message.orEmpty(), "Symbolic link")
+    }
+
+    @Test
+    fun `rejects symlink file even when target stays inside root`() = runTest {
+        val root = createHomeTempDirectory("skill-loader-symlink-inside-root-")
+        writeSkillFixture(root)
+        val target = root.resolve("README.md")
+        Files.delete(target)
+        root.resolve("docs").createDirectories()
+        root.resolve("docs/README.md").writeText("Read me")
+        Files.createSymbolicLink(target, root.resolve("docs/README.md"))
+        val loader = createLoader()
+
+        val error = assertFailsWith<SkillBundleException> {
+            loader.loadDirectory(
+                context = SkillBundleFsContext(userId = "user-1"),
+                skillId = SkillId("symlink-inside"),
+                rawRoot = root.toString(),
+            )
+        }
+
+        assertContains(error.message.orEmpty(), "Symbolic link")
+    }
+
+    @Test
+    fun `rejects symlink directory even when target stays inside root`() = runTest {
+        val root = createHomeTempDirectory("skill-loader-symlink-dir-inside-root-")
+        writeSkillFixture(root)
+        val templates = root.resolve("templates")
+        val realTemplates = root.resolve("real-templates")
+        templates.toFile().deleteRecursively()
+        realTemplates.createDirectories()
+        realTemplates.resolve("example.ts").writeText("export const template = true\n")
+        Files.createSymbolicLink(templates, realTemplates)
+        val loader = createLoader()
+
+        val error = assertFailsWith<SkillBundleException> {
+            loader.loadDirectory(
+                context = SkillBundleFsContext(userId = "user-1"),
+                skillId = SkillId("symlink-dir-inside"),
+                rawRoot = root.toString(),
+            )
+        }
+
+        assertContains(error.message.orEmpty(), "Symbolic link")
     }
 
     @Test
@@ -141,15 +186,15 @@ class FileSystemSkillBundleLoaderTest {
                 forbiddenError.message.orEmpty().contains("Access denied")
         )
 
-        val unsafeLoader = createLoader()
-        val unsafeError = assertFailsWith<SkillBundleException> {
-            unsafeLoader.loadDirectory(
+        val invalidLoader = createLoader()
+        val invalidError = assertFailsWith<SkillBundleException> {
+            invalidLoader.loadDirectory(
                 context = SkillBundleFsContext(userId = "user-1"),
                 skillId = SkillId("unsafe"),
-                rawRoot = "/etc",
+                rawRoot = "   ",
             )
         }
-        assertTrue(unsafeError.message.orEmpty().contains("Access denied") || unsafeError.message.orEmpty().contains("Forbidden"))
+        assertContains(invalidError.message.orEmpty(), "blank")
     }
 
     @Test

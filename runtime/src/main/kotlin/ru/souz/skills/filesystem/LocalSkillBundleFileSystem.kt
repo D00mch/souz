@@ -29,7 +29,11 @@ class LocalSkillBundleFileSystem(
 
         val resolved = runCatching {
             val expanded = filesToolUtil.applyDefaultEnvs(cleaned)
-            val file = Path.of(expanded).toFile()
+            val path = Path.of(expanded)
+            if (Files.isSymbolicLink(path)) {
+                throw SkillBundleException("Symbolic link roots are not allowed in skill bundles: $rawPath")
+            }
+            val file = path.toFile()
             if (!filesToolUtil.isPathSafe(file)) {
                 throw SkillBundleException("Access denied for skill root: $rawPath")
             }
@@ -63,10 +67,6 @@ class LocalSkillBundleFileSystem(
             ): FileVisitResult {
                 ensurePathSafe(dir)
                 if (dir != canonicalRoot && Files.isSymbolicLink(dir)) {
-                    val resolved = resolveSymlinkTarget(canonicalRoot, dir)
-                    if (!resolved.startsWith(canonicalRoot)) {
-                        throw SkillBundleException("Symbolic link escapes the skill root: ${canonicalRoot.relativize(dir)}")
-                    }
                     throw SkillBundleException(
                         "Symbolic link directories are not allowed in skill bundles: ${canonicalRoot.relativize(dir)}"
                     )
@@ -80,13 +80,7 @@ class LocalSkillBundleFileSystem(
             ): FileVisitResult {
                 ensurePathSafe(file)
                 if (Files.isSymbolicLink(file)) {
-                    val resolved = resolveSymlinkTarget(canonicalRoot, file)
-                    if (!resolved.startsWith(canonicalRoot)) {
-                        throw SkillBundleException("Symbolic link escapes the skill root: ${canonicalRoot.relativize(file)}")
-                    }
-                    if (!Files.isRegularFile(resolved)) {
-                        throw SkillBundleException("Only regular files are allowed in skill bundles: ${canonicalRoot.relativize(file)}")
-                    }
+                    throw SkillBundleException("Symbolic link files are not allowed in skill bundles: ${canonicalRoot.relativize(file)}")
                 } else if (!attrs.isRegularFile) {
                     throw SkillBundleException("Only regular files are allowed in skill bundles: ${canonicalRoot.relativize(file)}")
                 }
@@ -134,19 +128,6 @@ class LocalSkillBundleFileSystem(
                 else -> throw SkillBundleException("Failed to validate skill path safety: $path", error)
             }
         }
-    }
-
-    private fun resolveSymlinkTarget(
-        root: Path,
-        path: Path,
-    ): Path {
-        val resolved = runCatching { path.toRealPath() }
-            .getOrElse { error -> throw SkillBundleException("Failed to resolve symbolic link: $path", error) }
-        ensurePathSafe(resolved)
-        if (!resolved.startsWith(root)) {
-            throw SkillBundleException("Symbolic link escapes the skill root: ${root.relativize(path)}")
-        }
-        return resolved
     }
 
     private fun isLikelyBinary(bytes: ByteArray): Boolean {

@@ -9,8 +9,13 @@ import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationRepository
 import ru.souz.agent.skills.validation.SkillValidationStatus
+import ru.souz.db.ConfigStore
+import ru.souz.db.SettingsProviderImpl
 import ru.souz.paths.DefaultSouzPaths
+import ru.souz.skills.bundle.FileSystemSkillBundleLoader
+import ru.souz.skills.filesystem.LocalSkillBundleFileSystem
 import ru.souz.skills.validation.FileSystemSkillValidationRepository
+import ru.souz.tool.files.FilesToolUtil
 
 class LocalSkillRegistryRepository(
     stateRoot: Path = DefaultSouzPaths.defaultStateRoot(),
@@ -18,6 +23,9 @@ class LocalSkillRegistryRepository(
     private val skillsRepository: FileSystemSkillsRepository = FileSystemSkillsRepository(
         paths = DefaultSouzPaths(stateRoot = stateRoot),
         clock = clock,
+        loader = FileSystemSkillBundleLoader(
+            fileSystem = LocalSkillBundleFileSystem(FilesToolUtil(SettingsProviderImpl(ConfigStore))),
+        ),
     ),
     private val validationRepository: SkillValidationRepository = FileSystemSkillValidationRepository(
         paths = DefaultSouzPaths(stateRoot = stateRoot),

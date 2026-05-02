@@ -2,6 +2,7 @@ package ru.souz.skills.registry
 
 import com.fasterxml.jackson.module.kotlin.readValue
 import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock
@@ -16,15 +17,11 @@ import ru.souz.agent.skills.bundle.SkillBundleException
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.registry.SkillsRepository
 import ru.souz.agent.skills.registry.StoredSkill
-import ru.souz.db.ConfigStore
-import ru.souz.db.SettingsProviderImpl
 import ru.souz.llms.restJsonMapper
 import ru.souz.paths.DefaultSouzPaths
 import ru.souz.paths.SouzPaths
 import ru.souz.skills.bundle.FileSystemSkillBundleLoader
-import ru.souz.skills.filesystem.LocalSkillBundleFileSystem
 import ru.souz.skills.filesystem.SkillBundleFsContext
-import ru.souz.tool.files.FilesToolUtil
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
@@ -34,9 +31,7 @@ import kotlin.io.path.readText
 class FileSystemSkillsRepository(
     private val paths: SouzPaths = DefaultSouzPaths(),
     private val clock: Clock = Clock.systemUTC(),
-    private val loader: FileSystemSkillBundleLoader = FileSystemSkillBundleLoader(
-        fileSystem = LocalSkillBundleFileSystem(FilesToolUtil(SettingsProviderImpl(ConfigStore)))
-    ),
+    private val loader: FileSystemSkillBundleLoader,
 ) : SkillsRepository {
     private val logger = LoggerFactory.getLogger(FileSystemSkillsRepository::class.java)
 
@@ -62,38 +57,31 @@ class FileSystemSkillsRepository(
         listSkills(userId).firstOrNull { it.manifest.name == name }
 
     override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill = withContext(Dispatchers.IO) {
-        val skillRoot = SkillStoragePaths.skillRoot(paths, userId, bundle.skillId)
-        val bundleRoot = skillRoot.resolve(BUNDLE_DIR_NAME)
-        val metadataPath = skillRoot.resolve(STORED_SKILL_FILE_NAME)
+        val normalizedBundle = SkillBundle.fromFiles(bundle.skillId, bundle.files)
+        val bundleHash = SkillBundleHasher.hash(normalizedBundle)
+        val skillRoot = SkillStoragePaths.skillRoot(paths, userId, normalizedBundle.skillId)
+        val metadataPath = SkillStoragePaths.metadataPath(paths, userId, normalizedBundle.skillId)
+        val bundleRoot = SkillStoragePaths.bundleRoot(paths, userId, normalizedBundle.skillId, bundleHash)
 
         val createdAt = readStoredSkillOrNull(metadataPath)?.createdAt ?: clock.instant()
         val storedSkill = StoredSkill(
             userId = userId,
-            skillId = bundle.skillId,
-            manifest = bundle.manifest,
-            bundleHash = SkillBundleHasher.hash(bundle),
+            skillId = normalizedBundle.skillId,
+            manifest = normalizedBundle.manifest,
+            bundleHash = bundleHash,
             createdAt = createdAt,
         )
 
-        val parent = skillRoot.parent ?: throw SkillBundleException("Skill storage root has no parent: $skillRoot")
-        parent.createDirectories()
-        val tempRoot = parent.resolve("${skillRoot.fileName}.tmp-${UUID.randomUUID()}")
-
-        try {
-            writeBundle(tempRoot.resolve(BUNDLE_DIR_NAME), bundle)
-            writeStoredSkill(tempRoot.resolve(STORED_SKILL_FILE_NAME), storedSkill)
-            replaceDirectory(tempRoot, skillRoot)
-        } catch (error: Throwable) {
-            deleteRecursively(tempRoot)
-            throw error
-        }
+        skillRoot.createDirectories()
+        writeBundleIfMissing(bundleRoot, normalizedBundle)
+        writeStoredSkill(metadataPath, storedSkill)
 
         storedSkill
     }
 
     override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? {
         val metadata = getSkill(userId, skillId) ?: return null
-        val bundleRoot = SkillStoragePaths.bundleRoot(paths, userId, skillId)
+        val bundleRoot = SkillStoragePaths.bundleRoot(paths, userId, skillId, metadata.bundleHash)
         if (!bundleRoot.exists() || !bundleRoot.isDirectory()) {
             return null
         }
@@ -103,6 +91,27 @@ class FileSystemSkillsRepository(
             skillId = metadata.skillId,
             rawRoot = bundleRoot.toString(),
         )
+    }
+
+    private fun writeBundleIfMissing(
+        bundleRoot: Path,
+        bundle: SkillBundle,
+    ) {
+        if (bundleRoot.exists()) return
+
+        val parent = bundleRoot.parent ?: throw SkillBundleException("Bundle storage root has no parent: $bundleRoot")
+        parent.createDirectories()
+        val tempRoot = parent.resolve("${bundleRoot.fileName}.tmp-${UUID.randomUUID()}")
+
+        try {
+            writeBundle(tempRoot, bundle)
+            moveDirectory(tempRoot, bundleRoot)
+        } catch (_: FileAlreadyExistsException) {
+            deleteRecursively(tempRoot)
+        } catch (error: Throwable) {
+            deleteRecursively(tempRoot)
+            throw error
+        }
     }
 
     private fun writeBundle(
@@ -131,10 +140,25 @@ class FileSystemSkillsRepository(
         )
         val parent = path.parent ?: throw SkillBundleException("Stored skill metadata path has no parent: $path")
         parent.createDirectories()
-        Files.writeString(
-            path,
-            restJsonMapper.writerWithDefaultPrettyPrinter().writeValueAsString(record),
-        )
+        val tempPath = parent.resolve("${path.fileName}.tmp-${UUID.randomUUID()}")
+        try {
+            Files.writeString(
+                tempPath,
+                restJsonMapper.writerWithDefaultPrettyPrinter().writeValueAsString(record),
+            )
+            try {
+                Files.move(
+                    tempPath,
+                    path,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(tempPath, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            Files.deleteIfExists(tempPath)
+        }
     }
 
     private fun readStoredSkillOrNull(path: Path): StoredSkill? {
@@ -153,11 +177,10 @@ class FileSystemSkillsRepository(
         }.getOrNull()
     }
 
-    private fun replaceDirectory(
+    private fun moveDirectory(
         source: Path,
         destination: Path,
     ) {
-        deleteRecursively(destination)
         try {
             Files.move(source, destination, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
         } catch (_: AtomicMoveNotSupportedException) {
@@ -183,7 +206,6 @@ class FileSystemSkillsRepository(
     )
 
     private companion object {
-        private const val BUNDLE_DIR_NAME = "bundle"
         private const val STORED_SKILL_FILE_NAME = "stored-skill.json"
     }
 }

@@ -1,6 +1,6 @@
 package ru.souz.agent.skills.bundle
 
-internal object SkillPathNormalizer {
+object SkillPathNormalizer {
     fun normalize(rawPath: String): String {
         val trimmed = rawPath.trim()
         if (trimmed.isEmpty()) throw SkillBundleException("Skill path must not be blank.")
