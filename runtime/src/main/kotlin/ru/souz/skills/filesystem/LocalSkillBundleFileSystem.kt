@@ -15,6 +15,13 @@ import ru.souz.agent.skills.bundle.SkillBundleException
 import ru.souz.tool.BadInputException
 import ru.souz.tool.files.FilesToolUtil
 
+/**
+ * Local JVM implementation of [SkillBundleFileSystem] backed by [Files] and
+ * guarded by [FilesToolUtil] path-safety checks.
+ *
+ * It rejects symlinks, non-regular files, binary content, and invalid UTF-8 so
+ * skill bundles can be loaded from disk without escaping the allowed sandbox.
+ */
 class LocalSkillBundleFileSystem(
     private val filesToolUtil: FilesToolUtil,
 ) : SkillBundleFileSystem {

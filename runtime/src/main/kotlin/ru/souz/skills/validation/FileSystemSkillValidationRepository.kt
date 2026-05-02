@@ -25,6 +25,13 @@ import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readText
 
+/**
+ * File-backed [SkillValidationRepository] that stores one JSON record per
+ * user, skill, bundle hash, and validation policy version.
+ *
+ * Records are written atomically when possible so validation outcomes survive
+ * restarts and can be shared across turns.
+ */
 class FileSystemSkillValidationRepository(
     private val paths: SouzPaths = DefaultSouzPaths(),
     private val clock: Clock = Clock.systemUTC(),

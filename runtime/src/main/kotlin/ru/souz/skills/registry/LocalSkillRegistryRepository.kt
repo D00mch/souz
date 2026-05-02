@@ -17,6 +17,12 @@ import ru.souz.skills.filesystem.LocalSkillBundleFileSystem
 import ru.souz.skills.validation.FileSystemSkillValidationRepository
 import ru.souz.tool.files.FilesToolUtil
 
+/**
+ * Default local [SkillRegistryRepository] wiring for desktop and JVM hosts.
+ *
+ * It composes the filesystem-backed skill bundle store with the filesystem
+ * validation store behind the shared registry interface.
+ */
 class LocalSkillRegistryRepository(
     stateRoot: Path = DefaultSouzPaths.defaultStateRoot(),
     clock: Clock = Clock.systemUTC(),

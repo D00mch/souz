@@ -10,6 +10,13 @@ import ru.souz.agent.skills.validation.SkillValidationPolicy
 import ru.souz.skills.filesystem.SkillBundleFileSystem
 import ru.souz.skills.filesystem.SkillBundleFsContext
 
+/**
+ * Loads a skill bundle from a filesystem directory after applying path, file
+ * count, extension, and size constraints.
+ *
+ * The loader normalizes relative paths and rebuilds the bundle from validated
+ * UTF-8 files so downstream code receives canonical bundle contents.
+ */
 class FileSystemSkillBundleLoader(
     private val fileSystem: SkillBundleFileSystem,
     private val maxFiles: Int = 64,

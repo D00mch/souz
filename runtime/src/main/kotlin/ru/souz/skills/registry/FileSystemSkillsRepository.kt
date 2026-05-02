@@ -28,6 +28,13 @@ import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readText
 
+/**
+ * Filesystem-backed [SkillsRepository] that persists stored skill metadata and
+ * immutable bundle contents under the configured Souz state directories.
+ *
+ * Bundles are normalized, hashed, and written via temporary locations so saved
+ * skill state remains stable across concurrent reads and process restarts.
+ */
 class FileSystemSkillsRepository(
     private val paths: SouzPaths = DefaultSouzPaths(),
     private val clock: Clock = Clock.systemUTC(),

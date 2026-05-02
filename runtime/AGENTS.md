@@ -31,10 +31,10 @@ runtime/
         │       │   ├── runtime/                  # Shared model routing/classification helpers
         │       │   └── tunnel/                   # AiTunnel chat API client
         │       ├── skills/
-        │       │   ├── bundle/                   # Filesystem skill bundle loader
-        │       │   ├── filesystem/               # Safe local filesystem adapter for skill bundles
-        │       │   ├── registry/                 # Per-user skill bundle storage under specified path
-        │       │   └── validation/               # Persisted skill validation cache
+        │       │   ├── bundle/                   # Load SkillBundle (how bytes become a SkillBundle)
+        │       │   ├── filesystem/               # Safe/replaceable filesystem access (host/user/sandbox)
+        │       │   ├── registry/                 # Store and load user skill bundles
+        │       │   └── validation/               # Store and load validation records
         │       ├── runtime/
         │       │   └── di/                       # Shared Kodein modules for JVM runtime/core LLM wiring
         │       ├── service/
