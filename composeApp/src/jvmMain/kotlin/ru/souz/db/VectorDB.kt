@@ -13,12 +13,12 @@ import kotlin.math.min
 import org.apache.lucene.store.FSDirectory
 import org.slf4j.LoggerFactory
 import ru.souz.db.VectorDB.getAllData
-import ru.souz.tool.files.FilesToolUtil
-import java.nio.file.Paths
+import ru.souz.paths.DefaultSouzPaths
+import java.nio.file.Files
 
 object VectorDB {
     private val l = LoggerFactory.getLogger(VectorDB::class.java)
-    private val indexPath = "${FilesToolUtil.homeStr}/.local/state/souz/"
+    private val paths = DefaultSouzPaths()
     private const val INIT_KEY = "rag_db_initialized"
     private const val DEFAULT_MIN_SCORE = 0.65f
 
@@ -26,7 +26,7 @@ object VectorDB {
         if (ConfigStore.get(INIT_KEY, false)) return
         l.debug("About to initialize vector db")
         try {
-            val dir = FSDirectory.open(Paths.get(indexPath))
+            val dir = openIndexDirectory()
             IndexWriter(dir, IndexWriterConfig()).use { }
             ConfigStore.put(INIT_KEY, true)
         } catch (e: Exception) {
@@ -36,7 +36,7 @@ object VectorDB {
 
     fun insert(data: List<StorredData>, embeddings: List<List<Double>>) {
         l.debug("About to insert data, size ${data.size}")
-        val dir = FSDirectory.open(Paths.get(indexPath))
+        val dir = openIndexDirectory()
         IndexWriter(dir, IndexWriterConfig()).use { writer ->
             data.indices.forEach { idx ->
                 val doc = Document()
@@ -55,7 +55,7 @@ object VectorDB {
     }
 
     fun getAllData(): List<StorredData> {
-        val dir = FSDirectory.open(Paths.get(indexPath))
+        val dir = openIndexDirectory()
         try {
             DirectoryReader.open(dir).use { reader ->
                 val list = mutableListOf<StorredData>()
@@ -73,7 +73,7 @@ object VectorDB {
     }
 
     fun clearAllData() {
-        val dir = FSDirectory.open(Paths.get(indexPath))
+        val dir = openIndexDirectory()
         IndexWriter(dir, IndexWriterConfig()).use { writer ->
             writer.deleteAll()
         }
@@ -84,7 +84,7 @@ object VectorDB {
         limit: Int = 5,
         minScore: Float = DEFAULT_MIN_SCORE
     ): List<StorredData> {
-        val dir = FSDirectory.open(Paths.get(indexPath))
+        val dir = openIndexDirectory()
         try {
             DirectoryReader.open(dir).use { reader ->
                 val searcher = IndexSearcher(reader)
@@ -122,6 +122,11 @@ object VectorDB {
             arr[i] = list[i].toFloat()
         }
         return arr
+    }
+
+    private fun openIndexDirectory(): FSDirectory {
+        Files.createDirectories(paths.vectorIndexDir)
+        return FSDirectory.open(paths.vectorIndexDir)
     }
 
     private const val MAX_DIM = 1024

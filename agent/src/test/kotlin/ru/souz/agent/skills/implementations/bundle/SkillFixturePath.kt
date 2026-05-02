@@ -1,4 +1,4 @@
-package ru.souz.agent.skills.bundle
+package ru.souz.agent.skills.implementations.bundle
 
 import java.nio.file.Path
 import java.nio.file.Paths

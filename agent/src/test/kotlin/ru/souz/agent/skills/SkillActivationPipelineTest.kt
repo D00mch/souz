@@ -5,7 +5,7 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.agent.skills.activation.SkillContextInjector
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
-import ru.souz.agent.skills.bundle.skillFixturePath
+import ru.souz.agent.skills.implementations.bundle.skillFixturePath
 import ru.souz.agent.skills.implementations.activation.FakeSkillLlmValidator
 import ru.souz.agent.skills.implementations.activation.FakeSkillSelector
 import ru.souz.agent.skills.implementations.bundle.SkillBundleLoader

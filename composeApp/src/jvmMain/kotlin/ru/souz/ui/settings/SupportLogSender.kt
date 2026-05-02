@@ -16,9 +16,12 @@ import kotlin.io.path.name
 import souz.composeapp.generated.resources.Res
 import souz.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import ru.souz.paths.DefaultSouzPaths
+import ru.souz.paths.SouzPaths
 
 class SupportLogSender(
     private val defaultRecipient: String = DEFAULT_SUPPORT_EMAIL,
+    private val paths: SouzPaths = DefaultSouzPaths(),
 ) {
     data class Result(val message: String, val recipient: String, val logArchive: Path, val logDirectory: Path)
 
@@ -56,16 +59,13 @@ class SupportLogSender(
     fun logDirectory(): Path = resolveLogDir()
 
     private fun resolveLogDir(): Path {
-        val logDir = System.getenv(LOG_DIR_ENV)
+        val logDir = System.getenv(SOUZ_LOG_DIR_ENV)
+            ?: System.getProperty(SOUZ_LOG_DIR_ENV)
+            ?: System.getenv(LOG_DIR_ENV)
             ?: System.getProperty(LOG_DIR_ENV)
-            ?: defaultLogDir()
+            ?: paths.logsDir.toString()
 
         return Paths.get(logDir)
-    }
-
-    private fun defaultLogDir(): String {
-        val home = System.getenv("HOME") ?: System.getProperty("user.home")
-        return Paths.get(home, ".local", "state", "souz", "logs").toString()
     }
 
     private fun zipLogs(logs: List<Path>): Path {
@@ -200,6 +200,7 @@ class SupportLogSender(
 
     companion object {
         private const val DEFAULT_SUPPORT_EMAIL = "support@souz.ru" // Restoring this if it was missing or just assumed
+        private const val SOUZ_LOG_DIR_ENV = "SOUZ_LOG_DIR"
         private const val LOG_DIR_ENV = "LOG_DIR"
         private const val LOG_EXTENSION = ".log"
         private const val DOLLAR = '$'

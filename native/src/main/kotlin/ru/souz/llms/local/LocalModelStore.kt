@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import ru.souz.paths.DefaultSouzPaths
 
 class LocalModelStore(
     val rootDir: Path = defaultRootDir(),
@@ -252,13 +253,7 @@ class LocalModelStore(
         private const val HTTP_PARTIAL_CONTENT = 206
         private const val HTTP_RANGE_NOT_SATISFIABLE = 416
 
-        private fun defaultRootDir(): Path = Path.of(
-            System.getProperty("user.home"),
-            ".local",
-            "state",
-            "souz",
-            "models",
-        )
+        private fun defaultRootDir(): Path = DefaultSouzPaths().modelsDir
     }
 }
 

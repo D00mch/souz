@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <property name="STATE_LOG_DIR" value="${HOME:-${user.home}}/.local/state/souz/logs"/>
-    <property name="LOG_DIR" value="${LOG_DIR:-${STATE_LOG_DIR}}"/>
+    <property name="LOG_DIR" value="${SOUZ_LOG_DIR:-${LOG_DIR:-${HOME:-${user.home}}/.local/state/souz/logs}}"/>
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
