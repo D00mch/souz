@@ -16,7 +16,7 @@ import ru.souz.agent.skills.activation.SkillContextInjector
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.implementations.bundle.SkillBundleLoader
-import ru.souz.agent.skills.bundle.skillFixturePath
+import ru.souz.agent.skills.implementations.bundle.skillFixturePath
 import ru.souz.agent.skills.implementations.registry.InMemorySkillRegistryRepository
 import ru.souz.agent.skills.selection.LlmSkillSelector
 import ru.souz.agent.skills.validation.LlmSkillValidator
