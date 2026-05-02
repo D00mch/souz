@@ -24,7 +24,7 @@ import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.model.AgentEventType
-import ru.souz.backend.events.service.AgentEventBus
+import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.http.BackendV1Exception

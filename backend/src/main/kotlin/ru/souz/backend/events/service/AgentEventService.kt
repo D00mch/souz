@@ -3,11 +3,9 @@ package ru.souz.backend.events.service
 import io.ktor.http.HttpStatusCode
 import java.time.Instant
 import java.util.UUID
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.ReceiveChannel
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.events.bus.AgentEventBus
+import ru.souz.backend.events.bus.AgentEventStream
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.repository.AgentEventRepository
@@ -85,68 +83,3 @@ class AgentEventService(
         }
     }
 }
-
-class AgentEventBus {
-    private val mutex = Mutex()
-    private val subscribers = LinkedHashMap<AgentEventStreamKey, LinkedHashSet<Channel<AgentEvent>>>()
-
-    suspend fun subscribe(userId: String, chatId: UUID): AgentEventSubscription {
-        val key = AgentEventStreamKey(userId = userId, chatId = chatId)
-        val channel = Channel<AgentEvent>(Channel.UNLIMITED)
-        mutex.withLock {
-            subscribers.getOrPut(key) { LinkedHashSet() }.add(channel)
-        }
-        return AgentEventSubscription(
-            events = channel,
-            close = {
-                mutex.withLock {
-                    subscribers[key]?.remove(channel)
-                    if (subscribers[key].isNullOrEmpty()) {
-                        subscribers.remove(key)
-                    }
-                }
-                channel.close()
-            },
-        )
-    }
-
-    suspend fun publish(event: AgentEvent) {
-        val key = AgentEventStreamKey(userId = event.userId, chatId = event.chatId)
-        val targets = mutex.withLock { subscribers[key]?.toList().orEmpty() }
-        if (targets.isEmpty()) {
-            return
-        }
-        val closedTargets = ArrayList<Channel<AgentEvent>>()
-        targets.forEach { channel ->
-            if (channel.trySend(event).isFailure) {
-                closedTargets += channel
-            }
-        }
-        if (closedTargets.isEmpty()) {
-            return
-        }
-        mutex.withLock {
-            val existing = subscribers[key] ?: return@withLock
-            existing.removeAll(closedTargets.toSet())
-            if (existing.isEmpty()) {
-                subscribers.remove(key)
-            }
-        }
-    }
-}
-
-data class AgentEventStream(
-    val replay: List<AgentEvent>,
-    val liveEvents: ReceiveChannel<AgentEvent>,
-    val close: suspend () -> Unit,
-)
-
-data class AgentEventSubscription(
-    val events: ReceiveChannel<AgentEvent>,
-    val close: suspend () -> Unit,
-)
-
-private data class AgentEventStreamKey(
-    val userId: String,
-    val chatId: UUID,
-)

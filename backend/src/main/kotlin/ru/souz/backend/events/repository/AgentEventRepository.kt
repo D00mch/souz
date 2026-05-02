@@ -26,6 +26,7 @@ interface AgentEventRepository {
     ): List<AgentEvent>
 
     companion object {
+        // Durable replay read default only. Live subscription buffering is defined in AgentEventLimits.
         const val DEFAULT_LIMIT: Int = 100
     }
 }

@@ -48,7 +48,7 @@ import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
-import ru.souz.backend.events.service.AgentEventBus
+import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.service.AgentExecutionService

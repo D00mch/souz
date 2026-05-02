@@ -26,7 +26,7 @@ import ru.souz.backend.options.model.OptionItem
 import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.options.repository.OptionAnswerUpdateResult
 import ru.souz.backend.events.model.AgentEventType
-import ru.souz.backend.events.service.AgentEventBus
+import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus

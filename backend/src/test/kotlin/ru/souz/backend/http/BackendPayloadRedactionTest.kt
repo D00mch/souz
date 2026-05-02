@@ -14,7 +14,7 @@ import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.MessageRepository
-import ru.souz.backend.events.service.AgentEventBus
+import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
