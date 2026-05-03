@@ -104,7 +104,20 @@ class AgentExecutionService internal constructor(
                         chat = chat,
                         execution = runningExecution,
                         conversationKey = prepared.conversationKey,
-                        turnRequest = prepared.runtimeRequest,
+                        turnRequest = ru.souz.backend.agent.model.BackendConversationTurnRequest(
+                            prompt = when (val input = prepared.turn.input) {
+                                is ru.souz.backend.agent.model.BackendAgentTurnInput.UserMessage -> input.content
+                                is ru.souz.backend.agent.model.BackendAgentTurnInput.OptionAnswer -> "__option_answer__ ${input.payload}"
+                            },
+                            model = prepared.turn.config.modelAlias,
+                            contextSize = prepared.turn.config.contextSize,
+                            locale = prepared.turn.config.locale,
+                            timeZone = prepared.turn.config.timeZone,
+                            executionId = prepared.turn.executionId.toString(),
+                            temperature = prepared.turn.config.temperature,
+                            systemPrompt = prepared.turn.config.systemPrompt,
+                            streamingMessages = prepared.turn.config.streamingMessages,
+                        ),
                         eventSink = eventSink,
                     )
                 }
@@ -124,7 +137,20 @@ class AgentExecutionService internal constructor(
                         chat = chat,
                         execution = runningExecution,
                         conversationKey = prepared.conversationKey,
-                        turnRequest = prepared.runtimeRequest,
+                        turnRequest = ru.souz.backend.agent.model.BackendConversationTurnRequest(
+                            prompt = when (val input = prepared.turn.input) {
+                                is ru.souz.backend.agent.model.BackendAgentTurnInput.UserMessage -> input.content
+                                is ru.souz.backend.agent.model.BackendAgentTurnInput.OptionAnswer -> "__option_answer__ ${input.payload}"
+                            },
+                            model = prepared.turn.config.modelAlias,
+                            contextSize = prepared.turn.config.contextSize,
+                            locale = prepared.turn.config.locale,
+                            timeZone = prepared.turn.config.timeZone,
+                            executionId = prepared.turn.executionId.toString(),
+                            temperature = prepared.turn.config.temperature,
+                            systemPrompt = prepared.turn.config.systemPrompt,
+                            streamingMessages = prepared.turn.config.streamingMessages,
+                        ),
                         eventSink = eventSink,
                     )
                 }
@@ -212,7 +238,20 @@ class AgentExecutionService internal constructor(
                 chat = chat,
                 execution = runningExecution,
                 conversationKey = prepared.conversationKey,
-                turnRequest = prepared.runtimeRequest,
+                turnRequest = ru.souz.backend.agent.model.BackendConversationTurnRequest(
+                    prompt = when (val input = prepared.turn.input) {
+                        is ru.souz.backend.agent.model.BackendAgentTurnInput.UserMessage -> input.content
+                        is ru.souz.backend.agent.model.BackendAgentTurnInput.OptionAnswer -> "__option_answer__ ${input.payload}"
+                    },
+                    model = prepared.turn.config.modelAlias,
+                    contextSize = prepared.turn.config.contextSize,
+                    locale = prepared.turn.config.locale,
+                    timeZone = prepared.turn.config.timeZone,
+                    executionId = prepared.turn.executionId.toString(),
+                    temperature = prepared.turn.config.temperature,
+                    systemPrompt = prepared.turn.config.systemPrompt,
+                    streamingMessages = prepared.turn.config.streamingMessages,
+                ),
                 eventSink = eventSink,
             )
         }

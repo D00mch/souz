@@ -1,5 +1,8 @@
 package ru.souz.backend.agent.model
 
+import java.util.UUID
+import ru.souz.backend.execution.model.AgentExecutionRuntimeConfig
+
 /** Stable backend conversation identifier composed from user and conversation ids. */
 data class AgentConversationKey(
     val userId: String,
@@ -18,3 +21,17 @@ internal data class BackendConversationTurnRequest(
     val systemPrompt: String? = null,
     val streamingMessages: Boolean? = null,
 )
+
+internal data class BackendAgentTurn(
+    val userId: String,
+    val chatId: UUID,
+    val executionId: UUID,
+    val conversationId: String,
+    val input: BackendAgentTurnInput,
+    val config: AgentExecutionRuntimeConfig,
+)
+
+internal sealed interface BackendAgentTurnInput {
+    data class UserMessage(val content: String) : BackendAgentTurnInput
+    data class OptionAnswer(val optionId: UUID, val payload: String) : BackendAgentTurnInput
+}
