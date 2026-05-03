@@ -14,6 +14,7 @@ import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -217,6 +218,7 @@ internal class NodesCommon(
                 executeTool(
                     settings = ctx.settings,
                     functionCall = functionCall,
+                    meta = ctx.toolInvocationMeta,
                     toolCallId = functionsStateId,
                     eventSink = ctx.runtimeEventSink,
                 ).copy(functionsStateId = functionsStateId)
@@ -228,11 +230,13 @@ internal class NodesCommon(
     private suspend fun executeTool(
         settings: AgentSettings,
         functionCall: LLMResponse.FunctionCall,
+        meta: ToolInvocationMeta,
         toolCallId: String? = null,
         eventSink: ru.souz.agent.runtime.AgentRuntimeEventSink = ru.souz.agent.runtime.AgentRuntimeEventSink.NONE,
     ): LLMRequest.Message = agentToolExecutor.execute(
         settings = settings,
         functionCall = functionCall,
+        meta = meta,
         toolCallId = toolCallId,
         eventSink = eventSink,
     )

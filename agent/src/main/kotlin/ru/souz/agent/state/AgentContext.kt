@@ -4,6 +4,7 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.ToolCategory
 
 data class AgentContext<I>(
@@ -12,6 +13,7 @@ data class AgentContext<I>(
     val history: List<LLMRequest.Message>,
     val activeTools: List<LLMRequest.Function>,
     val systemPrompt: String,
+    val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.Empty,
     val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
 ) {
     inline fun <reified O> map(
@@ -26,6 +28,7 @@ data class AgentContext<I>(
         history = history,
         activeTools = activeTools,
         systemPrompt = systemPrompt,
+        toolInvocationMeta = toolInvocationMeta,
         runtimeEventSink = runtimeEventSink,
     )
 }

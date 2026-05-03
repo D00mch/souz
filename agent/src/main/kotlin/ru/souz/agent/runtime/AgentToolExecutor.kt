@@ -25,6 +25,7 @@ class AgentToolExecutor(
     suspend fun execute(
         settings: AgentSettings,
         functionCall: LLMResponse.FunctionCall,
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
         toolCallId: String? = null,
         eventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
     ): LLMRequest.Message {
@@ -33,7 +34,6 @@ class AgentToolExecutor(
         val runtimeToolCallId = toolCallId ?: UUID.randomUUID().toString()
         val toolCategoryName = settings.tools.categoryByName[functionCall.name]?.name
         val logContext = currentCoroutineContext()[AgentExecutionLogContext.Element]?.value
-        val meta = currentCoroutineContext()[ToolInvocationMetaContext.Element]?.value ?: ToolInvocationMeta.Empty
         logContext?.incrementToolExecutionCount()
         eventSink.emit(
             AgentRuntimeEvent.ToolCallStarted(
