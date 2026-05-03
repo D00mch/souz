@@ -7,6 +7,7 @@ The `:runtime` module contains shared JVM runtime pieces used by both desktop (`
 - shared LLM routing/classification (`LLMFactory`, `ApiClassifier`);
 - shared tool contracts/adapters plus the backend-safe tool catalog (`files`, `web`, `calculator`, `data analytics`, and non-UI config tools);
 - production skills infrastructure: safe bundle filesystem access, per-user bundle persistence under `~/.local/state/souz/skills/`, and separate file-backed validation cache storage under `~/.local/state/souz/skill-validations/`;
+- shared runtime sandbox adapters under `runtime/sandbox/` for host-local and Docker-backed filesystem and process isolation;
 - shared Kodein DI modules for JVM runtime settings/local-model services and provider/LLM wiring reused by both desktop and backend;
 - runtime resources required by shared clients (for example Giga trust certificates).
 
@@ -36,7 +37,8 @@ runtime/
         │       │   ├── registry/                 # Store and load user skill bundles
         │       │   └── validation/               # Store and load validation records
         │       ├── runtime/
-        │       │   └── di/                       # Shared Kodein modules for JVM runtime/core LLM wiring
+        │       │   ├── di/                       # Shared Kodein modules for JVM runtime/core LLM wiring
+        │       │   └── sandbox/                  # Replaceable local/Docker sandbox filesystem + command execution
         │       ├── service/
         │       │   └── files/                    # Shared JVM file service implementations
         │       └── tool/
