@@ -11,10 +11,13 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.LLMResponse.FinishReason
 import ru.souz.llms.LLMResponse.Usage
 import ru.souz.llms.LLMChatAPI
+import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.web.internal.InternetSearchToolOutput
 import ru.souz.tool.web.internal.WebResearchClient
@@ -22,6 +25,7 @@ import ru.souz.tool.web.internal.WebSearchResult
 import ru.souz.tool.web.internal.WebSearchProviderException
 import ru.souz.tool.web.internal.WebSearchProviderFailureKind
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -414,7 +418,8 @@ class ToolInternetSearchTest {
             ToolInternetResearch.Input(
                 query = "Проведи исследование про ИИ во Франции",
                 maxSources = 1,
-            )
+            ),
+            ToolInvocationMeta.Empty,
         )
 
         val synthesisRequest = requests.last()
@@ -428,11 +433,17 @@ class ToolInternetSearchTest {
 
     @Test
     fun `research mode saves oversized report to markdown file`() = runTest {
-        val tempDir = Files.createTempDirectory("internet-search-report-test")
+        val tempHome = Files.createTempDirectory("internet-search-home-")
+        val tempStateRoot = Files.createTempDirectory("internet-search-state-")
+        val realFilesToolUtil = createFilesToolUtil(tempHome, tempStateRoot)
+        val realResearchTool = ToolInternetResearch(
+            api = api,
+            settingsProvider = settingsProvider,
+            webResearchClient = webResearchClient,
+            filesToolUtil = realFilesToolUtil,
+        )
         val largeReportJson = ("## Раздел\\nОчень подробный текст исследования [1][2][3].\\n\\n").repeat(260)
         every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Mini
-        every { filesToolUtil.souzDocumentsDirectoryPath } returns tempDir
-        every { filesToolUtil.requirePathIsSave(any()) } returns Unit
         coEvery { api.message(any()) } returnsMany listOf(
             chatOk(
                 """
@@ -470,18 +481,26 @@ class ToolInternetSearchTest {
             "Extracted content for ${firstArg<String>()}"
         }
 
-        val output = invokeResearch(
-            query = "Найди подходящую библиотеку для презентаций",
-            maxSources = 8,
-        )
-        val reportFilePath = assertNotNull(output.reportFilePath)
-        val savedFile = java.io.File(reportFilePath)
+        try {
+            val output = invokeResearch(
+                tool = realResearchTool,
+                query = "Найди подходящую библиотеку для презентаций",
+                maxSources = 8,
+            )
+            val reportFilePath = assertNotNull(output.reportFilePath)
+            val savedFile = java.io.File(reportFilePath)
+            val expectedOutputDir = tempHome.resolve("Documents").resolve("souz").resolve("internet_research").toRealPath()
 
-        assertEquals("COMPLETE", output.status)
-        assertTrue(savedFile.exists())
-        assertTrue(savedFile.readText().contains("Очень подробный текст исследования"))
-        assertTrue(output.answer.contains(reportFilePath))
-        assertTrue(output.reportMarkdown.contains(reportFilePath))
+            assertEquals("COMPLETE", output.status)
+            assertTrue(savedFile.exists())
+            assertTrue(savedFile.readText().contains("Очень подробный текст исследования"))
+            assertTrue(savedFile.toPath().toRealPath().startsWith(expectedOutputDir))
+            assertTrue(output.answer.contains(reportFilePath))
+            assertTrue(output.reportMarkdown.contains(reportFilePath))
+        } finally {
+            runCatching { tempHome.toFile().deleteRecursively() }
+            runCatching { tempStateRoot.toFile().deleteRecursively() }
+        }
     }
 
     @Test
@@ -577,7 +596,8 @@ class ToolInternetSearchTest {
             ToolInternetSearch.Input(
                 query = query,
                 maxSources = maxSources,
-            )
+            ),
+            ToolInvocationMeta.Empty,
         )
         return restJsonMapper.readValue(raw)
     }
@@ -585,14 +605,30 @@ class ToolInternetSearchTest {
     private suspend fun invokeResearch(
         query: String,
         maxSources: Int = 10,
+        tool: ToolInternetResearch = researchTool,
     ): InternetSearchToolOutput {
-        val raw = researchTool.suspendInvoke(
+        val raw = tool.suspendInvoke(
             ToolInternetResearch.Input(
                 query = query,
                 maxSources = maxSources,
-            )
+            ),
+            ToolInvocationMeta.Empty,
         )
         return restJsonMapper.readValue(raw)
+    }
+
+    private fun createFilesToolUtil(homeDir: Path, stateRoot: Path): FilesToolUtil {
+        val sandboxSettingsProvider = mockk<SettingsProvider>()
+        every { sandboxSettingsProvider.forbiddenFolders } returns emptyList()
+        return FilesToolUtil(
+            LocalRuntimeSandbox(
+                scope = SandboxScope(userId = "test-user"),
+                settingsProvider = sandboxSettingsProvider,
+                homePath = homeDir,
+                stateRoot = stateRoot,
+                workspaceRoot = homeDir,
+            )
+        )
     }
 
     private fun chatOk(content: String): LLMResponse.Chat.Ok = LLMResponse.Chat.Ok(
