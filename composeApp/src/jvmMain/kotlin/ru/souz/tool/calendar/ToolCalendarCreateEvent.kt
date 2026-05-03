@@ -1,5 +1,7 @@
 package ru.souz.tool.calendar
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -55,7 +57,7 @@ class ToolCalendarCreateEvent(private val bash: ToolRunBashCommand) : ToolSetup<
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.title.isBlank()) throw BadInputException("'title' is required.")
 
         val isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -93,4 +95,6 @@ class ToolCalendarCreateEvent(private val bash: ToolRunBashCommand) : ToolSetup<
         val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
         return "Error: Invalid date format received '${received}'. I STRICTLY require 'yyyy-MM-dd HH:mm:ss'. Current system time is: $now."
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

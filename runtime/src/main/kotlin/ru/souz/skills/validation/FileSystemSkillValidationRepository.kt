@@ -35,6 +35,7 @@ import kotlin.io.path.readText
 class FileSystemSkillValidationRepository(
     private val paths: SouzPaths = DefaultSouzPaths(),
     private val clock: Clock = Clock.systemUTC(),
+    private val pathsResolver: (String) -> SouzPaths = { paths },
 ) : SkillValidationRepository {
     private val logger = LoggerFactory.getLogger(FileSystemSkillValidationRepository::class.java)
 
@@ -46,7 +47,7 @@ class FileSystemSkillValidationRepository(
     ): SkillValidationRecord? = withContext(Dispatchers.IO) {
         readRecordOrNull(
             SkillStoragePaths.validationRecordPath(
-                paths = paths,
+                paths = pathsResolver(userId),
                 userId = userId,
                 skillId = skillId,
                 policyVersion = policyVersion,
@@ -57,7 +58,7 @@ class FileSystemSkillValidationRepository(
 
     override suspend fun saveValidation(record: SkillValidationRecord) = withContext(Dispatchers.IO) {
         val path = SkillStoragePaths.validationRecordPath(
-            paths = paths,
+            paths = pathsResolver(record.userId),
             userId = record.userId,
             skillId = record.skillId,
             policyVersion = record.policyVersion,
@@ -90,6 +91,7 @@ class FileSystemSkillValidationRepository(
         policyVersion: String,
         reason: String?,
     ) = withContext(Dispatchers.IO) {
+        val paths = pathsResolver(userId)
         val policyRoot = SkillStoragePaths.validationPolicyRoot(
             paths = paths,
             userId = userId,

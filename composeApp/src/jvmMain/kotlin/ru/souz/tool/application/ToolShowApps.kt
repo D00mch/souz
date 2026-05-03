@@ -1,5 +1,7 @@
 package ru.souz.tool.application
 
+import ru.souz.llms.ToolInvocationMeta
+
 import com.fasterxml.jackson.annotation.JsonProperty
 import org.kodein.di.DI
 import org.kodein.di.instance
@@ -47,7 +49,7 @@ The "app-pid" only returned for running apps with `${AppState.running}` input.
         )
     )
 
-    override fun invoke(input: Input): String = when (input.state) {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = when (input.state) {
         AppState.installed -> {
             val script = filesToolUtil.resourceAsText("scripts/show_installed_apps.sh")
             val appsLines = ToolRunBashCommand.sh(script)
@@ -74,6 +76,8 @@ The "app-pid" only returned for running apps with `${AppState.running}` input.
             result.lines().joinToString(prefix = "[", postfix = "]", separator = ",") { it }
         }
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 private data class Result(
@@ -86,6 +90,6 @@ fun main() {
     val filesToolUtil: FilesToolUtil by di.instance()
 
     val tool = ToolShowApps(filesToolUtil)
-    val result = tool.invoke(ToolShowApps.Input(ToolShowApps.AppState.running))
+    val result = tool.invoke(ToolShowApps.Input(ToolShowApps.AppState.running), ToolInvocationMeta.Empty)
     println(result)
 }

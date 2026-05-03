@@ -40,4 +40,6 @@ class ToolSoundConfigDiff(private val config: ConfigStore) : ToolSetup<ToolSound
         config.put(ToolSoundConfig.SPEED_KEY, newSpeed)
         return "Sound speed updated to $newSpeed"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

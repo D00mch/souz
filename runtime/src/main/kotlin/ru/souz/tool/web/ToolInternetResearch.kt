@@ -67,5 +67,5 @@ class ToolInternetResearch(
     override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String =
-        mapper.writeValueAsString(executor.runResearch(input.query, input.maxSources))
+        mapper.writeValueAsString(executor.runResearch(input.query, input.maxSources, meta))
 }

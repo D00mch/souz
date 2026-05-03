@@ -1,5 +1,7 @@
 package ru.souz.tool.calendar
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -36,12 +38,14 @@ class ToolCalendarListCalendars(private val bash: ToolRunBashCommand) : ToolSetu
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         return bash.sh(CalendarAppleScriptCommands.listCalendarsCommand(input.nameFilter))
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
     val tool = ToolCalendarListCalendars(ToolRunBashCommand)
-    println(tool.invoke(ToolCalendarListCalendars.Input()))
+    println(tool.invoke(ToolCalendarListCalendars.Input(), ToolInvocationMeta.Empty))
 }

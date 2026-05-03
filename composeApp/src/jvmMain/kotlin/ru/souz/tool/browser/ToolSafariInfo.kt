@@ -1,5 +1,6 @@
 package ru.souz.tool.browser
 
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 import org.w3c.dom.Element
 import org.w3c.dom.Node
@@ -52,7 +53,7 @@ class ToolSafariInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolSafar
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         return when (input.type) {
             InfoType.history -> bash.sh(historyCommand(input.count))
             InfoType.bookmarks -> parseSafariBookmarks(bash.sh(bookmarksCommand())).toString()
@@ -128,6 +129,8 @@ EOF
             curl -L '$url'
         fi
     """.trimIndent()
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 private fun parseSafariBookmarks(xmlString: String): Map<String, String> {
@@ -232,9 +235,8 @@ private fun processArrayElement(array: Element, bookmarks: MutableMap<String, St
         currentNode = currentNode.nextSibling
     }
 }
-
 fun main() {
     val tool = ToolSafariInfo(ToolRunBashCommand)
-    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.history))
+    val result = tool.invoke(ToolSafariInfo.Input(ToolSafariInfo.InfoType.history), ToolInvocationMeta.Empty)
     println(result)
 }

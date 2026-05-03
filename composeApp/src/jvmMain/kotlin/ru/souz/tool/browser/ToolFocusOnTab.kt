@@ -1,5 +1,7 @@
 package ru.souz.tool.browser
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.*
 
 class ToolFocusOnTab(private val bash: ToolRunBashCommand) : ToolSetup<ToolFocusOnTab.Input> {
@@ -28,7 +30,7 @@ class ToolFocusOnTab(private val bash: ToolRunBashCommand) : ToolSetup<ToolFocus
         ),
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.tab !in 1..9) throw BadInputException("tab must be between 1 and 9")
         val tabIndex = input.tab
         bash.invoke(
@@ -43,12 +45,15 @@ class ToolFocusOnTab(private val bash: ToolRunBashCommand) : ToolSetup<ToolFocus
                 end tell
                 EOF""".trimIndent(),
             ),
+            meta,
         )
         return "Done"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
     val tool = ToolFocusOnTab(ToolRunBashCommand)
-    println(tool.invoke(ToolFocusOnTab.Input(1)))
+    println(tool.invoke(ToolFocusOnTab.Input(1), ToolInvocationMeta.Empty))
 }

@@ -1,5 +1,7 @@
 package ru.souz.tool.notes
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -38,16 +40,16 @@ class ToolDeleteNote(
         )
     )
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val result = permissionBroker?.requestPermission(
             getString(Res.string.permission_delete_note),
             linkedMapOf("noteName" to input.noteName)
         )
         if (result is ToolPermissionResult.No) return result.msg
-        return invoke(input)
+        return invoke(input, meta)
     }
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.noteName.isBlank()) throw BadInputException("Note name cannot be empty")
 
         bash.apple(

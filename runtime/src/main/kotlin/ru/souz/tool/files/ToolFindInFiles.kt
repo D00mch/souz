@@ -45,7 +45,7 @@ class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
     )
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val base = filesToolUtil.resolveSafeExistingDirectory(input.path)
+        val base = filesToolUtil.resolveSafeExistingDirectory(input.path, meta)
         val needle = input.query.trim()
         if (needle.isBlank()) {
             throw BadInputException("query must not be empty")
@@ -53,12 +53,12 @@ class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         val needleLower = needle.lowercase()
         val result = ArrayList<List<String>>()
 
-        filesToolUtil.listDescendants(base, includeHidden = false)
+        filesToolUtil.listDescendants(base, includeHidden = false, meta = meta)
             .asSequence()
             .filter { it.isRegularFile && (it.sizeBytes ?: Long.MAX_VALUE) <= MAX_TEXT_FILE_BYTES }
             .forEach { file ->
                 if (result.size >= MAX_RESULTS) return@forEach
-                val content = runCatching { filesToolUtil.readUtf8TextFile(file) }.getOrNull() ?: return@forEach
+                val content = runCatching { filesToolUtil.readUtf8TextFile(file, meta) }.getOrNull() ?: return@forEach
                 if (!content.contains(needle, ignoreCase = true)) return@forEach
 
                 content.lineSequence().forEach { line ->
@@ -75,4 +75,6 @@ class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         const val MAX_RESULTS = 200
         const val MAX_TEXT_FILE_BYTES = 1_000_000L
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

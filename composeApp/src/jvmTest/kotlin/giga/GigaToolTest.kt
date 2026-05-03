@@ -1,16 +1,21 @@
 package giga
 
+import io.mockk.every
+import io.mockk.mockk
 import ru.souz.tool.files.ToolListFiles
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
-import ru.souz.db.ConfigStore
-import ru.souz.db.SettingsProviderImpl
+import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.giga.toGiga
+import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
+import ru.souz.runtime.sandbox.RuntimeSandboxModeResolver
+import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.runtime.sandbox.ToolInvocationSandboxScopeResolver
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -22,10 +27,22 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class GigaToolTest {
-    private val listFiles = ToolListFiles(FilesToolUtil(SettingsProviderImpl(ConfigStore)))
+    private val settingsProvider = mockk<SettingsProvider> {
+        every { forbiddenFolders } returns emptyList()
+    }
+    private val listFiles = ToolListFiles(
+        FilesToolUtil(
+            sandboxFactory = DefaultRuntimeSandboxFactory(
+                settingsProvider = settingsProvider,
+                modeResolver = RuntimeSandboxModeResolver { "local" },
+            ),
+            scopeResolver = ToolInvocationSandboxScopeResolver { SandboxScope.localDefault() },
+        )
+    )
     
     private fun createTempDirectory(): File =
-        Files.createTempDirectory(FilesToolUtil.homeDirectory.toPath(), "souz-giga-test-").toFile()
+        FilesToolUtil.souzDocumentsDirectoryPath.toFile().apply { mkdirs() }
+            .let { Files.createTempDirectory(it.toPath(), "souz-giga-test-").toFile() }
 
     private fun createSampleFiles(baseDir: File) {
         val nestedDir = File(baseDir, "directory").apply { mkdirs() }
@@ -92,7 +109,7 @@ class GigaToolTest {
             override val fewShotExamples: List<FewShotExample> = emptyList()
             override val returnParameters: ReturnParameters = ReturnParameters(properties = emptyMap())
 
-            override fun invoke(input: TestInput): String = input.value
+            override fun invoke(input: TestInput, meta: ToolInvocationMeta): String = input.value
 
             override suspend fun suspendInvoke(input: TestInput, meta: ToolInvocationMeta): String {
                 receivedMeta = meta

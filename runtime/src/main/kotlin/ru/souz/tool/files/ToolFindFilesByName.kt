@@ -51,13 +51,13 @@ class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<
     )
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val base = filesToolUtil.resolveSafeExistingDirectory(input.path)
+        val base = filesToolUtil.resolveSafeExistingDirectory(input.path, meta)
         val needle = input.fileName.trim().lowercase()
         if (needle.isBlank()) {
             throw BadInputException("fileName must not be empty")
         }
 
-        val result = filesToolUtil.listDescendants(base, includeHidden = false)
+        val result = filesToolUtil.listDescendants(base, includeHidden = false, meta = meta)
             .asSequence()
             .filter { it.isRegularFile && it.name.lowercase().contains(needle) }
             .map { it.path }
@@ -70,4 +70,6 @@ class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<
     private companion object {
         const val MAX_RESULTS = 200
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

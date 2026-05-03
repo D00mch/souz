@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.*
 
 class ToolMinimizeWindows(private val bash: ToolRunBashCommand) : ToolSetup<ToolMinimizeWindows.Input> {
@@ -28,7 +30,7 @@ class ToolMinimizeWindows(private val bash: ToolRunBashCommand) : ToolSetup<Tool
             "result" to ReturnProperty("string", "Operation status")
         )
     )
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         bash.invoke(
             ToolRunBashCommand.Input(
                 """
@@ -76,8 +78,11 @@ class ToolMinimizeWindows(private val bash: ToolRunBashCommand) : ToolSetup<Tool
                     end if
                 EOF
             """.trimIndent()
-            )
+            ),
+            meta
         )
         return "Done"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

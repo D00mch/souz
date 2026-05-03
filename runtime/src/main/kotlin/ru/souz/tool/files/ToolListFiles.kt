@@ -27,8 +27,8 @@ class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolLi
     )
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val base = filesToolUtil.resolveSafeExistingDirectory(input.path)
-        val files = filesToolUtil.listDescendants(base, input.depth, includeHidden = false)
+        val base = filesToolUtil.resolveSafeExistingDirectory(input.path, meta)
+        val files = filesToolUtil.listDescendants(base, input.depth, includeHidden = false, meta = meta)
             .map { entry ->
                 val relPath = java.nio.file.Path.of(base.path).relativize(java.nio.file.Path.of(entry.path))
                     .toString()
@@ -42,6 +42,8 @@ class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolLi
         }
         return result
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {

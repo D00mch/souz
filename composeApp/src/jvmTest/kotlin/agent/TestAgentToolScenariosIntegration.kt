@@ -86,11 +86,11 @@ class GraphAgentToolScenariosIntegrationTest {
         val realToolOpen = ToolOpen(ToolRunBashCommand, filesUtil)
         val testOpenApp: ToolOpen = spyk(realToolOpen)
 
-        coEvery { testGetApps.invoke(any()) } returns """
+        coEvery { testGetApps.invoke(any(), any()) } returns """
             [{"app-bundle-id":"ru.keepcoder.Telegram","app-name":"Telegram"}]
         """.trimIndent()
 
-        coEvery { testOpenApp.invoke(any()) } returns "Opened"
+        coEvery { testOpenApp.invoke(any(), any()) } returns "Opened"
 
         runScenarioWithMocks(userPrompt) {
             bindProvider<DI> { this.di }
@@ -99,7 +99,7 @@ class GraphAgentToolScenariosIntegrationTest {
         }
 
         coVerify(atLeast = 1) {
-            testOpenApp.invoke(match { it.target.contains("ru.keepcoder.Telegram", ignoreCase = true) })
+            testOpenApp.invoke(match { it.target.contains("ru.keepcoder.Telegram", ignoreCase = true) }, any())
         }
     }
 
@@ -126,16 +126,16 @@ class GraphAgentToolScenariosIntegrationTest {
         val openTargets = mutableListOf<String>()
         val createNewTabUrls = mutableListOf<String>()
 
-        coEvery { toolOpenDefaultBrowser.invoke(any()) } answers {
+        coEvery { toolOpenDefaultBrowser.invoke(any(), any()) } answers {
             openCalls++
             "Browser opened"
         }
-        coEvery { toolOpen.invoke(any()) } answers {
+        coEvery { toolOpen.invoke(any(), any()) } answers {
             openCalls++
             openTargets += firstArg<ToolOpen.Input>().target
             "Opened"
         }
-        coEvery { toolCreateNewBrowserTab.invoke(any()) } answers {
+        coEvery { toolCreateNewBrowserTab.invoke(any(), any()) } answers {
             openCalls++
             createNewTabUrls += firstArg<ToolCreateNewBrowserTab.Input>().url
             "Tab opened"
@@ -165,13 +165,13 @@ class GraphAgentToolScenariosIntegrationTest {
         val realTool = ToolCreateNewBrowserTab(ToolRunBashCommand)
         val toolCreateNewBrowserTab: ToolCreateNewBrowserTab = spyk(realTool)
 
-        coEvery { toolCreateNewBrowserTab.invoke(any()) } returns "Tab opened"
+        coEvery { toolCreateNewBrowserTab.invoke(any(), any()) } returns "Tab opened"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
         }
         coVerify(exactly = 1) {
-            toolCreateNewBrowserTab.invoke(match { it.url.contains("example.com") })
+            toolCreateNewBrowserTab.invoke(match { it.url.contains("example.com") }, any())
         }
     }
 
@@ -191,9 +191,9 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolSafariInfo: ToolSafariInfo = spyk(ToolSafariInfo(ToolRunBashCommand))
         val toolCreateNewBrowserTab: ToolCreateNewBrowserTab = spyk(ToolCreateNewBrowserTab(ToolRunBashCommand))
 
-        coEvery { toolChromeInfo.invoke(any()) } returns "2026-01-01|https://example.com|Example Domain"
-        coEvery { toolSafariInfo.invoke(any()) } returns ""
-        coEvery { toolCreateNewBrowserTab.invoke(any()) } returns "Opened"
+        coEvery { toolChromeInfo.invoke(any(), any()) } returns "2026-01-01|https://example.com|Example Domain"
+        coEvery { toolSafariInfo.invoke(any(), any()) } returns ""
+        coEvery { toolCreateNewBrowserTab.invoke(any(), any()) } returns "Opened"
 
         try {
             runScenarioWithMocks(userPrompt) {
@@ -202,7 +202,7 @@ class GraphAgentToolScenariosIntegrationTest {
                 bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
             }
             coVerify(atLeast = 1) {
-                toolChromeInfo.invoke(match { it.type == ToolChromeInfo.InfoType.history })
+                toolChromeInfo.invoke(match { it.type == ToolChromeInfo.InfoType.history }, any())
             }
         } finally {
             unmockkStatic("ru.souz.tool.browser.DefaultBrowserKt")
@@ -226,12 +226,12 @@ class GraphAgentToolScenariosIntegrationTest {
 
         var pageTextCalls = 0
 
-        coEvery { toolSafariInfo.invoke(any()) } answers {
+        coEvery { toolSafariInfo.invoke(any(), any()) } answers {
             val input = firstArg<ToolSafariInfo.Input>()
             if (input.type == ToolSafariInfo.InfoType.pageText) pageTextCalls++
             "Page content"
         }
-        coEvery { toolChromeInfo.invoke(any()) } answers {
+        coEvery { toolChromeInfo.invoke(any(), any()) } answers {
             val input = firstArg<ToolChromeInfo.Input>()
             if (input.type == ToolChromeInfo.InfoType.pageText) pageTextCalls++
             "Page content"
@@ -259,12 +259,12 @@ class GraphAgentToolScenariosIntegrationTest {
         val realTool = ToolCalendarListEvents()
         val toolCalendarListEvents: ToolCalendarListEvents = spyk(realTool)
 
-        coEvery { toolCalendarListEvents.invoke(any()) } returns "[]"
+        coEvery { toolCalendarListEvents.invoke(any(), any()) } returns "[]"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCalendarListEvents> { toolCalendarListEvents }
         }
-        coVerify(exactly = 1) { toolCalendarListEvents.invoke(any()) }
+        coVerify(exactly = 1) { toolCalendarListEvents.invoke(any(), any()) }
     }
 
     @ParameterizedTest(name = "scenario7_createCalendarEvent[{index}] {0}")
@@ -279,13 +279,13 @@ class GraphAgentToolScenariosIntegrationTest {
         val realTool = ToolCalendarCreateEvent(ToolRunBashCommand)
         val toolCalendarCreateEvent: ToolCalendarCreateEvent = spyk(realTool)
 
-        coEvery { toolCalendarCreateEvent.invoke(any()) } returns "Event created"
+        coEvery { toolCalendarCreateEvent.invoke(any(), any()) } returns "Event created"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCalendarCreateEvent> { toolCalendarCreateEvent }
         }
         coVerify(exactly = 1) {
-            toolCalendarCreateEvent.invoke(match { it.title.isNotBlank() && it.startDateTime.isNotBlank() })
+            toolCalendarCreateEvent.invoke(match { it.title.isNotBlank() && it.startDateTime.isNotBlank() }, any())
         }
     }
 
@@ -307,12 +307,12 @@ class GraphAgentToolScenariosIntegrationTest {
         val realToolDel = ToolCalendarDeleteEvent(ToolRunBashCommand)
         val toolCalendarDeleteEvent: ToolCalendarDeleteEvent = spyk(realToolDel)
 
-        coEvery { toolCalendarListEvents.invoke(any()) } returns """
+        coEvery { toolCalendarListEvents.invoke(any(), any()) } returns """
             2026-02-11 10:00 - 11:00 | Важная встреча
             2026-02-11 15:00 - 16:00 | Командный синк
         """.trimIndent()
-        coEvery { toolCalendarCreateEvent.invoke(any()) } returns "Event created"
-        coEvery { toolCalendarDeleteEvent.invoke(any()) } returns "Deleted"
+        coEvery { toolCalendarCreateEvent.invoke(any(), any()) } returns "Event created"
+        coEvery { toolCalendarDeleteEvent.invoke(any(), any()) } returns "Deleted"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCalendarListEvents> { toolCalendarListEvents }
@@ -320,9 +320,9 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolCalendarDeleteEvent> { toolCalendarDeleteEvent }
         }
 
-        coVerify(atLeast = 1) { toolCalendarListEvents.invoke(any()) }
+        coVerify(atLeast = 1) { toolCalendarListEvents.invoke(any(), any()) }
         coVerify(atLeast = 1) {
-            toolCalendarDeleteEvent.invoke(match { it.title.contains("Важная встреча", ignoreCase = true) })
+            toolCalendarDeleteEvent.invoke(match { it.title.contains("Важная встреча", ignoreCase = true) }, any())
         }
     }
 
@@ -339,19 +339,19 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolCalendarCreateEvent: ToolCalendarCreateEvent = spyk(ToolCalendarCreateEvent(ToolRunBashCommand))
         val toolCalendarDeleteEvent: ToolCalendarDeleteEvent = spyk(ToolCalendarDeleteEvent(ToolRunBashCommand))
 
-        coEvery { toolCalendarListEvents.invoke(any()) } returns """
+        coEvery { toolCalendarListEvents.invoke(any(), any()) } returns """
             2026-02-10 10:00 - 10:30 | Статус встреча
             2026-02-12 16:00 - 17:00 | Планирование спринта
         """.trimIndent()
-        coEvery { toolCalendarCreateEvent.invoke(any()) } returns "Event created"
-        coEvery { toolCalendarDeleteEvent.invoke(any()) } returns "Deleted"
+        coEvery { toolCalendarCreateEvent.invoke(any(), any()) } returns "Event created"
+        coEvery { toolCalendarDeleteEvent.invoke(any(), any()) } returns "Deleted"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCalendarListEvents> { toolCalendarListEvents }
             bindSingleton<ToolCalendarCreateEvent> { toolCalendarCreateEvent }
             bindSingleton<ToolCalendarDeleteEvent> { toolCalendarDeleteEvent }
         }
-        coVerify(atLeast = 1) { toolCalendarListEvents.invoke(any()) }
+        coVerify(atLeast = 1) { toolCalendarListEvents.invoke(any(), any()) }
     }
 
     @ParameterizedTest(name = "scenario11_buildChartFromFile[{index}] {0}")
@@ -367,9 +367,9 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
         val excelRead: ExcelRead = spyk(ExcelRead(filesUtil))
 
-        coEvery { toolCreatePlotFromCsv.invoke(any()) } returns "Plot saved"
-        coEvery { toolListFiles.invoke(any()) } returns "[\"sample.csv\"]"
-        coEvery { excelRead.invoke(any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
+        coEvery { toolCreatePlotFromCsv.invoke(any(), any()) } returns "Plot saved"
+        coEvery { toolListFiles.invoke(any(), any()) } returns "[\"sample.csv\"]"
+        coEvery { excelRead.invoke(any(), any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolCreatePlotFromCsv> { toolCreatePlotFromCsv }
@@ -377,7 +377,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ExcelRead> { excelRead }
         }
         coVerify(exactly = 1) {
-            toolCreatePlotFromCsv.invoke(match { it.path.contains("sample.csv") })
+            toolCreatePlotFromCsv.invoke(match { it.path.contains("sample.csv") }, any())
         }
     }
 
@@ -392,14 +392,14 @@ class GraphAgentToolScenariosIntegrationTest {
     fun scenario12_findFileByName(userPrompt: String) = runTest {
         val toolFindFilesByName: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolFindFilesByName.invoke(any()) } returns "~/path/to/test.txt"
-        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "~/path/to/test.txt"
+        coEvery { toolFindFilesByName.invoke(any(), any()) } returns "~/path/to/test.txt"
+        coEvery { toolFindFilesByName.suspendInvoke(any(), any()) } returns "~/path/to/test.txt"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }
         coVerify(atLeast = 1) {
-            toolFindFilesByName.suspendInvoke(match { it.fileName.contains("100 ошибок в го") })
+            toolFindFilesByName.suspendInvoke(match { it.fileName.contains("100 ошибок в го") }, any())
         }
     }
 
@@ -415,12 +415,12 @@ class GraphAgentToolScenariosIntegrationTest {
         val realTool = ToolListFiles(filesUtil)
         val toolListFiles: ToolListFiles = spyk(realTool)
 
-        coEvery { toolListFiles.invoke(any()) } returns "test.txt, read_me.txt, sample.csv"
+        coEvery { toolListFiles.invoke(any(), any()) } returns "test.txt, read_me.txt, sample.csv"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolListFiles> { toolListFiles }
         }
-        coVerify(exactly = 1) { toolListFiles.invoke(any()) }
+        coVerify(exactly = 1) { toolListFiles.invoke(any(), any()) }
     }
 
     @ParameterizedTest(name = "scenario14_createFile[{index}] {0}")
@@ -435,13 +435,13 @@ class GraphAgentToolScenariosIntegrationTest {
         val realToolNew = ToolNewFile(filesUtil)
         val toolNewFile: ToolNewFile = spyk(realToolNew)
 
-        coEvery { toolNewFile.invoke(any()) } returns "Created"
+        coEvery { toolNewFile.invoke(any(), any()) } returns "Created"
 
         val tempFile = "test_integration.txt"
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolNewFile> { toolNewFile }
         }
-        coVerify(exactly = 1) { toolNewFile.invoke(match { it.path.contains(tempFile) && it.text.contains("Hello") }) }
+        coVerify(exactly = 1) { toolNewFile.invoke(match { it.path.contains(tempFile) && it.text.contains("Hello") }, any()) }
     }
 
     @ParameterizedTest(name = "scenario14_readFile[{index}] {0}")
@@ -456,15 +456,15 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolExtractText: ToolExtractText = spyk(ToolExtractText(filesUtil))
         val toolFindFilesByName: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolExtractText.invoke(any()) } returns "Hello"
-        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"~/tmp/test-data/test_integration.txt\"]"
+        coEvery { toolExtractText.invoke(any(), any()) } returns "Hello"
+        coEvery { toolFindFilesByName.suspendInvoke(any(), any()) } returns "[\"~/tmp/test-data/test_integration.txt\"]"
 
         val tempFile = "test_integration.txt"
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolExtractText> { toolExtractText }
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }
-        coVerify(exactly = 1) { toolExtractText.invoke(match { it.filePath.contains(tempFile) }) }
+        coVerify(exactly = 1) { toolExtractText.invoke(match { it.filePath.contains(tempFile) }, any()) }
     }
 
     @ParameterizedTest(name = "scenario14_modifyFile[{index}] {0}")
@@ -487,9 +487,9 @@ class GraphAgentToolScenariosIntegrationTest {
         val tempFile = "test_integration"
         val appendText = "World is over"
 
-        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"~/test_integration.txt\"]"
-        coEvery { toolExtractText.invoke(any()) } answers { currentContent }
-        coEvery { toolModifyFile.invoke(any()) } answers {
+        coEvery { toolFindFilesByName.suspendInvoke(any(), any()) } returns "[\"~/test_integration.txt\"]"
+        coEvery { toolExtractText.invoke(any(), any()) } answers { currentContent }
+        coEvery { toolModifyFile.invoke(any(), any()) } answers {
             val request = firstArg<ToolModifyFile.Input>()
             currentContent = if (request.replaceAll) {
                 currentContent.replace(request.oldString, request.newString)
@@ -505,7 +505,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }
         coVerify(exactly = 1) {
-            toolModifyFile.invoke(match { it.path.contains(tempFile) && it.newString.contains(appendText) })
+            toolModifyFile.invoke(match { it.path.contains(tempFile) && it.newString.contains(appendText) }, any())
         }
     }
 
@@ -524,15 +524,15 @@ class GraphAgentToolScenariosIntegrationTest {
         val realToolFind = ToolFindFilesByName(filesUtil)
         val toolFindFilesByName: ToolFindFilesByName = spyk(realToolFind)
 
-        coEvery { toolDeleteFile.invoke(any()) } returns "Deleted"
-        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
+        coEvery { toolDeleteFile.invoke(any(), any()) } returns "Deleted"
+        coEvery { toolFindFilesByName.suspendInvoke(any(), any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
 
         val tempFile = "test_integration.txt"
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolDeleteFile> { toolDeleteFile }
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
         }
-        coVerify(exactly = 1) { toolDeleteFile.invoke(match { it.path.contains(tempFile) }) }
+        coVerify(exactly = 1) { toolDeleteFile.invoke(match { it.path.contains(tempFile) }, any()) }
     }
 
     @ParameterizedTest(name = "scenario15_moveFile[{index}] {0}")
@@ -549,9 +549,9 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolMoveFile.invoke(any()) } returns "Moved"
-        coEvery { toolListFiles.invoke(any()) } returns """["sample.csv", "README.md", "/dest"]"""
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns """["~/sample.csv", "~/README.md", "~/dest/"]"""
+        coEvery { toolMoveFile.invoke(any(), any()) } returns "Moved"
+        coEvery { toolListFiles.invoke(any(), any()) } returns """["sample.csv", "README.md", "/dest"]"""
+        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns """["~/sample.csv", "~/README.md", "~/dest/"]"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolMoveFile> { toolMoveFile }
@@ -559,7 +559,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolFindFilesByName> { toolFindFiles }
         }
         coVerify(exactly = 1) {
-            toolMoveFile.invoke(match { it.sourcePath.contains("README") && it.destinationPath.contains("dest") })
+            toolMoveFile.invoke(match { it.sourcePath.contains("README") && it.destinationPath.contains("dest") }, any())
         }
     }
 
@@ -575,13 +575,13 @@ class GraphAgentToolScenariosIntegrationTest {
         val realTool = ToolExtractText(filesUtil)
         val toolExtractText: ToolExtractText = spyk(realTool)
 
-        coEvery { toolExtractText.invoke(any()) } returns "Test content\nСтрока для проверки извлечения текста."
+        coEvery { toolExtractText.invoke(any(), any()) } returns "Test content\nСтрока для проверки извлечения текста."
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolExtractText> { toolExtractText }
         }
         coVerify(exactly = 1) {
-            toolExtractText.invoke(match { it.filePath.contains("test.txt") })
+            toolExtractText.invoke(match { it.filePath.contains("test.txt") }, any())
         }
     }
 
@@ -599,9 +599,9 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sample.pdf\"]"
-        coEvery { toolListFiles.invoke(any()) } returns "[\"sample.pdf\"]"
-        coEvery { toolReadPdfPages.invoke(any()) } returns "Page 1 content"
+        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[\"~/sample.pdf\"]"
+        coEvery { toolListFiles.invoke(any(), any()) } returns "[\"sample.pdf\"]"
+        coEvery { toolReadPdfPages.invoke(any(), any()) } returns "Page 1 content"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolReadPdfPages> { toolReadPdfPages }
@@ -609,7 +609,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolFindFilesByName> { toolFindFiles }
         }
         coVerify(exactly = 1) {
-            toolReadPdfPages.invoke(match { it.filePath.contains("sample") })
+            toolReadPdfPages.invoke(match { it.filePath.contains("sample") }, any())
         }
     }
 
@@ -625,13 +625,13 @@ class GraphAgentToolScenariosIntegrationTest {
         val realTool = ToolOpen(ToolRunBashCommand, filesUtil)
         val toolOpen: ToolOpen = spyk(realTool)
 
-        coEvery { toolOpen.invoke(any()) } returns "Opened"
+        coEvery { toolOpen.invoke(any(), any()) } returns "Opened"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolOpen> { toolOpen }
         }
         coVerify(exactly = 1) {
-            toolOpen.invoke(match { it.target.contains("read_me.txt") })
+            toolOpen.invoke(match { it.target.contains("read_me.txt") }, any())
         }
     }
 
@@ -652,18 +652,18 @@ class GraphAgentToolScenariosIntegrationTest {
         val noteTitle = "тест интеграции"
         var hasNote = false
 
-        coEvery { toolCreateNote.invoke(any()) } answers {
+        coEvery { toolCreateNote.invoke(any(), any()) } answers {
             hasNote = true
             "Created"
         }
-        coEvery { toolDeleteNote.invoke(any()) } answers {
+        coEvery { toolDeleteNote.invoke(any(), any()) } answers {
             hasNote = false
             "Deleted"
         }
-        coEvery { toolListNotes.invoke(any()) } answers {
+        coEvery { toolListNotes.invoke(any(), any()) } answers {
             if (hasNote) "[\"$noteTitle\"]" else "[]"
         }
-        coEvery { toolSearchNotes.invoke(any()) } answers {
+        coEvery { toolSearchNotes.invoke(any(), any()) } answers {
             if (hasNote) "[\"$noteTitle\"]" else "[]"
         }
 
@@ -673,10 +673,10 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolSearchNotes> { toolSearchNotes }
             bindSingleton<ToolDeleteNote> { toolDeleteNote }
         }
-        coVerify(exactly = 1) { toolCreateNote.invoke(match { it.noteText.contains(noteTitle) }) }
-        coVerify(atLeast = 1) { toolListNotes.invoke(any()) }
-        coVerify(atLeast = 0) { toolSearchNotes.invoke(any()) }
-        coVerify(exactly = 1) { toolDeleteNote.invoke(match { it.noteName.contains("тест") }) }
+        coVerify(exactly = 1) { toolCreateNote.invoke(match { it.noteText.contains(noteTitle) }, any()) }
+        coVerify(atLeast = 1) { toolListNotes.invoke(any(), any()) }
+        coVerify(atLeast = 0) { toolSearchNotes.invoke(any(), any()) }
+        coVerify(exactly = 1) { toolDeleteNote.invoke(match { it.noteName.contains("тест") }, any()) }
     }
 
     @ParameterizedTest(name = "scenario20_mailFindUnreadListReply[{index}] {0}")
@@ -693,12 +693,12 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolMailListMessages: ToolMailListMessages = spyk(ToolMailListMessages(ToolRunBashCommand))
         val toolMailSearch: ToolMailSearch = spyk(ToolMailSearch(ToolRunBashCommand))
 
-        coEvery { toolMailUnreadMessagesCount.invoke(any()) } returns "1"
-        coEvery { toolMailListMessages.invoke(any()) } returns """
+        coEvery { toolMailUnreadMessagesCount.invoke(any(), any()) } returns "1"
+        coEvery { toolMailListMessages.invoke(any(), any()) } returns """
             ID: 50101 | From: Test Contact <test@example.com> | Subject: Отчет за сегодня
             ID: 50002 | From: Service Bot <noreply@example.com> | Subject: Daily digest
         """.trimIndent()
-        coEvery { toolMailSearch.invoke(any()) } returns """
+        coEvery { toolMailSearch.invoke(any(), any()) } returns """
             ID: 50101 | From: Test Contact <test@example.com> | Subject: Отчет за сегодня
         """.trimIndent()
 
@@ -707,8 +707,8 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolMailListMessages> { toolMailListMessages }
             bindSingleton<ToolMailSearch> { toolMailSearch }
         }
-        coVerify(exactly = 1) { toolMailUnreadMessagesCount.invoke(any()) }
-        coVerify(exactly = 1) { toolMailListMessages.invoke(any()) }
+        coVerify(exactly = 1) { toolMailUnreadMessagesCount.invoke(any(), any()) }
+        coVerify(exactly = 1) { toolMailListMessages.invoke(any(), any()) }
     }
 
     @ParameterizedTest(name = "scenario21_sendEmail[{index}] {0}")
@@ -723,8 +723,8 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolMailSendNewMessage: ToolMailSendNewMessage = spyk(ToolMailSendNewMessage(ToolRunBashCommand))
         val toolMailSearch: ToolMailSearch = spyk(ToolMailSearch(ToolRunBashCommand))
 
-        coEvery { toolMailSendNewMessage.invoke(any()) } returns "Sent"
-        coEvery { toolMailSearch.invoke(any()) } returns """
+        coEvery { toolMailSendNewMessage.invoke(any(), any()) } returns "Sent"
+        coEvery { toolMailSearch.invoke(any(), any()) } returns """
             ID: 50101 | From: Test Contact <test@example.com> | Subject: Переписка по тестам
         """.trimIndent()
 
@@ -733,7 +733,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolMailSearch> { toolMailSearch }
         }
         coVerify(exactly = 1) {
-            toolMailSendNewMessage.invoke(match { it.recipientAddress.contains("test@example.com") })
+            toolMailSendNewMessage.invoke(match { it.recipientAddress.contains("test@example.com") }, any())
         }
     }
 
@@ -748,12 +748,12 @@ class GraphAgentToolScenariosIntegrationTest {
     fun scenario22_readSelectedText(userPrompt: String) = runTest {
         val toolGetClipboard: ToolGetClipboard = spyk(ToolGetClipboard())
 
-        coEvery { toolGetClipboard.invoke(any()) } returns "Selected text"
+        coEvery { toolGetClipboard.invoke(any(), any()) } returns "Selected text"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolGetClipboard> { toolGetClipboard }
         }
-        coVerify(atLeast = 1) { toolGetClipboard.invoke(any()) }
+        coVerify(atLeast = 1) { toolGetClipboard.invoke(any(), any()) }
     }
 
     @ParameterizedTest(name = "excelRead_overview[{index}] {0}")
@@ -769,9 +769,9 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
-        coEvery { excelRead.invoke(any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
-        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx"]"""
+        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[\"~/sales.xlsx\"]"
+        coEvery { excelRead.invoke(any(), any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
+        coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelRead> { excelRead }
@@ -779,7 +779,7 @@ class GraphAgentToolScenariosIntegrationTest {
             bindSingleton<ToolListFiles> { toolListFiles }
         }
         coVerify(atLeast = 1) {
-            excelRead.invoke(match { it.path.contains("sales") && it.operation == ExcelRead.ReadOperation.STRUCTURE })
+            excelRead.invoke(match { it.path.contains("sales") && it.operation == ExcelRead.ReadOperation.STRUCTURE }, any())
         }
     }
 
@@ -796,12 +796,12 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
-        coEvery { excelRead.invoke(any()) } returns """[
+        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[\"~/sales.xlsx\"]"
+        coEvery { excelRead.invoke(any(), any()) } returns """[
             |{"Date":"2024-01-01","Amount":"1500"}
             |{"Date":"2023-02-03","Amount":"2500"}
             |]""".trimMargin()
-        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx"]"""
+        coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelRead> { excelRead }
@@ -814,7 +814,7 @@ class GraphAgentToolScenariosIntegrationTest {
                 it.path.contains("sales") &&
                         it.operation == ExcelRead.ReadOperation.QUERY &&
                         filter != null && filter.contains(">") && filter.contains("1000")
-            })
+            }, any())
         }
     }
 
@@ -831,12 +831,12 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
-        coEvery { excelRead.invoke(any()) } returns """[
+        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[\"~/sales.xlsx\"]"
+        coEvery { excelRead.invoke(any(), any()) } returns """[
             |{"Date":"2024-01-01","Amount":"1500"}
             |{"Date":"2023-02-03","Amount":"2500"}
             |]""".trimMargin()
-        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx"]"""
+        coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelRead> { excelRead }
@@ -849,7 +849,7 @@ class GraphAgentToolScenariosIntegrationTest {
                 it.path.contains("sales") &&
                         it.operation == ExcelRead.ReadOperation.QUERY &&
                         sortBy != null && sortBy.contains("Amount", ignoreCase = true)
-            })
+            }, any())
         }
     }
 
@@ -866,9 +866,9 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[\"~/sales.xlsx\"]"
-        coEvery { excelRead.invoke(any()) } returns "1500"
-        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx"]"""
+        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[\"~/sales.xlsx\"]"
+        coEvery { excelRead.invoke(any(), any()) } returns "1500"
+        coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelRead> { excelRead }
@@ -882,7 +882,7 @@ class GraphAgentToolScenariosIntegrationTest {
                         it.operation == ExcelRead.ReadOperation.CELL &&
                         ((range != null && range.contains("B5")) ||
                                 (it.returnColumn == "B5"))
-            })
+            }, any())
         }
     }
 
@@ -899,9 +899,9 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
-        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx"]"""
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns """["~/price.xlsx"]"""
-        coEvery { excelRead.invoke(any()) } answers {
+        coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
+        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns """["~/price.xlsx"]"""
+        coEvery { excelRead.invoke(any(), any()) } answers {
             val input = firstArg<ExcelRead.Input>()
             if (
                 input.path.contains("price", ignoreCase = true) &&
@@ -928,7 +928,7 @@ class GraphAgentToolScenariosIntegrationTest {
                         it.operation == ExcelRead.ReadOperation.LOOKUP &&
                         lookupValue != null && lookupValue.contains("Ноутбук") &&
                         it.returnColumn != null
-            })
+            }, any())
         }
     }
 
@@ -946,9 +946,9 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
-        coEvery { excelReport.invoke(any()) } returns "Created report.xlsx"
-        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx", "~/sales.xlsx"]"""
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[]"
+        coEvery { excelReport.invoke(any(), any()) } returns "Created report.xlsx"
+        coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx", "~/sales.xlsx"]"""
+        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[]"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelReport> { excelReport }
@@ -960,7 +960,7 @@ class GraphAgentToolScenariosIntegrationTest {
                 val headers = it.headers
                 it.path.contains("report") &&
                         headers != null && headers.contains("Имя")
-            })
+            }, any())
         }
     }
 
@@ -977,9 +977,9 @@ class GraphAgentToolScenariosIntegrationTest {
         val toolFindFiles: ToolFindFilesByName = spyk(ToolFindFilesByName(filesUtil))
         val toolListFiles: ToolListFiles = spyk(ToolListFiles(filesUtil))
 
-        coEvery { excelReport.invoke(any()) } returns "Created report stats.xlsx"
-        coEvery { toolListFiles.invoke(any()) } returns """["~/price.xlsx", "~/sales.xlsx"]"""
-        coEvery { toolFindFiles.suspendInvoke(any()) } returns "[]"
+        coEvery { excelReport.invoke(any(), any()) } returns "Created report stats.xlsx"
+        coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx", "~/sales.xlsx"]"""
+        coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[]"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ExcelReport> { excelReport }
@@ -989,7 +989,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coVerify(atLeast = 1) {
             excelReport.invoke(match {
                 it.path.contains("stats") && !it.csvData.isNullOrEmpty()
-            })
+            }, any())
         }
     }
 }

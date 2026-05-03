@@ -1,5 +1,7 @@
 package ru.souz.tool.application
 
+import ru.souz.llms.ToolInvocationMeta
+
 import org.slf4j.LoggerFactory
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
@@ -53,7 +55,7 @@ class ToolOpen(
     )
 
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val desktop = Desktop.getDesktop().takeIf { Desktop.isDesktopSupported() }
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.target)
             .replace("\n","")
@@ -78,10 +80,10 @@ class ToolOpen(
             }
         }
 
-        return openViaOsFallback(fixedPath)
+        return openViaOsFallback(fixedPath, meta)
     }
 
-    private fun openViaOsFallback(fixedPath: String): String = try {
+    private fun openViaOsFallback(fixedPath: String, meta: ToolInvocationMeta): String = try {
         when {
             fixedPath.contains('/') -> {
                 val isDir = !fixedPath.endsWith(".app") && File(fixedPath).isDirectory
@@ -103,18 +105,23 @@ class ToolOpen(
             }
 
             else -> {
-                ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(File(fixedPath).name))
+                ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(File(fixedPath).name), meta)
                 "Done"
             }
         }
     } catch (e: Exception) {
         l.error("Error opening '$fixedPath': ${e.message}")
-        ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(File(fixedPath).name))
+        ToolOpenFolder(bash, filesToolUtil).invoke(ToolOpenFolder.Input(File(fixedPath).name), meta)
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
     val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
-    val result = ToolOpen(ToolRunBashCommand, filesToolUtil).invoke(ToolOpen.Input("ru.keepcoder.Telegram"))
+    val result = ToolOpen(ToolRunBashCommand, filesToolUtil).invoke(
+        ToolOpen.Input("ru.keepcoder.Telegram"),
+        ToolInvocationMeta.Empty,
+    )
     println(result)
 }

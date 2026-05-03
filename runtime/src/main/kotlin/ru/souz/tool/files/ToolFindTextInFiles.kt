@@ -30,15 +30,17 @@ class ToolFindTextInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<
     )
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val baseDir = filesToolUtil.resolveSafeExistingDirectory(input.path)
+        val baseDir = filesToolUtil.resolveSafeExistingDirectory(input.path, meta)
         val basePath = java.nio.file.Path.of(baseDir.path)
-        val matchedFiles = filesToolUtil.listDescendants(baseDir, includeHidden = false)
+        val matchedFiles = filesToolUtil.listDescendants(baseDir, includeHidden = false, meta = meta)
             .asSequence()
             .filter { it.isRegularFile }
-            .filter { runCatching { filesToolUtil.readUtf8TextFile(it).contains(input.text) }.getOrDefault(false) }
+            .filter { runCatching { filesToolUtil.readUtf8TextFile(it, meta).contains(input.text) }.getOrDefault(false) }
             .map { basePath.relativize(java.nio.file.Path.of(it.path)).toString().replace('\\', '/') }
             .toList()
 
         return matchedFiles.joinToString(",", prefix = "[", postfix = "]")
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

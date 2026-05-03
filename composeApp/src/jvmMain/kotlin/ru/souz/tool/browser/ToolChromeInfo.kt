@@ -1,5 +1,6 @@
 package ru.souz.tool.browser
 
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 import java.io.File
 import java.util.regex.Pattern
@@ -48,7 +49,7 @@ class ToolChromeInfo(private val bash: ToolRunBashCommand) : ToolSetup<ToolChrom
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         return when (input.type) {
             InfoType.history -> {
                 // Chrome locks the DB file, so we copy it to /tmp first
@@ -133,6 +134,8 @@ EOF
             curl -L '$url'
         fi
     """.trimIndent()
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 /**
@@ -172,9 +175,8 @@ private fun parseChromeBookmarks(jsonString: String): Map<String, String> {
 
     return bookmarks
 }
-
 fun main() {
     val tool = ToolChromeInfo(ToolRunBashCommand)
-    val result = tool.invoke(ToolChromeInfo.Input(ToolChromeInfo.InfoType.history))
+    val result = tool.invoke(ToolChromeInfo.Input(ToolChromeInfo.InfoType.history), ToolInvocationMeta.Empty)
     println(result)
 }

@@ -2,12 +2,11 @@ package ru.souz.tool.web.internal
 
 import org.apache.tika.Tika
 import kotlinx.coroutines.runBlocking
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.BadInputException
 import ru.souz.tool.files.FilesToolUtil
-import java.io.File
 import java.net.URI
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
+import java.util.UUID
 
 private const val IMAGE_DOWNLOAD_REQUEST_TIMEOUT_MS = 10_000L
 private const val IMAGE_DOWNLOAD_MAX_BYTES = 20 * 1024 * 1024
@@ -32,41 +31,45 @@ class WebImageDownloader(
         imageUrl: String,
         preferredName: String,
         outputDir: String?,
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
     ): String {
-        val dir = resolveImageOutputDir(outputDir)
+        val dir = resolveImageOutputDir(outputDir, meta)
         val safeName = preferredName
             .replace(Regex("[^\\p{L}\\p{N}._-]+"), "_")
             .trim('_')
             .ifBlank { "image" }
             .take(80)
         val downloaded = downloadAndDetectExtension(imageUrl)
-        val candidate = uniqueFile(File(dir, "$safeName.${downloaded.extension}"))
-        Files.move(downloaded.file.toPath(), candidate.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        return candidate.absolutePath
+        val candidate = uniquePath(
+            basePath = "${dir.path}/$safeName.${downloaded.extension}",
+            meta = meta,
+        )
+        filesToolUtil.writeBytes(candidate, downloaded.body, meta)
+        return candidate.path
     }
 
-    fun downloadToTemp(imageUrl: String): String? {
+    fun downloadToTemp(
+        imageUrl: String,
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+    ): String? {
         return runCatching {
             val downloaded = downloadAndDetectExtension(imageUrl)
-            val renamed = File(downloaded.file.parentFile, "${downloaded.file.nameWithoutExtension}.${downloaded.extension}")
-            try {
-                Files.move(downloaded.file.toPath(), renamed.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            } catch (e: Exception) {
-                if (downloaded.file.exists()) downloaded.file.delete()
-                throw e
-            }
-            renamed.absolutePath
+            val sandboxPath = uniquePath(
+                basePath = "${filesToolUtil.runtimeSandbox(meta).runtimePaths.stateRootPath}/web-images/${UUID.randomUUID()}.${downloaded.extension}",
+                meta = meta,
+            )
+            filesToolUtil.writeBytes(sandboxPath, downloaded.body, meta)
+            sandboxPath.path
         }.getOrNull()
     }
 
     private data class DownloadedTemp(
-        val file: File,
+        val body: ByteArray,
         val extension: String,
     )
 
     private fun downloadAndDetectExtension(imageUrl: String): DownloadedTemp {
         val normalizedUrl = webToolSupport.requireHttpUrl(imageUrl)
-        val tempFile = Files.createTempFile("souz_img_", ".bin").toFile()
         try {
             val response = runBlocking {
                 downloadBinary(normalizedUrl, IMAGE_DOWNLOAD_REQUEST_TIMEOUT_MS)
@@ -81,53 +84,63 @@ class WebImageDownloader(
             if (response.body.size > IMAGE_DOWNLOAD_MAX_BYTES) {
                 throw BadInputException("Image download failed: asset is larger than ${IMAGE_DOWNLOAD_MAX_BYTES / (1024 * 1024)}MB")
             }
-            Files.write(tempFile.toPath(), response.body)
             val contentType = response.firstHeader("Content-Type").orEmpty()
             val extension = detectDownloadedImageExtension(
-                file = tempFile,
+                body = response.body,
                 contentType = contentType,
                 sourceUrl = normalizedUrl,
             ) ?: throw BadInputException("Downloaded asset is not a supported raster image: $normalizedUrl")
-            return DownloadedTemp(file = tempFile, extension = extension)
+            return DownloadedTemp(body = response.body, extension = extension)
         } catch (e: Exception) {
-            if (tempFile.exists()) tempFile.delete()
             throw e
         }
     }
 
-    private fun uniqueFile(base: File): File {
-        if (!base.exists()) return base
-        val parent = base.parentFile
-        val stem = base.nameWithoutExtension
-        val ext = base.extension
+    private fun uniquePath(basePath: String, meta: ToolInvocationMeta): ru.souz.runtime.sandbox.SandboxPathInfo {
+        val base = filesToolUtil.resolvePath(basePath, meta)
+        if (!base.exists) return base
+        val parentPath = base.parentPath ?: error("Image output path must include a parent directory: ${base.path}")
+        val stem = base.name.substringBeforeLast('.', base.name)
+        val ext = base.name.substringAfterLast('.', "")
         for (idx in 1..500) {
-            val candidate = File(parent, "${stem}_$idx.$ext")
-            if (!candidate.exists()) return candidate
+            val suffix = if (ext.isBlank()) "${stem}_$idx" else "${stem}_$idx.$ext"
+            val candidate = filesToolUtil.resolvePath("$parentPath/$suffix", meta)
+            if (!candidate.exists) return candidate
         }
-        return File(parent, "${stem}_${System.currentTimeMillis()}.$ext")
+        val fallbackName = if (ext.isBlank()) {
+            "${stem}_${System.currentTimeMillis()}"
+        } else {
+            "${stem}_${System.currentTimeMillis()}.$ext"
+        }
+        return filesToolUtil.resolvePath("$parentPath/$fallbackName", meta)
     }
 
-    private fun resolveImageOutputDir(outputDir: String?): File {
+    private fun resolveImageOutputDir(
+        outputDir: String?,
+        meta: ToolInvocationMeta,
+    ): ru.souz.runtime.sandbox.SandboxPathInfo {
         val raw = outputDir?.trim().takeUnless { it.isNullOrBlank() }
-            ?: FilesToolUtil.souzWebAssetsDirectoryPath.toString() + File.separator
-        val resolved = File(filesToolUtil.applyDefaultEnvs(raw))
+            ?: "${filesToolUtil.resolveSouzWebAssetsDirectory(meta).path}/"
+        val resolved = filesToolUtil.resolvePath(raw, meta)
         val dir = if (resolved.isDirectory || raw.endsWith("/") || raw.endsWith("\\")) {
             resolved
         } else {
-            resolved.parentFile ?: resolved
+            resolved.parentPath?.let { filesToolUtil.resolvePath(it, meta) } ?: resolved
         }
-        dir.mkdirs()
-        filesToolUtil.requirePathIsSave(dir)
+        if (!filesToolUtil.isPathSafe(dir, meta)) {
+            throw BadInputException("Access denied: File path must be within the home directory")
+        }
+        filesToolUtil.createDirectory(dir, meta)
         return dir
     }
 
     private fun detectDownloadedImageExtension(
-        file: File,
+        body: ByteArray,
         contentType: String,
         sourceUrl: String,
     ): String? {
         val declaredMime = normalizeMime(contentType)
-        val detectedMime = runCatching { normalizeMime(tika.detect(file)) }.getOrNull()
+        val detectedMime = runCatching { normalizeMime(tika.detect(body)) }.getOrNull()
         if (declaredMime in blockedImageMimeTypes || detectedMime in blockedImageMimeTypes) return null
         mimeToExtension[detectedMime]?.let { return it }
         mimeToExtension[declaredMime]?.let { return it }

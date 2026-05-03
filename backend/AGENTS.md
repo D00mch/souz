@@ -31,6 +31,7 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
 - Execution persists product messages separately from `agent_conversation_state`; runtime-only continuation state stays inside `AgentStateRepository`.
 - `conversationId = chatId.toString()` is the stable runtime identity for chat execution.
 - `BackendConversationRuntimeFactory` rebuilds a request-scoped runtime from persisted session state, while `AgentExecutionService` owns product execution lifecycle, cancellation, and option continuation.
+- Backend runtime sandboxes are resolved per user only: singleton runtime tools receive `ToolInvocationMeta.userId`, and backend sandbox scope currently omits `conversationId`.
 - `message.delta` stays live-only, while durable events such as `execution.started`, `message.created`, `message.completed`, `tool.call.*`, `option.*`, `execution.finished`, `execution.failed`, and `execution.cancelled` are persisted and replayable.
 
 ## Storage

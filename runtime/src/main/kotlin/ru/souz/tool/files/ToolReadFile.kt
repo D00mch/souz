@@ -24,11 +24,13 @@ class ToolReadFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolRea
     )
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val file = filesToolUtil.resolveSafeExistingFile(input.path)
-        val content = filesToolUtil.readUtf8TextFile(file)
+        val file = filesToolUtil.resolveSafeExistingFile(input.path, meta)
+        val content = filesToolUtil.readUtf8TextFile(file, meta)
         if (content.length > 25000) {
             return "Error: content is too large, it will be difficult to correctly process so much data (limit 25000 chars)."
         }
         return content
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

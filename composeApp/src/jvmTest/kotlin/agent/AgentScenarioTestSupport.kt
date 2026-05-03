@@ -102,52 +102,52 @@ class AgentScenarioTestSupport(
             // Safe defaults: prevent accidental system mutations if a scenario doesn't explicitly mock these tools.
             bindSingleton<ToolNewFile>(overrides = true) {
                 val tool = spyk(ToolNewFile(filesUtil))
-                coEvery { tool.invoke(any<ToolNewFile.Input>()) } returns "Created"
+                coEvery { tool.invoke(any<ToolNewFile.Input>(), any()) } returns "Created"
                 tool
             }
             bindSingleton<ToolModifyFile>(overrides = true) {
                 val tool = spyk(ToolModifyFile(filesUtil))
-                coEvery { tool.invoke(any<ToolModifyFile.Input>()) } returns "Modified"
+                coEvery { tool.invoke(any<ToolModifyFile.Input>(), any()) } returns "Modified"
                 tool
             }
             bindSingleton<ToolDeleteFile>(overrides = true) {
                 val tool = spyk(ToolDeleteFile(filesUtil))
-                coEvery { tool.invoke(any<ToolDeleteFile.Input>()) } returns "Deleted"
+                coEvery { tool.invoke(any<ToolDeleteFile.Input>(), any()) } returns "Deleted"
                 tool
             }
             bindSingleton<ToolMoveFile>(overrides = true) {
                 val tool = spyk(ToolMoveFile(filesUtil))
-                coEvery { tool.invoke(any<ToolMoveFile.Input>()) } returns "Moved"
+                coEvery { tool.invoke(any<ToolMoveFile.Input>(), any()) } returns "Moved"
                 tool
             }
             bindSingleton<ToolCreateNote>(overrides = true) {
                 val tool = spyk(ToolCreateNote(ToolRunBashCommand))
-                coEvery { tool.invoke(any<ToolCreateNote.Input>()) } returns "Created"
+                coEvery { tool.invoke(any<ToolCreateNote.Input>(), any()) } returns "Created"
                 tool
             }
             bindSingleton<ToolDeleteNote>(overrides = true) {
                 val tool = spyk(ToolDeleteNote(ToolRunBashCommand))
-                coEvery { tool.invoke(any<ToolDeleteNote.Input>()) } returns "Deleted"
+                coEvery { tool.invoke(any<ToolDeleteNote.Input>(), any()) } returns "Deleted"
                 tool
             }
             bindSingleton<ToolCalendarCreateEvent>(overrides = true) {
                 val tool = spyk(ToolCalendarCreateEvent(ToolRunBashCommand))
-                coEvery { tool.invoke(any<ToolCalendarCreateEvent.Input>()) } returns "Event created"
+                coEvery { tool.invoke(any<ToolCalendarCreateEvent.Input>(), any()) } returns "Event created"
                 tool
             }
             bindSingleton<ToolCalendarDeleteEvent>(overrides = true) {
                 val tool = spyk(ToolCalendarDeleteEvent(ToolRunBashCommand))
-                coEvery { tool.invoke(any<ToolCalendarDeleteEvent.Input>()) } returns "Deleted"
+                coEvery { tool.invoke(any<ToolCalendarDeleteEvent.Input>(), any()) } returns "Deleted"
                 tool
             }
             bindSingleton<ToolMailSendNewMessage>(overrides = true) {
                 val tool = spyk(ToolMailSendNewMessage(ToolRunBashCommand))
-                coEvery { tool.invoke(any<ToolMailSendNewMessage.Input>()) } returns "Sent"
+                coEvery { tool.invoke(any<ToolMailSendNewMessage.Input>(), any()) } returns "Sent"
                 tool
             }
             bindSingleton<ToolMailReplyMessage>(overrides = true) {
                 val tool = spyk(ToolMailReplyMessage(ToolRunBashCommand))
-                coEvery { tool.invoke(any<ToolMailReplyMessage.Input>()) } returns "Replied"
+                coEvery { tool.invoke(any<ToolMailReplyMessage.Input>(), any()) } returns "Replied"
                 tool
             }
 

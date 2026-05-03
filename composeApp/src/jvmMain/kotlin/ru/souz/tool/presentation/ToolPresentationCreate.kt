@@ -10,6 +10,7 @@ import org.apache.poi.xslf.usermodel.SlideLayout
 import org.apache.poi.xslf.usermodel.XMLSlideShow
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Image
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.BadInputException
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -288,7 +289,7 @@ class ToolPresentationCreate(
 
     override val attachments: List<String> = emptyList()
 
-    override fun invoke(input: PresentationCreateInput): String {
+    override fun invoke(input: PresentationCreateInput, meta: ToolInvocationMeta): String {
         val renderMode = resolveRenderMode(input.renderMode)
         val customTheme = buildCustomTheme(input)
         val includeSpeakerNotesInPptx = input.includeSpeakerNotes && isSpeakerNotesPptxEnabled()
@@ -307,15 +308,11 @@ class ToolPresentationCreate(
         val effectiveTemplatePath = if (input.templatePath.isNullOrBlank()) null else input.templatePath
 
         val ppt = if (effectiveTemplatePath != null) {
-            val resolvedTemplatePath = filesToolUtil.applyDefaultEnvs(effectiveTemplatePath)
-
-            val file = File(resolvedTemplatePath)
-            if (file.exists()) {
-                file.inputStream().use { inputStream ->
+            val file = filesToolUtil.resolveSafeExistingFile(effectiveTemplatePath, meta)
+            filesToolUtil.withReadableLocalPath(file, meta) { localTemplatePath ->
+                localTemplatePath.toFile().inputStream().use { inputStream ->
                     XMLSlideShow(inputStream)
                 }
-            } else {
-                throw IllegalArgumentException("Template file not found at: ${input.templatePath}")
             }
         } else {
             XMLSlideShow()
@@ -351,14 +348,15 @@ class ToolPresentationCreate(
                         includeSpeakerNotes = includeSpeakerNotesInPptx,
                         slideIndex = index + 1,
                         totalSlides = slides.size,
+                        meta = meta,
                     )
                 }
             } else {
                 slides.forEach { slideData ->
             // Smart Layout Fallback: Check if image is actually available
             var effectiveLayoutName = slideData.layout?.uppercase()
-            var effectiveImagePath = resolveImagePath(slideData.imagePath)
-            var preparedImage = effectiveImagePath?.let { prepareImageData(it) }
+            var effectiveImagePath = resolveImagePath(slideData.imagePath, meta)
+            var preparedImage = effectiveImagePath?.let { prepareImageData(it, meta) }
 
             // If layout implies image but image is missing/invalid, fallback to text-only layout
             if (effectiveLayoutName == "PIC_TX" || effectiveLayoutName == "TWO_COL_TX_IMG") {
@@ -680,28 +678,35 @@ class ToolPresentationCreate(
             }
             val fileName = if (safeTitle.endsWith(".pptx", ignoreCase = true)) safeTitle else "$safeTitle.pptx"
 
-            val outputFile = resolveOutputFile(input, fileName)
-            outputFile.parentFile?.mkdirs()
-            filesToolUtil.requirePathIsSave(outputFile)
+            val outputFile = resolveOutputFile(input, fileName, meta)
+            if (!filesToolUtil.isPathSafe(outputFile, meta)) {
+                throw BadInputException("Access denied: File path must be within the home directory")
+            }
 
             val htmlPath = if (input.saveHtmlPreview || renderMode == PresentationRenderMode.HTML_FIRST) {
-                val htmlFile = File(outputFile.parentFile, "${outputFile.nameWithoutExtension}.html")
-                filesToolUtil.requirePathIsSave(htmlFile)
-                htmlFile.writeText(
+                val htmlFile = filesToolUtil.resolvePath(
+                    "${outputFile.parentPath}/${outputFile.name.substringBeforeLast('.', outputFile.name)}.html",
+                    meta,
+                )
+                filesToolUtil.withWritableLocalPath(htmlFile, meta) { localHtmlFile ->
+                    localHtmlFile.toFile().writeText(
                     buildHtmlStoryboard(input.title, slides, resolvedThemeObj, customTheme),
                     StandardCharsets.UTF_8
                 )
-                htmlFile.absolutePath
+                }
+                htmlFile.path
             } else null
 
-            FileOutputStream(outputFile).use { out ->
-                ppt.write(out)
+            filesToolUtil.withWritableLocalPath(outputFile, meta) { localOutputFile ->
+                FileOutputStream(localOutputFile.toFile()).use { out ->
+                    ppt.write(out)
+                }
             }
 
             val slideCount = ppt.slides.size
             return """
                 {
-                    "path": "${outputFile.absolutePath}",
+                    "path": "${outputFile.path}",
                     "slideCount": $slideCount,
                     "renderMode": "${renderMode.name}",
                     "htmlPath": ${htmlPath?.let { "\"$it\"" } ?: "null"}
@@ -787,12 +792,12 @@ class ToolPresentationCreate(
         }
     }
 
-    private fun resolveImagePath(raw: String?): String? {
+    private fun resolveImagePath(raw: String?, meta: ToolInvocationMeta): String? {
         val normalized = raw?.trim()?.takeIf { it.isNotBlank() } ?: return null
-        val expanded = filesToolUtil.applyDefaultEnvs(normalized)
+        val expanded = filesToolUtil.applyDefaultEnvs(normalized, meta)
         return when {
             expanded.startsWith("http://", ignoreCase = true) || expanded.startsWith("https://", ignoreCase = true) ->
-                webImageDownloader.downloadToTemp(expanded)
+                webImageDownloader.downloadToTemp(expanded, meta)
 
             else -> expanded
         }
@@ -807,6 +812,7 @@ class ToolPresentationCreate(
         includeSpeakerNotes: Boolean,
         slideIndex: Int,
         totalSlides: Int,
+        meta: ToolInvocationMeta,
     ) {
         val slide = ppt.createSlide()
         val pageWidth = ppt.pageSize.width
@@ -832,7 +838,7 @@ class ToolPresentationCreate(
         slideData.backgroundShapes?.forEach { createShape(slide, it, resolvedTheme, customTheme) }
 
         val polishedPoints = polishPoints(slideData.points)
-        val preparedImageAsset = resolvePreparedImage(slideData.imagePath)
+        val preparedImageAsset = resolvePreparedImage(slideData.imagePath, meta)
         val preparedImage = preparedImageAsset?.preparedImage
         val hasImage = preparedImage != null
         val hasTextPoints = polishedPoints.isNotEmpty()
@@ -2165,41 +2171,46 @@ class ToolPresentationCreate(
         UNKNOWN,
     }
 
-    private fun resolvePreparedImage(raw: String?): ResolvedImageAsset? {
-        val path = resolveImagePath(raw) ?: return null
-        val prepared = prepareImageData(path) ?: return null
+    private fun resolvePreparedImage(raw: String?, meta: ToolInvocationMeta): ResolvedImageAsset? {
+        val path = resolveImagePath(raw, meta) ?: return null
+        val prepared = prepareImageData(path, meta) ?: return null
         return ResolvedImageAsset(prepared)
     }
 
-    private fun prepareImageData(imagePath: String): PreparedImage? {
-        val imageFile = File(imagePath)
-        if (!imageFile.exists() || !imageFile.isFile || imageFile.length() == 0L) return null
+    private fun prepareImageData(imagePath: String, meta: ToolInvocationMeta): PreparedImage? {
+        val imageFile = runCatching { filesToolUtil.resolveSafeExistingFile(imagePath, meta) }.getOrNull() ?: return null
+        return filesToolUtil.withReadableLocalPath(imageFile, meta) { localImagePath ->
+            val imageFileHandle = localImagePath.toFile()
+            if (!imageFileHandle.exists() || !imageFileHandle.isFile || imageFileHandle.length() == 0L) return@withReadableLocalPath null
 
-        var pictureData = imageFile.readBytes()
-        val sniffedKind = sniffImageKind(pictureData, imageFile.extension)
-        val decodedImage = runCatching { Image.makeFromEncoded(pictureData) }.getOrNull()
+            var pictureData = imageFileHandle.readBytes()
+            val sniffedKind = sniffImageKind(pictureData, imageFileHandle.extension)
+            val decodedImage = runCatching { Image.makeFromEncoded(pictureData) }.getOrNull()
 
-        if (sniffedKind == NormalizedImageKind.SVG && decodedImage == null) {
-            return null
-        }
-
-        val format = when {
-            sniffedKind == NormalizedImageKind.JPEG -> org.apache.poi.sl.usermodel.PictureData.PictureType.JPEG
-            sniffedKind == NormalizedImageKind.PNG -> org.apache.poi.sl.usermodel.PictureData.PictureType.PNG
-            decodedImage != null -> {
-                val pngData = runCatching { decodedImage.encodeToData(EncodedImageFormat.PNG) }.getOrNull() ?: return null
-                pictureData = pngData.bytes
-                org.apache.poi.sl.usermodel.PictureData.PictureType.PNG
+            if (sniffedKind == NormalizedImageKind.SVG && decodedImage == null) {
+                return@withReadableLocalPath null
             }
-            else -> return null
-        }
 
-        return PreparedImage(
-            data = pictureData,
-            format = format,
-            width = decodedImage?.width?.takeIf { it > 0 } ?: 1,
-            height = decodedImage?.height?.takeIf { it > 0 } ?: 1,
-        )
+            val format = when {
+                sniffedKind == NormalizedImageKind.JPEG -> org.apache.poi.sl.usermodel.PictureData.PictureType.JPEG
+                sniffedKind == NormalizedImageKind.PNG -> org.apache.poi.sl.usermodel.PictureData.PictureType.PNG
+                decodedImage != null -> {
+                    val pngData = runCatching { decodedImage.encodeToData(EncodedImageFormat.PNG) }.getOrNull()
+                        ?: return@withReadableLocalPath null
+                    pictureData = pngData.bytes
+                    org.apache.poi.sl.usermodel.PictureData.PictureType.PNG
+                }
+
+                else -> return@withReadableLocalPath null
+            }
+
+            PreparedImage(
+                data = pictureData,
+                format = format,
+                width = decodedImage?.width?.takeIf { it > 0 } ?: 1,
+                height = decodedImage?.height?.takeIf { it > 0 } ?: 1,
+            )
+        }
     }
 
     private fun sniffImageKind(data: ByteArray, extensionHint: String): NormalizedImageKind {
@@ -2505,25 +2516,32 @@ class ToolPresentationCreate(
         }
     }
 
-    private fun resolveOutputFile(input: PresentationCreateInput, defaultFileName: String): File {
-        val defaultOutputPath = FilesToolUtil.souzDocumentsDirectoryPath.resolve(defaultFileName).toString()
+    private fun resolveOutputFile(
+        input: PresentationCreateInput,
+        defaultFileName: String,
+        meta: ToolInvocationMeta,
+    ): ru.souz.runtime.sandbox.SandboxPathInfo {
+        val defaultOutputPath = "${filesToolUtil.resolveSouzDocumentsDirectory(meta).path}/$defaultFileName"
         val rawOutputPath = input.outputPath?.takeIf { it.isNotBlank() } ?: defaultOutputPath
-        val expandedPath = filesToolUtil.applyDefaultEnvs(rawOutputPath)
-        val outputTarget = File(expandedPath)
+        val outputTarget = filesToolUtil.resolvePath(rawOutputPath, meta)
 
         val looksLikeDirectory = rawOutputPath.endsWith("/") ||
             rawOutputPath.endsWith("\\") ||
             outputTarget.isDirectory
 
         if (looksLikeDirectory) {
-            return File(outputTarget, defaultFileName)
+            return filesToolUtil.resolvePath("${outputTarget.path}/$defaultFileName", meta)
         }
 
         val hasExtension = outputTarget.name.contains(".")
         return when {
-            outputTarget.extension.equals("pptx", ignoreCase = true) -> outputTarget
-            hasExtension -> File(outputTarget.parentFile ?: File("."), "${outputTarget.nameWithoutExtension}.pptx")
-            else -> File(outputTarget.parentFile ?: File("."), "${outputTarget.name}.pptx")
+            outputTarget.name.endsWith(".pptx", ignoreCase = true) -> outputTarget
+            hasExtension -> filesToolUtil.resolvePath(
+                "${outputTarget.parentPath}/${outputTarget.name.substringBeforeLast('.')}.pptx",
+                meta,
+            )
+
+            else -> filesToolUtil.resolvePath("${outputTarget.parentPath}/${outputTarget.name}.pptx", meta)
         }
     }
 
@@ -2818,4 +2836,6 @@ class ToolPresentationCreate(
         cornerAccent.fillColor = accentColor
         cornerAccent.setLineColor(null)
     }
+
+    override suspend fun suspendInvoke(input: PresentationCreateInput, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

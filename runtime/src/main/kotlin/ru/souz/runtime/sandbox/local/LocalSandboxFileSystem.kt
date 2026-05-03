@@ -110,8 +110,16 @@ internal class LocalSandboxFileSystem(
     }
 
     override fun localPathOrNull(path: SandboxPathInfo): Path? {
-        requireReadableFile(path)
+        if (!isPathSafe(path)) {
+            throw ForbiddenFolder(path.rawPath)
+        }
         return Path.of(path.path)
+    }
+
+    override fun writeBytes(path: SandboxPathInfo, content: ByteArray) {
+        val filePath = resolveWritablePath(path)
+        filePath.parent?.let(Files::createDirectories)
+        Files.write(filePath, content)
     }
 
     override fun writeText(path: SandboxPathInfo, content: String) {
