@@ -1,7 +1,12 @@
 package ru.souz.backend.storage.postgres
 
+import java.lang.reflect.Proxy
+import java.sql.PreparedStatement
+import java.sql.Types
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.Locale
 import java.util.UUID
 import javax.sql.DataSource
@@ -114,6 +119,70 @@ class PostgresRepositoriesTest {
             assertTrue(stored.toolPermissions.isEmpty())
             assertTrue(stored.mcp.isEmpty())
         }
+    }
+
+    @Test
+    fun `user settings repository saves and restores explicit created and updated timestamps`() = runTest {
+        val schema = newPostgresSchema("postgres_user_settings_timestamps")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+        val userRepository = PostgresUserRepository(dataSource)
+        val settingsRepository = PostgresUserSettingsRepository(dataSource)
+        val settings = UserSettings(
+            userId = "user-a",
+            defaultModel = LLMModel.Max,
+            contextSize = 16_000,
+            temperature = 0.7f,
+            locale = Locale.forLanguageTag("en-US"),
+            timeZone = ZoneId.of("UTC"),
+            systemPrompt = "system-user-a",
+            enabledTools = setOf("ListFiles"),
+            showToolEvents = true,
+            streamingMessages = true,
+            toolPermissions = mapOf("ListFiles" to ToolPermission(ToolPermissionMode.ALLOW)),
+            mcp = mapOf("repo" to UserMcpServer(enabled = true)),
+            createdAt = Instant.parse("2026-05-01T09:00:00Z"),
+            updatedAt = Instant.parse("2026-05-01T09:05:00Z"),
+        )
+
+        dataSource.use {
+            userRepository.ensureUser(settings.userId)
+
+            val saved = settingsRepository.save(settings)
+            val stored = settingsRepository.get(settings.userId)
+
+            assertEquals(settings, saved)
+            assertEquals(settings, stored)
+            assertEquals(settings.createdAt, stored?.createdAt)
+            assertEquals(settings.updatedAt, stored?.updatedAt)
+        }
+    }
+
+    @Test
+    fun `setInstant binds non null instants as utc timestamptz`() {
+        val calls = mutableListOf<Pair<String, List<Any?>>>()
+        val statement = Proxy.newProxyInstance(
+            PreparedStatement::class.java.classLoader,
+            arrayOf(PreparedStatement::class.java),
+        ) { _, method, args ->
+            when (method.name) {
+                "setObject", "setNull" -> calls += method.name to args.orEmpty().toList()
+            }
+            null
+        } as PreparedStatement
+        val instant = Instant.parse("2026-05-01T09:00:00Z")
+
+        statement.setInstant(1, instant)
+
+        assertEquals(
+            listOf(
+                "setObject" to listOf<Any?>(
+                    1,
+                    OffsetDateTime.ofInstant(instant, ZoneOffset.UTC),
+                    Types.TIMESTAMP_WITH_TIMEZONE,
+                )
+            ),
+            calls,
+        )
     }
 
     @Test

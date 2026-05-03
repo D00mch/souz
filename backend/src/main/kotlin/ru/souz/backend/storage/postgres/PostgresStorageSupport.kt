@@ -10,6 +10,7 @@ import java.sql.Types
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.Locale
 import javax.sql.DataSource
 import kotlinx.coroutines.Dispatchers
@@ -101,7 +102,11 @@ internal fun PreparedStatement.setInstant(index: Int, value: Instant?) {
     if (value == null) {
         setNull(index, Types.TIMESTAMP_WITH_TIMEZONE)
     } else {
-        setObject(index, value)
+        setObject(
+            index,
+            OffsetDateTime.ofInstant(value, ZoneOffset.UTC),
+            Types.TIMESTAMP_WITH_TIMEZONE,
+        )
     }
 }
 
