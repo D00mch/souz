@@ -1,5 +1,6 @@
 package ru.souz.tool.files
 
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 import java.io.File
 
@@ -29,7 +30,7 @@ class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewF
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val isDirectoryRequest = input.path.endsWith("/") || input.path.endsWith(File.separator)
         val target = filesToolUtil.resolvePath(input.path)
         if (!filesToolUtil.isPathSafe(target)) {

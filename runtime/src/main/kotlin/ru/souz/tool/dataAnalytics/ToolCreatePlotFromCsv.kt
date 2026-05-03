@@ -13,6 +13,7 @@ import org.jetbrains.letsPlot.ggsize
 import org.jetbrains.letsPlot.label.labs
 import org.jetbrains.letsPlot.letsPlot
 import org.slf4j.LoggerFactory
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.db.ConfigStore
@@ -79,7 +80,7 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val rawPath = filesToolUtil.applyDefaultEnvs(input.path)
         val inputFile = File(rawPath)
 
@@ -264,10 +265,15 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
 
 fun main() {
     val tool = ToolCreatePlotFromCsv(FilesToolUtil(SettingsProviderImpl(ConfigStore)))
-    println(tool.invoke(ToolCreatePlotFromCsv.Input(
-        path = "/Users/duxx/Отчеты/Финансовый отчет первый квартал.xlsx",
-        xColumn = "Manager",
-        yColumn = "Revenue",
-        chartType = ChartType.BAR
-    )))
+    println(
+        tool.invoke(
+            ToolCreatePlotFromCsv.Input(
+                path = "/Users/duxx/Отчеты/Финансовый отчет первый квартал.xlsx",
+                xColumn = "Manager",
+                yColumn = "Revenue",
+                chartType = ChartType.BAR
+            ),
+            ToolInvocationMeta.Empty,
+        )
+    )
 }

@@ -1,5 +1,6 @@
 package ru.souz.tool.files
 
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 
 class ToolFindTextInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindTextInFiles.Input> {
@@ -28,7 +29,7 @@ class ToolFindTextInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val baseDir = filesToolUtil.resolveSafeExistingDirectory(input.path)
         val basePath = java.nio.file.Path.of(baseDir.path)
         val matchedFiles = filesToolUtil.listDescendants(baseDir, includeHidden = false)

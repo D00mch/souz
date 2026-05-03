@@ -8,6 +8,7 @@ import org.apache.tika.metadata.Metadata
 import org.apache.tika.parser.AutoDetectParser
 import org.apache.tika.sax.BodyContentHandler
 import org.xml.sax.SAXException
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -43,17 +44,17 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         )
     )
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         return try {
             withTimeout(EXTRACTION_TIMEOUT_MS) {
-                runInterruptible(Dispatchers.IO) { invoke(input) }
+                runInterruptible(Dispatchers.IO) { invoke(input, meta) }
             }
         } catch (_: TimeoutCancellationException) {
             "Error extracting text: timed out after ${EXTRACTION_TIMEOUT_MS / 1000} seconds. Try a smaller file/range (for PDFs use ReadPdfPages)."
         }
     }
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val file = filesToolUtil.resolvePath(input.filePath)
         if (!file.exists) return "Error: File not found at ${input.filePath}"
 

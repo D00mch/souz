@@ -1,6 +1,7 @@
 package ru.souz.tool.files
 
 import org.slf4j.LoggerFactory
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 
 class ToolDeleteFile(
@@ -27,17 +28,17 @@ class ToolDeleteFile(
         )
     )
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
         val result = permissionBroker?.requestPermission(
             "Delete file or folder",
             linkedMapOf("path" to fixedPath)
         )
         if (result is ToolPermissionResult.No) return result.msg
-        return invoke(input)
+        return invoke(input, meta)
     }
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val path = filesToolUtil.resolvePath(input.path)
         if (!path.exists) {
             throw BadInputException("Invalid path: ${input.path}")

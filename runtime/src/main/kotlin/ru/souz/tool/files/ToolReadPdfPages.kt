@@ -8,6 +8,7 @@ import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
+import ru.souz.llms.ToolInvocationMeta
 import java.io.IOException
 
 class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolReadPdfPages.Input> {
@@ -38,7 +39,7 @@ class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<Too
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val file = filesToolUtil.resolvePath(input.filePath)
         if (!file.exists) return "Error: File not found at ${input.filePath}"
 
@@ -108,7 +109,8 @@ fun main() {
             filePath = "/Users/duxx/Книги/100 ошибок в го.pdf",
             startPage = 27,
             endPage = 75
-        )
+        ),
+        ToolInvocationMeta.Empty,
     )
     println(result)
 }

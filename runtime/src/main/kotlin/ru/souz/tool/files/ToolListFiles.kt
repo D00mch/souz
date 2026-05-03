@@ -2,6 +2,7 @@ package ru.souz.tool.files
 
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 
 class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolListFiles.Input> {
@@ -25,7 +26,7 @@ class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolLi
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val base = filesToolUtil.resolveSafeExistingDirectory(input.path)
         val files = filesToolUtil.listDescendants(base, input.depth, includeHidden = false)
             .map { entry ->
@@ -45,6 +46,6 @@ class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolLi
 
 fun main() {
     val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
-    val result = ToolListFiles(filesToolUtil).invoke(ToolListFiles.Input("${'$'}HOME", 3))
+    val result = ToolListFiles(filesToolUtil).invoke(ToolListFiles.Input("${'$'}HOME", 3), ToolInvocationMeta.Empty)
     println(result)
 }

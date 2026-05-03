@@ -1,5 +1,6 @@
 package ru.souz.tool.files
 
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 
 class ToolReadFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolReadFile.Input> {
@@ -22,7 +23,7 @@ class ToolReadFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolRea
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val file = filesToolUtil.resolveSafeExistingFile(input.path)
         val content = filesToolUtil.readUtf8TextFile(file)
         if (content.length > 25000) {

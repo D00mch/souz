@@ -9,6 +9,7 @@ import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.font.PDType1Font
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.db.SettingsProvider
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxFileSystem
@@ -56,7 +57,7 @@ class ToolReadPdfPagesMemoryTest {
         every { sandbox.runtimePaths } returns localSandbox.runtimePaths
 
         val result = ToolReadPdfPages(FilesToolUtil(sandbox))
-            .invoke(ToolReadPdfPages.Input(filePath = pdf.toString(), startPage = 1))
+            .invoke(ToolReadPdfPages.Input(filePath = pdf.toString(), startPage = 1), ToolInvocationMeta.Empty)
 
         assertContains(result, "Local sandbox PDF text")
         verify(exactly = 0) { fileSystem.readBytes(any()) }
@@ -92,7 +93,7 @@ class ToolReadPdfPagesMemoryTest {
         every { sandbox.runtimePaths } returns runtimePaths
 
         val result = ToolReadPdfPages(FilesToolUtil(sandbox))
-            .invoke(ToolReadPdfPages.Input(filePath = pdf.toString(), startPage = 1))
+            .invoke(ToolReadPdfPages.Input(filePath = pdf.toString(), startPage = 1), ToolInvocationMeta.Empty)
 
         assertContains(result, "Stream fallback PDF text")
         verify(exactly = 0) { fileSystem.readBytes(any()) }

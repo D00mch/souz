@@ -1,6 +1,7 @@
 package ru.souz.tool.files
 
 import org.slf4j.LoggerFactory
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -37,7 +38,7 @@ class ToolMoveFile(
         )
     )
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val fixedSourcePath = filesToolUtil.applyDefaultEnvs(input.sourcePath)
         val fixedDestinationPath = filesToolUtil.applyDefaultEnvs(input.destinationPath)
         val result = permissionBroker?.requestPermission(
@@ -48,10 +49,10 @@ class ToolMoveFile(
             )
         )
         if (result is ToolPermissionResult.No) return result.msg
-        return invoke(input)
+        return invoke(input, meta)
     }
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val source = filesToolUtil.resolveSafeExistingFile(input.sourcePath)
         val destination = filesToolUtil.resolvePath(input.destinationPath)
         if (source.path == destination.path) {

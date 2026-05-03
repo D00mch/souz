@@ -1,6 +1,7 @@
 package ru.souz.tool.config
 
 import ru.souz.db.ConfigStore
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 
 class ToolSoundConfig(private val config: ConfigStore) : ToolSetup<ToolSoundConfig.Input> {
@@ -29,7 +30,7 @@ class ToolSoundConfig(private val config: ConfigStore) : ToolSetup<ToolSoundConf
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val newSpeed = input.speed
         config.put(SPEED_KEY, newSpeed)
         return "Sound speed updated to ${input.speed}"

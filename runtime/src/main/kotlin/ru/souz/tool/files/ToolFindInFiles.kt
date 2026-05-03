@@ -1,5 +1,6 @@
 package ru.souz.tool.files
 
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
@@ -43,7 +44,7 @@ class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val base = filesToolUtil.resolveSafeExistingDirectory(input.path)
         val needle = input.query.trim()
         if (needle.isBlank()) {

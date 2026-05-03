@@ -2,6 +2,7 @@ package ru.souz.tool.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.runBlocking
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -44,9 +45,9 @@ class ToolWebPageText(
         )
     )
 
-    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val url = input.url.trim()
         return mapper.writeValueAsString(
             Output(
