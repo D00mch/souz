@@ -3,12 +3,6 @@ package ru.souz.backend.agent.model
 import java.util.UUID
 import ru.souz.backend.execution.model.AgentExecutionRuntimeConfig
 
-/** Stable backend conversation identifier composed from user and conversation ids. */
-data class AgentConversationKey(
-    val userId: String,
-    val conversationId: String,
-)
-
 internal data class BackendAgentTurn(
     val userId: String,
     val chatId: UUID,
