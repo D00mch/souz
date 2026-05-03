@@ -67,15 +67,15 @@ flowchart LR
     composeApp[":composeApp\nDesktop UI and OS integrations"] --> runtime[":runtime\nShared JVM runtime and backend-safe tools"]
     composeApp --> agent[":agent\nShared agent runtime"]
     composeApp --> llms[":llms\nProvider contracts and helpers"]
-    composeApp --> native[":native\nLocal-model native bridge"]
+    composeApp --> nativeBridge[":native\nLocal-model native bridge"]
 
     runtime --> agent
     runtime --> llms
-    runtime --> native
+    runtime --> nativeBridge
 
     agent --> graphEngine[":graph-engine\nGraph DSL/runtime"]
     agent --> llms
-    native --> llms
+    nativeBridge --> llms
 ```
 
 ### Backend
@@ -85,42 +85,41 @@ flowchart LR
     backend[":backend\nKtor HTTP server"] --> runtime[":runtime\nShared JVM runtime and backend-safe tools"]
     backend --> agent[":agent\nShared agent runtime"]
     backend --> llms[":llms\nProvider contracts and helpers"]
-    backend --> native[":native\nLocal-model native bridge"]
+    backend --> nativeBridge[":native\nLocal-model native bridge"]
 
     runtime --> agent
     runtime --> llms
-    runtime --> native
+    runtime --> nativeBridge
 
     agent --> graphEngine[":graph-engine\nGraph DSL/runtime"]
     agent --> llms
-    native --> llms
+    nativeBridge --> llms
 ```
 
 - `:runtime` owns the shared JVM wiring plus the reusable tool catalog that backend can execute without desktop integrations.
 - `:composeApp` layers desktop-only services and tools on top of the shared runtime modules.
 - `:backend` imports `runtimeToolsDiModule(includeWebImageSearch = false)` and exposes the shared agent runtime over HTTP without the image-search tool that would otherwise initialize Tika's external parser probes on startup.
 
-
 ## Architecture
 
 ```mermaid
 flowchart LR
-    user["User"] --> ui[":composeApp\nCompose Desktop UI"]
-    ui --> agent[":agent\nGraphBasedAgent"]
-    backend[":backend\nHTTP API"] --> agent
+    userNode["User"] --> desktopUi[":composeApp\nCompose Desktop UI"]
+    desktopUi --> agentNode[":agent\nGraphBasedAgent"]
+    backendApi[":backend\nHTTP API"] --> agentNode
 
-    agent --> graph[":graph-engine\nTyped graph runtime"]
-    agent --> runtime[":runtime\nShared JVM runtime"]
-    agent --> llms[":llms\nLLM contracts"]
-    runtime --> llms
-    runtime --> native[":native\nLocal llama.cpp runtime"]
-    backend --> runtime
-    ui --> runtime
-    ui --> native
+    agentNode --> graphEngine[":graph-engine\nTyped graph runtime"]
+    agentNode --> runtimeNode[":runtime\nShared JVM runtime"]
+    agentNode --> llmsNode[":llms\nLLM contracts"]
+    runtimeNode --> llmsNode
+    runtimeNode --> nativeRuntime[":native\nLocal llama.cpp runtime"]
+    backendApi --> runtimeNode
+    desktopUi --> runtimeNode
+    desktopUi --> nativeRuntime
 
-    runtime --> sandbox["RuntimeSandbox\nfilesystem + commands"]
-    runtime --> tools["Tool catalog"]
-    llms --> providers["Cloud + local providers"]
+    runtimeNode --> sandboxNode["RuntimeSandbox\nfilesystem + commands"]
+    runtimeNode --> toolsNode["Tool catalog"]
+    llmsNode --> providersNode["Cloud + local providers"]
 ```
 
 ### Frontend / Desktop app
@@ -162,9 +161,9 @@ flowchart TD
     decision -->|tool call| tool["Execute tool"]
     tool --> llm
     decision -->|final answer| summary["Summarize / save point"]
-    decision -->|error| error["Map error to user-facing output"]
+    decision -->|error| errorNode["Map error to user-facing output"]
     summary --> finish["Finish"]
-    error --> finish
+    errorNode --> finish
 ```
 
 Key behavior:
@@ -398,15 +397,15 @@ Skill pipeline:
 
 ```mermaid
 flowchart LR
-    list["List user skills"] --> select["Select skills\nmetadata + LLM"]
-    select --> load["Load selected bundle"]
-    load --> hash["Canonical hash"]
-    hash --> cache["Validation cache lookup"]
-    cache --> structural["Structural validation"]
-    structural --> static["Static validation"]
-    static --> llm["LLM validation"]
-    llm --> activate["Activate skill"]
-    activate --> inject["Inject skill context"]
+    skillList["List user skills"] --> skillSelect["Select skills\nmetadata + LLM"]
+    skillSelect --> skillLoad["Load selected bundle"]
+    skillLoad --> skillHash["Canonical hash"]
+    skillHash --> validationCache["Validation cache lookup"]
+    validationCache --> structuralValidation["Structural validation"]
+    structuralValidation --> staticValidation["Static validation"]
+    staticValidation --> llmValidation["LLM validation"]
+    llmValidation --> skillActivate["Activate skill"]
+    skillActivate --> skillInject["Inject skill context"]
 ```
 
 Skill safety and storage:
