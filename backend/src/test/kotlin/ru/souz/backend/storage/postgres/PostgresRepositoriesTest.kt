@@ -88,9 +88,16 @@ class PostgresRepositoriesTest {
             val chat = chat(userId = "user-tools", updatedAt = Instant.parse("2026-05-01T10:00:00Z"))
             repositories.userRepository.ensureUser(chat.userId)
             repositories.chatRepository.create(chat)
+            val userMessage = repositories.messageRepository.append(
+                userId = chat.userId,
+                chatId = chat.id,
+                role = ChatRole.USER,
+                content = "open browser",
+            )
             val execution = execution(
                 userId = chat.userId,
                 chatId = chat.id,
+                userMessageId = userMessage.id,
                 assistantMessageId = null,
                 status = AgentExecutionStatus.RUNNING,
                 startedAt = Instant.parse("2026-05-01T10:01:00Z"),
@@ -226,6 +233,7 @@ class PostgresRepositoriesTest {
             val execution = execution(
                 userId = userId,
                 chatId = chat.id,
+                userMessageId = firstMessage.id,
                 assistantMessageId = assistantPlaceholder.id,
                 status = AgentExecutionStatus.WAITING_OPTION,
                 startedAt = Instant.parse("2026-05-01T09:10:00Z"),
@@ -343,10 +351,17 @@ class PostgresRepositoriesTest {
             val chat = chat(userId = "user-active", updatedAt = Instant.parse("2026-05-01T10:00:00Z"))
             repositories.userRepository.ensureUser(chat.userId)
             repositories.chatRepository.create(chat)
+            val userMessage = repositories.messageRepository.append(
+                userId = chat.userId,
+                chatId = chat.id,
+                role = ChatRole.USER,
+                content = "run active execution",
+            )
             repositories.executionRepository.create(
                 execution(
                     userId = chat.userId,
                     chatId = chat.id,
+                    userMessageId = userMessage.id,
                     assistantMessageId = null,
                     status = AgentExecutionStatus.RUNNING,
                     startedAt = Instant.parse("2026-05-01T10:01:00Z"),
@@ -358,6 +373,7 @@ class PostgresRepositoriesTest {
                     execution(
                         userId = chat.userId,
                         chatId = chat.id,
+                        userMessageId = userMessage.id,
                         assistantMessageId = null,
                         status = AgentExecutionStatus.QUEUED,
                         startedAt = Instant.parse("2026-05-01T10:02:00Z"),
@@ -432,6 +448,24 @@ class PostgresRepositoriesTest {
         postgresRepositories(schema, durableEvents = true).use { repositories ->
             repositories.userRepository.ensureUser(userId)
             repositories.chatRepository.create(chat)
+            val userMessage = repositories.messageRepository.append(
+                userId = userId,
+                chatId = chat.id,
+                role = ChatRole.USER,
+                content = "replay durable events",
+            )
+            val execution = execution(
+                userId = userId,
+                chatId = chat.id,
+                userMessageId = userMessage.id,
+                assistantMessageId = null,
+                status = AgentExecutionStatus.COMPLETED,
+                startedAt = Instant.parse("2026-05-01T12:00:30Z"),
+            ).copy(
+                id = executionId,
+                finishedAt = Instant.parse("2026-05-01T12:01:00Z"),
+            )
+            repositories.executionRepository.create(execution)
             repositories.eventRepository.append(
                 userId = userId,
                 chatId = chat.id,
@@ -599,6 +633,7 @@ class PostgresRepositoriesTest {
                 select version
                 from flyway_schema_history
                 where success = true
+                  and version is not null
                 order by installed_rank
                 """.trimIndent()
             ).use { statement ->
@@ -648,6 +683,7 @@ class PostgresRepositoriesTest {
     private fun execution(
         userId: String,
         chatId: UUID,
+        userMessageId: UUID?,
         assistantMessageId: UUID?,
         status: AgentExecutionStatus,
         startedAt: Instant,
@@ -656,7 +692,7 @@ class PostgresRepositoriesTest {
             id = UUID.randomUUID(),
             userId = userId,
             chatId = chatId,
-            userMessageId = UUID.randomUUID(),
+            userMessageId = userMessageId,
             assistantMessageId = assistantMessageId,
             status = status,
             requestId = "req-$userId",

@@ -21,8 +21,13 @@ internal object SharedPostgresContainer {
     }
 }
 
+private const val POSTGRES_IDENTIFIER_LIMIT = 63
+
 internal fun newPostgresSchema(prefix: String): String =
-    "${prefix}_${UUID.randomUUID().toString().replace("-", "")}"
+    UUID.randomUUID().toString().replace("-", "").let { suffix ->
+        val maxPrefixLength = (POSTGRES_IDENTIFIER_LIMIT - suffix.length - 1).coerceAtLeast(1)
+        "${prefix.take(maxPrefixLength)}_$suffix"
+    }
 
 internal fun postgresAppConfig(
     schema: String,
