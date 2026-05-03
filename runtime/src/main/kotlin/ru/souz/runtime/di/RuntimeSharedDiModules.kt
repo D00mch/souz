@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl
@@ -26,9 +27,13 @@ import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.qwen.QwenChatAPI
 import ru.souz.llms.runtime.LLMFactory
 import ru.souz.llms.tunnel.AiTunnelChatAPI
+import ru.souz.paths.DefaultSouzPaths
+import ru.souz.paths.SouzPaths
+import ru.souz.skills.registry.LocalSkillRegistryRepository
 
 fun runtimeCoreDiModule(): DI.Module = DI.Module("runtimeCore") {
     bindSingleton { ConfigStore }
+    bindSingleton<SouzPaths> { DefaultSouzPaths() }
     bindSingleton { LocalHostInfoProvider() }
     bindSingleton { LocalModelStore() }
     bindSingleton { LocalBridgeLoader(instance()) }
@@ -37,6 +42,7 @@ fun runtimeCoreDiModule(): DI.Module = DI.Module("runtimeCore") {
     bindSingleton { LocalStrictJsonParser() }
     bindSingleton { LocalProviderAvailability(instance(), instance(), instance()) }
     bindSingleton<SettingsProvider> { SettingsProviderImpl(instance(), instance()) }
+    bindSingleton<SkillRegistryRepository> { LocalSkillRegistryRepository(paths = instance()) }
 }
 
 fun runtimeLlmDiModule(

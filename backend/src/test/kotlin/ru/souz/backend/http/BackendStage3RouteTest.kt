@@ -32,6 +32,7 @@ import kotlinx.coroutines.runBlocking
 import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.TestSkillRegistryRepository
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentConversationState
@@ -1128,6 +1129,7 @@ internal fun routeTestContext(
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "global backend prompt",
         toolCatalog = toolCatalog,
+        skillRegistryRepository = TestSkillRegistryRepository,
     )
     val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory)
     val requestFactory = AgentExecutionRequestFactory(
