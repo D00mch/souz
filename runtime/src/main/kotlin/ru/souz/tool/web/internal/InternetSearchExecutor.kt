@@ -9,10 +9,9 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.files.FilesToolUtil
-import java.io.File
-import java.nio.charset.StandardCharsets
 
 class InternetSearchExecutor(
     private val api: LLMChatAPI,
@@ -29,6 +28,7 @@ class InternetSearchExecutor(
     suspend fun runQuickSearch(
         queryRaw: String,
         maxSources: Int,
+        meta: ToolInvocationMeta,
     ): InternetSearchToolOutput {
         val query = internals.requireWebQuery(queryRaw)
         val requestedMaxSources = maxSources.coerceIn(2, 5)
@@ -44,6 +44,7 @@ class InternetSearchExecutor(
                 kind = InternetSearchKind.QUICK,
                 strategy = null,
                 status = collection.providerStatus ?: InternetSearchOutputStatus.NO_RESULTS,
+                meta = meta,
             )
         }
         val results = collection.sources
@@ -58,13 +59,14 @@ class InternetSearchExecutor(
             results = results,
             sources = citedSources,
             strategy = null,
-            saveLongReport = { saveResearchReport(query, it) },
+            saveLongReport = { saveResearchReport(query, it, meta) },
         )
     }
 
     suspend fun runResearch(
         queryRaw: String,
         maxSources: Int,
+        meta: ToolInvocationMeta,
     ): InternetSearchToolOutput {
         val query = internals.requireWebQuery(queryRaw)
         val strategy = buildResearchStrategy(query)
@@ -80,6 +82,7 @@ class InternetSearchExecutor(
                 kind = InternetSearchKind.RESEARCH,
                 strategy = strategy,
                 status = collection.providerStatus ?: InternetSearchOutputStatus.NO_RESULTS,
+                meta = meta,
             )
         }
         val results = collection.sources
@@ -94,7 +97,7 @@ class InternetSearchExecutor(
             results = results,
             sources = citedSources,
             strategy = strategy,
-            saveLongReport = { saveResearchReport(query, it) },
+            saveLongReport = { saveResearchReport(query, it, meta) },
         )
     }
 
@@ -218,6 +221,7 @@ class InternetSearchExecutor(
         kind: InternetSearchKind,
         strategy: InternetSearchResearchStrategy?,
         status: InternetSearchOutputStatus,
+        meta: ToolInvocationMeta,
     ): InternetSearchToolOutput {
         val message = internals.buildEmptySourcesMessage(query, status)
         return internals.buildOutput(
@@ -229,7 +233,7 @@ class InternetSearchExecutor(
             results = emptyList(),
             sources = emptyList(),
             strategy = strategy,
-            saveLongReport = { saveResearchReport(query, it) },
+            saveLongReport = { saveResearchReport(query, it, meta) },
         )
     }
 
@@ -274,15 +278,20 @@ class InternetSearchExecutor(
         }
     }
 
-    private fun saveResearchReport(query: String, reportMarkdown: String): String? {
+    private fun saveResearchReport(
+        query: String,
+        reportMarkdown: String,
+        meta: ToolInvocationMeta,
+    ): String? {
         return runCatching {
-            val outputDir = filesToolUtil.souzDocumentsDirectoryPath.resolve("internet_research").toFile()
-            filesToolUtil.requirePathIsSave(outputDir)
-            outputDir.mkdirs()
-            val file = File(outputDir, buildResearchFileName(query))
-            filesToolUtil.requirePathIsSave(file)
-            file.writeText(reportMarkdown, StandardCharsets.UTF_8)
-            file.absolutePath
+            val outputDir = filesToolUtil.resolvePath(
+                "${filesToolUtil.resolveSouzDocumentsDirectory(meta).path}/internet_research",
+                meta,
+            )
+            filesToolUtil.createDirectory(outputDir, meta)
+            val file = filesToolUtil.resolvePath("${outputDir.path}/${buildResearchFileName(query)}", meta)
+            filesToolUtil.writeUtf8TextFile(file, reportMarkdown, meta)
+            file.path
         }.onFailure { logger.warn("Failed to save research markdown report: {}", it.message) }.getOrNull()
     }
 

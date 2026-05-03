@@ -40,13 +40,13 @@ class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<Too
     )
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val file = filesToolUtil.resolvePath(input.filePath)
+        val file = filesToolUtil.resolvePath(input.filePath, meta)
         if (!file.exists) return "Error: File not found at ${input.filePath}"
 
         if (file.name.substringAfterLast('.', "").lowercase() != "pdf") return "Error: Expecting .pdf file"
 
         return try {
-            filesToolUtil.openPdfDocument(file).use { loaded ->
+            filesToolUtil.openPdfDocument(file, meta).use { loaded ->
                 val document = loaded.document
 
                 // 1. Проверка на шифрование (частая причина "пустоты")

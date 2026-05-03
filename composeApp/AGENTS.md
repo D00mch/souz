@@ -92,5 +92,6 @@ composeApp/
 
 - Keep UI composables presentation-only. Business logic and IO should stay in view models or delegated use cases.
 - `src/jvmMain/kotlin/ru/souz/di/Dependencies.kt` is the main desktop composition root.
+- Desktop sandbox wiring now goes through `RuntimeSandboxFactory`; local mode remains the default, and Docker mode is opt-in through `SOUZ_SANDBOX_MODE=docker`.
 - `src/jvmMain/kotlin/ru/souz/tool/ToolsFactory.kt` is the main entry point for adding or removing desktop tools.
 - Before changing `ui/main`, `ui/settings`, `service/telegram`, `service/observability`, or `tool/telegram`, read the nested `AGENTS.md` in that directory first.

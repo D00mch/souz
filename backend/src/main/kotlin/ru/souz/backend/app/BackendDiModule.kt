@@ -10,6 +10,7 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.app.BackendAppConfig
+import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.session.AgentStateRepository
@@ -97,7 +98,12 @@ fun backendDiModule(
     }
 
     import(runtimeCoreDiModule())
-    import(runtimeToolsDiModule(includeWebImageSearch = false))
+    import(
+        runtimeToolsDiModule(
+            includeWebImageSearch = false,
+            scopeResolver = BackendSandboxScopeResolver,
+        )
+    )
     import(runtimeLlmDiModule(logObjectMapperTag = BackendDiTags.LOG_OBJECT_MAPPER))
 
     bindSingleton { BackendApplicationScope() }

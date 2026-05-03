@@ -5,12 +5,17 @@ import org.apache.pdfbox.io.MemoryUsageSetting
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.slf4j.Logger
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.paths.DefaultSouzPaths
-import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.runtime.sandbox.RuntimeSandbox
+import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
+import ru.souz.runtime.sandbox.ToolInvocationSandboxScopeResolver
+import ru.souz.runtime.sandbox.FactoryBackedToolInvocationRuntimeSandboxResolver
+import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.service.files.FilesService
 import ru.souz.tool.BadInputException
 import java.io.File
@@ -22,61 +27,100 @@ import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.extension
 
 class FilesToolUtil(
-    private val sandbox: RuntimeSandbox,
+    private val sandboxResolver: ToolInvocationRuntimeSandboxResolver,
 ) : FilesService {
+    constructor(sandbox: RuntimeSandbox) : this(
+        ToolInvocationRuntimeSandboxResolver.fixed(sandbox)
+    )
+
     constructor(settingsProvider: SettingsProvider) : this(
-        LocalRuntimeSandbox(
-            scope = SandboxScope.localDefault(),
-            settingsProvider = settingsProvider,
-            homePath = DefaultSouzPaths.homeDirectory(),
-            stateRoot = DefaultSouzPaths.defaultStateRoot(),
+        sandboxFactory = DefaultRuntimeSandboxFactory(settingsProvider = settingsProvider),
+        scopeResolver = ToolInvocationSandboxScopeResolver {
+            SandboxScope.localDefault()
+        },
+    )
+
+    constructor(
+        sandboxFactory: RuntimeSandboxFactory,
+        scopeResolver: ToolInvocationSandboxScopeResolver,
+    ) : this(
+        FactoryBackedToolInvocationRuntimeSandboxResolver(
+            sandboxFactory = sandboxFactory,
+            scopeResolver = scopeResolver,
         )
     )
 
     val sandboxFileSystem: SandboxFileSystem
-        get() = sandbox.fileSystem
+        get() = sandboxFileSystem(ToolInvocationMeta.Empty)
+
+    fun runtimeSandbox(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): RuntimeSandbox =
+        sandboxResolver.resolve(meta)
+
+    fun sandboxFileSystem(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): SandboxFileSystem =
+        runtimeSandbox(meta).fileSystem
 
     override val homeStr: String
-        get() = sandbox.runtimePaths.homePath
+        get() = homeStr(ToolInvocationMeta.Empty)
+
+    fun homeStr(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): String =
+        runtimeSandbox(meta).runtimePaths.homePath
 
     override val homeDirectory: File
         get() = File(homeStr).canonicalFile
 
+    fun homeDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): File =
+        File(homeStr(meta)).canonicalFile
+
     val documentsDirectoryPath: Path
-        get() {
-            val homePath = homeDirectory.toPath()
-            val preferred = homePath.resolve("Documents")
-            val fallback = homePath.resolve("documents")
-            return when {
-                Files.isDirectory(preferred) -> preferred
-                Files.isDirectory(fallback) -> fallback
-                else -> preferred
-            }
-        }
+        get() = documentsDirectoryPath(ToolInvocationMeta.Empty)
+
+    fun documentsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): Path =
+        Path.of(resolveDocumentsDirectory(meta).path)
 
     val souzDocumentsDirectoryPath: Path
-        get() = documentsDirectoryPath.resolve("souz")
+        get() = souzDocumentsDirectoryPath(ToolInvocationMeta.Empty)
+
+    fun souzDocumentsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): Path =
+        Path.of(resolveSouzDocumentsDirectory(meta).path)
 
     val souzTelegramControlDirectoryPath: Path
-        get() = souzDocumentsDirectoryPath.resolve("telegram")
+        get() = souzTelegramControlDirectoryPath(ToolInvocationMeta.Empty)
+
+    fun souzTelegramControlDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): Path =
+        Path.of(resolveSouzTelegramControlDirectory(meta).path)
 
     val souzWebAssetsDirectoryPath: Path
-        get() = souzDocumentsDirectoryPath.resolve("web_assets")
+        get() = souzWebAssetsDirectoryPath(ToolInvocationMeta.Empty)
+
+    fun souzWebAssetsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): Path =
+        Path.of(resolveSouzWebAssetsDirectory(meta).path)
 
     /**
      * Generally, we don't want Agent to mess around anything out of $HOME and everything user disallowed
      */
     override fun isPathSafe(file: File): Boolean {
-        return sandboxFileSystem.isPathSafe(sandboxFileSystem.resolvePath(file.path))
+        return isPathSafe(file, ToolInvocationMeta.Empty)
     }
 
-    fun isPathSafe(path: SandboxPathInfo): Boolean = sandboxFileSystem.isPathSafe(path)
+    fun isPathSafe(file: File, meta: ToolInvocationMeta): Boolean {
+        val fileSystem = sandboxFileSystem(meta)
+        return fileSystem.isPathSafe(fileSystem.resolvePath(file.path))
+    }
+
+    fun isPathSafe(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty): Boolean =
+        sandboxFileSystem(meta).isPathSafe(path)
 
     @Throws(BadInputException::class)
     override fun requirePathIsSave(file: File) {
-        if (!isPathSafe(file)) {
+        requirePathIsSave(file, ToolInvocationMeta.Empty)
+    }
+
+    @Throws(BadInputException::class)
+    fun requirePathIsSave(file: File, meta: ToolInvocationMeta) {
+        if (!isPathSafe(file, meta)) {
             throw BadInputException("Access denied: File path must be within the home directory")
         }
     }
@@ -84,8 +128,11 @@ class FilesToolUtil(
     fun resourceAsText(path: String): String = Companion.resourceAsText(path)
 
     override fun applyDefaultEnvs(path: String): String {
-        return sandboxFileSystem.resolvePath(path).path
+        return applyDefaultEnvs(path, ToolInvocationMeta.Empty)
     }
+
+    fun applyDefaultEnvs(path: String, meta: ToolInvocationMeta): String =
+        sandboxFileSystem(meta).resolvePath(path).path
 
     /**
      * Resolves a raw path into a canonical existing file and enforces Souz path-safety rules.
@@ -93,41 +140,59 @@ class FilesToolUtil(
      * @throws [BadInputException] for missing or non-file targets
      * @throws [ForbiddenFolder] when the path escapes the allowed area.
      */
-    fun resolveSafeExistingFile(rawPath: String): SandboxPathInfo = sandboxFileSystem.resolveExistingFile(rawPath)
+    fun resolveSafeExistingFile(rawPath: String): SandboxPathInfo =
+        resolveSafeExistingFile(rawPath, ToolInvocationMeta.Empty)
 
-    fun resolveSafeExistingDirectory(rawPath: String): SandboxPathInfo = sandboxFileSystem.resolveExistingDirectory(rawPath)
+    fun resolveSafeExistingFile(rawPath: String, meta: ToolInvocationMeta): SandboxPathInfo =
+        sandboxFileSystem(meta).resolveExistingFile(rawPath)
 
-    fun resolvePath(rawPath: String): SandboxPathInfo = sandboxFileSystem.resolvePath(rawPath)
+    fun resolveSafeExistingDirectory(rawPath: String): SandboxPathInfo =
+        resolveSafeExistingDirectory(rawPath, ToolInvocationMeta.Empty)
+
+    fun resolveSafeExistingDirectory(rawPath: String, meta: ToolInvocationMeta): SandboxPathInfo =
+        sandboxFileSystem(meta).resolveExistingDirectory(rawPath)
+
+    fun resolvePath(rawPath: String): SandboxPathInfo = resolvePath(rawPath, ToolInvocationMeta.Empty)
+
+    fun resolvePath(rawPath: String, meta: ToolInvocationMeta): SandboxPathInfo =
+        sandboxFileSystem(meta).resolvePath(rawPath)
 
     fun listDescendants(
         root: SandboxPathInfo,
         maxDepth: Int = Int.MAX_VALUE,
         includeHidden: Boolean = false,
-    ): List<SandboxPathInfo> = sandboxFileSystem.listDescendants(root, maxDepth, includeHidden)
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+    ): List<SandboxPathInfo> = sandboxFileSystem(meta).listDescendants(root, maxDepth, includeHidden)
 
-    fun readUtf8TextFile(path: SandboxPathInfo): String = sandboxFileSystem.readText(path)
+    fun readUtf8TextFile(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty): String =
+        sandboxFileSystem(meta).readText(path)
 
-    fun readBytes(path: SandboxPathInfo): ByteArray = sandboxFileSystem.readBytes(path)
+    fun readBytes(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty): ByteArray =
+        sandboxFileSystem(meta).readBytes(path)
 
-    fun openInputStream(path: SandboxPathInfo): InputStream = sandboxFileSystem.openInputStream(path)
+    fun openInputStream(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty): InputStream =
+        sandboxFileSystem(meta).openInputStream(path)
 
-    fun openPdfDocument(path: SandboxPathInfo): CloseablePdfDocument {
-        sandboxFileSystem.localPathOrNull(path)?.let { localPath ->
+    fun localPathOrNull(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty): Path? =
+        sandboxFileSystem(meta).localPathOrNull(path)
+
+    fun openPdfDocument(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty): CloseablePdfDocument {
+        localPathOrNull(path, meta)?.let { localPath ->
             return CloseablePdfDocument(
-                document = Loader.loadPDF(localPath.toFile(), pdfMemoryUsageSetting().streamCache),
+                document = Loader.loadPDF(localPath.toFile(), pdfMemoryUsageSetting(meta).streamCache),
             )
         }
 
-        val tempFile = Files.createTempFile(pdfScratchDirectory(), "pdf-read-", ".pdf")
+        val tempFile = Files.createTempFile(pdfScratchDirectory(meta), "pdf-read-", ".pdf")
         try {
-            openInputStream(path).use { input ->
+            openInputStream(path, meta).use { input ->
                 Files.newOutputStream(tempFile).use { output ->
                     input.copyTo(output)
                 }
             }
 
             return CloseablePdfDocument(
-                document = Loader.loadPDF(tempFile.toFile(), pdfMemoryUsageSetting().streamCache),
+                document = Loader.loadPDF(tempFile.toFile(), pdfMemoryUsageSetting(meta).streamCache),
                 onClose = { Files.deleteIfExists(tempFile) },
             )
         } catch (e: Exception) {
@@ -136,9 +201,20 @@ class FilesToolUtil(
         }
     }
 
-    fun writeUtf8TextFile(path: SandboxPathInfo, content: String) = sandboxFileSystem.writeText(path, content)
+    fun writeBytes(
+        path: SandboxPathInfo,
+        content: ByteArray,
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+    ) = sandboxFileSystem(meta).writeBytes(path, content)
 
-    fun createDirectory(path: SandboxPathInfo) = sandboxFileSystem.createDirectory(path)
+    fun writeUtf8TextFile(
+        path: SandboxPathInfo,
+        content: String,
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+    ) = sandboxFileSystem(meta).writeText(path, content)
+
+    fun createDirectory(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty) =
+        sandboxFileSystem(meta).createDirectory(path)
 
     fun movePath(
         source: SandboxPathInfo,
@@ -146,10 +222,14 @@ class FilesToolUtil(
         replaceExisting: Boolean = false,
         createParents: Boolean = false,
         logger: Logger? = null,
-    ) = sandboxFileSystem.move(source, destination, replaceExisting, createParents, logger)
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+    ) = sandboxFileSystem(meta).move(source, destination, replaceExisting, createParents, logger)
 
-    fun moveToTrash(path: SandboxPathInfo, logger: Logger? = null): SandboxPathInfo =
-        sandboxFileSystem.moveToTrash(path, logger)
+    fun moveToTrash(
+        path: SandboxPathInfo,
+        logger: Logger? = null,
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+    ): SandboxPathInfo = sandboxFileSystem(meta).moveToTrash(path, logger)
 
     /**
      * Loads a file that is eligible for in-place text editing.
@@ -158,8 +238,12 @@ class FilesToolUtil(
      * The returned [EditableTextFile] includes both raw content and a normalized-to-raw offset index so
      * tools can match on `\n` internally while still preserving untouched raw bytes on write.
      */
-    fun readEditableUtf8TextFile(file: SandboxPathInfo): EditableTextFile {
-        if (!sandboxFileSystem.isPathSafe(file)) throw ForbiddenFolder(file.path)
+    fun readEditableUtf8TextFile(
+        file: SandboxPathInfo,
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+    ): EditableTextFile {
+        val fileSystem = sandboxFileSystem(meta)
+        if (!fileSystem.isPathSafe(file)) throw ForbiddenFolder(file.path)
         if (!file.exists || !file.isRegularFile) {
             throw BadInputException("Invalid file path: ${file.path}")
         }
@@ -168,7 +252,7 @@ class FilesToolUtil(
             throw BadInputException("$errMsg .${File(file.path).extension.lowercase()}")
         }
 
-        val bytes = sandboxFileSystem.readBytes(file)
+        val bytes = fileSystem.readBytes(file)
         if (isLikelyBinary(bytes)) {
             throw BadInputException("Only plain text, code, and config files can be edited.")
         }
@@ -198,7 +282,67 @@ class FilesToolUtil(
         file: SandboxPathInfo,
         content: String,
         logger: Logger,
-    ) = sandboxFileSystem.writeTextAtomically(file, content, logger)
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+    ) = sandboxFileSystem(meta).writeTextAtomically(file, content, logger)
+
+    fun resolveDocumentsDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): SandboxPathInfo {
+        val preferred = resolvePath("~/Documents", meta)
+        if (preferred.exists && preferred.isDirectory) {
+            return preferred
+        }
+        val fallback = resolvePath("~/documents", meta)
+        if (fallback.exists && fallback.isDirectory) {
+            return fallback
+        }
+        return preferred
+    }
+
+    fun resolveSouzDocumentsDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): SandboxPathInfo =
+        resolvePath("${resolveDocumentsDirectory(meta).path}/souz", meta)
+
+    fun resolveSouzTelegramControlDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): SandboxPathInfo =
+        resolvePath("${resolveSouzDocumentsDirectory(meta).path}/telegram", meta)
+
+    fun resolveSouzWebAssetsDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): SandboxPathInfo =
+        resolvePath("${resolveSouzDocumentsDirectory(meta).path}/web_assets", meta)
+
+    fun <T> withReadableLocalPath(
+        path: SandboxPathInfo,
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        prefix: String = "souz-read-",
+        suffix: String = path.name.safeTempSuffix(),
+        block: (Path) -> T,
+    ): T {
+        localPathOrNull(path, meta)?.let { return block(it) }
+        val tempFile = Files.createTempFile(pdfScratchDirectory(meta), prefix, suffix)
+        try {
+            Files.write(tempFile, readBytes(path, meta))
+            return block(tempFile)
+        } finally {
+            Files.deleteIfExists(tempFile)
+        }
+    }
+
+    fun <T> withWritableLocalPath(
+        path: SandboxPathInfo,
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        prefix: String = "souz-write-",
+        suffix: String = path.name.safeTempSuffix(),
+        block: (Path) -> T,
+    ): T {
+        localPathOrNull(path, meta)?.let { localPath ->
+            localPath.parent?.let(Files::createDirectories)
+            return block(localPath)
+        }
+        val tempFile = Files.createTempFile(pdfScratchDirectory(meta), prefix, suffix)
+        return try {
+            val result = block(tempFile)
+            writeBytes(path, Files.readAllBytes(tempFile), meta)
+            result
+        } finally {
+            Files.deleteIfExists(tempFile)
+        }
+    }
 
     /**
      * Converts any CRLF or CR line endings to LF so text matching can use a single internal format.
@@ -424,17 +568,20 @@ class FilesToolUtil(
         return decoder.decode(ByteBuffer.wrap(bytes)).toString()
     }
 
-    private fun pdfScratchDirectory(): Path {
-        val preferred = Path.of(sandbox.runtimePaths.stateRootPath).resolve("pdfbox")
+    private fun pdfScratchDirectory(meta: ToolInvocationMeta): Path {
+        val preferred = runCatching {
+            localPathOrNull(resolvePath(runtimeSandbox(meta).runtimePaths.stateRootPath, meta), meta)
+                ?.resolve("pdfbox")
+        }.getOrNull()
         return runCatching {
-            Files.createDirectories(preferred)
+            Files.createDirectories(preferred ?: Path.of(System.getProperty("java.io.tmpdir")).resolve("souz-pdfbox"))
         }.getOrElse {
             Path.of(System.getProperty("java.io.tmpdir"))
         }
     }
 
-    private fun pdfMemoryUsageSetting(): MemoryUsageSetting =
-        MemoryUsageSetting.setupTempFileOnly().setTempDir(pdfScratchDirectory().toFile())
+    private fun pdfMemoryUsageSetting(meta: ToolInvocationMeta): MemoryUsageSetting =
+        MemoryUsageSetting.setupTempFileOnly().setTempDir(pdfScratchDirectory(meta).toFile())
 
     companion object {
         private val UNIFIED_DIFF_HUNK_HEADER =
@@ -542,6 +689,15 @@ class FilesToolUtil(
             }
             val file = File(expanded)
             return file.takeIf { it.exists() && it.isFile }?.canonicalPath
+        }
+
+        private fun String.safeTempSuffix(): String {
+            val extension = Path.of(this).extension.takeIf(String::isNotBlank)
+            return if (extension == null) {
+                ".tmp"
+            } else {
+                ".$extension"
+            }
         }
     }
 

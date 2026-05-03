@@ -27,11 +27,13 @@ import ru.souz.service.keys.Keys
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.openai.OpenAIVoiceAPI
 import ru.souz.llms.runtime.ApiClassifier
-import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
+import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxCommandExecutor
 import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.service.mcp.McpClientManager
 import ru.souz.service.mcp.McpConfigProvider
 import ru.souz.service.observability.DesktopStructuredLogger
@@ -118,10 +120,14 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<AgentDesktopInfoRepository> { instance<DesktopInfoRepository>() }
     bindSingleton { ToolsSettings(instance(), instance(), instance(), instance()) }
     bindSingleton<AgentToolsFilter> { instance<ToolsSettings>() }
-    bindSingleton<RuntimeSandbox> { LocalRuntimeSandbox(scope = SandboxScope.localDefault(), settingsProvider = instance()) }
+    bindSingleton<RuntimeSandboxFactory> { DefaultRuntimeSandboxFactory(settingsProvider = instance()) }
+    bindSingleton<RuntimeSandbox> { instance<RuntimeSandboxFactory>().create(SandboxScope.localDefault()) }
+    bindSingleton<ToolInvocationRuntimeSandboxResolver> {
+        ToolInvocationRuntimeSandboxResolver.fixed(instance())
+    }
     bindSingleton<SandboxFileSystem> { instance<RuntimeSandbox>().fileSystem }
     bindSingleton<SandboxCommandExecutor> { instance<RuntimeSandbox>().commandExecutor }
-    bindSingleton { FilesToolUtil(instance<RuntimeSandbox>()) }
+    bindSingleton { FilesToolUtil(instance<ToolInvocationRuntimeSandboxResolver>()) }
     bindSingleton<FilesService> { instance<FilesToolUtil>() }
     bindSingleton<ToolPermissionBroker> { ImmediateToolPermissionBroker(instance()) }
     bindSingleton { DeferredToolModifyPermissionBroker(instance(), instance()) }
@@ -195,7 +201,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolWebImageSearch(filesToolUtil = instance(), webResearchClient = instance(), webImageDownloader = instance()) }
     bindSingleton { ToolWebPageText(webResearchClient = instance()) }
     bindSingleton { ToolPresentationCreate(filesToolUtil = instance(), webImageDownloader = instance()) }
-    bindSingleton { ToolPresentationRead() }
+    bindSingleton { ToolPresentationRead(instance()) }
     bindSingleton { ToolTelegramReadInbox(instance()) }
     bindSingleton { ToolTelegramGetHistory(instance(), instance()) }
     bindSingleton { ToolTelegramSetState(instance(), instance(), instance()) }

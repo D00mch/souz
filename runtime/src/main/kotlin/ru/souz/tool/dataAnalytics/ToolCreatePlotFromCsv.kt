@@ -14,8 +14,10 @@ import org.jetbrains.letsPlot.label.labs
 import org.jetbrains.letsPlot.letsPlot
 import org.slf4j.LoggerFactory
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.runtime.sandbox.SandboxMode
 import ru.souz.tool.*
 import ru.souz.tool.files.FilesToolUtil
+import ru.souz.tool.files.ForbiddenFolder
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
 import java.awt.Desktop
@@ -81,26 +83,26 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
     )
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val rawPath = filesToolUtil.applyDefaultEnvs(input.path)
-        val inputFile = File(rawPath)
-
-        filesToolUtil.requirePathIsSave(inputFile)
-
-        if (!inputFile.exists()) {
-            throw BadInputException("File not found: $rawPath")
+        val inputFile = filesToolUtil.resolveSafeExistingFile(input.path, meta)
+        val outputFile = filesToolUtil.resolvePath(
+            input.output ?: "${filesToolUtil.resolveSouzDocumentsDirectory(meta).path}/plot.png",
+            meta,
+        )
+        if (!filesToolUtil.isPathSafe(outputFile, meta)) {
+            throw ForbiddenFolder(outputFile.path)
         }
 
-        val rawOutputPath = filesToolUtil.applyDefaultEnvs(input.output ?: "~/souz/Documents/plot.png")
-        val outputFile = File(rawOutputPath)
-
-        outputFile.parentFile?.mkdirs()
-        filesToolUtil.requirePathIsSave(outputFile)
-
-        val extension = inputFile.extension.lowercase(Locale.getDefault())
+        val extension = inputFile.name.substringAfterLast('.', "").lowercase(Locale.getDefault())
 
         val dataResult = when (extension) {
-            "csv" -> parseCsv(inputFile, input.xColumn, input.yColumn)
-            "xls", "xlsx" -> parseExcel(inputFile, input.xColumn, input.yColumn)
+            "csv" -> filesToolUtil.withReadableLocalPath(inputFile, meta) { localPath ->
+                parseCsv(localPath.toFile(), input.xColumn, input.yColumn)
+            }
+
+            "xls", "xlsx" -> filesToolUtil.withReadableLocalPath(inputFile, meta) { localPath ->
+                parseExcel(localPath.toFile(), input.xColumn, input.yColumn)
+            }
+
             else -> throw BadInputException("Unsupported file extension: .$extension. Use CSV, XLS, or XLSX.")
         }
 
@@ -116,12 +118,14 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
         val yData = sortedData.map { it.second }
 
         val plot = createPlot(xData, yData, input)
-        ggsave(plot, outputFile.absolutePath)
-        if (input.openAfterCreate) {
-            openFileInOS(outputFile)
+        filesToolUtil.withWritableLocalPath(outputFile, meta) { localPath ->
+            ggsave(plot, localPath.toAbsolutePath().normalize().toString())
+            if (input.openAfterCreate && filesToolUtil.runtimeSandbox(meta).mode == SandboxMode.LOCAL) {
+                openFileInOS(localPath.toFile())
+            }
         }
 
-        return "Plot saved to ${outputFile.absolutePath}"
+        return "Plot saved to ${outputFile.path}"
     }
 
     private fun parseCsv(file: File, xCol: String?, yCol: String?): ParsedData {
