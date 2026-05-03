@@ -34,6 +34,7 @@ class LocalRuntimeSandbox(
         settingsProvider = settingsProvider,
         runtimePaths = runtimePaths,
     )
-    override val commandExecutor: SandboxCommandExecutor = LocalSandboxCommandExecutor()
+    override val commandExecutor: SandboxCommandExecutor = LocalSandboxCommandExecutor(
+        fileSystem = fileSystem,
+    )
 }
-

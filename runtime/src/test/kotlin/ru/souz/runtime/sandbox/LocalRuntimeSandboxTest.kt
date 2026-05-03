@@ -78,6 +78,24 @@ class LocalRuntimeSandboxTest {
         assertFalse(sandbox.fileSystem.isPathSafe(target))
     }
 
+    @Test
+    fun `list descendants excludes symlink files that resolve outside sandbox`() {
+        val home = createTempDirectory("home-")
+        val outside = createTempDirectory("outside-")
+        val safeFile = home.resolve("notes.txt").apply { writeText("safe") }
+        val outsideFile = outside.resolve("secret.txt").apply { writeText("secret") }
+        Files.createSymbolicLink(home.resolve("escape.txt"), outsideFile)
+        val sandbox = createSandbox(home, stateRoot = createTempDirectory("state-"))
+
+        val descendants = sandbox.fileSystem.listDescendants(
+            root = sandbox.fileSystem.resolveExistingDirectory(home.toString()),
+        )
+
+        assertTrue(descendants.any { it.path == safeFile.toRealPath().toString() })
+        assertFalse(descendants.any { it.rawPath == home.resolve("escape.txt").toString() })
+        assertFalse(descendants.any { it.path == outsideFile.toRealPath().toString() })
+    }
+
     private fun createSandbox(
         home: Path,
         stateRoot: Path,

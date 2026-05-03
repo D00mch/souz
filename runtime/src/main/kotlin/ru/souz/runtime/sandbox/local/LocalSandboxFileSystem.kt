@@ -153,6 +153,7 @@ internal class LocalSandboxFileSystem(
             .maxDepth(maxDepth)
             .filter { it.toPath() != rootPath }
             .map { resolvePath(it.path) }
+            .filter(::isPathSafe)
             .toList()
     }
 

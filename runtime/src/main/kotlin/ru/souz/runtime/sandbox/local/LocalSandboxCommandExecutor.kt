@@ -1,57 +1,67 @@
 package ru.souz.runtime.sandbox.local
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.souz.runtime.sandbox.SandboxCommandExecutor
 import ru.souz.runtime.sandbox.SandboxCommandRequest
 import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
+import ru.souz.runtime.sandbox.SandboxFileSystem
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
-internal class LocalSandboxCommandExecutor : SandboxCommandExecutor {
+internal class LocalSandboxCommandExecutor(
+    private val fileSystem: SandboxFileSystem,
+) : SandboxCommandExecutor {
     override suspend fun execute(request: SandboxCommandRequest): SandboxCommandResult = withContext(Dispatchers.IO) {
-        val command = request.toProcessCommand()
-        val process = ProcessBuilder(command).apply {
-            request.workingDirectory?.let { directory(File(it)) }
-            redirectErrorStream(false)
-            environment().putAll(request.environment)
-        }.start()
+        coroutineScope {
+            val workingDirectory = request.workingDirectory
+                ?.let(fileSystem::resolveExistingDirectory)
+                ?.path
+            val command = request.toProcessCommand()
+            val process = ProcessBuilder(command).apply {
+                workingDirectory?.let { directory(File(it)) }
+                redirectErrorStream(false)
+                environment().putAll(request.environment)
+            }.start()
 
-        request.stdin?.let { input ->
-            process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
-                writer.write(input)
+            request.stdin?.let { input ->
+                process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
+                    writer.write(input)
+                }
+            } ?: process.outputStream.close()
+
+            val stdout = ByteArrayOutputStream()
+            val stderr = ByteArrayOutputStream()
+            val stdoutCopy = async { process.inputStream.copyToOutput(stdout) }
+            val stderrCopy = async { process.errorStream.copyToOutput(stderr) }
+
+            val timedOut = request.timeoutMillis?.let { timeout ->
+                !process.waitFor(timeout, TimeUnit.MILLISECONDS)
+            } ?: run {
+                process.waitFor()
+                false
             }
-        } ?: process.outputStream.close()
 
-        val stdout = ByteArrayOutputStream()
-        val stderr = ByteArrayOutputStream()
-        val stdoutThread = streamAsync(process.inputStream, stdout)
-        val stderrThread = streamAsync(process.errorStream, stderr)
+            if (timedOut) {
+                process.destroyForcibly()
+            }
 
-        val timedOut = request.timeoutMillis?.let { timeout ->
-            !process.waitFor(timeout, TimeUnit.MILLISECONDS)
-        } ?: run {
-            process.waitFor()
-            false
+            stdoutCopy.await()
+            stderrCopy.await()
+
+            SandboxCommandResult(
+                exitCode = if (timedOut) -1 else process.exitValue(),
+                stdout = stdout.toString(StandardCharsets.UTF_8),
+                stderr = stderr.toString(StandardCharsets.UTF_8),
+                timedOut = timedOut,
+            )
         }
-
-        if (timedOut) {
-            process.destroyForcibly()
-        }
-
-        stdoutThread.join()
-        stderrThread.join()
-
-        SandboxCommandResult(
-            exitCode = if (timedOut) -1 else process.exitValue(),
-            stdout = stdout.toString(StandardCharsets.UTF_8),
-            stderr = stderr.toString(StandardCharsets.UTF_8),
-            timedOut = timedOut,
-        )
     }
 
     private fun SandboxCommandRequest.toProcessCommand(): List<String> = when (runtime) {
@@ -65,10 +75,9 @@ internal class LocalSandboxCommandExecutor : SandboxCommandExecutor {
         SandboxCommandRuntime.NODE -> listOf("node", "-e", requireNotNull(script) { "script is required for NODE runtime." })
     }
 
-    private fun streamAsync(input: InputStream, output: ByteArrayOutputStream): Thread =
-        Thread {
-            input.use { source ->
-                source.copyTo(output)
-            }
-        }.also(Thread::start)
+    private fun InputStream.copyToOutput(output: ByteArrayOutputStream) {
+        use { source ->
+            source.copyTo(output)
+        }
+    }
 }
