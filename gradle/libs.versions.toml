@@ -29,8 +29,6 @@ tdlight-java = "3.4.4+td.1.8.52"
 tdlight-natives = "4.0.558"
 jsoup = "1.18.3"
 icu4j = "78.2"
-luajava = "4.1.0"
-luaj = "3.0.1"
 flyway = "10.20.1"
 hikari = "5.1.0"
 postgresql = "42.7.4"
@@ -80,8 +78,6 @@ poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "poi" }
 tdlight-java = { module = "it.tdlight:tdlight-java", version.ref = "tdlight-java" }
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 icu4j = { module = "com.ibm.icu:icu4j", version.ref = "icu4j" }
-luajava = { module = "party.iroiro.luajava:luajava", version.ref = "luajava" }
-luaj-jse = { module = "org.luaj:luaj-jse", version.ref = "luaj" }
 flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
 hikari-cp = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }

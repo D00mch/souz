@@ -457,7 +457,7 @@ class FilesystemRepositoriesTest {
             conversationId = UUID.randomUUID().toString(),
         )
         val session = AgentConversationSession(
-            activeAgentId = AgentId.LUA_GRAPH,
+            activeAgentId = AgentId.GRAPH,
             history = listOf(
                 LLMRequest.Message(
                     role = LLMMessageRole.user,
@@ -480,7 +480,7 @@ class FilesystemRepositoriesTest {
 
         assertEquals(session, reloadedRepository.load(key))
         assertNotNull(storedState)
-        assertEquals(AgentId.LUA_GRAPH, storedState.activeAgentId)
+        assertEquals(AgentId.GRAPH, storedState.activeAgentId)
         assertEquals(session.history, storedState.history)
         assertEquals(Locale.forLanguageTag("en-US"), storedState.locale)
         assertEquals(ZoneId.of("Europe/Amsterdam"), storedState.timeZone)

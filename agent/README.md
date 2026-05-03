@@ -5,7 +5,7 @@ This package contains the standalone agent runtime extracted from `composeApp`.
 ## Responsibilities
 
 - Own the graph-based agent runtime and execution flow.
-- Own agent-specific models, graph/session mechanics, Lua runtime support, and node orchestration.
+- Own agent-specific models, graph/session mechanics, and node orchestration.
 - Define the SPI boundary that the host application implements.
 
 ## Boundaries

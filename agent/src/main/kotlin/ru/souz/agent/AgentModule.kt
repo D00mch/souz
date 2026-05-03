@@ -5,16 +5,13 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.GraphBasedAgent
-import ru.souz.LuaGraphBasedAgent
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
-import ru.souz.agent.nodes.NodesLua
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.runtime.LuaRuntime
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
@@ -38,8 +35,6 @@ fun agentDiModule(
     bindSingleton { NodesErrorHandling(instance()) }
     bindSingleton { NodesCommon(instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
-    bindSingleton { LuaRuntime(instance()) }
-    bindSingleton { NodesLua(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
     bindSingleton { NodesSummarization(instance(), instance()) }
     bindSingleton {
@@ -67,24 +62,8 @@ fun agentDiModule(
         )
     }
     bindSingleton {
-        LuaGraphBasedAgent(
-            logObjectMapper = instance<ObjectMapper>(tag = logObjectMapperTag),
-            nodesLua = instance(),
-            nodesCommon = instance(),
-            nodesClassify = instance(),
-            nodesErrorHandling = instance(),
-            nodesSummarization = instance(),
-            nodesMCP = instance(),
-        )
-    }
-    bindSingleton {
         AgentExecutor(
-            agentProvider = { id ->
-                when (id) {
-                    AgentId.GRAPH -> instance<GraphBasedAgent>()
-                    AgentId.LUA_GRAPH -> instance<LuaGraphBasedAgent>()
-                }
-            }
+            agentProvider = { instance<GraphBasedAgent>() }
         )
     }
     bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance()) }

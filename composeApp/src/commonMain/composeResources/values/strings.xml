@@ -150,8 +150,6 @@
     <string name="setting_fewshot_title">Few-Shot Examples</string>
     <string name="setting_fewshot_desc">Put tool usage examples into context</string>
     <string name="label_agent">Agent</string>
-    <string name="agent_option_lua_title">Scripts Writer</string>
-    <string name="agent_option_lua_description">Plans with LLM and executes safe scripts. Smarter, better tokens utilisation</string>
     <string name="agent_option_graph_title">Graph Agent</string>
     <string name="agent_option_graph_description">Classic graph flow with iterative tool calls and summarization.</string>
     <string name="agent_switch_dialog_title">Switch active agent?</string>
