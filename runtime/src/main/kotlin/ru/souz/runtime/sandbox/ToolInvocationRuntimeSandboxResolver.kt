@@ -1,5 +1,6 @@
 package ru.souz.runtime.sandbox
 
+import java.util.concurrent.ConcurrentHashMap
 import ru.souz.llms.ToolInvocationMeta
 
 fun interface ToolInvocationSandboxScopeResolver {
@@ -19,6 +20,11 @@ class FactoryBackedToolInvocationRuntimeSandboxResolver(
     private val sandboxFactory: RuntimeSandboxFactory,
     private val scopeResolver: ToolInvocationSandboxScopeResolver,
 ) : ToolInvocationRuntimeSandboxResolver {
-    override fun resolve(meta: ToolInvocationMeta): RuntimeSandbox =
-        sandboxFactory.create(scopeResolver.resolve(meta))
+    // TODO: implement cache eviction
+    private val sandboxesByScope = ConcurrentHashMap<SandboxScope, RuntimeSandbox>()
+
+    override fun resolve(meta: ToolInvocationMeta): RuntimeSandbox {
+        val scope = scopeResolver.resolve(meta)
+        return sandboxesByScope.computeIfAbsent(scope) { sandboxFactory.create(it) }
+    }
 }
