@@ -10,7 +10,7 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
-import ru.souz.backend.agent.model.ValidatedAgentRequest
+import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
@@ -21,9 +21,11 @@ import ru.souz.tool.ToolCategory
 /** Request-scoped backend settings wrapper used by the shared agent/runtime code. */
 class BackendConversationSettingsProvider(
     private val delegate: SettingsProvider,
-    private val systemPrompt: String,
+    private val defaultSystemPrompt: String,
     locale: String,
 ) : SettingsProvider by delegate {
+    private var overrideSystemPrompt: String? = null
+
     override var defaultCalendar: String? = null
     override var regionProfile: String = localeToRegionProfile(locale)
     override var activeAgentId: AgentId = AgentId.default
@@ -32,7 +34,8 @@ class BackendConversationSettingsProvider(
     override var contextSize: Int = delegate.contextSize
     override var temperature: Float = delegate.temperature
 
-    override fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String = systemPrompt
+    override fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String =
+        overrideSystemPrompt ?: defaultSystemPrompt
 
     override fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?) = Unit
 
@@ -47,15 +50,17 @@ class BackendConversationSettingsProvider(
     }
 
     internal fun applyRequest(
-        request: ValidatedAgentRequest,
+        request: BackendConversationTurnRequest,
         activeAgentId: AgentId,
         temperature: Float,
     ) {
         this.activeAgentId = activeAgentId
         this.gigaModel = parseModel(request.model) ?: delegate.gigaModel
         this.contextSize = request.contextSize
-        this.temperature = temperature
+        this.temperature = request.temperature ?: temperature
         this.regionProfile = localeToRegionProfile(request.locale)
+        this.overrideSystemPrompt = request.systemPrompt
+        this.useStreaming = request.streamingMessages == true
     }
 
     private fun parseModel(rawModel: String): LLMModel? =
@@ -74,7 +79,7 @@ class BackendConversationSettingsProvider(
     }
 }
 
-/** Backend runtime environment derived from one validated `/agent` request. */
+/** Backend runtime environment derived from one validated execution request. */
 class BackendRequestRuntimeEnvironment(
     localeTag: String,
     timeZone: String,
@@ -125,32 +130,49 @@ object BackendAgentErrorMessages : AgentErrorMessages {
     override suspend fun noMoney(): String = "The configured provider has no available balance."
 }
 
-/** LLM API wrapper that remembers the latest usage block for the HTTP response. */
-class UsageTrackingChatApi(private val delegate: LLMChatAPI) : LLMChatAPI by delegate {
-    @Volatile
-    private var latestUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0)
-
-    fun resetUsage() {
-        latestUsage = LLMResponse.Usage(0, 0, 0, 0)
-    }
+/** LLM API wrapper that keeps cumulative usage for one backend execution. */
+class CumulativeUsageTrackingChatApi(
+    private val delegate: LLMChatAPI,
+    initialUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0),
+) : LLMChatAPI by delegate {
+    private var cumulativeUsage: LLMResponse.Usage = initialUsage
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
         val response = delegate.message(body)
         if (response is LLMResponse.Chat.Ok) {
-            latestUsage = response.usage
+            cumulativeUsage = cumulativeUsage.plus(response.usage)
         }
         return response
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): kotlinx.coroutines.flow.Flow<LLMResponse.Chat> =
         kotlinx.coroutines.flow.flow {
+            var previousUsage = LLMResponse.Usage(0, 0, 0, 0)
             delegate.messageStream(body).collect { response ->
                 if (response is LLMResponse.Chat.Ok) {
-                    latestUsage = response.usage
+                    val delta = response.usage.deltaFrom(previousUsage)
+                    cumulativeUsage = cumulativeUsage.plus(delta)
+                    previousUsage = response.usage
                 }
                 emit(response)
             }
         }
 
-    fun latestUsage(): LLMResponse.Usage = latestUsage
+    fun cumulativeUsage(): LLMResponse.Usage = cumulativeUsage
 }
+
+private fun LLMResponse.Usage.plus(other: LLMResponse.Usage): LLMResponse.Usage =
+    LLMResponse.Usage(
+        promptTokens = promptTokens + other.promptTokens,
+        completionTokens = completionTokens + other.completionTokens,
+        totalTokens = totalTokens + other.totalTokens,
+        precachedTokens = precachedTokens + other.precachedTokens,
+    )
+
+private fun LLMResponse.Usage.deltaFrom(previous: LLMResponse.Usage): LLMResponse.Usage =
+    LLMResponse.Usage(
+        promptTokens = (promptTokens - previous.promptTokens).coerceAtLeast(0),
+        completionTokens = (completionTokens - previous.completionTokens).coerceAtLeast(0),
+        totalTokens = (totalTokens - previous.totalTokens).coerceAtLeast(0),
+        precachedTokens = (precachedTokens - previous.precachedTokens).coerceAtLeast(0),
+    )

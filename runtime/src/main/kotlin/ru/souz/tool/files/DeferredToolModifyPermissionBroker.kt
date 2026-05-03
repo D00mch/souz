@@ -97,7 +97,7 @@ class DeferredToolModifyPermissionBroker(
             val virtualFile = virtualFiles.getOrPut(fileKey) {
                 val editable = filesToolUtil.readEditableUtf8TextFile(canonicalFile)
                 VirtualFileState(
-                    file = editable.file,
+                    path = editable.path,
                     originalRawText = editable.rawText,
                     currentRawText = editable.rawText,
                 )
@@ -176,7 +176,7 @@ class DeferredToolModifyPermissionBroker(
             }
 
             val currentFile = try {
-                filesToolUtil.readEditableUtf8TextFile(virtualFile.file)
+                filesToolUtil.readEditableUtf8TextFile(filesToolUtil.resolveSafeExistingFile(virtualFile.path))
             } catch (_: BadInputException) {
                 appendExternalConflictResults(
                     results = results,
@@ -241,7 +241,11 @@ class DeferredToolModifyPermissionBroker(
             }
 
             if (hasAppliedChanges) {
-                filesToolUtil.writeUtf8TextFileAtomically(virtualFile.file, workingRawText, l)
+                filesToolUtil.writeUtf8TextFileAtomically(
+                    filesToolUtil.resolvePath(virtualFile.path),
+                    workingRawText,
+                    l,
+                )
             }
         }
 
@@ -283,7 +287,7 @@ class DeferredToolModifyPermissionBroker(
      * Per-file virtual editing state used while additional staged edits are still accumulating.
      */
     private data class VirtualFileState(
-        val file: java.io.File,
+        val path: String,
         val originalRawText: String,
         var currentRawText: String,
     )
@@ -293,7 +297,7 @@ class DeferredToolModifyPermissionBroker(
         rawText: String = currentRawText,
     ): FilesToolUtil.EditableTextFile =
         FilesToolUtil.EditableTextFile(
-            file = file,
+            path = path,
             rawText = rawText,
             normalizedTextIndex = filesToolUtil.buildNormalizedTextIndex(rawText),
             preferredLineSeparator = filesToolUtil.detectPreferredLineSeparator(rawText),

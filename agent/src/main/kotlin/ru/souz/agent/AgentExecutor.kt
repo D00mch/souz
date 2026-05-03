@@ -1,6 +1,7 @@
 package ru.souz.agent
 
 import kotlinx.coroutines.flow.Flow
+import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.state.AgentContext
 
 class AgentExecutor internal constructor(
@@ -17,10 +18,12 @@ class AgentExecutor internal constructor(
         agentId: AgentId,
         context: AgentContext<String>,
         input: String,
+        eventSink: AgentRuntimeEventSink? = null,
     ): AgentExecutionResult = executeWithTrace(
         agentId = agentId,
         context = context,
         input = input,
+        eventSink = eventSink,
         onStep = null,
     )
 
@@ -28,9 +31,13 @@ class AgentExecutor internal constructor(
         agentId: AgentId,
         context: AgentContext<String>,
         input: String,
+        eventSink: AgentRuntimeEventSink? = null,
         onStep: GraphStepCallback?,
     ): AgentExecutionResult {
-        val seed = context.copy(input = input)
+        val seed = context.copy(
+            input = input,
+            runtimeEventSink = eventSink ?: context.runtimeEventSink,
+        )
         return agentById(agentId).executeWithTrace(seed, onStep)
     }
 

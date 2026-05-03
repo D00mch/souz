@@ -5,6 +5,7 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ToolSetup
@@ -66,10 +67,16 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): LLMToolSetup {
             ),
         )
 
-        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message {
+        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
+            invoke(functionCall, ToolInvocationMeta.Empty)
+
+        override suspend fun invoke(
+            functionCall: LLMResponse.FunctionCall,
+            meta: ToolInvocationMeta,
+        ): LLMRequest.Message {
             return try {
                 val input: Input = restJsonMapper.convertValue(functionCall.arguments, Input::class.java)
-                val toolResult = toolSetup.suspendInvoke(input)
+                val toolResult = toolSetup.suspendInvoke(input, meta)
                 LLMRequest.Message(
                     role = LLMMessageRole.function,
                     content = restJsonMapper.writeValueAsString(toolResult),
@@ -90,10 +97,16 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): LLMTo
     val toolSetup = this
     val gigaToolSetup = (toolSetup as ToolSetup<Input>).toGiga()
     return object : LLMToolSetup by gigaToolSetup {
-        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message {
+        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
+            invoke(functionCall, ToolInvocationMeta.Empty)
+
+        override suspend fun invoke(
+            functionCall: LLMResponse.FunctionCall,
+            meta: ToolInvocationMeta,
+        ): LLMRequest.Message {
             return try {
                 val input: Input = restJsonMapper.convertValue(functionCall.arguments, Input::class.java)
-                val toolResult = toolSetup.suspendInvoke(input)
+                val toolResult = toolSetup.suspendInvoke(input, meta)
                 LLMRequest.Message(
                     role = LLMMessageRole.function,
                     content = restJsonMapper.writeValueAsString(toolResult),

@@ -1115,7 +1115,7 @@ class MainViewModelTest {
             bindSingleton { deferredToolModifyPermissionBroker }
             bindSingleton { telegramBotController }
             bindSingleton { InMemoryAudioRecorder() }
-            bindSingleton { FilesToolUtil(instance()) }
+            bindSingleton { FilesToolUtil(instance<SettingsProvider>()) }
             bindSingleton { FinderPathExtractor(instance()) }
             bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
             bindSingleton<TokenLogging> { tokenLogging }

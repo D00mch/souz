@@ -1,6 +1,7 @@
 package ru.souz.tool.dataAnalytics.excel
 
 import org.apache.poi.ss.usermodel.*
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.files.ForbiddenFolder
@@ -103,7 +104,7 @@ class ExcelRead(
         properties = mapOf("result" to ReturnProperty("string", "Operation result"))
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val file = File(filesToolUtil.applyDefaultEnvs(input.path))
         if (!filesToolUtil.isPathSafe(file)) throw ForbiddenFolder(file.path)
         if (!file.exists()) throw BadInputException("File not found: ${input.path}")

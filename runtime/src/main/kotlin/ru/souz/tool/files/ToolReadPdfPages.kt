@@ -1,6 +1,5 @@
 package ru.souz.tool.files
 
-import org.apache.pdfbox.Loader
 import org.apache.pdfbox.text.PDFTextStripper
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -9,7 +8,7 @@ import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
-import java.io.File
+import ru.souz.llms.ToolInvocationMeta
 import java.io.IOException
 
 class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolReadPdfPages.Input> {
@@ -40,18 +39,15 @@ class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<Too
         )
     )
 
-    override fun invoke(input: Input): String {
-        val fixedPath = filesToolUtil.applyDefaultEnvs(input.filePath)
-        val file = File(fixedPath)
-        if (!filesToolUtil.isPathSafe(file)) {
-            throw ForbiddenFolder(fixedPath)
-        }
-        if (!file.exists()) return "Error: File not found at ${input.filePath}"
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
+        val file = filesToolUtil.resolvePath(input.filePath)
+        if (!file.exists) return "Error: File not found at ${input.filePath}"
 
-        if (file.extension.lowercase() != "pdf") return "Error: Expecting .pdf file"
+        if (file.name.substringAfterLast('.', "").lowercase() != "pdf") return "Error: Expecting .pdf file"
 
         return try {
-            Loader.loadPDF(file).use { document ->
+            filesToolUtil.openPdfDocument(file).use { loaded ->
+                val document = loaded.document
 
                 // 1. Проверка на шифрование (частая причина "пустоты")
                 if (document.isEncrypted) {
@@ -113,7 +109,8 @@ fun main() {
             filePath = "/Users/duxx/Книги/100 ошибок в го.pdf",
             startPage = 27,
             endPage = 75
-        )
+        ),
+        ToolInvocationMeta.Empty,
     )
     println(result)
 }

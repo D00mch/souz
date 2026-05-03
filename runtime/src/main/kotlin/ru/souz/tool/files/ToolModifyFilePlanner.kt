@@ -3,10 +3,9 @@ package ru.souz.tool.files
 import com.github.difflib.DiffUtils
 import com.github.difflib.UnifiedDiffUtils
 import ru.souz.tool.BadInputException
-import java.io.File
 
 internal data class ToolModifyPreparedEdit(
-    val file: File,
+    val path: String,
     val originalRawText: String,
     val originalNormalizedText: String,
     val updatedRawText: String,
@@ -56,7 +55,7 @@ internal object ToolModifyFilePlanner {
         }
 
         return ToolModifyPreparedEdit(
-            file = editableTextFile.file,
+            path = editableTextFile.path,
             originalRawText = editableTextFile.rawText,
             originalNormalizedText = editableTextFile.normalizedText,
             updatedRawText = rebuildRawText(
@@ -69,7 +68,7 @@ internal object ToolModifyFilePlanner {
             ),
             updatedNormalizedText = updatedNormalizedText,
             patchPreview = createPatchPreview(
-                file = editableTextFile.file,
+                path = editableTextFile.path,
                 originalNormalizedText = editableTextFile.normalizedText,
                 updatedNormalizedText = updatedNormalizedText,
             ),
@@ -77,16 +76,17 @@ internal object ToolModifyFilePlanner {
     }
 
     fun createPatchPreview(
-        file: File,
+        path: String,
         originalNormalizedText: String,
         updatedNormalizedText: String,
     ): String {
         val originalLines = originalNormalizedText.toDiffLines()
         val updatedLines = updatedNormalizedText.toDiffLines()
         val patch = DiffUtils.diff(originalLines, updatedLines)
+        val fileName = java.io.File(path).name
         return UnifiedDiffUtils.generateUnifiedDiff(
-            "a/${file.name}",
-            "b/${file.name}",
+            "a/$fileName",
+            "b/$fileName",
             originalLines,
             patch,
             3,

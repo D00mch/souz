@@ -3,6 +3,7 @@ package ru.souz.tool.dataAnalytics.excel
 import org.apache.commons.csv.CSVFormat
 import org.apache.commons.csv.CSVParser
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.files.ForbiddenFolder
@@ -49,7 +50,7 @@ File must not exist. For reading use ExcelRead."""
         properties = mapOf("result" to ReturnProperty("string", "Result"))
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val file = File(filesToolUtil.applyDefaultEnvs(input.path))
         if (!filesToolUtil.isPathSafe(file)) throw ForbiddenFolder(file.path)
         if (file.exists()) throw BadInputException("File exists. Use ExcelRead to read, or choose new name.")

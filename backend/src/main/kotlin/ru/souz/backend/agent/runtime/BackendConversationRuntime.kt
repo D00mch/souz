@@ -4,16 +4,19 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
+import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.backend.agent.model.AgentConversationKey
-import ru.souz.backend.agent.model.ValidatedAgentRequest
+import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentSessionRepository
+import ru.souz.backend.llm.BackendLlmExecutionContext
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.tool.LocalRegexClassifier
 
@@ -21,6 +24,7 @@ import ru.souz.tool.LocalRegexClassifier
 internal data class BackendConversationExecution(
     val output: String,
     val usage: LLMResponse.Usage,
+    val session: AgentConversationSession,
 )
 
 /** Request-scoped backend conversation runtime rebuilt from the stored snapshot. */
@@ -30,7 +34,7 @@ internal class BackendConversationRuntime(
     private val settingsProvider: BackendConversationSettingsProvider,
     private val contextFactory: AgentContextFactory,
     private val executor: AgentExecutor,
-    private val usageTrackingApi: UsageTrackingChatApi,
+    private val usageTrackingApi: CumulativeUsageTrackingChatApi,
     private val persistedSession: AgentConversationSession?,
 ) {
     private val activeAgentId = contextFactory.normalizeAgentId(
@@ -48,13 +52,16 @@ internal class BackendConversationRuntime(
         }
     }
 
-    internal suspend fun execute(request: ValidatedAgentRequest): BackendConversationExecution {
+    internal suspend fun execute(
+        request: BackendConversationTurnRequest,
+        persistSession: Boolean = true,
+        eventSink: AgentRuntimeEventSink? = null,
+    ): BackendConversationExecution {
         settingsProvider.applyRequest(
             request = request,
             activeAgentId = activeAgentId,
             temperature = currentTemperature,
         )
-        usageTrackingApi.resetUsage()
 
         val seedContext = contextFactory.create(
             agentId = activeAgentId,
@@ -62,37 +69,50 @@ internal class BackendConversationRuntime(
             model = settingsProvider.gigaModel,
             contextSize = request.contextSize,
             temperature = settingsProvider.temperature,
+            toolInvocationMeta = ToolInvocationMeta(
+                userId = key.userId,
+                conversationId = key.conversationId,
+                requestId = request.executionId,
+                locale = request.locale,
+                timeZone = request.timeZone,
+            ),
         )
 
         val result = executor.execute(
             agentId = activeAgentId,
             context = seedContext,
             input = request.prompt,
+            eventSink = eventSink,
         )
         val nextAgentId = contextFactory.normalizeAgentId(settingsProvider.activeAgentId)
-
-        sessionRepository.save(
-            key,
-            AgentConversationSession(
-                activeAgentId = nextAgentId,
-                history = result.context.history,
-                temperature = result.context.settings.temperature,
-                locale = request.locale,
-                timeZone = request.timeZone,
-            )
+        val nextSession = AgentConversationSession(
+            activeAgentId = nextAgentId,
+            history = result.context.history,
+            temperature = result.context.settings.temperature,
+            locale = request.locale,
+            timeZone = request.timeZone,
+            basedOnMessageSeq = persistedSession?.basedOnMessageSeq ?: 0L,
+            rowVersion = persistedSession?.rowVersion ?: 0L,
         )
+
+        if (persistSession) {
+            sessionRepository.save(key, nextSession)
+        }
 
         return BackendConversationExecution(
             output = result.output,
-            usage = usageTrackingApi.latestUsage(),
+            usage = usageTrackingApi.cumulativeUsage(),
+            session = nextSession,
         )
     }
+
+    internal fun currentUsage(): LLMResponse.Usage = usageTrackingApi.cumulativeUsage()
 }
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
 class BackendConversationRuntimeFactory(
     private val baseSettingsProvider: SettingsProvider,
-    private val llmApiFactory: (BackendConversationSettingsProvider) -> LLMChatAPI,
+    private val llmApiFactory: suspend (BackendLlmExecutionContext) -> LLMChatAPI,
     private val sessionRepository: AgentSessionRepository,
     private val logObjectMapper: ObjectMapper,
     private val systemPrompt: String,
@@ -101,15 +121,26 @@ class BackendConversationRuntimeFactory(
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
-        request: ValidatedAgentRequest,
+        request: BackendConversationTurnRequest,
+        initialUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0),
     ): BackendConversationRuntime {
         val persistedSession = sessionRepository.load(key)
         val settingsProvider = BackendConversationSettingsProvider(
             delegate = baseSettingsProvider,
-            systemPrompt = systemPrompt,
+            defaultSystemPrompt = request.systemPrompt ?: systemPrompt,
             locale = persistedSession?.locale ?: request.locale,
         )
-        val usageTrackingApi = UsageTrackingChatApi(llmApiFactory(settingsProvider))
+        val delegateApi = llmApiFactory(
+            BackendLlmExecutionContext(
+                userId = key.userId,
+                executionId = request.executionId ?: key.conversationId,
+                settingsProvider = settingsProvider,
+            )
+        )
+        val usageTrackingApi = CumulativeUsageTrackingChatApi(
+            delegate = delegateApi,
+            initialUsage = initialUsage,
+        )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
@@ -125,7 +156,7 @@ class BackendConversationRuntimeFactory(
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,
             llmApi = usageTrackingApi,
-            apiClassifier = ApiClassifier(usageTrackingApi),
+            apiClassifier = ApiClassifier(delegateApi),
             localClassifier = LocalRegexClassifier,
         ).create()
         return BackendConversationRuntime(
