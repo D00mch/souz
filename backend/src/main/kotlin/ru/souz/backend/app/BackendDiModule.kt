@@ -8,10 +8,8 @@ import com.zaxxer.hikari.HikariDataSource
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.backend.agent.runtime.BackendAgentRuntime
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
-import ru.souz.backend.app.BackendAppConfig
-import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
-import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
@@ -26,9 +24,8 @@ import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.repository.AgentExecutionRepository
-import ru.souz.backend.execution.service.AgentExecutionFinalizer
 import ru.souz.backend.execution.service.AgentExecutionLauncher
-import ru.souz.backend.execution.service.AgentExecutionRequestFactory
+import ru.souz.backend.execution.service.AgentExecutionRunner
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.keys.service.UserProviderKeyService
@@ -224,7 +221,7 @@ fun backendDiModule(
         )
     }
     bindSingleton {
-        BackendConversationRuntimeFactory(
+        BackendAgentRuntime(
             baseSettingsProvider = instance(),
             llmApiFactory = { executionContext -> instance<LlmClientFactory>().create(executionContext) },
             sessionRepository = instance(),
@@ -235,23 +232,17 @@ fun backendDiModule(
         )
     }
     bindSingleton {
-        AgentExecutionRequestFactory(
-            effectiveSettingsResolver = instance(),
-            featureFlags = instance(),
-        )
-    }
-    bindSingleton {
-        AgentExecutionFinalizer(
+        AgentExecutionRunner(
             agentStateRepository = instance(),
             chatRepository = instance(),
             executionRepository = instance(),
-            turnRunner = BackendConversationRuntimeTurnRunner(instance()),
+            runtime = instance(),
         )
     }
     bindSingleton {
         AgentExecutionLauncher(
             executionScope = instance<BackendApplicationScope>(),
-            finalizer = instance(),
+            runner = instance(),
         )
     }
     bindSingleton {
@@ -262,8 +253,9 @@ fun backendDiModule(
             optionRepository = instance(),
             eventService = instance(),
             toolCallRepository = instance(),
-            requestFactory = instance(),
-            finalizer = instance(),
+            effectiveSettingsResolver = instance(),
+            featureFlags = instance(),
+            runner = instance(),
             launcher = instance(),
         )
     }
