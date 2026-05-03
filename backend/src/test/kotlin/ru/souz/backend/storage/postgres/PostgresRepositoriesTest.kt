@@ -12,6 +12,7 @@ import java.util.UUID
 import javax.sql.DataSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -61,10 +62,13 @@ class PostgresRepositoriesTest {
 
         dataSource.use {
             assertEquals(
-                listOf("1", "2", "3", "4"),
+                listOf("1", "2", "3", "4", "5"),
                 appliedMigrationVersions(it),
             )
             assertTrue(tableExists(it, "tool_calls"))
+            assertFalse(foreignKeyExists(it, "agent_executions", "user_message_id"))
+            assertFalse(foreignKeyExists(it, "agent_executions", "assistant_message_id"))
+            assertFalse(foreignKeyExists(it, "agent_events", "execution_id"))
         }
     }
 
@@ -809,6 +813,36 @@ class PostgresRepositoriesTest {
                 """.trimIndent()
             ).use { statement ->
                 statement.setString(1, tableName)
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    resultSet.getBoolean(1)
+                }
+            }
+        }
+
+    private fun foreignKeyExists(
+        dataSource: DataSource,
+        tableName: String,
+        columnName: String,
+    ): Boolean =
+        dataSource.connection.use { connection ->
+            connection.prepareStatement(
+                """
+                select exists(
+                  select 1
+                  from information_schema.table_constraints tc
+                  join information_schema.key_column_usage kcu
+                    on tc.constraint_name = kcu.constraint_name
+                   and tc.table_schema = kcu.table_schema
+                  where tc.table_schema = current_schema()
+                    and tc.table_name = ?
+                    and tc.constraint_type = 'FOREIGN KEY'
+                    and kcu.column_name = ?
+                )
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, tableName)
+                statement.setString(2, columnName)
                 statement.executeQuery().use { resultSet ->
                     resultSet.next()
                     resultSet.getBoolean(1)

@@ -1,6 +1,7 @@
 package ru.souz.backend.events.repository
 
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.model.AgentEvent
@@ -15,7 +16,7 @@ interface AgentEventRepository {
         type: AgentEventType,
         payload: AgentEventPayload,
         id: UUID = UUID.randomUUID(),
-        createdAt: Instant = Instant.now(),
+        createdAt: Instant = Instant.now().truncatedTo(ChronoUnit.MICROS),
     ): AgentEvent
 
     suspend fun get(userId: String, eventId: UUID): AgentEvent?
