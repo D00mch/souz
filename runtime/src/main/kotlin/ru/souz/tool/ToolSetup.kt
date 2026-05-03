@@ -28,11 +28,11 @@ interface ToolSetup<Input> {
     val returnParameters: ReturnParameters
 
     @Deprecated("use overloaded function with ToolInvocationMeta")
-    operator fun invoke(input: Input): String
+    operator fun invoke(input: Input): String = error("use overloaded function with ToolInvocationMeta")
     operator fun invoke(input: Input, meta: ToolInvocationMeta): String = invoke(input)
 
     @Deprecated("use overloaded function with ToolInvocationMeta")
-    suspend fun suspendInvoke(input: Input): String = invoke(input)
+    suspend fun suspendInvoke(input: Input): String = error("use overloaded function with ToolInvocationMeta")
     suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
