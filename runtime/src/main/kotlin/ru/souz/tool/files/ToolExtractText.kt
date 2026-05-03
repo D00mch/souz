@@ -13,7 +13,6 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
-import java.io.File
 import java.io.FileInputStream
 
 class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolExtractText.Input> {
@@ -55,14 +54,10 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
     }
 
     override fun invoke(input: Input): String {
-        val fixedPath = filesToolUtil.applyDefaultEnvs(input.filePath)
-        val file = File(fixedPath)
-        if (!filesToolUtil.isPathSafe(file)) {
-            throw ForbiddenFolder(fixedPath)
-        }
-        if (!file.exists()) return "Error: File not found at ${input.filePath}"
+        val file = filesToolUtil.resolvePath(input.filePath)
+        if (!file.exists) return "Error: File not found at ${input.filePath}"
 
-        if (file.extension.lowercase() == "key") {
+        if (java.io.File(file.path).extension.lowercase() == "key") {
             return "Warning: .key format is proprietary. I cannot read slide content directly without opening Keynote. I can only try to read basic metadata.\n" + extractWithTika(file)
         }
 
@@ -73,13 +68,13 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         return extractWithTika(file)
     }
 
-    private fun extractWithTika(file: File): String {
+    private fun extractWithTika(file: ru.souz.runtime.sandbox.SandboxPathInfo): String {
         return try {
             val parser = AutoDetectParser()
             val handler = BodyContentHandler(TEXT_CHAR_LIMIT)
             val metadata = Metadata()
 
-            FileInputStream(file).use { stream ->
+            filesToolUtil.openInputStream(file).use { stream ->
                 parser.parse(stream, handler, metadata)
             }
 
@@ -111,7 +106,7 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         }
     }
 
-    private fun extractPlainText(file: File): String {
+    private fun extractPlainText(file: ru.souz.runtime.sandbox.SandboxPathInfo): String {
         return try {
             val preview = readUtf8Preview(file, TEXT_CHAR_LIMIT)
             val metaLines = buildList {
@@ -129,9 +124,9 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         }
     }
 
-    private fun readUtf8Preview(file: File, charLimit: Int): TextPreview {
+    private fun readUtf8Preview(file: ru.souz.runtime.sandbox.SandboxPathInfo, charLimit: Int): TextPreview {
         val builder = StringBuilder(minOf(charLimit, 4096))
-        FileInputStream(file).buffered().reader(Charsets.UTF_8).use { reader ->
+        filesToolUtil.openInputStream(file).buffered().reader(Charsets.UTF_8).use { reader ->
             val buffer = CharArray(4096)
             while (builder.length < charLimit) {
                 val remaining = minOf(buffer.size, charLimit - builder.length)
@@ -144,7 +139,11 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         }
     }
 
-    private fun formatExtractionResult(file: File, metaInfo: String, content: String): String {
+    private fun formatExtractionResult(
+        file: ru.souz.runtime.sandbox.SandboxPathInfo,
+        metaInfo: String,
+        content: String,
+    ): String {
         return """
             |=== METADATA ===
             |Filename: ${file.name}
@@ -155,8 +154,8 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
             """.trimIndent().trimMargin()
     }
 
-    private fun isPlainTextPreview(file: File): Boolean =
-        file.extension.lowercase() in PLAIN_TEXT_EXTENSIONS
+    private fun isPlainTextPreview(file: ru.souz.runtime.sandbox.SandboxPathInfo): Boolean =
+        java.io.File(file.path).extension.lowercase() in PLAIN_TEXT_EXTENSIONS
 
     private data class TextPreview(val text: String, val truncated: Boolean)
 

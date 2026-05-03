@@ -5,6 +5,11 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.runtime.sandbox.LocalRuntimeSandbox
+import ru.souz.runtime.sandbox.RuntimeSandbox
+import ru.souz.runtime.sandbox.SandboxCommandExecutor
+import ru.souz.runtime.sandbox.SandboxFileSystem
+import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.tool.config.ToolSoundConfig
 import ru.souz.tool.config.ToolSoundConfigDiff
 import ru.souz.tool.dataAnalytics.ToolCreatePlotFromCsv
@@ -34,7 +39,10 @@ import ru.souz.llms.giga.toGiga
 fun runtimeToolsDiModule(
     includeWebImageSearch: Boolean = true,
 ): DI.Module = DI.Module("runtimeTools") {
-    bindSingleton { FilesToolUtil(instance()) }
+    bindSingleton<RuntimeSandbox> { LocalRuntimeSandbox(scope = SandboxScope.localDefault(), settingsProvider = instance()) }
+    bindSingleton<SandboxFileSystem> { instance<RuntimeSandbox>().fileSystem }
+    bindSingleton<SandboxCommandExecutor> { instance<RuntimeSandbox>().commandExecutor }
+    bindSingleton { FilesToolUtil(instance<RuntimeSandbox>()) }
     bindSingleton { ToolListFiles(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
     bindSingleton { ToolNewFile(instance()) }

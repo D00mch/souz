@@ -1,0 +1,85 @@
+package ru.souz.runtime.sandbox
+
+import io.mockk.every
+import io.mockk.mockk
+import java.nio.file.Files
+import java.nio.file.Path
+import ru.souz.db.SettingsProvider
+import kotlin.io.path.createDirectories
+import kotlin.io.path.writeText
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class LocalRuntimeSandboxTest {
+    private val createdPaths = mutableListOf<Path>()
+
+    @AfterTest
+    fun cleanup() {
+        createdPaths.asReversed().forEach { path ->
+            runCatching { path.toFile().deleteRecursively() }
+        }
+        createdPaths.clear()
+    }
+
+    @Test
+    fun `resolves tilde and relative paths inside sandbox home`() {
+        val home = createTempDirectory("sandbox-home-")
+        val stateRoot = createTempDirectory("sandbox-state-")
+        val sandbox = createSandbox(home = home, stateRoot = stateRoot)
+
+        val tildePath = sandbox.fileSystem.resolvePath("~/notes.txt")
+        val relativePath = sandbox.fileSystem.resolvePath("drafts/today.md")
+
+        assertTrue(Path.of(tildePath.sandboxPath).endsWith("notes.txt"))
+        assertTrue(Path.of(relativePath.sandboxPath).endsWith(Path.of("drafts/today.md")))
+        assertEquals(home.toString(), sandbox.runtimePaths.homePath)
+        assertEquals(stateRoot.resolve("skills").toString(), sandbox.runtimePaths.skillsDirPath)
+    }
+
+    @Test
+    fun `marks forbidden descendants as unsafe after sandbox path expansion`() {
+        val home = createTempDirectory("sandbox-home-")
+        val stateRoot = createTempDirectory("sandbox-state-")
+        val forbiddenRoot = home.resolve("Library").createDirectories()
+        val safeFile = home.resolve("workspace/notes.txt").apply {
+            parent.createDirectories()
+            writeText("ok")
+        }
+        val forbiddenFile = forbiddenRoot.resolve("secret.txt").apply {
+            parent.createDirectories()
+            writeText("nope")
+        }
+        val sandbox = createSandbox(
+            home = home,
+            stateRoot = stateRoot,
+            forbiddenFolders = listOf(forbiddenRoot.toString()),
+        )
+
+        val safePath = sandbox.fileSystem.resolvePath(safeFile.toString())
+        val blockedPath = sandbox.fileSystem.resolvePath(forbiddenFile.toString())
+
+        assertTrue(sandbox.fileSystem.isPathSafe(safePath))
+        assertFalse(sandbox.fileSystem.isPathSafe(blockedPath))
+    }
+
+    private fun createSandbox(
+        home: Path,
+        stateRoot: Path,
+        forbiddenFolders: List<String> = emptyList(),
+    ): LocalRuntimeSandbox {
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.forbiddenFolders } returns forbiddenFolders
+        return LocalRuntimeSandbox(
+            scope = SandboxScope(userId = "user-1"),
+            settingsProvider = settingsProvider,
+            homePath = home,
+            stateRoot = stateRoot,
+        )
+    }
+
+    private fun createTempDirectory(prefix: String): Path =
+        Files.createTempDirectory(prefix).also(createdPaths::add)
+}

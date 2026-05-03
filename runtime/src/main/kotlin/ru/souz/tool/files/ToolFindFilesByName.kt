@@ -7,12 +7,11 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
-import java.io.File
 
 class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindFilesByName.Input> {
     data class Input(
         @InputParamDescription("Relative or absolute path to limit the search. Defaults to user HOME.")
-        val path: String = FilesToolUtil.homeDirectory.absolutePath,
+        val path: String = "~",
         @InputParamDescription("The name or partial name of the file we are searching for.")
         val fileName: String,
     )
@@ -51,25 +50,16 @@ class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<
     )
 
     override fun invoke(input: Input): String {
-        val path = filesToolUtil.applyDefaultEnvs(input.path)
-        val base = File(path)
-        if (!filesToolUtil.isPathSafe(base)) {
-            throw BadInputException("Forbidden directory: $path. User explicitly restricted this path. Inform him")
-        }
-        if (!base.exists() || !base.isDirectory) {
-            throw BadInputException("Invalid directory path: ${input.path}")
-        }
+        val base = filesToolUtil.resolveSafeExistingDirectory(input.path)
         val needle = input.fileName.trim().lowercase()
         if (needle.isBlank()) {
             throw BadInputException("fileName must not be empty")
         }
 
-        val result = base.walkTopDown()
-            .onEnter { file ->
-                file == base || (filesToolUtil.isPathSafe(file) && !file.name.startsWith('.'))
-            }
-            .filter { it.isFile && it.name.lowercase().contains(needle) }
-            .map { it.canonicalPath }
+        val result = filesToolUtil.listDescendants(base, includeHidden = false)
+            .asSequence()
+            .filter { it.isRegularFile && it.name.lowercase().contains(needle) }
+            .map { it.path }
             .take(MAX_RESULTS)
             .toList()
 

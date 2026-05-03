@@ -1,7 +1,6 @@
 package ru.souz.tool.files
 
 import ru.souz.tool.*
-import java.io.File
 
 class ToolReadFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolReadFile.Input> {
     data class Input(
@@ -24,16 +23,8 @@ class ToolReadFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolRea
     )
 
     override fun invoke(input: Input): String {
-        val path = input.path
-        val fixedPath = filesToolUtil.applyDefaultEnvs(path)
-        val file = File(fixedPath)
-        if (!filesToolUtil.isPathSafe(file)) {
-            throw ForbiddenFolder(fixedPath)
-        }
-        if (!file.exists() || file.isDirectory) {
-            throw BadInputException("Invalid file path: $path")
-        }
-        val content = file.readText()
+        val file = filesToolUtil.resolveSafeExistingFile(input.path)
+        val content = filesToolUtil.readUtf8TextFile(file)
         if (content.length > 25000) {
             return "Error: content is too large, it will be difficult to correctly process so much data (limit 25000 chars)."
         }

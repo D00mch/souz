@@ -1,6 +1,13 @@
 package ru.souz.tool.files
 
+import org.slf4j.Logger
 import ru.souz.db.SettingsProvider
+import ru.souz.paths.DefaultSouzPaths
+import ru.souz.runtime.sandbox.LocalRuntimeSandbox
+import ru.souz.runtime.sandbox.RuntimeSandbox
+import ru.souz.runtime.sandbox.SandboxFileSystem
+import ru.souz.runtime.sandbox.SandboxPathInfo
+import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.service.files.FilesService
 import ru.souz.tool.BadInputException
 import java.io.File
@@ -10,30 +17,59 @@ import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 
-class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesService {
+class FilesToolUtil(
+    private val sandbox: RuntimeSandbox,
+) : FilesService {
+    constructor(settingsProvider: SettingsProvider) : this(
+        LocalRuntimeSandbox(
+            scope = SandboxScope.localDefault(),
+            settingsProvider = settingsProvider,
+            homePath = DefaultSouzPaths.homeDirectory(),
+            stateRoot = DefaultSouzPaths.defaultStateRoot(),
+        )
+    )
+
+    val sandboxFileSystem: SandboxFileSystem
+        get() = sandbox.fileSystem
 
     override val homeStr: String
-        get() = Companion.homeStr
+        get() = sandbox.runtimePaths.homePath
 
     override val homeDirectory: File
-        get() = Companion.homeDirectory
+        get() = File(homeStr).canonicalFile
+
+    val documentsDirectoryPath: Path
+        get() {
+            val homePath = homeDirectory.toPath()
+            val preferred = homePath.resolve("Documents")
+            val fallback = homePath.resolve("documents")
+            return when {
+                Files.isDirectory(preferred) -> preferred
+                Files.isDirectory(fallback) -> fallback
+                else -> preferred
+            }
+        }
 
     val souzDocumentsDirectoryPath: Path
-        get() = Companion.souzDocumentsDirectoryPath
+        get() = documentsDirectoryPath.resolve("souz")
+
+    val souzTelegramControlDirectoryPath: Path
+        get() = souzDocumentsDirectoryPath.resolve("telegram")
+
+    val souzWebAssetsDirectoryPath: Path
+        get() = souzDocumentsDirectoryPath.resolve("web_assets")
 
     /**
      * Generally, we don't want Agent to mess around anything out of $HOME and everything user disallowed
      */
     override fun isPathSafe(file: File): Boolean {
-        val canonicalPath = file.canonicalFile
-        return file.canonicalPath.startsWith(homeStr) &&
-                forbiddenDirectories().none { canonicalPath.startsWith(it) }
+        return sandboxFileSystem.isPathSafe(sandboxFileSystem.resolvePath(file.path))
     }
+
+    fun isPathSafe(path: SandboxPathInfo): Boolean = sandboxFileSystem.isPathSafe(path)
 
     @Throws(BadInputException::class)
     override fun requirePathIsSave(file: File) {
@@ -45,17 +81,7 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
     fun resourceAsText(path: String): String = Companion.resourceAsText(path)
 
     override fun applyDefaultEnvs(path: String): String {
-        val newPath = when {
-            path.startsWith("~") -> path.replace("~", homeStr)
-            path.startsWith("\$HOME") -> path.replace("\$HOME", homeStr)
-            path == "home" -> homeStr
-            else -> path
-        }
-        return when {
-            newPath.contains(homeStr) -> newPath
-            File(newPath).exists() -> newPath
-            else -> "$homeStr/$path"
-        }
+        return sandboxFileSystem.resolvePath(path).path
     }
 
     /**
@@ -64,15 +90,38 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
      * @throws [BadInputException] for missing or non-file targets
      * @throws [ForbiddenFolder] when the path escapes the allowed area.
      */
-    fun resolveSafeExistingFile(rawPath: String): File {
-        val fixedPath = applyDefaultEnvs(rawPath)
-        val file = File(fixedPath)
-        if (!isPathSafe(file)) throw ForbiddenFolder(fixedPath)
-        if (!file.exists() || !file.isFile) {
-            throw BadInputException("Invalid file path: $rawPath")
-        }
-        return file.canonicalFile
-    }
+    fun resolveSafeExistingFile(rawPath: String): SandboxPathInfo = sandboxFileSystem.resolveExistingFile(rawPath)
+
+    fun resolveSafeExistingDirectory(rawPath: String): SandboxPathInfo = sandboxFileSystem.resolveExistingDirectory(rawPath)
+
+    fun resolvePath(rawPath: String): SandboxPathInfo = sandboxFileSystem.resolvePath(rawPath)
+
+    fun listDescendants(
+        root: SandboxPathInfo,
+        maxDepth: Int = Int.MAX_VALUE,
+        includeHidden: Boolean = false,
+    ): List<SandboxPathInfo> = sandboxFileSystem.listDescendants(root, maxDepth, includeHidden)
+
+    fun readUtf8TextFile(path: SandboxPathInfo): String = sandboxFileSystem.readText(path)
+
+    fun readBytes(path: SandboxPathInfo): ByteArray = sandboxFileSystem.readBytes(path)
+
+    fun openInputStream(path: SandboxPathInfo): InputStream = sandboxFileSystem.openInputStream(path)
+
+    fun writeUtf8TextFile(path: SandboxPathInfo, content: String) = sandboxFileSystem.writeText(path, content)
+
+    fun createDirectory(path: SandboxPathInfo) = sandboxFileSystem.createDirectory(path)
+
+    fun movePath(
+        source: SandboxPathInfo,
+        destination: SandboxPathInfo,
+        replaceExisting: Boolean = false,
+        createParents: Boolean = false,
+        logger: Logger? = null,
+    ) = sandboxFileSystem.move(source, destination, replaceExisting, createParents, logger)
+
+    fun moveToTrash(path: SandboxPathInfo, logger: Logger? = null): SandboxPathInfo =
+        sandboxFileSystem.moveToTrash(path, logger)
 
     /**
      * Loads a file that is eligible for in-place text editing.
@@ -81,18 +130,17 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
      * The returned [EditableTextFile] includes both raw content and a normalized-to-raw offset index so
      * tools can match on `\n` internally while still preserving untouched raw bytes on write.
      */
-    fun readEditableUtf8TextFile(file: File): EditableTextFile {
-        val canonicalFile = file.canonicalFile
-        if (!isPathSafe(canonicalFile)) throw ForbiddenFolder(canonicalFile.path)
-        if (!canonicalFile.exists() || !canonicalFile.isFile) {
-            throw BadInputException("Invalid file path: ${canonicalFile.path}")
+    fun readEditableUtf8TextFile(file: SandboxPathInfo): EditableTextFile {
+        if (!sandboxFileSystem.isPathSafe(file)) throw ForbiddenFolder(file.path)
+        if (!file.exists || !file.isRegularFile) {
+            throw BadInputException("Invalid file path: ${file.path}")
         }
-        if (canonicalFile.extension.lowercase() in NON_EDITABLE_EXTENSIONS) {
+        if (File(file.path).extension.lowercase() in NON_EDITABLE_EXTENSIONS) {
             val errMsg = "Only plain text, code, and config files can be edited. Unsupported file type:"
-            throw BadInputException("$errMsg .${canonicalFile.extension.lowercase()}")
+            throw BadInputException("$errMsg .${File(file.path).extension.lowercase()}")
         }
 
-        val bytes = Files.readAllBytes(canonicalFile.toPath())
+        val bytes = sandboxFileSystem.readBytes(file)
         if (isLikelyBinary(bytes)) {
             throw BadInputException("Only plain text, code, and config files can be edited.")
         }
@@ -105,7 +153,7 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
 
         val normalizedTextIndex = buildNormalizedTextIndex(rawText)
         return EditableTextFile(
-            file = canonicalFile,
+            path = file.path,
             rawText = rawText,
             normalizedTextIndex = normalizedTextIndex,
             preferredLineSeparator = detectPreferredLineSeparator(rawText),
@@ -119,29 +167,10 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
      * for an atomic replace via [moveWithAtomicFallback].
      */
     fun writeUtf8TextFileAtomically(
-        file: File,
+        file: SandboxPathInfo,
         content: String,
-        logger: org.slf4j.Logger,
-    ) {
-        val canonicalFile = file.canonicalFile
-        val parent = canonicalFile.parentFile ?: throw BadInputException("File has no parent directory")
-        if (!parent.exists() && !parent.mkdirs()) {
-            throw BadInputException("Failed to create directory: ${parent.path}")
-        }
-
-        val tempPath = Files.createTempFile(parent.toPath(), "${canonicalFile.name}.", ".tmp")
-        try {
-            Files.writeString(tempPath, content, StandardCharsets.UTF_8)
-            moveWithAtomicFallback(
-                sourcePath = tempPath,
-                destinationPath = canonicalFile.toPath(),
-                logger = logger,
-                replaceExisting = true,
-            )
-        } finally {
-            Files.deleteIfExists(tempPath)
-        }
-    }
+        logger: Logger,
+    ) = sandboxFileSystem.writeTextAtomically(file, content, logger)
 
     /**
      * Converts any CRLF or CR line endings to LF so text matching can use a single internal format.
@@ -268,22 +297,16 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
     fun moveWithAtomicFallback(
         sourcePath: Path,
         destinationPath: Path,
-        logger: org.slf4j.Logger,
+        logger: Logger,
         replaceExisting: Boolean = false,
     ) {
-        val atomicOptions = buildList {
-            add(StandardCopyOption.ATOMIC_MOVE)
-            if (replaceExisting) add(StandardCopyOption.REPLACE_EXISTING)
-        }.toTypedArray()
-        val fallbackOptions = buildList {
-            if (replaceExisting) add(StandardCopyOption.REPLACE_EXISTING)
-        }.toTypedArray()
-        try {
-            Files.move(sourcePath, destinationPath, *atomicOptions)
-        } catch (exception: AtomicMoveNotSupportedException) {
-            logger.warn("Failed to make an atomic move", exception)
-            Files.move(sourcePath, destinationPath, *fallbackOptions)
-        }
+        sandboxFileSystem.move(
+            source = resolvePath(sourcePath.toString()),
+            destination = resolvePath(destinationPath.toString()),
+            replaceExisting = replaceExisting,
+            createParents = true,
+            logger = logger,
+        )
     }
 
     /**
@@ -293,15 +316,7 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
      * the home directory are discarded so later safety checks only compare against valid in-scope roots.
      */
     fun forbiddenDirectories(): List<File> {
-        return settingsProvider.forbiddenFolders.mapNotNull { raw ->
-            val expanded = applyDefaultEnvs(raw).trim()
-            if (expanded.isBlank()) return@mapNotNull null
-            val resolved = File(expanded).let { file ->
-                if (file.isAbsolute) file else File(homeDirectory, file.path)
-            }.canonicalFile
-            if (!resolved.startsWith(homeDirectory)) return@mapNotNull null
-            resolved
-        }.distinct()
+        return sandboxFileSystem.forbiddenPaths().map(::File)
     }
 
     private fun extractUnifiedDiffHeaderPath(line: String): String? {
@@ -498,7 +513,7 @@ class FilesToolUtil(private val settingsProvider: SettingsProvider) : FilesServi
      * @property preferredLineSeparator records the fallback separator to use for newly inserted lines
      */
     data class EditableTextFile(
-        val file: File,
+        val path: String,
         val rawText: String,
         val normalizedTextIndex: NormalizedTextIndex,
         val preferredLineSeparator: String,

@@ -1,12 +1,11 @@
 package ru.souz.tool.files
 
 import ru.souz.tool.*
-import java.io.File
 
 class ToolFindTextInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindTextInFiles.Input> {
     data class Input(
         @InputParamDescription("Directory path to search in (recursive)")
-        val path: String = FilesToolUtil.homeStr,
+        val path: String = "~",
         @InputParamDescription("Text to search for inside files")
         val text: String
     )
@@ -30,17 +29,13 @@ class ToolFindTextInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<
     )
 
     override fun invoke(input: Input): String {
-        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
-        val baseDir = File(fixedPath)
-        if (!filesToolUtil.isPathSafe(baseDir)) {
-            throw ForbiddenFolder(fixedPath)
-        }
-        if (!baseDir.exists() || !baseDir.isDirectory) {
-            throw BadInputException("Invalid directory path: ${input.path}")
-        }
-        val matchedFiles = baseDir.walkTopDown()
-            .filter { it.isFile && it.readText().contains(input.text) }
-            .map { it.relativeTo(baseDir).path }
+        val baseDir = filesToolUtil.resolveSafeExistingDirectory(input.path)
+        val basePath = java.nio.file.Path.of(baseDir.path)
+        val matchedFiles = filesToolUtil.listDescendants(baseDir, includeHidden = false)
+            .asSequence()
+            .filter { it.isRegularFile }
+            .filter { runCatching { filesToolUtil.readUtf8TextFile(it).contains(input.text) }.getOrDefault(false) }
+            .map { basePath.relativize(java.nio.file.Path.of(it.path)).toString().replace('\\', '/') }
             .toList()
 
         return matchedFiles.joinToString(",", prefix = "[", postfix = "]")

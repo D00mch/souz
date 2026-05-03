@@ -51,6 +51,11 @@ import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.llms.local.LocalStrictJsonParser
 import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.llms.runtime.LLMFactory
+import ru.souz.runtime.sandbox.LocalRuntimeSandbox
+import ru.souz.runtime.sandbox.RuntimeSandbox
+import ru.souz.runtime.sandbox.SandboxCommandExecutor
+import ru.souz.runtime.sandbox.SandboxFileSystem
+import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.service.mcp.McpClientManager
 import ru.souz.service.mcp.McpConfigProvider
 import ru.souz.service.observability.DesktopStructuredLogger
@@ -137,7 +142,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<AgentDesktopInfoRepository> { instance<DesktopInfoRepository>() }
     bindSingleton { ToolsSettings(instance(), instance(), instance(), instance()) }
     bindSingleton<AgentToolsFilter> { instance<ToolsSettings>() }
-    bindSingleton { FilesToolUtil(instance()) }
+    bindSingleton<RuntimeSandbox> { LocalRuntimeSandbox(scope = SandboxScope.localDefault(), settingsProvider = instance()) }
+    bindSingleton<SandboxFileSystem> { instance<RuntimeSandbox>().fileSystem }
+    bindSingleton<SandboxCommandExecutor> { instance<RuntimeSandbox>().commandExecutor }
+    bindSingleton { FilesToolUtil(instance<RuntimeSandbox>()) }
     bindSingleton<FilesService> { instance<FilesToolUtil>() }
     bindSingleton<ToolPermissionBroker> { ImmediateToolPermissionBroker(instance()) }
     bindSingleton { DeferredToolModifyPermissionBroker(instance(), instance()) }

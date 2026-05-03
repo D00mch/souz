@@ -3,13 +3,11 @@ package ru.souz.tool.files
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
 import ru.souz.tool.*
-import java.io.File
-import kotlin.io.relativeTo
 
 class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolListFiles.Input> {
     data class Input(
         @InputParamDescription("Relative path to list files from")
-        val path: String = FilesToolUtil.homeDirectory.absolutePath,
+        val path: String = "~",
         @InputParamDescription("Max depth to traverse (1 = direct children only; <=0 = unlimited)")
         val depth: Int = Integer.MAX_VALUE
     )
@@ -28,28 +26,14 @@ class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolLi
     )
 
     override fun invoke(input: Input): String {
-        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
-        val base = File(fixedPath)
-        if (!filesToolUtil.isPathSafe(base)) {
-            throw ForbiddenFolder(fixedPath)
-        }
-        if (!base.exists() || !base.isDirectory) {
-            throw BadInputException("Invalid directory path: $fixedPath")
-        }
-
-        val files = base.walkTopDown()
-            .onEnter { file ->
-                val excludedPaths: List<String> = filesToolUtil.forbiddenDirectories().map { it.canonicalPath }
-                val prohibit = excludedPaths.contains(file.path)
-                        || file.name.startsWith('.')
-                !prohibit
+        val base = filesToolUtil.resolveSafeExistingDirectory(input.path)
+        val files = filesToolUtil.listDescendants(base, input.depth, includeHidden = false)
+            .map { entry ->
+                val relPath = java.nio.file.Path.of(base.path).relativize(java.nio.file.Path.of(entry.path))
+                    .toString()
+                    .replace('\\', '/')
+                if (entry.isDirectory) "${base.path}/$relPath/" else "${base.path}/$relPath"
             }
-            .maxDepth(input.depth)
-            .filter { it != base }
-            .map { file ->
-                val relPath = file.relativeTo(base).path
-                if (file.isDirectory) "$fixedPath/$relPath/" else "$fixedPath/$relPath"
-            } // no sort or .toList() required, not for codex
 
         val result = files.joinToString(",", prefix = "[", postfix = "]")
         if (result.length > 25000) {

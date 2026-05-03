@@ -65,10 +65,14 @@ class ToolModifyFile(
     }
 
     private fun applyPreparedEdit(preparedEdit: ToolModifyPreparedEdit) {
-        val currentFile = filesToolUtil.readEditableUtf8TextFile(preparedEdit.file)
+        val currentFile = filesToolUtil.readEditableUtf8TextFile(filesToolUtil.resolveSafeExistingFile(preparedEdit.path))
         if (currentFile.rawText != preparedEdit.originalRawText) {
             throw BadInputException("File changed after preview generation. Read it again and retry.")
         }
-        filesToolUtil.writeUtf8TextFileAtomically(preparedEdit.file, preparedEdit.updatedRawText, l)
+        filesToolUtil.writeUtf8TextFileAtomically(
+            filesToolUtil.resolvePath(preparedEdit.path),
+            preparedEdit.updatedRawText,
+            l,
+        )
     }
 }

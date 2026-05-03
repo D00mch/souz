@@ -31,23 +31,19 @@ class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewF
 
     override fun invoke(input: Input): String {
         val isDirectoryRequest = input.path.endsWith("/") || input.path.endsWith(File.separator)
-        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
-        val file = File(fixedPath)
-        if (!filesToolUtil.isPathSafe(file)) {
-            throw ForbiddenFolder(fixedPath)
+        val target = filesToolUtil.resolvePath(input.path)
+        if (!filesToolUtil.isPathSafe(target)) {
+            throw ForbiddenFolder(target.path)
         }
-        if (file.exists()) {
+        if (target.exists) {
             val typeLabel = if (isDirectoryRequest) "Folder" else "File"
             throw BadInputException("$typeLabel already exists: ${input.path}. Use EditFile to modify existing files.")
         }
         if (isDirectoryRequest) {
-            if (!file.mkdirs()) {
-                throw BadInputException("Failed to create folder: ${input.path}")
-            }
+            filesToolUtil.createDirectory(target)
             return "Folder created at ${input.path}"
         }
-        file.parentFile?.mkdirs()
-        file.writeText(input.text)
+        filesToolUtil.writeUtf8TextFile(target, input.text)
         return "File created at ${input.path}"
     }
 }
