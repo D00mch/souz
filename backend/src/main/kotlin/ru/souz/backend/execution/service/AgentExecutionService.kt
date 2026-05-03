@@ -42,11 +42,39 @@ class AgentExecutionService internal constructor(
     private val optionRepository: OptionRepository,
     private val eventService: AgentEventService,
     private val toolCallRepository: ToolCallRepository,
-    private val effectiveSettingsResolver: EffectiveSettingsResolver,
-    private val featureFlags: BackendFeatureFlags,
-    private val runner: AgentExecutionRunner,
+    private val effectiveSettingsResolver: EffectiveSettingsResolver?,
+    private val featureFlags: BackendFeatureFlags?,
+    private val runner: AgentExecutionRunner?,
     private val launcher: AgentExecutionLauncher,
+    private val legacyRequestFactory: AgentExecutionRequestFactory? = null,
+    private val legacyFinalizer: AgentExecutionFinalizer? = null,
 ) {
+    @Deprecated("Production execution should use EffectiveSettingsResolver + BackendAgentTurn + AgentExecutionRunner.")
+    internal constructor(
+        chatRepository: ChatRepository,
+        messageRepository: MessageRepository,
+        executionRepository: AgentExecutionRepository,
+        optionRepository: OptionRepository,
+        eventService: AgentEventService,
+        toolCallRepository: ToolCallRepository,
+        requestFactory: AgentExecutionRequestFactory,
+        finalizer: AgentExecutionFinalizer,
+        launcher: AgentExecutionLauncher,
+    ) : this(
+        chatRepository = chatRepository,
+        messageRepository = messageRepository,
+        executionRepository = executionRepository,
+        optionRepository = optionRepository,
+        eventService = eventService,
+        toolCallRepository = toolCallRepository,
+        effectiveSettingsResolver = null,
+        featureFlags = null,
+        runner = null,
+        launcher = launcher,
+        legacyRequestFactory = requestFactory,
+        legacyFinalizer = finalizer,
+    )
+
     suspend fun executeChatTurn(
         userId: String,
         chatId: UUID,
@@ -54,8 +82,20 @@ class AgentExecutionService internal constructor(
         clientMessageId: String? = null,
         requestOverrides: UserSettingsOverrides = UserSettingsOverrides(),
     ): SendMessageResult = supervisorScope {
+        legacyRequestFactory?.let { factory ->
+            return@supervisorScope executeChatTurnLegacy(
+                factory = factory,
+                finalizer = requireNotNull(legacyFinalizer),
+                userId = userId,
+                chatId = chatId,
+                content = content,
+                clientMessageId = clientMessageId,
+                requestOverrides = requestOverrides,
+            )
+        }
+
         val chat = requireOwnedChat(userId, chatId)
-        val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
+        val effectiveSettings = requireNotNull(effectiveSettingsResolver).resolve(userId, requestOverrides)
         val config = AgentExecutionRuntimeConfig.from(effectiveSettings)
         val normalizedClientMessageId = clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
         val queuedExecution = try {
@@ -113,44 +153,19 @@ class AgentExecutionService internal constructor(
                 input = BackendAgentTurnInput.UserMessage(content),
                 config = config,
             )
-            val eventSink = createEventSink(
-                userId = userId,
-                chatId = chatId,
-                execution = runningExecution,
-                config = config,
-            )
+            val eventSink = createEventSink(userId, chatId, runningExecution, config)
             eventSink.emitExecutionStarted(runningExecution)
 
-            if (config.streamingMessages && featureFlags.wsEvents) {
-                launcher.startBackgroundExecution(
-                    execution = runningExecution,
-                    eventSink = eventSink,
-                ) {
-                    runner.run(
-                        chat = chat,
-                        execution = runningExecution,
-                        turn = turn,
-                        eventSink = eventSink,
-                    )
+            if (config.streamingMessages && requireNotNull(featureFlags).wsEvents) {
+                launcher.startBackgroundExecution(runningExecution, eventSink) {
+                    requireNotNull(runner).run(chat, runningExecution, turn, eventSink)
                 }
-                return@supervisorScope SendMessageResult(
-                    userMessage = userMessage,
-                    assistantMessage = null,
-                    execution = runningExecution,
-                )
+                return@supervisorScope SendMessageResult(userMessage, null, runningExecution)
             }
 
             val executionResult = try {
-                launcher.runTrackedExecution(
-                    execution = runningExecution,
-                    eventSink = eventSink,
-                ) {
-                    runner.run(
-                        chat = chat,
-                        execution = runningExecution,
-                        turn = turn,
-                        eventSink = eventSink,
-                    )
+                launcher.runTrackedExecution(runningExecution, eventSink) {
+                    requireNotNull(runner).run(chat, runningExecution, turn, eventSink)
                 }
             } catch (_: ExecutionCancelledException) {
                 throw BackendV1Exception(
@@ -170,7 +185,7 @@ class AgentExecutionService internal constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            runner.markFailed(
+            requireNotNull(runner).markFailed(
                 executionId = queuedExecution.id,
                 userId = userId,
                 chatId = chatId,
@@ -187,7 +202,11 @@ class AgentExecutionService internal constructor(
     }
 
     suspend fun resumeOption(option: Option): AgentExecution {
-        val currentExecution = runner.currentExecution(option.executionId, option.userId, option.chatId)
+        legacyRequestFactory?.let { factory ->
+            return resumeOptionLegacy(factory, requireNotNull(legacyFinalizer), option)
+        }
+
+        val currentExecution = requireNotNull(runner).currentExecution(option.executionId, option.userId, option.chatId)
         if (currentExecution.status != AgentExecutionStatus.WAITING_OPTION) {
             throw invalidV1Request("Execution is not waiting for an option.")
         }
@@ -201,19 +220,7 @@ class AgentExecutionService internal constructor(
                 errorMessage = null,
             )
         )
-        eventService.appendDurable(
-            userId = option.userId,
-            chatId = option.chatId,
-            executionId = runningExecution.id,
-            type = AgentEventType.OPTION_ANSWERED,
-            payload = ChoiceAnsweredPayload(
-                optionId = option.id,
-                status = option.status.value,
-                selectedOptionIds = option.answer?.selectedOptionIds?.toList().orEmpty(),
-                freeText = option.answer?.freeText,
-                metadata = option.answer?.metadata.orEmpty(),
-            ),
-        )
+        appendOptionAnswered(option, runningExecution.id)
 
         val config = AgentExecutionRuntimeConfig.fromExecution(runningExecution)
         val turn = BackendAgentTurn(
@@ -227,41 +234,21 @@ class AgentExecutionService internal constructor(
             ),
             config = config,
         )
-        val eventSink = createEventSink(
-            userId = option.userId,
-            chatId = option.chatId,
-            execution = runningExecution,
-            config = config,
-        )
-        launcher.startBackgroundExecution(
-            execution = runningExecution,
-            eventSink = eventSink,
-        ) {
-            runner.run(
-                chat = chat,
-                execution = runningExecution,
-                turn = turn,
-                eventSink = eventSink,
-            )
+        val eventSink = createEventSink(option.userId, option.chatId, runningExecution, config)
+        launcher.startBackgroundExecution(runningExecution, eventSink) {
+            requireNotNull(runner).run(chat, runningExecution, turn, eventSink)
         }
         return runningExecution
     }
 
-    suspend fun cancelActive(
-        userId: String,
-        chatId: UUID,
-    ): CancelExecutionResult {
+    suspend fun cancelActive(userId: String, chatId: UUID): CancelExecutionResult {
         requireOwnedChat(userId, chatId)
         val activeExecution = executionRepository.findActive(userId, chatId)
             ?: throw invalidV1Request("Chat has no active execution.")
         return CancelExecutionResult(cancelExecutionInternal(activeExecution))
     }
 
-    suspend fun cancelExecution(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID,
-    ): CancelExecutionResult {
+    suspend fun cancelExecution(userId: String, chatId: UUID, executionId: UUID): CancelExecutionResult {
         requireOwnedChat(userId, chatId)
         val execution = executionRepository.getByChat(userId, chatId, executionId)
             ?: throw BackendV1Exception(
@@ -272,33 +259,129 @@ class AgentExecutionService internal constructor(
         return CancelExecutionResult(cancelExecutionInternal(execution))
     }
 
+    private suspend fun executeChatTurnLegacy(
+        factory: AgentExecutionRequestFactory,
+        finalizer: AgentExecutionFinalizer,
+        userId: String,
+        chatId: UUID,
+        content: String,
+        clientMessageId: String?,
+        requestOverrides: UserSettingsOverrides,
+    ): SendMessageResult {
+        val chat = requireOwnedChat(userId, chatId)
+        val prepared = factory.prepareChatTurn(userId, chatId, content, clientMessageId, requestOverrides)
+        val queuedExecution = try {
+            executionRepository.create(prepared.execution)
+        } catch (e: ActiveAgentExecutionConflictException) {
+            throw BackendV1Exception(HttpStatusCode.Conflict, "chat_already_has_active_execution", "Chat already has an active execution.")
+        }
+        try {
+            val userMessage = messageRepository.append(userId, chatId, ChatRole.USER, content, metadata = prepared.userMessageMetadata)
+            chatRepository.update(chat.copy(updatedAt = userMessage.createdAt))
+            val runningExecution = executionRepository.update(
+                queuedExecution.copy(userMessageId = userMessage.id, status = AgentExecutionStatus.RUNNING, startedAt = Instant.now())
+            )
+            val eventSink = factory.createEventSink(
+                userId = userId,
+                chatId = chatId,
+                execution = runningExecution,
+                messageRepository = messageRepository,
+                optionRepository = optionRepository,
+                executionRepository = executionRepository,
+                eventService = eventService,
+                toolCallRepository = toolCallRepository,
+                streamingMessagesEnabled = prepared.effectiveSettings.streamingMessages,
+                toolEventsEnabled = prepared.effectiveSettings.showToolEvents,
+            )
+            eventSink.emitExecutionStarted(runningExecution)
+            if (prepared.shouldReturnRunning) {
+                launcher.startBackgroundExecution(runningExecution, eventSink) {
+                    finalizer.runExecution(chat, runningExecution, prepared.conversationKey, prepared.runtimeRequest, eventSink)
+                }
+                return SendMessageResult(userMessage, null, runningExecution)
+            }
+            val executionResult = try {
+                launcher.runTrackedExecution(runningExecution, eventSink) {
+                    finalizer.runExecution(chat, runningExecution, prepared.conversationKey, prepared.runtimeRequest, eventSink)
+                }
+            } catch (_: ExecutionCancelledException) {
+                throw BackendV1Exception(HttpStatusCode.Conflict, "agent_execution_cancelled", "Agent execution was cancelled.")
+            }
+            return SendMessageResult(userMessage, executionResult.assistantMessage, executionResult.execution)
+        } catch (e: BackendV1Exception) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            finalizer.markFailed(queuedExecution.id, userId, chatId, "agent_execution_failed", e.message ?: "Agent execution failed.", queuedExecution.usage)
+            throw BackendV1Exception(HttpStatusCode.InternalServerError, "agent_execution_failed", "Agent execution failed.")
+        }
+    }
+
+    private suspend fun resumeOptionLegacy(
+        factory: AgentExecutionRequestFactory,
+        finalizer: AgentExecutionFinalizer,
+        option: Option,
+    ): AgentExecution {
+        val currentExecution = finalizer.currentExecution(option.executionId, option.userId, option.chatId)
+        if (currentExecution.status != AgentExecutionStatus.WAITING_OPTION) {
+            throw invalidV1Request("Execution is not waiting for an option.")
+        }
+        val chat = requireOwnedChat(option.userId, option.chatId)
+        val runningExecution = executionRepository.update(
+            currentExecution.copy(status = AgentExecutionStatus.RUNNING, finishedAt = null, cancelRequested = false, errorCode = null, errorMessage = null)
+        )
+        appendOptionAnswered(option, runningExecution.id)
+        val prepared = factory.prepareContinuationTurn(runningExecution, option)
+        val eventSink = factory.createEventSink(
+            userId = option.userId,
+            chatId = option.chatId,
+            execution = runningExecution,
+            messageRepository = messageRepository,
+            optionRepository = optionRepository,
+            executionRepository = executionRepository,
+            eventService = eventService,
+            toolCallRepository = toolCallRepository,
+            streamingMessagesEnabled = prepared.streamingMessagesEnabled,
+            toolEventsEnabled = prepared.toolEventsEnabled,
+        )
+        launcher.startBackgroundExecution(runningExecution, eventSink) {
+            finalizer.runExecution(chat, runningExecution, prepared.conversationKey, prepared.runtimeRequest, eventSink)
+        }
+        return runningExecution
+    }
+
     private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution {
         if (!execution.status.isActiveForCancellation()) {
             throw invalidV1Request("Execution is not active.")
         }
-        val cancellingExecution = executionRepository.update(
-            execution.copy(
-                status = AgentExecutionStatus.CANCELLING,
-                cancelRequested = true,
-            )
-        )
+        val cancellingExecution = executionRepository.update(execution.copy(status = AgentExecutionStatus.CANCELLING, cancelRequested = true))
         if (launcher.cancel(cancellingExecution.id)) {
             return cancellingExecution
         }
-        return runner.markCancelled(
-            executionId = cancellingExecution.id,
-            userId = cancellingExecution.userId,
-            chatId = cancellingExecution.chatId,
-            usage = cancellingExecution.usage,
+        legacyFinalizer?.let { finalizer ->
+            return finalizer.markCancelled(cancellingExecution.id, cancellingExecution.userId, cancellingExecution.chatId, cancellingExecution.usage)
+        }
+        return requireNotNull(runner).markCancelled(cancellingExecution.id, cancellingExecution.userId, cancellingExecution.chatId, cancellingExecution.usage)
+    }
+
+    private suspend fun appendOptionAnswered(option: Option, executionId: UUID) {
+        eventService.appendDurable(
+            userId = option.userId,
+            chatId = option.chatId,
+            executionId = executionId,
+            type = AgentEventType.OPTION_ANSWERED,
+            payload = ChoiceAnsweredPayload(
+                optionId = option.id,
+                status = option.status.value,
+                selectedOptionIds = option.answer?.selectedOptionIds?.toList().orEmpty(),
+                freeText = option.answer?.freeText,
+                metadata = option.answer?.metadata.orEmpty(),
+            ),
         )
     }
 
-    private fun createEventSink(
-        userId: String,
-        chatId: UUID,
-        execution: AgentExecution,
-        config: AgentExecutionRuntimeConfig,
-    ): BackendAgentRuntimeEventSink =
+    private fun createEventSink(userId: String, chatId: UUID, execution: AgentExecution, config: AgentExecutionRuntimeConfig): BackendAgentRuntimeEventSink =
         BackendAgentRuntimeEventSink(
             userId = userId,
             chatId = chatId,
@@ -310,17 +393,13 @@ class AgentExecutionService internal constructor(
             toolCallRepository = toolCallRepository,
             streamingMessagesEnabled = config.streamingMessages,
             toolEventsEnabled = config.showToolEvents,
-            optionsEnabled = featureFlags.options,
+            optionsEnabled = requireNotNull(featureFlags).options,
             assistantMessageId = execution.assistantMessageId,
         )
 
     private suspend fun requireOwnedChat(userId: String, chatId: UUID): Chat =
         chatRepository.get(userId, chatId)
-            ?: throw BackendV1Exception(
-                status = HttpStatusCode.NotFound,
-                code = "chat_not_found",
-                message = "Chat not found.",
-            )
+            ?: throw BackendV1Exception(HttpStatusCode.NotFound, "chat_not_found", "Chat not found.")
 }
 
 private fun userMessageMetadata(clientMessageId: String?): Map<String, String> =
@@ -330,11 +409,7 @@ private fun Option.toContinuationPayload(): String {
     val answer = answer ?: error("Option answer is required for continuation.")
     val optionById = options.associateBy { it.id }
     val selectedOptions = answer.selectedOptionIds.mapNotNull(optionById::get).map { option ->
-        linkedMapOf(
-            "id" to option.id,
-            "label" to option.label,
-            "content" to option.content,
-        )
+        linkedMapOf("id" to option.id, "label" to option.label, "content" to option.content)
     }
     val payload = linkedMapOf<String, Any?>(
         "type" to "option_answer",
