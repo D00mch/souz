@@ -8,6 +8,14 @@ import kotlin.test.assertTrue
 
 class DockerRuntimeSandboxHelpersTest {
     @Test
+    fun `formats GNU timeout durations from milliseconds`() {
+        assertEquals("1.5s", formatDockerTimeoutDuration(1_500))
+        assertEquals("1s", formatDockerTimeoutDuration(1_000))
+        assertEquals("0.001s", formatDockerTimeoutDuration(1))
+        assertEquals("0.01s", formatDockerTimeoutDuration(10))
+    }
+
+    @Test
     fun `builds stable safe container names from scope`() {
         val scope = SandboxScope(
             userId = "User Name/with:odd#chars",

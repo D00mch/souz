@@ -6,6 +6,7 @@ import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.tool.BadInputException
+import java.math.BigDecimal
 
 internal class DockerSandboxCommandExecutor(
     private val containerHandle: DockerContainerHandle,
@@ -50,7 +51,7 @@ internal class DockerSandboxCommandExecutor(
                 "timeout",
                 "--signal=TERM",
                 "--kill-after=1s",
-                "${timeout}ms",
+                formatDockerTimeoutDuration(timeout),
             ) + command
         } ?: command
     }
@@ -58,4 +59,11 @@ internal class DockerSandboxCommandExecutor(
     private companion object {
         const val TIMEOUT_EXIT_CODE = 124
     }
+}
+
+internal fun formatDockerTimeoutDuration(timeoutMillis: Long): String {
+    val positiveTimeoutMillis = timeoutMillis.coerceAtLeast(1L)
+    return BigDecimal.valueOf(positiveTimeoutMillis, 3)
+        .stripTrailingZeros()
+        .toPlainString() + "s"
 }

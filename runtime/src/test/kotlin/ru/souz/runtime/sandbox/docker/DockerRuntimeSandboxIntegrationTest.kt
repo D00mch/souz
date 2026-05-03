@@ -10,6 +10,7 @@ import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.createSymbolicLinkPointingTo
 import kotlin.io.path.readText
 import kotlin.concurrent.thread
 import kotlin.test.AfterTest
@@ -23,6 +24,7 @@ import kotlin.test.assertTrue
 class DockerRuntimeSandboxIntegrationTest {
     private val createdPaths = mutableListOf<Path>()
     private val sandboxes = mutableListOf<DockerRuntimeSandbox>()
+    private val containerNames = mutableSetOf<String>()
 
     @AfterTest
     fun cleanup() {
@@ -30,6 +32,10 @@ class DockerRuntimeSandboxIntegrationTest {
             runCatching { sandbox.close() }
         }
         sandboxes.clear()
+        containerNames.forEach { containerName ->
+            runCatching { docker("rm", "-f", containerName) }
+        }
+        containerNames.clear()
         createdPaths.asReversed().forEach { path ->
             runCatching { path.toFile().deleteRecursively() }
         }
@@ -151,9 +157,78 @@ class DockerRuntimeSandboxIntegrationTest {
         assertTrue(inspect.exitCode != 0 || !inspect.stdout.contains(containerName))
     }
 
-    private fun createSandbox(): DockerRuntimeSandbox {
+    @Test
+    fun `long running bash command times out`() = runTest {
+        val sandbox = createSandbox()
+
+        val result = sandbox.commandExecutor.execute(
+            SandboxCommandRequest(
+                runtime = SandboxCommandRuntime.BASH,
+                script = "sleep 5",
+                timeoutMillis = 100L,
+            ),
+        )
+
+        assertTrue(result.timedOut)
+        assertEquals(-1, result.exitCode)
+    }
+
+    @Test
+    fun `list descendants includes symlink entries without following them`() = runTest {
+        val sandbox = createSandbox()
+        val workspaceRoot = sandbox.hostRoot.resolve("home/workspace").also(Files::createDirectories)
+        val target = workspaceRoot.resolve("real.txt").also { Files.writeString(it, "hello") }
+        workspaceRoot.resolve("link.txt").createSymbolicLinkPointingTo(target.fileName)
+
+        val descendants = sandbox.fileSystem.listDescendants(
+            root = sandbox.fileSystem.resolveExistingDirectory("~/workspace"),
+            includeHidden = true,
+        )
+
+        val symlink = descendants.single { it.name == "link.txt" }
+        assertTrue(symlink.isSymbolicLink)
+        assertFalse(symlink.isRegularFile)
+    }
+
+    @Test
+    fun `reusing a container name with a different host root fails fast`() {
+        val containerName = "souz-runtime-stale-${System.nanoTime()}"
+        val sandboxA = createSandbox(
+            containerName = containerName,
+            hostRoot = createTempDirectory("docker-runtime-sandbox-a-"),
+            removeContainerOnClose = false,
+        )
+
+        val hostRootB = createTempDirectory("docker-runtime-sandbox-b-")
+        val error = assertThrows<IllegalStateException> {
+            DockerRuntimeSandbox(
+                scope = SandboxScope(
+                    userId = "docker-test-user",
+                    conversationId = "case-b-${System.nanoTime()}",
+                ),
+                hostRoot = hostRootB,
+                imageName = TEST_IMAGE_NAME,
+                containerName = containerName,
+                removeContainerOnClose = true,
+            )
+        }
+
+        assertContains(error.message.orEmpty(), "different host root")
+        assertTrue(Files.isDirectory(sandboxA.hostRoot.resolve("home")))
+    }
+
+    private fun createSandbox(
+        containerName: String = DockerSandboxIds.defaultContainerName(
+            SandboxScope(
+                userId = "docker-test-user",
+                conversationId = "case-${System.nanoTime()}",
+            ),
+        ),
+        hostRoot: Path = createTempDirectory("docker-runtime-sandbox-"),
+        removeContainerOnClose: Boolean = true,
+    ): DockerRuntimeSandbox {
         ensureDockerImage()
-        val hostRoot = createTempDirectory("docker-runtime-sandbox-")
+        containerNames += containerName
         val sandbox = DockerRuntimeSandbox(
             scope = SandboxScope(
                 userId = "docker-test-user",
@@ -161,7 +236,8 @@ class DockerRuntimeSandboxIntegrationTest {
             ),
             hostRoot = hostRoot,
             imageName = TEST_IMAGE_NAME,
-            removeContainerOnClose = true,
+            containerName = containerName,
+            removeContainerOnClose = removeContainerOnClose,
         )
         sandboxes += sandbox
         return sandbox
@@ -175,7 +251,10 @@ class DockerRuntimeSandboxIntegrationTest {
         if (inspect.exitCode == 0) {
             return
         }
-        val contextDir = Path.of("runtime/src/test/resources/docker/runtime-sandbox")
+        val contextDir = Path.of(System.getProperty("user.dir"))
+            .resolve("runtime/src/test/resources/docker/runtime-sandbox")
+            .toAbsolutePath()
+            .normalize()
         val build = docker("build", "-t", TEST_IMAGE_NAME, contextDir.toString())
         check(build.exitCode == 0) {
             "Failed to build Docker sandbox test image.\nstdout:\n${build.stdout}\nstderr:\n${build.stderr}\nRun locally with SOUZ_TEST_DOCKER=1 ./gradlew :runtime:test"

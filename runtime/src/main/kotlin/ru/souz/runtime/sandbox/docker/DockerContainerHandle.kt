@@ -8,10 +8,13 @@ internal class DockerContainerHandle(
     private val userSpec: String?,
 ) {
     fun ensureStarted() {
-        when (inspectRunningState()) {
+        when (val existingContainer = inspectContainerState()) {
             null -> createAndStart()
-            true -> return
-            false -> {
+            else -> {
+                requireMatchingHostRoot(existingContainer)
+                if (existingContainer.running) {
+                    return
+                }
                 val start = dockerCli.run(listOf("start", containerName))
                 check(start.exitCode == 0) {
                     "Failed to start Docker sandbox container '$containerName'. stdout:\n${start.stdout}\nstderr:\n${start.stderr}"
@@ -99,17 +102,46 @@ internal class DockerContainerHandle(
         }
     }
 
-    private fun inspectRunningState(): Boolean? {
+    private fun inspectContainerState(): DockerContainerState? {
         val inspection = dockerCli.run(
-            listOf("container", "inspect", "--format", "{{.State.Running}}", containerName),
+            listOf(
+                "container",
+                "inspect",
+                "--format",
+                "{{.State.Running}}\t{{range .Mounts}}{{if eq .Destination \"/souz\"}}{{.Source}}{{end}}{{end}}",
+                containerName,
+            ),
         )
         if (inspection.exitCode != 0) {
             return null
         }
-        return inspection.stdout.trim().equals("true", ignoreCase = true)
+        val output = inspection.stdout.trimEnd()
+        val running = output.substringBefore('\t').trim().equals("true", ignoreCase = true)
+        val mountedHostRoot = output.substringAfter('\t', missingDelimiterValue = "").trim()
+            .takeIf(String::isNotEmpty)
+            ?.let { normalizeHostPath(java.nio.file.Path.of(it)) }
+        return DockerContainerState(
+            running = running,
+            mountedHostRoot = mountedHostRoot,
+        )
+    }
+
+    private fun requireMatchingHostRoot(existingContainer: DockerContainerState) {
+        val mountedHostRoot = existingContainer.mountedHostRoot
+            ?: throw IllegalStateException(
+                "Docker sandbox container '$containerName' exists without the expected ${layout.containerRoot} bind mount."
+            )
+        check(mountedHostRoot == layout.hostRoot) {
+            "Docker sandbox container '$containerName' already exists with a different host root: expected ${layout.hostRoot}, actual $mountedHostRoot"
+        }
     }
 
     private companion object {
         const val DOCKER_EXEC_TIMEOUT_GRACE_MILLIS = 2_000L
     }
 }
+
+internal data class DockerContainerState(
+    val running: Boolean,
+    val mountedHostRoot: java.nio.file.Path?,
+)

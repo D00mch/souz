@@ -11,11 +11,7 @@ internal class DockerSandboxLayout(
     hostRoot: Path,
     val containerRoot: String = CONTAINER_ROOT,
 ) {
-    val hostRoot: Path = runCatching {
-        hostRoot.toRealPath()
-    }.getOrElse {
-        hostRoot.toAbsolutePath().normalize()
-    }
+    val hostRoot: Path = normalizeHostPath(hostRoot)
     val hostHomeRoot: Path = this.hostRoot.resolve("home")
     val hostWorkspaceRoot: Path = this.hostRoot.resolve("workspace")
     val hostStateRoot: Path = this.hostRoot.resolve("state")
@@ -163,3 +159,9 @@ internal fun normalizeContainerPath(path: String): String? {
 
 internal fun isUnderContainerRoot(path: String, root: String = DockerSandboxLayout.CONTAINER_ROOT): Boolean =
     path == root || path.startsWith("$root/")
+
+internal fun normalizeHostPath(path: Path): Path = runCatching {
+    path.toRealPath()
+}.getOrElse {
+    path.toAbsolutePath().normalize()
+}

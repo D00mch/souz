@@ -136,8 +136,9 @@ internal class DockerSandboxFileSystem(
                     .filter { (_, relative) ->
                         includeHidden || relative.none { segment -> segment.toString().startsWith('.') }
                     }
-                    .map { (hostPath, _) -> resolveHostPath(hostPath) }
-                    .filter(::isPathSafe)
+                    .map { (hostPath, _) ->
+                        resolveHostPath(hostPath).also(::requireVisibleDescendant)
+                    }
                     .toList()
             }
     }
@@ -192,6 +193,15 @@ internal class DockerSandboxFileSystem(
     private fun requireSafePath(path: SandboxPathInfo) {
         if (!isPathSafe(path)) {
             throw ForbiddenFolder(path.rawPath)
+        }
+    }
+
+    private fun requireVisibleDescendant(path: SandboxPathInfo) {
+        if (path.isSymbolicLink) {
+            return
+        }
+        if (!isPathSafe(path)) {
+            throw BadInputException("Unsafe descendant path: ${path.path}")
         }
     }
 
