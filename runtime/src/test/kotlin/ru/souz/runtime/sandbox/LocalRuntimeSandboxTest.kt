@@ -66,6 +66,18 @@ class LocalRuntimeSandboxTest {
         assertFalse(sandbox.fileSystem.isPathSafe(blockedPath))
     }
 
+    @Test
+    fun `new file under symlink parent is unsafe`() {
+        val home = createTempDirectory("home-")
+        val outside = createTempDirectory("outside-")
+        Files.createSymbolicLink(home.resolve("escape"), outside)
+
+        val sandbox = createSandbox(home, stateRoot = createTempDirectory("state-"))
+        val target = sandbox.fileSystem.resolvePath("~/escape/new.txt")
+
+        assertFalse(sandbox.fileSystem.isPathSafe(target))
+    }
+
     private fun createSandbox(
         home: Path,
         stateRoot: Path,
