@@ -8,8 +8,13 @@ import ru.souz.db.SettingsProviderImpl
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.giga.toGiga
+import ru.souz.tool.FewShotExample
+import ru.souz.tool.InputParamDescription
+import ru.souz.tool.ReturnParameters
+import ru.souz.tool.ToolSetup
 import ru.souz.tool.files.FilesToolUtil
 import java.io.File
 import java.nio.file.Files
@@ -77,4 +82,46 @@ class GigaToolTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun `toGiga forwards invocation metadata to tool setup`() = runBlocking {
+        var receivedMeta: ToolInvocationMeta? = null
+        val tool = object : ToolSetup<TestInput> {
+            override val name: String = "MetaEcho"
+            override val description: String = "Captures metadata for tests"
+            override val fewShotExamples: List<FewShotExample> = emptyList()
+            override val returnParameters: ReturnParameters = ReturnParameters(properties = emptyMap())
+
+            override fun invoke(input: TestInput): String = input.value
+
+            override suspend fun suspendInvoke(input: TestInput, meta: ToolInvocationMeta): String {
+                receivedMeta = meta
+                return input.value
+            }
+        }
+        val meta = ToolInvocationMeta(
+            userId = "user-1",
+            conversationId = "conversation-1",
+            requestId = "request-1",
+            locale = "en-US",
+            timeZone = "America/New_York",
+            attributes = mapOf("source" to "test"),
+        )
+
+        val result = tool.toGiga<TestInput>().invoke(
+            LLMResponse.FunctionCall(
+                name = "MetaEcho",
+                arguments = mapOf("value" to "hello"),
+            ),
+            meta,
+        )
+
+        assertEquals(LLMMessageRole.function, result.role)
+        assertEquals(meta, receivedMeta)
+    }
+
+    private data class TestInput(
+        @InputParamDescription("Echo value")
+        val value: String,
+    )
 }

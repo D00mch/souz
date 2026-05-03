@@ -5,7 +5,9 @@ import org.kodein.di.instance
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.giga.toGiga
 import ru.souz.tool.application.*
 import ru.souz.tool.browser.*
@@ -227,6 +229,11 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
                         else -> emptyList()
                     }
                 )
+
+            override suspend fun invoke(
+                functionCall: LLMResponse.FunctionCall,
+                meta: ToolInvocationMeta,
+            ) = it.invoke(functionCall, meta)
         }
     }
 }
