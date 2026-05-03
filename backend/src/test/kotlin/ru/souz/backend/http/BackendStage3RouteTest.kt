@@ -215,6 +215,40 @@ class BackendStage3RouteTest {
     }
 
     @Test
+    fun `patch me settings accepts canonicalized locale tags`() = testApplication {
+        val context = routeTestContext()
+        application {
+            backendApplication(
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                chatService = context.chatService,
+                messageService = context.messageService,
+                executionService = context.executionService,
+            )
+        }
+
+        val response = client.patch(BackendHttpRoutes.SETTINGS) {
+            trustedHeaders("user-locale-canonical")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "locale": "iw-IL"
+                }
+                """.trimIndent()
+            )
+        }
+        val payload = json.readTree(response.bodyAsText())
+        val storedIntent = runBlocking { context.userSettingsRepository.get("user-locale-canonical") }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals("he-IL", payload["settings"]["locale"].asText())
+        assertEquals(Locale.forLanguageTag("he-IL"), storedIntent?.locale)
+    }
+
+    @Test
     fun `get chats lists only current user chats and previews`() = testApplication {
         val context = routeTestContext()
         val olderChat = chat(

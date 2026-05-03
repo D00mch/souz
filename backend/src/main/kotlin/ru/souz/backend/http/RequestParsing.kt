@@ -63,19 +63,19 @@ internal fun parseModel(rawModel: String, fieldName: String): LLMModel =
 
 internal fun parseLocale(rawLocale: String, fieldName: String): Locale =
     try {
-        val normalized = rawLocale.trim()
         Locale.Builder()
-            .setLanguageTag(normalized)
+            .setLanguageTag(rawLocale.trim())
             .build()
-            .takeIf { locale ->
-                locale.language.isNotBlank() &&
-                    locale.toLanguageTag().equals(normalized, ignoreCase = true) &&
-                    locale.toLanguageTag().lowercase() in AVAILABLE_LOCALE_TAGS
-            }
+            .takeIf(Locale::isRecognizedLocaleTag)
             ?: throw invalidV1Request("$fieldName must be a valid locale.")
     } catch (_: IllformedLocaleException) {
         throw invalidV1Request("$fieldName must be a valid locale.")
     }
+
+private fun Locale.isRecognizedLocaleTag(): Boolean =
+    language.isNotBlank() &&
+        !language.equals(UNDEFINED_LANGUAGE, ignoreCase = true) &&
+        !getDisplayLanguage(Locale.ENGLISH).equals(language, ignoreCase = true)
 
 internal fun parseTimeZone(rawTimeZone: String, fieldName: String): ZoneId =
     try {
@@ -95,6 +95,4 @@ private suspend inline fun <reified T : Any> ApplicationCall.receiveOrRequestErr
         throw errorFactory("Invalid payload: ${e.message ?: "request body cannot be parsed."}")
     }
 
-private val AVAILABLE_LOCALE_TAGS: Set<String> =
-    Locale.getAvailableLocales()
-        .mapTo(linkedSetOf()) { it.toLanguageTag().lowercase() }
+private const val UNDEFINED_LANGUAGE = "und"

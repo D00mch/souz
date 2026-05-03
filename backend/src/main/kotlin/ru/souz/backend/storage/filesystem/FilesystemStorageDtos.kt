@@ -608,9 +608,9 @@ private fun String?.toModelOrNull(): LLMModel? =
         LLMModel.entries.firstOrNull { it.alias == raw || it.name.equals(raw, ignoreCase = true) }
     }
 
-private fun String?.toProviderOrNull(): ru.souz.llms.LlmProvider? =
+private fun String?.toProviderOrNull(): LlmProvider? =
     this?.let { raw ->
-        ru.souz.llms.LlmProvider.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+        LlmProvider.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
     }
 
 private fun String.toLocaleOrDefault(): Locale =
