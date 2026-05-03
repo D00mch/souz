@@ -11,7 +11,7 @@ The project is designed around one core idea: an AI agent should be useful enoug
 - **Kotlin Multiplatform desktop app** built with Compose for Desktop.
 - **GraphBasedAgent** powered by an explicit graph runtime with classification, MCP tool injection, prompt enrichment, LLM execution, tool loops, summarization, retries, tracing, and cancellation.
 - **Shared runtime layer** used by both desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools.
-- **Sandbox abstraction** for filesystem and command execution, currently backed by local sandbox scope and ready for future Docker-backed execution.
+- **Sandbox abstraction** for filesystem and command execution, with local mode by default and opt-in Docker-backed execution.
 - **HTTP backend** with trusted-proxy auth, per-user settings/provider keys, chat lifecycle, message execution, cancellation, option continuation, event replay, WebSocket streaming, and memory/filesystem/Postgres storage.
 - **Rich desktop tool catalog** for files, browser, web search/research, config, notes, applications, data analytics, calendar, mail, text replacement, Telegram, desktop capture, presentations, and calculator.
 - **SafeMode confirmations** for tool permission prompts, destructive Telegram operations, ambiguous contact/chat selection, and deferred file-modification review.
@@ -58,6 +58,10 @@ Gradle modules included by the build:
 :backend
 ```
 
+Module docs:
+
+- [`runtime/README.md`](runtime/README.md) covers the shared JVM runtime layer, sandbox modes, backend-safe tools, and Docker sandbox image setup.
+
 ## Architecture (module structure)
 
 ```mermaid
@@ -99,7 +103,7 @@ Souz keeps platform-specific logic at the edges:
 - `:llms` contains provider-agnostic contracts and shared model/profile definitions.
 - `:graph-engine` contains no LLM/tool/agent knowledge; it only runs typed suspendable graph nodes.
 - `:agent` implements agent behavior on top of the graph engine.
-- `:runtime` contains JVM-shared runtime services and backend-safe tools.
+- `:runtime` contains JVM-shared runtime services and backend-safe tools. See [`runtime/README.md`](runtime/README.md).
 - `:native` contains local model support used by desktop and backend-capable runtime wiring.
 - `:composeApp` adds Desktop/KMP UI and OS integrations.
 - `:backend` exposes the same runtime over HTTP without starting the desktop app.
@@ -168,7 +172,7 @@ RuntimeSandbox
 └── commandExecutor: SandboxCommandExecutor
 ```
 
-The current implementation is `LocalRuntimeSandbox`, which normalizes runtime paths and provides sandbox-backed filesystem and command execution contracts. Tools and skill loaders depend on sandbox abstractions instead of directly assuming host access.
+The current implementations are `LocalRuntimeSandbox` and `DockerRuntimeSandbox`. Local mode is the default. Docker mode is opt-in through `SOUZ_SANDBOX_MODE=docker` and requires the `souz-runtime-sandbox:latest` image to exist locally. Tools and skill loaders depend on sandbox abstractions instead of directly assuming host access. See [`runtime/README.md`](runtime/README.md) for setup details.
 
 Default state layout is under:
 
