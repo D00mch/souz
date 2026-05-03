@@ -85,6 +85,7 @@ class LocalRuntimeSandboxTest {
         val sandbox = createSandbox(home = home, stateRoot = stateRoot)
         val target = sandbox.fileSystem.resolvePath("~/escape/new.txt")
 
+        assertFalse(sandbox.fileSystem.isPathSafe(target))
         assertThrows<Exception> {
             sandbox.fileSystem.writeText(target, "should not escape")
         }

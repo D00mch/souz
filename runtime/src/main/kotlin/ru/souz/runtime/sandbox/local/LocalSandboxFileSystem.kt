@@ -74,8 +74,9 @@ internal class LocalSandboxFileSystem(
 
     override fun isPathSafe(path: SandboxPathInfo): Boolean {
         val candidate = Path.of(path.path).normalize()
-        return candidate.startsWith(homeRoot) &&
-            forbiddenPaths().map(Path::of).none(candidate::startsWith)
+        val effectiveCandidate = resolveEffectivePath(candidate) ?: return false
+        return effectiveCandidate.startsWith(homeRoot) &&
+            forbiddenPaths().map(Path::of).none(effectiveCandidate::startsWith)
     }
 
     override fun forbiddenPaths(): List<String> {
@@ -114,15 +115,13 @@ internal class LocalSandboxFileSystem(
     }
 
     override fun writeText(path: SandboxPathInfo, content: String) {
-        requireSafePath(path)
-        val filePath = Path.of(path.path)
+        val filePath = resolveWritablePath(path)
         filePath.parent?.let(Files::createDirectories)
         Files.writeString(filePath, content, StandardCharsets.UTF_8)
     }
 
     override fun writeTextAtomically(path: SandboxPathInfo, content: String, logger: Logger) {
-        requireSafePath(path)
-        val filePath = Path.of(path.path)
+        val filePath = resolveWritablePath(path)
         val parent = filePath.parent ?: throw BadInputException("File has no parent directory")
         Files.createDirectories(parent)
         val tempPath = Files.createTempFile(parent, "${path.name}.", ".tmp")
@@ -135,8 +134,7 @@ internal class LocalSandboxFileSystem(
     }
 
     override fun createDirectory(path: SandboxPathInfo) {
-        requireSafePath(path)
-        Files.createDirectories(Path.of(path.path))
+        Files.createDirectories(resolveWritablePath(path))
     }
 
     override fun listDescendants(
@@ -170,11 +168,10 @@ internal class LocalSandboxFileSystem(
         logger: Logger?,
     ) {
         requireSafePath(source)
-        requireSafePath(destination)
         if (!source.exists) {
             throw BadInputException("Invalid path: ${source.rawPath}")
         }
-        val destinationPath = Path.of(destination.path)
+        val destinationPath = resolveWritablePath(destination)
         if (createParents) {
             destinationPath.parent?.let(Files::createDirectories)
         }
@@ -224,6 +221,18 @@ internal class LocalSandboxFileSystem(
         }
     }
 
+    private fun resolveWritablePath(path: SandboxPathInfo): Path {
+        val candidate = Path.of(path.path).normalize()
+        val effectiveCandidate = resolveEffectivePath(candidate)
+            ?: throw BadInputException("Invalid path: ${path.rawPath}")
+        if (!effectiveCandidate.startsWith(homeRoot) ||
+            forbiddenPaths().map(Path::of).any(effectiveCandidate::startsWith)
+        ) {
+            throw ForbiddenFolder(path.rawPath)
+        }
+        return effectiveCandidate
+    }
+
     private fun cleanRawPath(rawPath: String): String = rawPath
         .trim()
         .removeSurrounding("`")
@@ -252,6 +261,23 @@ internal class LocalSandboxFileSystem(
         runCatching {
             Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
         }.getOrNull()
+
+    private fun resolveEffectivePath(candidate: Path): Path? {
+        val normalized = candidate.toAbsolutePath().normalize()
+        val existingAncestor = generateSequence(normalized) { it.parent }
+            .firstOrNull { Files.exists(it, LinkOption.NOFOLLOW_LINKS) }
+            ?: return normalized
+        val relativeSuffix = existingAncestor.relativize(normalized)
+        val resolvedAncestor = runCatching {
+            existingAncestor.toRealPath()
+        }.getOrElse {
+            existingAncestor.toAbsolutePath().normalize()
+        }
+        if (relativeSuffix.toString().isNotEmpty() && !Files.isDirectory(resolvedAncestor)) {
+            return null
+        }
+        return resolvedAncestor.resolve(relativeSuffix).normalize()
+    }
 
     private fun movePath(
         sourcePath: Path,
