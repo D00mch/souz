@@ -1,6 +1,7 @@
 package ru.souz.backend.chat.repository
 
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
@@ -13,7 +14,7 @@ interface MessageRepository {
         content: String,
         metadata: Map<String, String> = emptyMap(),
         id: UUID = UUID.randomUUID(),
-        createdAt: Instant = Instant.now(),
+        createdAt: Instant = Instant.now().truncatedTo(ChronoUnit.MICROS),
     ): ChatMessage
 
     suspend fun get(userId: String, chatId: UUID, seq: Long): ChatMessage?

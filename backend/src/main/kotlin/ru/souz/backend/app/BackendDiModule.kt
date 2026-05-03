@@ -40,6 +40,7 @@ import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.RuntimeProviderChatApiBuilder
 import ru.souz.backend.llm.StoredProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
+import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsService
@@ -221,6 +222,13 @@ fun backendDiModule(
         UserSettingsService(
             userSettingsRepository = instance(),
             effectiveSettingsResolver = instance(),
+        )
+    }
+    bindSingleton {
+        BackendOnboardingService(
+            bootstrapService = instance(),
+            userSettingsRepository = instance(),
+            userSettingsService = instance(),
         )
     }
     bindSingleton {

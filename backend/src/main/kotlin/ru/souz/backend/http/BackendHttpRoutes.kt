@@ -5,6 +5,8 @@ internal object BackendHttpRoutes {
     const val HEALTH = "/health"
     const val V1 = "/v1"
     const val BOOTSTRAP = "$V1/bootstrap"
+    const val ONBOARDING_STATE = "$V1/onboarding/state"
+    const val ONBOARDING_COMPLETE = "$V1/onboarding/complete"
     const val SETTINGS = "$V1/me/settings"
     const val PROVIDER_KEYS = "$V1/me/provider-keys"
     const val CHATS = "$V1/chats"

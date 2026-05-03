@@ -4,6 +4,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
 import java.time.DateTimeException
 import java.time.ZoneId
+import java.util.IllformedLocaleException
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import ru.souz.backend.settings.service.UserSettingsOverrides
@@ -30,6 +31,19 @@ internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(): UserSettin
         streamingMessages = streamingMessages,
     )
 
+internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(): UserSettingsOverrides =
+    UserSettingsOverrides(
+        defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel") },
+        locale = locale?.let { parseLocale(it, fieldName = "locale") },
+        timeZone = timeZone?.let { parseTimeZone(it, fieldName = "timeZone") },
+        enabledTools = enabledTools?.map { toolName ->
+            toolName.trim().takeIf { it.isNotEmpty() }
+                ?: throw invalidV1Request("enabledTools must not contain blank values.")
+        }?.toCollection(linkedSetOf()),
+        showToolEvents = showToolEvents,
+        streamingMessages = streamingMessages,
+    )
+
 internal fun BackendV1MessageOptionsRequest?.toUserSettingsOverrides(): UserSettingsOverrides =
     UserSettingsOverrides(
         defaultModel = this?.model?.let { parseModel(it, fieldName = "options.model") },
@@ -48,9 +62,20 @@ internal fun parseModel(rawModel: String, fieldName: String): LLMModel =
     } ?: throw invalidV1Request("$fieldName must be a known model alias.")
 
 internal fun parseLocale(rawLocale: String, fieldName: String): Locale =
-    Locale.forLanguageTag(rawLocale.trim())
-        .takeIf { it.language.isNotBlank() }
-        ?: throw invalidV1Request("$fieldName must be a valid locale.")
+    try {
+        Locale.Builder()
+            .setLanguageTag(rawLocale.trim())
+            .build()
+            .takeIf(Locale::isRecognizedLocaleTag)
+            ?: throw invalidV1Request("$fieldName must be a valid locale.")
+    } catch (_: IllformedLocaleException) {
+        throw invalidV1Request("$fieldName must be a valid locale.")
+    }
+
+private fun Locale.isRecognizedLocaleTag(): Boolean =
+    language.isNotBlank() &&
+        !language.equals(UNDEFINED_LANGUAGE, ignoreCase = true) &&
+        !getDisplayLanguage(Locale.ENGLISH).equals(language, ignoreCase = true)
 
 internal fun parseTimeZone(rawTimeZone: String, fieldName: String): ZoneId =
     try {
@@ -69,3 +94,5 @@ private suspend inline fun <reified T : Any> ApplicationCall.receiveOrRequestErr
     } catch (e: Exception) {
         throw errorFactory("Invalid payload: ${e.message ?: "request body cannot be parsed."}")
     }
+
+private const val UNDEFINED_LANGUAGE = "und"

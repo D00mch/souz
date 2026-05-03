@@ -6,6 +6,8 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
 
 - `GET /health` returns process and selected-model status.
 - `GET /v1/bootstrap` returns backend features, storage mode, server-visible models/tools, and effective settings for the trusted user.
+- `GET /v1/onboarding/state` returns first-run onboarding requirements, current effective settings, and model-access hints for the trusted user.
+- `POST /v1/onboarding/complete` persists first-run preferences and marks onboarding as completed for the trusted user.
 - `GET /v1/me/settings` and `PATCH /v1/me/settings` read and persist public user settings.
 - `GET /v1/me/provider-keys`, `PUT /v1/me/provider-keys/{provider}`, and `DELETE /v1/me/provider-keys/{provider}` manage encrypted per-user provider keys.
 - `GET /v1/chats`, `POST /v1/chats`, `PATCH /v1/chats/{chatId}/title`, `POST /v1/chats/{chatId}/archive`, and `POST /v1/chats/{chatId}/unarchive` manage owned chats.
@@ -25,6 +27,7 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
 ## Runtime Model
 
 - Chat turns resolve effective settings from server defaults, persisted user intent, feature flags, and per-request overrides.
+- Per-user onboarding completion now lives alongside persisted user settings; `/v1/bootstrap` and `/v1/onboarding/state` normalize missing settings, legacy partial settings payloads, and invalid provider-key rows into stable responses instead of surfacing them as misconfiguration errors.
 - Execution persists product messages separately from `agent_conversation_state`; runtime-only continuation state stays inside `AgentStateRepository`.
 - `conversationId = chatId.toString()` is the stable runtime identity for chat execution.
 - `BackendConversationRuntimeFactory` rebuilds a request-scoped runtime from persisted session state, while `AgentExecutionService` owns product execution lifecycle, cancellation, and option continuation.
@@ -78,6 +81,7 @@ backend/
     │   ├── execution/    # Execution models, repositories, lifecycle services
     │   ├── http/         # Ktor server, DTOs, routes, validation
     │   ├── keys/         # Provider-key models, repositories, services
+    │   ├── onboarding/   # First-run onboarding state and completion service
     │   ├── options/      # Option models, repositories, services
     │   ├── security/     # Trusted proxy request identity
     │   ├── settings/     # User settings models, repositories, resolver, service

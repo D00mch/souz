@@ -10,6 +10,7 @@ import ru.souz.backend.security.requestIdentity
 
 internal fun Route.v1Routes(deps: BackendHttpDependencies) {
     bootstrapRoutes(deps)
+    onboardingRoutes(deps)
     settingsRoutes(deps)
     providerKeyRoutes(deps)
     chatRoutes(deps)

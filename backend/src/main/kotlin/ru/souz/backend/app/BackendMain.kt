@@ -22,6 +22,7 @@ fun main() {
     val runtime = BackendRuntime.create(appConfig)
     val server = BackendHttpServer(
         bootstrapService = runtime.bootstrapService,
+        onboardingService = runtime.onboardingService,
         userSettingsService = runtime.userSettingsService,
         providerKeyService = runtime.userProviderKeyService,
         chatService = runtime.chatService,

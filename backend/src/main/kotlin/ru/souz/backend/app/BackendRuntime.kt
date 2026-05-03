@@ -11,6 +11,7 @@ import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.keys.service.UserProviderKeyService
+import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.settings.service.UserSettingsService
 import ru.souz.backend.user.repository.UserRepository
 import ru.souz.db.SettingsProvider
@@ -21,6 +22,7 @@ class BackendRuntime private constructor(
     private val di: DI,
 ) : AutoCloseable {
     val bootstrapService: BackendBootstrapService by lazy { di.direct.instance() }
+    val onboardingService: BackendOnboardingService by lazy { di.direct.instance() }
     val userSettingsService: UserSettingsService by lazy { di.direct.instance() }
     val userProviderKeyService: UserProviderKeyService by lazy { di.direct.instance() }
     val chatService: ChatService by lazy { di.direct.instance() }

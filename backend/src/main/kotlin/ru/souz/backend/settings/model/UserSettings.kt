@@ -34,6 +34,12 @@ data class UserSettings(
     val streamingMessages: Boolean? = null,
     val toolPermissions: Map<String, ToolPermission> = emptyMap(),
     val mcp: Map<String, UserMcpServer> = emptyMap(),
+    val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
+    val onboardingCompletedAt: Instant? = null,
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = createdAt,
-)
+) {
+    companion object {
+        const val CURRENT_SCHEMA_VERSION: Int = 2
+    }
+}

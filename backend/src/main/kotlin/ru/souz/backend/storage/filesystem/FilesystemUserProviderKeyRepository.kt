@@ -53,6 +53,6 @@ class FilesystemUserProviderKeyRepository(
 
     private fun readAll(userId: String): List<UserProviderKey> =
         mapper.readJsonIfExists<List<StoredUserProviderKey>>(layout.providerKeysFile(userId))
-            ?.map(StoredUserProviderKey::toDomain)
+            ?.mapNotNull(StoredUserProviderKey::toDomainOrNull)
             .orEmpty()
 }

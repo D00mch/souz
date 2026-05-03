@@ -22,7 +22,7 @@ class PostgresUserProviderKeyRepository(
             statement.setString(1, userId)
             statement.setString(2, provider.name)
             statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) resultSet.toUserProviderKey() else null
+                if (resultSet.next()) resultSet.toUserProviderKeyOrNull() else null
             }
         }
     }
@@ -40,7 +40,7 @@ class PostgresUserProviderKeyRepository(
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
-                        add(resultSet.toUserProviderKey())
+                        resultSet.toUserProviderKeyOrNull()?.let(::add)
                     }
                 }
             }
