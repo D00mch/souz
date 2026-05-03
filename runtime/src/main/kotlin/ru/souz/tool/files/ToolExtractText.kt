@@ -55,27 +55,28 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
     }
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val file = filesToolUtil.resolvePath(input.filePath)
+        val file = filesToolUtil.resolvePath(input.filePath, meta)
         if (!file.exists) return "Error: File not found at ${input.filePath}"
 
         if (java.io.File(file.path).extension.lowercase() == "key") {
-            return "Warning: .key format is proprietary. I cannot read slide content directly without opening Keynote. I can only try to read basic metadata.\n" + extractWithTika(file)
+            return "Warning: .key format is proprietary. I cannot read slide content directly without opening Keynote. I can only try to read basic metadata.\n" +
+                extractWithTika(file, meta)
         }
 
         if (isPlainTextPreview(file)) {
-            return extractPlainText(file)
+            return extractPlainText(file, meta)
         }
 
-        return extractWithTika(file)
+        return extractWithTika(file, meta)
     }
 
-    private fun extractWithTika(file: SandboxPathInfo): String {
+    private fun extractWithTika(file: SandboxPathInfo, meta: ToolInvocationMeta): String {
         return try {
             val parser = AutoDetectParser()
             val handler = BodyContentHandler(TEXT_CHAR_LIMIT)
             val metadata = Metadata()
 
-            filesToolUtil.openInputStream(file).use { stream ->
+            filesToolUtil.openInputStream(file, meta).use { stream ->
                 parser.parse(stream, handler, metadata)
             }
 
@@ -107,9 +108,9 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         }
     }
 
-    private fun extractPlainText(file: SandboxPathInfo): String {
+    private fun extractPlainText(file: SandboxPathInfo, meta: ToolInvocationMeta): String {
         return try {
-            val preview = readUtf8Preview(file, TEXT_CHAR_LIMIT)
+            val preview = readUtf8Preview(file, TEXT_CHAR_LIMIT, meta)
             val metaLines = buildList {
                 add("Content-Type: text/plain (direct)")
                 add("Charset: UTF-8")
@@ -121,13 +122,13 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
                 content = preview.text.trim()
             )
         } catch (_: Exception) {
-            extractWithTika(file)
+            extractWithTika(file, meta)
         }
     }
 
-    private fun readUtf8Preview(file: SandboxPathInfo, charLimit: Int): TextPreview {
+    private fun readUtf8Preview(file: SandboxPathInfo, charLimit: Int, meta: ToolInvocationMeta): TextPreview {
         val builder = StringBuilder(minOf(charLimit, 4096))
-        filesToolUtil.openInputStream(file).buffered().reader(Charsets.UTF_8).use { reader ->
+        filesToolUtil.openInputStream(file, meta).buffered().reader(Charsets.UTF_8).use { reader ->
             val buffer = CharArray(4096)
             while (builder.length < charLimit) {
                 val remaining = minOf(buffer.size, charLimit - builder.length)

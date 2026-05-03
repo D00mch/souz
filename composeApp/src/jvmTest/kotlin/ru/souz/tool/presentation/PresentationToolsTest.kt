@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import ru.souz.test.invoke
 
 class PresentationToolsTest {
 
@@ -30,14 +31,14 @@ class PresentationToolsTest {
         """.trimIndent()
 
         // Configure mock behavior
-        every { createTool.invoke(any()) } returns """
+        every { createTool.invoke(any(), any()) } returns """
             {
                 "path": "$fakePath",
                 "slideCount": 2
             }
         """.trimIndent()
 
-        every { readTool.invoke(any()) } returns expectedSlidesJson
+        every { readTool.invoke(any(), any()) } returns expectedSlidesJson
 
         val slide1 = SlideContent(title = "Slide 1 Title", points = listOf("Point 1", "Point 2"), notes = "Note 1")
         val slide2 = SlideContent(title = "Slide 2 Title", points = listOf("Point A", "Point B"), notes = "Note 2")
@@ -59,7 +60,7 @@ class PresentationToolsTest {
         assertEquals(2, createResult["slideCount"])
         
         // Verify create was called
-        verify { createTool.invoke(input) }
+        verify { createTool.invoke(input, any()) }
 
         // Test Read Mock
         val readInput = PresentationReadInput(filePath)
@@ -78,7 +79,7 @@ class PresentationToolsTest {
         assertTrue(content1.contains("Point 1"))
         
         // Verify read was called
-        verify { readTool.invoke(readInput) }
+        verify { readTool.invoke(readInput, any()) }
     }
 
     @Test
@@ -86,7 +87,7 @@ class PresentationToolsTest {
         val createTool = mockk<ToolPresentationCreate>()
         
         val fakePath = "~/tmp/mock_image_presentation.pptx"
-        every { createTool.invoke(any()) } returns """{"path": "$fakePath", "slideCount": 1}"""
+        every { createTool.invoke(any(), any()) } returns """{"path": "$fakePath", "slideCount": 1}"""
 
         val slide1 = SlideContent(
             title = "Image Slide", 
@@ -107,7 +108,7 @@ class PresentationToolsTest {
         val createResult: Map<String, Any> = mapper.readValue(createResultJson)
         assertEquals(fakePath, createResult["path"])
         
-        verify { createTool.invoke(input) }
+        verify { createTool.invoke(input, any()) }
     }
 
     @Test
@@ -115,7 +116,7 @@ class PresentationToolsTest {
         val createTool = mockk<ToolPresentationCreate>()
         
         val fakePath = "~/tmp/mock_themed_presentation.pptx"
-        every { createTool.invoke(any()) } returns """{"path": "$fakePath", "slideCount": 2}"""
+        every { createTool.invoke(any(), any()) } returns """{"path": "$fakePath", "slideCount": 2}"""
         
         val slides = listOf(
             SlideContent(title = "Slide 1", points = listOf("Content 1")),
@@ -135,7 +136,7 @@ class PresentationToolsTest {
         val createResult: Map<String, Any> = mapper.readValue(createResultJson)
         assertEquals(fakePath, createResult["path"])
         
-        verify { createTool.invoke(input) }
+        verify { createTool.invoke(input, any()) }
     }
 
     @Test
@@ -143,7 +144,7 @@ class PresentationToolsTest {
         val createTool = mockk<ToolPresentationCreate>()
         
         val fakePath = "~/tmp/mock_complex_presentation.pptx"
-        every { createTool.invoke(any()) } returns """{"path": "$fakePath", "slideCount": 2}"""
+        every { createTool.invoke(any(), any()) } returns """{"path": "$fakePath", "slideCount": 2}"""
 
         val slides = listOf(
             SlideContent(
@@ -174,14 +175,14 @@ class PresentationToolsTest {
         
         assertTrue(resultJson.contains("path"))
         assertTrue(resultJson.contains("path"))
-        verify { createTool.invoke(any()) }
+        verify { createTool.invoke(any(), any()) }
     }
 
     @Test
     fun `test presentation with chart`() {
         val createTool = mockk<ToolPresentationCreate>()
         val fakePath = "~/tmp/mock_chart_presentation.pptx"
-        every { createTool.invoke(any()) } returns """{"path": "$fakePath", "slideCount": 1}"""
+        every { createTool.invoke(any(), any()) } returns """{"path": "$fakePath", "slideCount": 1}"""
 
         val slides = listOf(
             SlideContent(
@@ -207,6 +208,6 @@ class PresentationToolsTest {
         ))
 
         assertTrue(resultJson.contains("path"))
-        verify { createTool.invoke(any()) }
+        verify { createTool.invoke(any(), any()) }
     }
 }

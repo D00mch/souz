@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.llms.LLMChatAPI
 import ru.souz.service.image.ImageUtils
 import ru.souz.tool.*
@@ -43,9 +45,9 @@ class ToolDesktopScreenShot(
     override val attachments: List<String>
         get() = lastAttachments
 
-    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         try {
             val screenshot = ImageUtils.screenshotJpegBytes()
             val file = File.createTempFile("screenshot", ".jpg")
@@ -66,6 +68,6 @@ fun main() {
     val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
     val di = DI.invoke { import(mainDiModule) }
     val api: LLMChatAPI by di.instance()
-    val id = ToolDesktopScreenShot(api).invoke(ToolDesktopScreenShot.Input("1"))
+    val id = ToolDesktopScreenShot(api).invoke(ToolDesktopScreenShot.Input("1"), ToolInvocationMeta.Empty)
     l.info(id)
 }

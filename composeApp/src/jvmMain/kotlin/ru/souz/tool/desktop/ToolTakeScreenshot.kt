@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.*
 import java.io.File
 import java.text.SimpleDateFormat
@@ -35,7 +37,7 @@ class ToolTakeScreenshot(
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(Date())
         
         // Strict sanitization: ensure suffix only contains alphanumeric characters, underscores, or hyphens
@@ -53,4 +55,6 @@ class ToolTakeScreenshot(
         
         return "Screenshot saved to: $desktopPath"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

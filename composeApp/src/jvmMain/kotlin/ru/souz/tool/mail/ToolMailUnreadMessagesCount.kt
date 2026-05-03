@@ -1,5 +1,7 @@
 package ru.souz.tool.mail
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -30,7 +32,9 @@ class ToolMailUnreadMessagesCount(private val bash: ToolRunBashCommand) : ToolSe
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         return bash.sh(MailAppleScriptCommands.unreadCountCommand(input.limit))
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

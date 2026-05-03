@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.llms.LLMChatAPI
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -42,9 +44,9 @@ class ToolDownloadFile(
         )
     )
 
-    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val path = api.downloadFile(input.fileId)
         return if (path != null) {
             try {
@@ -64,6 +66,6 @@ class ToolDownloadFile(
 fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val api: LLMChatAPI by di.instance()
-    val path = ToolDownloadFile(api).invoke(ToolDownloadFile.Input("file_id"))
+    val path = ToolDownloadFile(api).invoke(ToolDownloadFile.Input("file_id"), ToolInvocationMeta.Empty)
     println(path)
 }

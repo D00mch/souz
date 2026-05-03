@@ -1,5 +1,7 @@
 package ru.souz.tool
 
+import ru.souz.llms.ToolInvocationMeta
+
 import java.io.BufferedReader
 
 object ToolRunBashCommand : ToolSetup<ToolRunBashCommand.Input> {
@@ -17,7 +19,7 @@ object ToolRunBashCommand : ToolSetup<ToolRunBashCommand.Input> {
         )
     )
 
-    override fun invoke(input: Input): String = sh(input.command, *input.args.toTypedArray())
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = sh(input.command, *input.args.toTypedArray())
 
     fun sh(str: String, vararg args: String): String {
         val process = ProcessBuilder("bash", "-c", str, "", *args)
@@ -49,11 +51,16 @@ EOF
         val command: String,
         val args: List<String> = emptyList()
     )
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 class ShellException(msg: String, val exitCode: Int) : Exception(msg)
 
 fun main() {
-    val result = ToolRunBashCommand.invoke(ToolRunBashCommand.Input("open /System/Applications/Weather.app"))
+    val result = ToolRunBashCommand.invoke(
+        ToolRunBashCommand.Input("open /System/Applications/Weather.app"),
+        ToolInvocationMeta.Empty,
+    )
     println(result)
 }

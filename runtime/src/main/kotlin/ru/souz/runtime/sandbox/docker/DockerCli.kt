@@ -20,6 +20,14 @@ internal class DockerCli(
         }
     }
 
+    fun ensureImageAvailable(imageName: String) {
+        val result = run(listOf("image", "inspect", imageName))
+        check(result.exitCode == 0) {
+            "Docker sandbox image '$imageName' is unavailable. Build or pull it before using SOUZ_SANDBOX_MODE=docker.\n" +
+                "stdout:\n${result.stdout}\nstderr:\n${result.stderr}"
+        }
+    }
+
     fun run(
         arguments: List<String>,
         stdin: String? = null,

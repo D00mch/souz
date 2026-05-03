@@ -49,6 +49,7 @@ class DockerRuntimeSandbox(
     fun start() {
         layout.ensureHostDirectories()
         dockerCli.ensureAvailable()
+        dockerCli.ensureImageAvailable(imageName)
         containerHandle.ensureStarted()
         containerHandle.verifyRuntimeExecutables()
     }
@@ -61,5 +62,7 @@ class DockerRuntimeSandbox(
 
     companion object {
         const val DEFAULT_IMAGE_NAME: String = "souz-runtime-sandbox:latest"
+
+        fun defaultContainerName(scope: SandboxScope): String = DockerSandboxIds.defaultContainerName(scope)
     }
 }

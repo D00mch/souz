@@ -91,6 +91,17 @@ internal class DockerSandboxFileSystem(
         return Files.newInputStream(requireHostPath(path))
     }
 
+    override fun localPathOrNull(path: SandboxPathInfo): Path? {
+        requireSafePath(path)
+        return requireHostPath(path)
+    }
+
+    override fun writeBytes(path: SandboxPathInfo, content: ByteArray) {
+        val hostPath = resolveWritableHostPath(path)
+        hostPath.parent?.let(Files::createDirectories)
+        Files.write(hostPath, content)
+    }
+
     override fun writeText(path: SandboxPathInfo, content: String) {
         val hostPath = resolveWritableHostPath(path)
         hostPath.parent?.let(Files::createDirectories)

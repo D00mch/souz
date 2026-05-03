@@ -79,6 +79,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LocalModelAvailability
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -1469,5 +1470,7 @@ private class ThrowingTool : ToolSetup<ThrowingTool.Input> {
         properties = mapOf("result" to ReturnProperty("string"))
     )
 
-    override fun invoke(input: Input): String = error(input.payload)
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = error(input.payload)
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

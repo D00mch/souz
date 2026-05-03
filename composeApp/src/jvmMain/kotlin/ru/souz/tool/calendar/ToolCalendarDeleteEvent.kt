@@ -1,5 +1,7 @@
 package ru.souz.tool.calendar
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -36,10 +38,12 @@ class ToolCalendarDeleteEvent(private val bash: ToolRunBashCommand) : ToolSetup<
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.title.isBlank()) throw BadInputException("'title' is required to delete an event.")
         val calName = input.calendarName
         val escapedTitle = input.title.replace("\"", "\\\"")
         return bash.sh(CalendarAppleScriptCommands.deleteEventCommand(calName, escapedTitle))
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

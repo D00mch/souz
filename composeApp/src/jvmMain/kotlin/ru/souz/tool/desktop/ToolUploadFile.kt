@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.llms.LLMChatAPI
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -41,9 +43,9 @@ class ToolUploadFile(
     override val attachments: List<String>
         get() = lastAttachments
 
-    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val file = File(input.filePath)
         val upload = api.uploadFile(file)
         lastAttachments.clear()
@@ -56,6 +58,6 @@ class ToolUploadFile(
 fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val api: LLMChatAPI by di.instance()
-    val id = ToolUploadFile(api).invoke(ToolUploadFile.Input("/path/to/file"))
+    val id = ToolUploadFile(api).invoke(ToolUploadFile.Input("/path/to/file"), ToolInvocationMeta.Empty)
     println(id)
 }

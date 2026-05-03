@@ -1,5 +1,7 @@
 package ru.souz.tool.telegram
 
+import ru.souz.llms.ToolInvocationMeta
+
 import kotlinx.coroutines.runBlocking
 import ru.souz.llms.restJsonMapper
 import ru.souz.service.telegram.TelegramService
@@ -33,9 +35,9 @@ class ToolTelegramReadInbox(
         )
     )
 
-    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val limit = input.limit.coerceIn(1, 100)
         val items = runCatching {
             telegramService.readUnreadInbox(limit)

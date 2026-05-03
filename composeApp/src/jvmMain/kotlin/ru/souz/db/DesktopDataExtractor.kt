@@ -6,6 +6,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.souz.di.mainDiModule
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.browser.ToolChromeInfo
 import ru.souz.tool.browser.detectDefaultBrowser
@@ -30,7 +31,10 @@ class DesktopDataExtractor(
 
     fun all(): List<StorredData> {
         val installed = runCatching {
-            val json = toolShowApps.invoke(ToolShowApps.Input(ToolShowApps.AppState.installed))
+            val json = toolShowApps.invoke(
+                ToolShowApps.Input(ToolShowApps.AppState.installed),
+                ToolInvocationMeta.Empty,
+            )
             val arr: List<Map<String, String>> = restJsonMapper.readValue(json)
             arr.map {
                 val (appName, appBundleId) = it["app-name"] to it["app-bundle-id"]
@@ -59,7 +63,10 @@ class DesktopDataExtractor(
     }
 
     fun files(): Sequence<StorredData> = runCatching {
-        val res = ToolListFiles(filesToolUtil).invoke(ToolListFiles.Input(System.getenv("HOME"), 3))
+        val res = ToolListFiles(filesToolUtil).invoke(
+            ToolListFiles.Input(System.getenv("HOME"), 3),
+            ToolInvocationMeta.Empty,
+        )
         res.trim('[', ']')
             .splitToSequence(',')
             .mapNotNull { it.trim().takeIf { s -> s.isNotEmpty() } }    // skip empty lines
@@ -74,13 +81,15 @@ class DesktopDataExtractor(
             val rawHistory = when (browserType) {
                 BrowserType.CHROME -> {
                     ToolChromeInfo(ToolRunBashCommand).invoke(
-                        ToolChromeInfo.Input(ToolChromeInfo.InfoType.history, count = count)
+                        ToolChromeInfo.Input(ToolChromeInfo.InfoType.history, count = count),
+                        ToolInvocationMeta.Empty,
                     )
                 }
                 else -> {
                     // Используем Safari как дефолт
                     ToolSafariInfo(ToolRunBashCommand).invoke(
-                        ToolSafariInfo.Input(ToolSafariInfo.InfoType.history, count = count)
+                        ToolSafariInfo.Input(ToolSafariInfo.InfoType.history, count = count),
+                        ToolInvocationMeta.Empty,
                     )
                 }
             }

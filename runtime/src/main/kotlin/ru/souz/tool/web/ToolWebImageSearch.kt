@@ -88,6 +88,7 @@ class ToolWebImageSearch(
                         imageUrl = candidate.imageUrl,
                         preferredName = candidate.title.ifBlank { "image" },
                         outputDir = input.outputDir,
+                        meta = meta,
                     )
                 }.getOrNull()
                 candidate.copy(localPath = localPath)

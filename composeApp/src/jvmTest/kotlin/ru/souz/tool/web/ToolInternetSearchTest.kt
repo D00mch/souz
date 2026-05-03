@@ -15,6 +15,7 @@ import ru.souz.llms.restJsonMapper
 import ru.souz.llms.LLMResponse.FinishReason
 import ru.souz.llms.LLMResponse.Usage
 import ru.souz.llms.LLMChatAPI
+import ru.souz.test.suspendInvoke
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.web.internal.InternetSearchToolOutput
 import ru.souz.tool.web.internal.WebResearchClient

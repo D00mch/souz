@@ -31,6 +31,7 @@ interface SandboxFileSystem {
     fun readText(path: SandboxPathInfo): String
     fun openInputStream(path: SandboxPathInfo): InputStream
     fun localPathOrNull(path: SandboxPathInfo): Path? = null
+    fun writeBytes(path: SandboxPathInfo, content: ByteArray)
     fun writeText(path: SandboxPathInfo, content: String)
     fun writeTextAtomically(path: SandboxPathInfo, content: String, logger: Logger)
     fun createDirectory(path: SandboxPathInfo)

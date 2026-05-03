@@ -12,11 +12,13 @@ import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
 import ru.souz.paths.DefaultSouzPaths
+import ru.souz.paths.SandboxSouzPaths
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.skills.bundle.FileSystemSkillBundleLoader
 import ru.souz.skills.filesystem.LocalSkillBundleFileSystem
 import ru.souz.skills.validation.FileSystemSkillValidationRepository
+import ru.souz.tool.files.FilesToolUtil
 
 /**
  * Default local [SkillRegistryRepository] wiring for desktop and JVM hosts.
@@ -34,14 +36,14 @@ class LocalSkillRegistryRepository(
         stateRoot = stateRoot,
     ),
     private val skillsRepository: FileSystemSkillsRepository = FileSystemSkillsRepository(
-        paths = DefaultSouzPaths(stateRoot = stateRoot),
+        paths = SandboxSouzPaths(sandbox.runtimePaths),
         clock = clock,
         loader = FileSystemSkillBundleLoader(
-            fileSystem = LocalSkillBundleFileSystem(sandbox.fileSystem),
+            fileSystem = LocalSkillBundleFileSystem(FilesToolUtil(sandbox)),
         ),
     ),
     private val validationRepository: SkillValidationRepository = FileSystemSkillValidationRepository(
-        paths = DefaultSouzPaths(stateRoot = stateRoot),
+        paths = SandboxSouzPaths(sandbox.runtimePaths),
     ),
 ) : SkillRegistryRepository {
     override suspend fun listSkills(userId: String): List<StoredSkill> = skillsRepository.listSkills(userId)

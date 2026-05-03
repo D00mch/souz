@@ -129,4 +129,6 @@ class ToolCalculator : ToolSetup<ToolCalculator.Input> {
             }
         }.parse()
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

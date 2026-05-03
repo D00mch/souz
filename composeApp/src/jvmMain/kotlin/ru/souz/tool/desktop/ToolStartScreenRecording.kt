@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.*
 
 class ToolStartScreenRecording(
@@ -32,8 +34,10 @@ class ToolStartScreenRecording(
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         bash.sh("open -a Screenshot")
         return "Screen recording utility launched. User must click 'Record' to start."
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

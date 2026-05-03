@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.service.keys.HotKey
 import ru.souz.service.keys.Keys
 import ru.souz.tool.*
@@ -38,7 +40,7 @@ class ToolSendTelegramMessage(
         ),
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         require(System.getProperty("os.name").contains("Mac", ignoreCase = true)) {
             "This implementation supports macOS only."
         }
@@ -85,9 +87,11 @@ class ToolSendTelegramMessage(
         val escaped = text.replace("'", "'\"'\"'")
         bash.sh("printf '%s' '$escaped' | pbcopy")
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
     val tool = ToolSendTelegramMessage(ToolRunBashCommand, Keys())
-    println(tool.invoke(ToolSendTelegramMessage.Input("Шамиль", "привет, пишу нашим агентом! Сработало!")))
+    println(tool.invoke(ToolSendTelegramMessage.Input("Шамиль", "привет, пишу нашим агентом! Сработало!"), ToolInvocationMeta.Empty))
 }

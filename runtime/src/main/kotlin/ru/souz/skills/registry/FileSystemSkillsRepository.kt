@@ -39,11 +39,12 @@ class FileSystemSkillsRepository(
     private val paths: SouzPaths = DefaultSouzPaths(),
     private val clock: Clock = Clock.systemUTC(),
     private val loader: FileSystemSkillBundleLoader,
+    private val pathsResolver: (String) -> SouzPaths = { paths },
 ) : SkillsRepository {
     private val logger = LoggerFactory.getLogger(FileSystemSkillsRepository::class.java)
 
     override suspend fun listSkills(userId: String): List<StoredSkill> = withContext(Dispatchers.IO) {
-        val userRoot = SkillStoragePaths.userSkillsRoot(paths, userId)
+        val userRoot = SkillStoragePaths.userSkillsRoot(pathsResolver(userId), userId)
         if (!userRoot.exists() || !userRoot.isDirectory()) {
             return@withContext emptyList()
         }
@@ -57,13 +58,14 @@ class FileSystemSkillsRepository(
     }
 
     override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? = withContext(Dispatchers.IO) {
-        readStoredSkillOrNull(SkillStoragePaths.metadataPath(paths, userId, skillId))
+        readStoredSkillOrNull(SkillStoragePaths.metadataPath(pathsResolver(userId), userId, skillId))
     }
 
     override suspend fun getSkillByName(userId: String, name: String): StoredSkill? =
         listSkills(userId).firstOrNull { it.manifest.name == name }
 
     override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill = withContext(Dispatchers.IO) {
+        val paths = pathsResolver(userId)
         val normalizedBundle = SkillBundle.fromFiles(bundle.skillId, bundle.files)
         val bundleHash = SkillBundleHasher.hash(normalizedBundle)
         val skillRoot = SkillStoragePaths.skillRoot(paths, userId, normalizedBundle.skillId)
@@ -87,6 +89,7 @@ class FileSystemSkillsRepository(
     }
 
     override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? {
+        val paths = pathsResolver(userId)
         val metadata = getSkill(userId, skillId) ?: return null
         val bundleRoot = SkillStoragePaths.bundleRoot(paths, userId, skillId, metadata.bundleHash)
         if (!bundleRoot.exists() || !bundleRoot.isDirectory()) {

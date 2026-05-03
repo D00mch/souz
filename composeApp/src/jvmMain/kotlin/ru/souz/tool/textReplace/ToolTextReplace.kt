@@ -1,5 +1,7 @@
 package ru.souz.tool.textReplace
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.service.keys.MrRobot
 import ru.souz.tool.*
 import java.awt.Toolkit
@@ -31,7 +33,7 @@ class ToolTextReplace(
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val clipboard = Toolkit.getDefaultToolkit().systemClipboard
         val previousContent: Transferable? = runCatching { clipboard.getContents(null) }.getOrNull()
 
@@ -51,6 +53,8 @@ class ToolTextReplace(
     private companion object {
         private const val PASTE_SETTLE_DELAY_MS = 70L
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 private const val SCRIPT = """
