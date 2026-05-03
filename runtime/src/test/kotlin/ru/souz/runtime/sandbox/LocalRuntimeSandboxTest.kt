@@ -2,6 +2,7 @@ package ru.souz.runtime.sandbox
 
 import io.mockk.every
 import io.mockk.mockk
+import org.junit.jupiter.api.assertThrows
 import java.nio.file.Files
 import java.nio.file.Path
 import ru.souz.db.SettingsProvider
@@ -67,15 +68,28 @@ class LocalRuntimeSandboxTest {
     }
 
     @Test
-    fun `new file under symlink parent is unsafe`() {
-        val home = createTempDirectory("home-")
-        val outside = createTempDirectory("outside-")
-        Files.createSymbolicLink(home.resolve("escape"), outside)
+    fun `new file under symlink parent cannot escape home`() {
+        val home = createTempDirectory("sandbox-home-")
+        val outside = createTempDirectory("sandbox-outside-")
+        val stateRoot = createTempDirectory("sandbox-state-")
 
-        val sandbox = createSandbox(home, stateRoot = createTempDirectory("state-"))
+        val link = home.resolve("escape")
+        runCatching {
+            Files.createSymbolicLink(link, outside)
+        }.getOrElse { error ->
+            error("Could not create symlink for sandbox escape test: ${error.message}")
+        }
+
+        assertTrue(Files.isSymbolicLink(link), "Test setup failed: link is not a symlink")
+
+        val sandbox = createSandbox(home = home, stateRoot = stateRoot)
         val target = sandbox.fileSystem.resolvePath("~/escape/new.txt")
 
-        assertFalse(sandbox.fileSystem.isPathSafe(target))
+        assertThrows<Exception> {
+            sandbox.fileSystem.writeText(target, "should not escape")
+        }
+
+        assertFalse(Files.exists(outside.resolve("new.txt")))
     }
 
     @Test
