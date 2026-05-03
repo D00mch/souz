@@ -108,6 +108,11 @@ internal class LocalSandboxFileSystem(
         return Files.newInputStream(Path.of(path.path))
     }
 
+    override fun localPathOrNull(path: SandboxPathInfo): Path? {
+        requireReadableFile(path)
+        return Path.of(path.path)
+    }
+
     override fun writeText(path: SandboxPathInfo, content: String) {
         requireSafePath(path)
         val filePath = Path.of(path.path)

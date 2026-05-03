@@ -1,6 +1,7 @@
 package ru.souz.runtime.sandbox
 
 import java.io.InputStream
+import java.nio.file.Path
 import org.slf4j.Logger
 
 data class SandboxPathInfo(
@@ -29,6 +30,7 @@ interface SandboxFileSystem {
     fun readBytes(path: SandboxPathInfo): ByteArray
     fun readText(path: SandboxPathInfo): String
     fun openInputStream(path: SandboxPathInfo): InputStream
+    fun localPathOrNull(path: SandboxPathInfo): Path? = null
     fun writeText(path: SandboxPathInfo, content: String)
     fun writeTextAtomically(path: SandboxPathInfo, content: String, logger: Logger)
     fun createDirectory(path: SandboxPathInfo)

@@ -1,5 +1,8 @@
 package ru.souz.tool.files
 
+import org.apache.pdfbox.Loader
+import org.apache.pdfbox.io.MemoryUsageSetting
+import org.apache.pdfbox.pdmodel.PDDocument
 import org.slf4j.Logger
 import ru.souz.db.SettingsProvider
 import ru.souz.paths.DefaultSouzPaths
@@ -107,6 +110,31 @@ class FilesToolUtil(
     fun readBytes(path: SandboxPathInfo): ByteArray = sandboxFileSystem.readBytes(path)
 
     fun openInputStream(path: SandboxPathInfo): InputStream = sandboxFileSystem.openInputStream(path)
+
+    fun openPdfDocument(path: SandboxPathInfo): CloseablePdfDocument {
+        sandboxFileSystem.localPathOrNull(path)?.let { localPath ->
+            return CloseablePdfDocument(
+                document = Loader.loadPDF(localPath.toFile(), pdfMemoryUsageSetting().streamCache),
+            )
+        }
+
+        val tempFile = Files.createTempFile(pdfScratchDirectory(), "pdf-read-", ".pdf")
+        try {
+            openInputStream(path).use { input ->
+                Files.newOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            return CloseablePdfDocument(
+                document = Loader.loadPDF(tempFile.toFile(), pdfMemoryUsageSetting().streamCache),
+                onClose = { Files.deleteIfExists(tempFile) },
+            )
+        } catch (e: Exception) {
+            runCatching { Files.deleteIfExists(tempFile) }
+            throw e
+        }
+    }
 
     fun writeUtf8TextFile(path: SandboxPathInfo, content: String) = sandboxFileSystem.writeText(path, content)
 
@@ -396,6 +424,18 @@ class FilesToolUtil(
         return decoder.decode(ByteBuffer.wrap(bytes)).toString()
     }
 
+    private fun pdfScratchDirectory(): Path {
+        val preferred = Path.of(sandbox.runtimePaths.stateRootPath).resolve("pdfbox")
+        return runCatching {
+            Files.createDirectories(preferred)
+        }.getOrElse {
+            Path.of(System.getProperty("java.io.tmpdir"))
+        }
+    }
+
+    private fun pdfMemoryUsageSetting(): MemoryUsageSetting =
+        MemoryUsageSetting.setupTempFileOnly().setTempDir(pdfScratchDirectory().toFile())
+
     companion object {
         private val UNIFIED_DIFF_HUNK_HEADER =
             Regex("^@@ -\\d+(?:,\\d+)? \\+\\d+(?:,\\d+)? @@(?: .*)?$")
@@ -526,6 +566,37 @@ class FilesToolUtil(
         val normalizedText: String,
         val rawOffsets: IntArray,
     )
+
+    class CloseablePdfDocument(
+        val document: PDDocument,
+        private val onClose: () -> Unit = {},
+    ) : AutoCloseable {
+        override fun close() {
+            var failure: Throwable? = null
+            try {
+                document.close()
+            } catch (t: Throwable) {
+                failure = t
+            }
+            try {
+                onClose()
+            } catch (t: Throwable) {
+                if (failure == null) {
+                    failure = t
+                } else {
+                    failure.addSuppressed(t)
+                }
+            }
+            if (failure != null) {
+                when (failure) {
+                    is IOException -> throw failure
+                    is RuntimeException -> throw failure
+                    is Error -> throw failure
+                    else -> throw RuntimeException(failure)
+                }
+            }
+        }
+    }
 }
 
 @Suppress("FunctionName")

@@ -1,6 +1,5 @@
 package ru.souz.tool.files
 
-import org.apache.pdfbox.Loader
 import org.apache.pdfbox.text.PDFTextStripper
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -43,10 +42,11 @@ class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<Too
         val file = filesToolUtil.resolvePath(input.filePath)
         if (!file.exists) return "Error: File not found at ${input.filePath}"
 
-        if (java.io.File(file.path).extension.lowercase() != "pdf") return "Error: Expecting .pdf file"
+        if (file.name.substringAfterLast('.', "").lowercase() != "pdf") return "Error: Expecting .pdf file"
 
         return try {
-            Loader.loadPDF(filesToolUtil.readBytes(file)).use { document ->
+            filesToolUtil.openPdfDocument(file).use { loaded ->
+                val document = loaded.document
 
                 // 1. Проверка на шифрование (частая причина "пустоты")
                 if (document.isEncrypted) {
