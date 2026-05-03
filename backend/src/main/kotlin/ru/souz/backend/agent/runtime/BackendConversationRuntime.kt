@@ -1,6 +1,7 @@
 package ru.souz.backend.agent.runtime
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.coroutines.CancellationException
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
@@ -9,6 +10,10 @@ import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.backend.agent.model.AgentConversationKey
+import ru.souz.backend.agent.model.BackendAgentRuntimeException
+import ru.souz.backend.agent.model.BackendAgentRuntimeOutcome
+import ru.souz.backend.agent.model.BackendAgentTurn
+import ru.souz.backend.agent.model.BackendAgentTurnInput
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentSessionRepository
@@ -26,6 +31,167 @@ internal data class BackendConversationExecution(
     val usage: LLMResponse.Usage,
     val session: AgentConversationSession,
 )
+
+/** Stateless backend runtime adapter over the shared agent kernel. */
+class BackendAgentRuntime(
+    private val baseSettingsProvider: SettingsProvider,
+    private val llmApiFactory: suspend (BackendLlmExecutionContext) -> LLMChatAPI,
+    private val sessionRepository: AgentSessionRepository,
+    private val logObjectMapper: ObjectMapper,
+    private val systemPrompt: String,
+    private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
+    private val toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
+) {
+    internal suspend fun run(
+        turn: BackendAgentTurn,
+        eventSink: AgentRuntimeEventSink,
+        initialUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0),
+    ): BackendAgentRuntimeOutcome {
+        val persistedSession = sessionRepository.load(turn.conversationKey)
+        val settingsProvider = BackendConversationSettingsProvider(
+            delegate = baseSettingsProvider,
+            defaultSystemPrompt = turn.config.systemPrompt ?: systemPrompt,
+            locale = persistedSession?.locale ?: turn.config.locale,
+        )
+        val activeAgentId = AgentContextFactory().normalizeAgentId(
+            persistedSession?.activeAgentId ?: settingsProvider.activeAgentId,
+        )
+        val currentTemperature = persistedSession?.temperature ?: settingsProvider.temperature
+        persistedSession?.let { session ->
+            settingsProvider.restore(
+                activeAgentId = activeAgentId,
+                temperature = currentTemperature,
+                locale = session.locale,
+            )
+        }
+
+        val delegateApi = llmApiFactory(
+            BackendLlmExecutionContext(
+                userId = turn.userId,
+                executionId = turn.executionId.toString(),
+                settingsProvider = settingsProvider,
+            )
+        )
+        val usageTrackingApi = CumulativeUsageTrackingChatApi(
+            delegate = delegateApi,
+            initialUsage = initialUsage,
+        )
+
+        return try {
+            val kernel = AgentExecutionKernelFactory(
+                logObjectMapper = logObjectMapper,
+                settingsProvider = settingsProvider,
+                desktopInfoRepository = BackendNoopAgentDesktopInfoRepository,
+                toolCatalog = toolCatalog,
+                toolsFilter = toolsFilter,
+                defaultBrowserProvider = BackendNoopDefaultBrowserProvider,
+                runtimeEnvironment = BackendRequestRuntimeEnvironment(
+                    localeTag = turn.config.locale,
+                    timeZone = turn.config.timeZone,
+                ),
+                mcpToolProvider = BackendNoopMcpToolProvider,
+                telemetry = AgentTelemetry.NONE,
+                errorMessages = BackendAgentErrorMessages,
+                llmApi = usageTrackingApi,
+                apiClassifier = ApiClassifier(delegateApi),
+                localClassifier = LocalRegexClassifier,
+            ).create()
+
+            val execution = executeTurn(
+                turn = turn,
+                persistedSession = persistedSession,
+                settingsProvider = settingsProvider,
+                contextFactory = kernel.contextFactory,
+                executor = kernel.executor,
+                usageTrackingApi = usageTrackingApi,
+                activeAgentId = activeAgentId,
+                currentTemperature = currentTemperature,
+                eventSink = eventSink,
+            )
+            if (eventSink is BackendAgentRuntimeEventSink && eventSink.hasRequestedOption) {
+                BackendAgentRuntimeOutcome.WaitingOption(
+                    usage = execution.usage,
+                    session = execution.session,
+                )
+            } else {
+                BackendAgentRuntimeOutcome.Completed(
+                    output = execution.output,
+                    usage = execution.usage,
+                    session = execution.session,
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw BackendAgentRuntimeException(
+                cause = e,
+                usage = usageTrackingApi.cumulativeUsage(),
+            )
+        }
+    }
+
+    private suspend fun executeTurn(
+        turn: BackendAgentTurn,
+        persistedSession: AgentConversationSession?,
+        settingsProvider: BackendConversationSettingsProvider,
+        contextFactory: AgentContextFactory,
+        executor: AgentExecutor,
+        usageTrackingApi: CumulativeUsageTrackingChatApi,
+        activeAgentId: ru.souz.agent.AgentId,
+        currentTemperature: Float,
+        eventSink: AgentRuntimeEventSink,
+    ): BackendConversationExecution {
+        settingsProvider.applyConfig(
+            config = turn.config,
+            activeAgentId = activeAgentId,
+            temperature = currentTemperature,
+        )
+
+        val seedContext = contextFactory.create(
+            agentId = activeAgentId,
+            history = persistedSession?.history.orEmpty(),
+            model = settingsProvider.gigaModel,
+            contextSize = turn.config.contextSize,
+            temperature = settingsProvider.temperature,
+            toolInvocationMeta = ToolInvocationMeta(
+                userId = turn.userId,
+                conversationId = turn.conversationId,
+                requestId = turn.executionId.toString(),
+                locale = turn.config.locale,
+                timeZone = turn.config.timeZone,
+            ),
+        )
+
+        val result = executor.execute(
+            agentId = activeAgentId,
+            context = seedContext,
+            input = turn.input.toAgentInput(),
+            eventSink = eventSink,
+        )
+        val nextAgentId = contextFactory.normalizeAgentId(settingsProvider.activeAgentId)
+        val nextSession = AgentConversationSession(
+            activeAgentId = nextAgentId,
+            history = result.context.history,
+            temperature = result.context.settings.temperature,
+            locale = turn.config.locale,
+            timeZone = turn.config.timeZone,
+            basedOnMessageSeq = persistedSession?.basedOnMessageSeq ?: 0L,
+            rowVersion = persistedSession?.rowVersion ?: 0L,
+        )
+
+        return BackendConversationExecution(
+            output = result.output,
+            usage = usageTrackingApi.cumulativeUsage(),
+            session = nextSession,
+        )
+    }
+}
+
+private fun BackendAgentTurnInput.toAgentInput(): String =
+    when (this) {
+        is BackendAgentTurnInput.UserMessage -> content
+        is BackendAgentTurnInput.OptionAnswer -> "$OPTION_CONTINUATION_PREFIX $payload"
+    }
 
 /** Request-scoped backend conversation runtime rebuilt from the stored snapshot. */
 internal class BackendConversationRuntime(
@@ -170,3 +336,5 @@ class BackendConversationRuntimeFactory(
         )
     }
 }
+
+private const val OPTION_CONTINUATION_PREFIX = "__option_answer__"
