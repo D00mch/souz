@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.service.keys.HotKey
 import ru.souz.service.keys.Keys
 import ru.souz.tool.*
@@ -38,7 +40,7 @@ class ToolHotkeyMac(private val keys: Keys) : ToolSetup<ToolHotkeyMac.Input> {
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         require(System.getProperty("os.name").contains("Mac", ignoreCase = true)) {
             "This implementation supports macOS only."
         }
@@ -47,9 +49,11 @@ class ToolHotkeyMac(private val keys: Keys) : ToolSetup<ToolHotkeyMac.Input> {
 
         return "Pressed ${input.hotKey}"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
     val tool = ToolHotkeyMac(Keys())
-    println(tool.invoke(ToolHotkeyMac.Input(HotKey.cancel_last_action)))
+    println(tool.invoke(ToolHotkeyMac.Input(HotKey.cancel_last_action), ToolInvocationMeta.Empty))
 }

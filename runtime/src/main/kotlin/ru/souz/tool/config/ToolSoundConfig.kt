@@ -40,4 +40,6 @@ class ToolSoundConfig(private val config: ConfigStore) : ToolSetup<ToolSoundConf
         const val SPEED_KEY = "sound_speed"
         const val DEFAULT_SPEED = 230
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

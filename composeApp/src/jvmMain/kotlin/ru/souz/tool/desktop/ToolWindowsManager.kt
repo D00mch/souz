@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import org.kodein.di.DI
 import org.kodein.di.instance
 import ru.souz.tool.*
@@ -99,7 +101,7 @@ class ToolWindowsManager(private val toolOpen: ToolOpen) : ToolSetup<ToolWindows
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val cmd = when(input.action) {
             Action.layout_tiles_horizontal -> "layout tiles horizontal"
             Action.layout_tiles_vertical -> "layout tiles vertical"
@@ -108,7 +110,7 @@ class ToolWindowsManager(private val toolOpen: ToolOpen) : ToolSetup<ToolWindows
             Action.focus_right -> "focus right"
             Action.focus_up -> "focus up"
             Action.focus_down -> "focus down"
-            Action.focus_app -> return toolOpen.invoke(ToolOpen.Input(input.meta))
+            Action.focus_app -> return toolOpen.invoke(ToolOpen.Input(input.meta), meta)
             Action.move_left -> "move left"
             Action.move_right -> "move right"
             Action.move_up -> "move up"
@@ -146,6 +148,8 @@ class ToolWindowsManager(private val toolOpen: ToolOpen) : ToolSetup<ToolWindows
         }
         return out.readText()
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 // Usage
@@ -155,7 +159,7 @@ fun main() {
     val t = ToolWindowsManager(open)
 //    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.list_apps, "")))
 //    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.move_app_to_workspace, "2")))
-    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.focus_app, "com.google.Chrome")))
+    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.focus_app, "com.google.Chrome"), ToolInvocationMeta.Empty))
 //    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.go_to_workspace, "2"))
 
 //    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.move_left, ""))

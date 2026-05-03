@@ -3,10 +3,12 @@ package ru.souz.tool.presentation
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.mockk.every
 import io.mockk.mockk
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.souz.db.SettingsProvider
+import ru.souz.test.invoke
 import ru.souz.tool.files.FilesToolUtil
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -184,6 +186,42 @@ class ToolPresentationCreateCompatibilityTest {
                 "Notes master should stay disabled unless compatibility guard property is enabled",
             )
         }
+
+        outputDir.deleteRecursively()
+    }
+
+    @Test
+    fun `presentation read should resolve generated files through files tool util`() {
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        every { settingsProvider.forbiddenFolders } returns emptyList()
+
+        val filesToolUtil = FilesToolUtil(settingsProvider)
+        val createTool = ToolPresentationCreate(filesToolUtil = filesToolUtil)
+        val readTool = ToolPresentationRead(filesToolUtil)
+
+        val outputDir = createOutputDir()
+        val resultJson = createTool.invoke(
+            PresentationCreateInput(
+                title = "Round Trip Read Test",
+                slides = listOf(
+                    SlideContent(
+                        title = "Slide 1",
+                        points = listOf("Point 1", "Point 2"),
+                        notes = "Speaker note 1",
+                    ),
+                ),
+                filename = "round_trip_read_test",
+                outputPath = outputDir.absolutePath,
+                renderMode = "CLASSIC",
+                saveHtmlPreview = false,
+            )
+        )
+
+        val pptPath = jacksonObjectMapper().readTree(resultJson).path("path").asText()
+        val readResult = jacksonObjectMapper().readTree(readTool.invoke(PresentationReadInput(pptPath)))
+
+        assertEquals(1, readResult.path("totalSlides").asInt())
+        assertEquals("Slide 1", readResult.path("slides").path(0).path("title").asText())
 
         outputDir.deleteRecursively()
     }

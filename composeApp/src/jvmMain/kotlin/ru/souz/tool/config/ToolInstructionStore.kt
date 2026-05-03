@@ -1,5 +1,7 @@
 package ru.souz.tool.config
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.StorredData
 import ru.souz.db.StorredType
@@ -44,9 +46,9 @@ class ToolInstructionStore(
         properties = mapOf("result" to ReturnProperty("string", "Operation status"))
     )
 
-    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val currentInstructions = config.get<ArrayList<Input>>(INSTUCTIONS_KEY, ArrayList())
         currentInstructions.add(input)
 

@@ -29,7 +29,7 @@ class ToolDeleteFile(
     )
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
-        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path)
+        val fixedPath = filesToolUtil.applyDefaultEnvs(input.path, meta)
         val result = permissionBroker?.requestPermission(
             "Delete file or folder",
             linkedMapOf("path" to fixedPath)
@@ -39,11 +39,11 @@ class ToolDeleteFile(
     }
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val path = filesToolUtil.resolvePath(input.path)
+        val path = filesToolUtil.resolvePath(input.path, meta)
         if (!path.exists) {
             throw BadInputException("Invalid path: ${input.path}")
         }
-        filesToolUtil.moveToTrash(path, l)
+        filesToolUtil.moveToTrash(path, l, meta)
         return "Path moved to Trash from ${input.path}"
     }
 }

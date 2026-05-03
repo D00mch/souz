@@ -58,22 +58,26 @@ class ToolModifyFile(
     }
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val file = filesToolUtil.resolveSafeExistingFile(input.path)
-        val editableTextFile = filesToolUtil.readEditableUtf8TextFile(file)
+        val file = filesToolUtil.resolveSafeExistingFile(input.path, meta)
+        val editableTextFile = filesToolUtil.readEditableUtf8TextFile(file, meta)
         val preparedEdit = ToolModifyFilePlanner.prepareEdit(input, editableTextFile, filesToolUtil)
-        applyPreparedEdit(preparedEdit)
+        applyPreparedEdit(preparedEdit, meta)
         return "OK"
     }
 
-    private fun applyPreparedEdit(preparedEdit: ToolModifyPreparedEdit) {
-        val currentFile = filesToolUtil.readEditableUtf8TextFile(filesToolUtil.resolveSafeExistingFile(preparedEdit.path))
+    private fun applyPreparedEdit(preparedEdit: ToolModifyPreparedEdit, meta: ToolInvocationMeta) {
+        val currentFile = filesToolUtil.readEditableUtf8TextFile(
+            filesToolUtil.resolveSafeExistingFile(preparedEdit.path, meta),
+            meta,
+        )
         if (currentFile.rawText != preparedEdit.originalRawText) {
             throw BadInputException("File changed after preview generation. Read it again and retry.")
         }
         filesToolUtil.writeUtf8TextFileAtomically(
-            filesToolUtil.resolvePath(preparedEdit.path),
+            filesToolUtil.resolvePath(preparedEdit.path, meta),
             preparedEdit.updatedRawText,
             l,
+            meta,
         )
     }
 }

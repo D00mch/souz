@@ -39,8 +39,8 @@ class ToolMoveFile(
     )
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
-        val fixedSourcePath = filesToolUtil.applyDefaultEnvs(input.sourcePath)
-        val fixedDestinationPath = filesToolUtil.applyDefaultEnvs(input.destinationPath)
+        val fixedSourcePath = filesToolUtil.applyDefaultEnvs(input.sourcePath, meta)
+        val fixedDestinationPath = filesToolUtil.applyDefaultEnvs(input.destinationPath, meta)
         val result = permissionBroker?.requestPermission(
             "Move file",
             linkedMapOf(
@@ -53,8 +53,8 @@ class ToolMoveFile(
     }
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val source = filesToolUtil.resolveSafeExistingFile(input.sourcePath)
-        val destination = filesToolUtil.resolvePath(input.destinationPath)
+        val source = filesToolUtil.resolveSafeExistingFile(input.sourcePath, meta)
+        val destination = filesToolUtil.resolvePath(input.destinationPath, meta)
         if (source.path == destination.path) {
             throw BadInputException("Source and destination paths must be different.")
         }
@@ -63,11 +63,18 @@ class ToolMoveFile(
         }
         val destinationParentPath = destination.parentPath
             ?: throw BadInputException("Destination path must include a parent directory.")
-        val destinationParent = filesToolUtil.resolvePath(destinationParentPath)
+        val destinationParent = filesToolUtil.resolvePath(destinationParentPath, meta)
         if (destinationParent.exists && !destinationParent.isDirectory) {
             throw BadInputException("Destination parent is not a directory: ${destinationParent.path}")
         }
-        filesToolUtil.movePath(source, destination, replaceExisting = false, createParents = true, logger = l)
+        filesToolUtil.movePath(
+            source,
+            destination,
+            replaceExisting = false,
+            createParents = true,
+            logger = l,
+            meta = meta,
+        )
         return "File moved to ${input.destinationPath}"
     }
 

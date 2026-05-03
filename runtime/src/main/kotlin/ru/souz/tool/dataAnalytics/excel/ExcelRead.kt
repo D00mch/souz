@@ -4,8 +4,6 @@ import org.apache.poi.ss.usermodel.*
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 import ru.souz.tool.files.FilesToolUtil
-import ru.souz.tool.files.ForbiddenFolder
-import java.io.File
 
 class ExcelRead(
     private val filesToolUtil: FilesToolUtil
@@ -105,20 +103,20 @@ class ExcelRead(
     )
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val file = File(filesToolUtil.applyDefaultEnvs(input.path))
-        if (!filesToolUtil.isPathSafe(file)) throw ForbiddenFolder(file.path)
-        if (!file.exists()) throw BadInputException("File not found: ${input.path}")
+        val file = filesToolUtil.resolveSafeExistingFile(input.path, meta)
 
-        return WorkbookFactory.create(file, null, true).use { workbook ->
-            val sheet = input.sheet?.let { name ->
-                workbook.getSheet(name) ?: throw BadInputException("Sheet '$name' not found")
-            } ?: workbook.getSheetAt(0)
+        return filesToolUtil.withReadableLocalPath(file, meta) { localPath ->
+            WorkbookFactory.create(localPath.toFile(), null, true).use { workbook ->
+                val sheet = input.sheet?.let { name ->
+                    workbook.getSheet(name) ?: throw BadInputException("Sheet '$name' not found")
+                } ?: workbook.getSheetAt(0)
 
-            when (input.operation) {
-                ReadOperation.STRUCTURE -> readStructure(sheet)
-                ReadOperation.QUERY -> readQuery(sheet, input)
-                ReadOperation.CELL -> readCell(sheet, input.range ?: "${input.returnColumn}:${input.returnColumn}")
-                ReadOperation.LOOKUP -> readLookup(sheet, input)
+                when (input.operation) {
+                    ReadOperation.STRUCTURE -> readStructure(sheet)
+                    ReadOperation.QUERY -> readQuery(sheet, input)
+                    ReadOperation.CELL -> readCell(sheet, input.range ?: "${input.returnColumn}:${input.returnColumn}")
+                    ReadOperation.LOOKUP -> readLookup(sheet, input)
+                }
             }
         }
     }
@@ -327,4 +325,6 @@ class ExcelRead(
 
         return "Not found: '$lookupValue'"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

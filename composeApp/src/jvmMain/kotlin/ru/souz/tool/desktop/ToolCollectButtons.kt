@@ -1,5 +1,6 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.giga.toGiga
 import ru.souz.service.image.ImageUtils
 import ru.souz.tool.*
@@ -35,9 +36,9 @@ class ToolCollectButtons(
         )
     )
 
-    override fun invoke(input: Input): String = runBlocking { suspendInvoke(input) }
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val count = input.buttonsCount.takeIf { it > 0 }
             ?: throw BadInputException("Invalid buttonsCount: ${input.buttonsCount}")
         l.info("Collecting buttons from the frontmost application window")
@@ -134,7 +135,8 @@ class ToolCollectButtons(
                     jsonResult
                 EOF
                 """.trimIndent()
-            )
+            ),
+            meta
         )
 
         val outButtons = restJsonMapper.readValue<List<OsxButton>>(result)
@@ -164,6 +166,6 @@ class ToolCollectButtons(
 
 fun main() {
     val tool = ToolCollectButtons(ToolRunBashCommand)
-    println(tool.invoke(ToolCollectButtons.Input(3)))
+    println(tool.invoke(ToolCollectButtons.Input(3), ToolInvocationMeta.Empty))
     println(tool.toGiga().fn)
 }

@@ -7,7 +7,6 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.files.ForbiddenFolder
-import java.io.File
 import java.io.FileOutputStream
 import java.io.StringReader
 
@@ -51,63 +50,64 @@ File must not exist. For reading use ExcelRead."""
     )
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val file = File(filesToolUtil.applyDefaultEnvs(input.path))
-        if (!filesToolUtil.isPathSafe(file)) throw ForbiddenFolder(file.path)
-        if (file.exists()) throw BadInputException("File exists. Use ExcelRead to read, or choose new name.")
+        val file = filesToolUtil.resolvePath(input.path, meta)
+        if (!filesToolUtil.isPathSafe(file, meta)) throw ForbiddenFolder(file.path)
+        if (file.exists) throw BadInputException("File exists. Use ExcelRead to read, or choose new name.")
 
-        XSSFWorkbook().use { wb ->
-            val sheet = wb.createSheet(input.sheetName ?: "Report")
-            
-            var rowIdx = 0
-            var maxColumns = 0
+        filesToolUtil.withWritableLocalPath(file, meta) { localPath ->
+            XSSFWorkbook().use { wb ->
+                val sheet = wb.createSheet(input.sheetName ?: "Report")
 
-            if (!input.headers.isNullOrBlank()) {
-                val row = sheet.createRow(rowIdx++)
-                val style = wb.createCellStyle()
-                val font = wb.createFont()
-                font.bold = true
-                style.setFont(font)
+                var rowIdx = 0
+                var maxColumns = 0
 
-                parseCsvRows(input.headers).firstOrNull().orEmpty().forEachIndexed { i, h ->
-                    val cell = row.createCell(i)
-                    cell.setCellValue(h)
-                    cell.cellStyle = style
-                }
-                maxColumns = maxOf(maxColumns, row.lastCellNum.toInt())
-            }
-
-            // Data
-            if (!input.csvData.isNullOrBlank()) {
-                parseCsvRows(input.csvData).forEach { cells ->
+                if (!input.headers.isNullOrBlank()) {
                     val row = sheet.createRow(rowIdx++)
+                    val style = wb.createCellStyle()
+                    val font = wb.createFont()
+                    font.bold = true
+                    style.setFont(font)
 
-                    cells.forEachIndexed { i, valueStr ->
+                    parseCsvRows(input.headers).firstOrNull().orEmpty().forEachIndexed { i, h ->
                         val cell = row.createCell(i)
-                        val doubleVal = valueStr.toDoubleOrNull()
-                        val boolVal = when {
-                            valueStr.equals("true", ignoreCase = true) -> true
-                            valueStr.equals("false", ignoreCase = true) -> false
-                            else -> null
-                        }
-
-                        when {
-                            doubleVal != null -> cell.setCellValue(doubleVal)
-                            boolVal != null -> cell.setCellValue(boolVal)
-                            else -> cell.setCellValue(valueStr)
-                        }
+                        cell.setCellValue(h)
+                        cell.cellStyle = style
                     }
                     maxColumns = maxOf(maxColumns, row.lastCellNum.toInt())
                 }
-            }
 
-            if (rowIdx > 0 && maxColumns > 0) {
-                for (i in 0 until maxColumns) sheet.autoSizeColumn(i)
-            }
+                if (!input.csvData.isNullOrBlank()) {
+                    parseCsvRows(input.csvData).forEach { cells ->
+                        val row = sheet.createRow(rowIdx++)
 
-            FileOutputStream(file).use { wb.write(it) }
+                        cells.forEachIndexed { i, valueStr ->
+                            val cell = row.createCell(i)
+                            val doubleVal = valueStr.toDoubleOrNull()
+                            val boolVal = when {
+                                valueStr.equals("true", ignoreCase = true) -> true
+                                valueStr.equals("false", ignoreCase = true) -> false
+                                else -> null
+                            }
+
+                            when {
+                                doubleVal != null -> cell.setCellValue(doubleVal)
+                                boolVal != null -> cell.setCellValue(boolVal)
+                                else -> cell.setCellValue(valueStr)
+                            }
+                        }
+                        maxColumns = maxOf(maxColumns, row.lastCellNum.toInt())
+                    }
+                }
+
+                if (rowIdx > 0 && maxColumns > 0) {
+                    for (i in 0 until maxColumns) sheet.autoSizeColumn(i)
+                }
+
+                FileOutputStream(localPath.toFile()).use { wb.write(it) }
+            }
         }
 
-        return "Created report ${input.path}"
+        return "Created report ${file.path}"
     }
 
     private fun parseCsvRows(csvData: String): List<List<String>> {
@@ -120,4 +120,6 @@ File must not exist. For reading use ExcelRead."""
             parser.records.map { record -> record.map { it } }
         }
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

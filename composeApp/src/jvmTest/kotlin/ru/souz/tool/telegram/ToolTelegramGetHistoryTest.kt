@@ -5,6 +5,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.service.telegram.TelegramChatCandidate
 import ru.souz.service.telegram.TelegramChatLookupResult
@@ -50,7 +51,10 @@ class ToolTelegramGetHistoryTest {
         } returns history
 
         val result = restJsonMapper.readTree(
-            tool.suspendInvoke(ToolTelegramGetHistory.Input(chatName = "Проект Альфа"))
+            tool.suspendInvoke(
+                ToolTelegramGetHistory.Input(chatName = "Проект Альфа"),
+                ToolInvocationMeta.Empty,
+            )
         )
 
         assertEquals(1, result.path("count").asInt())
@@ -87,7 +91,8 @@ class ToolTelegramGetHistoryTest {
                     chatName = "Работа",
                     limit = 25,
                     forceRefresh = false,
-                )
+                ),
+                ToolInvocationMeta.Empty,
             )
         )
 

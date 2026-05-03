@@ -1,5 +1,7 @@
 package ru.souz.tool.mail
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -44,11 +46,13 @@ class ToolMailSendNewMessage(private val bash: ToolRunBashCommand) : ToolSetup<T
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.recipientAddress.isBlank()) throw BadInputException("recipientAddress is required for new email")
         val subj = input.subject ?: "No Subject"
         val body = input.content ?: ""
         val recName = input.recipientName ?: input.recipientAddress
         return bash.sh(MailAppleScriptCommands.sendNewMessageCommand(recName, input.recipientAddress, subj, body))
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

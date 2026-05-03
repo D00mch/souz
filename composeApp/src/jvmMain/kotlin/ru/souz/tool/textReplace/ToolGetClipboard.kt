@@ -1,5 +1,7 @@
 package ru.souz.tool.textReplace
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.service.keys.MrRobot
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.ReturnParameters
@@ -16,11 +18,13 @@ class ToolGetClipboard : ToolSetup<ToolGetClipboard.Input> {
         properties = mapOf("result" to ReturnProperty("string", "The text from clipboard in quot")),
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         return getDataFromSelectionWithKeys()
     }
 
     private fun getDataFromSelectionWithKeys(): String {
         return MrRobot.clipboardGet() ?: "Error: \"Nothing in selection\""
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

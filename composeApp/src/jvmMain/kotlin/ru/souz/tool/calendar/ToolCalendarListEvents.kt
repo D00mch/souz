@@ -1,5 +1,7 @@
 package ru.souz.tool.calendar
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -44,7 +46,7 @@ class ToolCalendarListEvents : ToolSetup<ToolCalendarListEvents.Input> {
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val calName = input.calendarName.ifBlank { "Calendar" }
 
         val targetDateStr = input.date.ifBlank { null }
@@ -71,9 +73,11 @@ class ToolCalendarListEvents : ToolSetup<ToolCalendarListEvents.Input> {
 
         return outputBuilder.toString()
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
     val tool = ToolCalendarListEvents()
-    println(tool.invoke(ToolCalendarListEvents.Input("lovkikisa@gmail.com", "2026-02-20")))
+    println(tool.invoke(ToolCalendarListEvents.Input("lovkikisa@gmail.com", "2026-02-20"), ToolInvocationMeta.Empty))
 }

@@ -18,6 +18,7 @@ import ru.souz.llms.LLMResponse.Usage
 import ru.souz.llms.LLMChatAPI
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import ru.souz.test.suspendInvoke
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.web.internal.InternetSearchToolOutput
 import ru.souz.tool.web.internal.WebResearchClient

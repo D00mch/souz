@@ -44,8 +44,8 @@ class ToolFindFolders(
             throw BadInputException("name must not be empty")
         }
 
-        val home = filesToolUtil.resolveSafeExistingDirectory("~")
-        val paths = filesToolUtil.listDescendants(home, includeHidden = false)
+        val home = filesToolUtil.resolveSafeExistingDirectory("~", meta)
+        val paths = filesToolUtil.listDescendants(home, includeHidden = false, meta = meta)
             .asSequence()
             .filter { it.isDirectory && it.name.lowercase().contains(needle) }
             .map { it.path }
@@ -61,4 +61,6 @@ class ToolFindFolders(
     private companion object {
         const val MAX_RESULTS = 50
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

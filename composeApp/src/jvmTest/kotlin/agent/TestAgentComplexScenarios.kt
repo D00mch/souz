@@ -63,12 +63,12 @@ class GraphAgentComplexScenarios {
         val foundFilePath = "~/tmp/public-note.txt"
         val safeFileText = "launch approved for finance review"
 
-        every { toolFindFilesByName.invoke(any()) } returns """["$foundFilePath"]"""
-        coEvery { toolFindFilesByName.suspendInvoke(any()) } returns """["$foundFilePath"]"""
-        every { toolExtractText.invoke(any()) } returns safeFileText
-        coEvery { toolExtractText.suspendInvoke(any()) } returns safeFileText
-        every { toolMailSendNewMessage.invoke(any()) } returns "Sent"
-        coEvery { toolMailSendNewMessage.suspendInvoke(any()) } returns "Sent"
+        every { toolFindFilesByName.invoke(any(), any()) } returns """["$foundFilePath"]"""
+        coEvery { toolFindFilesByName.suspendInvoke(any(), any()) } returns """["$foundFilePath"]"""
+        every { toolExtractText.invoke(any(), any()) } returns safeFileText
+        coEvery { toolExtractText.suspendInvoke(any(), any()) } returns safeFileText
+        every { toolMailSendNewMessage.invoke(any(), any()) } returns "Sent"
+        coEvery { toolMailSendNewMessage.suspendInvoke(any(), any()) } returns "Sent"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
@@ -77,9 +77,9 @@ class GraphAgentComplexScenarios {
         }
 
         coVerifyOrder {
-            toolFindFilesByName.suspendInvoke(match { it.fileName.contains("public-note.txt") })
-            toolExtractText.suspendInvoke(match { it.filePath.contains("public-note.txt") })
-            toolMailSendNewMessage.suspendInvoke(any())
+            toolFindFilesByName.suspendInvoke(match { it.fileName.contains("public-note.txt") }, any())
+            toolExtractText.suspendInvoke(match { it.filePath.contains("public-note.txt") }, any())
+            toolMailSendNewMessage.suspendInvoke(any(), any())
         }
         coVerify(exactly = 1) {
             toolMailSendNewMessage.suspendInvoke(
@@ -88,8 +88,7 @@ class GraphAgentComplexScenarios {
                         (it.subject?.contains("Public Note", ignoreCase = true) == true) &&
                         (it.content == safeFileText) &&
                         !it.content.contains("secret", ignoreCase = true)
-                }
-            )
+                }, any())
         }
     }
 
@@ -171,12 +170,12 @@ class GraphAgentComplexScenarios {
             }
         """.trimIndent()
 
-        every { toolInternetSearch.invoke(any()) } returns internetSearchResult
-        coEvery { toolInternetSearch.suspendInvoke(any()) } returns internetSearchResult
-        every { toolTelegramSearch.invoke(any()) } returns telegramSearchResult
-        coEvery { toolTelegramSearch.suspendInvoke(any()) } returns telegramSearchResult
-        every { toolCreateNote.invoke(any()) } returns "Created"
-        coEvery { toolCreateNote.suspendInvoke(any()) } returns "Created"
+        every { toolInternetSearch.invoke(any(), any()) } returns internetSearchResult
+        coEvery { toolInternetSearch.suspendInvoke(any(), any()) } returns internetSearchResult
+        every { toolTelegramSearch.invoke(any(), any()) } returns telegramSearchResult
+        coEvery { toolTelegramSearch.suspendInvoke(any(), any()) } returns telegramSearchResult
+        every { toolCreateNote.invoke(any(), any()) } returns "Created"
+        coEvery { toolCreateNote.suspendInvoke(any(), any()) } returns "Created"
 
         runScenarioWithMocks(userPrompt) {
             bindSingleton<ToolInternetSearch> { toolInternetSearch }
@@ -185,26 +184,21 @@ class GraphAgentComplexScenarios {
         }
 
         coVerifyOrder {
-            toolInternetSearch.suspendInvoke(
-                match {
+            toolInternetSearch.suspendInvoke(match {
                     val query = it.query.lowercase()
                     (query.contains("моск") || query.contains("moscow")) &&
                         (query.contains("ии") || query.contains("ai") || query.contains("интеллект"))
-                }
-            )
-            toolTelegramSearch.suspendInvoke(
-                match {
+                }, any())
+            toolTelegramSearch.suspendInvoke(match {
                     val query = it.query.lowercase()
                     query.contains(expectedEventName, ignoreCase = true) ||
                         query.contains(expectedAddress, ignoreCase = true) ||
                         query.contains("22 марта")
-                }
-            )
-            toolCreateNote.suspendInvoke(any())
+                }, any())
+            toolCreateNote.suspendInvoke(any(), any())
         }
         coVerify(exactly = 1) {
-            toolCreateNote.suspendInvoke(
-                match {
+            toolCreateNote.suspendInvoke(match {
                     val noteText = it.noteText.lowercase()
                     noteText.contains(nearestEventTitle.lowercase()) &&
                         (noteText.contains("22 марта") || noteText.contains("22.03")) &&
@@ -217,8 +211,7 @@ class GraphAgentComplexScenarios {
                                 noteText.contains("встречаемся") ||
                                 noteText.contains("промокод")
                             )
-                }
-            )
+                }, any())
         }
     }
 

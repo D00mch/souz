@@ -1,5 +1,7 @@
 package ru.souz.tool.notes
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -30,7 +32,7 @@ class ToolSearchNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolSear
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.query.isBlank()) throw BadInputException("Search query cannot be empty")
 
         val result = bash.apple(
@@ -54,4 +56,6 @@ class ToolSearchNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolSear
 
         return result.ifBlank { "No matches" }
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

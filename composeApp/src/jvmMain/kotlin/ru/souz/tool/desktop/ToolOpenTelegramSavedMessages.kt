@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.*
 
 class ToolOpenTelegramSavedMessages(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenTelegramSavedMessages.Input> {
@@ -24,7 +26,7 @@ class ToolOpenTelegramSavedMessages(private val bash: ToolRunBashCommand) : Tool
             "result" to ReturnProperty("string", "Operation status")
         )
     )
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         bash.apple(
                 """
                     tell application "Telegram"
@@ -55,9 +57,11 @@ class ToolOpenTelegramSavedMessages(private val bash: ToolRunBashCommand) : Tool
 
         return "Done"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
     val tool = ToolOpenTelegramSavedMessages(ToolRunBashCommand)
-    println(tool.invoke(ToolOpenTelegramSavedMessages.Input()))
+    println(tool.invoke(ToolOpenTelegramSavedMessages.Input(), ToolInvocationMeta.Empty))
 }

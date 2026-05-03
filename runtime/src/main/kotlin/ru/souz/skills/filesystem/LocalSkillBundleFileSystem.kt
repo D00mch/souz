@@ -8,6 +8,7 @@ import java.nio.file.Path
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.souz.agent.skills.bundle.SkillBundleException
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.BadInputException
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.runtime.sandbox.SandboxFileSystem
@@ -21,9 +22,18 @@ import ru.souz.runtime.sandbox.SandboxPathInfo
  * skill bundles can be loaded from disk without escaping the allowed sandbox.
  */
 class LocalSkillBundleFileSystem(
-    private val sandboxFileSystem: SandboxFileSystem,
+    private val sandboxFileSystemResolver: (SkillBundleFsContext) -> SandboxFileSystem,
 ) : SkillBundleFileSystem {
-    constructor(filesToolUtil: FilesToolUtil) : this(filesToolUtil.sandboxFileSystem)
+    constructor(sandboxFileSystem: SandboxFileSystem) : this({ sandboxFileSystem })
+
+    constructor(filesToolUtil: FilesToolUtil) : this({ context ->
+        filesToolUtil.sandboxFileSystem(
+            ToolInvocationMeta(userId = context.userId)
+        )
+    })
+
+    private fun sandboxFileSystem(context: SkillBundleFsContext): SandboxFileSystem =
+        sandboxFileSystemResolver(context)
 
     override suspend fun resolveSafeDirectory(
         context: SkillBundleFsContext,
@@ -35,6 +45,7 @@ class LocalSkillBundleFileSystem(
         }
 
         val resolved = runCatching {
+            val sandboxFileSystem = sandboxFileSystem(context)
             val path = sandboxFileSystem.resolveExistingDirectory(cleaned)
             if (path.isSymbolicLink) {
                 throw SkillBundleException("Symbolic link roots are not allowed in skill bundles: $rawPath")
@@ -58,10 +69,11 @@ class LocalSkillBundleFileSystem(
         context: SkillBundleFsContext,
         root: Path,
     ): List<Path> = withContext(Dispatchers.IO) {
+        val sandboxFileSystem = sandboxFileSystem(context)
         val canonicalRoot = sandboxFileSystem.resolveExistingDirectory(root.toString())
         sandboxFileSystem.listDescendants(canonicalRoot, includeHidden = true)
             .mapNotNull { entry ->
-                ensurePathSafe(entry)
+                ensurePathSafe(context, entry)
                 if (entry.isSymbolicLink) {
                     val relative = root.relativize(Path.of(entry.path)).toString().replace('\\', '/')
                     val messagePrefix = if (entry.isDirectory) {
@@ -89,8 +101,9 @@ class LocalSkillBundleFileSystem(
         path: Path,
         maxBytes: Long,
     ): String = withContext(Dispatchers.IO) {
+        val sandboxFileSystem = sandboxFileSystem(context)
         val sandboxPath = sandboxFileSystem.resolveExistingFile(path.toString())
-        ensurePathSafe(sandboxPath)
+        ensurePathSafe(context, sandboxPath)
         val size = sandboxPath.sizeBytes
             ?: throw SkillBundleException("Failed to stat skill file: $path")
         if (size > maxBytes) {
@@ -110,7 +123,8 @@ class LocalSkillBundleFileSystem(
         }
     }
 
-    private fun ensurePathSafe(path: SandboxPathInfo) {
+    private fun ensurePathSafe(context: SkillBundleFsContext, path: SandboxPathInfo) {
+        val sandboxFileSystem = sandboxFileSystem(context)
         runCatching {
             if (!sandboxFileSystem.isPathSafe(path)) {
                 throw SkillBundleException("Access denied for skill path: $path")

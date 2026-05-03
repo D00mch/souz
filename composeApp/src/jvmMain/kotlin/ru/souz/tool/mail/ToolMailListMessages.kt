@@ -1,5 +1,7 @@
 package ru.souz.tool.mail
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -30,12 +32,14 @@ class ToolMailListMessages(private val bash: ToolRunBashCommand) : ToolSetup<Too
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         return bash.sh(MailAppleScriptCommands.listMessagesCommand(input.count ?: 10))
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
-    val result = ToolMailListMessages(ToolRunBashCommand).invoke(ToolMailListMessages.Input(10))
+    val result = ToolMailListMessages(ToolRunBashCommand).invoke(ToolMailListMessages.Input(10), ToolInvocationMeta.Empty)
     println(result)
 }

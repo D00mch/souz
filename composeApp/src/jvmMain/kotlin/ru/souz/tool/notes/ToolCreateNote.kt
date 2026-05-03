@@ -1,5 +1,7 @@
 package ru.souz.tool.notes
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -35,16 +37,16 @@ class ToolCreateNote(
         )
     )
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val result = permissionBroker?.requestPermission(
             getString(Res.string.permission_create_note),
             linkedMapOf("noteText" to input.noteText)
         )
         if (result is ToolPermissionResult.No) return result.msg
-        return invoke(input)
+        return invoke(input, meta)
     }
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.noteText.isBlank()) throw BadInputException("Note text cannot be empty")
         bash.invoke(
             ToolRunBashCommand.Input(
@@ -56,7 +58,8 @@ class ToolCreateNote(
                     end tell
                 EOF
             """.trimIndent()
-            )
+            ),
+            meta,
         )
         return "Done"
     }

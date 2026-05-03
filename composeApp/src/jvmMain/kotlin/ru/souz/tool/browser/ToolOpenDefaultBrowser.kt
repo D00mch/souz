@@ -1,5 +1,7 @@
 package ru.souz.tool.browser
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
@@ -30,7 +32,7 @@ class ToolOpenDefaultBrowser(
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val browserType = bash.detectDefaultBrowser()
         val target = when (browserType) {
             BrowserType.SAFARI -> "/Applications/Safari.app"
@@ -38,7 +40,9 @@ class ToolOpenDefaultBrowser(
             else -> "/Applications/Safari.app"
         }
 
-        ToolOpen(bash, filesToolUtil).invoke(ToolOpen.Input(target))
+        ToolOpen(bash, filesToolUtil).invoke(ToolOpen.Input(target), meta)
         return "Done"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

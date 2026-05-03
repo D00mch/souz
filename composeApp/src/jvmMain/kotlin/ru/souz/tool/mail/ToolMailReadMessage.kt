@@ -1,5 +1,7 @@
 package ru.souz.tool.mail
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -30,8 +32,10 @@ class ToolMailReadMessage(private val bash: ToolRunBashCommand) : ToolSetup<Tool
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.messageId <= 0) throw BadInputException("messageId must be a positive integer")
         return bash.sh(MailAppleScriptCommands.readMessageCommand(input.messageId))
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

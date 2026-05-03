@@ -8,6 +8,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
+import ru.souz.test.invoke
+import ru.souz.test.suspendInvoke
 import ru.souz.tool.BadInputException
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.ToolPermissionBroker

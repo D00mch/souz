@@ -32,8 +32,8 @@ class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewF
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val isDirectoryRequest = input.path.endsWith("/") || input.path.endsWith(File.separator)
-        val target = filesToolUtil.resolvePath(input.path)
-        if (!filesToolUtil.isPathSafe(target)) {
+        val target = filesToolUtil.resolvePath(input.path, meta)
+        if (!filesToolUtil.isPathSafe(target, meta)) {
             throw ForbiddenFolder(target.path)
         }
         if (target.exists) {
@@ -41,10 +41,12 @@ class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewF
             throw BadInputException("$typeLabel already exists: ${input.path}. Use EditFile to modify existing files.")
         }
         if (isDirectoryRequest) {
-            filesToolUtil.createDirectory(target)
+            filesToolUtil.createDirectory(target, meta)
             return "Folder created at ${input.path}"
         }
-        filesToolUtil.writeUtf8TextFile(target, input.text)
+        filesToolUtil.writeUtf8TextFile(target, input.text, meta)
         return "File created at ${input.path}"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

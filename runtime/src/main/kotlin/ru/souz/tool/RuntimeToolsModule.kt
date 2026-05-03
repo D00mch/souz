@@ -5,11 +5,13 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
-import ru.souz.runtime.sandbox.RuntimeSandbox
-import ru.souz.runtime.sandbox.SandboxCommandExecutor
-import ru.souz.runtime.sandbox.SandboxFileSystem
+import ru.souz.llms.ToolInvocationMeta
+import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
+import ru.souz.runtime.sandbox.FactoryBackedToolInvocationRuntimeSandboxResolver
+import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
+import ru.souz.runtime.sandbox.ToolInvocationSandboxScopeResolver
 import ru.souz.tool.config.ToolSoundConfig
 import ru.souz.tool.config.ToolSoundConfigDiff
 import ru.souz.tool.dataAnalytics.ToolCreatePlotFromCsv
@@ -38,11 +40,22 @@ import ru.souz.llms.giga.toGiga
 
 fun runtimeToolsDiModule(
     includeWebImageSearch: Boolean = true,
+    scopeResolver: ToolInvocationSandboxScopeResolver = ToolInvocationSandboxScopeResolver {
+        SandboxScope(
+            userId = it.userId?.trim()?.takeIf(String::isNotEmpty) ?: SandboxScope.localDefault().userId,
+            conversationId = it.conversationId,
+        )
+    },
 ): DI.Module = DI.Module("runtimeTools") {
-    bindSingleton<RuntimeSandbox> { LocalRuntimeSandbox(scope = SandboxScope.localDefault(), settingsProvider = instance()) }
-    bindSingleton<SandboxFileSystem> { instance<RuntimeSandbox>().fileSystem }
-    bindSingleton<SandboxCommandExecutor> { instance<RuntimeSandbox>().commandExecutor }
-    bindSingleton { FilesToolUtil(instance<RuntimeSandbox>()) }
+    bindSingleton<RuntimeSandboxFactory> { DefaultRuntimeSandboxFactory(settingsProvider = instance()) }
+    bindSingleton<ToolInvocationSandboxScopeResolver> { scopeResolver }
+    bindSingleton<ToolInvocationRuntimeSandboxResolver> {
+        FactoryBackedToolInvocationRuntimeSandboxResolver(
+            sandboxFactory = instance(),
+            scopeResolver = instance(),
+        )
+    }
+    bindSingleton { FilesToolUtil(instance<ToolInvocationRuntimeSandboxResolver>()) }
     bindSingleton { ToolListFiles(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
     bindSingleton { ToolNewFile(instance()) }

@@ -1,5 +1,7 @@
 package ru.souz.tool.browser
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.*
 
 class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<ToolCreateNewBrowserTab.Input> {
@@ -29,7 +31,7 @@ class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.url.isBlank()) throw BadInputException("The url is empty. Can't open it")
 
         // 1. Определяем браузер по умолчанию
@@ -45,7 +47,7 @@ class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<
         }
 
         // 3. Выполняем команду
-        bash.invoke(ToolRunBashCommand.Input(command))
+        bash.invoke(ToolRunBashCommand.Input(command), meta)
 
         return "Done"
     }
@@ -79,4 +81,6 @@ class ToolCreateNewBrowserTab(private val bash: ToolRunBashCommand) : ToolSetup<
             end tell
         EOF
     """.trimIndent()
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
