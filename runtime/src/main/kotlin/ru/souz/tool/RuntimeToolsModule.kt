@@ -5,7 +5,7 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.runtime.sandbox.LocalRuntimeSandbox
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxCommandExecutor
 import ru.souz.runtime.sandbox.SandboxFileSystem

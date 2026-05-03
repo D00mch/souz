@@ -5,7 +5,7 @@ import io.mockk.every
 import io.mockk.mockk
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.restJsonMapper
-import ru.souz.runtime.sandbox.LocalRuntimeSandbox
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.files.ToolFindFolders

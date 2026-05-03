@@ -5,6 +5,7 @@ import io.mockk.mockk
 import java.nio.file.Files
 import java.nio.file.Path
 import ru.souz.db.SettingsProvider
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest

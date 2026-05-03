@@ -1,7 +1,13 @@
-package ru.souz.runtime.sandbox
+package ru.souz.runtime.sandbox.local
 
+import org.slf4j.Logger
+import ru.souz.db.SettingsProvider
+import ru.souz.runtime.sandbox.SandboxFileSystem
+import ru.souz.runtime.sandbox.SandboxPathInfo
+import ru.souz.runtime.sandbox.SandboxRuntimePaths
+import ru.souz.tool.BadInputException
+import ru.souz.tool.files.ForbiddenFolder
 import java.awt.Desktop
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
@@ -11,104 +17,8 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.slf4j.Logger
-import ru.souz.db.SettingsProvider
-import ru.souz.paths.DefaultSouzPaths
-import ru.souz.tool.BadInputException
-import ru.souz.tool.files.ForbiddenFolder
 
-class LocalRuntimeSandbox(
-    override val scope: SandboxScope,
-    settingsProvider: SettingsProvider,
-    homePath: Path = DefaultSouzPaths.homeDirectory(),
-    stateRoot: Path = DefaultSouzPaths.defaultStateRoot(),
-    workspaceRoot: Path? = runCatching { Path.of(System.getProperty("user.dir")) }.getOrNull(),
-) : RuntimeSandbox {
-    override val mode: SandboxMode = SandboxMode.LOCAL
-    override val runtimePaths: SandboxRuntimePaths = SandboxRuntimePaths(
-        homePath = homePath.toAbsolutePath().normalize().toString(),
-        workspaceRootPath = workspaceRoot?.toAbsolutePath()?.normalize()?.toString(),
-        stateRootPath = stateRoot.toAbsolutePath().normalize().toString(),
-        sessionsDirPath = stateRoot.resolve("sessions").toAbsolutePath().normalize().toString(),
-        vectorIndexDirPath = stateRoot.resolve("vector-index").toAbsolutePath().normalize().toString(),
-        logsDirPath = stateRoot.resolve("logs").toAbsolutePath().normalize().toString(),
-        modelsDirPath = stateRoot.resolve("models").toAbsolutePath().normalize().toString(),
-        nativeLibsDirPath = stateRoot.resolve("native").toAbsolutePath().normalize().toString(),
-        skillsDirPath = stateRoot.resolve("skills").toAbsolutePath().normalize().toString(),
-        skillValidationsDirPath = stateRoot.resolve("skill-validations").toAbsolutePath().normalize().toString(),
-    )
-    override val fileSystem: SandboxFileSystem = LocalSandboxFileSystem(
-        settingsProvider = settingsProvider,
-        runtimePaths = runtimePaths,
-    )
-    override val commandExecutor: SandboxCommandExecutor = LocalSandboxCommandExecutor()
-}
-
-private class LocalSandboxCommandExecutor : SandboxCommandExecutor {
-    override suspend fun execute(request: SandboxCommandRequest): SandboxCommandResult = withContext(Dispatchers.IO) {
-        val command = request.toProcessCommand()
-        val process = ProcessBuilder(command).apply {
-            request.workingDirectory?.let { directory(File(it)) }
-            redirectErrorStream(false)
-            environment().putAll(request.environment)
-        }.start()
-
-        request.stdin?.let { input ->
-            process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
-                writer.write(input)
-            }
-        } ?: process.outputStream.close()
-
-        val stdout = ByteArrayOutputStream()
-        val stderr = ByteArrayOutputStream()
-        val stdoutThread = streamAsync(process.inputStream, stdout)
-        val stderrThread = streamAsync(process.errorStream, stderr)
-
-        val timedOut = request.timeoutMillis?.let { timeout ->
-            !process.waitFor(timeout, TimeUnit.MILLISECONDS)
-        } ?: run {
-            process.waitFor()
-            false
-        }
-
-        if (timedOut) {
-            process.destroyForcibly()
-        }
-
-        stdoutThread.join()
-        stderrThread.join()
-
-        SandboxCommandResult(
-            exitCode = if (timedOut) -1 else process.exitValue(),
-            stdout = stdout.toString(StandardCharsets.UTF_8),
-            stderr = stderr.toString(StandardCharsets.UTF_8),
-            timedOut = timedOut,
-        )
-    }
-
-    private fun SandboxCommandRequest.toProcessCommand(): List<String> = when (runtime) {
-        SandboxCommandRuntime.PROCESS -> {
-            require(command.isNotEmpty()) { "command must not be empty for PROCESS runtime." }
-            command
-        }
-
-        SandboxCommandRuntime.BASH -> listOf("bash", "-lc", requireNotNull(script) { "script is required for BASH runtime." })
-        SandboxCommandRuntime.PYTHON -> listOf("python3", "-c", requireNotNull(script) { "script is required for PYTHON runtime." })
-        SandboxCommandRuntime.NODE -> listOf("node", "-e", requireNotNull(script) { "script is required for NODE runtime." })
-    }
-
-    private fun streamAsync(input: InputStream, output: ByteArrayOutputStream): Thread =
-        Thread {
-            input.use { source ->
-                source.copyTo(output)
-            }
-        }.also(Thread::start)
-}
-
-private class LocalSandboxFileSystem(
+internal class LocalSandboxFileSystem(
     private val settingsProvider: SettingsProvider,
     override val runtimePaths: SandboxRuntimePaths,
 ) : SandboxFileSystem {

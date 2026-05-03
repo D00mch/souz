@@ -12,7 +12,7 @@ import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
 import ru.souz.paths.DefaultSouzPaths
-import ru.souz.runtime.sandbox.LocalRuntimeSandbox
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.skills.bundle.FileSystemSkillBundleLoader
 import ru.souz.skills.filesystem.LocalSkillBundleFileSystem

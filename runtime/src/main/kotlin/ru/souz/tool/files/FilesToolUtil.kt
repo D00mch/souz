@@ -3,7 +3,7 @@ package ru.souz.tool.files
 import org.slf4j.Logger
 import ru.souz.db.SettingsProvider
 import ru.souz.paths.DefaultSouzPaths
-import ru.souz.runtime.sandbox.LocalRuntimeSandbox
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxPathInfo

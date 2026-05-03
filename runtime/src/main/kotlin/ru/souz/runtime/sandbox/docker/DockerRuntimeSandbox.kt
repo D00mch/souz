@@ -1,4 +1,11 @@
-package ru.souz.runtime.sandbox
+package ru.souz.runtime.sandbox.docker
+
+import ru.souz.runtime.sandbox.RuntimeSandbox
+import ru.souz.runtime.sandbox.SandboxCommandExecutor
+import ru.souz.runtime.sandbox.SandboxFileSystem
+import ru.souz.runtime.sandbox.SandboxMode
+import ru.souz.runtime.sandbox.SandboxRuntimePaths
+import ru.souz.runtime.sandbox.SandboxScope
 
 /**
  * Placeholder for the future Docker-backed sandbox.
