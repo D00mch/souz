@@ -1,5 +1,6 @@
 package ru.souz.tool.files
 
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
@@ -7,7 +8,6 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
-import java.io.File
 
 class ToolFindFolders(
     private val filesToolUtil: FilesToolUtil
@@ -38,22 +38,21 @@ class ToolFindFolders(
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val needle = input.name.trim().lowercase()
         if (needle.isBlank()) {
             throw BadInputException("name must not be empty")
         }
 
-        val paths = FilesToolUtil.homeDirectory.walkTopDown()
-            .onEnter { file ->
-                file == FilesToolUtil.homeDirectory || (filesToolUtil.isPathSafe(file) && !file.name.startsWith('.'))
-            }
+        val home = filesToolUtil.resolveSafeExistingDirectory("~")
+        val paths = filesToolUtil.listDescendants(home, includeHidden = false)
+            .asSequence()
             .filter { it.isDirectory && it.name.lowercase().contains(needle) }
-            .map { it.canonicalPath }
+            .map { it.path }
             .toList()
 
         val sorted = paths.sortedWith(
-            compareBy<String> { File(it).name.equals(input.name, ignoreCase = true).not() }
+            compareBy<String> { java.io.File(it).name.equals(input.name, ignoreCase = true).not() }
                 .thenBy { it.length }
         )
         return restJsonMapper.writeValueAsString(sorted.take(MAX_RESULTS))

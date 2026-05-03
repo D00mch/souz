@@ -1,29 +1,21 @@
 package tool.files
 
 import com.fasterxml.jackson.module.kotlin.readValue
-import io.mockk.clearAllMocks
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.unmockkAll
+import ru.souz.db.SettingsProvider
 import ru.souz.llms.restJsonMapper
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.files.ToolFindInFiles
 import java.io.File
 import java.nio.file.Files
-import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ToolFindInFilesTest {
-    private val filesToolUtil: FilesToolUtil = mockk()
-
-    @AfterTest
-    fun clearMocks() {
-        clearAllMocks()
-        unmockkAll()
-    }
-
     @Test
     fun `filters forbidden subfolder results`() {
         val baseDir = Files.createTempDirectory("souz-test-find-in-files").toFile().canonicalFile
@@ -34,18 +26,18 @@ class ToolFindInFilesTest {
         allowedFile.writeText("Allowed content with needle")
         forbiddenFile.writeText("Forbidden content with needle")
 
-        try {
-            every { filesToolUtil.applyDefaultEnvs(any()) } answers { firstArg() }
-            every { filesToolUtil.isPathSafe(any()) } answers {
-                val file = firstArg<File>().canonicalFile
-                when {
-                    file.toPath().startsWith(forbiddenDir.toPath()) -> false
-                    file == baseDir -> true
-                    file.toPath().startsWith(baseDir.toPath()) -> true
-                    else -> false
-                }
-            }
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.forbiddenFolders } returns listOf(forbiddenDir.absolutePath)
+        val filesToolUtil = FilesToolUtil(
+            LocalRuntimeSandbox(
+                scope = SandboxScope(userId = "user-1"),
+                settingsProvider = settingsProvider,
+                homePath = baseDir.toPath(),
+                stateRoot = Files.createTempDirectory("souz-test-find-in-files-state"),
+            )
+        )
 
+        try {
             val resultsJson = ToolFindInFiles(filesToolUtil)
                 .invoke(ToolFindInFiles.Input(baseDir.absolutePath, "needle"))
             val results: List<List<String>> = restJsonMapper.readValue(resultsJson)

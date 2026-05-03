@@ -1,10 +1,12 @@
 package ru.souz.backend.agent.runtime
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.coroutines.withContext
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.runtime.ToolInvocationMetaContext
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -16,6 +18,7 @@ import ru.souz.backend.llm.BackendLlmExecutionContext
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.tool.LocalRegexClassifier
 
@@ -70,12 +73,24 @@ internal class BackendConversationRuntime(
             temperature = settingsProvider.temperature,
         )
 
-        val result = executor.execute(
-            agentId = activeAgentId,
-            context = seedContext,
-            input = request.prompt,
-            eventSink = eventSink,
-        )
+        val result = withContext(
+            ToolInvocationMetaContext(
+                ToolInvocationMeta(
+                    userId = request.userId,
+                    conversationId = request.conversationId,
+                    requestId = request.requestId,
+                    locale = request.locale,
+                    timeZone = request.timeZone,
+                )
+            ).asCoroutineContext()
+        ) {
+            executor.execute(
+                agentId = activeAgentId,
+                context = seedContext,
+                input = request.prompt,
+                eventSink = eventSink,
+            )
+        }
         val nextAgentId = contextFactory.normalizeAgentId(settingsProvider.activeAgentId)
         val nextSession = AgentConversationSession(
             activeAgentId = nextAgentId,

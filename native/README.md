@@ -7,6 +7,7 @@
 - Expose the local provider through `LocalChatAPI` and `LocalLlamaRuntime`.
 - Detect whether local inference is available on the current host and which local profiles are eligible.
 - Store and download GGUF models under `~/.local/state/souz/models`.
+- Extract packaged bridge binaries under `~/.local/state/souz/native/`.
 - Render prompts and normalize local-model output into the shared `:llms` chat/tool-calling contract.
 - Load the packaged native bridge library shipped from `native/src/main/resources/darwin-*`.
 

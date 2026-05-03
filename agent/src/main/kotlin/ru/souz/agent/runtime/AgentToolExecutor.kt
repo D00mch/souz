@@ -13,6 +13,7 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.ToolInvocationMeta
 
 class AgentToolExecutor(
     private val telemetry: AgentTelemetry = AgentTelemetry.NONE,
@@ -32,6 +33,7 @@ class AgentToolExecutor(
         val runtimeToolCallId = toolCallId ?: UUID.randomUUID().toString()
         val toolCategoryName = settings.tools.categoryByName[functionCall.name]?.name
         val logContext = currentCoroutineContext()[AgentExecutionLogContext.Element]?.value
+        val meta = currentCoroutineContext()[ToolInvocationMetaContext.Element]?.value ?: ToolInvocationMeta.Empty
         logContext?.incrementToolExecutionCount()
         eventSink.emit(
             AgentRuntimeEvent.ToolCallStarted(
@@ -63,7 +65,7 @@ class AgentToolExecutor(
             )
         }
         return try {
-            fn.invoke(functionCall).also {
+            fn.invoke(functionCall, meta).also {
                 eventSink.emit(
                     AgentRuntimeEvent.ToolCallFinished(
                         toolCallId = runtimeToolCallId,

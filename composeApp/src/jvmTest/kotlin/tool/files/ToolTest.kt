@@ -401,7 +401,7 @@ class ToolTest {
             val path = "${tempDir.absolutePath}/mixed-eol-index.txt"
             File(path).writeText("first\r\nsecond\nthird\r\n")
 
-            val editable = filesToolUtil.readEditableUtf8TextFile(File(path))
+            val editable = filesToolUtil.readEditableUtf8TextFile(filesToolUtil.resolveSafeExistingFile(path))
             val match = "second\n"
             val normalizedStart = editable.normalizedText.indexOf(match)
             val normalizedEnd = normalizedStart + match.length
