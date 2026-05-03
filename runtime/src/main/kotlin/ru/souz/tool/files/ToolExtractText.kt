@@ -8,12 +8,12 @@ import org.apache.tika.metadata.Metadata
 import org.apache.tika.parser.AutoDetectParser
 import org.apache.tika.sax.BodyContentHandler
 import org.xml.sax.SAXException
+import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
-import java.io.FileInputStream
 
 class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolExtractText.Input> {
 
@@ -68,7 +68,7 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         return extractWithTika(file)
     }
 
-    private fun extractWithTika(file: ru.souz.runtime.sandbox.SandboxPathInfo): String {
+    private fun extractWithTika(file: SandboxPathInfo): String {
         return try {
             val parser = AutoDetectParser()
             val handler = BodyContentHandler(TEXT_CHAR_LIMIT)
@@ -106,7 +106,7 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         }
     }
 
-    private fun extractPlainText(file: ru.souz.runtime.sandbox.SandboxPathInfo): String {
+    private fun extractPlainText(file: SandboxPathInfo): String {
         return try {
             val preview = readUtf8Preview(file, TEXT_CHAR_LIMIT)
             val metaLines = buildList {
@@ -124,7 +124,7 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         }
     }
 
-    private fun readUtf8Preview(file: ru.souz.runtime.sandbox.SandboxPathInfo, charLimit: Int): TextPreview {
+    private fun readUtf8Preview(file: SandboxPathInfo, charLimit: Int): TextPreview {
         val builder = StringBuilder(minOf(charLimit, 4096))
         filesToolUtil.openInputStream(file).buffered().reader(Charsets.UTF_8).use { reader ->
             val buffer = CharArray(4096)
@@ -140,7 +140,7 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
     }
 
     private fun formatExtractionResult(
-        file: ru.souz.runtime.sandbox.SandboxPathInfo,
+        file: SandboxPathInfo,
         metaInfo: String,
         content: String,
     ): String {
@@ -154,7 +154,7 @@ class ToolExtractText(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
             """.trimIndent().trimMargin()
     }
 
-    private fun isPlainTextPreview(file: ru.souz.runtime.sandbox.SandboxPathInfo): Boolean =
+    private fun isPlainTextPreview(file: SandboxPathInfo): Boolean =
         java.io.File(file.path).extension.lowercase() in PLAIN_TEXT_EXTENSIONS
 
     private data class TextPreview(val text: String, val truncated: Boolean)
