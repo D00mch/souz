@@ -53,18 +53,6 @@ class BackendAgentRuntime(
             defaultSystemPrompt = turn.config.systemPrompt ?: systemPrompt,
             locale = persistedSession?.locale ?: turn.config.locale,
         )
-        val activeAgentId = AgentContextFactory().normalizeAgentId(
-            persistedSession?.activeAgentId ?: settingsProvider.activeAgentId,
-        )
-        val currentTemperature = persistedSession?.temperature ?: settingsProvider.temperature
-        persistedSession?.let { session ->
-            settingsProvider.restore(
-                activeAgentId = activeAgentId,
-                temperature = currentTemperature,
-                locale = session.locale,
-            )
-        }
-
         val delegateApi = llmApiFactory(
             BackendLlmExecutionContext(
                 userId = turn.userId,
@@ -96,6 +84,17 @@ class BackendAgentRuntime(
                 apiClassifier = ApiClassifier(delegateApi),
                 localClassifier = LocalRegexClassifier,
             ).create()
+            val activeAgentId = kernel.contextFactory.normalizeAgentId(
+                persistedSession?.activeAgentId ?: settingsProvider.activeAgentId,
+            )
+            val currentTemperature = persistedSession?.temperature ?: settingsProvider.temperature
+            persistedSession?.let { session ->
+                settingsProvider.restore(
+                    activeAgentId = activeAgentId,
+                    temperature = currentTemperature,
+                    locale = session.locale,
+                )
+            }
 
             val execution = executeTurn(
                 turn = turn,
@@ -277,13 +276,13 @@ internal class BackendConversationRuntime(
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
 class BackendConversationRuntimeFactory(
-    private val baseSettingsProvider: SettingsProvider,
-    private val llmApiFactory: suspend (BackendLlmExecutionContext) -> LLMChatAPI,
-    private val sessionRepository: AgentSessionRepository,
-    private val logObjectMapper: ObjectMapper,
-    private val systemPrompt: String,
-    private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
-    private val toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
+    internal val baseSettingsProvider: SettingsProvider,
+    internal val llmApiFactory: suspend (BackendLlmExecutionContext) -> LLMChatAPI,
+    internal val sessionRepository: AgentSessionRepository,
+    internal val logObjectMapper: ObjectMapper,
+    internal val systemPrompt: String,
+    internal val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
+    internal val toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
