@@ -704,7 +704,7 @@ private class ThrowingTool : ToolSetup<ThrowingTool.Input> {
         properties = mapOf("result" to ReturnProperty("string"))
     )
 
-    override fun invoke(input: Input): String = error(input.payload)
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = error(input.payload)
 }
 
 private class RecordingMetaTool : ToolSetup<RecordingMetaTool.Input> {
@@ -723,7 +723,7 @@ private class RecordingMetaTool : ToolSetup<RecordingMetaTool.Input> {
         properties = mapOf("result" to ReturnProperty("string"))
     )
 
-    override fun invoke(input: Input): String = input.payload
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String = input.payload
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         receivedMeta = meta
