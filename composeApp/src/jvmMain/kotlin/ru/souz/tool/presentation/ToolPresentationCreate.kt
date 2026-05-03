@@ -2836,4 +2836,6 @@ class ToolPresentationCreate(
         cornerAccent.fillColor = accentColor
         cornerAccent.setLineColor(null)
     }
+
+    override suspend fun suspendInvoke(input: PresentationCreateInput, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

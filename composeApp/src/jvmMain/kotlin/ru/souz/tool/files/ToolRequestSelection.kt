@@ -1,5 +1,7 @@
 package ru.souz.tool.files
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.service.keys.MrRobot
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -36,7 +38,7 @@ object ToolRequestSelection : ToolSetup<ToolRequestSelection.Input> {
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         MrRobot.hotKeys("cmd", "c")
         val code = MrRobot.clipboardGet()
         MrRobot.hotKeys("cmd", "shift", "c")
@@ -45,8 +47,10 @@ object ToolRequestSelection : ToolSetup<ToolRequestSelection.Input> {
  path: $path
  
  ```
- $code
- ```
+$code
+```
         """.trimIndent()
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

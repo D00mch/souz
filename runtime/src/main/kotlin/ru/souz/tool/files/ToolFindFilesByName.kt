@@ -70,4 +70,6 @@ class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<
     private companion object {
         const val MAX_RESULTS = 200
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

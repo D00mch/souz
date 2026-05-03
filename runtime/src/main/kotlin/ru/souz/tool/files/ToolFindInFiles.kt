@@ -75,4 +75,6 @@ class ToolFindInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<Tool
         const val MAX_RESULTS = 200
         const val MAX_TEXT_FILE_BYTES = 1_000_000L
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

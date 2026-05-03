@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.*
 import ru.souz.tool.files.FilesToolUtil
 import ru.souz.tool.files.ToolListFiles
@@ -36,14 +38,14 @@ class ToolOpenFolder(
         val name: String
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         l.info("Opening folder '${input.name}'")
         val script = buildScript(input)
 
         val path = bash.apple(script)
         if (path.isBlank()) return "Can't find path of such folder: ${input.name}"
 
-        val files = ToolListFiles(filesToolUtil).invoke(ToolListFiles.Input(path))
+        val files = ToolListFiles(filesToolUtil).invoke(ToolListFiles.Input(path), meta)
         val result = """{"path":"$path","files":$files}"""
         l.info("Result is $result")
         return result
@@ -117,10 +119,13 @@ class ToolOpenFolder(
         return ""
     end try
                 """.trimIndent()
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
     val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
-    val v = ToolOpenFolder(ToolRunBashCommand, filesToolUtil)(ToolOpenFolder.Input("семья"))
+    val v = ToolOpenFolder(ToolRunBashCommand, filesToolUtil)
+        .invoke(ToolOpenFolder.Input("семья"), ToolInvocationMeta.Empty)
     println(v)
 }

@@ -325,4 +325,6 @@ class ExcelRead(
 
         return "Not found: '$lookupValue'"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

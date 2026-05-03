@@ -41,4 +41,6 @@ class ToolFindTextInFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<
 
         return matchedFiles.joinToString(",", prefix = "[", postfix = "]")
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

@@ -1,5 +1,7 @@
 package ru.souz.tool.mail
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -34,7 +36,7 @@ class ToolMailSearch(private val bash: ToolRunBashCommand) : ToolSetup<ToolMailS
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val safeQuery = input.query.replace("\"", "\\\"")
         val limit = input.limit
 
@@ -87,9 +89,11 @@ EOF
 
         return bash.sh(script)
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
     val tool = ToolMailSearch(ToolRunBashCommand)
-    println(tool.invoke(ToolMailSearch.Input("ндс")))
+    println(tool.invoke(ToolMailSearch.Input("ндс"), ToolInvocationMeta.Empty))
 }

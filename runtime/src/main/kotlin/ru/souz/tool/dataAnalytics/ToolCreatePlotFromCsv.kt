@@ -265,6 +265,8 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
         val data: Map<String, Double> = emptyMap(),
         val isHeadersOnly: Boolean = false
     )
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {

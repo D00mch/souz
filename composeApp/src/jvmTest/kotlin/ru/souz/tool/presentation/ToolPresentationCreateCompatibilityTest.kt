@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.souz.db.SettingsProvider
+import ru.souz.test.invoke
 import ru.souz.tool.files.FilesToolUtil
 import java.io.ByteArrayInputStream
 import java.io.File

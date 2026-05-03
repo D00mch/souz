@@ -1,5 +1,7 @@
 package ru.souz.tool.notes
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.*
 
 class ToolOpenNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenNote.Input> {
@@ -20,7 +22,7 @@ class ToolOpenNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenNot
             "result" to ReturnProperty("string", "Operation status")
         )
     )
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         if (input.noteName.isBlank()) throw BadInputException("Note name cannot be empty")
         bash.apple(
             """
@@ -40,9 +42,11 @@ class ToolOpenNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenNot
 
         return "Done"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
     val tool = ToolOpenNote(ToolRunBashCommand)
-    println(tool.invoke(ToolOpenNote.Input("Демо")))
+    println(tool.invoke(ToolOpenNote.Input("Демо"), ToolInvocationMeta.Empty))
 }

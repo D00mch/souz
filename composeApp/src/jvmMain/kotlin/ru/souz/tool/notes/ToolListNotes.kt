@@ -1,5 +1,7 @@
 package ru.souz.tool.notes
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
@@ -26,7 +28,7 @@ class ToolListNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolListNo
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val result = bash.apple(
             """
                 tell application "Notes"
@@ -46,4 +48,6 @@ class ToolListNotes(private val bash: ToolRunBashCommand) : ToolSetup<ToolListNo
 
         return result.ifBlank { "No notes found" }
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

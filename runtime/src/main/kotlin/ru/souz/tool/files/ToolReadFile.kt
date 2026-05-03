@@ -31,4 +31,6 @@ class ToolReadFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolRea
         }
         return content
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

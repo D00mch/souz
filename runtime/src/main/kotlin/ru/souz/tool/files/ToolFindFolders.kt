@@ -61,4 +61,6 @@ class ToolFindFolders(
     private companion object {
         const val MAX_RESULTS = 50
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

@@ -120,4 +120,6 @@ File must not exist. For reading use ExcelRead."""
             parser.records.map { record -> record.map { it } }
         }
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

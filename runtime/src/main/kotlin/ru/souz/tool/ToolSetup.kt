@@ -42,13 +42,9 @@ interface ToolSetup<Input> {
     val fewShotExamples: List<FewShotExample>
     val returnParameters: ReturnParameters
 
-    @Deprecated("use overloaded function with ToolInvocationMeta")
-    operator fun invoke(input: Input): String = invoke(input, ToolInvocationMeta.Empty)
-    operator fun invoke(input: Input, meta: ToolInvocationMeta): String = error("override function with ToolInvocationMeta")
+    operator fun invoke(input: Input, meta: ToolInvocationMeta): String
 
-    @Deprecated("use overloaded function with ToolInvocationMeta")
-    suspend fun suspendInvoke(input: Input): String = suspendInvoke(input, ToolInvocationMeta.Empty)
-    suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+    suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String
 }
 
 interface ToolSetupWithAttachments<Input> : ToolSetup<Input> {

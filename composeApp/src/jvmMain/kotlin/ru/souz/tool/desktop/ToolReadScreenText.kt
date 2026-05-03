@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.service.image.ImageUtils
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -40,7 +42,7 @@ class ToolReadScreenText(
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         try {
             val screenshot = ImageUtils.screenshotJpegBytes()
             val file = File.createTempFile("screenshot", ".jpg")
@@ -98,10 +100,12 @@ class ToolReadScreenText(
             throw RuntimeException("ReadScreenText failed: ${e.message}", e)
         }
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
     val tool = ToolReadScreenText()
-    val result = tool.invoke(ToolReadScreenText.Input())
+    val result = tool.invoke(ToolReadScreenText.Input(), ToolInvocationMeta.Empty)
     println(result)
 }

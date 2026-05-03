@@ -1,5 +1,7 @@
 package ru.souz.tool.textReplace
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
@@ -23,11 +25,11 @@ class ToolTextUnderSelection(
         properties = mapOf("result" to ReturnProperty("string", "The selected text in quotes")),
     )
 
-    override fun invoke(input: Input): String {
-        return getDataFromSelectionWithKeys()
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
+        return getDataFromSelectionWithKeys(meta)
     }
 
-    private fun getDataFromSelectionWithKeys(): String {
+    private fun getDataFromSelectionWithKeys(meta: ToolInvocationMeta): String {
         val clipboard = Toolkit.getDefaultToolkit().systemClipboard
         val previousContent: Transferable? = runCatching { clipboard.getContents(null) }.getOrNull()
         val marker = "SOUZ_SELECTION_MARKER_${UUID.randomUUID()}"
@@ -38,7 +40,7 @@ class ToolTextUnderSelection(
 
             repeat(COPY_RETRY_ATTEMPTS) {
                 Thread.sleep(COPY_RETRY_DELAY_MS)
-                val current = toolGetClipboard.invoke(ToolGetClipboard.Input)
+                val current = toolGetClipboard.invoke(ToolGetClipboard.Input, meta)
                 if (current == NO_SELECTION_ERROR) return@repeat
                 if (current != marker) return current
             }
@@ -56,6 +58,8 @@ class ToolTextUnderSelection(
         private const val COPY_RETRY_ATTEMPTS = 8
         private const val COPY_RETRY_DELAY_MS = 30L
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 private const val SCRIPT = """tell application "System Events"

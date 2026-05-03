@@ -79,4 +79,6 @@ class ToolPresentationRead(
             }
         }
     }
+
+    override suspend fun suspendInvoke(input: PresentationReadInput, meta: ToolInvocationMeta): String = invoke(input, meta)
 }

@@ -1,5 +1,7 @@
 package ru.souz.tool.desktop
 
+import ru.souz.llms.ToolInvocationMeta
+
 import ru.souz.service.image.ImageUtils
 import ru.souz.service.keys.CGPoint
 import ru.souz.service.keys.CoreFoundation
@@ -45,7 +47,7 @@ class ToolMouseClickMac : ToolSetup<ToolMouseClickMac.Input> {
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         require(System.getProperty("os.name").contains("Mac", ignoreCase = true)) {
             "This implementation supports macOS only."
         }
@@ -73,9 +75,11 @@ class ToolMouseClickMac : ToolSetup<ToolMouseClickMac.Input> {
 
         return "Mouse clicked at ($x, $y) with button $btnIdx"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 fun main() {
     val tool = ToolMouseClickMac()
-    println(tool.invoke(ToolMouseClickMac.Input(0, 0, ToolMouseClickMac.MouseButton.left)))
+    println(tool.invoke(ToolMouseClickMac.Input(0, 0, ToolMouseClickMac.MouseButton.left), ToolInvocationMeta.Empty))
 }

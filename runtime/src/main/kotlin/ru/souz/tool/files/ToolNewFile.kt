@@ -47,4 +47,6 @@ class ToolNewFile(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolNewF
         filesToolUtil.writeUtf8TextFile(target, input.text, meta)
         return "File created at ${input.path}"
     }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
