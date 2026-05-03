@@ -1,7 +1,7 @@
 package ru.souz.backend.agent.runtime
 
-import java.util.Locale
 import java.time.ZoneId
+import java.util.Locale
 import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
@@ -11,6 +11,7 @@ import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.execution.model.AgentExecutionRuntimeConfig
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
@@ -18,6 +19,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
+
 /** Request-scoped backend settings wrapper used by the shared agent/runtime code. */
 class BackendConversationSettingsProvider(
     private val delegate: SettingsProvider,
@@ -49,19 +51,38 @@ class BackendConversationSettingsProvider(
         this.regionProfile = localeToRegionProfile(locale)
     }
 
-    internal fun applyRequest(
-        request: BackendConversationTurnRequest,
+    internal fun applyConfig(
+        config: AgentExecutionRuntimeConfig,
         activeAgentId: AgentId,
         temperature: Float,
     ) {
         this.activeAgentId = activeAgentId
-        this.gigaModel = parseModel(request.model) ?: delegate.gigaModel
-        this.contextSize = request.contextSize
-        this.temperature = request.temperature ?: temperature
-        this.regionProfile = localeToRegionProfile(request.locale)
-        this.overrideSystemPrompt = request.systemPrompt
-        this.useStreaming = request.streamingMessages == true
+        this.gigaModel = parseModel(config.modelAlias) ?: delegate.gigaModel
+        this.contextSize = config.contextSize
+        this.temperature = config.temperature ?: temperature
+        this.regionProfile = localeToRegionProfile(config.locale)
+        this.overrideSystemPrompt = config.systemPrompt
+        this.useStreaming = config.streamingMessages
     }
+
+    internal fun applyRequest(
+        request: BackendConversationTurnRequest,
+        activeAgentId: AgentId,
+        temperature: Float,
+    ) = applyConfig(
+        config = AgentExecutionRuntimeConfig(
+            modelAlias = request.model,
+            contextSize = request.contextSize,
+            temperature = request.temperature,
+            locale = request.locale,
+            timeZone = request.timeZone,
+            systemPrompt = request.systemPrompt,
+            streamingMessages = request.streamingMessages == true,
+            showToolEvents = false,
+        ),
+        activeAgentId = activeAgentId,
+        temperature = temperature,
+    )
 
     private fun parseModel(rawModel: String): LLMModel? =
         LLMModel.entries.firstOrNull { model ->
