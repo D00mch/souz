@@ -1,61 +1,58 @@
 # Runtime
 
-The `:runtime` module contains shared JVM runtime pieces used by both desktop (`:composeApp`) and backend (`:backend`):
+The `:runtime` module contains shared JVM runtime infrastructure reused by both desktop (`:composeApp`) and backend (`:backend`).
 
-- secure config/settings access (`ConfigStore`, `SettingsProvider`, `SettingsProviderImpl`);
-- provider chat clients (Giga, Qwen, AiTunnel, Anthropic, OpenAI);
-- shared LLM routing/classification (`LLMFactory`, `ApiClassifier`);
-- shared tool contracts/adapters plus the backend-safe tool catalog (`files`, `web`, `calculator`, `data analytics`, and non-UI config tools), now with invocation-time sandbox resolution from `ToolInvocationMeta` so singleton tools can stay stateless across desktop and backend hosts;
-- production skills infrastructure: safe bundle filesystem access, per-user bundle persistence under `~/.local/state/souz/skills/`, and separate file-backed validation cache storage under `~/.local/state/souz/skill-validations/`;
-- shared runtime sandbox adapters under `runtime/sandbox/` for host-local and Docker-backed filesystem and process isolation, plus factory-based mode selection via `SOUZ_SANDBOX_MODE=local|docker`;
-- shared Kodein DI modules for JVM runtime settings/local-model services and provider/LLM wiring reused by both desktop and backend;
-- runtime resources required by shared clients (for example Giga trust certificates).
+Keep this module UI-free and safe to use from backend code (stateless).
+
+## Responsibilities
+
+- Provider clients and shared LLM runtime wiring.
+- Settings and config access.
+- Runtime-safe tool implementations.
+- Skill bundle loading, storage, filesystem access, and validation storage.
+- Sandbox-aware filesystem and command execution contracts.
+- Shared Kodein DI modules for runtime wiring.
 
 ## Project Structure
 
 ```text
 runtime/
-├── build.gradle.kts                              # JVM module build and shared runtime dependencies
-├── AGENTS.md                                     # Module notes and structure
+├── build.gradle.kts
+├── AGENTS.md
 └── src/
     └── main/
         ├── kotlin/
         │   └── ru/souz/
-        │       ├── db/
-        │       │   ├── ConfigStore.kt            # Secure config persistence and lookup
-        │       │   └── SettingsProvider.kt       # Runtime settings access contract + implementation
-        │       ├── llms/
-        │       │   ├── anthropic/                # Anthropic API client and Ktor defaults
-        │       │   ├── giga/                     # Giga auth, HTTP client defaults, and chat API
-        │       │   ├── openai/                   # OpenAI chat API client
-        │       │   ├── qwen/                     # Qwen chat API client
-        │       │   ├── runtime/                  # Shared model routing/classification helpers
-        │       │   └── tunnel/                   # AiTunnel chat API client
+        │       ├── db/                       # ConfigStore and SettingsProvider
+        │       ├── llms/                     # Provider clients and LLM runtime helpers
         │       ├── skills/
-        │       │   ├── bundle/                   # Load SkillBundle (how bytes become a SkillBundle)
-        │       │   ├── filesystem/               # Safe/replaceable filesystem access (host/user/sandbox)
-        │       │   ├── registry/                 # Store and load user skill bundles
-        │       │   └── validation/               # Store and load validation records
+        │       │   ├── bundle/               # Load SkillBundle: how bytes/files become a SkillBundle
+        │       │   ├── filesystem/           # Safe/replaceable filesystem access: host/user/sandbox
+        │       │   ├── registry/             # Store and load installed skill bundles
+        │       │   └── validation/           # Store and load skill validation records
         │       ├── runtime/
-        │       │   ├── di/                       # Shared Kodein modules for JVM runtime/core LLM wiring
-        │       │   └── sandbox/                  # Replaceable local/Docker sandbox filesystem + command execution
+        │       │   ├── di/                   # Shared runtime DI modules
+        │       │   └── sandbox/              # Local/Docker sandbox abstractions
         │       ├── service/
-        │       │   └── files/                    # Shared JVM file service implementations
+        │       │   └── files/                # Shared JVM file services
         │       └── tool/
-        │           ├── RuntimeToolsModule.kt     # DI wiring for backend-safe runtime tools
-        │           ├── ToolPermissionBroker.kt   # Shared tool permission contract
-        │           ├── ToolSetup.kt              # Shared tool setup helpers/adapters
-        │           ├── config/                   # Non-UI config tools
-        │           ├── dataAnalytics/            # CSV plotting and spreadsheet helpers
-        │           ├── files/                    # File read/write/search/move/extract tools
-        │           ├── math/                     # Calculator tool
-        │           └── web/                      # Search/research/page/image web tools + internals
+        │           ├── RuntimeToolsModule.kt # Backend-safe tool catalog wiring
+        │           ├── config/               # Non-UI config tools
+        │           ├── dataAnalytics/        # CSV/Excel/data helpers
+        │           ├── files/                # File tools
+        │           ├── math/                 # Calculator tool
+        │           └── web/                  # Web/search/research tools
         └── resources/
-            └── certs/                            # Bundled Russian trust certs for provider clients
-```
+            └── certs/                        # Runtime provider certificates
+````
 
 ## Notes
 
-- `:runtime` is JVM-only.
-- Backend no longer depends on `:composeApp`; both backend and desktop reuse these classes from `:runtime`.
-- `RuntimeSandboxFactory` is the entry point for selecting local vs Docker sandboxes. Desktop may pin one singleton sandbox for `SandboxScope.localDefault()`, while backend resolves per-user sandboxes from `ToolInvocationMeta.userId`.
+* `:runtime` is JVM-only.
+* `RuntimeSandboxFactory` selects sandbox mode with `SOUZ_SANDBOX_MODE=local|docker`.
+* Local mode is the default when `SOUZ_SANDBOX_MODE` is unset.
+* Tools should resolve sandbox/filesystem access per invocation from `ToolInvocationMeta`, not cache user-specific paths in singleton tools.
+* Skill bundle loading should stay split:
+    * `skills/bundle/` decides how validated files become a `SkillBundle`.
+    * `skills/filesystem/` owns safe, replaceable filesystem access for host/user/sandbox environments.
+* Avoid direct host filesystem access in new skill/tool code when sandbox-aware abstractions are available.
