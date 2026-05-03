@@ -64,6 +64,108 @@ class PostgresRepositoriesTest {
     }
 
     @Test
+    fun `user settings repository tolerates legacy partial settings json`() = runTest {
+        val schema = newPostgresSchema("postgres_legacy_settings_json")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+        val userRepository = PostgresUserRepository(dataSource)
+        val settingsRepository = PostgresUserSettingsRepository(dataSource)
+
+        dataSource.use {
+            userRepository.ensureUser("legacy-user")
+            dataSource.write { connection ->
+                connection.prepareStatement(
+                    """
+                    insert into user_settings(user_id, settings_json, created_at, updated_at)
+                    values (?, ?, ?, ?)
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setString(1, "legacy-user")
+                    statement.setJson(
+                        2,
+                        """
+                        {
+                          "defaultModel": "${LLMModel.Max.alias}",
+                          "contextSize": 12000,
+                          "temperature": 0.2,
+                          "locale": "en-US",
+                          "timeZone": "Europe/Amsterdam"
+                        }
+                        """.trimIndent(),
+                    )
+                    statement.setInstant(3, Instant.parse("2026-05-01T09:00:00Z"))
+                    statement.setInstant(4, Instant.parse("2026-05-01T09:00:00Z"))
+                    statement.executeUpdate()
+                }
+            }
+
+            val stored = settingsRepository.get("legacy-user")
+
+            assertNotNull(stored)
+            assertEquals("legacy-user", stored.userId)
+            assertEquals(LLMModel.Max, stored.defaultModel)
+            assertEquals(12_000, stored.contextSize)
+            assertEquals(0.2f, stored.temperature)
+            assertEquals(Locale.forLanguageTag("en-US"), stored.locale)
+            assertEquals(ZoneId.of("Europe/Amsterdam"), stored.timeZone)
+            assertNull(stored.systemPrompt)
+            assertNull(stored.enabledTools)
+            assertNull(stored.showToolEvents)
+            assertNull(stored.streamingMessages)
+            assertTrue(stored.toolPermissions.isEmpty())
+            assertTrue(stored.mcp.isEmpty())
+        }
+    }
+
+    @Test
+    fun `provider key repository ignores invalid provider rows`() = runTest {
+        val schema = newPostgresSchema("postgres_invalid_provider_rows")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+        val userRepository = PostgresUserRepository(dataSource)
+        val repository = PostgresUserProviderKeyRepository(dataSource)
+
+        dataSource.use {
+            userRepository.ensureUser("user-a")
+            dataSource.write { connection ->
+                connection.prepareStatement(
+                    """
+                    insert into user_provider_keys(
+                        user_id,
+                        provider,
+                        encrypted_api_key,
+                        key_hint,
+                        created_at,
+                        updated_at
+                    )
+                    values (?, ?, ?, ?, ?, ?)
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setString(1, "user-a")
+                    statement.setString(2, "OPENAI")
+                    statement.setBytes(3, "enc-openai".toByteArray())
+                    statement.setString(4, "...1234")
+                    statement.setInstant(5, Instant.parse("2026-05-01T09:00:00Z"))
+                    statement.setInstant(6, Instant.parse("2026-05-01T09:00:00Z"))
+                    statement.executeUpdate()
+
+                    statement.setString(1, "user-a")
+                    statement.setString(2, "BROKEN_PROVIDER")
+                    statement.setBytes(3, "enc-broken".toByteArray())
+                    statement.setString(4, "...9999")
+                    statement.setInstant(5, Instant.parse("2026-05-01T09:01:00Z"))
+                    statement.setInstant(6, Instant.parse("2026-05-01T09:01:00Z"))
+                    statement.executeUpdate()
+                }
+            }
+
+            val keys = repository.list("user-a")
+
+            assertEquals(1, keys.size)
+            assertEquals(LlmProvider.OPENAI, keys.single().provider)
+            assertEquals("...1234", keys.single().keyHint)
+        }
+    }
+
+    @Test
     fun `user repository upserts single user row and throttles last seen updates`() = runTest {
         val schema = newPostgresSchema("postgres_users")
         val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)

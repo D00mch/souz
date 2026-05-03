@@ -7,11 +7,13 @@ import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.keys.service.UserProviderKeyService
+import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.settings.service.UserSettingsService
 
 internal data class BackendHttpDependencies(
     val bootstrapService: BackendBootstrapService,
+    val onboardingService: BackendOnboardingService?,
     val userSettingsService: UserSettingsService?,
     val providerKeyService: UserProviderKeyService?,
     val chatService: ChatService?,

@@ -27,6 +27,7 @@ import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.http.routes.v1Routes
 import ru.souz.backend.keys.service.UserProviderKeyService
+import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.security.RequestIdentityPlugin
 import ru.souz.backend.settings.service.UserSettingsService
@@ -46,6 +47,7 @@ data class RootResponse(
 /** Embedded Ktor server wrapper for the Souz backend HTTP API. */
 class BackendHttpServer(
     bootstrapService: BackendBootstrapService,
+    onboardingService: BackendOnboardingService? = null,
     userSettingsService: UserSettingsService? = null,
     providerKeyService: UserProviderKeyService? = null,
     chatService: ChatService? = null,
@@ -62,6 +64,7 @@ class BackendHttpServer(
     private val logger = LoggerFactory.getLogger(BackendHttpServer::class.java)
     private val dependencies = BackendHttpDependencies(
         bootstrapService = bootstrapService,
+        onboardingService = onboardingService,
         userSettingsService = userSettingsService,
         providerKeyService = providerKeyService,
         chatService = chatService,
@@ -105,6 +108,7 @@ class BackendHttpServer(
 /** Installs backend HTTP routes into a Ktor application. */
 fun Application.backendApplication(
     bootstrapService: BackendBootstrapService,
+    onboardingService: BackendOnboardingService? = null,
     userSettingsService: UserSettingsService? = null,
     providerKeyService: UserProviderKeyService? = null,
     chatService: ChatService? = null,
@@ -120,6 +124,7 @@ fun Application.backendApplication(
     configureBackendHttpServer(
         BackendHttpDependencies(
             bootstrapService = bootstrapService,
+            onboardingService = onboardingService,
             userSettingsService = userSettingsService,
             providerKeyService = providerKeyService,
             chatService = chatService,
@@ -202,6 +207,8 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
 private val ROOT_ENDPOINTS = listOf(
     "GET ${BackendHttpRoutes.HEALTH}",
     "GET ${BackendHttpRoutes.BOOTSTRAP}",
+    "GET ${BackendHttpRoutes.ONBOARDING_STATE}",
+    "POST ${BackendHttpRoutes.ONBOARDING_COMPLETE}",
     "GET ${BackendHttpRoutes.SETTINGS}",
     "PATCH ${BackendHttpRoutes.SETTINGS}",
     "GET ${BackendHttpRoutes.PROVIDER_KEYS}",

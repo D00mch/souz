@@ -57,6 +57,8 @@ class BackendBootstrapService(
                 temperature = effectiveSettings.temperature,
                 locale = effectiveSettings.locale.toLanguageTag(),
                 timeZone = effectiveSettings.timeZone.id,
+                systemPrompt = effectiveSettings.systemPrompt,
+                enabledTools = effectiveSettings.enabledTools.toList(),
                 showToolEvents = effectiveSettings.showToolEvents,
                 streamingMessages = effectiveSettings.streamingMessages,
             ),

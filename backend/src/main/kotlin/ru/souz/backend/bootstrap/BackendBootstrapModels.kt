@@ -41,6 +41,8 @@ data class BootstrapSettings(
     val temperature: Float,
     val locale: String,
     val timeZone: String,
+    val systemPrompt: String?,
+    val enabledTools: List<String>,
     val showToolEvents: Boolean,
     val streamingMessages: Boolean,
 )

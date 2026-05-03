@@ -30,6 +30,19 @@ internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(): UserSettin
         streamingMessages = streamingMessages,
     )
 
+internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(): UserSettingsOverrides =
+    UserSettingsOverrides(
+        defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel") },
+        locale = locale?.let { parseLocale(it, fieldName = "locale") },
+        timeZone = timeZone?.let { parseTimeZone(it, fieldName = "timeZone") },
+        enabledTools = enabledTools?.map { toolName ->
+            toolName.trim().takeIf { it.isNotEmpty() }
+                ?: throw invalidV1Request("enabledTools must not contain blank values.")
+        }?.toCollection(linkedSetOf()),
+        showToolEvents = showToolEvents,
+        streamingMessages = streamingMessages,
+    )
+
 internal fun BackendV1MessageOptionsRequest?.toUserSettingsOverrides(): UserSettingsOverrides =
     UserSettingsOverrides(
         defaultModel = this?.model?.let { parseModel(it, fieldName = "options.model") },

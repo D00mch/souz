@@ -32,6 +32,8 @@ class UserSettingsService(
                 streamingMessages = overrides.streamingMessages ?: existing?.streamingMessages,
                 toolPermissions = existing?.toolPermissions ?: emptyMap(),
                 mcp = existing?.mcp ?: emptyMap(),
+                schemaVersion = existing?.schemaVersion ?: UserSettings.CURRENT_SCHEMA_VERSION,
+                onboardingCompletedAt = existing?.onboardingCompletedAt,
                 createdAt = existing?.createdAt ?: now,
                 updatedAt = now,
             )

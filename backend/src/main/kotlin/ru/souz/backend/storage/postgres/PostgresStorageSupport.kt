@@ -128,17 +128,19 @@ internal fun SQLException.isConstraintViolation(constraintName: String): Boolean
         message.orEmpty().contains(constraintName))
 
 internal data class StoredSettingsPayload(
-    val defaultModel: String?,
-    val contextSize: Int?,
-    val temperature: Float?,
-    val locale: String?,
-    val timeZone: String?,
-    val systemPrompt: String?,
-    val enabledTools: Set<String>?,
-    val showToolEvents: Boolean?,
-    val streamingMessages: Boolean?,
-    val toolPermissions: Map<String, ToolPermission>,
-    val mcp: Map<String, UserMcpServer>,
+    val defaultModel: String? = null,
+    val contextSize: Int? = null,
+    val temperature: Float? = null,
+    val locale: String? = null,
+    val timeZone: String? = null,
+    val systemPrompt: String? = null,
+    val enabledTools: Set<String>? = null,
+    val showToolEvents: Boolean? = null,
+    val streamingMessages: Boolean? = null,
+    val toolPermissions: Map<String, ToolPermission> = emptyMap(),
+    val mcp: Map<String, UserMcpServer> = emptyMap(),
+    val schemaVersion: Int = UserSettings.CURRENT_SCHEMA_VERSION,
+    val onboardingCompletedAt: String? = null,
 )
 
 internal data class StoredConversationContext(
@@ -309,20 +311,24 @@ internal fun ResultSet.toUserSettings(): UserSettings {
         streamingMessages = payload.streamingMessages,
         toolPermissions = payload.toolPermissions,
         mcp = payload.mcp,
+        schemaVersion = payload.schemaVersion,
+        onboardingCompletedAt = payload.onboardingCompletedAt?.let(Instant::parse),
         createdAt = instant("created_at"),
         updatedAt = instant("updated_at"),
     )
 }
 
-internal fun ResultSet.toUserProviderKey(): UserProviderKey =
-    UserProviderKey(
-        userId = getString("user_id"),
-        provider = enumValueOf(getString("provider")),
-        encryptedApiKey = getBytes("encrypted_api_key").toString(Charsets.UTF_8),
-        keyHint = getString("key_hint"),
-        createdAt = instant("created_at"),
-        updatedAt = instant("updated_at"),
-    )
+internal fun ResultSet.toUserProviderKeyOrNull(): UserProviderKey? =
+    getString("provider").toProviderOrNull()?.let { provider ->
+        UserProviderKey(
+            userId = getString("user_id"),
+            provider = provider,
+            encryptedApiKey = getBytes("encrypted_api_key").toString(Charsets.UTF_8),
+            keyHint = getString("key_hint"),
+            createdAt = instant("created_at"),
+            updatedAt = instant("updated_at"),
+        )
+    }
 
 internal fun UserSettings.toSettingsJson(): String =
     postgresStorageMapper.writeValueAsString(
@@ -338,6 +344,8 @@ internal fun UserSettings.toSettingsJson(): String =
             streamingMessages = streamingMessages,
             toolPermissions = toolPermissions,
             mcp = mcp,
+            schemaVersion = schemaVersion,
+            onboardingCompletedAt = onboardingCompletedAt?.toString(),
         )
     )
 
