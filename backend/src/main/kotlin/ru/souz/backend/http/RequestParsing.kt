@@ -4,6 +4,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
 import java.time.DateTimeException
 import java.time.ZoneId
+import java.util.IllformedLocaleException
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import ru.souz.backend.settings.service.UserSettingsOverrides
@@ -61,9 +62,20 @@ internal fun parseModel(rawModel: String, fieldName: String): LLMModel =
     } ?: throw invalidV1Request("$fieldName must be a known model alias.")
 
 internal fun parseLocale(rawLocale: String, fieldName: String): Locale =
-    Locale.forLanguageTag(rawLocale.trim())
-        .takeIf { it.language.isNotBlank() }
-        ?: throw invalidV1Request("$fieldName must be a valid locale.")
+    try {
+        val normalized = rawLocale.trim()
+        Locale.Builder()
+            .setLanguageTag(normalized)
+            .build()
+            .takeIf { locale ->
+                locale.language.isNotBlank() &&
+                    locale.toLanguageTag().equals(normalized, ignoreCase = true) &&
+                    locale.toLanguageTag().lowercase() in AVAILABLE_LOCALE_TAGS
+            }
+            ?: throw invalidV1Request("$fieldName must be a valid locale.")
+    } catch (_: IllformedLocaleException) {
+        throw invalidV1Request("$fieldName must be a valid locale.")
+    }
 
 internal fun parseTimeZone(rawTimeZone: String, fieldName: String): ZoneId =
     try {
@@ -82,3 +94,7 @@ private suspend inline fun <reified T : Any> ApplicationCall.receiveOrRequestErr
     } catch (e: Exception) {
         throw errorFactory("Invalid payload: ${e.message ?: "request body cannot be parsed."}")
     }
+
+private val AVAILABLE_LOCALE_TAGS: Set<String> =
+    Locale.getAvailableLocales()
+        .mapTo(linkedSetOf()) { it.toLanguageTag().lowercase() }

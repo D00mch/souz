@@ -25,8 +25,11 @@ class BackendBootstrapService(
 ) {
     suspend fun response(identity: RequestIdentity): BootstrapResponse {
         val buildProfile = LlmBuildProfile(settingsProvider, localModelAvailability)
-        val effectiveSettings = effectiveSettingsResolver.resolve(identity.userId)
         val userManagedProviders = userProviderKeyRepository.list(identity.userId).map { it.provider }.toSet()
+        val effectiveSettings = effectiveSettingsResolver.resolve(
+            userId = identity.userId,
+            userManagedProviders = userManagedProviders,
+        )
         val capabilityProviders = buildSet {
             addAll(buildProfile.availableProviders)
             addAll(userManagedProviders)
@@ -46,7 +49,7 @@ class BackendBootstrapService(
                             else -> model.provider in capabilityProviders
                         }
                     }
-                    .map { modelCapability(identity.userId, it) },
+                    .map { modelCapability(it, userManagedProviders) },
                 tools = backendSafeToolNames(toolCatalog).map { toolName ->
                     BootstrapToolCapability(name = toolName, enabled = true)
                 },
@@ -65,15 +68,15 @@ class BackendBootstrapService(
         )
     }
 
-    private suspend fun modelCapability(
-        userId: String,
+    private fun modelCapability(
         model: LLMModel,
+        userManagedProviders: Set<LlmProvider>,
     ): BootstrapModelCapability =
         BootstrapModelCapability(
             provider = model.provider.name.lowercase(),
             model = model.alias,
             serverManagedKey = hasServerManagedAccess(model),
-            userManagedKey = hasUserManagedAccess(userId, model.provider),
+            userManagedKey = hasUserManagedAccess(model.provider, userManagedProviders),
         )
 
     private fun hasServerManagedAccess(model: LLMModel): Boolean =
@@ -82,9 +85,9 @@ class BackendBootstrapService(
             else -> settingsProvider.hasKey(model.provider)
         }
 
-    private suspend fun hasUserManagedAccess(
-        userId: String,
+    private fun hasUserManagedAccess(
         provider: LlmProvider,
+        userManagedProviders: Set<LlmProvider>,
     ): Boolean =
-        provider != LlmProvider.LOCAL && userProviderKeyRepository.get(userId, provider) != null
+        provider != LlmProvider.LOCAL && provider in userManagedProviders
 }

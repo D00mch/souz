@@ -44,6 +44,7 @@ class EffectiveSettingsResolver(
     suspend fun resolve(
         userId: String,
         requestOverrides: UserSettingsOverrides? = null,
+        userManagedProviders: Set<LlmProvider>? = null,
     ): EffectiveUserSettings {
         val persisted = userSettingsRepository.get(userId) ?: userSettingsRepository.save(defaultsFor(userId))
 
@@ -53,6 +54,7 @@ class EffectiveSettingsResolver(
             userId = userId,
             model = requestOverrides?.defaultModel ?: persisted.defaultModel,
             locale = locale,
+            userManagedProviders = userManagedProviders,
         )
         val enabledTools = normalizeEnabledTools(requestOverrides?.enabledTools ?: persisted.enabledTools)
         val showToolEventsPreference = requestOverrides?.showToolEvents ?: persisted.showToolEvents ?: true
@@ -107,16 +109,18 @@ class EffectiveSettingsResolver(
         userId: String,
         model: LLMModel?,
         locale: Locale,
+        userManagedProviders: Set<LlmProvider>?,
     ): LLMModel {
-        val fallback = fallbackModel(userId, locale)
+        val fallback = fallbackModel(userId, locale, userManagedProviders)
         val candidate = model ?: fallback
         val supportedProviders = LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion()).keys
         return when {
             candidate.provider == LlmProvider.LOCAL ->
                 candidate.takeIf { it in localModelAvailability.availableGigaModels() } ?: fallback
 
-            candidate.provider !in supportedProviders && !hasConfiguredAccess(userId, candidate.provider) -> fallback
-            !hasConfiguredAccess(userId, candidate.provider) -> fallback
+            candidate.provider !in supportedProviders &&
+                !hasConfiguredAccess(userId, candidate.provider, userManagedProviders) -> fallback
+            !hasConfiguredAccess(userId, candidate.provider, userManagedProviders) -> fallback
             else -> candidate
         }
     }
@@ -124,6 +128,7 @@ class EffectiveSettingsResolver(
     private suspend fun fallbackModel(
         userId: String,
         locale: Locale,
+        userManagedProviders: Set<LlmProvider>?,
     ): LLMModel {
         val defaults = LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion())
         val localDefault = localModelAvailability.defaultGigaModel()
@@ -131,7 +136,7 @@ class EffectiveSettingsResolver(
             .firstNotNullOfOrNull { provider ->
                 when (provider) {
                     LlmProvider.LOCAL -> localDefault
-                    else -> defaults[provider]?.takeIf { hasConfiguredAccess(userId, provider) }
+                    else -> defaults[provider]?.takeIf { hasConfiguredAccess(userId, provider, userManagedProviders) }
                 }
             }
             ?: localDefault
@@ -141,11 +146,16 @@ class EffectiveSettingsResolver(
     private suspend fun hasConfiguredAccess(
         userId: String,
         provider: LlmProvider,
+        userManagedProviders: Set<LlmProvider>?,
     ): Boolean =
         when (provider) {
             LlmProvider.LOCAL -> localModelAvailability.isProviderAvailable()
-            else -> baseSettingsProvider.hasKey(provider) || userProviderKeyRepository.get(userId, provider) != null
+            else -> baseSettingsProvider.hasKey(provider) || provider in (userManagedProviders ?: loadUserManagedProviders(userId))
         }
+
+    private suspend fun loadUserManagedProviders(userId: String): Set<LlmProvider> =
+        userProviderKeyRepository.list(userId)
+            .mapTo(linkedSetOf()) { it.provider }
 
     private fun defaultLocale(): Locale =
         if (baseSettingsProvider.regionProfile.equals(REGION_EN, ignoreCase = true)) {

@@ -12,8 +12,11 @@ import io.ktor.server.testing.testApplication
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.llms.LLMModel
 
 class BackendOnboardingRouteTest {
     private val json = jacksonObjectMapper()
@@ -196,5 +199,212 @@ class BackendOnboardingRouteTest {
         assertEquals(true, statePayload["hasUsableModelAccess"].asBoolean())
         assertEquals(context.settingsProvider.gigaModel.alias, statePayload["currentSettings"]["defaultModel"].asText())
         assertEquals(listOf("ListFiles"), statePayload["currentSettings"]["enabledTools"].map { it.asText() })
+    }
+
+    @Test
+    fun `completing onboarding without usable model access returns conflict and does not mark completion`() = testApplication {
+        val context = routeTestContext(
+            settingsProvider = TestSettingsProvider().apply {
+                gigaChatKey = null
+                qwenChatKey = null
+                aiTunnelKey = null
+                anthropicKey = null
+                openaiKey = null
+            },
+        )
+        application {
+            backendApplication(
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                providerKeyService = context.userProviderKeyService,
+                onboardingService = context.onboardingService,
+            )
+        }
+
+        val response = client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
+            trustedHeaders("blocked-user")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "locale": "ru-RU",
+                  "timeZone": "Europe/Moscow",
+                  "enabledTools": ["ListFiles"]
+                }
+                """.trimIndent()
+            )
+        }
+        val payload = json.readTree(response.bodyAsText())
+        val storedSettings = runBlocking { context.userSettingsRepository.get("blocked-user") }
+
+        assertEquals(HttpStatusCode.Conflict, response.status)
+        assertEquals("onboarding_requires_model_access", payload["error"]["code"].asText())
+        assertTrue(payload["error"]["message"].asText().contains("model access"))
+        assertNull(storedSettings?.onboardingCompletedAt)
+    }
+
+    @Test
+    fun `completing onboarding rejects unavailable default model for the user`() = testApplication {
+        val context = routeTestContext(
+            settingsProvider = TestSettingsProvider().apply {
+                gigaChatKey = "giga-key"
+                qwenChatKey = null
+                aiTunnelKey = null
+                anthropicKey = null
+                openaiKey = null
+            },
+        )
+        application {
+            backendApplication(
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                providerKeyService = context.userProviderKeyService,
+                onboardingService = context.onboardingService,
+            )
+        }
+
+        val response = client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
+            trustedHeaders("user-invalid-model")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "defaultModel": "${LLMModel.QwenMax.alias}",
+                  "enabledTools": ["ListFiles"]
+                }
+                """.trimIndent()
+            )
+        }
+        val payload = json.readTree(response.bodyAsText())
+        val storedSettings = runBlocking { context.userSettingsRepository.get("user-invalid-model") }
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertTrue(payload["error"]["message"].asText().contains("defaultModel"))
+        assertEquals(context.settingsProvider.gigaModel, storedSettings?.defaultModel)
+        assertNull(storedSettings?.onboardingCompletedAt)
+    }
+
+    @Test
+    fun `completing onboarding rejects tools outside the safe backend catalog`() = testApplication {
+        val context = routeTestContext(
+            settingsProvider = TestSettingsProvider().apply {
+                gigaChatKey = "giga-key"
+            },
+        )
+        application {
+            backendApplication(
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                providerKeyService = context.userProviderKeyService,
+                onboardingService = context.onboardingService,
+            )
+        }
+
+        val response = client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
+            trustedHeaders("user-invalid-tool")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "enabledTools": ["ListFiles", "OpenBrowser"]
+                }
+                """.trimIndent()
+            )
+        }
+        val payload = json.readTree(response.bodyAsText())
+        val storedSettings = runBlocking { context.userSettingsRepository.get("user-invalid-tool") }
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertTrue(payload["error"]["message"].asText().contains("enabledTools"))
+        assertEquals(listOf("ListFiles"), storedSettings?.enabledTools?.toList())
+        assertNull(storedSettings?.onboardingCompletedAt)
+    }
+
+    @Test
+    fun `completing onboarding rejects malformed locale tags`() = testApplication {
+        val context = routeTestContext(
+            settingsProvider = TestSettingsProvider().apply {
+                gigaChatKey = "giga-key"
+            },
+        )
+        application {
+            backendApplication(
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                providerKeyService = context.userProviderKeyService,
+                onboardingService = context.onboardingService,
+            )
+        }
+
+        val response = client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
+            trustedHeaders("user-invalid-locale")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "locale": "not-a-locale",
+                  "timeZone": "Europe/Moscow",
+                  "enabledTools": ["ListFiles"]
+                }
+                """.trimIndent()
+            )
+        }
+        val payload = json.readTree(response.bodyAsText())
+        val storedSettings = runBlocking { context.userSettingsRepository.get("user-invalid-locale") }
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertTrue(payload["error"]["message"].asText().contains("locale"))
+        assertNull(storedSettings)
+    }
+
+    @Test
+    fun `completing onboarding rejects invalid time zones`() = testApplication {
+        val context = routeTestContext(
+            settingsProvider = TestSettingsProvider().apply {
+                gigaChatKey = "giga-key"
+            },
+        )
+        application {
+            backendApplication(
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                providerKeyService = context.userProviderKeyService,
+                onboardingService = context.onboardingService,
+            )
+        }
+
+        val response = client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
+            trustedHeaders("user-invalid-zone")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "locale": "ru-RU",
+                  "timeZone": "Mars/Phobos",
+                  "enabledTools": ["ListFiles"]
+                }
+                """.trimIndent()
+            )
+        }
+        val payload = json.readTree(response.bodyAsText())
+        val storedSettings = runBlocking { context.userSettingsRepository.get("user-invalid-zone") }
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertTrue(payload["error"]["message"].asText().contains("timeZone"))
+        assertNull(storedSettings)
     }
 }

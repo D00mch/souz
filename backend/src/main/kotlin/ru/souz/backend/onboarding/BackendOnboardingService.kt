@@ -1,8 +1,11 @@
 package ru.souz.backend.onboarding
 
+import io.ktor.http.HttpStatusCode
 import java.time.Instant
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.bootstrap.BootstrapModelCapability
+import ru.souz.backend.http.BackendV1Exception
+import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.security.RequestIdentity
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
@@ -76,6 +79,25 @@ class BackendOnboardingService(
         identity: RequestIdentity,
         overrides: UserSettingsOverrides,
     ): OnboardingCompleteResponse {
+        val bootstrap = bootstrapService.response(identity)
+        val accessibleModelAliases = bootstrap.capabilities.models
+            .filter { it.serverManagedKey || it.userManagedKey }
+            .mapTo(linkedSetOf()) { it.model }
+        if (overrides.defaultModel != null && overrides.defaultModel.alias !in accessibleModelAliases) {
+            throw invalidV1Request("defaultModel must be available to the current user.")
+        }
+        val allowedTools = bootstrap.capabilities.tools.mapTo(linkedSetOf()) { it.name }
+        val invalidTools = overrides.enabledTools.orEmpty() - allowedTools
+        if (invalidTools.isNotEmpty()) {
+            throw invalidV1Request("enabledTools contains unsupported backend tools: ${invalidTools.joinToString(", ")}.")
+        }
+        if (accessibleModelAliases.isEmpty()) {
+            throw BackendV1Exception(
+                status = HttpStatusCode.Conflict,
+                code = "onboarding_requires_model_access",
+                message = "Cannot complete onboarding until the user has usable model access.",
+            )
+        }
         userSettingsService.patch(identity.userId, overrides)
         val current = userSettingsRepository.get(identity.userId) ?: error("Persisted user settings are unavailable.")
         val now = Instant.now()
