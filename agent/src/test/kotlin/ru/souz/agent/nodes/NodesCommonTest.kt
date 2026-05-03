@@ -22,11 +22,8 @@ import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
-import ru.souz.llms.LLMResponse
-import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -122,80 +119,5 @@ class NodesCommonTest {
 
         assertTrue(injectedContext.content.contains("Найден локальный факт"))
         coVerify(exactly = 1) { desktopInfoRepository.search(any(), any()) }
-    }
-
-    @Test
-    fun `tool use forwards context tool invocation metadata to executor`() = runTest {
-        val desktopInfoRepository = mockk<AgentDesktopInfoRepository>(relaxed = true)
-        val settingsProvider = mockk<AgentSettingsProvider> {
-            every { defaultCalendar } returns null
-        }
-        val agentToolExecutor = mockk<AgentToolExecutor>()
-        val functionCall = LLMResponse.FunctionCall(
-            name = "tool.read_file",
-            arguments = mapOf("path" to "/tmp/file.txt"),
-        )
-        val meta = ToolInvocationMeta(
-            userId = "user-1",
-            conversationId = "conversation-1",
-            requestId = "request-1",
-        )
-        coEvery {
-            agentToolExecutor.execute(any(), functionCall, meta)
-        } returns LLMRequest.Message(
-            role = LLMMessageRole.function,
-            content = """{"ok":true}""",
-            functionsStateId = null,
-            name = functionCall.name,
-        )
-        val nodesCommon = NodesCommon(
-            desktopInfoRepository = desktopInfoRepository,
-            settingsProvider = settingsProvider,
-            agentToolExecutor = agentToolExecutor,
-            defaultBrowserProvider = mockk<DefaultBrowserProvider> {
-                every { defaultBrowserDisplayName() } returns null
-            },
-            runtimeEnvironment = SystemAgentRuntimeEnvironment,
-        )
-        val context = AgentContext(
-            input = LLMResponse.Chat.Ok(
-                choices = listOf(
-                    LLMResponse.Choice(
-                        message = LLMResponse.Message(
-                            content = "",
-                            role = LLMMessageRole.assistant,
-                            functionCall = functionCall,
-                            functionsStateId = "call-1",
-                        ),
-                        index = 0,
-                        finishReason = LLMResponse.FinishReason.function_call,
-                    )
-                ),
-                created = 1L,
-                model = "gpt-5-nano",
-                usage = LLMResponse.Usage(1, 1, 2, 0),
-            ),
-            settings = AgentSettings(
-                model = "gpt-5-nano",
-                temperature = 0.2f,
-                toolsByCategory = emptyMap(),
-            ),
-            history = listOf(
-                "system".toSystemPromptMessage(),
-                LLMRequest.Message(LLMMessageRole.user, "read file"),
-            ),
-            activeTools = emptyList(),
-            systemPrompt = "system",
-            toolInvocationMeta = meta,
-        )
-
-        val result = nodesCommon.toolUse().execute(
-            ctx = context,
-            runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
-        )
-
-        coVerify(exactly = 1) { agentToolExecutor.execute(context.settings, functionCall, meta) }
-        assertEquals("""{"ok":true}""", result.history.last().content)
-        assertEquals("call-1", result.history.last().functionsStateId)
     }
 }

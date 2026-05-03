@@ -23,12 +23,12 @@ class AgentToolExecutor(
     suspend fun execute(
         settings: AgentSettings,
         functionCall: LLMResponse.FunctionCall,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
     ): LLMRequest.Message {
         _toolInvocations.tryEmit(functionCall)
         val startedAtMs = System.currentTimeMillis()
         val toolCategoryName = settings.tools.categoryByName[functionCall.name]?.name
         val logContext = currentCoroutineContext()[AgentExecutionLogContext.Element]?.value
+        val meta = currentCoroutineContext()[ToolInvocationMetaContext.Element]?.value ?: ToolInvocationMeta.Empty
         logContext?.incrementToolExecutionCount()
         val fn: LLMToolSetup = settings.tools.byName[functionCall.name] ?: return LLMRequest.Message(
             role = LLMMessageRole.function,

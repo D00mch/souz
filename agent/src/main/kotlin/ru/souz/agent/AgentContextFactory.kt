@@ -7,7 +7,6 @@ import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
-import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
 
 class AgentContextFactory(
@@ -45,7 +44,6 @@ class AgentContextFactory(
         model: LLMModel,
         contextSize: Int,
         temperature: Float,
-        toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.Empty,
     ): AgentContext<String> {
         val normalizedAgentId = normalizeAgentId(agentId)
         val settings = AgentSettings(
@@ -63,7 +61,6 @@ class AgentContextFactory(
             history = normalizeHistory(history, systemPrompt),
             activeTools = allFunctions,
             systemPrompt = systemPrompt,
-            toolInvocationMeta = toolInvocationMeta,
         )
     }
 
