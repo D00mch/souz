@@ -12,10 +12,11 @@ import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
 import ru.souz.paths.DefaultSouzPaths
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.skills.bundle.FileSystemSkillBundleLoader
 import ru.souz.skills.filesystem.LocalSkillBundleFileSystem
 import ru.souz.skills.validation.FileSystemSkillValidationRepository
-import ru.souz.tool.files.FilesToolUtil
 
 /**
  * Default local [SkillRegistryRepository] wiring for desktop and JVM hosts.
@@ -26,11 +27,17 @@ import ru.souz.tool.files.FilesToolUtil
 class LocalSkillRegistryRepository(
     stateRoot: Path = DefaultSouzPaths.defaultStateRoot(),
     clock: Clock = Clock.systemUTC(),
+    sandbox: LocalRuntimeSandbox = LocalRuntimeSandbox(
+        scope = SandboxScope.localDefault(),
+        settingsProvider = SettingsProviderImpl(ConfigStore),
+        homePath = DefaultSouzPaths.homeDirectory(),
+        stateRoot = stateRoot,
+    ),
     private val skillsRepository: FileSystemSkillsRepository = FileSystemSkillsRepository(
         paths = DefaultSouzPaths(stateRoot = stateRoot),
         clock = clock,
         loader = FileSystemSkillBundleLoader(
-            fileSystem = LocalSkillBundleFileSystem(FilesToolUtil(SettingsProviderImpl(ConfigStore))),
+            fileSystem = LocalSkillBundleFileSystem(sandbox.fileSystem),
         ),
     ),
     private val validationRepository: SkillValidationRepository = FileSystemSkillValidationRepository(

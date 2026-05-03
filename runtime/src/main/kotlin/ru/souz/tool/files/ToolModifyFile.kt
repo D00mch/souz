@@ -1,6 +1,7 @@
 package ru.souz.tool.files
 
 import org.slf4j.LoggerFactory
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 
 class ToolModifyFile(
@@ -48,15 +49,15 @@ class ToolModifyFile(
         )
     )
 
-    override suspend fun suspendInvoke(input: Input): String {
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         if (permissionBroker?.shouldStageEdits() == true) {
             permissionBroker.stageEdit(input)
             return "Staged, not yet applied"
         }
-        return invoke(input)
+        return invoke(input, meta)
     }
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val file = filesToolUtil.resolveSafeExistingFile(input.path)
         val editableTextFile = filesToolUtil.readEditableUtf8TextFile(file)
         val preparedEdit = ToolModifyFilePlanner.prepareEdit(input, editableTextFile, filesToolUtil)
@@ -65,10 +66,14 @@ class ToolModifyFile(
     }
 
     private fun applyPreparedEdit(preparedEdit: ToolModifyPreparedEdit) {
-        val currentFile = filesToolUtil.readEditableUtf8TextFile(preparedEdit.file)
+        val currentFile = filesToolUtil.readEditableUtf8TextFile(filesToolUtil.resolveSafeExistingFile(preparedEdit.path))
         if (currentFile.rawText != preparedEdit.originalRawText) {
             throw BadInputException("File changed after preview generation. Read it again and retry.")
         }
-        filesToolUtil.writeUtf8TextFileAtomically(preparedEdit.file, preparedEdit.updatedRawText, l)
+        filesToolUtil.writeUtf8TextFileAtomically(
+            filesToolUtil.resolvePath(preparedEdit.path),
+            preparedEdit.updatedRawText,
+            l,
+        )
     }
 }

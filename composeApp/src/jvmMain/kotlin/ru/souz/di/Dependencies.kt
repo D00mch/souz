@@ -7,50 +7,31 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.agentDiModule
-import ru.souz.db.SettingsProviderImpl
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
-import ru.souz.agent.spi.AgentRuntimeEnvironment
-import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
-import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.service.audio.ActiveSoundRecorderImpl
 import ru.souz.service.audio.InMemoryAudioRecorder
 import ru.souz.service.audio.Say
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopDataExtractor
 import ru.souz.db.DesktopInfoRepository
-import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
-import ru.souz.llms.giga.GigaAuth
-import ru.souz.llms.LLMChatAPI
-import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.giga.GigaVoiceAPI
 import ru.souz.llms.LlmBuildProfile
-import ru.souz.llms.SessionTokenLogging
-import ru.souz.llms.TokenLogging
 import ru.souz.service.keys.Keys
-import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
-import ru.souz.llms.anthropic.AnthropicChatAPI
-import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.openai.OpenAIVoiceAPI
-import ru.souz.llms.qwen.QwenChatAPI
-import ru.souz.llms.local.LocalBridgeLoader
-import ru.souz.llms.local.LocalChatAPI
-import ru.souz.llms.local.LocalHostInfoProvider
-import ru.souz.llms.local.LocalLlamaRuntime
-import ru.souz.llms.local.LocalModelStore
-import ru.souz.llms.local.LocalNativeBridge
-import ru.souz.llms.local.LocalPromptRenderer
-import ru.souz.llms.local.LocalProviderAvailability
-import ru.souz.llms.local.LocalStrictJsonParser
 import ru.souz.llms.runtime.ApiClassifier
-import ru.souz.llms.runtime.LLMFactory
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import ru.souz.runtime.sandbox.RuntimeSandbox
+import ru.souz.runtime.sandbox.SandboxCommandExecutor
+import ru.souz.runtime.sandbox.SandboxFileSystem
+import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.service.mcp.McpClientManager
 import ru.souz.service.mcp.McpConfigProvider
 import ru.souz.service.observability.DesktopStructuredLogger
@@ -137,7 +118,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<AgentDesktopInfoRepository> { instance<DesktopInfoRepository>() }
     bindSingleton { ToolsSettings(instance(), instance(), instance(), instance()) }
     bindSingleton<AgentToolsFilter> { instance<ToolsSettings>() }
-    bindSingleton { FilesToolUtil(instance()) }
+    bindSingleton<RuntimeSandbox> { LocalRuntimeSandbox(scope = SandboxScope.localDefault(), settingsProvider = instance()) }
+    bindSingleton<SandboxFileSystem> { instance<RuntimeSandbox>().fileSystem }
+    bindSingleton<SandboxCommandExecutor> { instance<RuntimeSandbox>().commandExecutor }
+    bindSingleton { FilesToolUtil(instance<RuntimeSandbox>()) }
     bindSingleton<FilesService> { instance<FilesToolUtil>() }
     bindSingleton<ToolPermissionBroker> { ImmediateToolPermissionBroker(instance()) }
     bindSingleton { DeferredToolModifyPermissionBroker(instance(), instance()) }

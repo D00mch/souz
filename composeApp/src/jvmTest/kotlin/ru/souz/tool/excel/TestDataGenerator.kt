@@ -21,7 +21,7 @@ class TestDataGenerator {
             val path = firstArg<String>()
             if (path.startsWith("/")) path else File(baseDir, path).absolutePath
         }
-        every { filesUtil.isPathSafe(any()) } returns true
+        every { filesUtil.isPathSafe(any<File>()) } returns true
 
         val report = ExcelReport(filesUtil)
 

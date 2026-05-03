@@ -1,5 +1,6 @@
 package ru.souz.tool.math
 
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 import kotlin.math.pow
 
@@ -34,7 +35,7 @@ class ToolCalculator : ToolSetup<ToolCalculator.Input> {
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         return try {
             val result = evaluate(input.expression)
             val formattedResult = if (result % 1.0 == 0.0) {

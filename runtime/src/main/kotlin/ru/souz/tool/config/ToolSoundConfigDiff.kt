@@ -1,6 +1,7 @@
 package ru.souz.tool.config
 
 import ru.souz.db.ConfigStore
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 
 class ToolSoundConfigDiff(private val config: ConfigStore) : ToolSetup<ToolSoundConfigDiff.Input> {
@@ -33,7 +34,7 @@ class ToolSoundConfigDiff(private val config: ConfigStore) : ToolSetup<ToolSound
         )
     )
 
-    override fun invoke(input: Input): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
         val currentSpeed = ConfigStore.get(ToolSoundConfig.SPEED_KEY, ToolSoundConfig.DEFAULT_SPEED)
         val newSpeed = currentSpeed + input.diff
         config.put(ToolSoundConfig.SPEED_KEY, newSpeed)
