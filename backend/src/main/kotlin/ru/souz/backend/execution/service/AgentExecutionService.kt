@@ -5,15 +5,20 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.supervisorScope
+import ru.souz.backend.agent.model.BackendAgentTurn
+import ru.souz.backend.agent.model.BackendAgentTurnInput
+import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.SendMessageResult
+import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.ChoiceAnsweredPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
+import ru.souz.backend.execution.model.AgentExecutionRuntimeConfig
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictException
 import ru.souz.backend.execution.repository.AgentExecutionRepository
@@ -21,8 +26,10 @@ import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.repository.OptionRepository
+import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.backend.toolcall.repository.ToolCallRepository
+import ru.souz.llms.restJsonMapper
 
 data class CancelExecutionResult(
     val execution: AgentExecution,
@@ -35,8 +42,9 @@ class AgentExecutionService internal constructor(
     private val optionRepository: OptionRepository,
     private val eventService: AgentEventService,
     private val toolCallRepository: ToolCallRepository,
-    private val requestFactory: AgentExecutionRequestFactory,
-    private val finalizer: AgentExecutionFinalizer,
+    private val effectiveSettingsResolver: EffectiveSettingsResolver,
+    private val featureFlags: BackendFeatureFlags,
+    private val runner: AgentExecutionRunner,
     private val launcher: AgentExecutionLauncher,
 ) {
     suspend fun executeChatTurn(
@@ -47,15 +55,31 @@ class AgentExecutionService internal constructor(
         requestOverrides: UserSettingsOverrides = UserSettingsOverrides(),
     ): SendMessageResult = supervisorScope {
         val chat = requireOwnedChat(userId, chatId)
-        val prepared = requestFactory.prepareChatTurn(
-            userId = userId,
-            chatId = chatId,
-            content = content,
-            clientMessageId = clientMessageId,
-            requestOverrides = requestOverrides,
-        )
+        val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
+        val config = AgentExecutionRuntimeConfig.from(effectiveSettings)
+        val normalizedClientMessageId = clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
         val queuedExecution = try {
-            executionRepository.create(prepared.execution)
+            executionRepository.create(
+                AgentExecution(
+                    id = UUID.randomUUID(),
+                    userId = userId,
+                    chatId = chatId,
+                    userMessageId = null,
+                    assistantMessageId = null,
+                    status = AgentExecutionStatus.QUEUED,
+                    requestId = null,
+                    clientMessageId = normalizedClientMessageId,
+                    model = effectiveSettings.defaultModel,
+                    provider = effectiveSettings.defaultModel.provider,
+                    startedAt = Instant.now(),
+                    finishedAt = null,
+                    cancelRequested = false,
+                    errorCode = null,
+                    errorMessage = null,
+                    usage = null,
+                    metadata = config.toMetadata(),
+                )
+            )
         } catch (e: ActiveAgentExecutionConflictException) {
             throw BackendV1Exception(
                 status = HttpStatusCode.Conflict,
@@ -70,7 +94,7 @@ class AgentExecutionService internal constructor(
                 chatId = chatId,
                 role = ChatRole.USER,
                 content = content,
-                metadata = prepared.userMessageMetadata,
+                metadata = userMessageMetadata(normalizedClientMessageId),
             )
             chatRepository.update(chat.copy(updatedAt = userMessage.createdAt))
 
@@ -81,30 +105,31 @@ class AgentExecutionService internal constructor(
                     startedAt = Instant.now(),
                 )
             )
-            val eventSink = requestFactory.createEventSink(
+            val turn = BackendAgentTurn(
+                userId = userId,
+                chatId = chatId,
+                executionId = runningExecution.id,
+                conversationId = chatId.toString(),
+                input = BackendAgentTurnInput.UserMessage(content),
+                config = config,
+            )
+            val eventSink = createEventSink(
                 userId = userId,
                 chatId = chatId,
                 execution = runningExecution,
-                messageRepository = messageRepository,
-                optionRepository = optionRepository,
-                executionRepository = executionRepository,
-                eventService = eventService,
-                toolCallRepository = toolCallRepository,
-                streamingMessagesEnabled = prepared.effectiveSettings.streamingMessages,
-                toolEventsEnabled = prepared.effectiveSettings.showToolEvents,
+                config = config,
             )
             eventSink.emitExecutionStarted(runningExecution)
 
-            if (prepared.shouldReturnRunning) {
+            if (config.streamingMessages && featureFlags.wsEvents) {
                 launcher.startBackgroundExecution(
                     execution = runningExecution,
                     eventSink = eventSink,
                 ) {
-                    finalizer.runExecution(
+                    runner.run(
                         chat = chat,
                         execution = runningExecution,
-                        conversationKey = prepared.conversationKey,
-                        turnRequest = prepared.runtimeRequest,
+                        turn = turn,
                         eventSink = eventSink,
                     )
                 }
@@ -120,11 +145,10 @@ class AgentExecutionService internal constructor(
                     execution = runningExecution,
                     eventSink = eventSink,
                 ) {
-                    finalizer.runExecution(
+                    runner.run(
                         chat = chat,
                         execution = runningExecution,
-                        conversationKey = prepared.conversationKey,
-                        turnRequest = prepared.runtimeRequest,
+                        turn = turn,
                         eventSink = eventSink,
                     )
                 }
@@ -146,7 +170,7 @@ class AgentExecutionService internal constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            finalizer.markFailed(
+            runner.markFailed(
                 executionId = queuedExecution.id,
                 userId = userId,
                 chatId = chatId,
@@ -163,7 +187,7 @@ class AgentExecutionService internal constructor(
     }
 
     suspend fun resumeOption(option: Option): AgentExecution {
-        val currentExecution = finalizer.currentExecution(option.executionId, option.userId, option.chatId)
+        val currentExecution = runner.currentExecution(option.executionId, option.userId, option.chatId)
         if (currentExecution.status != AgentExecutionStatus.WAITING_OPTION) {
             throw invalidV1Request("Execution is not waiting for an option.")
         }
@@ -191,28 +215,32 @@ class AgentExecutionService internal constructor(
             ),
         )
 
-        val prepared = requestFactory.prepareContinuationTurn(runningExecution, option)
-        val eventSink = requestFactory.createEventSink(
+        val config = AgentExecutionRuntimeConfig.fromExecution(runningExecution)
+        val turn = BackendAgentTurn(
+            userId = option.userId,
+            chatId = option.chatId,
+            executionId = runningExecution.id,
+            conversationId = option.chatId.toString(),
+            input = BackendAgentTurnInput.OptionAnswer(
+                optionId = option.id,
+                payload = option.toContinuationPayload(),
+            ),
+            config = config,
+        )
+        val eventSink = createEventSink(
             userId = option.userId,
             chatId = option.chatId,
             execution = runningExecution,
-            messageRepository = messageRepository,
-            optionRepository = optionRepository,
-            executionRepository = executionRepository,
-            eventService = eventService,
-            toolCallRepository = toolCallRepository,
-            streamingMessagesEnabled = prepared.streamingMessagesEnabled,
-            toolEventsEnabled = prepared.toolEventsEnabled,
+            config = config,
         )
         launcher.startBackgroundExecution(
             execution = runningExecution,
             eventSink = eventSink,
         ) {
-            finalizer.runExecution(
+            runner.run(
                 chat = chat,
                 execution = runningExecution,
-                conversationKey = prepared.conversationKey,
-                turnRequest = prepared.runtimeRequest,
+                turn = turn,
                 eventSink = eventSink,
             )
         }
@@ -257,13 +285,34 @@ class AgentExecutionService internal constructor(
         if (launcher.cancel(cancellingExecution.id)) {
             return cancellingExecution
         }
-        return finalizer.markCancelled(
+        return runner.markCancelled(
             executionId = cancellingExecution.id,
             userId = cancellingExecution.userId,
             chatId = cancellingExecution.chatId,
             usage = cancellingExecution.usage,
         )
     }
+
+    private fun createEventSink(
+        userId: String,
+        chatId: UUID,
+        execution: AgentExecution,
+        config: AgentExecutionRuntimeConfig,
+    ): BackendAgentRuntimeEventSink =
+        BackendAgentRuntimeEventSink(
+            userId = userId,
+            chatId = chatId,
+            executionId = execution.id,
+            messageRepository = messageRepository,
+            optionRepository = optionRepository,
+            executionRepository = executionRepository,
+            eventService = eventService,
+            toolCallRepository = toolCallRepository,
+            streamingMessagesEnabled = config.streamingMessages,
+            toolEventsEnabled = config.showToolEvents,
+            optionsEnabled = featureFlags.options,
+            assistantMessageId = execution.assistantMessageId,
+        )
 
     private suspend fun requireOwnedChat(userId: String, chatId: UUID): Chat =
         chatRepository.get(userId, chatId)
@@ -272,6 +321,32 @@ class AgentExecutionService internal constructor(
                 code = "chat_not_found",
                 message = "Chat not found.",
             )
+}
+
+private fun userMessageMetadata(clientMessageId: String?): Map<String, String> =
+    clientMessageId?.let { linkedMapOf("clientMessageId" to it) } ?: emptyMap()
+
+private fun Option.toContinuationPayload(): String {
+    val answer = answer ?: error("Option answer is required for continuation.")
+    val optionById = options.associateBy { it.id }
+    val selectedOptions = answer.selectedOptionIds.mapNotNull(optionById::get).map { option ->
+        linkedMapOf(
+            "id" to option.id,
+            "label" to option.label,
+            "content" to option.content,
+        )
+    }
+    val payload = linkedMapOf<String, Any?>(
+        "type" to "option_answer",
+        "optionId" to id.toString(),
+        "kind" to kind.value,
+        "selectionMode" to selectionMode,
+        "selectedOptionIds" to answer.selectedOptionIds.toList(),
+        "selectedOptions" to selectedOptions,
+        "freeText" to answer.freeText,
+        "metadata" to answer.metadata,
+    )
+    return restJsonMapper.writeValueAsString(payload)
 }
 
 private fun AgentExecutionStatus.isActiveForCancellation(): Boolean =
