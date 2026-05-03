@@ -2,31 +2,34 @@ package ru.souz.backend.http
 
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.jackson.jackson
 import io.ktor.server.application.Application
-import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.server.request.contentType
-import io.ktor.server.request.header
-import io.ktor.server.request.receive
+import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.request.path
 import io.ktor.server.response.respond
-import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
-import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
+import io.ktor.server.websocket.WebSockets
 import java.net.InetSocketAddress
-import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
-import ru.souz.backend.agent.model.AgentRequest
-import ru.souz.backend.agent.service.BackendAgentService
-import ru.souz.backend.common.BackendRequestException
+import ru.souz.backend.bootstrap.BackendBootstrapService
+import ru.souz.backend.chat.service.ChatService
+import ru.souz.backend.chat.service.MessageService
+import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.events.service.AgentEventService
+import ru.souz.backend.execution.service.AgentExecutionService
+import ru.souz.backend.http.routes.v1Routes
+import ru.souz.backend.keys.service.UserProviderKeyService
+import ru.souz.backend.options.service.OptionService
+import ru.souz.backend.security.RequestIdentityPlugin
+import ru.souz.backend.settings.service.UserSettingsService
 
 /** Health-check response returned by `GET /health`. */
 data class HealthResponse(
@@ -40,29 +43,43 @@ data class RootResponse(
     val endpoints: List<String>,
 )
 
-/** Minimal JSON error envelope used by backend routes. */
-data class ErrorResponse(
-    val error: String,
-)
-
 /** Embedded Ktor server wrapper for the Souz backend HTTP API. */
 class BackendHttpServer(
-    private val agentService: BackendAgentService,
-    private val selectedModel: () -> String,
+    bootstrapService: BackendBootstrapService,
+    userSettingsService: UserSettingsService? = null,
+    providerKeyService: UserProviderKeyService? = null,
+    chatService: ChatService? = null,
+    messageService: MessageService? = null,
+    executionService: AgentExecutionService? = null,
+    optionService: OptionService? = null,
+    eventService: AgentEventService? = null,
+    featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
+    selectedModel: () -> String,
     private val bindAddress: InetSocketAddress,
-    private val internalAgentToken: () -> String? = { null },
+    trustedProxyToken: () -> String? = { null },
+    ensureTrustedUser: suspend (String) -> Unit = { _ -> },
 ) : AutoCloseable {
-    private val l = LoggerFactory.getLogger(BackendHttpServer::class.java)
+    private val logger = LoggerFactory.getLogger(BackendHttpServer::class.java)
+    private val dependencies = BackendHttpDependencies(
+        bootstrapService = bootstrapService,
+        userSettingsService = userSettingsService,
+        providerKeyService = providerKeyService,
+        chatService = chatService,
+        messageService = messageService,
+        executionService = executionService,
+        optionService = optionService,
+        eventService = eventService,
+        featureFlags = featureFlags,
+        selectedModel = selectedModel,
+        trustedProxyToken = trustedProxyToken,
+        ensureTrustedUser = ensureTrustedUser,
+    )
     private val server = embeddedServer(
         factory = Netty,
         host = bindAddress.hostString,
         port = bindAddress.port,
     ) {
-        backendApplication(
-            agentService = agentService,
-            selectedModel = selectedModel,
-            internalAgentToken = internalAgentToken,
-        )
+        configureBackendHttpServer(dependencies)
     }
     private var startedAddress: InetSocketAddress? = null
 
@@ -72,7 +89,7 @@ class BackendHttpServer(
     fun start() {
         server.start(wait = false)
         startedAddress = bindAddress
-        l.info("Souz backend started on http://{}:{}", address.hostString, address.port)
+        logger.info("Souz backend started on http://{}:{}", address.hostString, address.port)
     }
 
     override fun close() {
@@ -87,11 +104,39 @@ class BackendHttpServer(
 
 /** Installs backend HTTP routes into a Ktor application. */
 fun Application.backendApplication(
-    agentService: BackendAgentService,
+    bootstrapService: BackendBootstrapService,
+    userSettingsService: UserSettingsService? = null,
+    providerKeyService: UserProviderKeyService? = null,
+    chatService: ChatService? = null,
+    messageService: MessageService? = null,
+    executionService: AgentExecutionService? = null,
+    optionService: OptionService? = null,
+    eventService: AgentEventService? = null,
+    featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     selectedModel: () -> String,
-    internalAgentToken: () -> String? = { null },
+    trustedProxyToken: () -> String? = { null },
+    ensureTrustedUser: suspend (String) -> Unit = { _ -> },
 ) {
-    val l = LoggerFactory.getLogger("SouzBackendRoutes")
+    configureBackendHttpServer(
+        BackendHttpDependencies(
+            bootstrapService = bootstrapService,
+            userSettingsService = userSettingsService,
+            providerKeyService = providerKeyService,
+            chatService = chatService,
+            messageService = messageService,
+            executionService = executionService,
+            optionService = optionService,
+            eventService = eventService,
+            featureFlags = featureFlags,
+            selectedModel = selectedModel,
+            trustedProxyToken = trustedProxyToken,
+            ensureTrustedUser = ensureTrustedUser,
+        )
+    )
+}
+
+internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDependencies) {
+    val logger = LoggerFactory.getLogger("SouzBackendRoutes")
 
     install(ContentNegotiation) {
         jackson {
@@ -99,100 +144,79 @@ fun Application.backendApplication(
             disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
         }
     }
+    install(WebSockets)
+    install(StatusPages) {
+        exception<BackendV1Exception> { call, cause ->
+            call.respond(
+                cause.status,
+                BackendV1ErrorEnvelope(
+                    error = BackendV1Error(code = cause.code, message = cause.message),
+                ),
+            )
+        }
+        exception<Throwable> { call, cause ->
+            if (cause is CancellationException) {
+                throw cause
+            }
+            logger.error("Unhandled backend request failure", cause)
+            if (BackendHttpRoutes.isV1Path(call.request.path())) {
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    BackendV1ErrorEnvelope(
+                        error = BackendV1Error(
+                            code = "internal_error",
+                            message = "Internal server error.",
+                        ),
+                    ),
+                )
+            } else {
+                call.respond(HttpStatusCode.InternalServerError, ErrorResponse("Internal server error."))
+            }
+        }
+    }
+    install(RequestIdentityPlugin) {
+        trustedProxyToken = dependencies.trustedProxyToken
+        ensureUser = dependencies.ensureTrustedUser
+    }
 
     routing {
-        get("/") {
-            call.respondBackend(l) {
+        get(BackendHttpRoutes.ROOT) {
+            call.respondBackend(logger) {
                 RootResponse(
                     service = "souz-backend",
-                    endpoints = listOf(
-                        "GET /health",
-                        "POST /agent",
-                    ),
+                    endpoints = ROOT_ENDPOINTS,
                 )
             }
         }
 
-        get("/health") {
-            call.respondBackend(l) {
-                HealthResponse(status = "ok", model = selectedModel())
+        get(BackendHttpRoutes.HEALTH) {
+            call.respondBackend(logger) {
+                HealthResponse(status = "ok", model = dependencies.selectedModel())
             }
         }
 
-        post("/agent") {
-            call.respondBackend(l) {
-                requireAgentAuthorization(internalAgentToken())
-                requireJsonContent()
-                val request = receiveOrBadRequest<AgentRequest>()
-                requireMatchingRequestId(request.requestId)
-                agentService.sendAgentRequest(request)
-            }
-        }
+        v1Routes(dependencies)
     }
 }
 
-private suspend fun ApplicationCall.respondBackend(
-    logger: org.slf4j.Logger,
-    block: suspend ApplicationCall.() -> Any,
-) {
-    try {
-        respond(block())
-    } catch (e: BackendRequestException) {
-        respond(HttpStatusCode.fromValue(e.statusCode), ErrorResponse(e.message))
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        logger.error("Unhandled backend request failure", e)
-        respond(HttpStatusCode.InternalServerError, ErrorResponse("Internal server error."))
-    }
-}
-
-private suspend inline fun <reified T : Any> ApplicationCall.receiveOrBadRequest(): T =
-    try {
-        receive<T>()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        throw BackendRequestException(400, "Invalid payload: ${e.message ?: "request body cannot be parsed."}")
-    }
-
-private fun ApplicationCall.requireAgentAuthorization(expectedToken: String?) {
-    return // TODO: setup proper auth
-    val token = expectedToken?.trim().takeUnless { it.isNullOrEmpty() }
-        ?: throw BackendRequestException(401, "Missing or invalid internal token.")
-    val authorization = request.header(HttpHeaders.Authorization)?.trim().orEmpty()
-    val actualToken = authorization.removePrefix(BEARER_PREFIX).takeIf {
-        authorization.startsWith(BEARER_PREFIX)
-    }?.trim()
-    if (actualToken != token) {
-        throw BackendRequestException(401, "Missing or invalid internal token.")
-    }
-}
-
-private fun ApplicationCall.requireJsonContent() {
-    val contentType = request.contentType()
-    if (
-        contentType.contentType != ContentType.Application.Json.contentType ||
-        contentType.contentSubtype != ContentType.Application.Json.contentSubtype
-    ) {
-        throw BackendRequestException(400, "Content-Type must be application/json.")
-    }
-}
-
-private fun ApplicationCall.requireMatchingRequestId(bodyRequestId: String) {
-    val headerRequestId = request.header(REQUEST_ID_HEADER)?.trim()
-    val headerUuid = headerRequestId?.toUuidOrNull()
-    val bodyUuid = bodyRequestId.toUuidOrNull()
-    if (headerUuid == null) {
-        throw BackendRequestException(400, "$REQUEST_ID_HEADER must be a UUID.")
-    }
-    if (bodyUuid == null || headerUuid != bodyUuid) {
-        throw BackendRequestException(400, "$REQUEST_ID_HEADER must match requestId.")
-    }
-}
-
-private fun String.toUuidOrNull(): UUID? =
-    runCatching { UUID.fromString(this) }.getOrNull()
-
-private const val BEARER_PREFIX = "Bearer "
-private const val REQUEST_ID_HEADER = "X-Request-Id"
+private val ROOT_ENDPOINTS = listOf(
+    "GET ${BackendHttpRoutes.HEALTH}",
+    "GET ${BackendHttpRoutes.BOOTSTRAP}",
+    "GET ${BackendHttpRoutes.SETTINGS}",
+    "PATCH ${BackendHttpRoutes.SETTINGS}",
+    "GET ${BackendHttpRoutes.PROVIDER_KEYS}",
+    "PUT ${BackendHttpRoutes.PROVIDER_KEY_PATTERN}",
+    "DELETE ${BackendHttpRoutes.PROVIDER_KEY_PATTERN}",
+    "GET ${BackendHttpRoutes.CHATS}",
+    "POST ${BackendHttpRoutes.CHATS}",
+    "PATCH ${BackendHttpRoutes.CHAT_TITLE_PATTERN}",
+    "POST ${BackendHttpRoutes.CHAT_ARCHIVE_PATTERN}",
+    "POST ${BackendHttpRoutes.CHAT_UNARCHIVE_PATTERN}",
+    "GET ${BackendHttpRoutes.CHAT_MESSAGES_PATTERN}",
+    "GET ${BackendHttpRoutes.CHAT_EVENTS_PATTERN}",
+    "POST ${BackendHttpRoutes.CHAT_MESSAGES_PATTERN}",
+    "POST ${BackendHttpRoutes.CHAT_CANCEL_ACTIVE_PATTERN}",
+    "POST ${BackendHttpRoutes.CHAT_EXECUTION_CANCEL_PATTERN}",
+    "POST ${BackendHttpRoutes.OPTION_ANSWER_PATTERN}",
+    "WS ${BackendHttpRoutes.CHAT_WS_PATTERN}",
+)

@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
+import ru.souz.agent.runtime.AgentRuntimeEvent
+import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.llms.LLMChatAPI
@@ -43,7 +45,10 @@ internal class NodesLLM(
             val response = withContext(Dispatchers.IO) {
                 val req = ctx.toGigaRequest(ctx.history)
                 if (settingsProvider.useStreaming) {
-                    streamResponse(req.copy(stream = true))
+                    streamResponse(
+                        request = req.copy(stream = true),
+                        eventSink = ctx.runtimeEventSink,
+                    )
                 } else {
                     llmApi.message(req)
                 }
@@ -57,7 +62,10 @@ internal class NodesLLM(
             ctx.map(history = history) { response }
         }
 
-    private suspend fun streamResponse(request: LLMRequest.Chat): LLMResponse.Chat {
+    private suspend fun streamResponse(
+        request: LLMRequest.Chat,
+        eventSink: AgentRuntimeEventSink,
+    ): LLMResponse.Chat {
         val streamResponse = AtomicReference<LLMResponse.Chat?>(null)
         val choicesByIndex = ConcurrentHashMap<Int, ChoiceAccumulator>()
         val pending = StringBuilder()
@@ -78,6 +86,7 @@ internal class NodesLLM(
 
                 val content = response.choices.firstOrNull()?.message?.content
                 if (content?.isNotEmpty() == true) {
+                    eventSink.emit(AgentRuntimeEvent.LlmMessageDelta(content))
                     pending.append(content)
                     if (pending.length >= increasingChunkSize) {
                         val toEmit = pending.toString()

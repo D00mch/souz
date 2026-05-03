@@ -16,11 +16,6 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.util.concurrent.atomic.AtomicReference
 import java.util.prefs.Preferences
-import javax.crypto.Cipher
-import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.PBEKeySpec
-import javax.crypto.spec.SecretKeySpec
 
 object ConfigStore {
     // TODO: move into SettingsProviderImpl
@@ -74,12 +69,6 @@ internal object SecretPrefsCodec {
     private val l = LoggerFactory.getLogger(SecretPrefsCodec::class.java)
 
     private const val ENV_MASTER_KEY = "SOUZ_MASTER_KEY"
-    private const val PAYLOAD_PREFIX = "enc:v1:"
-    private const val PBKDF2_ITERATIONS = 120_000
-    private const val GCM_TAG_BITS = 128
-    private const val AES_KEY_BITS = 256
-    private const val SALT_SIZE = 16
-    private const val IV_SIZE = 12
     private const val LOCAL_APP_DIR_NAME = "Souz"
     private const val LOCAL_MASTER_KEY_FILE = "master.key"
     private val secureRandom = SecureRandom()
@@ -106,7 +95,7 @@ internal object SecretPrefsCodec {
     internal fun decodeForRead(key: String, raw: String, prefs: Preferences): String? {
         if (!isSensitiveKey(key)) return raw
 
-        if (!raw.startsWith(PAYLOAD_PREFIX)) {
+        if (!AesGcmSecretCodec.isEncrypted(raw)) {
             // Transparent migration for legacy plaintext values once a master key is configured.
             val readyForMigration = runCatching { masterSecret() != null }
                 .onFailure { e ->
@@ -144,44 +133,13 @@ internal object SecretPrefsCodec {
     private fun encrypt(plainText: String): String {
         val masterSecret = masterSecret()
             ?: throw IllegalStateException("Missing $ENV_MASTER_KEY (env/sysprop) for secret storage")
-        val salt = ByteArray(SALT_SIZE).also(secureRandom::nextBytes)
-        val iv = ByteArray(IV_SIZE).also(secureRandom::nextBytes)
-        val secretKey = deriveKey(masterSecret, salt)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
-            init(Cipher.ENCRYPT_MODE, secretKey, GCMParameterSpec(GCM_TAG_BITS, iv))
-        }
-        val cipherText = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
-        return buildString {
-            append(PAYLOAD_PREFIX)
-            append(b64(salt))
-            append(':')
-            append(b64(iv))
-            append(':')
-            append(b64(cipherText))
-        }
+        return AesGcmSecretCodec.encrypt(masterKey = masterSecret, plainText = plainText)
     }
 
     private fun decrypt(payload: String): String {
         val masterSecret = masterSecret()
             ?: throw IllegalStateException("Missing $ENV_MASTER_KEY (env/sysprop) for secret decryption")
-        val parts = payload.removePrefix(PAYLOAD_PREFIX).split(':')
-        require(parts.size == 3) { "Malformed encrypted payload" }
-        val salt = b64Decode(parts[0])
-        val iv = b64Decode(parts[1])
-        val cipherText = b64Decode(parts[2])
-        val secretKey = deriveKey(masterSecret, salt)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
-            init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(GCM_TAG_BITS, iv))
-        }
-        val plain = cipher.doFinal(cipherText)
-        return plain.toString(Charsets.UTF_8)
-    }
-
-    private fun deriveKey(masterSecret: String, salt: ByteArray): SecretKeySpec {
-        val spec = PBEKeySpec(masterSecret.toCharArray(), salt, PBKDF2_ITERATIONS, AES_KEY_BITS)
-        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        val keyBytes = factory.generateSecret(spec).encoded
-        return SecretKeySpec(keyBytes, "AES")
+        return AesGcmSecretCodec.decrypt(masterKey = masterSecret, payload = payload)
     }
 
     private fun masterSecret(): String? =
@@ -210,7 +168,7 @@ internal object SecretPrefsCodec {
 
         if (!Files.exists(keyPath)) {
             val generated = ByteArray(32).also(secureRandom::nextBytes)
-            val encoded = b64(generated)
+            val encoded = java.util.Base64.getEncoder().encodeToString(generated)
             try {
                 Files.writeString(
                     keyPath,
@@ -269,9 +227,6 @@ internal object SecretPrefsCodec {
         }
     }
 
-    private fun b64(bytes: ByteArray): String = java.util.Base64.getEncoder().encodeToString(bytes)
-
-    private fun b64Decode(value: String): ByteArray = java.util.Base64.getDecoder().decode(value)
 }
     private const val OAUTH_STORE_PREFIX = "MCP_OAUTH_STATE_"
     private const val TELEMETRY_PRIVATE_KEY = "TELEMETRY_PRIVATE_KEY"

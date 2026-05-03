@@ -31,6 +31,10 @@ jsoup = "1.18.3"
 icu4j = "78.2"
 luajava = "4.1.0"
 luaj = "3.0.1"
+flyway = "10.20.1"
+hikari = "5.1.0"
+postgresql = "42.7.4"
+testcontainers = "1.20.4"
 
 
 [libraries]
@@ -78,6 +82,12 @@ jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 icu4j = { module = "com.ibm.icu:icu4j", version.ref = "icu4j" }
 luajava = { module = "party.iroiro.luajava:luajava", version.ref = "luajava" }
 luaj-jse = { module = "org.luaj:luaj-jse", version.ref = "luaj" }
+flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
+flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
+hikari-cp = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
+postgresql-jdbc = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+testcontainers-junitJupiter = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
+testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
 
 [bundles]
 ktorClient = [

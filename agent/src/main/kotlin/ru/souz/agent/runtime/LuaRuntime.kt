@@ -31,6 +31,7 @@ class LuaRuntime(
         code: String,
         settings: AgentSettings,
         activeTools: List<LLMRequest.Function>,
+        eventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
     ): String = withContext(Dispatchers.IO) {
         try {
             val executionDeadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(LUA_EXECUTION_TIMEOUT_MILLIS)
@@ -39,6 +40,7 @@ class LuaRuntime(
                 activeTools = activeTools.associateBy { it.name },
                 parentContext = currentCoroutineContext(),
                 executionDeadlineNanos = executionDeadlineNanos,
+                eventSink = eventSink,
             )
             l.info("About to run code:\n\n$code\n\n")
             val chunk = globals.load(code, "agent.lua")
@@ -55,6 +57,7 @@ class LuaRuntime(
         activeTools: Map<String, LLMRequest.Function>,
         parentContext: CoroutineContext,
         executionDeadlineNanos: Long,
+        eventSink: AgentRuntimeEventSink,
     ): Globals {
         val globals = JsePlatform.standardGlobals()
         globals.load(
@@ -73,6 +76,7 @@ class LuaRuntime(
                 function = fn,
                 settings = settings,
                 parentContext = parentContext,
+                eventSink = eventSink,
             )
             toolsTable.set(name, callable)
             if (isLuaIdentifier(name)) {
@@ -107,6 +111,7 @@ class LuaRuntime(
         function: LLMRequest.Function,
         settings: AgentSettings,
         parentContext: CoroutineContext,
+        eventSink: AgentRuntimeEventSink,
     ): VarArgFunction = object : VarArgFunction() {
         override fun invoke(args: Varargs): Varargs {
             val arguments = argsToToolArguments(args, function)
@@ -115,7 +120,11 @@ class LuaRuntime(
                 arguments = arguments,
             )
             val toolMessage = runBlocking(parentContext) {
-                toolExecutor.execute(settings, functionCall)
+                toolExecutor.execute(
+                    settings = settings,
+                    functionCall = functionCall,
+                    eventSink = eventSink,
+                )
             }
             val decoded = decodeToolResult(toolMessage.content)
             return javaToLua(decoded)

@@ -3,7 +3,16 @@ package ru.souz.backend.app
 import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
-import ru.souz.backend.agent.service.BackendAgentService
+import ru.souz.backend.bootstrap.BackendBootstrapService
+import ru.souz.backend.chat.service.ChatService
+import ru.souz.backend.chat.service.MessageService
+import ru.souz.backend.options.service.OptionService
+import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.events.service.AgentEventService
+import ru.souz.backend.execution.service.AgentExecutionService
+import ru.souz.backend.keys.service.UserProviderKeyService
+import ru.souz.backend.settings.service.UserSettingsService
+import ru.souz.backend.user.repository.UserRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.local.LocalLlamaRuntime
 
@@ -11,7 +20,17 @@ import ru.souz.llms.local.LocalLlamaRuntime
 class BackendRuntime private constructor(
     private val di: DI,
 ) : AutoCloseable {
-    val agentService: BackendAgentService by lazy { di.direct.instance() }
+    val bootstrapService: BackendBootstrapService by lazy { di.direct.instance() }
+    val userSettingsService: UserSettingsService by lazy { di.direct.instance() }
+    val userProviderKeyService: UserProviderKeyService by lazy { di.direct.instance() }
+    val chatService: ChatService by lazy { di.direct.instance() }
+    val messageService: MessageService by lazy { di.direct.instance() }
+    val executionService: AgentExecutionService by lazy { di.direct.instance() }
+    val optionService: OptionService by lazy { di.direct.instance() }
+    val eventService: AgentEventService by lazy { di.direct.instance() }
+    val featureFlags: BackendFeatureFlags by lazy { di.direct.instance() }
+    val userRepository: UserRepository by lazy { di.direct.instance() }
+    private val resources: BackendRuntimeResources by lazy { di.direct.instance() }
     private val settingsProvider: SettingsProvider by lazy { di.direct.instance() }
     private val localRuntime: LocalLlamaRuntime by lazy { di.direct.instance() }
 
@@ -19,12 +38,20 @@ class BackendRuntime private constructor(
 
     override fun close() {
         localRuntime.close()
+        resources.close()
     }
 
     companion object {
-        fun create(): BackendRuntime {
+        fun create(
+            appConfig: BackendAppConfig = BackendAppConfig.load().validate(),
+        ): BackendRuntime {
             val di = DI {
-                import(backendDiModule(systemPrompt = backendSystemPrompt()))
+                import(
+                    backendDiModule(
+                        systemPrompt = backendSystemPrompt(),
+                        appConfig = appConfig,
+                    )
+                )
             }
             return BackendRuntime(di = di)
         }
