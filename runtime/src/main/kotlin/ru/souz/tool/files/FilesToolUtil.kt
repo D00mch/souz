@@ -471,10 +471,12 @@ class FilesToolUtil(
         destinationPath: Path,
         logger: Logger,
         replaceExisting: Boolean = false,
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
     ) {
-        sandboxFileSystem.move(
-            source = resolvePath(sourcePath.toString()),
-            destination = resolvePath(destinationPath.toString()),
+        val fileSystem = sandboxFileSystem(meta)
+        fileSystem.move(
+            source = resolvePath(sourcePath.toString(), meta),
+            destination = resolvePath(destinationPath.toString(), meta),
             replaceExisting = replaceExisting,
             createParents = true,
             logger = logger,
