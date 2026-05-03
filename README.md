@@ -58,49 +58,7 @@ Gradle modules included by the build:
 :backend
 ```
 
-## Module Structure
-
-### KMP/Desktop
-
-```mermaid
-flowchart LR
-    composeApp[":composeApp\nDesktop UI and OS integrations"] --> runtime[":runtime\nShared JVM runtime and backend-safe tools"]
-    composeApp --> agent[":agent\nShared agent runtime"]
-    composeApp --> llms[":llms\nProvider contracts and helpers"]
-    composeApp --> nativeBridge[":native\nLocal-model native bridge"]
-
-    runtime --> agent
-    runtime --> llms
-    runtime --> nativeBridge
-
-    agent --> graphEngine[":graph-engine\nGraph DSL/runtime"]
-    agent --> llms
-    nativeBridge --> llms
-```
-
-### Backend
-
-```mermaid
-flowchart LR
-    backend[":backend\nKtor HTTP server"] --> runtime[":runtime\nShared JVM runtime and backend-safe tools"]
-    backend --> agent[":agent\nShared agent runtime"]
-    backend --> llms[":llms\nProvider contracts and helpers"]
-    backend --> nativeBridge[":native\nLocal-model native bridge"]
-
-    runtime --> agent
-    runtime --> llms
-    runtime --> nativeBridge
-
-    agent --> graphEngine[":graph-engine\nGraph DSL/runtime"]
-    agent --> llms
-    nativeBridge --> llms
-```
-
-- `:runtime` owns the shared JVM wiring plus the reusable tool catalog that backend can execute without desktop integrations.
-- `:composeApp` layers desktop-only services and tools on top of the shared runtime modules.
-- `:backend` imports `runtimeToolsDiModule(includeWebImageSearch = false)` and exposes the shared agent runtime over HTTP without the image-search tool that would otherwise initialize Tika's external parser probes on startup.
-
-## Architecture
+## Architecture (module structure)
 
 ```mermaid
 flowchart LR
