@@ -160,6 +160,39 @@ class AgentToolExecutorTest {
         assertEquals(ToolInvocationMeta.Empty, receivedMeta)
     }
 
+    @Test
+    fun `passes explicit invocation metadata to tool`() = runTest {
+        var receivedMeta: ToolInvocationMeta? = null
+        val executor = AgentToolExecutor()
+        val settings = settingsWithFileTool(
+            invokeWithMeta = { _, meta ->
+                receivedMeta = meta
+                LLMRequest.Message(
+                    role = LLMMessageRole.function,
+                    content = """{"ok":true}""",
+                )
+            }
+        )
+        val meta = ToolInvocationMeta(
+            userId = "user-1",
+            conversationId = "conversation-1",
+            requestId = "request-1",
+            locale = "en-US",
+            timeZone = "America/New_York",
+        )
+
+        executor.execute(
+            settings = settings,
+            functionCall = LLMResponse.FunctionCall(
+                name = "tool.read_file",
+                arguments = mapOf("path" to "/tmp/file.txt"),
+            ),
+            meta = meta,
+        )
+
+        assertEquals(meta, receivedMeta)
+    }
+
     private fun settingsWithFileTool(
         invokeWithMeta: (suspend (LLMResponse.FunctionCall, ToolInvocationMeta) -> LLMRequest.Message)? = null,
         invoke: suspend (LLMResponse.FunctionCall) -> LLMRequest.Message = {

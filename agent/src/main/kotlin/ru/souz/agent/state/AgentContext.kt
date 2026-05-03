@@ -3,6 +3,7 @@ package ru.souz.agent.state
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.ToolCategory
 
 data class AgentContext<I>(
@@ -11,6 +12,7 @@ data class AgentContext<I>(
     val history: List<LLMRequest.Message>,
     val activeTools: List<LLMRequest.Function>,
     val systemPrompt: String,
+    val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.Empty,
 ) {
     inline fun <reified O> map(
         settings: AgentSettings = this.settings,
@@ -18,7 +20,14 @@ data class AgentContext<I>(
         activeTools: List<LLMRequest.Function> = this.activeTools,
         systemPrompt: String = this.systemPrompt,
         transform: (I) -> O = { it as O },
-    ): AgentContext<O> = AgentContext(input = transform(input), settings, history, activeTools, systemPrompt)
+    ): AgentContext<O> = AgentContext(
+        input = transform(input),
+        settings = settings,
+        history = history,
+        activeTools = activeTools,
+        systemPrompt = systemPrompt,
+        toolInvocationMeta = toolInvocationMeta,
+    )
 }
 
 data class AgentTools(

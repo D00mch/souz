@@ -14,6 +14,7 @@ import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -214,7 +215,7 @@ internal class NodesCommon(
             val functionCall = msg.functionCall
             val functionsStateId = msg.functionsStateId
             if (functionCall != null && functionsStateId != null) {
-                executeTool(ctx.settings, functionCall).copy(functionsStateId = functionsStateId)
+                executeTool(ctx.settings, functionCall, ctx.toolInvocationMeta).copy(functionsStateId = functionsStateId)
             } else null
         }
         return fnCallMessages
@@ -223,7 +224,8 @@ internal class NodesCommon(
     private suspend fun executeTool(
         settings: AgentSettings,
         functionCall: LLMResponse.FunctionCall,
-    ): LLMRequest.Message = agentToolExecutor.execute(settings, functionCall)
+        meta: ToolInvocationMeta,
+    ): LLMRequest.Message = agentToolExecutor.execute(settings, functionCall, meta)
 }
 
 internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {

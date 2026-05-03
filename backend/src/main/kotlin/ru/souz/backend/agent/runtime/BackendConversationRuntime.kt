@@ -1,11 +1,9 @@
 package ru.souz.backend.agent.runtime
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import kotlinx.coroutines.withContext
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
-import ru.souz.agent.runtime.ToolInvocationMetaContext
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -65,25 +63,20 @@ internal class BackendConversationRuntime(
             model = settingsProvider.gigaModel,
             contextSize = request.contextSize,
             temperature = settingsProvider.temperature,
+            toolInvocationMeta = ToolInvocationMeta(
+                userId = request.userId,
+                conversationId = request.conversationId,
+                requestId = request.requestId,
+                locale = request.locale,
+                timeZone = request.timeZone,
+            ),
         )
 
-        val result = withContext(
-            ToolInvocationMetaContext(
-                ToolInvocationMeta(
-                    userId = request.userId,
-                    conversationId = request.conversationId,
-                    requestId = request.requestId,
-                    locale = request.locale,
-                    timeZone = request.timeZone,
-                )
-            ).asCoroutineContext()
-        ) {
-            executor.execute(
-                agentId = activeAgentId,
-                context = seedContext,
-                input = request.prompt,
-            )
-        }
+        val result = executor.execute(
+            agentId = activeAgentId,
+            context = seedContext,
+            input = request.prompt,
+        )
         val nextAgentId = contextFactory.normalizeAgentId(settingsProvider.activeAgentId)
 
         sessionRepository.save(
