@@ -13,7 +13,7 @@ data class AgentContext<I>(
     val history: List<LLMRequest.Message>,
     val activeTools: List<LLMRequest.Function>,
     val systemPrompt: String,
-    val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+    val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
 ) {
     inline fun <reified O> map(

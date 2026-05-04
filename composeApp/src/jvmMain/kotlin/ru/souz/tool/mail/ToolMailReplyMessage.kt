@@ -45,6 +45,6 @@ class ToolMailReplyMessage(private val bash: ToolRunBashCommand) : ToolSetup<Too
 }
 
 fun main() {
-    val result = ToolMailReplyMessage(ToolRunBashCommand).invoke(ToolMailReplyMessage.Input(1382, "Test"), ToolInvocationMeta.Empty)
+    val result = ToolMailReplyMessage(ToolRunBashCommand).invoke(ToolMailReplyMessage.Input(1382, "Test"), ToolInvocationMeta.localDefault())
     println(result)
 }

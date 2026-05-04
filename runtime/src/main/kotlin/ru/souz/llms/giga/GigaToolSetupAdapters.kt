@@ -68,7 +68,7 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): LLMToolSetup {
         )
 
         override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
-            invoke(functionCall, ToolInvocationMeta.Empty)
+            invoke(functionCall, ToolInvocationMeta.localDefault())
 
         override suspend fun invoke(
             functionCall: LLMResponse.FunctionCall,
@@ -98,7 +98,7 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): LLMTo
     val gigaToolSetup = (toolSetup as ToolSetup<Input>).toGiga()
     return object : LLMToolSetup by gigaToolSetup {
         override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
-            invoke(functionCall, ToolInvocationMeta.Empty)
+            invoke(functionCall, ToolInvocationMeta.localDefault())
 
         override suspend fun invoke(
             functionCall: LLMResponse.FunctionCall,

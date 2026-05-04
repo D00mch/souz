@@ -145,6 +145,25 @@ internal class LocalSandboxFileSystem(
         Files.createDirectories(resolveWritablePath(path))
     }
 
+    override fun delete(path: SandboxPathInfo, recursively: Boolean) {
+        requireSafePath(path)
+        if (!path.exists) {
+            return
+        }
+
+        val sourcePath = Path.of(path.path)
+        if (!recursively || path.isSymbolicLink || !path.isDirectory) {
+            Files.deleteIfExists(sourcePath)
+            return
+        }
+
+        Files.walk(sourcePath).use { stream ->
+            stream.sorted(Comparator.reverseOrder()).forEach { current ->
+                Files.deleteIfExists(current)
+            }
+        }
+    }
+
     override fun listDescendants(
         root: SandboxPathInfo,
         maxDepth: Int,

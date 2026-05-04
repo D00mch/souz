@@ -8,6 +8,7 @@ import com.zaxxer.hikari.HikariDataSource
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
@@ -81,6 +82,8 @@ import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
 import ru.souz.backend.storage.StorageMode
+import ru.souz.skills.registry.FileSystemSkillRegistryConfig
+import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.runtimeToolsDiModule
 
 private object BackendDiTags {
@@ -98,10 +101,15 @@ fun backendDiModule(
             .enable(SerializationFeature.INDENT_OUTPUT)
     }
 
-    import(runtimeCoreDiModule())
+    import(
+        runtimeCoreDiModule(
+            skillRegistryConfig = FileSystemSkillRegistryConfig(scope = SkillStorageScope.USER_SCOPED)
+        )
+    )
     import(
         runtimeToolsDiModule(
             includeWebImageSearch = false,
+            skillStorageScope = SkillStorageScope.USER_SCOPED,
             scopeResolver = BackendSandboxScopeResolver,
         )
     )
@@ -246,6 +254,7 @@ fun backendDiModule(
             systemPrompt = systemPrompt,
             toolCatalog = instance(),
             toolsFilter = instance(),
+            skillCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
             skillRegistryRepository = instance(),
         )
     }

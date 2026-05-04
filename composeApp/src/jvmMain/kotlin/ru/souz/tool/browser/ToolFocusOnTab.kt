@@ -55,5 +55,5 @@ class ToolFocusOnTab(private val bash: ToolRunBashCommand) : ToolSetup<ToolFocus
 
 fun main() {
     val tool = ToolFocusOnTab(ToolRunBashCommand)
-    println(tool.invoke(ToolFocusOnTab.Input(1), ToolInvocationMeta.Empty))
+    println(tool.invoke(ToolFocusOnTab.Input(1), ToolInvocationMeta.localDefault()))
 }

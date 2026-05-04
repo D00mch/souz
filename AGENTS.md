@@ -21,8 +21,8 @@ If you are not sure about something, left a note for other developers to review.
 ## Features
 
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
-- **Standalone ClawHub/OpenClaw skills support across `:agent` and `:runtime`**: bundle parsing, canonical hashing, safe filesystem bundle loading, per-user bundle persistence under `~/.local/state/souz/skills/`, separate file-backed validation caching under `~/.local/state/souz/skill-validations/`, LLM-based skill selection and validation, and a dedicated prompt-only skills activation node in the main agent graph between classification and MCP that injects approved skill context into history/system prompts without changing the active tool list.
-- **Shared sandbox abstraction for tools and skills** in `:runtime`: local and Docker-backed sandbox filesystem/path/process contracts now sit under `runtime/src/main/kotlin/ru/souz/runtime/sandbox/`; runtime sandbox selection is now mode-driven via `SOUZ_SANDBOX_MODE=local|docker`, singleton tools resolve the active sandbox per invocation from `ToolInvocationMeta`, desktop keeps a local-default singleton scope, and backend runtime sandboxing is currently user-scoped only (no conversation-scoped backend sandboxes yet).
+- **Standalone ClawHub/OpenClaw skills support across `:agent` and `:runtime`**: bundle parsing, canonical hashing, sandbox-safe filesystem bundle loading, desktop-first single-user skill storage with backend user-scoped storage support, runtime-backed activated-skill command execution through `RunSkillCommand`, plus a Docker-bundled academic paper skill fixture seeded into runtime registry storage for sandbox testing.
+- **Shared sandbox abstraction for tools and skills** in `:runtime`: sandbox filesystem/path/process contracts sit under `runtime/src/main/kotlin/ru/souz/runtime/sandbox/`.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Local llama.cpp provider** with a thin native bridge, strict JSON tool contract, a RAM-gated local model catalog (Qwen plus Gemma 4 chat profiles), linked local EmbeddingGemma GGUF downloads/usage for embeddings, background preload/warmup on local chat model selection, prompt-family-aware rendering (Qwen ChatML and Gemma 4 turns), prompt-prefix/KV reuse inside the native runtime, settings-driven context windows for local inference within model caps, model storage under `~/.local/state/souz/models/`, and extracted native bridge libraries under `~/.local/state/souz/native/`.
 - **Shared JVM runtime layer** in `:runtime` for provider clients, config/settings access, file utilities, and backend-safe tool categories (`FILES`, `WEB_SEARCH`, `CONFIG`, `DATA_ANALYTICS`, `CALCULATOR`) reused by both desktop and backend agent execution.
@@ -43,6 +43,8 @@ If you are not sure about something, left a note for other developers to review.
 ├── llms/                                   # Shared LLM contracts/helpers module
 ├── native/                                 # Shared local-model runtime/native bridge module
 ├── runtime/                                # Shared JVM runtime and backend-safe tools
+│   ├── Dockerfile                          # Shared local/test Docker runtime sandbox image
+│   ├── docker/                             # Docker entrypoint and bundled development skill fixtures
 │   ├── src/main/kotlin/ru/souz/db/         # Config store + settings provider
 │   ├── src/main/kotlin/ru/souz/llms/       # Provider APIs and runtime LLM helpers
 │   ├── src/main/kotlin/ru/souz/runtime/    # Shared runtime infrastructure (sandbox, DI helpers)
@@ -87,5 +89,5 @@ flowchart LR
 
 ## Builds
 
-- Desktop KMP app: `./gradlew :composeApp:jvmRun` or the existing Compose distribution tasks.
+- Desktop KMP app: `./gradlew :composeApp:jvmRun` or the existing Compose distribution tasks. For Docker sandbox mode, build the runtime image with `./gradlew :runtime:buildRuntimeSandboxImage` and run with `SOUZ_SANDBOX_MODE=docker`.
 - Backend JVM app: `./gradlew :backend:run`. It binds to `127.0.0.1:8080` by default, configurable with `SOUZ_BACKEND_HOST` and `SOUZ_BACKEND_PORT`.

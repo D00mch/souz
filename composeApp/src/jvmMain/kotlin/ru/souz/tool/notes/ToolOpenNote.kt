@@ -48,5 +48,5 @@ class ToolOpenNote(private val bash: ToolRunBashCommand) : ToolSetup<ToolOpenNot
 
 fun main() {
     val tool = ToolOpenNote(ToolRunBashCommand)
-    println(tool.invoke(ToolOpenNote.Input("Демо"), ToolInvocationMeta.Empty))
+    println(tool.invoke(ToolOpenNote.Input("Демо"), ToolInvocationMeta.localDefault()))
 }

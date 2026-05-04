@@ -81,5 +81,5 @@ class ToolMouseClickMac : ToolSetup<ToolMouseClickMac.Input> {
 
 fun main() {
     val tool = ToolMouseClickMac()
-    println(tool.invoke(ToolMouseClickMac.Input(0, 0, ToolMouseClickMac.MouseButton.left), ToolInvocationMeta.Empty))
+    println(tool.invoke(ToolMouseClickMac.Input(0, 0, ToolMouseClickMac.MouseButton.left), ToolInvocationMeta.localDefault()))
 }

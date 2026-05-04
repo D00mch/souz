@@ -19,7 +19,7 @@ The project is designed around one core idea: an AI agent should be useful enoug
 - **Local inference** through a packaged native bridge with Qwen/Gemma chat profiles, EmbeddingGemma embeddings, prompt-family rendering, strict JSON tool output handling, model downloads, preload/warmup, and cancellation.
 - **MCP integration** over stdio/http with OAuth discovery and token refresh support.
 - **Voice and desktop interaction** with audio capture/playback, speech recognition, global hotkeys, native media keys, screenshots, screen recording, and macOS integrations.
-- **ClawHub/OpenClaw skill support** with bundle parsing, canonical hashing, safe loading, LLM-backed selection, structural/static/LLM validation, validation caching, activation, and context injection.
+- **ClawHub/OpenClaw skill support** with bundle parsing, canonical hashing, desktop-first registry storage, backend user-scoped storage support, safe loading, LLM-backed selection, structural/static/LLM validation, validation caching, activation, and context injection.
 
 ## Installation
 
@@ -172,7 +172,7 @@ RuntimeSandbox
 └── commandExecutor: SandboxCommandExecutor
 ```
 
-The current implementations are `LocalRuntimeSandbox` and `DockerRuntimeSandbox`. Local mode is the default. Docker mode is opt-in through `SOUZ_SANDBOX_MODE=docker` and requires the `souz-runtime-sandbox:latest` image to exist locally. Tools and skill loaders depend on sandbox abstractions instead of directly assuming host access. See [`runtime/README.md`](runtime/README.md) for setup details.
+The current implementations are `LocalRuntimeSandbox` and `DockerRuntimeSandbox`. Local mode is the default. Docker mode is opt-in through `SOUZ_SANDBOX_MODE=docker` and requires the `souz-runtime-sandbox:latest` image to exist locally. Build it with `./gradlew :runtime:buildRuntimeSandboxImage`. Tools plus skill loading, storage, and validation depend on sandbox abstractions instead of directly assuming host access. See [`runtime/README.md`](runtime/README.md) for setup details.
 
 Default state layout is under:
 
@@ -197,7 +197,7 @@ Safety mechanisms include:
 - Backend tool restriction to backend-safe categories.
 - Trusted-proxy identity only for backend `/v1/**` routes.
 - Durable tool-call audit rows in the backend with redacted/truncated previews.
-- Future-ready `DOCKER` sandbox mode in the shared contract.
+- Opt-in Docker runtime sandbox mode for local app runs and integration tests.
 
 ## Tool catalog
 
@@ -373,8 +373,9 @@ flowchart LR
 Skill safety and storage:
 
 - Bundles are loaded through safe filesystem access.
-- User skills are persisted under `~/.local/state/souz/skills/`.
-- Validation records are persisted separately under `~/.local/state/souz/skill-validations/`.
+- Desktop/local skills are persisted under `~/.local/state/souz/skills/{skillId}/`, with immutable bundles in `bundles/{bundleHash}/` and metadata in `stored-skill.json`.
+- Desktop/local validation records are persisted separately under `~/.local/state/souz/skill-validations/{skillId}/policies/{policy}/`.
+- Backend storage keeps the user-scoped scope available under `skills/users/{encodedUserId}/skills/{skillId}/` and `skill-validations/users/{encodedUserId}/skills/{skillId}/`.
 - Validation cache keys include user id, skill id, bundle hash, and policy version.
 - Stale validations are invalidated when the active bundle hash changes.
 - Selected skills are activated only after structural, static, and LLM validation pass.

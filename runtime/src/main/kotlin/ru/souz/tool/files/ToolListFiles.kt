@@ -48,6 +48,6 @@ class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolLi
 
 fun main() {
     val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
-    val result = ToolListFiles(filesToolUtil).invoke(ToolListFiles.Input("${'$'}HOME", 3), ToolInvocationMeta.Empty)
+    val result = ToolListFiles(filesToolUtil).invoke(ToolListFiles.Input("${'$'}HOME", 3), ToolInvocationMeta.localDefault())
     println(result)
 }

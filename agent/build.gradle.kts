@@ -19,6 +19,12 @@ dependencies {
     testImplementation(projects.runtime)
 }
 
+sourceSets {
+    test {
+        resources.srcDir(project(":runtime").layout.projectDirectory.dir("docker"))
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
 }

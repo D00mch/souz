@@ -112,7 +112,7 @@ fun main() {
             startPage = 27,
             endPage = 75
         ),
-        ToolInvocationMeta.Empty,
+        ToolInvocationMeta.localDefault(),
     )
     println(result)
 }

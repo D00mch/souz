@@ -53,7 +53,7 @@ class ToolTelegramGetHistoryTest {
         val result = restJsonMapper.readTree(
             tool.suspendInvoke(
                 ToolTelegramGetHistory.Input(chatName = "Проект Альфа"),
-                ToolInvocationMeta.Empty,
+                ToolInvocationMeta.localDefault(),
             )
         )
 
@@ -92,7 +92,7 @@ class ToolTelegramGetHistoryTest {
                     limit = 25,
                     forceRefresh = false,
                 ),
-                ToolInvocationMeta.Empty,
+                ToolInvocationMeta.localDefault(),
             )
         )
 

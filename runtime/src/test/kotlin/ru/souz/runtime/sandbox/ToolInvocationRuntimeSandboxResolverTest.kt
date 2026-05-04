@@ -14,12 +14,12 @@ class ToolInvocationRuntimeSandboxResolverTest {
     fun `reuses runtime sandbox for repeated resolves of the same scope`() {
         val created = AtomicInteger(0)
         val resolver = FactoryBackedToolInvocationRuntimeSandboxResolver(
-            sandboxFactory = RuntimeSandboxFactory { scope ->
+            sandboxFactory = { scope ->
                 created.incrementAndGet()
                 sandboxFor(scope)
             },
-            scopeResolver = ToolInvocationSandboxScopeResolver { meta ->
-                SandboxScope(userId = meta.userId ?: "default-user")
+            scopeResolver = { meta ->
+                SandboxScope(userId = meta.userId)
             },
         )
 
@@ -34,12 +34,12 @@ class ToolInvocationRuntimeSandboxResolverTest {
     fun `creates separate runtime sandboxes for different scopes`() {
         val created = AtomicInteger(0)
         val resolver = FactoryBackedToolInvocationRuntimeSandboxResolver(
-            sandboxFactory = RuntimeSandboxFactory { scope ->
+            sandboxFactory = { scope ->
                 created.incrementAndGet()
                 sandboxFor(scope)
             },
-            scopeResolver = ToolInvocationSandboxScopeResolver { meta ->
-                SandboxScope(userId = meta.userId ?: "default-user")
+            scopeResolver = { meta ->
+                SandboxScope(userId = meta.userId)
             },
         )
 
@@ -51,19 +51,19 @@ class ToolInvocationRuntimeSandboxResolverTest {
     }
 
     @Test
-    fun `empty metadata still resolves and reuses the default sandbox scope`() {
+    fun `local metadata resolves and reuses the local default sandbox scope`() {
         val created = AtomicInteger(0)
         val defaultScope = SandboxScope.localDefault()
         val resolver = FactoryBackedToolInvocationRuntimeSandboxResolver(
-            sandboxFactory = RuntimeSandboxFactory { scope ->
+            sandboxFactory = { scope ->
                 created.incrementAndGet()
                 sandboxFor(scope)
             },
-            scopeResolver = ToolInvocationSandboxScopeResolver { defaultScope },
+            scopeResolver = { defaultScope },
         )
 
-        val first = resolver.resolve(ToolInvocationMeta.Empty)
-        val second = resolver.resolve(ToolInvocationMeta.Empty)
+        val first = resolver.resolve(ToolInvocationMeta.localDefault())
+        val second = resolver.resolve(ToolInvocationMeta.localDefault())
 
         assertSame(first, second)
         assertEquals(defaultScope, first.scope)

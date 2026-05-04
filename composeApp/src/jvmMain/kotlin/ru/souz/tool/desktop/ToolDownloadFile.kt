@@ -66,6 +66,6 @@ class ToolDownloadFile(
 fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val api: LLMChatAPI by di.instance()
-    val path = ToolDownloadFile(api).invoke(ToolDownloadFile.Input("file_id"), ToolInvocationMeta.Empty)
+    val path = ToolDownloadFile(api).invoke(ToolDownloadFile.Input("file_id"), ToolInvocationMeta.localDefault())
     println(path)
 }

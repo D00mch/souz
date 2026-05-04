@@ -95,5 +95,5 @@ EOF
 
 fun main() {
     val tool = ToolMailSearch(ToolRunBashCommand)
-    println(tool.invoke(ToolMailSearch.Input("ндс"), ToolInvocationMeta.Empty))
+    println(tool.invoke(ToolMailSearch.Input("ндс"), ToolInvocationMeta.localDefault()))
 }

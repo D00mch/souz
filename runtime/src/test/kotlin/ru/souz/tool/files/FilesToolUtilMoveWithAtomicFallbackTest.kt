@@ -42,7 +42,7 @@ class FilesToolUtilMoveWithAtomicFallbackTest {
                     "request-user" to (requestHome to requestState),
                 )
             ),
-            scopeResolver = { meta -> SandboxScope(userId = meta.userId ?: "default-user") },
+            scopeResolver = { meta -> SandboxScope(userId = meta.userId) },
         )
         val source = requestHome.resolve("draft.txt").apply { writeText("request scoped content") }
         val destination = requestHome.resolve("archive/draft.txt")

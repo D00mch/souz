@@ -8,29 +8,21 @@ import java.nio.file.Path
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.souz.agent.skills.bundle.SkillBundleException
-import ru.souz.llms.ToolInvocationMeta
-import ru.souz.tool.BadInputException
-import ru.souz.tool.files.FilesToolUtil
 import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxPathInfo
+import ru.souz.tool.BadInputException
 
 /**
- * Local JVM implementation of [SkillBundleFileSystem] backed by the shared
- * sandbox filesystem abstraction.
+ * Sandbox-backed [SkillBundleFileSystem] implementation shared by local and
+ * Docker runtime sandboxes.
  *
  * It rejects symlinks, non-regular files, binary content, and invalid UTF-8 so
- * skill bundles can be loaded from disk without escaping the allowed sandbox.
+ * skill bundles can be loaded from disk without escaping the active sandbox.
  */
-class LocalSkillBundleFileSystem(
+class SandboxSkillBundleFileSystem(
     private val sandboxFileSystemResolver: (SkillBundleFsContext) -> SandboxFileSystem,
 ) : SkillBundleFileSystem {
     constructor(sandboxFileSystem: SandboxFileSystem) : this({ sandboxFileSystem })
-
-    constructor(filesToolUtil: FilesToolUtil) : this({ context ->
-        filesToolUtil.sandboxFileSystem(
-            ToolInvocationMeta(userId = context.userId)
-        )
-    })
 
     private fun sandboxFileSystem(context: SkillBundleFsContext): SandboxFileSystem =
         sandboxFileSystemResolver(context)

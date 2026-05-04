@@ -121,7 +121,7 @@ fun main() {
     val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
     val result = ToolOpen(ToolRunBashCommand, filesToolUtil).invoke(
         ToolOpen.Input("ru.keepcoder.Telegram"),
-        ToolInvocationMeta.Empty,
+        ToolInvocationMeta.localDefault(),
     )
     println(result)
 }

@@ -38,7 +38,10 @@ internal class DockerSandboxFileSystem(
         return SandboxPathInfo(
             rawPath = rawPath,
             path = containerPath,
-            name = if (containerPath == layout.containerRoot) layout.containerRoot.removePrefix("/") else containerPath.substringAfterLast('/'),
+            name = when (containerPath) {
+                layout.containerRoot -> layout.containerRoot.removePrefix("/")
+                else -> containerPath.substringAfterLast('/')
+            },
             parentPath = containerParent(containerPath),
             exists = attributes != null,
             isDirectory = attributes?.isDirectory == true,
@@ -123,6 +126,25 @@ internal class DockerSandboxFileSystem(
 
     override fun createDirectory(path: SandboxPathInfo) {
         Files.createDirectories(resolveWritableHostPath(path))
+    }
+
+    override fun delete(path: SandboxPathInfo, recursively: Boolean) {
+        requireSafePath(path)
+        if (!path.exists) {
+            return
+        }
+
+        val sourcePath = requireHostPath(path)
+        if (!recursively || path.isSymbolicLink || !path.isDirectory) {
+            Files.deleteIfExists(sourcePath)
+            return
+        }
+
+        Files.walk(sourcePath).use { stream ->
+            stream.sorted(Comparator.reverseOrder()).forEach { current ->
+                Files.deleteIfExists(current)
+            }
+        }
     }
 
     override fun listDescendants(

@@ -2,6 +2,16 @@ plugins {
     alias(libs.plugins.kotlinJvm)
 }
 
+val runtimeSandboxImageName = "souz-runtime-sandbox:latest"
+val dockerCli = providers.environmentVariable("SOUZ_DOCKER_CLI")
+    .orElse(
+        providers.provider {
+            listOf("/opt/homebrew/bin/docker", "/usr/local/bin/docker")
+                .firstOrNull { file(it).canExecute() }
+                ?: "docker"
+        }
+    )
+
 dependencies {
     implementation(projects.agent)
     implementation(projects.llms)
@@ -31,4 +41,10 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.register<Exec>("buildRuntimeSandboxImage") {
+    group = "docker"
+    description = "Builds the Docker runtime sandbox image used by local runs."
+    commandLine(dockerCli.get(), "build", "-t", runtimeSandboxImageName, projectDir.absolutePath)
 }

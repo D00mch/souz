@@ -177,6 +177,6 @@ private fun parseChromeBookmarks(jsonString: String): Map<String, String> {
 }
 fun main() {
     val tool = ToolChromeInfo(ToolRunBashCommand)
-    val result = tool.invoke(ToolChromeInfo.Input(ToolChromeInfo.InfoType.history), ToolInvocationMeta.Empty)
+    val result = tool.invoke(ToolChromeInfo.Input(ToolChromeInfo.InfoType.history), ToolInvocationMeta.localDefault())
     println(result)
 }

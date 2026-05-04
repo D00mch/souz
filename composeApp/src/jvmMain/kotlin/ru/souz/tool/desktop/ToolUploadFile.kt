@@ -58,6 +58,6 @@ class ToolUploadFile(
 fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val api: LLMChatAPI by di.instance()
-    val id = ToolUploadFile(api).invoke(ToolUploadFile.Input("/path/to/file"), ToolInvocationMeta.Empty)
+    val id = ToolUploadFile(api).invoke(ToolUploadFile.Input("/path/to/file"), ToolInvocationMeta.localDefault())
     println(id)
 }

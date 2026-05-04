@@ -21,6 +21,7 @@ import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.json.JsonUtils
+import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.UserMessageClassifier
 
@@ -28,6 +29,7 @@ fun agentDiModule(
     logObjectMapperTag: Any? = null,
     apiClassifierTag: Any? = null,
     localClassifierTag: Any? = null,
+    skillCommandToolTag: Any? = null,
 ): DI.Module = DI.Module("agent") {
     bindSingleton { GraphSessionRepository() }
     bindSingleton {
@@ -61,7 +63,12 @@ fun agentDiModule(
             jsonUtils = instance(),
         )
     }
-    bindSingleton { NodesSkills(instance()) }
+    bindSingleton {
+        NodesSkills(
+            pipeline = instance(),
+            skillCommandTool = skillCommandToolTag?.let { tag -> instance<LLMToolSetup>(tag = tag) },
+        )
+    }
     bindSingleton { SystemPromptResolver() }
     bindSingleton<AgentRuntimeEnvironment> { SystemAgentRuntimeEnvironment }
     bindSingleton { AgentContextFactory(instance(), instance(), instance()) }

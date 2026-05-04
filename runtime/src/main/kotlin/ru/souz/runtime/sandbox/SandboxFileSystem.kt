@@ -35,6 +35,7 @@ interface SandboxFileSystem {
     fun writeText(path: SandboxPathInfo, content: String)
     fun writeTextAtomically(path: SandboxPathInfo, content: String, logger: Logger)
     fun createDirectory(path: SandboxPathInfo)
+    fun delete(path: SandboxPathInfo, recursively: Boolean = false)
     fun listDescendants(
         root: SandboxPathInfo,
         maxDepth: Int = Int.MAX_VALUE,

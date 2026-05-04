@@ -420,7 +420,7 @@ class ToolInternetSearchTest {
                 query = "Проведи исследование про ИИ во Франции",
                 maxSources = 1,
             ),
-            ToolInvocationMeta.Empty,
+            ToolInvocationMeta.localDefault(),
         )
 
         val synthesisRequest = requests.last()
@@ -598,7 +598,7 @@ class ToolInternetSearchTest {
                 query = query,
                 maxSources = maxSources,
             ),
-            ToolInvocationMeta.Empty,
+            ToolInvocationMeta.localDefault(),
         )
         return restJsonMapper.readValue(raw)
     }
@@ -613,7 +613,7 @@ class ToolInternetSearchTest {
                 query = query,
                 maxSources = maxSources,
             ),
-            ToolInvocationMeta.Empty,
+            ToolInvocationMeta.localDefault(),
         )
         return restJsonMapper.readValue(raw)
     }

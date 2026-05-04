@@ -40,6 +40,6 @@ class ToolMailListMessages(private val bash: ToolRunBashCommand) : ToolSetup<Too
 }
 
 fun main() {
-    val result = ToolMailListMessages(ToolRunBashCommand).invoke(ToolMailListMessages.Input(10), ToolInvocationMeta.Empty)
+    val result = ToolMailListMessages(ToolRunBashCommand).invoke(ToolMailListMessages.Input(10), ToolInvocationMeta.localDefault())
     println(result)
 }

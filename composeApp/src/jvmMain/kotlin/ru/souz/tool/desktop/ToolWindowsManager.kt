@@ -157,12 +157,5 @@ fun main() {
     val di = DI.invoke { import(mainDiModule) }
     val open: ToolOpen by di.instance()
     val t = ToolWindowsManager(open)
-//    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.list_apps, "")))
-//    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.move_app_to_workspace, "2")))
-    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.focus_app, "com.google.Chrome"), ToolInvocationMeta.Empty))
-//    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.go_to_workspace, "2"))
-
-//    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.move_left, ""))
-//    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.layout_tiles_horizontal, ""))
-//    t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.resize_width, "-70"))
+    println(t.invoke(ToolWindowsManager.Input(ToolWindowsManager.Action.focus_app, "com.google.Chrome"), ToolInvocationMeta.localDefault()))
 }

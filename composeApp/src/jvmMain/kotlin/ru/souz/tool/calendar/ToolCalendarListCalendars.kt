@@ -47,5 +47,5 @@ class ToolCalendarListCalendars(private val bash: ToolRunBashCommand) : ToolSetu
 
 fun main() {
     val tool = ToolCalendarListCalendars(ToolRunBashCommand)
-    println(tool.invoke(ToolCalendarListCalendars.Input(), ToolInvocationMeta.Empty))
+    println(tool.invoke(ToolCalendarListCalendars.Input(), ToolInvocationMeta.localDefault()))
 }

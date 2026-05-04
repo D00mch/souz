@@ -25,7 +25,7 @@ class AgentToolExecutor(
     suspend fun execute(
         settings: AgentSettings,
         functionCall: LLMResponse.FunctionCall,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
         toolCallId: String? = null,
         eventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
     ): LLMRequest.Message {

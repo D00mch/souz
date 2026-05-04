@@ -176,7 +176,7 @@ class AgentToolExecutorTest {
     }
 
     @Test
-    fun `passes empty invocation metadata when no request metadata is available`() = runTest {
+    fun `passes local invocation metadata when no request metadata is available`() = runTest {
         var receivedMeta: ToolInvocationMeta? = null
         val executor = AgentToolExecutor()
         val settings = settingsWithFileTool(
@@ -197,7 +197,7 @@ class AgentToolExecutorTest {
             ),
         )
 
-        assertEquals(ToolInvocationMeta.Empty, receivedMeta)
+        assertEquals(ToolInvocationMeta.localDefault(), receivedMeta)
     }
 
     @Test

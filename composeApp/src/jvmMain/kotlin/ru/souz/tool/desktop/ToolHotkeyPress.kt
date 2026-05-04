@@ -55,5 +55,5 @@ class ToolHotkeyMac(private val keys: Keys) : ToolSetup<ToolHotkeyMac.Input> {
 
 fun main() {
     val tool = ToolHotkeyMac(Keys())
-    println(tool.invoke(ToolHotkeyMac.Input(HotKey.cancel_last_action), ToolInvocationMeta.Empty))
+    println(tool.invoke(ToolHotkeyMac.Input(HotKey.cancel_last_action), ToolInvocationMeta.localDefault()))
 }

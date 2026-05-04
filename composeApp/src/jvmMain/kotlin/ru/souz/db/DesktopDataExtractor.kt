@@ -33,7 +33,7 @@ class DesktopDataExtractor(
         val installed = runCatching {
             val json = toolShowApps.invoke(
                 ToolShowApps.Input(ToolShowApps.AppState.installed),
-                ToolInvocationMeta.Empty,
+                ToolInvocationMeta.localDefault(),
             )
             val arr: List<Map<String, String>> = restJsonMapper.readValue(json)
             arr.map {
@@ -65,7 +65,7 @@ class DesktopDataExtractor(
     fun files(): Sequence<StorredData> = runCatching {
         val res = ToolListFiles(filesToolUtil).invoke(
             ToolListFiles.Input(System.getenv("HOME"), 3),
-            ToolInvocationMeta.Empty,
+            ToolInvocationMeta.localDefault(),
         )
         res.trim('[', ']')
             .splitToSequence(',')
@@ -82,14 +82,14 @@ class DesktopDataExtractor(
                 BrowserType.CHROME -> {
                     ToolChromeInfo(ToolRunBashCommand).invoke(
                         ToolChromeInfo.Input(ToolChromeInfo.InfoType.history, count = count),
-                        ToolInvocationMeta.Empty,
+                        ToolInvocationMeta.localDefault(),
                     )
                 }
                 else -> {
                     // Используем Safari как дефолт
                     ToolSafariInfo(ToolRunBashCommand).invoke(
                         ToolSafariInfo.Input(ToolSafariInfo.InfoType.history, count = count),
-                        ToolInvocationMeta.Empty,
+                        ToolInvocationMeta.localDefault(),
                     )
                 }
             }

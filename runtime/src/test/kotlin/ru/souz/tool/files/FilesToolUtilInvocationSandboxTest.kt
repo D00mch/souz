@@ -40,7 +40,7 @@ class FilesToolUtilInvocationSandboxTest {
                         "user-2" to (userTwoHome to userTwoState),
                     )
                 ),
-                scopeResolver = { meta -> SandboxScope(userId = meta.userId ?: error("userId required")) },
+                scopeResolver = { meta -> SandboxScope(userId = meta.userId) },
             )
         )
 
@@ -53,7 +53,7 @@ class FilesToolUtilInvocationSandboxTest {
     }
 
     @Test
-    fun `default metadata still resolves local default sandbox without request scoped state`() {
+    fun `local metadata still resolves local default sandbox without request scoped state`() {
         val home = createTempDirectory("files-meta-default-home-")
         val stateRoot = createTempDirectory("files-meta-default-state-")
         val filesToolUtil = FilesToolUtil(
