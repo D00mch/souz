@@ -124,6 +124,55 @@ class EffectiveSettingsResolverTest {
     }
 
     @Test
+    fun `resolver keeps selected local model when it is available`() = runTest {
+        val repository = MemoryUserSettingsRepository()
+        repository.save(
+            UserSettings(
+                userId = "user-a",
+                defaultModel = LLMModel.LocalGemma4_E2B_It,
+            )
+        )
+
+        val effective = resolver(
+            repository = repository,
+            localModelAvailability = localModels(
+                available = listOf(LLMModel.LocalGemma4_E2B_It, LLMModel.LocalQwen3_4B_Instruct_2507),
+                default = LLMModel.LocalQwen3_4B_Instruct_2507,
+            ),
+        ).resolve("user-a")
+
+        assertEquals(LLMModel.LocalGemma4_E2B_It, effective.defaultModel)
+    }
+
+    @Test
+    fun `resolver falls back to available local default when remote providers are inaccessible`() = runTest {
+        val settingsProvider = TestSettingsProvider().apply {
+            regionProfile = "en"
+            openaiKey = null
+            anthropicKey = null
+            qwenChatKey = null
+        }
+        val repository = MemoryUserSettingsRepository()
+        repository.save(
+            UserSettings(
+                userId = "user-a",
+                defaultModel = LLMModel.OpenAIGpt52,
+            )
+        )
+
+        val effective = resolver(
+            settingsProvider = settingsProvider,
+            repository = repository,
+            localModelAvailability = localModels(
+                available = listOf(LLMModel.LocalGemma4_E4B_It),
+                default = LLMModel.LocalGemma4_E4B_It,
+            ),
+        ).resolve("user-a")
+
+        assertEquals(LLMModel.LocalGemma4_E4B_It, effective.defaultModel)
+    }
+
+    @Test
     fun `feature flags can disable streaming and tool events`() = runTest {
         val settingsProvider = TestSettingsProvider().apply {
             gigaChatKey = "giga-key"
@@ -227,5 +276,17 @@ class EffectiveSettingsResolverTest {
             override fun defaultGigaModel(): LLMModel? = null
 
             override fun isProviderAvailable(): Boolean = false
+        }
+
+    private fun localModels(
+        available: List<LLMModel>,
+        default: LLMModel,
+    ): LocalModelAvailability =
+        object : LocalModelAvailability {
+            override fun availableGigaModels(): List<LLMModel> = available
+
+            override fun defaultGigaModel(): LLMModel = default
+
+            override fun isProviderAvailable(): Boolean = true
         }
 }

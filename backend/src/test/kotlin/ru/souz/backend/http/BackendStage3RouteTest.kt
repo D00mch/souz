@@ -57,6 +57,7 @@ import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.execution.service.AgentExecutionRequestFactory
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.keys.service.UserProviderKeyService
+import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
@@ -213,6 +214,40 @@ class BackendStage3RouteTest {
         assertEquals(false, settings["streamingMessages"].asBoolean())
         assertEquals(LLMModel.QwenMax, storedIntent?.defaultModel)
         assertEquals(setOf("ListFiles", "OpenBrowser"), storedIntent?.enabledTools)
+    }
+
+    @Test
+    fun `patch me settings accepts canonicalized locale tags`() = testApplication {
+        val context = routeTestContext()
+        application {
+            backendApplication(
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                chatService = context.chatService,
+                messageService = context.messageService,
+                executionService = context.executionService,
+            )
+        }
+
+        val response = client.patch(BackendHttpRoutes.SETTINGS) {
+            trustedHeaders("user-locale-canonical")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "locale": "iw-IL"
+                }
+                """.trimIndent()
+            )
+        }
+        val payload = json.readTree(response.bodyAsText())
+        val storedIntent = runBlocking { context.userSettingsRepository.get("user-locale-canonical") }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals("he-IL", payload["settings"]["locale"].asText())
+        assertEquals(Locale.forLanguageTag("he-IL"), storedIntent?.locale)
     }
 
     @Test
@@ -1072,6 +1107,7 @@ internal data class RouteTestContext(
     val eventService: AgentEventService,
     val stateRepository: MemoryAgentStateRepository,
     val bootstrapService: BackendBootstrapService,
+    val onboardingService: BackendOnboardingService,
     val userSettingsService: UserSettingsService,
     val userProviderKeyService: UserProviderKeyService,
     val chatService: ChatService,
@@ -1161,6 +1197,37 @@ internal fun routeTestContext(
         executionService = executionService,
         featureFlags = featureFlags,
     )
+    val bootstrapService = BackendBootstrapService(
+        settingsProvider = settingsProvider,
+        effectiveSettingsResolver = effectiveSettingsResolver,
+        toolCatalog = toolCatalog,
+        featureFlags = featureFlags,
+        storageMode = StorageMode.MEMORY,
+        localModelAvailability = unavailableLocalModels(),
+        userProviderKeyRepository = userProviderKeyRepository,
+    )
+    val userSettingsService = UserSettingsService(
+        userSettingsRepository = userSettingsRepository,
+        effectiveSettingsResolver = effectiveSettingsResolver,
+    )
+    val userProviderKeyService = UserProviderKeyService(
+        repository = userProviderKeyRepository,
+        masterKey = "test-master-key",
+    )
+    val chatService = ChatService(
+        chatRepository = chatRepository,
+        messageRepository = messageRepository,
+    )
+    val messageService = MessageService(
+        chatRepository = chatRepository,
+        messageRepository = messageRepository,
+        executionService = executionService,
+    )
+    val onboardingService = BackendOnboardingService(
+        bootstrapService = bootstrapService,
+        userSettingsRepository = userSettingsRepository,
+        userSettingsService = userSettingsService,
+    )
     return RouteTestContext(
         featureFlags = featureFlags,
         settingsProvider = settingsProvider,
@@ -1175,34 +1242,14 @@ internal fun routeTestContext(
         toolCallRepository = toolCallRepository,
         eventService = eventService,
         stateRepository = stateRepository,
-        bootstrapService = BackendBootstrapService(
-            settingsProvider = settingsProvider,
-            effectiveSettingsResolver = effectiveSettingsResolver,
-            toolCatalog = toolCatalog,
-            featureFlags = featureFlags,
-            storageMode = StorageMode.MEMORY,
-            localModelAvailability = unavailableLocalModels(),
-            userProviderKeyRepository = userProviderKeyRepository,
-        ),
-        userSettingsService = UserSettingsService(
-            userSettingsRepository = userSettingsRepository,
-            effectiveSettingsResolver = effectiveSettingsResolver,
-        ),
-        userProviderKeyService = UserProviderKeyService(
-            repository = userProviderKeyRepository,
-            masterKey = "test-master-key",
-        ),
-        chatService = ChatService(
-            chatRepository = chatRepository,
-            messageRepository = messageRepository,
-        ),
+        bootstrapService = bootstrapService,
+        onboardingService = onboardingService,
+        userSettingsService = userSettingsService,
+        userProviderKeyService = userProviderKeyService,
+        chatService = chatService,
         executionService = executionService,
         optionService = optionService,
-        messageService = MessageService(
-            chatRepository = chatRepository,
-            messageRepository = messageRepository,
-            executionService = executionService,
-        ),
+        messageService = messageService,
     )
 }
 

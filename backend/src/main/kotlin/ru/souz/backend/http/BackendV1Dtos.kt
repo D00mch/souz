@@ -44,6 +44,15 @@ internal data class BackendV1SettingsPatchRequest(
     val streamingMessages: Boolean? = null,
 )
 
+internal data class BackendV1OnboardingCompleteRequest(
+    val defaultModel: String? = null,
+    val locale: String? = null,
+    val timeZone: String? = null,
+    val enabledTools: List<String>? = null,
+    val showToolEvents: Boolean? = null,
+    val streamingMessages: Boolean? = null,
+)
+
 internal data class BackendV1SettingsDto(
     val defaultModel: String,
     val contextSize: Int,

@@ -177,8 +177,10 @@ internal data class StoredUserSettings(
     val streamingMessages: Boolean? = null,
     val toolPermissions: Map<String, StoredToolPermission> = emptyMap(),
     val mcp: Map<String, StoredUserMcpServer> = emptyMap(),
-    val createdAt: String,
-    val updatedAt: String,
+    val schemaVersion: Int = UserSettings.CURRENT_SCHEMA_VERSION,
+    val onboardingCompletedAt: String? = null,
+    val createdAt: String? = null,
+    val updatedAt: String? = null,
 )
 
 internal data class StoredUserProviderKey(
@@ -500,6 +502,8 @@ internal fun UserSettings.toStored(): StoredUserSettings =
         streamingMessages = streamingMessages,
         toolPermissions = toolPermissions.mapValues { (_, value) -> value.toStored() },
         mcp = mcp.mapValues { (_, value) -> value.toStored() },
+        schemaVersion = schemaVersion,
+        onboardingCompletedAt = onboardingCompletedAt?.toString(),
         createdAt = createdAt.toString(),
         updatedAt = updatedAt.toString(),
     )
@@ -518,8 +522,10 @@ internal fun StoredUserSettings.toDomain(): UserSettings =
         streamingMessages = streamingMessages,
         toolPermissions = toolPermissions.mapValues { (_, value) -> value.toDomain() },
         mcp = mcp.mapValues { (_, value) -> value.toDomain() },
-        createdAt = Instant.parse(createdAt),
-        updatedAt = Instant.parse(updatedAt),
+        schemaVersion = schemaVersion,
+        onboardingCompletedAt = onboardingCompletedAt?.let(Instant::parse),
+        createdAt = createdAt?.let(Instant::parse) ?: Instant.EPOCH,
+        updatedAt = updatedAt?.let(Instant::parse) ?: Instant.EPOCH,
     )
 
 internal fun ToolPermission.toStored(): StoredToolPermission =
@@ -554,15 +560,17 @@ internal fun UserProviderKey.toStored(): StoredUserProviderKey =
         updatedAt = updatedAt.toString(),
     )
 
-internal fun StoredUserProviderKey.toDomain(): UserProviderKey =
-    UserProviderKey(
-        userId = userId,
-        provider = enumValueOf(provider),
-        encryptedApiKey = encryptedApiKey,
-        keyHint = keyHint,
-        createdAt = Instant.parse(createdAt),
-        updatedAt = Instant.parse(updatedAt),
-    )
+internal fun StoredUserProviderKey.toDomainOrNull(): UserProviderKey? =
+    provider.toProviderOrNull()?.let { normalizedProvider ->
+        UserProviderKey(
+            userId = userId,
+            provider = normalizedProvider,
+            encryptedApiKey = encryptedApiKey,
+            keyHint = keyHint,
+            createdAt = Instant.parse(createdAt),
+            updatedAt = Instant.parse(updatedAt),
+        )
+    }
 
 private fun parseChatRole(raw: String): ChatRole =
     ChatRole.entries.firstOrNull { it.value == raw || it.name.equals(raw, ignoreCase = true) }
@@ -598,6 +606,11 @@ private fun parseToolCallStatus(raw: String): ToolCallStatus =
 private fun String?.toModelOrNull(): LLMModel? =
     this?.let { raw ->
         LLMModel.entries.firstOrNull { it.alias == raw || it.name.equals(raw, ignoreCase = true) }
+    }
+
+private fun String?.toProviderOrNull(): LlmProvider? =
+    this?.let { raw ->
+        LlmProvider.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
     }
 
 private fun String.toLocaleOrDefault(): Locale =

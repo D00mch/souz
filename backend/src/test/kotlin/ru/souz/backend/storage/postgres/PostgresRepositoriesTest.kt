@@ -1,12 +1,18 @@
 package ru.souz.backend.storage.postgres
 
+import java.lang.reflect.Proxy
+import java.sql.PreparedStatement
+import java.sql.Types
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.Locale
 import java.util.UUID
 import javax.sql.DataSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -58,10 +64,179 @@ class PostgresRepositoriesTest {
 
         dataSource.use {
             assertEquals(
-                listOf("1", "2", "3", "4"),
+                listOf("1", "2", "3", "4", "5"),
                 appliedMigrationVersions(it),
             )
             assertTrue(tableExists(it, "tool_calls"))
+            assertFalse(foreignKeyExists(it, "agent_executions", "user_message_id"))
+            assertFalse(foreignKeyExists(it, "agent_executions", "assistant_message_id"))
+            assertFalse(foreignKeyExists(it, "agent_events", "execution_id"))
+        }
+    }
+
+    @Test
+    fun `user settings repository tolerates legacy partial settings json`() = runTest {
+        val schema = newPostgresSchema("postgres_legacy_settings_json")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+        val userRepository = PostgresUserRepository(dataSource)
+        val settingsRepository = PostgresUserSettingsRepository(dataSource)
+
+        dataSource.use {
+            userRepository.ensureUser("legacy-user")
+            dataSource.write { connection ->
+                connection.prepareStatement(
+                    """
+                    insert into user_settings(user_id, settings_json, created_at, updated_at)
+                    values (?, ?, ?, ?)
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setString(1, "legacy-user")
+                    statement.setJson(
+                        2,
+                        """
+                        {
+                          "defaultModel": "${LLMModel.Max.alias}",
+                          "contextSize": 12000,
+                          "temperature": 0.2,
+                          "locale": "en-US",
+                          "timeZone": "Europe/Amsterdam"
+                        }
+                        """.trimIndent(),
+                    )
+                    statement.setInstant(3, Instant.parse("2026-05-01T09:00:00Z"))
+                    statement.setInstant(4, Instant.parse("2026-05-01T09:00:00Z"))
+                    statement.executeUpdate()
+                }
+            }
+
+            val stored = settingsRepository.get("legacy-user")
+
+            assertNotNull(stored)
+            assertEquals("legacy-user", stored.userId)
+            assertEquals(LLMModel.Max, stored.defaultModel)
+            assertEquals(12_000, stored.contextSize)
+            assertEquals(0.2f, stored.temperature)
+            assertEquals(Locale.forLanguageTag("en-US"), stored.locale)
+            assertEquals(ZoneId.of("Europe/Amsterdam"), stored.timeZone)
+            assertNull(stored.systemPrompt)
+            assertNull(stored.enabledTools)
+            assertNull(stored.showToolEvents)
+            assertNull(stored.streamingMessages)
+            assertTrue(stored.toolPermissions.isEmpty())
+            assertTrue(stored.mcp.isEmpty())
+        }
+    }
+
+    @Test
+    fun `user settings repository saves and restores explicit created and updated timestamps`() = runTest {
+        val schema = newPostgresSchema("postgres_user_settings_timestamps")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+        val userRepository = PostgresUserRepository(dataSource)
+        val settingsRepository = PostgresUserSettingsRepository(dataSource)
+        val settings = UserSettings(
+            userId = "user-a",
+            defaultModel = LLMModel.Max,
+            contextSize = 16_000,
+            temperature = 0.7f,
+            locale = Locale.forLanguageTag("en-US"),
+            timeZone = ZoneId.of("UTC"),
+            systemPrompt = "system-user-a",
+            enabledTools = setOf("ListFiles"),
+            showToolEvents = true,
+            streamingMessages = true,
+            toolPermissions = mapOf("ListFiles" to ToolPermission(ToolPermissionMode.ALLOW)),
+            mcp = mapOf("repo" to UserMcpServer(enabled = true)),
+            createdAt = Instant.parse("2026-05-01T09:00:00Z"),
+            updatedAt = Instant.parse("2026-05-01T09:05:00Z"),
+        )
+
+        dataSource.use {
+            userRepository.ensureUser(settings.userId)
+
+            val saved = settingsRepository.save(settings)
+            val stored = settingsRepository.get(settings.userId)
+
+            assertEquals(settings, saved)
+            assertEquals(settings, stored)
+            assertEquals(settings.createdAt, stored?.createdAt)
+            assertEquals(settings.updatedAt, stored?.updatedAt)
+        }
+    }
+
+    @Test
+    fun `setInstant binds non null instants as utc timestamptz`() {
+        val calls = mutableListOf<Pair<String, List<Any?>>>()
+        val statement = Proxy.newProxyInstance(
+            PreparedStatement::class.java.classLoader,
+            arrayOf(PreparedStatement::class.java),
+        ) { _, method, args ->
+            when (method.name) {
+                "setObject", "setNull" -> calls += method.name to args.orEmpty().toList()
+            }
+            null
+        } as PreparedStatement
+        val instant = Instant.parse("2026-05-01T09:00:00Z")
+
+        statement.setInstant(1, instant)
+
+        assertEquals(
+            listOf(
+                "setObject" to listOf<Any?>(
+                    1,
+                    OffsetDateTime.ofInstant(instant, ZoneOffset.UTC),
+                    Types.TIMESTAMP_WITH_TIMEZONE,
+                )
+            ),
+            calls,
+        )
+    }
+
+    @Test
+    fun `provider key repository ignores invalid provider rows`() = runTest {
+        val schema = newPostgresSchema("postgres_invalid_provider_rows")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+        val userRepository = PostgresUserRepository(dataSource)
+        val repository = PostgresUserProviderKeyRepository(dataSource)
+
+        dataSource.use {
+            userRepository.ensureUser("user-a")
+            dataSource.write { connection ->
+                connection.prepareStatement(
+                    """
+                    insert into user_provider_keys(
+                        user_id,
+                        provider,
+                        encrypted_api_key,
+                        key_hint,
+                        created_at,
+                        updated_at
+                    )
+                    values (?, ?, ?, ?, ?, ?)
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setString(1, "user-a")
+                    statement.setString(2, "OPENAI")
+                    statement.setBytes(3, "enc-openai".toByteArray())
+                    statement.setString(4, "...1234")
+                    statement.setInstant(5, Instant.parse("2026-05-01T09:00:00Z"))
+                    statement.setInstant(6, Instant.parse("2026-05-01T09:00:00Z"))
+                    statement.executeUpdate()
+
+                    statement.setString(1, "user-a")
+                    statement.setString(2, "BROKEN_PROVIDER")
+                    statement.setBytes(3, "enc-broken".toByteArray())
+                    statement.setString(4, "...9999")
+                    statement.setInstant(5, Instant.parse("2026-05-01T09:01:00Z"))
+                    statement.setInstant(6, Instant.parse("2026-05-01T09:01:00Z"))
+                    statement.executeUpdate()
+                }
+            }
+
+            val keys = repository.list("user-a")
+
+            assertEquals(1, keys.size)
+            assertEquals(LlmProvider.OPENAI, keys.single().provider)
+            assertEquals("...1234", keys.single().keyHint)
         }
     }
 
@@ -640,6 +815,36 @@ class PostgresRepositoriesTest {
                 """.trimIndent()
             ).use { statement ->
                 statement.setString(1, tableName)
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    resultSet.getBoolean(1)
+                }
+            }
+        }
+
+    private fun foreignKeyExists(
+        dataSource: DataSource,
+        tableName: String,
+        columnName: String,
+    ): Boolean =
+        dataSource.connection.use { connection ->
+            connection.prepareStatement(
+                """
+                select exists(
+                  select 1
+                  from information_schema.table_constraints tc
+                  join information_schema.key_column_usage kcu
+                    on tc.constraint_name = kcu.constraint_name
+                   and tc.table_schema = kcu.table_schema
+                  where tc.table_schema = current_schema()
+                    and tc.table_name = ?
+                    and tc.constraint_type = 'FOREIGN KEY'
+                    and kcu.column_name = ?
+                )
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, tableName)
+                statement.setString(2, columnName)
                 statement.executeQuery().use { resultSet ->
                     resultSet.next()
                     resultSet.getBoolean(1)
