@@ -40,6 +40,16 @@ class MemoryAgentExecutionRepository(
         executionFor(ExecutionKey(userId, executionId))?.takeIf { it.chatId == chatId }
     }
 
+    override suspend fun findByClientMessageId(
+        userId: String,
+        chatId: UUID,
+        clientMessageId: String,
+    ): AgentExecution? = mutex.withLock {
+        (executions.values + activeExecutions.values)
+            .distinctBy { it.id }
+            .firstOrNull { it.userId == userId && it.chatId == chatId && it.clientMessageId == clientMessageId }
+    }
+
     override suspend fun findActive(userId: String, chatId: UUID): AgentExecution? = mutex.withLock {
         activeExecutionIds[ActiveConversationKey(userId, chatId)]
             ?.let { executionId -> executionFor(ExecutionKey(userId, executionId)) }

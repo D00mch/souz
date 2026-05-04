@@ -14,6 +14,7 @@ internal fun Route.v1Routes(deps: BackendHttpDependencies) {
     settingsRoutes(deps)
     providerKeyRoutes(deps)
     chatRoutes(deps)
+    telegramRoutes(deps)
     messageRoutes(deps)
     eventRoutes(deps)
     choiceRoutes(deps)

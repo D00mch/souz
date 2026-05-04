@@ -166,6 +166,30 @@ class AgentExecutionServiceAsyncLifecycleTest {
             context.close()
         }
     }
+
+    @Test
+    fun `execute chat turn publishes user message created event before execution started`() = runTest {
+        val runner = CountingCompletedTurnRunner()
+        val context = asyncLifecycleContext(runner)
+        try {
+            val result = context.service.executeChatTurn(
+                userId = context.chat.userId,
+                chatId = context.chat.id,
+                content = "telegram user message",
+                clientMessageId = "telegram:test-binding:15",
+            )
+
+            val events = context.eventRepository.listByChat(context.chat.userId, context.chat.id)
+
+            assertEquals(listOf(AgentEventType.MESSAGE_CREATED, AgentEventType.EXECUTION_STARTED), events.take(2).map { it.type })
+            val createdPayload = events.first().payload as ru.souz.backend.events.model.MessageCreatedPayload
+            assertEquals(result.userMessage.id, createdPayload.messageId)
+            assertEquals(ChatRole.USER.value, createdPayload.role)
+            assertEquals("telegram user message", createdPayload.content)
+        } finally {
+            context.close()
+        }
+    }
 }
 
 private suspend fun TestScope.asyncLifecycleContext(

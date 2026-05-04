@@ -26,6 +26,7 @@ import ru.souz.backend.execution.model.AgentExecutionUsage
 import ru.souz.backend.keys.model.UserProviderKeyView
 import ru.souz.backend.execution.service.CancelExecutionResult
 import ru.souz.backend.settings.model.EffectiveUserSettings
+import ru.souz.backend.telegram.TelegramBotBinding
 import ru.souz.llms.restJsonMapper
 
 internal data class BackendV1SettingsResponse(
@@ -115,6 +116,14 @@ internal data class BackendV1MessagesResponse(
     val nextBeforeSeq: Long?,
 )
 
+internal data class BackendV1TelegramBotBindingResponse(
+    val telegramBot: BackendV1TelegramBotBindingDto?,
+)
+
+internal data class BackendV1UpsertTelegramBotBindingRequest(
+    val token: String? = null,
+)
+
 internal data class BackendV1CreateMessageRequest(
     val content: String = "",
     val clientMessageId: String? = null,
@@ -168,6 +177,20 @@ internal data class BackendV1MessageDto(
     val content: String,
     val metadata: Map<String, String>,
     val createdAt: String,
+)
+
+internal data class BackendV1TelegramBotBindingDto(
+    val chatId: String,
+    val enabled: Boolean,
+    val botUsername: String?,
+    val botFirstName: String?,
+    val createdAt: String,
+    val updatedAt: String,
+    val linked: Boolean,
+    val telegramUsername: String? = null,
+    val telegramFirstName: String? = null,
+    val telegramLastName: String? = null,
+    val linkedAt: String? = null,
 )
 
 internal data class BackendV1ExecutionDto(
@@ -244,6 +267,21 @@ internal fun Chat.toDto(lastMessagePreview: String? = null): BackendV1ChatDto =
         createdAt = createdAt.toString(),
         updatedAt = updatedAt.toString(),
         lastMessagePreview = lastMessagePreview,
+    )
+
+internal fun TelegramBotBinding.toDto(): BackendV1TelegramBotBindingDto =
+    BackendV1TelegramBotBindingDto(
+        chatId = chatId.toString(),
+        enabled = enabled,
+        botUsername = botUsername,
+        botFirstName = botFirstName,
+        createdAt = createdAt.toString(),
+        updatedAt = updatedAt.toString(),
+        linked = linked,
+        telegramUsername = telegramUsername,
+        telegramFirstName = telegramFirstName,
+        telegramLastName = telegramLastName,
+        linkedAt = linkedAt?.toString(),
     )
 
 internal fun SendMessageResult.toResponse(): BackendV1CreateMessageResponse =

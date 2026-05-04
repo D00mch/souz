@@ -10,6 +10,7 @@ import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.settings.service.UserSettingsService
+import ru.souz.backend.telegram.TelegramBotBindingService
 
 internal data class BackendHttpDependencies(
     val bootstrapService: BackendBootstrapService,
@@ -21,6 +22,7 @@ internal data class BackendHttpDependencies(
     val executionService: AgentExecutionService?,
     val optionService: OptionService?,
     val eventService: AgentEventService?,
+    val telegramBotBindingService: TelegramBotBindingService?,
     val featureFlags: BackendFeatureFlags,
     val selectedModel: () -> String,
     val trustedProxyToken: () -> String?,

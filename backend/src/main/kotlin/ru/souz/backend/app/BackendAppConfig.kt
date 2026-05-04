@@ -92,6 +92,8 @@ data class BackendAppConfig(
     val proxyToken: String?,
     val dataDir: Path,
     val masterKey: String? = null,
+    val telegramTokenEncryptionKey: String? = null,
+    val telegramPollingMaxConcurrency: Int = 4,
     val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     val providerRetryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(),
     val postgres: BackendPostgresConfig? = null,
@@ -100,6 +102,14 @@ data class BackendAppConfig(
         storageMode.requireSupported()
         if (masterKey.isNullOrBlank()) {
             throw BackendConfigurationException("SOUZ_MASTER_KEY / souz.masterKey must not be blank.")
+        }
+        if (telegramTokenEncryptionKey.isNullOrBlank()) {
+            throw BackendConfigurationException(
+                "TELEGRAM_TOKEN_ENCRYPTION_KEY / souz.telegram.tokenEncryptionKey must not be blank."
+            )
+        }
+        if (telegramPollingMaxConcurrency <= 0) {
+            throw BackendConfigurationException("Telegram polling max concurrency must be positive.")
         }
         llmLimits.validate()
         providerRetryPolicy.validate()
@@ -131,6 +141,15 @@ data class BackendAppConfig(
                     envKey = "SOUZ_MASTER_KEY",
                     propertyKey = "souz.masterKey",
                 )?.trim()?.takeIf { it.isNotEmpty() },
+                telegramTokenEncryptionKey = source.value(
+                    envKey = "TELEGRAM_TOKEN_ENCRYPTION_KEY",
+                    propertyKey = "souz.telegram.tokenEncryptionKey",
+                )?.trim()?.takeIf { it.isNotEmpty() },
+                telegramPollingMaxConcurrency = source.intValue(
+                    envKey = "SOUZ_TELEGRAM_POLLING_MAX_CONCURRENCY",
+                    propertyKey = "souz.telegram.pollingMaxConcurrency",
+                    default = 4,
+                ),
                 dataDir = Path.of(
                     source.value(
                         envKey = "SOUZ_BACKEND_DATA_DIR",

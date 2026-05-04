@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.zaxxer.hikari.HikariDataSource
+import java.time.Clock
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -51,6 +52,7 @@ import ru.souz.backend.storage.memory.MemoryChatRepository
 import ru.souz.backend.storage.memory.MemoryOptionRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
 import ru.souz.backend.storage.memory.MemoryToolCallRepository
+import ru.souz.backend.storage.memory.MemoryTelegramBotBindingRepository
 import ru.souz.backend.storage.memory.MemoryUserRepository
 import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
@@ -62,6 +64,7 @@ import ru.souz.backend.storage.filesystem.FilesystemOptionRepository
 import ru.souz.backend.storage.filesystem.FilesystemMessageRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserRepository
 import ru.souz.backend.storage.filesystem.FilesystemToolCallRepository
+import ru.souz.backend.storage.filesystem.FilesystemTelegramBotBindingRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserProviderKeyRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserSettingsRepository
 import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
@@ -72,6 +75,7 @@ import ru.souz.backend.storage.postgres.PostgresOptionRepository
 import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.backend.storage.postgres.PostgresToolCallRepository
+import ru.souz.backend.storage.postgres.PostgresTelegramBotBindingRepository
 import ru.souz.backend.storage.postgres.PostgresUserRepository
 import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
@@ -81,6 +85,12 @@ import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
 import ru.souz.backend.storage.StorageMode
+import ru.souz.backend.telegram.HttpTelegramBotApi
+import ru.souz.backend.telegram.TelegramBotApi
+import ru.souz.backend.telegram.TelegramBotBindingRepository
+import ru.souz.backend.telegram.TelegramBotBindingService
+import ru.souz.backend.telegram.TelegramBotPollingService
+import ru.souz.backend.telegram.TelegramBotTokenCrypto
 import ru.souz.tool.runtimeToolsDiModule
 
 private object BackendDiTags {
@@ -108,6 +118,7 @@ fun backendDiModule(
     import(runtimeLlmDiModule(logObjectMapperTag = BackendDiTags.LOG_OBJECT_MAPPER))
 
     bindSingleton { BackendApplicationScope() }
+    bindSingleton<Clock> { Clock.systemUTC() }
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
     bindSingleton<StorageMode> { appConfig.storageMode }
     when (appConfig.storageMode.requireSupported()) {
@@ -122,6 +133,7 @@ fun backendDiModule(
             bindSingleton<ToolCallRepository> { MemoryToolCallRepository() }
             bindSingleton<UserSettingsRepository> { MemoryUserSettingsRepository() }
             bindSingleton<UserProviderKeyRepository> { MemoryUserProviderKeyRepository() }
+            bindSingleton<TelegramBotBindingRepository> { MemoryTelegramBotBindingRepository() }
         }
         StorageMode.FILESYSTEM -> {
             bindSingleton<UserRepository> { FilesystemUserRepository(appConfig.dataDir) }
@@ -135,6 +147,9 @@ fun backendDiModule(
             bindSingleton<UserSettingsRepository> { FilesystemUserSettingsRepository(appConfig.dataDir) }
             bindSingleton<UserProviderKeyRepository> {
                 FilesystemUserProviderKeyRepository(dataDir = appConfig.dataDir)
+            }
+            bindSingleton<TelegramBotBindingRepository> {
+                FilesystemTelegramBotBindingRepository(dataDir = appConfig.dataDir)
             }
         }
         StorageMode.POSTGRES -> {
@@ -159,6 +174,7 @@ fun backendDiModule(
             bindSingleton<ToolCallRepository> { PostgresToolCallRepository(instance()) }
             bindSingleton<UserSettingsRepository> { PostgresUserSettingsRepository(instance()) }
             bindSingleton<UserProviderKeyRepository> { PostgresUserProviderKeyRepository(instance()) }
+            bindSingleton<TelegramBotBindingRepository> { PostgresTelegramBotBindingRepository(instance()) }
         }
     }
     bindSingleton {
@@ -280,6 +296,32 @@ fun backendDiModule(
             requestFactory = instance(),
             finalizer = instance(),
             launcher = instance(),
+        )
+    }
+    bindSingleton<TelegramBotApi> { HttpTelegramBotApi() }
+    bindSingleton {
+        TelegramBotTokenCrypto(
+            rawBase64Key = appConfig.telegramTokenEncryptionKey
+                ?: error("Telegram token encryption key is required.")
+        )
+    }
+    bindSingleton {
+        TelegramBotBindingService(
+            chatRepository = instance(),
+            bindingRepository = instance(),
+            telegramBotApi = instance(),
+            tokenCrypto = instance(),
+            clock = instance(),
+        )
+    }
+    bindSingleton {
+        TelegramBotPollingService(
+            repository = instance(),
+            botApi = instance(),
+            executionService = instance(),
+            tokenCrypto = instance(),
+            scope = instance<BackendApplicationScope>(),
+            maxConcurrency = appConfig.telegramPollingMaxConcurrency,
         )
     }
     bindSingleton {

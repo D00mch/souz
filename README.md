@@ -12,7 +12,7 @@ The project is designed around one core idea: an AI agent should be useful enoug
 - **GraphBasedAgent** powered by an explicit graph runtime with classification, MCP tool injection, prompt enrichment, LLM execution, tool loops, summarization, retries, tracing, and cancellation.
 - **Shared runtime layer** used by both desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools.
 - **Sandbox abstraction** for filesystem and command execution, with local mode by default and opt-in Docker-backed execution.
-- **HTTP backend** with trusted-proxy auth, per-user settings/provider keys, chat lifecycle, message execution, cancellation, option continuation, event replay, WebSocket streaming, and memory/filesystem/Postgres storage.
+- **HTTP backend** with trusted-proxy auth, per-user settings/provider keys, chat lifecycle, message execution, Telegram bot chat bindings, cancellation, option continuation, event replay, WebSocket streaming, and memory/filesystem/Postgres storage.
 - **Rich desktop tool catalog** for files, browser, web search/research, config, notes, applications, data analytics, calendar, mail, text replacement, Telegram, desktop capture, presentations, and calculator.
 - **SafeMode confirmations** for tool permission prompts, destructive Telegram operations, ambiguous contact/chat selection, and deferred file-modification review.
 - **Multi-provider LLM support** for GigaChat, Qwen, AiTunnel, Anthropic Claude, OpenAI, and local llama.cpp models.
@@ -237,7 +237,7 @@ The backend-safe catalog avoids desktop-only APIs and includes:
 | Data analytics | CSV plotting, Excel read, Excel report |
 | Calculator | Calculator |
 
-The backend intentionally excludes desktop automation, browser control, Mail, Calendar, Notes, Telegram, presentation UI integrations, and other OS-bound tools.
+The backend intentionally excludes desktop automation, browser control, Mail, Calendar, Notes, desktop Telegram tools, presentation UI integrations, and other OS-bound tools. It now separately supports Telegram bot chat bindings for text ingress into existing backend chats.
 
 ## UI confirmations and approval flows
 
@@ -287,6 +287,9 @@ Confirmation-related flows:
 | `POST /v1/chats/{chatId}/unarchive` | Unarchive chat |
 | `GET /v1/chats/{chatId}/messages` | List visible product messages |
 | `POST /v1/chats/{chatId}/messages` | Create user message and start/complete agent execution |
+| `GET /v1/chats/{chatId}/telegram-bot` | Read Telegram bot binding state for an owned chat |
+| `PUT /v1/chats/{chatId}/telegram-bot` | Validate and upsert a Telegram bot binding for an owned chat |
+| `DELETE /v1/chats/{chatId}/telegram-bot` | Remove the Telegram bot binding from an owned chat |
 | `GET /v1/chats/{chatId}/events` | Replay durable chat events |
 | `WS /v1/chats/{chatId}/ws` | Replay and subscribe to live chat events |
 | `POST /v1/options/{optionId}/answer` | Resume execution after a pending option is answered |
@@ -313,6 +316,7 @@ Confirmation-related flows:
 | `postgres` | JDBC + HikariCP + Flyway-backed durable storage |
 
 Postgres storage supports durable event replay, per-chat message/event sequence numbers, one active execution per chat, optimistic locking for `agent_conversation_state`, and durable tool-call audit rows.
+Telegram bot bindings are available in all backend storage modes; MVP keeps bot tokens plaintext and should be upgraded to encryption-at-rest later.
 
 ### Backend configuration
 

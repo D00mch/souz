@@ -286,7 +286,7 @@ internal class BackendAgentRuntimeEventSink(
         )
     }
 
-    private suspend fun emitMessageCreated(message: ChatMessage) {
+    suspend fun emitMessageCreated(message: ChatMessage) {
         appendDurableEvent(
             type = AgentEventType.MESSAGE_CREATED,
             payload = MessageCreatedPayload(
