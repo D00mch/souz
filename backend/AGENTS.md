@@ -32,7 +32,7 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
 - Execution persists product messages separately from `agent_conversation_state`; runtime-only continuation state stays inside `AgentStateRepository`.
 - `conversationId = chatId.toString()` is the stable runtime identity for chat execution.
 - `BackendConversationRuntimeFactory` rebuilds a request-scoped runtime from persisted session state, while `AgentExecutionService` owns product execution lifecycle, cancellation, and option continuation.
-- Telegram bot bindings validate tokens through Telegram `getMe`, store a per-chat binding in backend storage, long-poll `getUpdates` for enabled bindings, feed Telegram text into `AgentExecutionService.executeChatTurn(...)` with `clientMessageId = "telegram:<updateId>"`, and send only short technical acknowledgements back to Telegram in MVP.
+- Telegram bot bindings validate tokens through Telegram `getMe`, store a per-chat binding in backend storage with encrypted-at-rest bot tokens, return only safe binding metadata to the UI, start in a pending-link state until the first private Telegram account writes to the bot, bind permanently to that first private `from.id + chat.id`, ignore unsupported group/channel traffic, reject later private traffic from other Telegram accounts, feed accepted Telegram text into `AgentExecutionService.executeChatTurn(...)` with `clientMessageId = "telegram:<bindingId>:<updateId>"` and `streamingMessages = false`, send the final assistant response back to Telegram in <=4096-char chunks with a short fallback reply when needed, and advance `lastUpdateId` only after each update has been processed.
 - Backend runtime sandboxes are resolved per user only: singleton runtime tools receive `ToolInvocationMeta.userId`, and backend sandbox scope currently omits `conversationId`.
 - `message.delta` stays live-only, while durable events such as `execution.started`, `message.created`, `message.completed`, `tool.call.*`, `option.*`, `execution.finished`, `execution.failed`, and `execution.cancelled` are persisted and replayable.
 
@@ -40,9 +40,9 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
 
 - Storage modes: `memory`, `filesystem`, `postgres`.
 - `memory` uses bounded LRU repositories to reduce accidental OOM risk.
-- `filesystem` stores per-user data under `SOUZ_BACKEND_DATA_DIR` / `souz.backend.dataDir` using URL-safe user path segments and append-only logs for messages, executions, options, events, and tool calls; Telegram bot bindings live beside the chat as `telegram-bot.json`.
-- `postgres` uses JDBC + HikariCP + Flyway, allocates message/event sequence numbers per chat, enforces one active execution per chat, persists durable replay only when `SOUZ_FEATURE_DURABLE_EVENT_REPLAY=true`, uses optimistic locking on `agent_conversation_state`, and now includes a `telegram_bot_bindings` table.
-- Telegram bot tokens are stored plaintext in MVP storage across all modes; TODO: replace this with encryption-at-rest in a follow-up.
+- `filesystem` stores per-user data under `SOUZ_BACKEND_DATA_DIR` / `souz.backend.dataDir` using URL-safe user path segments and append-only logs for messages, executions, options, events, and tool calls; Telegram bot bindings live beside the chat as `telegram-bot.json` with encrypted token payload plus linked Telegram-user metadata.
+- `postgres` uses JDBC + HikariCP + Flyway, allocates message/event sequence numbers per chat, enforces one active execution per chat, persists durable replay only when `SOUZ_FEATURE_DURABLE_EVENT_REPLAY=true`, uses optimistic locking on `agent_conversation_state`, keeps Telegram binding token hashes unique, and stores per-binding poller lease ownership in `telegram_bot_bindings` for multi-instance polling safety.
+- Telegram bot tokens now use `TELEGRAM_TOKEN_ENCRYPTION_KEY` / `souz.telegram.tokenEncryptionKey` for AES-GCM encryption at rest. Legacy rows copied forward from the old plaintext column still need to be rebound or rewritten by the application path before they stop relying on the plaintext compatibility fallback. Review this migration path before production rollout.
 
 ## Config
 
@@ -52,6 +52,9 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
   - `SOUZ_FEATURE_TOOL_EVENTS` / `souz.backend.feature.toolEvents`
   - `SOUZ_FEATURE_OPTIONS` / `souz.backend.feature.options`
   - `SOUZ_FEATURE_DURABLE_EVENT_REPLAY` / `souz.backend.feature.durableEventReplay`
+- Telegram:
+  - `TELEGRAM_TOKEN_ENCRYPTION_KEY` / `souz.telegram.tokenEncryptionKey`
+  - `SOUZ_TELEGRAM_POLLING_MAX_CONCURRENCY` / `souz.telegram.pollingMaxConcurrency`
 - Storage mode:
   - `SOUZ_STORAGE_MODE` / `souz.backend.storageMode`
 - Filesystem root:

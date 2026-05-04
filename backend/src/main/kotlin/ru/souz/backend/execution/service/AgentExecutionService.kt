@@ -54,6 +54,22 @@ class AgentExecutionService internal constructor(
             clientMessageId = clientMessageId,
             requestOverrides = requestOverrides,
         )
+        prepared.normalizedClientMessageId?.let { normalizedClientMessageId ->
+            executionRepository.findByClientMessageId(userId, chatId, normalizedClientMessageId)
+                ?.let { existingExecution ->
+                    val userMessageId = existingExecution.userMessageId
+                    val userMessage = userMessageId?.let { messageRepository.getById(userId, chatId, it) }
+                    if (userMessage != null) {
+                        val assistantMessage = existingExecution.assistantMessageId
+                            ?.let { messageRepository.getById(userId, chatId, it) }
+                        return@supervisorScope SendMessageResult(
+                            userMessage = userMessage,
+                            assistantMessage = assistantMessage,
+                            execution = existingExecution,
+                        )
+                    }
+                }
+        }
         val queuedExecution = try {
             executionRepository.create(prepared.execution)
         } catch (e: ActiveAgentExecutionConflictException) {
@@ -93,6 +109,7 @@ class AgentExecutionService internal constructor(
                 streamingMessagesEnabled = prepared.effectiveSettings.streamingMessages,
                 toolEventsEnabled = prepared.effectiveSettings.showToolEvents,
             )
+            eventSink.emitMessageCreated(userMessage)
             eventSink.emitExecutionStarted(runningExecution)
 
             if (prepared.shouldReturnRunning) {

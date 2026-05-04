@@ -180,11 +180,17 @@ internal data class BackendV1MessageDto(
 )
 
 internal data class BackendV1TelegramBotBindingDto(
+    val chatId: String,
     val enabled: Boolean,
+    val botUsername: String?,
+    val botFirstName: String?,
     val createdAt: String,
     val updatedAt: String,
-    val lastError: String? = null,
-    val lastErrorAt: String? = null,
+    val linked: Boolean,
+    val telegramUsername: String? = null,
+    val telegramFirstName: String? = null,
+    val telegramLastName: String? = null,
+    val linkedAt: String? = null,
 )
 
 internal data class BackendV1ExecutionDto(
@@ -265,11 +271,17 @@ internal fun Chat.toDto(lastMessagePreview: String? = null): BackendV1ChatDto =
 
 internal fun TelegramBotBinding.toDto(): BackendV1TelegramBotBindingDto =
     BackendV1TelegramBotBindingDto(
+        chatId = chatId.toString(),
         enabled = enabled,
+        botUsername = botUsername,
+        botFirstName = botFirstName,
         createdAt = createdAt.toString(),
         updatedAt = updatedAt.toString(),
-        lastError = lastError,
-        lastErrorAt = lastErrorAt?.toString(),
+        linked = linked,
+        telegramUsername = telegramUsername,
+        telegramFirstName = telegramFirstName,
+        telegramLastName = telegramLastName,
+        linkedAt = linkedAt?.toString(),
     )
 
 internal fun SendMessageResult.toResponse(): BackendV1CreateMessageResponse =

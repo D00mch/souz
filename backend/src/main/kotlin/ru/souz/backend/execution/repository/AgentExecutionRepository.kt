@@ -13,6 +13,7 @@ interface AgentExecutionRepository {
     suspend fun update(execution: AgentExecution): AgentExecution
     suspend fun get(userId: String, executionId: UUID): AgentExecution?
     suspend fun getByChat(userId: String, chatId: UUID, executionId: UUID): AgentExecution?
+    suspend fun findByClientMessageId(userId: String, chatId: UUID, clientMessageId: String): AgentExecution?
     suspend fun findActive(userId: String, chatId: UUID): AgentExecution?
     suspend fun listByChat(
         userId: String,

@@ -85,6 +85,18 @@ class TelegramBotBindingRepositoryTest {
             FilesystemTelegramBotBindingRepository(Files.createTempDirectory("telegram-bindings-fs-clear"))
         )
     }
+
+    @Test
+    fun `memory repository persists telegram link metadata`() = runTest {
+        assertLinkTelegramUserContract(MemoryTelegramBotBindingRepository())
+    }
+
+    @Test
+    fun `filesystem repository persists telegram link metadata`() = runTest {
+        assertLinkTelegramUserContract(
+            FilesystemTelegramBotBindingRepository(Files.createTempDirectory("telegram-bindings-fs-link"))
+        )
+    }
 }
 
 internal suspend fun assertChatScopedUpsertContract(
@@ -109,7 +121,7 @@ internal suspend fun assertChatScopedUpsertContract(
 
     assertEquals(created.id, updated.id)
     assertEquals(created.createdAt, updated.createdAt)
-    assertEquals("123456:second-token", updated.botToken)
+    assertEquals("123456:second-token", updated.botTokenEncrypted)
     assertEquals(0L, updated.lastUpdateId)
     assertNull(repository.findByTokenHash(sha256("123456:first-token")))
     assertEquals(updated.id, repository.findByTokenHash(sha256("123456:second-token"))?.id)
@@ -247,6 +259,91 @@ internal suspend fun assertClearErrorContract(
     assertNull(stored.lastErrorAt)
     assertTrue(stored.enabled)
     assertEquals(Instant.parse("2026-05-04T09:05:00Z"), stored.updatedAt)
+}
+
+internal suspend fun assertLinkTelegramUserContract(
+    repository: TelegramBotBindingRepository,
+) {
+    val binding = repository.upsertForChat(
+        userId = "user-a",
+        chatId = UUID.randomUUID(),
+        botToken = "123456:link-token",
+        botTokenHash = sha256("123456:link-token"),
+        botUsername = "souz_bot",
+        botFirstName = "Souz",
+        now = Instant.parse("2026-05-04T09:00:00Z"),
+    )
+
+    val linked = repository.linkTelegramUser(
+        id = binding.id,
+        telegramUserId = 77L,
+        telegramChatId = 88L,
+        telegramUsername = "alice",
+        telegramFirstName = "Alice",
+        telegramLastName = "Doe",
+        linkedAt = Instant.parse("2026-05-04T09:06:00Z"),
+    )
+
+    val stored = repository.getByChat(binding.chatId)
+
+    assertNotNull(linked)
+    assertNotNull(stored)
+    assertEquals("souz_bot", stored.botUsername)
+    assertEquals("Souz", stored.botFirstName)
+    assertEquals(77L, stored.telegramUserId)
+    assertEquals(88L, stored.telegramChatId)
+    assertEquals("alice", stored.telegramUsername)
+    assertEquals("Alice", stored.telegramFirstName)
+    assertEquals("Doe", stored.telegramLastName)
+    assertEquals(Instant.parse("2026-05-04T09:06:00Z"), stored.linkedAt)
+    assertEquals(true, stored.linked)
+}
+
+internal suspend fun assertLeaseContract(
+    repository: TelegramBotBindingRepository,
+) {
+    val binding = repository.upsertForChat(
+        userId = "user-a",
+        chatId = UUID.randomUUID(),
+        botToken = "123456:lease-token",
+        botTokenHash = sha256("123456:lease-token"),
+        botUsername = "souz_bot",
+        botFirstName = "Souz",
+        now = Instant.parse("2026-05-04T09:00:00Z"),
+    )
+
+    val firstLease = repository.tryAcquireLease(
+        id = binding.id,
+        owner = "instance-a",
+        leaseUntil = Instant.parse("2026-05-04T09:00:45Z"),
+        now = Instant.parse("2026-05-04T09:00:00Z"),
+    )
+    val competingLease = repository.tryAcquireLease(
+        id = binding.id,
+        owner = "instance-b",
+        leaseUntil = Instant.parse("2026-05-04T09:00:50Z"),
+        now = Instant.parse("2026-05-04T09:00:05Z"),
+    )
+    val renewedBySameOwner = repository.tryAcquireLease(
+        id = binding.id,
+        owner = "instance-a",
+        leaseUntil = Instant.parse("2026-05-04T09:01:05Z"),
+        now = Instant.parse("2026-05-04T09:00:20Z"),
+    )
+    val acquiredAfterExpiry = repository.tryAcquireLease(
+        id = binding.id,
+        owner = "instance-b",
+        leaseUntil = Instant.parse("2026-05-04T09:01:45Z"),
+        now = Instant.parse("2026-05-04T09:01:06Z"),
+    )
+
+    assertNotNull(firstLease)
+    assertEquals("instance-a", firstLease.pollerOwner)
+    assertEquals(null, competingLease)
+    assertNotNull(renewedBySameOwner)
+    assertEquals("instance-a", renewedBySameOwner.pollerOwner)
+    assertNotNull(acquiredAfterExpiry)
+    assertEquals("instance-b", acquiredAfterExpiry.pollerOwner)
 }
 
 internal fun sha256(token: String): String =

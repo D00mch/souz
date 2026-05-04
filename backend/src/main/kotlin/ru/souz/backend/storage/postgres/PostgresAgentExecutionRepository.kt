@@ -112,6 +112,28 @@ class PostgresAgentExecutionRepository(
         }
     }
 
+    override suspend fun findByClientMessageId(
+        userId: String,
+        chatId: UUID,
+        clientMessageId: String,
+    ): AgentExecution? = dataSource.read { connection ->
+        connection.prepareStatement(
+            """
+            select * from agent_executions
+            where user_id = ? and chat_id = ? and client_message_id = ?
+            order by started_at desc
+            limit 1
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.setObject(2, chatId)
+            statement.setString(3, clientMessageId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.toExecution() else null
+            }
+        }
+    }
+
     override suspend fun findActive(userId: String, chatId: UUID): AgentExecution? = dataSource.read { connection ->
         connection.prepareStatement(
             """

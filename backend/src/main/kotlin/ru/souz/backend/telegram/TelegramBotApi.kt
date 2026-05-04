@@ -197,9 +197,11 @@ data class TelegramGetMeResponse(
 data class TelegramUser(
     val id: Long,
     @param:JsonProperty("is_bot")
-    val isBot: Boolean,
+    val isBot: Boolean? = null,
     @param:JsonProperty("first_name")
-    val firstName: String,
+    val firstName: String? = null,
+    @param:JsonProperty("last_name")
+    val lastName: String? = null,
     val username: String? = null,
 )
 
@@ -224,6 +226,7 @@ data class TelegramUpdate(
 data class TelegramMessage(
     @param:JsonProperty("message_id")
     val messageId: Long,
+    val from: TelegramUser? = null,
     val chat: TelegramChat,
     val text: String? = null,
 )

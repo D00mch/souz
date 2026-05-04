@@ -91,6 +91,7 @@ class BackendAppConfigTest {
                 env = mapOf(
                     "SOUZ_STORAGE_MODE" to "filesystem",
                     "SOUZ_MASTER_KEY" to "test-master-key",
+                    "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                 )
             )
         ).validate()
@@ -108,6 +109,7 @@ class BackendAppConfigTest {
                     "SOUZ_STORAGE_MODE" to "filesystem",
                     "SOUZ_BACKEND_DATA_DIR" to "/tmp/souz-env-data",
                     "SOUZ_MASTER_KEY" to "env-master-key",
+                    "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                 )
             )
         )
@@ -117,6 +119,7 @@ class BackendAppConfigTest {
                     "souz.backend.storageMode" to "filesystem",
                     "souz.backend.dataDir" to "/tmp/souz-prop-data",
                     "souz.masterKey" to "prop-master-key",
+                    "souz.telegram.tokenEncryptionKey" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                 )
             )
         )
@@ -134,6 +137,7 @@ class BackendAppConfigTest {
                 env = mapOf(
                     "SOUZ_STORAGE_MODE" to "postgres",
                     "SOUZ_MASTER_KEY" to "postgres-master-key",
+                    "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                 )
             )
         ).validate()
@@ -150,6 +154,7 @@ class BackendAppConfigTest {
                     "souz.backend.db.maxPoolSize" to "17",
                     "souz.backend.db.connectionTimeoutMs" to "45000",
                     "souz.masterKey" to "postgres-prop-master-key",
+                    "souz.telegram.tokenEncryptionKey" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                 ),
             )
         ).validate()
@@ -192,6 +197,7 @@ class BackendAppConfigTest {
                 env = mapOf(
                     "SOUZ_STORAGE_MODE" to "filesystem",
                     "SOUZ_MASTER_KEY" to "test-master-key",
+                    "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                 )
             )
         ).validate()
@@ -206,6 +212,7 @@ class BackendAppConfigTest {
                 env = mapOf(
                     "SOUZ_STORAGE_MODE" to "memory",
                     "SOUZ_MASTER_KEY" to "test-master-key",
+                    "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                     "SOUZ_BACKEND_LIMIT_PER_USER_CONCURRENT_EXECUTIONS" to "3",
                     "SOUZ_BACKEND_LIMIT_PER_USER_REQUESTS_PER_MINUTE" to "17",
                     "SOUZ_BACKEND_LIMIT_PER_USER_TOKENS_PER_MINUTE" to "32000",
@@ -259,6 +266,7 @@ class BackendAppConfigTest {
                     env = mapOf(
                         "SOUZ_STORAGE_MODE" to "memory",
                         "SOUZ_MASTER_KEY" to "test-master-key",
+                        "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                         "SOUZ_BACKEND_LIMIT_PER_USER_REQUESTS_PER_MINUTE" to "0",
                     )
                 )
@@ -270,6 +278,7 @@ class BackendAppConfigTest {
                     env = mapOf(
                         "SOUZ_STORAGE_MODE" to "memory",
                         "SOUZ_MASTER_KEY" to "test-master-key",
+                        "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                     ),
                     properties = mapOf(
                         "souz.backend.provider.max429Retries" to "-1",
@@ -291,3 +300,5 @@ private class MapBackendConfigSource(
 
     override fun property(key: String): String? = properties[key]
 }
+
+private const val TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="

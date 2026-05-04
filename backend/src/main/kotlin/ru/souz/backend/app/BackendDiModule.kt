@@ -90,6 +90,7 @@ import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.telegram.TelegramBotPollingService
+import ru.souz.backend.telegram.TelegramBotTokenCrypto
 import ru.souz.tool.runtimeToolsDiModule
 
 private object BackendDiTags {
@@ -298,10 +299,17 @@ fun backendDiModule(
     }
     bindSingleton<TelegramBotApi> { HttpTelegramBotApi() }
     bindSingleton {
+        TelegramBotTokenCrypto(
+            rawBase64Key = appConfig.telegramTokenEncryptionKey
+                ?: error("Telegram token encryption key is required.")
+        )
+    }
+    bindSingleton {
         TelegramBotBindingService(
             chatRepository = instance(),
             bindingRepository = instance(),
             telegramBotApi = instance(),
+            tokenCrypto = instance(),
             clock = instance(),
         )
     }
@@ -310,7 +318,9 @@ fun backendDiModule(
             repository = instance(),
             botApi = instance(),
             executionService = instance(),
+            tokenCrypto = instance(),
             scope = instance<BackendApplicationScope>(),
+            maxConcurrency = appConfig.telegramPollingMaxConcurrency,
         )
     }
     bindSingleton {

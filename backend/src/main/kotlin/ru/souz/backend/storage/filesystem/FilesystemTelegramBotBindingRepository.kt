@@ -44,6 +44,8 @@ class FilesystemTelegramBotBindingRepository(
         chatId: UUID,
         botToken: String,
         botTokenHash: String,
+        botUsername: String?,
+        botFirstName: String?,
         now: Instant,
     ): TelegramBotBinding =
         withFileLock {
@@ -60,10 +62,20 @@ class FilesystemTelegramBotBindingRepository(
                     id = UUID.randomUUID(),
                     userId = userId,
                     chatId = chatId,
-                    botToken = botToken,
+                    botTokenEncrypted = botToken,
                     botTokenHash = botTokenHash,
+                    botUsername = botUsername,
+                    botFirstName = botFirstName,
                     lastUpdateId = 0L,
                     enabled = true,
+                    telegramUserId = null,
+                    telegramChatId = null,
+                    telegramUsername = null,
+                    telegramFirstName = null,
+                    telegramLastName = null,
+                    linkedAt = null,
+                    pollerOwner = null,
+                    pollerLeaseUntil = null,
                     lastError = null,
                     lastErrorAt = null,
                     createdAt = now,
@@ -72,10 +84,20 @@ class FilesystemTelegramBotBindingRepository(
             } else {
                 current.copy(
                     userId = userId,
-                    botToken = botToken,
+                    botTokenEncrypted = botToken,
                     botTokenHash = botTokenHash,
+                    botUsername = botUsername,
+                    botFirstName = botFirstName,
                     lastUpdateId = 0L,
                     enabled = true,
+                    telegramUserId = null,
+                    telegramChatId = null,
+                    telegramUsername = null,
+                    telegramFirstName = null,
+                    telegramLastName = null,
+                    linkedAt = null,
+                    pollerOwner = null,
+                    pollerLeaseUntil = null,
                     lastError = null,
                     lastErrorAt = null,
                     updatedAt = now,
@@ -90,6 +112,50 @@ class FilesystemTelegramBotBindingRepository(
             val binding = readAllBindings().firstOrNull { it.chatId == chatId } ?: return@withFileLock
             Files.deleteIfExists(layout.telegramBotBindingFile(binding.userId, binding.chatId))
         }
+
+    override suspend fun linkTelegramUser(
+        id: UUID,
+        telegramUserId: Long,
+        telegramChatId: Long,
+        telegramUsername: String?,
+        telegramFirstName: String?,
+        telegramLastName: String?,
+        linkedAt: Instant,
+        updatedAt: Instant,
+    ): TelegramBotBinding? = withFileLock {
+        val current = readAllBindings().firstOrNull { it.id == id } ?: return@withFileLock null
+        val updated = current.copy(
+            telegramUserId = current.telegramUserId ?: telegramUserId,
+            telegramChatId = current.telegramChatId ?: telegramChatId,
+            telegramUsername = current.telegramUsername ?: telegramUsername,
+            telegramFirstName = current.telegramFirstName ?: telegramFirstName,
+            telegramLastName = current.telegramLastName ?: telegramLastName,
+            linkedAt = current.linkedAt ?: linkedAt,
+            updatedAt = updatedAt,
+        )
+        mapper.writeJsonFile(layout.telegramBotBindingFile(current.userId, current.chatId), updated.toStored())
+        updated
+    }
+
+    override suspend fun tryAcquireLease(
+        id: UUID,
+        owner: String,
+        leaseUntil: Instant,
+        now: Instant,
+    ): TelegramBotBinding? = withFileLock {
+        val current = readAllBindings().firstOrNull { it.id == id } ?: return@withFileLock null
+        val canAcquire = current.enabled &&
+            (current.pollerLeaseUntil == null || current.pollerLeaseUntil < now || current.pollerOwner == owner)
+        if (!canAcquire) {
+            return@withFileLock null
+        }
+        val updated = current.copy(
+            pollerOwner = owner,
+            pollerLeaseUntil = leaseUntil,
+        )
+        mapper.writeJsonFile(layout.telegramBotBindingFile(current.userId, current.chatId), updated.toStored())
+        updated
+    }
 
     override suspend fun updateLastUpdateId(
         id: UUID,

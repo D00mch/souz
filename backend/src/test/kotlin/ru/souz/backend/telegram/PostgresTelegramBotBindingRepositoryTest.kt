@@ -67,4 +67,24 @@ class PostgresTelegramBotBindingRepositoryTest {
             assertClearErrorContract(PostgresTelegramBotBindingRepository(it))
         }
     }
+
+    @Test
+    fun `postgres repository persists telegram link metadata`() = runTest {
+        val schema = newPostgresSchema("postgres_tg_binding_link")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+
+        dataSource.use {
+            assertLinkTelegramUserContract(PostgresTelegramBotBindingRepository(it))
+        }
+    }
+
+    @Test
+    fun `postgres repository lease allows one owner at a time`() = runTest {
+        val schema = newPostgresSchema("postgres_tg_binding_lease")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+
+        dataSource.use {
+            assertLeaseContract(PostgresTelegramBotBindingRepository(it))
+        }
+    }
 }

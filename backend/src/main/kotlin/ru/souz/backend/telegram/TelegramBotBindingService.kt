@@ -12,6 +12,7 @@ class TelegramBotBindingService(
     private val chatRepository: ChatRepository,
     private val bindingRepository: TelegramBotBindingRepository,
     private val telegramBotApi: TelegramBotApi,
+    private val tokenCrypto: TelegramBotTokenCrypto,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     suspend fun get(
@@ -64,8 +65,10 @@ class TelegramBotBindingService(
             bindingRepository.upsertForChat(
                 userId = userId,
                 chatId = chatId,
-                botToken = normalizedToken,
+                botToken = tokenCrypto.encrypt(normalizedToken),
                 botTokenHash = tokenHash,
+                botUsername = getMe.result?.username,
+                botFirstName = getMe.result?.firstName,
                 now = clock.instant(),
             )
         } catch (e: CancellationException) {

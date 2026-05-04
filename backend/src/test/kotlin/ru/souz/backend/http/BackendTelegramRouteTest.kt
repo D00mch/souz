@@ -22,6 +22,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotBindingService
+import ru.souz.backend.telegram.TelegramBotTokenCrypto
 import ru.souz.backend.telegram.TelegramChat
 import ru.souz.backend.telegram.TelegramGetMeResponse
 import ru.souz.backend.telegram.TelegramMessage
@@ -89,16 +90,56 @@ class BackendTelegramRouteTest {
         val stored = runBlocking { context.repository.getByChat(chat.id) }
 
         assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(chat.id.toString(), payload["telegramBot"]["chatId"].asText())
         assertEquals(true, payload["telegramBot"]["enabled"].asBoolean())
+        assertEquals("souz_bot", payload["telegramBot"]["botUsername"].asText())
+        assertEquals("Souz", payload["telegramBot"]["botFirstName"].asText())
         assertNotNull(payload["telegramBot"]["createdAt"].asText())
         assertNotNull(payload["telegramBot"]["updatedAt"].asText())
-        assertTrue(payload["telegramBot"]["lastError"].isNull)
-        assertTrue(payload["telegramBot"]["lastErrorAt"].isNull)
+        assertEquals(false, payload["telegramBot"]["linked"].asBoolean())
+        assertTrue(payload["telegramBot"]["telegramUsername"].isNull)
+        assertTrue(payload["telegramBot"]["telegramFirstName"].isNull)
+        assertTrue(payload["telegramBot"]["telegramLastName"].isNull)
+        assertTrue(payload["telegramBot"]["linkedAt"].isNull)
         assertTrue(payload["telegramBot"]["botToken"] == null)
         assertTrue(payload["telegramBot"]["botTokenHash"] == null)
-        assertEquals("123456:valid-token", stored?.botToken)
+        assertTrue(payload["telegramBot"]["botTokenEncrypted"] == null)
+        assertEquals("souz_bot", stored?.botUsername)
+        assertEquals("Souz", stored?.botFirstName)
+        assertTrue(stored?.botTokenEncrypted?.isNotBlank() == true)
+        assertTrue(stored?.botTokenEncrypted != "123456:valid-token")
         assertEquals(0L, stored?.lastUpdateId)
         assertEquals(listOf("123456:valid-token"), context.telegramApi.getMeCalls)
+    }
+
+    @Test
+    fun `get telegram bot returns linked false before first telegram private message`() = testApplication {
+        val context = telegramRouteTestContext()
+        val chat = chat(userId = "user-a", title = "Owned")
+        context.telegramApi.allowToken("123456:valid-token")
+        runBlocking {
+            context.base.chatRepository.create(chat)
+            context.service.upsert(
+                userId = "user-a",
+                chatId = chat.id,
+                token = "123456:valid-token",
+            )
+        }
+        installTelegramApplication(context)
+
+        val response = client.get(BackendHttpRoutes.chatTelegramBot(chat.id)) {
+            trustedHeaders("user-a")
+        }
+        val payload = json.readTree(response.bodyAsText())
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(false, payload["telegramBot"]["linked"].asBoolean())
+        assertTrue(payload["telegramBot"]["telegramUsername"].isNull)
+        assertTrue(payload["telegramBot"]["telegramFirstName"].isNull)
+        assertTrue(payload["telegramBot"]["telegramLastName"].isNull)
+        assertTrue(payload["telegramBot"]["linkedAt"].isNull)
+        assertTrue(payload["telegramBot"]["telegramUserId"] == null)
+        assertTrue(payload["telegramBot"]["telegramChatId"] == null)
     }
 
     @Test
@@ -253,7 +294,8 @@ class BackendTelegramRouteTest {
         val stored = runBlocking { context.repository.getByChat(chat.id) }
 
         assertEquals(HttpStatusCode.OK, response.status)
-        assertEquals("123456:second-token", stored?.botToken)
+        assertTrue(stored?.botTokenEncrypted?.isNotBlank() == true)
+        assertTrue(stored?.botTokenEncrypted != "123456:second-token")
         assertEquals(0L, stored?.lastUpdateId)
         assertTrue(stored?.botTokenHash != "old-hash")
     }
@@ -357,6 +399,7 @@ private fun telegramRouteTestContext(
         chatRepository = base.chatRepository,
         bindingRepository = repository,
         telegramBotApi = telegramApi,
+        tokenCrypto = TelegramBotTokenCrypto(TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY),
         clock = Clock.fixed(Instant.parse("2026-05-04T10:00:00Z"), ZoneOffset.UTC),
     )
     return TelegramRouteTestContext(
@@ -379,6 +422,7 @@ private class FakeTelegramBotApi : TelegramBotApi {
                 id = 42L,
                 isBot = true,
                 firstName = "Souz",
+                lastName = "Assistant",
                 username = "souz_bot",
             ),
         )
@@ -421,3 +465,5 @@ private class FakeTelegramBotApi : TelegramBotApi {
         text: String,
     ) = Unit
 }
+
+private const val TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="

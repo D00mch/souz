@@ -51,6 +51,8 @@ class MemoryTelegramBotBindingRepository(
         chatId: UUID,
         botToken: String,
         botTokenHash: String,
+        botUsername: String?,
+        botFirstName: String?,
         now: Instant,
     ): TelegramBotBinding = mutex.withLock {
         val existingByTokenHash = bindingsByTokenHash[botTokenHash]?.let(bindings::get)
@@ -63,10 +65,20 @@ class MemoryTelegramBotBindingRepository(
                 id = UUID.randomUUID(),
                 userId = userId,
                 chatId = chatId,
-                botToken = botToken,
+                botTokenEncrypted = botToken,
                 botTokenHash = botTokenHash,
+                botUsername = botUsername,
+                botFirstName = botFirstName,
                 lastUpdateId = 0L,
                 enabled = true,
+                telegramUserId = null,
+                telegramChatId = null,
+                telegramUsername = null,
+                telegramFirstName = null,
+                telegramLastName = null,
+                linkedAt = null,
+                pollerOwner = null,
+                pollerLeaseUntil = null,
                 lastError = null,
                 lastErrorAt = null,
                 createdAt = now,
@@ -78,10 +90,20 @@ class MemoryTelegramBotBindingRepository(
             }
             existing.copy(
                 userId = userId,
-                botToken = botToken,
+                botTokenEncrypted = botToken,
                 botTokenHash = botTokenHash,
+                botUsername = botUsername,
+                botFirstName = botFirstName,
                 lastUpdateId = 0L,
                 enabled = true,
+                telegramUserId = null,
+                telegramChatId = null,
+                telegramUsername = null,
+                telegramFirstName = null,
+                telegramLastName = null,
+                linkedAt = null,
+                pollerOwner = null,
+                pollerLeaseUntil = null,
                 lastError = null,
                 lastErrorAt = null,
                 updatedAt = now,
@@ -94,6 +116,49 @@ class MemoryTelegramBotBindingRepository(
         val bindingId = bindingsByChat.remove(chatId) ?: return@withLock
         val binding = bindings.remove(bindingId) ?: return@withLock
         bindingsByTokenHash.remove(binding.botTokenHash)
+    }
+
+    override suspend fun linkTelegramUser(
+        id: UUID,
+        telegramUserId: Long,
+        telegramChatId: Long,
+        telegramUsername: String?,
+        telegramFirstName: String?,
+        telegramLastName: String?,
+        linkedAt: Instant,
+        updatedAt: Instant,
+    ): TelegramBotBinding? = mutex.withLock {
+        val current = bindings[id] ?: return@withLock null
+        val updated = current.copy(
+            telegramUserId = current.telegramUserId ?: telegramUserId,
+            telegramChatId = current.telegramChatId ?: telegramChatId,
+            telegramUsername = current.telegramUsername ?: telegramUsername,
+            telegramFirstName = current.telegramFirstName ?: telegramFirstName,
+            telegramLastName = current.telegramLastName ?: telegramLastName,
+            linkedAt = current.linkedAt ?: linkedAt,
+            updatedAt = updatedAt,
+        )
+        store(updated)
+    }
+
+    override suspend fun tryAcquireLease(
+        id: UUID,
+        owner: String,
+        leaseUntil: Instant,
+        now: Instant,
+    ): TelegramBotBinding? = mutex.withLock {
+        val current = bindings[id] ?: return@withLock null
+        val canAcquire = current.enabled &&
+            (current.pollerLeaseUntil == null || current.pollerLeaseUntil < now || current.pollerOwner == owner)
+        if (!canAcquire) {
+            return@withLock null
+        }
+        store(
+            current.copy(
+                pollerOwner = owner,
+                pollerLeaseUntil = leaseUntil,
+            )
+        )
     }
 
     override suspend fun updateLastUpdateId(
