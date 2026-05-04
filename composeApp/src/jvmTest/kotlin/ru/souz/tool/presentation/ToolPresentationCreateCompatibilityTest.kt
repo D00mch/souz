@@ -3,43 +3,67 @@ package ru.souz.tool.presentation
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.mockk.every
 import io.mockk.mockk
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.souz.db.SettingsProvider
+import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.test.invoke
 import ru.souz.tool.files.FilesToolUtil
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
 import java.util.Collections
 import java.util.zip.ZipFile
 import javax.xml.parsers.DocumentBuilderFactory
 
 class ToolPresentationCreateCompatibilityTest {
+    private val createdTempDirs = mutableListOf<File>()
+
     companion object {
         private const val SPEAKER_NOTES_PPTX_PROPERTY = "souz.presentation.enableSpeakerNotesPptx"
-
-        private fun createOutputDir(): File =
-            File.createTempFile("souz-presentation-test-", "", FilesToolUtil.homeDirectory).apply {
-                delete()
-                mkdirs()
-            }
     }
+
+    @AfterEach
+    fun cleanupTempDirectories() {
+        createdTempDirs.asReversed().forEach { it.deleteRecursively() }
+        createdTempDirs.clear()
+    }
+
+    private fun createTempDirectory(prefix: String): File =
+        Files.createTempDirectory(prefix).toFile().canonicalFile.also(createdTempDirs::add)
+
+    private fun createFilesToolUtil(forbiddenFolders: List<String> = emptyList()): FilesToolUtil {
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        every { settingsProvider.forbiddenFolders } returns forbiddenFolders
+        return FilesToolUtil(
+            LocalRuntimeSandbox(
+                scope = SandboxScope(userId = "presentation-compat-test-user"),
+                settingsProvider = settingsProvider,
+                homePath = createTempDirectory("souz-presentation-home-").toPath(),
+                stateRoot = createTempDirectory("souz-presentation-state-").toPath(),
+            )
+        )
+    }
+
+    private fun createOutputDir(filesToolUtil: FilesToolUtil): File =
+        Files.createTempDirectory(filesToolUtil.homeDirectory.toPath(), "souz-presentation-test-")
+            .toFile()
+            .canonicalFile
 
     @Test
     fun `notes slides should not contain malformed field runs`() {
         val previous = System.getProperty(SPEAKER_NOTES_PPTX_PROPERTY)
         System.setProperty(SPEAKER_NOTES_PPTX_PROPERTY, "true")
         try {
-            val settingsProvider = mockk<SettingsProvider>(relaxed = true)
-            every { settingsProvider.forbiddenFolders } returns emptyList()
-
-            val filesToolUtil = FilesToolUtil(settingsProvider)
+            val filesToolUtil = createFilesToolUtil()
             val tool = ToolPresentationCreate(filesToolUtil = filesToolUtil)
 
-            val outputDir = createOutputDir()
+            val outputDir = createOutputDir(filesToolUtil)
             val resultJson = tool.invoke(
                 PresentationCreateInput(
                     title = "Notes Compatibility Test",
@@ -101,13 +125,10 @@ class ToolPresentationCreateCompatibilityTest {
 
     @Test
     fun `speaker notes should be disabled by default for compatibility`() {
-        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
-        every { settingsProvider.forbiddenFolders } returns emptyList()
-
-        val filesToolUtil = FilesToolUtil(settingsProvider)
+        val filesToolUtil = createFilesToolUtil()
         val tool = ToolPresentationCreate(filesToolUtil = filesToolUtil)
 
-        val outputDir = createOutputDir()
+        val outputDir = createOutputDir(filesToolUtil)
         val resultJson = tool.invoke(
             PresentationCreateInput(
                 title = "Notes Disabled By Default Test",
@@ -147,13 +168,10 @@ class ToolPresentationCreateCompatibilityTest {
     fun `speaker notes request should be ignored when compatibility guard is off`() {
         System.clearProperty(SPEAKER_NOTES_PPTX_PROPERTY)
 
-        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
-        every { settingsProvider.forbiddenFolders } returns emptyList()
-
-        val filesToolUtil = FilesToolUtil(settingsProvider)
+        val filesToolUtil = createFilesToolUtil()
         val tool = ToolPresentationCreate(filesToolUtil = filesToolUtil)
 
-        val outputDir = createOutputDir()
+        val outputDir = createOutputDir(filesToolUtil)
         val resultJson = tool.invoke(
             PresentationCreateInput(
                 title = "Notes Guard Off Test",
@@ -192,14 +210,11 @@ class ToolPresentationCreateCompatibilityTest {
 
     @Test
     fun `presentation read should resolve generated files through files tool util`() {
-        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
-        every { settingsProvider.forbiddenFolders } returns emptyList()
-
-        val filesToolUtil = FilesToolUtil(settingsProvider)
+        val filesToolUtil = createFilesToolUtil()
         val createTool = ToolPresentationCreate(filesToolUtil = filesToolUtil)
         val readTool = ToolPresentationRead(filesToolUtil)
 
-        val outputDir = createOutputDir()
+        val outputDir = createOutputDir(filesToolUtil)
         val resultJson = createTool.invoke(
             PresentationCreateInput(
                 title = "Round Trip Read Test",

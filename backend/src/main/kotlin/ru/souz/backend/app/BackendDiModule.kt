@@ -246,6 +246,7 @@ fun backendDiModule(
             systemPrompt = systemPrompt,
             toolCatalog = instance(),
             toolsFilter = instance(),
+            skillRegistryRepository = instance(),
         )
     }
     bindSingleton {
