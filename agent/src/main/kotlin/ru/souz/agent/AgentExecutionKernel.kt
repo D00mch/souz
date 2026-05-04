@@ -22,6 +22,7 @@ import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.UserMessageClassifier
@@ -40,6 +41,7 @@ class AgentExecutionKernelFactory(
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
     private val mcpToolProvider: McpToolProvider,
+    private val skillCommandTool: LLMToolSetup? = null,
     private val telemetry: AgentTelemetry,
     private val errorMessages: AgentErrorMessages,
     private val llmApi: LLMChatAPI,
@@ -74,7 +76,8 @@ class AgentExecutionKernelFactory(
                 llmApi = llmApi,
                 settingsProvider = settingsProvider,
                 jsonUtils = jsonUtils,
-            )
+            ),
+            skillCommandTool = skillCommandTool,
         )
         val nodesSummarization = NodesSummarization(llmApi = llmApi, nodesCommon = nodesCommon)
         val contextFactory = AgentContextFactory(

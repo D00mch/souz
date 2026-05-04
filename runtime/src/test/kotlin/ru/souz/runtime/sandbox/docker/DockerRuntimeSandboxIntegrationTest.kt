@@ -5,9 +5,11 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.assertThrows
 import org.slf4j.LoggerFactory
+import ru.souz.agent.skills.activation.SkillId
 import ru.souz.runtime.sandbox.SandboxCommandRequest
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createSymbolicLinkPointingTo
@@ -111,6 +113,26 @@ class DockerRuntimeSandboxIntegrationTest {
         assertTrue(trashed.path.startsWith("/souz/trash/"))
         assertEquals("hello docker sandbox", sandbox.fileSystem.readText(trashed))
         assertEquals("hello docker sandbox", sandbox.hostRoot.resolve("trash").resolve(trashed.name).readText())
+    }
+
+    @Test
+    fun `bundled academic paper skill is copied into sandbox skill storage`() = runTest {
+        val sandbox = createSandbox()
+        val repository = FileSystemSkillRegistryRepository(sandbox = sandbox)
+        val skillId = SkillId("paper-summarize-academic")
+
+        val stored = repository.listSkills(userId = "docker-test-user").single { it.skillId == skillId }
+        val bundle = assertNotNull(repository.loadSkillBundle(userId = "docker-test-user", skillId = skillId))
+
+        assertEquals(skillId, stored.skillId)
+        assertEquals("paper_summarize", bundle.manifest.name)
+        assertContains(bundle.skillMarkdownBody, "Paper Summarize Skill")
+        assertTrue(bundle.files.any { it.normalizedPath == "templates/sop_templates.ts" })
+        assertTrue(
+            sandbox.fileSystem.resolveExistingFile(
+                "/souz/state/skills/paper-summarize-academic/SKILL.md"
+            ).isRegularFile
+        )
     }
 
     @Test
@@ -247,18 +269,30 @@ class DockerRuntimeSandboxIntegrationTest {
         Files.createTempDirectory(prefix).also(createdPaths::add)
 
     private fun ensureDockerImage() {
-        val inspect = docker("image", "inspect", TEST_IMAGE_NAME)
-        if (inspect.exitCode == 0) {
+        val inspect = docker(
+            "image",
+            "inspect",
+            "--format",
+            "{{ index .Config.Labels \"ru.souz.runtime-sandbox.fixture\" }}",
+            TEST_IMAGE_NAME,
+        )
+        if (inspect.exitCode == 0 && inspect.stdout.trim() == TEST_IMAGE_LABEL) {
             return
         }
-        val contextDir = Path.of(System.getProperty("user.dir"))
-            .resolve("runtime/src/test/resources/docker/runtime-sandbox")
-            .toAbsolutePath()
-            .normalize()
+        val contextDir = repositoryRoot().resolve("runtime")
         val build = docker("build", "-t", TEST_IMAGE_NAME, contextDir.toString())
         check(build.exitCode == 0) {
             "Failed to build Docker sandbox test image.\nstdout:\n${build.stdout}\nstderr:\n${build.stderr}\nRun locally with SOUZ_TEST_DOCKER=1 ./gradlew :runtime:test"
         }
+    }
+
+    private fun repositoryRoot(): Path {
+        var current = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize()
+        while (!Files.exists(current.resolve("settings.gradle.kts"))) {
+            current = current.parent
+                ?: error("Failed to locate repository root from ${System.getProperty("user.dir")}")
+        }
+        return current
     }
 
     private fun dockerTestsEnabled(): Boolean = System.getenv("SOUZ_TEST_DOCKER") == "1"
@@ -294,5 +328,6 @@ class DockerRuntimeSandboxIntegrationTest {
 
     private companion object {
         const val TEST_IMAGE_NAME = "souz-runtime-sandbox:test"
+        const val TEST_IMAGE_LABEL = "paper-summarize-academic"
     }
 }

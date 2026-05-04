@@ -5,6 +5,7 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.FactoryBackedToolInvocationRuntimeSandboxResolver
@@ -29,6 +30,7 @@ import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolReadPdfPages
 import ru.souz.tool.math.ToolCalculator
+import ru.souz.tool.skills.ToolRunSkillCommand
 import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolInternetSearch
 import ru.souz.tool.web.ToolWebImageSearch
@@ -37,9 +39,11 @@ import ru.souz.tool.web.internal.WebImageDownloader
 import ru.souz.tool.web.internal.WebResearchClient
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
+import ru.souz.skills.registry.SkillStorageScope
 
 fun runtimeToolsDiModule(
     includeWebImageSearch: Boolean = true,
+    skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
     scopeResolver: ToolInvocationSandboxScopeResolver = ToolInvocationSandboxScopeResolver {
         SandboxScope(
             userId = it.userId.trim(),
@@ -110,6 +114,12 @@ fun runtimeToolsDiModule(
     }
     bindSingleton<AgentToolCatalog> { instance<RuntimeToolsFactory>() }
     bindSingleton<AgentToolsFilter> { RuntimePassThroughToolsFilter }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
+        ToolRunSkillCommand(
+            sandboxResolver = instance(),
+            skillStorageScope = skillStorageScope,
+        ).toGiga()
+    }
 }
 
 object RuntimePassThroughToolsFilter : AgentToolsFilter {

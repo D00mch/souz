@@ -14,6 +14,7 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
+import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.service.audio.ActiveSoundRecorderImpl
 import ru.souz.service.audio.InMemoryAudioRecorder
 import ru.souz.service.audio.Say
@@ -22,7 +23,9 @@ import ru.souz.db.DesktopDataExtractor
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.VectorDB
 import ru.souz.llms.giga.GigaVoiceAPI
+import ru.souz.llms.giga.toGiga
 import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LLMToolSetup
 import ru.souz.service.keys.Keys
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.openai.OpenAIVoiceAPI
@@ -86,6 +89,8 @@ import ru.souz.tool.web.internal.WebResearchClient
 import ru.souz.ui.common.ComposeAgentErrorMessages
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
+import ru.souz.skills.registry.SkillStorageScope
+import ru.souz.tool.skills.ToolRunSkillCommand
 
 private object DiTags {
     const val MODULE_MAIN = "main"
@@ -229,11 +234,18 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     bindSingleton { ToolsFactory(di) }
     bindSingleton<AgentToolCatalog> { instance<ToolsFactory>() }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
+        ToolRunSkillCommand(
+            sandboxResolver = instance(),
+            skillStorageScope = SkillStorageScope.SINGLE_USER,
+        ).toGiga()
+    }
     import(
         agentDiModule(
             logObjectMapperTag = DiTags.TAG_LOG,
             apiClassifierTag = DiTags.TAG_API,
             localClassifierTag = DiTags.TAG_LOCAL,
+            skillCommandToolTag = SkillToolBindingTags.COMMAND_TOOL,
         )
     )
     bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }

@@ -23,10 +23,7 @@ import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
-import ru.souz.skills.bundle.FileSystemSkillBundleLoader
 import ru.souz.paths.DefaultSouzPaths
-import ru.souz.skills.filesystem.SandboxSkillBundleFileSystem
-import ru.souz.skills.validation.FileSystemSkillValidationRepository
 import ru.souz.tool.files.FilesToolUtil
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -38,7 +35,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-class SandboxSkillRegistryRepositoryTest {
+class FileSystemSkillRegistryRepositoryTest {
     private val createdPaths = mutableListOf<Path>()
 
     @AfterTest
@@ -52,7 +49,7 @@ class SandboxSkillRegistryRepositoryTest {
     @Test
     fun `saves and loads skill bundle by user id and skill id`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-save-load-")
-        val repository = SandboxSkillRegistryRepository(
+        val repository = FileSystemSkillRegistryRepository(
             sandbox = createLocalSandbox(DefaultSouzPaths(stateRoot = stateRoot)),
         )
         val bundle = sampleBundle(skillId = SkillId("paper-summarize-academic"))
@@ -63,13 +60,31 @@ class SandboxSkillRegistryRepositoryTest {
         assertEquals("user-1", stored.userId)
         assertEquals(SkillBundleHasher.hash(bundle), stored.bundleHash)
         assertEquals(bundle, loaded)
+        assertEquals(bundle, repository.loadSkillBundle(userId = "user-2", skillId = bundle.skillId))
+    }
+
+    @Test
+    fun `user-scoped storage isolates skills by user id`() = runTest {
+        val stateRoot = createTempDirectory("skill-registry-user-scoped-")
+        val paths = DefaultSouzPaths(stateRoot = stateRoot)
+        val repository = FileSystemSkillRegistryRepository(
+            sandbox = createLocalSandbox(paths),
+            config = FileSystemSkillRegistryConfig(scope = SkillStorageScope.USER_SCOPED),
+        )
+        val bundle = sampleBundle(skillId = SkillId("paper-summarize-academic"))
+
+        repository.saveSkillBundle(userId = "user-1", bundle = bundle)
+
+        assertEquals(bundle, repository.loadSkillBundle(userId = "user-1", skillId = bundle.skillId))
         assertNull(repository.loadSkillBundle(userId = "user-2", skillId = bundle.skillId))
+        assertTrue(metadataPath(paths, "user-1", bundle.skillId, SkillStorageScope.USER_SCOPED).exists())
+        assertTrue(!metadataPath(paths, "user-1", bundle.skillId, SkillStorageScope.SINGLE_USER).exists())
     }
 
     @Test
     fun `lists stored skill metadata without validation storage`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-list-")
-        val repository = createSkillsRepository(DefaultSouzPaths(stateRoot = stateRoot))
+        val repository = createRepository(DefaultSouzPaths(stateRoot = stateRoot))
         val bundle = sampleBundle(skillId = SkillId("listable-skill"))
 
         repository.saveSkillBundle(userId = "user-1", bundle = bundle)
@@ -82,13 +97,44 @@ class SandboxSkillRegistryRepositoryTest {
         assertEquals(bundle.skillId, listed.single().skillId)
         assertEquals(bundle.manifest, byId?.manifest)
         assertEquals(bundle.skillId, byName?.skillId)
-        assertNull(repository.getSkill("user-2", bundle.skillId))
+        assertEquals(bundle.skillId, repository.getSkill("user-2", bundle.skillId)?.skillId)
     }
 
     @Test
-    fun `saves and reads validation record from separate validation storage`() = runTest {
+    fun `loads loose skill directory without stored metadata`() = runTest {
+        val stateRoot = createTempDirectory("skill-registry-loose-")
+        val paths = DefaultSouzPaths(stateRoot = stateRoot)
+        val repository = createRepository(paths)
+        val skillId = SkillId("loose-skill")
+        val skillRoot = paths.skillsDir.resolve(skillId.value)
+        Files.createDirectories(skillRoot)
+        Files.writeString(
+            skillRoot.resolve("SKILL.md"),
+            """
+                ---
+                name: loose_skill
+                description: Loose fixture skill
+                ---
+                Loose instructions.
+            """.trimIndent(),
+        )
+        Files.writeString(skillRoot.resolve("README.md"), "Loose readme")
+
+        val listed = repository.listSkills("user-1").single()
+        val loaded = assertNotNull(repository.loadSkillBundle("user-1", skillId))
+
+        assertEquals(skillId, listed.skillId)
+        assertEquals("loose_skill", listed.manifest.name)
+        assertEquals(SkillBundleHasher.hash(loaded), listed.bundleHash)
+        assertEquals(listed, repository.getSkill("user-1", skillId))
+        assertTrue(!skillRoot.resolve("stored-skill.json").exists())
+        assertTrue(loaded.files.any { it.normalizedPath == "README.md" })
+    }
+
+    @Test
+    fun `saves and reads validation record`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-validation-")
-        val repository = createValidationRepository(DefaultSouzPaths(stateRoot = stateRoot))
+        val repository = createRepository(DefaultSouzPaths(stateRoot = stateRoot))
         val record = SkillValidationRecord(
             userId = "user-1",
             skillId = SkillId("paper-summarize-academic"),
@@ -130,9 +176,48 @@ class SandboxSkillRegistryRepositoryTest {
     }
 
     @Test
+    fun `user-scoped validation storage isolates records by user id`() = runTest {
+        val stateRoot = createTempDirectory("skill-registry-validation-user-scoped-")
+        val paths = DefaultSouzPaths(stateRoot = stateRoot)
+        val repository = createRepository(
+            paths,
+            config = FileSystemSkillRegistryConfig(scope = SkillStorageScope.USER_SCOPED),
+        )
+        val record = sampleValidationRecord(bundleHash = VALIDATION_HASH_A)
+
+        repository.saveValidation(record)
+
+        assertEquals(
+            record,
+            repository.getValidation(record.userId, record.skillId, record.bundleHash, record.policyVersion),
+        )
+        assertNull(repository.getValidation("user-2", record.skillId, record.bundleHash, record.policyVersion))
+        assertTrue(
+            validationRecordPath(
+                paths = paths,
+                userId = record.userId,
+                skillId = record.skillId,
+                policyVersion = record.policyVersion,
+                bundleHash = record.bundleHash,
+                scope = SkillStorageScope.USER_SCOPED,
+            ).exists()
+        )
+        assertTrue(
+            !validationRecordPath(
+                paths = paths,
+                userId = record.userId,
+                skillId = record.skillId,
+                policyVersion = record.policyVersion,
+                bundleHash = record.bundleHash,
+                scope = SkillStorageScope.SINGLE_USER,
+            ).exists()
+        )
+    }
+
+    @Test
     fun `rejects unsafe bundle hashes for validation storage paths`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-validation-unsafe-hash-")
-        val repository = createValidationRepository(DefaultSouzPaths(stateRoot = stateRoot))
+        val repository = createRepository(DefaultSouzPaths(stateRoot = stateRoot))
 
         listOf("", "   ", "../escape", "abc/def", "not-a-sha256").forEach { bundleHash ->
             val error = assertFailsWith<IllegalArgumentException> {
@@ -145,7 +230,7 @@ class SandboxSkillRegistryRepositoryTest {
     @Test
     fun `invalidates older approved validations without touching active bundle`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-validation-invalidate-")
-        val repository = createValidationRepository(DefaultSouzPaths(stateRoot = stateRoot))
+        val repository = createRepository(DefaultSouzPaths(stateRoot = stateRoot))
         val active = sampleValidationRecord(bundleHash = VALIDATION_HASH_A)
         val old = sampleValidationRecord(bundleHash = VALIDATION_HASH_B)
         repository.saveValidation(active)
@@ -171,7 +256,7 @@ class SandboxSkillRegistryRepositoryTest {
     fun `stores bundles under hash-addressed bundle directories and keeps prior bundles`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-bundle-layout-")
         val paths = DefaultSouzPaths(stateRoot = stateRoot)
-        val repository = createSkillsRepository(paths)
+        val repository = createRepository(paths)
         val skillId = SkillId("paper-summarize-academic")
         val initialBundle = sampleBundle(skillId = skillId)
         val updatedBundle = sampleBundle(
@@ -182,8 +267,8 @@ class SandboxSkillRegistryRepositoryTest {
         val initialStored = repository.saveSkillBundle(userId = "user-1", bundle = initialBundle)
         val updatedStored = repository.saveSkillBundle(userId = "user-1", bundle = updatedBundle)
 
-        val skillRoot = SkillStoragePaths.skillRoot(paths, "user-1", skillId)
-        val metadataPath = SkillStoragePaths.metadataPath(paths, "user-1", skillId)
+        val skillRoot = skillRoot(paths, "user-1", skillId, SkillStorageScope.SINGLE_USER)
+        val metadataPath = metadataPath(paths, "user-1", skillId, SkillStorageScope.SINGLE_USER)
         val initialBundleRoot = skillRoot.resolve("bundles").resolve(initialStored.bundleHash)
         val updatedBundleRoot = skillRoot.resolve("bundles").resolve(updatedStored.bundleHash)
 
@@ -199,7 +284,7 @@ class SandboxSkillRegistryRepositoryTest {
     fun `saveSkillBundle revalidates paths before writing files`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-untrusted-paths-")
         val paths = DefaultSouzPaths(stateRoot = stateRoot)
-        val repository = createSkillsRepository(paths)
+        val repository = createRepository(paths)
         val skillId = SkillId("paper-summarize-academic")
         val bundle = SkillBundle(
             skillId = skillId,
@@ -235,7 +320,7 @@ class SandboxSkillRegistryRepositoryTest {
         }
 
         val bundleHash = SkillBundleHasher.hash(bundle)
-        val escapedPath = SkillStoragePaths.bundleRoot(paths, "user-1", skillId, bundleHash)
+        val escapedPath = bundleRoot(paths, "user-1", skillId, bundleHash, SkillStorageScope.SINGLE_USER)
             .resolve("../../escape.txt")
             .normalize()
         assertTrue(!escapedPath.exists(), "Unexpected write outside bundle root: $escapedPath")
@@ -246,7 +331,7 @@ class SandboxSkillRegistryRepositoryTest {
     fun `sandbox registry can be constructed with local runtime sandbox`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-sandbox-local-")
         val sandbox = createLocalSandbox(DefaultSouzPaths(stateRoot = stateRoot))
-        val repository = SandboxSkillRegistryRepository(sandbox = sandbox)
+        val repository = FileSystemSkillRegistryRepository(sandbox = sandbox)
         val bundle = sampleBundle(skillId = SkillId("local-sandbox-skill"))
 
         val stored = repository.saveSkillBundle(userId = "user-1", bundle = bundle)
@@ -258,18 +343,24 @@ class SandboxSkillRegistryRepositoryTest {
     @Test
     fun `docker sandbox registry persists and loads skills through container visible paths`() = runTest {
         val sandbox = createDockerSandbox("skill-registry-docker-")
-        val repository = SandboxSkillRegistryRepository(sandbox = sandbox)
+        val repository = FileSystemSkillRegistryRepository(sandbox = sandbox)
         val bundle = sampleBundle(skillId = SkillId("docker-skill"))
 
         val stored = repository.saveSkillBundle(userId = "user-1", bundle = bundle)
         val loaded = repository.loadSkillBundle(userId = "user-1", skillId = bundle.skillId)
 
-        val metadataPath = SkillStoragePaths.metadataPath(SandboxSouzPaths(sandbox.runtimePaths), "user-1", bundle.skillId)
-        val bundleRoot = SkillStoragePaths.bundleRoot(
+        val metadataPath = metadataPath(
+            SandboxSouzPaths(sandbox.runtimePaths),
+            "user-1",
+            bundle.skillId,
+            SkillStorageScope.SINGLE_USER,
+        )
+        val bundleRoot = bundleRoot(
             paths = SandboxSouzPaths(sandbox.runtimePaths),
             userId = "user-1",
             skillId = bundle.skillId,
             bundleHash = stored.bundleHash,
+            scope = SkillStorageScope.SINGLE_USER,
         )
         val metadataInfo = sandbox.fileSystem.resolveExistingFile(metadataPath.toString())
         val bundleInfo = sandbox.fileSystem.resolveExistingDirectory(bundleRoot.toString())
@@ -284,21 +375,19 @@ class SandboxSkillRegistryRepositoryTest {
     @Test
     fun `docker sandbox validation storage stays under container skill validation root`() = runTest {
         val sandbox = createDockerSandbox("skill-registry-docker-validation-")
-        val repository = FileSystemSkillValidationRepository(
-            paths = SandboxSouzPaths(sandbox.runtimePaths),
-            fileSystem = sandbox.fileSystem,
-        )
+        val repository = FileSystemSkillRegistryRepository(sandbox = sandbox)
         val record = sampleValidationRecord(bundleHash = VALIDATION_HASH_A)
 
         repository.saveValidation(record)
         val loaded = repository.getValidation(record.userId, record.skillId, record.bundleHash, record.policyVersion)
 
-        val path = SkillStoragePaths.validationRecordPath(
+        val path = validationRecordPath(
             paths = SandboxSouzPaths(sandbox.runtimePaths),
             userId = record.userId,
             skillId = record.skillId,
             policyVersion = record.policyVersion,
             bundleHash = record.bundleHash,
+            scope = SkillStorageScope.SINGLE_USER,
         )
         val pathInfo = sandbox.fileSystem.resolveExistingFile(path.toString())
 
@@ -311,7 +400,7 @@ class SandboxSkillRegistryRepositoryTest {
     fun `docker sandbox filesystem lists descendants using container paths`() = runTest {
         val sandbox = createDockerSandbox("skill-registry-docker-listing-")
         val bundle = sampleBundle(skillId = SkillId("docker-listing-skill"))
-        val repository = createSkillsRepository(
+        val repository = createRepository(
             paths = SandboxSouzPaths(sandbox.runtimePaths),
             runtimeSandbox = sandbox,
         )
@@ -373,29 +462,80 @@ class SandboxSkillRegistryRepositoryTest {
         createdAt = Instant.parse("2026-05-02T12:00:00Z"),
     )
 
-    private fun createSkillsRepository(
+    private fun createRepository(
         paths: SouzPaths,
         runtimeSandbox: RuntimeSandbox? = null,
-    ): FileSystemSkillsRepository {
+        config: FileSystemSkillRegistryConfig = FileSystemSkillRegistryConfig(),
+    ): FileSystemSkillRegistryRepository {
         val effectiveSandbox = runtimeSandbox
             ?: createLocalSandbox(paths)
-        val loader = FileSystemSkillBundleLoader(
-            fileSystem = SandboxSkillBundleFileSystem(effectiveSandbox.fileSystem),
-        )
-        return FileSystemSkillsRepository(
-            paths = paths,
-            fileSystem = effectiveSandbox.fileSystem,
-            loader = loader,
+        return FileSystemSkillRegistryRepository(
+            sandbox = effectiveSandbox,
+            config = config,
         )
     }
 
-    private fun createValidationRepository(paths: SouzPaths): FileSystemSkillValidationRepository {
-        val sandbox = createLocalSandbox(paths)
-        return FileSystemSkillValidationRepository(
-            paths = paths,
-            fileSystem = sandbox.fileSystem,
-        )
+    private fun metadataPath(
+        paths: SouzPaths,
+        userId: String,
+        skillId: SkillId,
+        scope: SkillStorageScope,
+    ): Path = skillRoot(paths, userId, skillId, scope).resolve("stored-skill.json")
+
+    private fun bundleRoot(
+        paths: SouzPaths,
+        userId: String,
+        skillId: SkillId,
+        bundleHash: String,
+        scope: SkillStorageScope,
+    ): Path = skillRoot(paths, userId, skillId, scope).resolve("bundles").resolve(bundleHash)
+
+    private fun skillRoot(
+        paths: SouzPaths,
+        userId: String,
+        skillId: SkillId,
+        scope: SkillStorageScope,
+    ): Path = when (scope) {
+        SkillStorageScope.SINGLE_USER -> paths.skillsDir.resolve(skillId.value)
+        SkillStorageScope.USER_SCOPED -> paths.skillsDir
+            .resolve("users")
+            .resolve(encodeSegment(userId))
+            .resolve("skills")
+            .resolve(skillId.value)
     }
+
+    private fun validationRecordPath(
+        paths: SouzPaths,
+        userId: String,
+        skillId: SkillId,
+        policyVersion: String,
+        bundleHash: String,
+        scope: SkillStorageScope,
+    ): Path = validationPolicyRoot(paths, userId, skillId, policyVersion, scope)
+        .resolve("$bundleHash.json")
+
+    private fun validationPolicyRoot(
+        paths: SouzPaths,
+        userId: String,
+        skillId: SkillId,
+        policyVersion: String,
+        scope: SkillStorageScope,
+    ): Path {
+        val skillValidationRoot = when (scope) {
+            SkillStorageScope.SINGLE_USER -> paths.skillValidationsDir.resolve(skillId.value)
+            SkillStorageScope.USER_SCOPED -> paths.skillValidationsDir
+                .resolve("users")
+                .resolve(encodeSegment(userId))
+                .resolve("skills")
+                .resolve(skillId.value)
+        }
+        return skillValidationRoot.resolve("policies").resolve(policyVersion)
+    }
+
+    private fun encodeSegment(raw: String): String =
+        java.util.Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(raw.toByteArray(Charsets.UTF_8))
 
     private fun createLocalSandbox(paths: SouzPaths): LocalRuntimeSandbox {
         val settingsProvider = mockk<SettingsProvider>()

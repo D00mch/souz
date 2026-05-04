@@ -9,13 +9,18 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.skills.SkillActivationPipeline
+import ru.souz.agent.skills.activation.ActivatedSkill
 import ru.souz.agent.skills.activation.SkillContextInjector
+import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.bundle.SkillManifest
 import ru.souz.agent.skills.validation.SkillValidationFinding
 import ru.souz.agent.skills.validation.SkillValidationSeverity
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -65,6 +70,74 @@ class NodesSkillsTest {
         assertSame(updated, result)
         assertEquals(original.activeTools, result.activeTools)
         assertTrue(result.history.first().content.contains(SkillContextInjector.START_MARKER))
+    }
+
+    @Test
+    fun `skills node adds dynamic skill tools when skills are activated`() = runTest {
+        val pipeline = mockk<SkillActivationPipeline>()
+        var capturedArguments: Map<String, Any>? = null
+        val skillTool = dummyTool("RunSkillCommand") { functionCall ->
+            capturedArguments = functionCall.arguments
+        }
+        val node = NodesSkills(pipeline, skillTool).node()
+        val original = baseContext(userId = "user-1")
+        val activatedSkill = activatedSkill()
+        coEvery { pipeline.run(any()) } returns SkillActivationPipeline.Result.Ready(
+            context = original,
+            activatedSkills = listOf(activatedSkill),
+            rejectedSkills = emptyList(),
+            selectedSkillIds = listOf(activatedSkill.skillId),
+        )
+
+        val result = node.execute(
+            ctx = original,
+            runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
+        )
+
+        val wrappedTool = result.settings.tools.byName[skillTool.fn.name] ?: error("Missing wrapped skill tool")
+        assertTrue(result.activeTools.any { it.name == skillTool.fn.name })
+        assertTrue(result.activeTools.single { it.name == skillTool.fn.name }.description.contains(activatedSkill.skillId.value))
+
+        wrappedTool.invoke(
+            LLMResponse.FunctionCall(
+                name = skillTool.fn.name,
+                arguments = mapOf("skillId" to activatedSkill.skillId.value),
+            ),
+            ToolInvocationMeta(userId = "user-1"),
+        )
+
+        assertTrue(capturedArguments?.containsKey("activeSkills") == true)
+    }
+
+    @Test
+    fun `skills node removes stale dynamic skill tools when no skills are activated`() = runTest {
+        val pipeline = mockk<SkillActivationPipeline>()
+        val staleTool = dummyTool("RunSkillCommand")
+        val node = NodesSkills(pipeline, staleTool).node()
+        val original = baseContext(userId = "user-1").let { ctx ->
+            ctx.copy(
+                settings = ctx.settings.copy(
+                    tools = ctx.settings.tools.copy(
+                        byName = ctx.settings.tools.byName + (staleTool.fn.name to staleTool),
+                    )
+                ),
+                activeTools = ctx.activeTools + staleTool.fn,
+            )
+        }
+        coEvery { pipeline.run(any()) } returns SkillActivationPipeline.Result.Ready(
+            context = original,
+            activatedSkills = emptyList(),
+            rejectedSkills = emptyList(),
+            selectedSkillIds = emptyList(),
+        )
+
+        val result = node.execute(
+            ctx = original,
+            runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
+        )
+
+        assertTrue(staleTool.fn.name !in result.settings.tools.byName)
+        assertTrue(result.activeTools.none { it.name == staleTool.fn.name })
     }
 
     @Test
@@ -173,4 +246,39 @@ class NodesSkillsTest {
         systemPrompt = "system",
         toolInvocationMeta = ToolInvocationMeta(userId = userId),
     )
+
+    private fun activatedSkill(): ActivatedSkill = ActivatedSkill(
+        skillId = SkillId("paper-summarize-academic"),
+        manifest = SkillManifest(
+            name = "paper_summarize",
+            description = "Summarize academic papers.",
+            rawFrontmatter = "name: paper_summarize",
+        ),
+        bundleHash = "a".repeat(64),
+        instructionBody = "Use supporting scripts when needed.",
+        supportingFiles = listOf("scripts/run.sh"),
+    )
+
+    private fun dummyTool(
+        name: String,
+        onInvoke: (LLMResponse.FunctionCall) -> Unit = {},
+    ): LLMToolSetup = object : LLMToolSetup {
+        override val fn: LLMRequest.Function = LLMRequest.Function(
+            name = name,
+            description = "$name description",
+            parameters = LLMRequest.Parameters(
+                type = "object",
+                properties = emptyMap(),
+            ),
+        )
+
+        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message {
+            onInvoke(functionCall)
+            return LLMRequest.Message(
+                role = LLMMessageRole.function,
+                content = "ok",
+                name = functionCall.name,
+            )
+        }
+    }
 }

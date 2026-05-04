@@ -4,7 +4,6 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundleException
-import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -21,8 +20,11 @@ class LlmSkillSelector(
 
     override suspend fun select(input: SkillSelectionInput): SkillSelectionResult {
         if (input.availableSkills.isEmpty()) {
+            logNoAvailableSkills()
             return SkillSelectionResult(emptyList(), "No skills available.")
         }
+
+        logAvailableSkills(input)
 
         val allowedIds = input.availableSkills.map { it.skillId.value }.toSet()
         val response = llmApi.message(
@@ -46,16 +48,12 @@ class LlmSkillSelector(
             ?: throw SkillBundleException("Skill selector LLM request failed: $response")
         val content = ok.choices.lastOrNull()?.message?.content.orEmpty()
         val parsed: SelectorResponse = restJsonMapper.readValue(jsonUtils.extractObject(content))
+        val rejectedIds = parsed.selectedSkillIds.filterNot { it in allowedIds }.distinct()
         val safeIds = parsed.selectedSkillIds
             .filter { it in allowedIds }
             .distinct()
             .map(::SkillId)
-        logger.info(
-            "Skill selector returned {} candidate(s), accepted {} for {} available skill(s)",
-            parsed.selectedSkillIds.size,
-            safeIds.size,
-            input.availableSkills.size,
-        )
+        logSelectionResult(input, parsed, safeIds, rejectedIds)
         return SkillSelectionResult(
             selectedSkillIds = safeIds,
             rationale = parsed.rationale.orEmpty(),
@@ -84,6 +82,36 @@ class LlmSkillSelector(
             JSON:
             ${restJsonMapper.writeValueAsString(payload)}
         """.trimIndent()
+    }
+
+    private fun logNoAvailableSkills() {
+        logger.info("Skill selector skipped: no available skills")
+    }
+
+    private fun logAvailableSkills(input: SkillSelectionInput) {
+        logger.info(
+            "Skill selector evaluating {} available skill(s): {}",
+            input.availableSkills.size,
+            input.availableSkills.map { it.skillId.value },
+        )
+    }
+
+    private fun logSelectionResult(
+        input: SkillSelectionInput,
+        parsed: SelectorResponse,
+        safeIds: List<SkillId>,
+        rejectedIds: List<String>,
+    ) {
+        logger.info(
+            "Skill selector returned {} candidate(s), accepted {} for {} available skill(s), rejectedUnknown={}",
+            parsed.selectedSkillIds.size,
+            safeIds.size,
+            input.availableSkills.size,
+            rejectedIds,
+        )
+        if (parsed.rationale?.isNotBlank() == true) {
+            logger.debug("Skill selector rationale: {}", parsed.rationale)
+        }
     }
 
     private data class SelectorResponse(

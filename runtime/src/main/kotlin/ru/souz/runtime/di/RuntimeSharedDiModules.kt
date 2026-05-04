@@ -30,9 +30,12 @@ import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.paths.DefaultSouzPaths
 import ru.souz.paths.SouzPaths
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
-import ru.souz.skills.registry.SandboxSkillRegistryRepository
+import ru.souz.skills.registry.FileSystemSkillRegistryConfig
+import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 
-fun runtimeCoreDiModule(): DI.Module = DI.Module("runtimeCore") {
+fun runtimeCoreDiModule(
+    skillRegistryConfig: FileSystemSkillRegistryConfig = FileSystemSkillRegistryConfig(),
+): DI.Module = DI.Module("runtimeCore") {
     bindSingleton { ConfigStore }
     bindSingleton<SouzPaths> { DefaultSouzPaths() }
     bindSingleton { LocalHostInfoProvider() }
@@ -44,8 +47,9 @@ fun runtimeCoreDiModule(): DI.Module = DI.Module("runtimeCore") {
     bindSingleton { LocalProviderAvailability(instance(), instance(), instance()) }
     bindSingleton<SettingsProvider> { SettingsProviderImpl(instance(), instance()) }
     bindSingleton<SkillRegistryRepository> {
-        SandboxSkillRegistryRepository(
+        FileSystemSkillRegistryRepository(
             sandboxResolver = instance<ToolInvocationRuntimeSandboxResolver>(),
+            config = skillRegistryConfig,
         )
     }
 }

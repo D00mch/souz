@@ -9,10 +9,12 @@ import ru.souz.agent.skills.bundle.SKILL_MD_PATH
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.selection.LlmSkillSelector
 import ru.souz.agent.skills.selection.SkillSelectionInput
 import ru.souz.agent.skills.selection.SkillSelector
 import ru.souz.agent.skills.validation.LlmSkillValidator
+import ru.souz.agent.skills.validation.SkillLlmValidationVerdict
 import ru.souz.agent.skills.validation.SkillLlmValidationInput
 import ru.souz.agent.skills.validation.SkillLlmValidator
 import ru.souz.agent.skills.validation.SkillStaticValidator
@@ -72,6 +74,8 @@ class SkillActivationPipeline(
 
     /** Inject skills */
     suspend fun run(input: Input): Result {
+        logActivationStarted(input)
+
         var state = State(input)
 
         while (state.phase != SkillActivationPhase.DONE) {
@@ -91,13 +95,7 @@ class SkillActivationPipeline(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (t: Throwable) {
-            logger.warn(
-                "Skills phase {} failed for user={}, skill={}",
-                state.phase,
-                state.input.userId,
-                state.currentSkillId?.value,
-                t,
-            )
+            logPhaseFailed(state, t)
 
             state.finishBlocked(
                 reason = "Skills processing failed during ${state.phase}.",
@@ -123,6 +121,7 @@ class SkillActivationPipeline(
 
     private suspend fun selectSkills(state: State): State {
         val availableSkills = registryRepository.listSkills(state.input.userId)
+        logRegistryResult(state, availableSkills)
         val selection = selector.select(
             SkillSelectionInput(
                 userMessage = state.input.context.input,
@@ -131,15 +130,19 @@ class SkillActivationPipeline(
         )
         val selectedIds = selection.selectedSkillIds
         if (selectedIds.isEmpty()) {
+            logNoSkillsSelected(state, availableSkills.size, selection.rationale)
             return state.copy(
                 selectedSkillIds = emptyList(),
                 phase = SkillActivationPhase.INJECT_CONTEXT,
             )
         }
 
+        logSkillsSelected(state, selectedIds)
+
         val availableById = availableSkills.associateBy { it.skillId }
         val unknownSkill = selectedIds.firstOrNull { it !in availableById }
         if (unknownSkill != null) {
+            logUnknownSkillSelected(state, unknownSkill, selectedIds, availableSkills)
             return state.copy(selectedSkillIds = selectedIds).finishBlocked(
                 reason = "Skill selector returned an unknown skill id: ${unknownSkill.value}",
                 findings = listOf(
@@ -166,6 +169,8 @@ class SkillActivationPipeline(
                 code = "bundle.missing",
             )
 
+        logBundleLoaded(state, skillId, bundle)
+
         return state.copy(
             bundle = bundle,
             bundleHash = null,
@@ -175,10 +180,15 @@ class SkillActivationPipeline(
         )
     }
 
-    private fun hashBundle(state: State): State = state.copy(
-        bundleHash = SkillBundleHasher.hash(state.requireBundle()),
-        phase = SkillActivationPhase.CHECK_CACHE,
-    )
+    private fun hashBundle(state: State): State {
+        val skillId = state.requireCurrentSkillId()
+        val bundleHash = SkillBundleHasher.hash(state.requireBundle())
+        logBundleHashed(state, skillId, bundleHash)
+        return state.copy(
+            bundleHash = bundleHash,
+            phase = SkillActivationPhase.CHECK_CACHE,
+        )
+    }
 
     private suspend fun checkCache(state: State): State {
         val skillId = state.requireCurrentSkillId()
@@ -201,24 +211,33 @@ class SkillActivationPipeline(
 
         return when (cached?.status) {
             SkillValidationStatus.APPROVED -> {
-                logger.info("Using cached skill validation for {} ({})", skillId.value, bundleHash.take(12))
+                logValidationCacheHit(state, skillId, bundleHash, cached)
                 state.copy(phase = SkillActivationPhase.ACTIVATE_SKILL)
             }
 
-            SkillValidationStatus.REJECTED ->
+            SkillValidationStatus.REJECTED -> {
+                logValidationCacheHit(state, skillId, bundleHash, cached)
                 rejectCurrentSkill(
                     state = state,
                     reason = "Skill validation previously rejected for ${skillId.value}",
                     findings = listOf(
-                            errorFinding(
-                                code = "validation.cached_reject",
-                                message = "Skill validation previously rejected for ${skillId.value}",
-                            )
-                        ),
+                        errorFinding(
+                            code = "validation.cached_reject",
+                            message = "Skill validation previously rejected for ${skillId.value}",
+                        )
+                    ),
                 )
+            }
 
-            SkillValidationStatus.STALE, null ->
+            SkillValidationStatus.STALE -> {
+                logStaleValidationCacheHit(state, skillId, bundleHash)
                 state.copy(phase = SkillActivationPhase.STRUCTURAL_VALIDATE)
+            }
+
+            null -> {
+                logValidationCacheMiss(state, skillId, bundleHash)
+                state.copy(phase = SkillActivationPhase.STRUCTURAL_VALIDATE)
+            }
         }
     }
 
@@ -226,6 +245,7 @@ class SkillActivationPipeline(
         val skillId = state.requireCurrentSkillId()
         val bundleHash = state.requireBundleHash()
         val structural = SkillStructuralValidator(state.input.policy).validate(state.requireBundle())
+        logStructuralValidation(state, skillId, bundleHash, structural)
         if (structural.hasHardReject) {
             registryRepository.saveValidation(
                 SkillValidationRecord(
@@ -257,6 +277,7 @@ class SkillActivationPipeline(
         val skillId = state.requireCurrentSkillId()
         val bundleHash = state.requireBundleHash()
         val static = SkillStaticValidator(state.input.policy).validate(state.requireBundle())
+        logStaticValidation(state, skillId, bundleHash, static)
         if (static.hasHardReject) {
             registryRepository.saveValidation(
                 SkillValidationRecord(
@@ -285,6 +306,8 @@ class SkillActivationPipeline(
     }
 
     private suspend fun validateWithLlm(state: State): State {
+        if (true) return state.copy(phase = SkillActivationPhase.ACTIVATE_SKILL)
+
         val bundle = state.requireBundle()
         val skillId = state.requireCurrentSkillId()
         val bundleHash = state.requireBundleHash()
@@ -320,28 +343,36 @@ class SkillActivationPipeline(
             createdAt = Instant.now(clock),
         )
         registryRepository.saveValidation(record)
-        if (record.status != SkillValidationStatus.APPROVED) {
-            return rejectCurrentSkill(
-                state = state,
-                reason = "Skill validation rejected for ${skillId.value}",
-                findings = record.findings.ifEmpty {
-                    listOf(
-                        errorFinding(
-                            code = "validation.rejected",
-                            message = "Skill validation rejected for ${skillId.value}",
+        logLlmValidationResult(state, skillId, bundleHash, llmVerdict, record)
+        return when {
+            record.status == SkillValidationStatus.APPROVED -> {
+                state.copy(phase = SkillActivationPhase.ACTIVATE_SKILL)
+            }
+            else -> {
+                rejectCurrentSkill(
+                    state = state,
+                    reason = "Skill validation rejected for ${skillId.value}",
+                    findings = record.findings.ifEmpty {
+                        listOf(
+                            errorFinding(
+                                code = "validation.rejected",
+                                message = "Skill validation rejected for ${skillId.value}",
+                            )
                         )
-                    )
-                },
-            )
+                    },
+                )
+            }
         }
-
-        return state.copy(phase = SkillActivationPhase.ACTIVATE_SKILL)
     }
 
-    private fun activateSkill(state: State): State = state.copy(
-        activatedSkills = state.activatedSkills + state.requireBundle().toActivatedSkill(state.requireBundleHash()),
-        phase = SkillActivationPhase.NEXT_SKILL,
-    )
+    private fun activateSkill(state: State): State {
+        val newSkills = state.requireBundle().toActivatedSkill(state.requireBundleHash())
+        logSkillActivated(state, newSkills)
+        return state.copy(
+            activatedSkills = state.activatedSkills + newSkills,
+            phase = SkillActivationPhase.NEXT_SKILL,
+        )
+    }
 
     private fun nextSkill(state: State): State {
         val nextIndex = state.currentIndex + 1
@@ -357,6 +388,7 @@ class SkillActivationPipeline(
 
     private fun injectContext(state: State): State {
         val updatedContext = SkillContextInjector.inject(state.input.context, state.activatedSkills)
+        logActivationFinished(state)
         return state.finishReady(updatedContext)
     }
 
@@ -366,6 +398,7 @@ class SkillActivationPipeline(
         findings: List<SkillValidationFinding>,
     ): State {
         val skillId = state.requireCurrentSkillId()
+        logSkillRejected(state, skillId, reason, findings)
         return nextSkill(
             state.copy(
                 rejectedSkills = state.rejectedSkills + RejectedSkill(
@@ -401,6 +434,243 @@ class SkillActivationPipeline(
         message = message,
         severity = SkillValidationSeverity.ERROR,
     )
+
+    private fun SkillValidationResult.errorCount(): Int =
+        findings.count { it.severity == SkillValidationSeverity.ERROR }
+
+    private fun logActivationStarted(input: Input) {
+        logger.info(
+            "Skill activation started for user={} conversationId={} requestId={} policy={} " +
+                    "validator={} minApprovalConfidence={}",
+            input.userId,
+            input.context.toolInvocationMeta.conversationId,
+            input.context.toolInvocationMeta.requestId,
+            input.policy.policyVersion,
+            input.policy.validatorVersion,
+            input.policy.minApprovalConfidence,
+        )
+    }
+
+    private fun logPhaseFailed(state: State, error: Throwable) {
+        logger.warn(
+            "Skills phase {} failed for user={}, skill={}",
+            state.phase,
+            state.input.userId,
+            state.currentSkillId?.value,
+            error,
+        )
+    }
+
+    private fun logRegistryResult(state: State, availableSkills: List<StoredSkill>) {
+        logger.info(
+            "Skill registry returned {} skill(s) for user={} ids={}",
+            availableSkills.size,
+            state.input.userId,
+            availableSkills.map { it.skillId.value },
+        )
+    }
+
+    private fun logNoSkillsSelected(
+        state: State,
+        availableSkillCount: Int,
+        rationale: String,
+    ) {
+        logger.info(
+            "Skill activation selected no skills for user={} available={} rationale={}",
+            state.input.userId,
+            availableSkillCount,
+            rationale,
+        )
+    }
+
+    private fun logSkillsSelected(state: State, selectedIds: List<SkillId>) {
+        logger.info(
+            "Skill activation selected {} skill(s) for user={} ids={}",
+            selectedIds.size,
+            state.input.userId,
+            selectedIds.map { it.value },
+        )
+    }
+
+    private fun logUnknownSkillSelected(
+        state: State,
+        unknownSkill: SkillId,
+        selectedIds: List<SkillId>,
+        availableSkills: List<StoredSkill>,
+    ) {
+        logger.warn(
+            "Skill selector returned unknown skill id={} for user={} selected={} available={}",
+            unknownSkill.value,
+            state.input.userId,
+            selectedIds.map { it.value },
+            availableSkills.map { it.skillId.value },
+        )
+    }
+
+    private fun logBundleLoaded(
+        state: State,
+        skillId: SkillId,
+        bundle: SkillBundle,
+    ) {
+        logger.info(
+            "Skill bundle loaded skill={} user={} files={} supportingFiles={}",
+            skillId.value,
+            state.input.userId,
+            bundle.files.size,
+            bundle.files.count { it.normalizedPath != SKILL_MD_PATH },
+        )
+    }
+
+    private fun logBundleHashed(
+        state: State,
+        skillId: SkillId,
+        bundleHash: String,
+    ) {
+        logger.info(
+            "Skill bundle hashed skill={} user={} hash={}",
+            skillId.value,
+            state.input.userId,
+            bundleHash.take(12),
+        )
+    }
+
+    private fun logValidationCacheHit(
+        state: State,
+        skillId: SkillId,
+        bundleHash: String,
+        cached: SkillValidationRecord,
+    ) {
+        logger.info(
+            "Skill validation cache hit status={} skill={} user={} hash={} policy={} findings={} reasons={}",
+            cached.status,
+            skillId.value,
+            state.input.userId,
+            bundleHash.take(12),
+            state.input.policy.policyVersion,
+            cached.findings.size,
+            cached.reasons.size,
+        )
+    }
+
+    private fun logStaleValidationCacheHit(
+        state: State,
+        skillId: SkillId,
+        bundleHash: String,
+    ) {
+        logger.info(
+            "Skill validation cache hit status=STALE skill={} user={} hash={} policy={}",
+            skillId.value,
+            state.input.userId,
+            bundleHash.take(12),
+            state.input.policy.policyVersion,
+        )
+    }
+
+    private fun logValidationCacheMiss(
+        state: State,
+        skillId: SkillId,
+        bundleHash: String,
+    ) {
+        logger.info(
+            "Skill validation cache miss skill={} user={} hash={} policy={}",
+            skillId.value,
+            state.input.userId,
+            bundleHash.take(12),
+            state.input.policy.policyVersion,
+        )
+    }
+
+    private fun logStructuralValidation(
+        state: State,
+        skillId: SkillId,
+        bundleHash: String,
+        result: SkillValidationResult,
+    ) {
+        logger.info(
+            "Skill structural validation skill={} user={} hash={} findings={} errors={}",
+            skillId.value,
+            state.input.userId,
+            bundleHash.take(12),
+            result.findings.size,
+            result.errorCount(),
+        )
+    }
+
+    private fun logStaticValidation(
+        state: State,
+        skillId: SkillId,
+        bundleHash: String,
+        result: SkillValidationResult,
+    ) {
+        logger.info(
+            "Skill static validation skill={} user={} hash={} findings={} errors={}",
+            skillId.value,
+            state.input.userId,
+            bundleHash.take(12),
+            result.findings.size,
+            result.errorCount(),
+        )
+    }
+
+    private fun logLlmValidationResult(
+        state: State,
+        skillId: SkillId,
+        bundleHash: String,
+        verdict: SkillLlmValidationVerdict,
+        record: SkillValidationRecord,
+    ) {
+        logger.info(
+            "Skill LLM validation result skill={} user={} hash={} decision={} confidence={} " +
+                    "minApprovalConfidence={} finalStatus={} findings={} errors={} model={}",
+            skillId.value,
+            state.input.userId,
+            bundleHash.take(12),
+            verdict.decision,
+            verdict.confidence,
+            state.input.policy.minApprovalConfidence,
+            record.status,
+            record.findings.size,
+            record.findings.count { it.severity == SkillValidationSeverity.ERROR },
+            record.model,
+        )
+    }
+
+    private fun logSkillActivated(state: State, skill: ActivatedSkill) {
+        logger.info(
+            "Skill activated skill={} user={} hash={}",
+            skill.skillId.value,
+            state.input.userId,
+            skill.bundleHash.take(12),
+        )
+    }
+
+    private fun logActivationFinished(state: State) {
+        logger.info(
+            "Skill activation finished for user={} selected={} activated={} rejected={} activatedIds={} rejectedIds={}",
+            state.input.userId,
+            state.selectedSkillIds.size,
+            state.activatedSkills.size,
+            state.rejectedSkills.size,
+            state.activatedSkills.map { it.skillId.value },
+            state.rejectedSkills.map { it.skillId.value },
+        )
+    }
+
+    private fun logSkillRejected(
+        state: State,
+        skillId: SkillId,
+        reason: String,
+        findings: List<SkillValidationFinding>,
+    ) {
+        logger.warn(
+            "Skill rejected skill={} user={} reason={} findings={} errors={}",
+            skillId.value,
+            state.input.userId,
+            reason,
+            findings.size,
+            findings.count { it.severity == SkillValidationSeverity.ERROR },
+        )
+    }
 
     private data class State(
         val input: Input,

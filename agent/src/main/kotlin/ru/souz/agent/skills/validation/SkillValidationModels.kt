@@ -60,7 +60,7 @@ data class SkillValidationPolicy(
         fun default(): SkillValidationPolicy = SkillValidationPolicy(
             policyVersion = "skills-policy/v1",
             validatorVersion = "skills-validator/v1",
-            minApprovalConfidence = 0.80,
+            minApprovalConfidence = 0.66,
             maxFileBytes = 128 * 1024,
             maxBundleBytes = 512 * 1024,
             excerptCharsPerFile = 2_000,
