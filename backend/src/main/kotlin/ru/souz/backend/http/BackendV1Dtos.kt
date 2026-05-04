@@ -26,6 +26,7 @@ import ru.souz.backend.execution.model.AgentExecutionUsage
 import ru.souz.backend.keys.model.UserProviderKeyView
 import ru.souz.backend.execution.service.CancelExecutionResult
 import ru.souz.backend.settings.model.EffectiveUserSettings
+import ru.souz.backend.telegram.TelegramBotBinding
 import ru.souz.llms.restJsonMapper
 
 internal data class BackendV1SettingsResponse(
@@ -115,6 +116,14 @@ internal data class BackendV1MessagesResponse(
     val nextBeforeSeq: Long?,
 )
 
+internal data class BackendV1TelegramBotBindingResponse(
+    val telegramBot: BackendV1TelegramBotBindingDto?,
+)
+
+internal data class BackendV1UpsertTelegramBotBindingRequest(
+    val token: String? = null,
+)
+
 internal data class BackendV1CreateMessageRequest(
     val content: String = "",
     val clientMessageId: String? = null,
@@ -168,6 +177,14 @@ internal data class BackendV1MessageDto(
     val content: String,
     val metadata: Map<String, String>,
     val createdAt: String,
+)
+
+internal data class BackendV1TelegramBotBindingDto(
+    val enabled: Boolean,
+    val createdAt: String,
+    val updatedAt: String,
+    val lastError: String? = null,
+    val lastErrorAt: String? = null,
 )
 
 internal data class BackendV1ExecutionDto(
@@ -244,6 +261,15 @@ internal fun Chat.toDto(lastMessagePreview: String? = null): BackendV1ChatDto =
         createdAt = createdAt.toString(),
         updatedAt = updatedAt.toString(),
         lastMessagePreview = lastMessagePreview,
+    )
+
+internal fun TelegramBotBinding.toDto(): BackendV1TelegramBotBindingDto =
+    BackendV1TelegramBotBindingDto(
+        enabled = enabled,
+        createdAt = createdAt.toString(),
+        updatedAt = updatedAt.toString(),
+        lastError = lastError,
+        lastErrorAt = lastErrorAt?.toString(),
     )
 
 internal fun SendMessageResult.toResponse(): BackendV1CreateMessageResponse =

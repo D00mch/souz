@@ -22,6 +22,7 @@ internal object BackendHttpRoutes {
     const val CHAT_ARCHIVE_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/archive"
     const val CHAT_UNARCHIVE_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/unarchive"
     const val CHAT_MESSAGES_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/messages"
+    const val CHAT_TELEGRAM_BOT_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/telegram-bot"
     const val CHAT_EVENTS_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/events"
     const val CHAT_WS_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/ws"
     const val CHAT_CANCEL_ACTIVE_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/cancel-active"
@@ -32,6 +33,8 @@ internal object BackendHttpRoutes {
     fun providerKey(provider: String): String = "$PROVIDER_KEYS/$provider"
 
     fun chatMessages(chatId: Any): String = "$CHATS/$chatId/messages"
+
+    fun chatTelegramBot(chatId: Any): String = "$CHATS/$chatId/telegram-bot"
 
     fun chatTitle(chatId: Any): String = "$CHATS/$chatId/title"
 

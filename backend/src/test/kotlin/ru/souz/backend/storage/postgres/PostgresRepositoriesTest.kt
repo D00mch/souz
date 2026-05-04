@@ -64,7 +64,7 @@ class PostgresRepositoriesTest {
 
         dataSource.use {
             assertEquals(
-                listOf("1", "2", "3", "4", "5"),
+                listOf("1", "2", "3", "4", "5", "6"),
                 appliedMigrationVersions(it),
             )
             assertTrue(tableExists(it, "tool_calls"))

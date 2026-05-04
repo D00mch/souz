@@ -26,10 +26,12 @@ import ru.souz.backend.storage.filesystem.FilesystemAgentStateRepository
 import ru.souz.backend.storage.filesystem.FilesystemChatRepository
 import ru.souz.backend.storage.filesystem.FilesystemOptionRepository
 import ru.souz.backend.storage.filesystem.FilesystemMessageRepository
+import ru.souz.backend.storage.filesystem.FilesystemTelegramBotBindingRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserProviderKeyRepository
 import ru.souz.backend.storage.filesystem.FilesystemUserSettingsRepository
 import ru.souz.backend.storage.memory.MemoryAgentEventRepository
+import ru.souz.backend.storage.memory.MemoryTelegramBotBindingRepository
 import ru.souz.backend.storage.memory.MemoryUserRepository
 import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
@@ -38,11 +40,13 @@ import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
 import ru.souz.backend.storage.postgres.PostgresChatRepository
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
+import ru.souz.backend.storage.postgres.PostgresTelegramBotBindingRepository
 import ru.souz.backend.storage.postgres.PostgresUserRepository
 import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.backend.storage.postgres.postgresAppConfig
+import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.user.repository.UserRepository
 
 class BackendDiModuleTest {
@@ -73,6 +77,7 @@ class BackendDiModuleTest {
         assertIs<FilesystemAgentEventRepository>(di.direct.instance<AgentEventRepository>())
         assertIs<FilesystemUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
         assertIs<FilesystemUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
+        assertIs<FilesystemTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
         assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
         assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
         assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
@@ -104,6 +109,7 @@ class BackendDiModuleTest {
             assertIs<PostgresAgentEventRepository>(di.direct.instance<AgentEventRepository>())
             assertIs<PostgresUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
             assertIs<PostgresUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
+            assertIs<PostgresTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
             assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
             assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
             assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
@@ -138,6 +144,7 @@ class BackendDiModuleTest {
             assertIs<MemoryAgentEventRepository>(di.direct.instance<AgentEventRepository>())
             assertIs<PostgresUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
             assertIs<PostgresUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
+            assertIs<PostgresTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
             assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
             assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
             assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
@@ -166,6 +173,7 @@ class BackendDiModuleTest {
 
         assertIs<MemoryUserRepository>(di.direct.instance<UserRepository>())
         assertIs<MemoryUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
+        assertIs<MemoryTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
         assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
         assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
         assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())

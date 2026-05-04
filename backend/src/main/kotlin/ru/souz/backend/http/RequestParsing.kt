@@ -13,6 +13,9 @@ import ru.souz.llms.LLMModel
 internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrV1BadRequest(): T =
     receiveOrRequestError(::invalidV1Request)
 
+internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrBadRequest(): T =
+    receiveOrRequestError(::badRequestV1)
+
 internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(): UserSettingsOverrides =
     UserSettingsOverrides(
         defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel") },

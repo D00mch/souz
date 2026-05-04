@@ -31,6 +31,7 @@ import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.security.RequestIdentityPlugin
 import ru.souz.backend.settings.service.UserSettingsService
+import ru.souz.backend.telegram.TelegramBotBindingService
 
 /** Health-check response returned by `GET /health`. */
 data class HealthResponse(
@@ -55,6 +56,7 @@ class BackendHttpServer(
     executionService: AgentExecutionService? = null,
     optionService: OptionService? = null,
     eventService: AgentEventService? = null,
+    telegramBotBindingService: TelegramBotBindingService? = null,
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     selectedModel: () -> String,
     private val bindAddress: InetSocketAddress,
@@ -72,6 +74,7 @@ class BackendHttpServer(
         executionService = executionService,
         optionService = optionService,
         eventService = eventService,
+        telegramBotBindingService = telegramBotBindingService,
         featureFlags = featureFlags,
         selectedModel = selectedModel,
         trustedProxyToken = trustedProxyToken,
@@ -116,6 +119,7 @@ fun Application.backendApplication(
     executionService: AgentExecutionService? = null,
     optionService: OptionService? = null,
     eventService: AgentEventService? = null,
+    telegramBotBindingService: TelegramBotBindingService? = null,
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     selectedModel: () -> String,
     trustedProxyToken: () -> String? = { null },
@@ -132,6 +136,7 @@ fun Application.backendApplication(
             executionService = executionService,
             optionService = optionService,
             eventService = eventService,
+            telegramBotBindingService = telegramBotBindingService,
             featureFlags = featureFlags,
             selectedModel = selectedModel,
             trustedProxyToken = trustedProxyToken,
@@ -220,8 +225,11 @@ private val ROOT_ENDPOINTS = listOf(
     "POST ${BackendHttpRoutes.CHAT_ARCHIVE_PATTERN}",
     "POST ${BackendHttpRoutes.CHAT_UNARCHIVE_PATTERN}",
     "GET ${BackendHttpRoutes.CHAT_MESSAGES_PATTERN}",
+    "GET ${BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN}",
     "GET ${BackendHttpRoutes.CHAT_EVENTS_PATTERN}",
     "POST ${BackendHttpRoutes.CHAT_MESSAGES_PATTERN}",
+    "PUT ${BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN}",
+    "DELETE ${BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN}",
     "POST ${BackendHttpRoutes.CHAT_CANCEL_ACTIVE_PATTERN}",
     "POST ${BackendHttpRoutes.CHAT_EXECUTION_CANCEL_PATTERN}",
     "POST ${BackendHttpRoutes.OPTION_ANSWER_PATTERN}",

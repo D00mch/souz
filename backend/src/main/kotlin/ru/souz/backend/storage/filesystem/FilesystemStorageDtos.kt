@@ -26,6 +26,7 @@ import ru.souz.backend.settings.model.ToolPermission
 import ru.souz.backend.settings.model.ToolPermissionMode
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
+import ru.souz.backend.telegram.TelegramBotBinding
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.user.model.UserRecord
@@ -202,6 +203,20 @@ internal data class StoredUserMcpServer(
     val url: String? = null,
 )
 
+internal data class StoredTelegramBotBinding(
+    val id: String,
+    val userId: String,
+    val chatId: String,
+    val botToken: String,
+    val botTokenHash: String,
+    val lastUpdateId: Long,
+    val enabled: Boolean,
+    val lastError: String? = null,
+    val lastErrorAt: String? = null,
+    val createdAt: String,
+    val updatedAt: String,
+)
+
 internal fun Chat.toStored(): StoredChat =
     StoredChat(
         id = id.toString(),
@@ -218,6 +233,36 @@ internal fun StoredChat.toDomain(): Chat =
         userId = userId,
         title = title,
         archived = archived,
+        createdAt = Instant.parse(createdAt),
+        updatedAt = Instant.parse(updatedAt),
+    )
+
+internal fun TelegramBotBinding.toStored(): StoredTelegramBotBinding =
+    StoredTelegramBotBinding(
+        id = id.toString(),
+        userId = userId,
+        chatId = chatId.toString(),
+        botToken = botToken,
+        botTokenHash = botTokenHash,
+        lastUpdateId = lastUpdateId,
+        enabled = enabled,
+        lastError = lastError,
+        lastErrorAt = lastErrorAt?.toString(),
+        createdAt = createdAt.toString(),
+        updatedAt = updatedAt.toString(),
+    )
+
+internal fun StoredTelegramBotBinding.toDomain(): TelegramBotBinding =
+    TelegramBotBinding(
+        id = UUID.fromString(id),
+        userId = userId,
+        chatId = UUID.fromString(chatId),
+        botToken = botToken,
+        botTokenHash = botTokenHash,
+        lastUpdateId = lastUpdateId,
+        enabled = enabled,
+        lastError = lastError,
+        lastErrorAt = lastErrorAt?.let(Instant::parse),
         createdAt = Instant.parse(createdAt),
         updatedAt = Instant.parse(updatedAt),
     )
