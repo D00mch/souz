@@ -55,4 +55,5 @@ runtime/
 * Skill bundle loading should stay split:
     * `skills/bundle/` decides how validated files become a `SkillBundle`.
     * `skills/filesystem/` owns safe, replaceable filesystem access for host/user/sandbox environments.
+* Skill storage and validation repositories resolve `SouzPaths` through `SandboxFileSystem`.
 * Avoid direct host filesystem access in new skill/tool code when sandbox-aware abstractions are available.

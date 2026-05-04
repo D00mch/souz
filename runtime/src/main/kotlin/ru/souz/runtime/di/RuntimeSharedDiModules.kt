@@ -29,7 +29,8 @@ import ru.souz.llms.runtime.LLMFactory
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.paths.DefaultSouzPaths
 import ru.souz.paths.SouzPaths
-import ru.souz.skills.registry.LocalSkillRegistryRepository
+import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
+import ru.souz.skills.registry.SandboxSkillRegistryRepository
 
 fun runtimeCoreDiModule(): DI.Module = DI.Module("runtimeCore") {
     bindSingleton { ConfigStore }
@@ -42,7 +43,11 @@ fun runtimeCoreDiModule(): DI.Module = DI.Module("runtimeCore") {
     bindSingleton { LocalStrictJsonParser() }
     bindSingleton { LocalProviderAvailability(instance(), instance(), instance()) }
     bindSingleton<SettingsProvider> { SettingsProviderImpl(instance(), instance()) }
-    bindSingleton<SkillRegistryRepository> { LocalSkillRegistryRepository(paths = instance()) }
+    bindSingleton<SkillRegistryRepository> {
+        SandboxSkillRegistryRepository(
+            sandboxResolver = instance<ToolInvocationRuntimeSandboxResolver>(),
+        )
+    }
 }
 
 fun runtimeLlmDiModule(

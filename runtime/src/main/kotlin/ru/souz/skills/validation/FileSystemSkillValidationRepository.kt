@@ -1,12 +1,9 @@
 package ru.souz.skills.validation
 
 import com.fasterxml.jackson.module.kotlin.readValue
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
-import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -16,26 +13,22 @@ import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationRepository
 import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.llms.restJsonMapper
-import ru.souz.paths.DefaultSouzPaths
 import ru.souz.paths.SouzPaths
+import ru.souz.runtime.sandbox.SandboxFileSystem
+import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.skills.registry.SkillStoragePaths
-import kotlin.io.path.createDirectories
-import kotlin.io.path.exists
-import kotlin.io.path.isDirectory
-import kotlin.io.path.listDirectoryEntries
-import kotlin.io.path.readText
 
 /**
  * File-backed [SkillValidationRepository] that stores one JSON record per
  * user, skill, bundle hash, and validation policy version.
  *
- * Records are written atomically when possible so validation outcomes survive
- * restarts and can be shared across turns.
+ * Reads and writes go through [SandboxFileSystem] so validation state follows
+ * the same runtime-visible paths as skill bundles.
  */
 class FileSystemSkillValidationRepository(
-    private val paths: SouzPaths = DefaultSouzPaths(),
+    private val paths: SouzPaths,
+    private val fileSystem: SandboxFileSystem,
     private val clock: Clock = Clock.systemUTC(),
-    private val pathsResolver: (String) -> SouzPaths = { paths },
 ) : SkillValidationRepository {
     private val logger = LoggerFactory.getLogger(FileSystemSkillValidationRepository::class.java)
 
@@ -46,25 +39,31 @@ class FileSystemSkillValidationRepository(
         policyVersion: String,
     ): SkillValidationRecord? = withContext(Dispatchers.IO) {
         readRecordOrNull(
-            SkillStoragePaths.validationRecordPath(
-                paths = pathsResolver(userId),
-                userId = userId,
-                skillId = skillId,
-                policyVersion = policyVersion,
-                bundleHash = bundleHash,
+            resolvePath(
+                SkillStoragePaths.validationRecordPath(
+                    paths = paths,
+                    userId = userId,
+                    skillId = skillId,
+                    policyVersion = policyVersion,
+                    bundleHash = bundleHash,
+                )
             )
         )
     }
 
     override suspend fun saveValidation(record: SkillValidationRecord) = withContext(Dispatchers.IO) {
-        val path = SkillStoragePaths.validationRecordPath(
-            paths = pathsResolver(record.userId),
-            userId = record.userId,
-            skillId = record.skillId,
-            policyVersion = record.policyVersion,
-            bundleHash = record.bundleHash,
+        writeRecord(
+            path = resolvePath(
+                SkillStoragePaths.validationRecordPath(
+                    paths = paths,
+                    userId = record.userId,
+                    skillId = record.skillId,
+                    policyVersion = record.policyVersion,
+                    bundleHash = record.bundleHash,
+                )
+            ),
+            record = record,
         )
-        writeRecord(path, record)
     }
 
     override suspend fun markValidationStatus(
@@ -91,18 +90,24 @@ class FileSystemSkillValidationRepository(
         policyVersion: String,
         reason: String?,
     ) = withContext(Dispatchers.IO) {
-        val paths = pathsResolver(userId)
-        val policyRoot = SkillStoragePaths.validationPolicyRoot(
-            paths = paths,
-            userId = userId,
-            skillId = skillId,
-            policyVersion = policyVersion,
+        val policyRoot = resolvePath(
+            SkillStoragePaths.validationPolicyRoot(
+                paths = paths,
+                userId = userId,
+                skillId = skillId,
+                policyVersion = policyVersion,
+            )
         )
-        if (!policyRoot.exists() || !policyRoot.isDirectory()) {
+        if (!policyRoot.exists || !policyRoot.isDirectory) {
             return@withContext
         }
 
-        policyRoot.listDirectoryEntries("*.json")
+        fileSystem.listDescendants(
+            root = policyRoot,
+            maxDepth = 1,
+            includeHidden = true,
+        )
+            .filter { it.isRegularFile && it.parentPath == policyRoot.path && it.name.endsWith(".json") }
             .forEach { path ->
                 val record = readRecordOrNull(path) ?: return@forEach
                 if (record.bundleHash == activeBundleHash || record.status != SkillValidationStatus.APPROVED) {
@@ -118,10 +123,10 @@ class FileSystemSkillValidationRepository(
             }
     }
 
-    private fun readRecordOrNull(path: Path): SkillValidationRecord? {
-        if (!path.exists()) return null
+    private fun readRecordOrNull(path: SandboxPathInfo): SkillValidationRecord? {
+        if (!path.exists || !path.isRegularFile) return null
         return runCatching {
-            val stored: StoredSkillValidationRecord = restJsonMapper.readValue(path.readText())
+            val stored: StoredSkillValidationRecord = restJsonMapper.readValue(fileSystem.readText(path))
             SkillValidationRecord(
                 userId = stored.userId,
                 skillId = SkillId(stored.skillId),
@@ -135,17 +140,14 @@ class FileSystemSkillValidationRepository(
                 createdAt = Instant.parse(stored.createdAt),
             )
         }.onFailure { error ->
-            logger.warn("Failed to read validation record from {}: {}", path, error.message)
+            logger.warn("Failed to read validation record from {}: {}", path.path, error.message)
         }.getOrNull()
     }
 
     private fun writeRecord(
-        path: Path,
+        path: SandboxPathInfo,
         record: SkillValidationRecord,
     ) {
-        val parent = path.parent ?: error("Validation record path has no parent: $path")
-        parent.createDirectories()
-        val tempPath = parent.resolve("${path.fileName}.tmp-${UUID.randomUUID()}")
         val stored = StoredSkillValidationRecord(
             userId = record.userId,
             skillId = record.skillId.value,
@@ -159,21 +161,14 @@ class FileSystemSkillValidationRepository(
             createdAt = record.createdAt.toString(),
             updatedAt = clock.instant().toString(),
         )
-
-        try {
-            Files.writeString(
-                tempPath,
-                restJsonMapper.writerWithDefaultPrettyPrinter().writeValueAsString(stored),
-            )
-            try {
-                Files.move(tempPath, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(tempPath, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-            }
-        } finally {
-            Files.deleteIfExists(tempPath)
-        }
+        fileSystem.writeTextAtomically(
+            path = path,
+            content = restJsonMapper.writerWithDefaultPrettyPrinter().writeValueAsString(stored),
+            logger = logger,
+        )
     }
+
+    private fun resolvePath(path: Path): SandboxPathInfo = fileSystem.resolvePath(path.toString())
 
     private data class StoredSkillValidationRecord(
         val userId: String,

@@ -172,7 +172,7 @@ RuntimeSandbox
 └── commandExecutor: SandboxCommandExecutor
 ```
 
-The current implementations are `LocalRuntimeSandbox` and `DockerRuntimeSandbox`. Local mode is the default. Docker mode is opt-in through `SOUZ_SANDBOX_MODE=docker` and requires the `souz-runtime-sandbox:latest` image to exist locally. Tools and skill loaders depend on sandbox abstractions instead of directly assuming host access. See [`runtime/README.md`](runtime/README.md) for setup details.
+The current implementations are `LocalRuntimeSandbox` and `DockerRuntimeSandbox`. Local mode is the default. Docker mode is opt-in through `SOUZ_SANDBOX_MODE=docker` and requires the `souz-runtime-sandbox:latest` image to exist locally. Tools plus skill loading, storage, and validation depend on sandbox abstractions instead of directly assuming host access. See [`runtime/README.md`](runtime/README.md) for setup details.
 
 Default state layout is under:
 

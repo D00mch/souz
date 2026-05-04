@@ -17,12 +17,15 @@ import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationSeverity
 import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.db.SettingsProvider
+import ru.souz.paths.SandboxSouzPaths
 import ru.souz.paths.SouzPaths
+import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.skills.bundle.FileSystemSkillBundleLoader
-import ru.souz.skills.filesystem.LocalSkillBundleFileSystem
 import ru.souz.paths.DefaultSouzPaths
+import ru.souz.skills.filesystem.SandboxSkillBundleFileSystem
 import ru.souz.skills.validation.FileSystemSkillValidationRepository
 import ru.souz.tool.files.FilesToolUtil
 import kotlin.io.path.exists
@@ -83,7 +86,7 @@ class LocalSkillRegistryRepositoryTest {
     @Test
     fun `saves and reads validation record from separate validation storage`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-validation-")
-        val repository = FileSystemSkillValidationRepository(paths = DefaultSouzPaths(stateRoot = stateRoot))
+        val repository = createValidationRepository(DefaultSouzPaths(stateRoot = stateRoot))
         val record = SkillValidationRecord(
             userId = "user-1",
             skillId = SkillId("paper-summarize-academic"),
@@ -127,7 +130,7 @@ class LocalSkillRegistryRepositoryTest {
     @Test
     fun `rejects unsafe bundle hashes for validation storage paths`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-validation-unsafe-hash-")
-        val repository = FileSystemSkillValidationRepository(paths = DefaultSouzPaths(stateRoot = stateRoot))
+        val repository = createValidationRepository(DefaultSouzPaths(stateRoot = stateRoot))
 
         listOf("", "   ", "../escape", "abc/def", "not-a-sha256").forEach { bundleHash ->
             val error = assertFailsWith<IllegalArgumentException> {
@@ -140,7 +143,7 @@ class LocalSkillRegistryRepositoryTest {
     @Test
     fun `invalidates older approved validations without touching active bundle`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-validation-invalidate-")
-        val repository = FileSystemSkillValidationRepository(paths = DefaultSouzPaths(stateRoot = stateRoot))
+        val repository = createValidationRepository(DefaultSouzPaths(stateRoot = stateRoot))
         val active = sampleValidationRecord(bundleHash = VALIDATION_HASH_A)
         val old = sampleValidationRecord(bundleHash = VALIDATION_HASH_B)
         repository.saveValidation(active)
@@ -237,6 +240,91 @@ class LocalSkillRegistryRepositoryTest {
         assertNull(repository.getSkill("user-1", skillId))
     }
 
+    @Test
+    fun `sandbox registry can be constructed with local runtime sandbox`() = runTest {
+        val stateRoot = createTempDirectory("skill-registry-sandbox-local-")
+        val sandbox = createLocalSandbox(DefaultSouzPaths(stateRoot = stateRoot))
+        val repository = SandboxSkillRegistryRepository(sandbox = sandbox)
+        val bundle = sampleBundle(skillId = SkillId("local-sandbox-skill"))
+
+        val stored = repository.saveSkillBundle(userId = "user-1", bundle = bundle)
+
+        assertEquals(bundle, repository.loadSkillBundle("user-1", bundle.skillId))
+        assertEquals("user-1", stored.userId)
+    }
+
+    @Test
+    fun `docker sandbox registry persists and loads skills through container visible paths`() = runTest {
+        val sandbox = createDockerSandbox("skill-registry-docker-")
+        val repository = SandboxSkillRegistryRepository(sandbox = sandbox)
+        val bundle = sampleBundle(skillId = SkillId("docker-skill"))
+
+        val stored = repository.saveSkillBundle(userId = "user-1", bundle = bundle)
+        val loaded = repository.loadSkillBundle(userId = "user-1", skillId = bundle.skillId)
+
+        val metadataPath = SkillStoragePaths.metadataPath(SandboxSouzPaths(sandbox.runtimePaths), "user-1", bundle.skillId)
+        val bundleRoot = SkillStoragePaths.bundleRoot(
+            paths = SandboxSouzPaths(sandbox.runtimePaths),
+            userId = "user-1",
+            skillId = bundle.skillId,
+            bundleHash = stored.bundleHash,
+        )
+        val metadataInfo = sandbox.fileSystem.resolveExistingFile(metadataPath.toString())
+        val bundleInfo = sandbox.fileSystem.resolveExistingDirectory(bundleRoot.toString())
+
+        assertEquals(bundle, loaded)
+        assertTrue(metadataInfo.path.startsWith("/souz/state/skills"))
+        assertTrue(bundleInfo.path.startsWith("/souz/state/skills"))
+        assertNotNull(sandbox.fileSystem.localPathOrNull(metadataInfo))
+        assertNotNull(sandbox.fileSystem.localPathOrNull(bundleInfo))
+    }
+
+    @Test
+    fun `docker sandbox validation storage stays under container skill validation root`() = runTest {
+        val sandbox = createDockerSandbox("skill-registry-docker-validation-")
+        val repository = FileSystemSkillValidationRepository(
+            paths = SandboxSouzPaths(sandbox.runtimePaths),
+            fileSystem = sandbox.fileSystem,
+        )
+        val record = sampleValidationRecord(bundleHash = VALIDATION_HASH_A)
+
+        repository.saveValidation(record)
+        val loaded = repository.getValidation(record.userId, record.skillId, record.bundleHash, record.policyVersion)
+
+        val path = SkillStoragePaths.validationRecordPath(
+            paths = SandboxSouzPaths(sandbox.runtimePaths),
+            userId = record.userId,
+            skillId = record.skillId,
+            policyVersion = record.policyVersion,
+            bundleHash = record.bundleHash,
+        )
+        val pathInfo = sandbox.fileSystem.resolveExistingFile(path.toString())
+
+        assertEquals(record, loaded)
+        assertTrue(pathInfo.path.startsWith("/souz/state/skill-validations"))
+        assertNotNull(sandbox.fileSystem.localPathOrNull(pathInfo))
+    }
+
+    @Test
+    fun `docker sandbox filesystem lists descendants using container paths`() = runTest {
+        val sandbox = createDockerSandbox("skill-registry-docker-listing-")
+        val bundle = sampleBundle(skillId = SkillId("docker-listing-skill"))
+        val repository = createSkillsRepository(
+            paths = SandboxSouzPaths(sandbox.runtimePaths),
+            runtimeSandbox = sandbox,
+        )
+
+        repository.saveSkillBundle(userId = "user-1", bundle = bundle)
+
+        val skillsRoot = sandbox.fileSystem.resolveExistingDirectory(sandbox.runtimePaths.skillsDirPath)
+        val descendants = sandbox.fileSystem.listDescendants(skillsRoot, includeHidden = true)
+
+        assertTrue(descendants.isNotEmpty())
+        assertTrue(descendants.all { it.path.startsWith("/souz/state/skills") })
+        assertTrue(descendants.any { it.name == "stored-skill.json" })
+        assertTrue(descendants.any { it.name == "SKILL.md" })
+    }
+
     private fun createTempDirectory(prefix: String): Path =
         Files.createTempDirectory(Path.of(FilesToolUtil.homeStr), prefix).also(createdPaths::add)
 
@@ -283,20 +371,46 @@ class LocalSkillRegistryRepositoryTest {
         createdAt = Instant.parse("2026-05-02T12:00:00Z"),
     )
 
-    private fun createSkillsRepository(paths: SouzPaths): FileSystemSkillsRepository {
+    private fun createSkillsRepository(
+        paths: SouzPaths,
+        runtimeSandbox: RuntimeSandbox? = null,
+    ): FileSystemSkillsRepository {
+        val effectiveSandbox = runtimeSandbox
+            ?: createLocalSandbox(paths)
+        val loader = FileSystemSkillBundleLoader(
+            fileSystem = SandboxSkillBundleFileSystem(FilesToolUtil(effectiveSandbox)),
+        )
+        return FileSystemSkillsRepository(
+            paths = paths,
+            fileSystem = effectiveSandbox.fileSystem,
+            loader = loader,
+        )
+    }
+
+    private fun createValidationRepository(paths: SouzPaths): FileSystemSkillValidationRepository {
+        val sandbox = createLocalSandbox(paths)
+        return FileSystemSkillValidationRepository(
+            paths = paths,
+            fileSystem = sandbox.fileSystem,
+        )
+    }
+
+    private fun createLocalSandbox(paths: SouzPaths): LocalRuntimeSandbox {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.forbiddenFolders } returns emptyList()
-        val sandbox = LocalRuntimeSandbox(
+        return LocalRuntimeSandbox(
             scope = SandboxScope.localDefault(),
             settingsProvider = settingsProvider,
             stateRoot = paths.stateRoot,
         )
-        val loader = FileSystemSkillBundleLoader(
-            fileSystem = LocalSkillBundleFileSystem(FilesToolUtil(sandbox)),
-        )
-        return FileSystemSkillsRepository(
-            paths = paths,
-            loader = loader,
+    }
+
+    private fun createDockerSandbox(prefix: String): DockerRuntimeSandbox {
+        val hostRoot = createTempDirectory(prefix)
+        return DockerRuntimeSandbox(
+            scope = SandboxScope(userId = "user-1"),
+            hostRoot = hostRoot,
+            autoStart = false,
         )
     }
 

@@ -11,7 +11,7 @@ import ru.souz.agent.skills.validation.SkillValidationPolicy
 import ru.souz.db.SettingsProvider
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
-import ru.souz.skills.filesystem.LocalSkillBundleFileSystem
+import ru.souz.skills.filesystem.SandboxSkillBundleFileSystem
 import ru.souz.skills.filesystem.SkillBundleFileSystem
 import ru.souz.skills.filesystem.SkillBundleFsContext
 import ru.souz.tool.files.FilesToolUtil
@@ -287,7 +287,7 @@ class FileSystemSkillBundleLoaderTest {
             scope = SandboxScope.localDefault(),
             settingsProvider = settingsProvider,
         )
-        val fileSystem = LocalSkillBundleFileSystem(FilesToolUtil(sandbox))
+        val fileSystem = SandboxSkillBundleFileSystem(FilesToolUtil(sandbox))
         return FileSystemSkillBundleLoader(fileSystem = fileSystem, maxFiles = maxFiles)
     }
 

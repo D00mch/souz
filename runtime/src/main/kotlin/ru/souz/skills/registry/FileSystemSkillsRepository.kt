@@ -1,9 +1,7 @@
 package ru.souz.skills.registry
 
 import com.fasterxml.jackson.module.kotlin.readValue
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.FileAlreadyExistsException
-import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
@@ -18,59 +16,58 @@ import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.registry.SkillsRepository
 import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.llms.restJsonMapper
-import ru.souz.paths.DefaultSouzPaths
 import ru.souz.paths.SouzPaths
+import ru.souz.runtime.sandbox.SandboxFileSystem
+import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.skills.bundle.FileSystemSkillBundleLoader
 import ru.souz.skills.filesystem.SkillBundleFsContext
-import kotlin.io.path.createDirectories
-import kotlin.io.path.exists
-import kotlin.io.path.isDirectory
-import kotlin.io.path.listDirectoryEntries
-import kotlin.io.path.readText
 
 /**
  * Filesystem-backed [SkillsRepository] that persists stored skill metadata and
  * immutable bundle contents under the configured Souz state directories.
  *
- * Bundles are normalized, hashed, and written via temporary locations so saved
- * skill state remains stable across concurrent reads and process restarts.
+ * All filesystem access goes through [SandboxFileSystem], so the same storage
+ * code works for both local and Docker-backed runtime paths.
  */
 class FileSystemSkillsRepository(
-    private val paths: SouzPaths = DefaultSouzPaths(),
-    private val clock: Clock = Clock.systemUTC(),
+    private val paths: SouzPaths,
+    private val fileSystem: SandboxFileSystem,
     private val loader: FileSystemSkillBundleLoader,
-    private val pathsResolver: (String) -> SouzPaths = { paths },
+    private val clock: Clock = Clock.systemUTC(),
 ) : SkillsRepository {
     private val logger = LoggerFactory.getLogger(FileSystemSkillsRepository::class.java)
 
     override suspend fun listSkills(userId: String): List<StoredSkill> = withContext(Dispatchers.IO) {
-        val userRoot = SkillStoragePaths.userSkillsRoot(pathsResolver(userId), userId)
-        if (!userRoot.exists() || !userRoot.isDirectory()) {
+        val userRoot = resolvePath(SkillStoragePaths.userSkillsRoot(paths, userId))
+        if (!userRoot.exists || !userRoot.isDirectory) {
             return@withContext emptyList()
         }
 
-        userRoot.listDirectoryEntries()
-            .filter { it.isDirectory() }
+        fileSystem.listDescendants(
+            root = userRoot,
+            maxDepth = 1,
+            includeHidden = true,
+        )
+            .filter { it.isDirectory && it.parentPath == userRoot.path }
             .mapNotNull { skillRoot ->
-                readStoredSkillOrNull(skillRoot.resolve(STORED_SKILL_FILE_NAME))
+                readStoredSkillOrNull(resolveChildPath(skillRoot, STORED_SKILL_FILE_NAME))
             }
             .sortedBy { it.skillId.value }
     }
 
     override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? = withContext(Dispatchers.IO) {
-        readStoredSkillOrNull(SkillStoragePaths.metadataPath(pathsResolver(userId), userId, skillId))
+        readStoredSkillOrNull(SkillStoragePaths.metadataPath(paths, userId, skillId))
     }
 
     override suspend fun getSkillByName(userId: String, name: String): StoredSkill? =
         listSkills(userId).firstOrNull { it.manifest.name == name }
 
     override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill = withContext(Dispatchers.IO) {
-        val paths = pathsResolver(userId)
         val normalizedBundle = SkillBundle.fromFiles(bundle.skillId, bundle.files)
         val bundleHash = SkillBundleHasher.hash(normalizedBundle)
-        val skillRoot = SkillStoragePaths.skillRoot(paths, userId, normalizedBundle.skillId)
-        val metadataPath = SkillStoragePaths.metadataPath(paths, userId, normalizedBundle.skillId)
-        val bundleRoot = SkillStoragePaths.bundleRoot(paths, userId, normalizedBundle.skillId, bundleHash)
+        val skillRoot = resolvePath(SkillStoragePaths.skillRoot(paths, userId, normalizedBundle.skillId))
+        val metadataPath = resolvePath(SkillStoragePaths.metadataPath(paths, userId, normalizedBundle.skillId))
+        val bundleRoot = resolvePath(SkillStoragePaths.bundleRoot(paths, userId, normalizedBundle.skillId, bundleHash))
 
         val createdAt = readStoredSkillOrNull(metadataPath)?.createdAt ?: clock.instant()
         val storedSkill = StoredSkill(
@@ -81,64 +78,67 @@ class FileSystemSkillsRepository(
             createdAt = createdAt,
         )
 
-        skillRoot.createDirectories()
+        fileSystem.createDirectory(skillRoot)
         writeBundleIfMissing(bundleRoot, normalizedBundle)
         writeStoredSkill(metadataPath, storedSkill)
 
         storedSkill
     }
 
-    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? {
-        val paths = pathsResolver(userId)
-        val metadata = getSkill(userId, skillId) ?: return null
-        val bundleRoot = SkillStoragePaths.bundleRoot(paths, userId, skillId, metadata.bundleHash)
-        if (!bundleRoot.exists() || !bundleRoot.isDirectory()) {
-            return null
+    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = withContext(Dispatchers.IO) {
+        val metadata = getSkill(userId, skillId) ?: return@withContext null
+        val bundleRoot = resolvePath(SkillStoragePaths.bundleRoot(paths, userId, skillId, metadata.bundleHash))
+        if (!bundleRoot.exists || !bundleRoot.isDirectory) {
+            return@withContext null
         }
 
-        return loader.loadDirectory(
+        loader.loadDirectory(
             context = SkillBundleFsContext(userId = userId),
             skillId = metadata.skillId,
-            rawRoot = bundleRoot.toString(),
+            rawRoot = bundleRoot.path,
         )
     }
 
     private fun writeBundleIfMissing(
-        bundleRoot: Path,
+        bundleRoot: SandboxPathInfo,
         bundle: SkillBundle,
     ) {
-        if (bundleRoot.exists()) return
+        if (bundleRoot.exists) return
 
-        val parent = bundleRoot.parent ?: throw SkillBundleException("Bundle storage root has no parent: $bundleRoot")
-        parent.createDirectories()
-        val tempRoot = parent.resolve("${bundleRoot.fileName}.tmp-${UUID.randomUUID()}")
+        val parentPath = bundleRoot.parentPath
+            ?: throw SkillBundleException("Bundle storage root has no parent: ${bundleRoot.path}")
+        val parent = fileSystem.resolvePath(parentPath)
+        fileSystem.createDirectory(parent)
+        val tempRoot = fileSystem.resolvePath(childPath(parent.path, "${bundleRoot.name}.tmp-${UUID.randomUUID()}"))
 
         try {
             writeBundle(tempRoot, bundle)
-            moveDirectory(tempRoot, bundleRoot)
+            moveDirectory(refresh(tempRoot), refresh(bundleRoot))
         } catch (_: FileAlreadyExistsException) {
-            deleteRecursively(tempRoot)
+            deleteRecursively(refresh(tempRoot))
         } catch (error: Throwable) {
-            deleteRecursively(tempRoot)
+            deleteRecursively(refresh(tempRoot))
             throw error
         }
     }
 
     private fun writeBundle(
-        bundleRoot: Path,
+        bundleRoot: SandboxPathInfo,
         bundle: SkillBundle,
     ) {
-        bundleRoot.createDirectories()
+        fileSystem.createDirectory(bundleRoot)
+        val bundleRootPath = Path.of(bundleRoot.path).normalize()
         bundle.files.forEach { file ->
-            val target = bundleRoot.resolve(file.normalizedPath)
-            val parent = target.parent ?: bundleRoot
-            parent.createDirectories()
-            Files.write(target, file.content)
+            val targetPath = bundleRootPath.resolve(file.normalizedPath).normalize()
+            if (!targetPath.startsWith(bundleRootPath)) {
+                throw SkillBundleException("Skill file path escapes bundle root: ${file.normalizedPath}")
+            }
+            fileSystem.writeBytes(fileSystem.resolvePath(targetPath.toString()), file.content)
         }
     }
 
     private fun writeStoredSkill(
-        path: Path,
+        path: SandboxPathInfo,
         storedSkill: StoredSkill,
     ) {
         val record = StoredSkillRecord(
@@ -148,33 +148,20 @@ class FileSystemSkillsRepository(
             bundleHash = storedSkill.bundleHash,
             createdAt = storedSkill.createdAt.toString(),
         )
-        val parent = path.parent ?: throw SkillBundleException("Stored skill metadata path has no parent: $path")
-        parent.createDirectories()
-        val tempPath = parent.resolve("${path.fileName}.tmp-${UUID.randomUUID()}")
-        try {
-            Files.writeString(
-                tempPath,
-                restJsonMapper.writerWithDefaultPrettyPrinter().writeValueAsString(record),
-            )
-            try {
-                Files.move(
-                    tempPath,
-                    path,
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                )
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(tempPath, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-            }
-        } finally {
-            Files.deleteIfExists(tempPath)
-        }
+        fileSystem.writeTextAtomically(
+            path = path,
+            content = restJsonMapper.writerWithDefaultPrettyPrinter().writeValueAsString(record),
+            logger = logger,
+        )
     }
 
-    private fun readStoredSkillOrNull(path: Path): StoredSkill? {
-        if (!path.exists()) return null
+    private fun readStoredSkillOrNull(path: Path): StoredSkill? =
+        readStoredSkillOrNull(resolvePath(path))
+
+    private fun readStoredSkillOrNull(path: SandboxPathInfo): StoredSkill? {
+        if (!path.exists || !path.isRegularFile) return null
         return runCatching {
-            val record: StoredSkillRecord = restJsonMapper.readValue(path.readText())
+            val record: StoredSkillRecord = restJsonMapper.readValue(fileSystem.readText(path))
             StoredSkill(
                 userId = record.userId,
                 skillId = SkillId(record.skillId),
@@ -183,29 +170,39 @@ class FileSystemSkillsRepository(
                 createdAt = Instant.parse(record.createdAt),
             )
         }.onFailure { error ->
-            logger.warn("Failed to read stored skill metadata from {}: {}", path, error.message)
+            logger.warn("Failed to read stored skill metadata from {}: {}", path.path, error.message)
         }.getOrNull()
     }
 
     private fun moveDirectory(
-        source: Path,
-        destination: Path,
+        source: SandboxPathInfo,
+        destination: SandboxPathInfo,
     ) {
-        try {
-            Files.move(source, destination, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(source, destination)
+        fileSystem.move(
+            source = source,
+            destination = destination,
+            logger = logger,
+        )
+    }
+
+    private fun deleteRecursively(path: SandboxPathInfo) {
+        runCatching {
+            fileSystem.delete(path, recursively = true)
+        }.onFailure { error ->
+            logger.warn("Failed to clean up temporary skill bundle directory {}: {}", path.path, error.message)
         }
     }
 
-    private fun deleteRecursively(path: Path) {
-        if (!path.exists()) return
-        Files.walk(path).use { stream ->
-            stream.sorted(Comparator.reverseOrder()).forEach { current ->
-                Files.deleteIfExists(current)
-            }
-        }
-    }
+    private fun resolvePath(path: Path): SandboxPathInfo = fileSystem.resolvePath(path.toString())
+
+    private fun resolveChildPath(parent: SandboxPathInfo, child: String): SandboxPathInfo =
+        fileSystem.resolvePath(childPath(parent.path, child))
+
+    private fun refresh(path: SandboxPathInfo): SandboxPathInfo =
+        fileSystem.resolvePath(path.path)
+
+    private fun childPath(parent: String, child: String): String =
+        Path.of(parent).resolve(child).normalize().toString()
 
     private data class StoredSkillRecord(
         val userId: String,

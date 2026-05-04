@@ -111,6 +111,21 @@ class LocalRuntimeSandboxTest {
         assertFalse(descendants.any { it.path == outsideFile.toRealPath().toString() })
     }
 
+    @Test
+    fun `delete recursively removes sandbox directory tree`() {
+        val home = createTempDirectory("sandbox-home-")
+        val stateRoot = createTempDirectory("sandbox-state-")
+        val sandbox = createSandbox(home = home, stateRoot = stateRoot)
+        val root = home.resolve("skills/tmp").apply { createDirectories() }
+        root.resolve("nested").createDirectories()
+        root.resolve("nested/SKILL.md").writeText("skill")
+
+        val path = sandbox.fileSystem.resolveExistingDirectory(root.toString())
+        sandbox.fileSystem.delete(path, recursively = true)
+
+        assertFalse(Files.exists(root))
+    }
+
     private fun createSandbox(
         home: Path,
         stateRoot: Path,
