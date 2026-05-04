@@ -287,7 +287,7 @@ class FileSystemSkillBundleLoaderTest {
             scope = SandboxScope.localDefault(),
             settingsProvider = settingsProvider,
         )
-        val fileSystem = SandboxSkillBundleFileSystem(FilesToolUtil(sandbox))
+        val fileSystem = SandboxSkillBundleFileSystem(sandbox.fileSystem)
         return FileSystemSkillBundleLoader(fileSystem = fileSystem, maxFiles = maxFiles)
     }
 

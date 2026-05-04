@@ -68,6 +68,6 @@ fun main() {
     val l = LoggerFactory.getLogger(ToolDesktopScreenShot::class.java)
     val di = DI.invoke { import(mainDiModule) }
     val api: LLMChatAPI by di.instance()
-    val id = ToolDesktopScreenShot(api).invoke(ToolDesktopScreenShot.Input("1"), ToolInvocationMeta.Empty)
+    val id = ToolDesktopScreenShot(api).invoke(ToolDesktopScreenShot.Input("1"), ToolInvocationMeta.localDefault())
     l.info(id)
 }

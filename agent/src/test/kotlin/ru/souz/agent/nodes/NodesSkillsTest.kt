@@ -1,7 +1,6 @@
 package ru.souz.agent.nodes
 
 import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -102,28 +101,12 @@ class NodesSkillsTest {
     }
 
     @Test
-    fun `skills node returns fallback context when user id is missing or blank`() = runTest {
-        val pipeline = mockk<SkillActivationPipeline>()
-        val node = NodesSkills(pipeline).node()
-
-        listOf<String?>(null, "", "   ").forEach { userId ->
-            val original = baseContext(userId = userId)
-            val fallback = original.copy(
-                systemPrompt = "fallback-$userId",
-                history = listOf(LLMRequest.Message(LLMMessageRole.system, "fallback-$userId")) + original.history.drop(1),
-            )
-            every { pipeline.withoutSkills(original) } returns fallback
-
-            val result = node.execute(
-                ctx = original,
-                runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
-            )
-
-            assertSame(fallback, result)
-            verify(exactly = 1) { pipeline.withoutSkills(original) }
+    fun `tool invocation metadata rejects blank user id`() {
+        listOf("", "   ").forEach { userId ->
+            assertFailsWith<IllegalArgumentException> {
+                ToolInvocationMeta(userId = userId)
+            }
         }
-
-        coVerify(exactly = 0) { pipeline.run(any()) }
     }
 
     @Test
@@ -166,7 +149,7 @@ class NodesSkillsTest {
         verify(exactly = 1) { pipeline.withoutSkills(original) }
     }
 
-    private fun baseContext(userId: String?): AgentContext<String> = AgentContext(
+    private fun baseContext(userId: String): AgentContext<String> = AgentContext(
         input = "Summarize this paper",
         settings = AgentSettings(
             model = "gpt-5-nano",

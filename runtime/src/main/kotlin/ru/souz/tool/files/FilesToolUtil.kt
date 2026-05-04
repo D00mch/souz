@@ -54,55 +54,55 @@ class FilesToolUtil(
     )
 
     val sandboxFileSystem: SandboxFileSystem
-        get() = sandboxFileSystem(ToolInvocationMeta.Empty)
+        get() = sandboxFileSystem(ToolInvocationMeta.localDefault())
 
-    fun runtimeSandbox(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): RuntimeSandbox =
+    fun runtimeSandbox(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): RuntimeSandbox =
         sandboxResolver.resolve(meta)
 
-    fun sandboxFileSystem(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): SandboxFileSystem =
+    fun sandboxFileSystem(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): SandboxFileSystem =
         runtimeSandbox(meta).fileSystem
 
     override val homeStr: String
-        get() = homeStr(ToolInvocationMeta.Empty)
+        get() = homeStr(ToolInvocationMeta.localDefault())
 
-    fun homeStr(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): String =
+    fun homeStr(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): String =
         runtimeSandbox(meta).runtimePaths.homePath
 
     override val homeDirectory: File
         get() = File(homeStr).canonicalFile
 
-    fun homeDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): File =
+    fun homeDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): File =
         File(homeStr(meta)).canonicalFile
 
     val documentsDirectoryPath: Path
-        get() = documentsDirectoryPath(ToolInvocationMeta.Empty)
+        get() = documentsDirectoryPath(ToolInvocationMeta.localDefault())
 
-    fun documentsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): Path =
+    fun documentsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Path =
         Path.of(resolveDocumentsDirectory(meta).path)
 
     val souzDocumentsDirectoryPath: Path
-        get() = souzDocumentsDirectoryPath(ToolInvocationMeta.Empty)
+        get() = souzDocumentsDirectoryPath(ToolInvocationMeta.localDefault())
 
-    fun souzDocumentsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): Path =
+    fun souzDocumentsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Path =
         Path.of(resolveSouzDocumentsDirectory(meta).path)
 
     val souzTelegramControlDirectoryPath: Path
-        get() = souzTelegramControlDirectoryPath(ToolInvocationMeta.Empty)
+        get() = souzTelegramControlDirectoryPath(ToolInvocationMeta.localDefault())
 
-    fun souzTelegramControlDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): Path =
+    fun souzTelegramControlDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Path =
         Path.of(resolveSouzTelegramControlDirectory(meta).path)
 
     val souzWebAssetsDirectoryPath: Path
-        get() = souzWebAssetsDirectoryPath(ToolInvocationMeta.Empty)
+        get() = souzWebAssetsDirectoryPath(ToolInvocationMeta.localDefault())
 
-    fun souzWebAssetsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): Path =
+    fun souzWebAssetsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Path =
         Path.of(resolveSouzWebAssetsDirectory(meta).path)
 
     /**
      * Generally, we don't want Agent to mess around anything out of $HOME and everything user disallowed
      */
     override fun isPathSafe(file: File): Boolean {
-        return isPathSafe(file, ToolInvocationMeta.Empty)
+        return isPathSafe(file, ToolInvocationMeta.localDefault())
     }
 
     fun isPathSafe(file: File, meta: ToolInvocationMeta): Boolean {
@@ -110,12 +110,12 @@ class FilesToolUtil(
         return fileSystem.isPathSafe(fileSystem.resolvePath(file.path))
     }
 
-    fun isPathSafe(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty): Boolean =
+    fun isPathSafe(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Boolean =
         sandboxFileSystem(meta).isPathSafe(path)
 
     @Throws(BadInputException::class)
     override fun requirePathIsSave(file: File) {
-        requirePathIsSave(file, ToolInvocationMeta.Empty)
+        requirePathIsSave(file, ToolInvocationMeta.localDefault())
     }
 
     @Throws(BadInputException::class)
@@ -128,7 +128,7 @@ class FilesToolUtil(
     fun resourceAsText(path: String): String = Companion.resourceAsText(path)
 
     override fun applyDefaultEnvs(path: String): String {
-        return applyDefaultEnvs(path, ToolInvocationMeta.Empty)
+        return applyDefaultEnvs(path, ToolInvocationMeta.localDefault())
     }
 
     fun applyDefaultEnvs(path: String, meta: ToolInvocationMeta): String =
@@ -141,18 +141,18 @@ class FilesToolUtil(
      * @throws [ForbiddenFolder] when the path escapes the allowed area.
      */
     fun resolveSafeExistingFile(rawPath: String): SandboxPathInfo =
-        resolveSafeExistingFile(rawPath, ToolInvocationMeta.Empty)
+        resolveSafeExistingFile(rawPath, ToolInvocationMeta.localDefault())
 
     fun resolveSafeExistingFile(rawPath: String, meta: ToolInvocationMeta): SandboxPathInfo =
         sandboxFileSystem(meta).resolveExistingFile(rawPath)
 
     fun resolveSafeExistingDirectory(rawPath: String): SandboxPathInfo =
-        resolveSafeExistingDirectory(rawPath, ToolInvocationMeta.Empty)
+        resolveSafeExistingDirectory(rawPath, ToolInvocationMeta.localDefault())
 
     fun resolveSafeExistingDirectory(rawPath: String, meta: ToolInvocationMeta): SandboxPathInfo =
         sandboxFileSystem(meta).resolveExistingDirectory(rawPath)
 
-    fun resolvePath(rawPath: String): SandboxPathInfo = resolvePath(rawPath, ToolInvocationMeta.Empty)
+    fun resolvePath(rawPath: String): SandboxPathInfo = resolvePath(rawPath, ToolInvocationMeta.localDefault())
 
     fun resolvePath(rawPath: String, meta: ToolInvocationMeta): SandboxPathInfo =
         sandboxFileSystem(meta).resolvePath(rawPath)
@@ -161,22 +161,22 @@ class FilesToolUtil(
         root: SandboxPathInfo,
         maxDepth: Int = Int.MAX_VALUE,
         includeHidden: Boolean = false,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     ): List<SandboxPathInfo> = sandboxFileSystem(meta).listDescendants(root, maxDepth, includeHidden)
 
-    fun readUtf8TextFile(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty): String =
+    fun readUtf8TextFile(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): String =
         sandboxFileSystem(meta).readText(path)
 
-    fun readBytes(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty): ByteArray =
+    fun readBytes(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): ByteArray =
         sandboxFileSystem(meta).readBytes(path)
 
-    fun openInputStream(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty): InputStream =
+    fun openInputStream(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): InputStream =
         sandboxFileSystem(meta).openInputStream(path)
 
-    fun localPathOrNull(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty): Path? =
+    fun localPathOrNull(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Path? =
         sandboxFileSystem(meta).localPathOrNull(path)
 
-    fun openPdfDocument(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty): CloseablePdfDocument {
+    fun openPdfDocument(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): CloseablePdfDocument {
         localPathOrNull(path, meta)?.let { localPath ->
             return CloseablePdfDocument(
                 document = Loader.loadPDF(localPath.toFile(), pdfMemoryUsageSetting(meta).streamCache),
@@ -204,16 +204,16 @@ class FilesToolUtil(
     fun writeBytes(
         path: SandboxPathInfo,
         content: ByteArray,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     ) = sandboxFileSystem(meta).writeBytes(path, content)
 
     fun writeUtf8TextFile(
         path: SandboxPathInfo,
         content: String,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     ) = sandboxFileSystem(meta).writeText(path, content)
 
-    fun createDirectory(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.Empty) =
+    fun createDirectory(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()) =
         sandboxFileSystem(meta).createDirectory(path)
 
     fun movePath(
@@ -222,13 +222,13 @@ class FilesToolUtil(
         replaceExisting: Boolean = false,
         createParents: Boolean = false,
         logger: Logger? = null,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     ) = sandboxFileSystem(meta).move(source, destination, replaceExisting, createParents, logger)
 
     fun moveToTrash(
         path: SandboxPathInfo,
         logger: Logger? = null,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     ): SandboxPathInfo = sandboxFileSystem(meta).moveToTrash(path, logger)
 
     /**
@@ -240,7 +240,7 @@ class FilesToolUtil(
      */
     fun readEditableUtf8TextFile(
         file: SandboxPathInfo,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     ): EditableTextFile {
         val fileSystem = sandboxFileSystem(meta)
         if (!fileSystem.isPathSafe(file)) throw ForbiddenFolder(file.path)
@@ -282,10 +282,10 @@ class FilesToolUtil(
         file: SandboxPathInfo,
         content: String,
         logger: Logger,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     ) = sandboxFileSystem(meta).writeTextAtomically(file, content, logger)
 
-    fun resolveDocumentsDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): SandboxPathInfo {
+    fun resolveDocumentsDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): SandboxPathInfo {
         val preferred = resolvePath("~/Documents", meta)
         if (preferred.exists && preferred.isDirectory) {
             return preferred
@@ -297,18 +297,18 @@ class FilesToolUtil(
         return preferred
     }
 
-    fun resolveSouzDocumentsDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): SandboxPathInfo =
+    fun resolveSouzDocumentsDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): SandboxPathInfo =
         resolvePath("${resolveDocumentsDirectory(meta).path}/souz", meta)
 
-    fun resolveSouzTelegramControlDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): SandboxPathInfo =
+    fun resolveSouzTelegramControlDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): SandboxPathInfo =
         resolvePath("${resolveSouzDocumentsDirectory(meta).path}/telegram", meta)
 
-    fun resolveSouzWebAssetsDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.Empty): SandboxPathInfo =
+    fun resolveSouzWebAssetsDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): SandboxPathInfo =
         resolvePath("${resolveSouzDocumentsDirectory(meta).path}/web_assets", meta)
 
     fun <T> withReadableLocalPath(
         path: SandboxPathInfo,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
         prefix: String = "souz-read-",
         suffix: String = path.name.safeTempSuffix(),
         block: (Path) -> T,
@@ -325,7 +325,7 @@ class FilesToolUtil(
 
     fun <T> withWritableLocalPath(
         path: SandboxPathInfo,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
         prefix: String = "souz-write-",
         suffix: String = path.name.safeTempSuffix(),
         block: (Path) -> T,
@@ -471,7 +471,7 @@ class FilesToolUtil(
         destinationPath: Path,
         logger: Logger,
         replaceExisting: Boolean = false,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     ) {
         val fileSystem = sandboxFileSystem(meta)
         fileSystem.move(

@@ -6,10 +6,6 @@ import ru.souz.runtime.sandbox.ToolInvocationSandboxScopeResolver
 
 object BackendSandboxScopeResolver : ToolInvocationSandboxScopeResolver {
     override fun resolve(meta: ToolInvocationMeta): SandboxScope {
-        val userId = meta.userId
-            ?.trim()
-            ?.takeIf(String::isNotEmpty)
-            ?: error("Backend sandbox resolution requires ToolInvocationMeta.userId.")
-        return SandboxScope(userId = userId)
+        return SandboxScope(userId = meta.userId.trim())
     }
 }

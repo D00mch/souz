@@ -63,5 +63,5 @@ class ToolOpenTelegramSavedMessages(private val bash: ToolRunBashCommand) : Tool
 
 fun main() {
     val tool = ToolOpenTelegramSavedMessages(ToolRunBashCommand)
-    println(tool.invoke(ToolOpenTelegramSavedMessages.Input(), ToolInvocationMeta.Empty))
+    println(tool.invoke(ToolOpenTelegramSavedMessages.Input(), ToolInvocationMeta.localDefault()))
 }

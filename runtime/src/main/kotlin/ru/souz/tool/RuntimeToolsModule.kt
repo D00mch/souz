@@ -42,7 +42,7 @@ fun runtimeToolsDiModule(
     includeWebImageSearch: Boolean = true,
     scopeResolver: ToolInvocationSandboxScopeResolver = ToolInvocationSandboxScopeResolver {
         SandboxScope(
-            userId = it.userId?.trim()?.takeIf(String::isNotEmpty) ?: SandboxScope.localDefault().userId,
+            userId = it.userId.trim(),
             conversationId = it.conversationId,
         )
     },

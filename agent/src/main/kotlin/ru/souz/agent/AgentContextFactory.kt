@@ -45,7 +45,7 @@ class AgentContextFactory(
         model: LLMModel,
         contextSize: Int,
         temperature: Float,
-        toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     ): AgentContext<String> {
         val normalizedAgentId = normalizeAgentId(agentId)
         val settings = AgentSettings(

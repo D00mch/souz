@@ -166,6 +166,6 @@ class ToolCollectButtons(
 
 fun main() {
     val tool = ToolCollectButtons(ToolRunBashCommand)
-    println(tool.invoke(ToolCollectButtons.Input(3), ToolInvocationMeta.Empty))
+    println(tool.invoke(ToolCollectButtons.Input(3), ToolInvocationMeta.localDefault()))
     println(tool.toGiga().fn)
 }

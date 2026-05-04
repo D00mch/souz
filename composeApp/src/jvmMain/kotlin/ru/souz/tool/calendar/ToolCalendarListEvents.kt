@@ -79,5 +79,5 @@ class ToolCalendarListEvents : ToolSetup<ToolCalendarListEvents.Input> {
 
 fun main() {
     val tool = ToolCalendarListEvents()
-    println(tool.invoke(ToolCalendarListEvents.Input("lovkikisa@gmail.com", "2026-02-20"), ToolInvocationMeta.Empty))
+    println(tool.invoke(ToolCalendarListEvents.Input("lovkikisa@gmail.com", "2026-02-20"), ToolInvocationMeta.localDefault()))
 }

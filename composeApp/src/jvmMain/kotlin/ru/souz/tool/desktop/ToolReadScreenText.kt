@@ -106,6 +106,6 @@ class ToolReadScreenText(
 
 fun main() {
     val tool = ToolReadScreenText()
-    val result = tool.invoke(ToolReadScreenText.Input(), ToolInvocationMeta.Empty)
+    val result = tool.invoke(ToolReadScreenText.Input(), ToolInvocationMeta.localDefault())
     println(result)
 }

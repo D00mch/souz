@@ -90,6 +90,6 @@ fun main() {
     val filesToolUtil: FilesToolUtil by di.instance()
 
     val tool = ToolShowApps(filesToolUtil)
-    val result = tool.invoke(ToolShowApps.Input(ToolShowApps.AppState.running), ToolInvocationMeta.Empty)
+    val result = tool.invoke(ToolShowApps.Input(ToolShowApps.AppState.running), ToolInvocationMeta.localDefault())
     println(result)
 }

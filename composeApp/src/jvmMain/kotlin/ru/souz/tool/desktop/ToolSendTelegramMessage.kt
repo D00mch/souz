@@ -93,5 +93,5 @@ class ToolSendTelegramMessage(
 
 fun main() {
     val tool = ToolSendTelegramMessage(ToolRunBashCommand, Keys())
-    println(tool.invoke(ToolSendTelegramMessage.Input("Шамиль", "привет, пишу нашим агентом! Сработало!"), ToolInvocationMeta.Empty))
+    println(tool.invoke(ToolSendTelegramMessage.Input("Шамиль", "привет, пишу нашим агентом! Сработало!"), ToolInvocationMeta.localDefault()))
 }

@@ -57,7 +57,7 @@ class ToolReadPdfPagesMemoryTest {
         every { sandbox.runtimePaths } returns localSandbox.runtimePaths
 
         val result = ToolReadPdfPages(FilesToolUtil(sandbox))
-            .invoke(ToolReadPdfPages.Input(filePath = pdf.toString(), startPage = 1), ToolInvocationMeta.Empty)
+            .invoke(ToolReadPdfPages.Input(filePath = pdf.toString(), startPage = 1), ToolInvocationMeta.localDefault())
 
         assertContains(result, "Local sandbox PDF text")
         verify(exactly = 0) { fileSystem.readBytes(any()) }
@@ -93,7 +93,7 @@ class ToolReadPdfPagesMemoryTest {
         every { sandbox.runtimePaths } returns runtimePaths
 
         val result = ToolReadPdfPages(FilesToolUtil(sandbox))
-            .invoke(ToolReadPdfPages.Input(filePath = pdf.toString(), startPage = 1), ToolInvocationMeta.Empty)
+            .invoke(ToolReadPdfPages.Input(filePath = pdf.toString(), startPage = 1), ToolInvocationMeta.localDefault())
 
         assertContains(result, "Stream fallback PDF text")
         verify(exactly = 0) { fileSystem.readBytes(any()) }

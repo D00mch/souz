@@ -60,7 +60,7 @@ class ShellException(msg: String, val exitCode: Int) : Exception(msg)
 fun main() {
     val result = ToolRunBashCommand.invoke(
         ToolRunBashCommand.Input("open /System/Applications/Weather.app"),
-        ToolInvocationMeta.Empty,
+        ToolInvocationMeta.localDefault(),
     )
     println(result)
 }

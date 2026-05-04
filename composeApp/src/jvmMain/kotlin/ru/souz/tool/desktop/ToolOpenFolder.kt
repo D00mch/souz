@@ -126,6 +126,6 @@ class ToolOpenFolder(
 fun main() {
     val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
     val v = ToolOpenFolder(ToolRunBashCommand, filesToolUtil)
-        .invoke(ToolOpenFolder.Input("семья"), ToolInvocationMeta.Empty)
+        .invoke(ToolOpenFolder.Input("семья"), ToolInvocationMeta.localDefault())
     println(v)
 }

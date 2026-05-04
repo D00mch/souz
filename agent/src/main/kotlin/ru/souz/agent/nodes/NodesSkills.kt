@@ -14,15 +14,7 @@ internal class NodesSkills(
     private val logger = LoggerFactory.getLogger(NodesSkills::class.java)
 
     fun node(name: String = SKILLS_ACTIVATION_NODE_NAME): Node<String, String> = Node(name) { ctx: AgentContext<String> ->
-        val userId = ctx.toolInvocationMeta.userId?.trim()
-        if (userId.isNullOrEmpty()) {
-            logger.warn(
-                "Skipping skills activation because toolInvocationMeta.userId is missing. conversationId={}, requestId={}",
-                ctx.toolInvocationMeta.conversationId,
-                ctx.toolInvocationMeta.requestId,
-            )
-            return@Node pipeline.withoutSkills(ctx)
-        }
+        val userId = ctx.toolInvocationMeta.userId.trim()
 
         try {
             when (val result = pipeline.run(SkillActivationPipeline.Input(userId = userId, context = ctx))) {

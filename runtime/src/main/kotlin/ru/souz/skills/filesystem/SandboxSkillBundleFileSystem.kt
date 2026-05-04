@@ -8,11 +8,9 @@ import java.nio.file.Path
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.souz.agent.skills.bundle.SkillBundleException
-import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.tool.BadInputException
-import ru.souz.tool.files.FilesToolUtil
 
 /**
  * Sandbox-backed [SkillBundleFileSystem] implementation shared by local and
@@ -25,12 +23,6 @@ class SandboxSkillBundleFileSystem(
     private val sandboxFileSystemResolver: (SkillBundleFsContext) -> SandboxFileSystem,
 ) : SkillBundleFileSystem {
     constructor(sandboxFileSystem: SandboxFileSystem) : this({ sandboxFileSystem })
-
-    constructor(filesToolUtil: FilesToolUtil) : this({ context ->
-        filesToolUtil.sandboxFileSystem(
-            ToolInvocationMeta(userId = context.userId)
-        )
-    })
 
     private fun sandboxFileSystem(context: SkillBundleFsContext): SandboxFileSystem =
         sandboxFileSystemResolver(context)

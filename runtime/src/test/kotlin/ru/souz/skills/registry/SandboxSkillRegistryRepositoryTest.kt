@@ -38,7 +38,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-class LocalSkillRegistryRepositoryTest {
+class SandboxSkillRegistryRepositoryTest {
     private val createdPaths = mutableListOf<Path>()
 
     @AfterTest
@@ -52,7 +52,9 @@ class LocalSkillRegistryRepositoryTest {
     @Test
     fun `saves and loads skill bundle by user id and skill id`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-save-load-")
-        val repository = LocalSkillRegistryRepository(paths = DefaultSouzPaths(stateRoot = stateRoot))
+        val repository = SandboxSkillRegistryRepository(
+            sandbox = createLocalSandbox(DefaultSouzPaths(stateRoot = stateRoot)),
+        )
         val bundle = sampleBundle(skillId = SkillId("paper-summarize-academic"))
 
         val stored = repository.saveSkillBundle(userId = "user-1", bundle = bundle)
@@ -378,7 +380,7 @@ class LocalSkillRegistryRepositoryTest {
         val effectiveSandbox = runtimeSandbox
             ?: createLocalSandbox(paths)
         val loader = FileSystemSkillBundleLoader(
-            fileSystem = SandboxSkillBundleFileSystem(FilesToolUtil(effectiveSandbox)),
+            fileSystem = SandboxSkillBundleFileSystem(effectiveSandbox.fileSystem),
         )
         return FileSystemSkillsRepository(
             paths = paths,

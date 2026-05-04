@@ -51,7 +51,7 @@ class TestDataGenerator {
                         )
                     ),
                 ),
-                ToolInvocationMeta.Empty,
+                ToolInvocationMeta.localDefault(),
             )
             println("Created sales.xlsx")
 
@@ -68,7 +68,7 @@ class TestDataGenerator {
                         )
                     ),
                 ),
-                ToolInvocationMeta.Empty,
+                ToolInvocationMeta.localDefault(),
             )
             println("Created price.xlsx")
 
@@ -86,7 +86,7 @@ class TestDataGenerator {
                         )
                     ),
                 ),
-                ToolInvocationMeta.Empty,
+                ToolInvocationMeta.localDefault(),
             )
             println("Created orders.xlsx")
 
@@ -104,7 +104,7 @@ class TestDataGenerator {
                         )
                     ),
                 ),
-                ToolInvocationMeta.Empty,
+                ToolInvocationMeta.localDefault(),
             )
             println("Created clients.xlsx")
             generatedFiles.forEach { file ->

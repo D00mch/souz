@@ -31,7 +31,7 @@ class WebImageDownloader(
         imageUrl: String,
         preferredName: String,
         outputDir: String?,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     ): String {
         val dir = resolveImageOutputDir(outputDir, meta)
         val safeName = preferredName
@@ -50,7 +50,7 @@ class WebImageDownloader(
 
     fun downloadToTemp(
         imageUrl: String,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     ): String? {
         return runCatching {
             val downloaded = downloadAndDetectExtension(imageUrl)

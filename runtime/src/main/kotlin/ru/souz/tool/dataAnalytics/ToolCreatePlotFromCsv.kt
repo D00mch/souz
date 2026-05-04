@@ -279,7 +279,7 @@ fun main() {
                 yColumn = "Revenue",
                 chartType = ChartType.BAR
             ),
-            ToolInvocationMeta.Empty,
+            ToolInvocationMeta.localDefault(),
         )
     )
 }
