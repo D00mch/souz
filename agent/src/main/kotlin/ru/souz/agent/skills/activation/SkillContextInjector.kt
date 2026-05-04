@@ -8,6 +8,11 @@ internal object SkillContextInjector {
     const val START_MARKER = "<souz_skills_context>"
     const val END_MARKER = "</souz_skills_context>"
 
+    private val SKILLS_CONTEXT_BLOCK = Regex(
+        pattern = "\\s*${Regex.escape(START_MARKER)}.*?${Regex.escape(END_MARKER)}\\s*",
+        option = RegexOption.DOT_MATCHES_ALL,
+    )
+
     fun inject(
         context: AgentContext<String>,
         activatedSkills: List<ActivatedSkill>,
@@ -18,6 +23,25 @@ internal object SkillContextInjector {
         )
         return context.map(history = context.history.replaceSystemPrompt(updatedSystemPrompt)) { it }
     }
+
+    /** Walk through [context] history, find message with Skills instructions and remove it. */
+    fun clear(context: AgentContext<String>): AgentContext<String> {
+        val cleanSystemPrompt = context.systemPrompt.removeSkillsContext()
+        val cleanHistory = context.history.mapIndexed { index, message ->
+            if (index == 0 && message.role == LLMMessageRole.system) {
+                message.copy(content = cleanSystemPrompt)
+            } else {
+                message
+            }
+        }
+
+        return context.copy(
+            systemPrompt = cleanSystemPrompt,
+            history = cleanHistory,
+        )
+    }
+
+    private fun String.removeSkillsContext(): String = replace(SKILLS_CONTEXT_BLOCK, "").trimEnd()
 
     private fun buildSystemPrompt(
         baseSystemPrompt: String,

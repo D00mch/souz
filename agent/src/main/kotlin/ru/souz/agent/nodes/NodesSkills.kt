@@ -21,7 +21,7 @@ internal class NodesSkills(
                 ctx.toolInvocationMeta.conversationId,
                 ctx.toolInvocationMeta.requestId,
             )
-            return@Node ctx
+            return@Node pipeline.withoutSkills(ctx)
         }
 
         try {
@@ -60,7 +60,7 @@ internal class NodesSkills(
                         result.selectedSkillIds.map { it.value },
                         result.findings,
                     )
-                    ctx
+                    pipeline.withoutSkills(ctx)
                 }
             }
         } catch (cancelled: CancellationException) {
@@ -73,7 +73,7 @@ internal class NodesSkills(
                 ctx.toolInvocationMeta.requestId,
                 t,
             )
-            ctx
+            pipeline.withoutSkills(ctx)
         }
     }
 }

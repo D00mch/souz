@@ -61,6 +61,11 @@ class SkillActivationPipeline(
 
     private val logger = LoggerFactory.getLogger(SkillActivationPipeline::class.java)
 
+    /** Make sure no Skills are injected. */
+    fun withoutSkills(ctx: AgentContext<String>): AgentContext<String> =
+        SkillContextInjector.clear(ctx)
+
+    /** Inject skills */
     suspend fun run(input: Input): Result {
         var state = State(input)
 
