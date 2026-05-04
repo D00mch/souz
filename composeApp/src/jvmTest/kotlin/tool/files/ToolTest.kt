@@ -8,6 +8,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
+import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.test.invoke
 import ru.souz.test.suspendInvoke
 import ru.souz.tool.BadInputException
@@ -108,10 +110,20 @@ class ToolTest {
         File(baseDir, "test.txt").writeText("Test content\n")
     }
 
-    private fun createFilesToolUtil(forbiddenFolders: List<String>): FilesToolUtil {
+    private fun createFilesToolUtil(
+        forbiddenFolders: List<String>,
+        homeDir: File = fixtureRoot(),
+    ): FilesToolUtil {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.forbiddenFolders } returns forbiddenFolders
-        return FilesToolUtil(settingsProvider)
+        return FilesToolUtil(
+            LocalRuntimeSandbox(
+                scope = SandboxScope(userId = "tool-test-user"),
+                settingsProvider = settingsProvider,
+                homePath = homeDir.canonicalFile.toPath(),
+                stateRoot = createTempDirectory(prefix = "souz-test-state-").toPath(),
+            )
+        )
     }
 
     @Test
