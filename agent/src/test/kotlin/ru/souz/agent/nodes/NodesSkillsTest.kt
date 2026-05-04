@@ -2,7 +2,9 @@ package ru.souz.agent.nodes
 
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.graph.GraphRuntime
@@ -67,10 +69,14 @@ class NodesSkillsTest {
     }
 
     @Test
-    fun `skills node returns original context when pipeline returns Blocked`() = runTest {
+    fun `skills node returns fallback context when pipeline returns Blocked`() = runTest {
         val pipeline = mockk<SkillActivationPipeline>()
         val node = NodesSkills(pipeline).node()
         val original = baseContext(userId = "user-1")
+        val fallback = original.copy(
+            systemPrompt = "fallback-system",
+            history = listOf(LLMRequest.Message(LLMMessageRole.system, "fallback-system")) + original.history.drop(1),
+        )
         val finding = SkillValidationFinding(
             code = "skills.validation.blocked",
             message = "Validator rejected the skill bundle",
@@ -82,33 +88,39 @@ class NodesSkillsTest {
             findings = listOf(finding),
             selectedSkillIds = emptyList(),
         )
+        every { pipeline.withoutSkills(original) } returns fallback
 
         val result = node.execute(
             ctx = original,
             runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
         )
 
-        assertSame(original, result)
+        assertSame(fallback, result)
         assertEquals(original.activeTools, result.activeTools)
-        assertEquals(original.systemPrompt, result.systemPrompt)
-        assertTrue(result.history.none { it.content.contains(SkillContextInjector.START_MARKER) })
-        assertTrue(result.history.none { it.content.contains(finding.message) })
+        assertEquals("fallback-system", result.systemPrompt)
+        verify(exactly = 1) { pipeline.withoutSkills(original) }
     }
 
     @Test
-    fun `skills node returns original context when user id is missing or blank`() = runTest {
+    fun `skills node returns fallback context when user id is missing or blank`() = runTest {
         val pipeline = mockk<SkillActivationPipeline>()
         val node = NodesSkills(pipeline).node()
 
         listOf<String?>(null, "", "   ").forEach { userId ->
             val original = baseContext(userId = userId)
+            val fallback = original.copy(
+                systemPrompt = "fallback-$userId",
+                history = listOf(LLMRequest.Message(LLMMessageRole.system, "fallback-$userId")) + original.history.drop(1),
+            )
+            every { pipeline.withoutSkills(original) } returns fallback
 
             val result = node.execute(
                 ctx = original,
                 runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
             )
 
-            assertSame(original, result)
+            assertSame(fallback, result)
+            verify(exactly = 1) { pipeline.withoutSkills(original) }
         }
 
         coVerify(exactly = 0) { pipeline.run(any()) }
@@ -134,18 +146,24 @@ class NodesSkillsTest {
         val pipeline = mockk<SkillActivationPipeline>()
         val node = NodesSkills(pipeline).node()
         val original = baseContext(userId = "user-1")
+        val fallback = original.copy(
+            systemPrompt = "fallback-system",
+            history = listOf(LLMRequest.Message(LLMMessageRole.system, "fallback-system")) + original.history.drop(1),
+        )
         coEvery { pipeline.run(any()) } throws IllegalStateException("boom")
+        every { pipeline.withoutSkills(original) } returns fallback
 
         val result = node.execute(
             ctx = original,
             runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
         )
 
-        assertSame(original, result)
+        assertSame(fallback, result)
         assertEquals(original.activeTools, result.activeTools)
-        assertEquals(original.systemPrompt, result.systemPrompt)
+        assertEquals("fallback-system", result.systemPrompt)
         assertTrue(result.history.none { it.content.contains("boom") })
         assertTrue(result.history.none { it.content.contains(SkillContextInjector.START_MARKER) })
+        verify(exactly = 1) { pipeline.withoutSkills(original) }
     }
 
     private fun baseContext(userId: String?): AgentContext<String> = AgentContext(
