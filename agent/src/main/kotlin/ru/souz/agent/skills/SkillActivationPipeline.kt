@@ -9,8 +9,10 @@ import ru.souz.agent.skills.bundle.SKILL_MD_PATH
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.selection.LlmSkillSelector
 import ru.souz.agent.skills.selection.SkillSelectionInput
 import ru.souz.agent.skills.selection.SkillSelector
+import ru.souz.agent.skills.validation.LlmSkillValidator
 import ru.souz.agent.skills.validation.SkillLlmValidationInput
 import ru.souz.agent.skills.validation.SkillLlmValidator
 import ru.souz.agent.skills.validation.SkillStaticValidator
@@ -22,7 +24,10 @@ import ru.souz.agent.skills.validation.SkillValidationRecordFactory
 import ru.souz.agent.skills.validation.SkillValidationResult
 import ru.souz.agent.skills.validation.SkillValidationSeverity
 import ru.souz.agent.skills.validation.SkillValidationStatus
+import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.state.AgentContext
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.json.JsonUtils
 import java.time.Clock
 import java.time.Instant
 
@@ -453,4 +458,25 @@ class SkillActivationPipeline(
 
     private fun State.requireStatic(): SkillValidationResult =
         static ?: error("Static validation is missing in phase $phase")
+
+    companion object {
+        internal fun from(
+            registryRepository: SkillRegistryRepository,
+            llmApi: LLMChatAPI,
+            settingsProvider: AgentSettingsProvider,
+            jsonUtils: JsonUtils,
+        ): SkillActivationPipeline = SkillActivationPipeline(
+            registryRepository = registryRepository,
+            selector = LlmSkillSelector(
+                llmApi = llmApi,
+                model = settingsProvider.gigaModel.alias,
+                jsonUtils = jsonUtils,
+            ),
+            llmValidator = LlmSkillValidator(
+                llmApi = llmApi,
+                model = settingsProvider.gigaModel.alias,
+                jsonUtils = jsonUtils,
+            ),
+        )
+    }
 }

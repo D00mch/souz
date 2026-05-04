@@ -13,7 +13,7 @@ import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.skills.productionSkillActivationPipeline
+import ru.souz.agent.skills.SkillActivationPipeline
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentRuntimeEnvironment
@@ -54,7 +54,7 @@ fun agentDiModule(
         )
     }
     bindSingleton {
-        productionSkillActivationPipeline(
+        SkillActivationPipeline.from(
             registryRepository = instance<SkillRegistryRepository>(),
             llmApi = instance(),
             settingsProvider = instance(),

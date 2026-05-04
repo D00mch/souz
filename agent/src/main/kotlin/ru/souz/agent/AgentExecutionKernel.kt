@@ -10,7 +10,7 @@ import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.skills.productionSkillActivationPipeline
+import ru.souz.agent.skills.SkillActivationPipeline
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
@@ -69,7 +69,7 @@ class AgentExecutionKernelFactory(
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
         val nodesMcp = NodesMCP(mcpToolProvider)
         val nodesSkills = NodesSkills(
-            pipeline = productionSkillActivationPipeline(
+            pipeline = SkillActivationPipeline.from(
                 registryRepository = skillRegistryRepository,
                 llmApi = llmApi,
                 settingsProvider = settingsProvider,
