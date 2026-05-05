@@ -503,3 +503,11 @@ See JetBrains Compose Multiplatform release docs for signing and notarization de
 
 - [How to Build AI Agents You Can Actually Trust](https://medium.com/@liverm0r/building-ai-agents-for-non-technical-users-50d24c3184a8)
 - [Russian version on Habr](https://habr.com/ru/articles/1010236/)
+
+## License
+
+Copyright © 2026 Artur Dumchev and Shamil Khizriev
+
+This program and the accompanying materials are made available under the terms of the Eclipse Public License 2.0 which is available at http://www.eclipse.org/legal/epl-2.0.
+
+This Source Code may also be made available under the following Secondary Licenses when the conditions for such availability set forth in the Eclipse Public License, v. 2.0 are satisfied: GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version, with the GNU Classpath Exception which is available at https://www.gnu.org/software/classpath/license.html.
