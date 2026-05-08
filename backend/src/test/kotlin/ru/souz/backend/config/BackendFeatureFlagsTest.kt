@@ -24,6 +24,7 @@ class BackendFeatureFlagsTest {
         assertFalse(flags.toolEvents)
         assertFalse(flags.options)
         assertFalse(flags.durableEventReplay)
+        assertFalse(flags.telegramBot)
     }
 
     @Test
@@ -33,6 +34,7 @@ class BackendFeatureFlagsTest {
                 env = mapOf(
                     "SOUZ_FEATURE_WS_EVENTS" to "true",
                     "SOUZ_FEATURE_STREAMING_MESSAGES" to "TRUE",
+                    "ENABLE_BACKEND_TG_FEATURE" to "true",
                 ),
                 properties = mapOf(
                     "souz.backend.feature.toolEvents" to "true",
@@ -47,6 +49,7 @@ class BackendFeatureFlagsTest {
         assertTrue(flags.toolEvents)
         assertTrue(flags.options)
         assertTrue(flags.durableEventReplay)
+        assertTrue(flags.telegramBot)
     }
 }
 
@@ -256,6 +259,38 @@ class BackendAppConfigTest {
         }
 
         assertTrue(error.message.orEmpty().contains("SOUZ_MASTER_KEY"))
+    }
+
+    @Test
+    fun `backend config does not require telegram encryption key when telegram feature is disabled`() {
+        val config = BackendAppConfig.load(
+            MapBackendConfigSource(
+                env = mapOf(
+                    "SOUZ_STORAGE_MODE" to "memory",
+                    "SOUZ_MASTER_KEY" to "test-master-key",
+                )
+            )
+        ).validate()
+
+        assertFalse(config.featureFlags.telegramBot)
+        assertNull(config.telegramTokenEncryptionKey)
+    }
+
+    @Test
+    fun `backend config requires telegram encryption key when telegram feature is enabled`() {
+        val error = assertFailsWith<BackendConfigurationException> {
+            BackendAppConfig.load(
+                MapBackendConfigSource(
+                    env = mapOf(
+                        "SOUZ_STORAGE_MODE" to "memory",
+                        "SOUZ_MASTER_KEY" to "test-master-key",
+                        "ENABLE_BACKEND_TG_FEATURE" to "true",
+                    )
+                )
+            ).validate()
+        }
+
+        assertTrue(error.message.orEmpty().contains("TELEGRAM_TOKEN_ENCRYPTION_KEY"))
     }
 
     @Test

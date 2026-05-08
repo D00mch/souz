@@ -32,11 +32,13 @@ class BackendRuntime private constructor(
     val executionService: AgentExecutionService by lazy { di.direct.instance() }
     val optionService: OptionService by lazy { di.direct.instance() }
     val eventService: AgentEventService by lazy { di.direct.instance() }
-    val telegramBotBindingService: TelegramBotBindingService by lazy { di.direct.instance() }
-    val telegramBotPollingService: TelegramBotPollingService? by lazy {
-        runCatching { di.direct.instance<TelegramBotPollingService>() }.getOrNull()
-    }
     val featureFlags: BackendFeatureFlags by lazy { di.direct.instance() }
+    val telegramBotBindingService: TelegramBotBindingService? by lazy {
+        if (featureFlags.telegramBot) di.direct.instance() else null
+    }
+    val telegramBotPollingService: TelegramBotPollingService? by lazy {
+        if (featureFlags.telegramBot) di.direct.instance() else null
+    }
     val userRepository: UserRepository by lazy { di.direct.instance() }
     private val resources: BackendRuntimeResources by lazy { di.direct.instance() }
     private val settingsProvider: SettingsProvider by lazy { di.direct.instance() }

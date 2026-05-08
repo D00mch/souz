@@ -297,31 +297,33 @@ fun backendDiModule(
             launcher = instance(),
         )
     }
-    bindSingleton<TelegramBotApi> { HttpTelegramBotApi() }
-    bindSingleton {
-        TelegramBotTokenCrypto(
-            rawBase64Key = appConfig.telegramTokenEncryptionKey
-                ?: error("Telegram token encryption key is required.")
-        )
-    }
-    bindSingleton {
-        TelegramBotBindingService(
-            chatRepository = instance(),
-            bindingRepository = instance(),
-            telegramBotApi = instance(),
-            tokenCrypto = instance(),
-            clock = instance(),
-        )
-    }
-    bindSingleton {
-        TelegramBotPollingService(
-            repository = instance(),
-            botApi = instance(),
-            executionService = instance(),
-            tokenCrypto = instance(),
-            scope = instance<BackendApplicationScope>(),
-            maxConcurrency = appConfig.telegramPollingMaxConcurrency,
-        )
+    if (appConfig.featureFlags.telegramBot) {
+        bindSingleton<TelegramBotApi> { HttpTelegramBotApi() }
+        bindSingleton {
+            TelegramBotTokenCrypto(
+                rawBase64Key = appConfig.telegramTokenEncryptionKey
+                    ?: error("Telegram token encryption key is required.")
+            )
+        }
+        bindSingleton {
+            TelegramBotBindingService(
+                chatRepository = instance(),
+                bindingRepository = instance(),
+                telegramBotApi = instance(),
+                tokenCrypto = instance(),
+                clock = instance(),
+            )
+        }
+        bindSingleton {
+            TelegramBotPollingService(
+                repository = instance(),
+                botApi = instance(),
+                executionService = instance(),
+                tokenCrypto = instance(),
+                scope = instance<BackendApplicationScope>(),
+                maxConcurrency = appConfig.telegramPollingMaxConcurrency,
+            )
+        }
     }
     bindSingleton {
         OptionService(

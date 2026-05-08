@@ -20,6 +20,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
@@ -34,6 +35,45 @@ import ru.souz.backend.storage.memory.MemoryTelegramBotBindingRepository
 
 class BackendTelegramRouteTest {
     private val json = jacksonObjectMapper()
+
+    @Test
+    fun `telegram bot routes are absent when backend telegram feature is disabled`() = testApplication {
+        val context = telegramRouteTestContext(
+            base = routeTestContext(
+                featureFlags = BackendFeatureFlags(
+                    streamingMessages = false,
+                    toolEvents = true,
+                    telegramBot = false,
+                )
+            )
+        )
+        val chat = chat(userId = "user-a", title = "Owned")
+        runBlocking {
+            context.base.chatRepository.create(chat)
+        }
+        application {
+            backendApplication(
+                bootstrapService = context.base.bootstrapService,
+                onboardingService = context.base.onboardingService,
+                userSettingsService = context.base.userSettingsService,
+                providerKeyService = context.base.userProviderKeyService,
+                chatService = context.base.chatService,
+                messageService = context.base.messageService,
+                executionService = context.base.executionService,
+                optionService = context.base.optionService,
+                eventService = context.base.eventService,
+                featureFlags = context.base.featureFlags,
+                selectedModel = { context.base.settingsProvider.gigaModel.alias },
+                trustedProxyToken = { "proxy-secret" },
+            )
+        }
+
+        val response = client.get(BackendHttpRoutes.chatTelegramBot(chat.id)) {
+            trustedHeaders("user-a")
+        }
+
+        assertEquals(HttpStatusCode.NotFound, response.status)
+    }
 
     @Test
     fun `get telegram bot returns null for owned chat without binding`() = testApplication {
@@ -391,7 +431,13 @@ private fun ApplicationTestBuilder.installTelegramApplication(context: TelegramR
 }
 
 private fun telegramRouteTestContext(
-    base: RouteTestContext = routeTestContext(),
+    base: RouteTestContext = routeTestContext(
+        featureFlags = BackendFeatureFlags(
+            streamingMessages = false,
+            toolEvents = true,
+            telegramBot = true,
+        )
+    ),
 ): TelegramRouteTestContext {
     val repository = MemoryTelegramBotBindingRepository()
     val telegramApi = FakeTelegramBotApi()

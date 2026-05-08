@@ -103,7 +103,7 @@ data class BackendAppConfig(
         if (masterKey.isNullOrBlank()) {
             throw BackendConfigurationException("SOUZ_MASTER_KEY / souz.masterKey must not be blank.")
         }
-        if (telegramTokenEncryptionKey.isNullOrBlank()) {
+        if (featureFlags.telegramBot && telegramTokenEncryptionKey.isNullOrBlank()) {
             throw BackendConfigurationException(
                 "TELEGRAM_TOKEN_ENCRYPTION_KEY / souz.telegram.tokenEncryptionKey must not be blank."
             )
