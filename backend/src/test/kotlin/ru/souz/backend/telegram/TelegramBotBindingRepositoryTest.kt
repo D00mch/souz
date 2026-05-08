@@ -63,6 +63,18 @@ class TelegramBotBindingRepositoryTest {
     }
 
     @Test
+    fun `memory repository keeps last update id monotonic for current lease owner`() = runTest {
+        assertLeaseScopedLastUpdateContract(MemoryTelegramBotBindingRepository())
+    }
+
+    @Test
+    fun `filesystem repository keeps last update id monotonic for current lease owner`() = runTest {
+        assertLeaseScopedLastUpdateContract(
+            FilesystemTelegramBotBindingRepository(Files.createTempDirectory("telegram-bindings-fs-update-owner"))
+        )
+    }
+
+    @Test
     fun `memory repository stores errors and can disable binding`() = runTest {
         assertMarkErrorContract(MemoryTelegramBotBindingRepository())
     }
@@ -202,6 +214,61 @@ internal suspend fun assertLastUpdateContract(
     assertNotNull(stored)
     assertEquals(77L, stored.lastUpdateId)
     assertEquals(Instant.parse("2026-05-04T09:03:00Z"), stored.updatedAt)
+}
+
+internal suspend fun assertLeaseScopedLastUpdateContract(
+    repository: TelegramBotBindingRepository,
+) {
+    val binding = repository.upsertForChat(
+        userId = "user-a",
+        chatId = UUID.randomUUID(),
+        botToken = "123456:update-owner-token",
+        botTokenHash = sha256("123456:update-owner-token"),
+        now = Instant.parse("2026-05-04T09:00:00Z"),
+    )
+    repository.tryAcquireLease(
+        id = binding.id,
+        owner = "instance-a",
+        leaseUntil = Instant.parse("2026-05-04T09:00:45Z"),
+        now = Instant.parse("2026-05-04T09:00:00Z"),
+    )
+
+    repository.updateLastUpdateId(
+        id = binding.id,
+        lastUpdateId = 77L,
+        updatedAt = Instant.parse("2026-05-04T09:03:00Z"),
+        owner = "instance-a",
+    )
+    repository.updateLastUpdateId(
+        id = binding.id,
+        lastUpdateId = 55L,
+        updatedAt = Instant.parse("2026-05-04T09:04:00Z"),
+        owner = "instance-a",
+    )
+    repository.updateLastUpdateId(
+        id = binding.id,
+        lastUpdateId = 99L,
+        updatedAt = Instant.parse("2026-05-04T09:05:00Z"),
+        owner = "instance-b",
+    )
+    repository.tryAcquireLease(
+        id = binding.id,
+        owner = "instance-b",
+        leaseUntil = Instant.parse("2026-05-04T09:01:45Z"),
+        now = Instant.parse("2026-05-04T09:01:06Z"),
+    )
+    repository.updateLastUpdateId(
+        id = binding.id,
+        lastUpdateId = 120L,
+        updatedAt = Instant.parse("2026-05-04T09:06:00Z"),
+        owner = "instance-b",
+    )
+
+    val stored = repository.getByChat(binding.chatId)
+
+    assertNotNull(stored)
+    assertEquals(120L, stored.lastUpdateId)
+    assertEquals(Instant.parse("2026-05-04T09:06:00Z"), stored.updatedAt)
 }
 
 internal suspend fun assertMarkErrorContract(

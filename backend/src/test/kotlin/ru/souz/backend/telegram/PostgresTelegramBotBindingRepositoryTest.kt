@@ -49,6 +49,16 @@ class PostgresTelegramBotBindingRepositoryTest {
     }
 
     @Test
+    fun `postgres repository keeps last update id monotonic for current lease owner`() = runTest {
+        val schema = newPostgresSchema("postgres_tg_binding_update_owner")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+
+        dataSource.use {
+            assertLeaseScopedLastUpdateContract(PostgresTelegramBotBindingRepository(it))
+        }
+    }
+
+    @Test
     fun `postgres repository stores errors and can disable binding`() = runTest {
         val schema = newPostgresSchema("postgres_tg_binding_error")
         val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)

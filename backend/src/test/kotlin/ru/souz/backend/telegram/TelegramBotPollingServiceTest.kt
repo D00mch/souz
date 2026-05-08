@@ -2,7 +2,10 @@ package ru.souz.backend.telegram
 
 import io.ktor.http.HttpStatusCode
 import java.io.IOException
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,9 +16,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
@@ -401,6 +407,32 @@ class TelegramBotPollingServiceTest {
     }
 
     @Test
+    fun `in flight dedupe does not send fallback done reply`() = runTest {
+        val repository = MemoryTelegramBotBindingRepository()
+        val botApi = FakePollingTelegramBotApi()
+        val executor = RecordingTelegramTurnExecutor(
+            assistantResponse = null,
+            responseExecutionStatus = AgentExecutionStatus.RUNNING,
+        )
+        val service = pollingService(repository, botApi, executor)
+        linkedBinding(repository)
+        botApi.enqueueSingleTextUpdate(
+            token = "123456:linked-token",
+            updateId = 30L,
+            chatId = 777L,
+            userId = 555L,
+            text = "do work",
+        )
+
+        service.pollEnabledOnce()
+
+        assertEquals(
+            listOf(SentTelegramMessage(777L, "В этом чате уже выполняется задача. Попробуй позже.")),
+            botApi.sentMessages,
+        )
+    }
+
+    @Test
     fun `telegram unauthorized disables binding and stores stable error`() = runTest {
         val repository = MemoryTelegramBotBindingRepository()
         val botApi = FakePollingTelegramBotApi()
@@ -490,6 +522,80 @@ class TelegramBotPollingServiceTest {
 
         assertTrue(repository.listEnabledCalls >= 2)
         scope.cancel()
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `lease is renewed while long turn is executing`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val clock = schedulerClock(this)
+        val repository = MemoryTelegramBotBindingRepository()
+        val botApi = FakePollingTelegramBotApi()
+        val firstExecutor = RecordingTelegramTurnExecutor(
+            assistantResponse = "done",
+            delayMs = 8_000L,
+        )
+        val secondExecutor = RecordingTelegramTurnExecutor(assistantResponse = "duplicate")
+        firstExecutor.repository = repository
+        secondExecutor.repository = repository
+        val binding = linkedBinding(repository)
+        val firstService = TelegramBotPollingService(
+            repository = repository,
+            botApi = botApi,
+            turnExecutor = firstExecutor,
+            tokenCrypto = TelegramBotTokenCrypto(TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY),
+            scope = backgroundScope,
+            clock = clock,
+            instanceId = "instance-a",
+            leaseTtlSeconds = 6L,
+        )
+        val secondService = TelegramBotPollingService(
+            repository = repository,
+            botApi = botApi,
+            turnExecutor = secondExecutor,
+            tokenCrypto = TelegramBotTokenCrypto(TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY),
+            scope = backgroundScope,
+            clock = clock,
+            instanceId = "instance-b",
+            leaseTtlSeconds = 6L,
+        )
+        botApi.enqueueUpdates(
+            token = "123456:linked-token",
+            updater = { offset ->
+                assertEquals(1L, offset)
+                TelegramUpdatesResponse(
+                    ok = true,
+                    result = listOf(
+                        privateTextUpdate(
+                            updateId = 50L,
+                            chatId = 777L,
+                            userId = 555L,
+                            text = "long work",
+                            username = "alice",
+                            firstName = "Alice",
+                        )
+                    ),
+                )
+            },
+        )
+
+        val firstPoll = backgroundScope.launch(dispatcher) {
+            firstService.pollEnabledOnce()
+        }
+        runCurrent()
+        advanceTimeBy(6_500L)
+
+        secondService.pollEnabledOnce()
+
+        assertTrue(secondExecutor.calls.isEmpty())
+        assertEquals(1, botApi.getUpdatesCalls.size)
+
+        advanceTimeBy(2_000L)
+        firstPoll.join()
+
+        assertEquals(1, firstExecutor.calls.size)
+        assertEquals(50L, repository.getByChat(binding.chatId)?.lastUpdateId)
+        assertEquals(listOf(SentTelegramMessage(777L, "done")), botApi.sentMessages)
     }
 }
 
@@ -584,6 +690,8 @@ private data class GetUpdatesCall(
 private class RecordingTelegramTurnExecutor(
     private val assistantResponse: String? = "Готово",
     private val failure: Throwable? = null,
+    private val responseExecutionStatus: AgentExecutionStatus = AgentExecutionStatus.COMPLETED,
+    private val delayMs: Long = 0L,
 ) : TelegramTurnExecutor {
     val calls = mutableListOf<TelegramTurnCall>()
     lateinit var repository: MemoryTelegramBotBindingRepository
@@ -603,6 +711,9 @@ private class RecordingTelegramTurnExecutor(
             requestOverrides = requestOverrides,
             observedLastUpdateId = repository.getByChat(chatId)?.lastUpdateId,
         )
+        if (delayMs > 0L) {
+            delay(delayMs)
+        }
         failure?.let { throw it }
         return sendMessageResult(
             chatId = chatId,
@@ -610,6 +721,7 @@ private class RecordingTelegramTurnExecutor(
             content = content,
             clientMessageId = clientMessageId,
             assistantResponse = assistantResponse,
+            executionStatus = responseExecutionStatus,
         )
     }
 }
@@ -620,6 +732,7 @@ private fun sendMessageResult(
     content: String,
     clientMessageId: String,
     assistantResponse: String?,
+    executionStatus: AgentExecutionStatus = AgentExecutionStatus.COMPLETED,
 ): SendMessageResult {
     val userMessage = ChatMessage(
         id = UUID.randomUUID(),
@@ -652,13 +765,14 @@ private fun sendMessageResult(
             chatId = chatId,
             userMessageId = userMessage.id,
             assistantMessageId = assistantMessage?.id,
-            status = AgentExecutionStatus.COMPLETED,
+            status = executionStatus,
             requestId = null,
             clientMessageId = clientMessageId,
             model = null,
             provider = null,
             startedAt = Instant.parse("2026-05-04T10:02:00Z"),
-            finishedAt = Instant.parse("2026-05-04T10:02:05Z"),
+            finishedAt = Instant.parse("2026-05-04T10:02:05Z")
+                .takeIf { executionStatus == AgentExecutionStatus.COMPLETED },
             cancelRequested = false,
             errorCode = null,
             errorMessage = null,
@@ -780,6 +894,7 @@ private class FlakyListEnabledTelegramBindingRepository : TelegramBotBindingRepo
         id: UUID,
         lastUpdateId: Long,
         updatedAt: Instant,
+        owner: String?,
     ) = Unit
 
     override suspend fun markError(
@@ -812,5 +927,16 @@ private class FlakyListEnabledTelegramBindingRepository : TelegramBotBindingRepo
         now: Instant,
     ): TelegramBotBinding? = null
 }
+
+@OptIn(ExperimentalCoroutinesApi::class)
+private fun schedulerClock(scope: TestScope): Clock =
+    object : Clock() {
+        override fun getZone(): ZoneId = ZoneOffset.UTC
+
+        override fun withZone(zone: ZoneId): Clock = this
+
+        override fun instant(): Instant =
+            Instant.parse("2026-05-04T10:00:00Z").plusMillis(scope.testScheduler.currentTime)
+    }
 
 private const val TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="

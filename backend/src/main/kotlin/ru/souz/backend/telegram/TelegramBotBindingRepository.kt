@@ -49,6 +49,7 @@ interface TelegramBotBindingRepository {
         id: UUID,
         lastUpdateId: Long,
         updatedAt: Instant = Instant.now(),
+        owner: String? = null,
     )
 
     suspend fun markError(

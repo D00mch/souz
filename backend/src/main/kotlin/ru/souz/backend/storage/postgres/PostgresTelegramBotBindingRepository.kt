@@ -231,18 +231,22 @@ class PostgresTelegramBotBindingRepository(
         id: UUID,
         lastUpdateId: Long,
         updatedAt: Instant,
+        owner: String?,
     ) {
         dataSource.write { connection ->
             connection.prepareStatement(
                 """
                 update telegram_bot_bindings
-                set last_update_id = ?, updated_at = ?
+                set last_update_id = greatest(last_update_id, ?), updated_at = ?
                 where id = ?
+                  and (? is null or poller_owner = ?)
                 """.trimIndent()
             ).use { statement ->
                 statement.setLong(1, lastUpdateId)
                 statement.setInstant(2, updatedAt)
                 statement.setObject(3, id)
+                statement.setString(4, owner)
+                statement.setString(5, owner)
                 statement.executeUpdate()
             }
         }

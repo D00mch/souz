@@ -165,11 +165,15 @@ class MemoryTelegramBotBindingRepository(
         id: UUID,
         lastUpdateId: Long,
         updatedAt: Instant,
+        owner: String?,
     ) = mutex.withLock {
         val current = bindings[id] ?: return@withLock
+        if (owner != null && current.pollerOwner != owner) {
+            return@withLock
+        }
         store(
             current.copy(
-                lastUpdateId = lastUpdateId,
+                lastUpdateId = maxOf(current.lastUpdateId, lastUpdateId),
                 updatedAt = updatedAt,
             )
         )

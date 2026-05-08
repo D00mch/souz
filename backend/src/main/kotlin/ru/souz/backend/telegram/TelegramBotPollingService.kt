@@ -9,6 +9,8 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -17,6 +19,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.service.SendMessageResult
+import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.settings.service.UserSettingsOverrides
@@ -124,60 +127,81 @@ class TelegramBotPollingService(
         }
     }
 
-    private suspend fun pollBinding(binding: TelegramBotBinding) {
+    private suspend fun pollBinding(binding: TelegramBotBinding) = coroutineScope {
         val now = clock.instant()
         val leasedBinding = repository.tryAcquireLease(
             id = binding.id,
             owner = instanceId,
             leaseUntil = now.plusSeconds(leaseTtlSeconds),
             now = now,
-        ) ?: return
-        val token = try {
-            tokenCrypto.decrypt(leasedBinding.botTokenEncrypted)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            repository.markError(leasedBinding.id, TELEGRAM_TOKEN_DECRYPT_ERROR)
-            logger.warn("Telegram token decrypt failed for binding {}", leasedBinding.id)
-            return
+        ) ?: return@coroutineScope
+        val leaseHeartbeat = launch {
+            val renewIntervalMs = leaseRenewIntervalMs(leaseTtlSeconds)
+            while (isActive) {
+                delay(renewIntervalMs)
+                repository.tryAcquireLease(
+                    id = leasedBinding.id,
+                    owner = instanceId,
+                    leaseUntil = clock.instant().plusSeconds(leaseTtlSeconds),
+                    now = clock.instant(),
+                ) ?: return@launch
+            }
         }
 
-        val updates = try {
-            botApi.getUpdates(
-                token = token,
-                offset = leasedBinding.lastUpdateId + 1L,
-                timeoutSeconds = GET_UPDATES_TIMEOUT_SECONDS,
-                allowedUpdates = listOf("message"),
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: TelegramBotApiHttpException) {
-            handleHttpError(leasedBinding, e)
-            return
-        } catch (e: TelegramBotApiTransportException) {
-            repository.markError(leasedBinding.id, TELEGRAM_NETWORK_ERROR)
-            logger.warn("Telegram long polling transport failure for binding {}", leasedBinding.id)
-            return
-        } catch (e: IOException) {
-            repository.markError(leasedBinding.id, TELEGRAM_NETWORK_ERROR)
-            logger.warn("Telegram long polling IO failure for binding {}", leasedBinding.id)
-            return
-        } catch (e: Exception) {
-            repository.markError(leasedBinding.id, TELEGRAM_UNKNOWN_ERROR)
-            logger.warn("Telegram long polling unexpected failure for binding {}", leasedBinding.id)
-            return
-        }
+        try {
+            val token = try {
+                tokenCrypto.decrypt(leasedBinding.botTokenEncrypted)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                repository.markError(leasedBinding.id, TELEGRAM_TOKEN_DECRYPT_ERROR)
+                logger.warn("Telegram token decrypt failed for binding {}", leasedBinding.id)
+                return@coroutineScope
+            }
 
-        if (!updates.ok) {
-            handleResponseError(leasedBinding, updates)
-            return
-        }
+            val updates = try {
+                botApi.getUpdates(
+                    token = token,
+                    offset = leasedBinding.lastUpdateId + 1L,
+                    timeoutSeconds = GET_UPDATES_TIMEOUT_SECONDS,
+                    allowedUpdates = listOf("message"),
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: TelegramBotApiHttpException) {
+                handleHttpError(leasedBinding, e)
+                return@coroutineScope
+            } catch (e: TelegramBotApiTransportException) {
+                repository.markError(leasedBinding.id, TELEGRAM_NETWORK_ERROR)
+                logger.warn("Telegram long polling transport failure for binding {}", leasedBinding.id)
+                return@coroutineScope
+            } catch (e: IOException) {
+                repository.markError(leasedBinding.id, TELEGRAM_NETWORK_ERROR)
+                logger.warn("Telegram long polling IO failure for binding {}", leasedBinding.id)
+                return@coroutineScope
+            } catch (e: Exception) {
+                repository.markError(leasedBinding.id, TELEGRAM_UNKNOWN_ERROR)
+                logger.warn("Telegram long polling unexpected failure for binding {}", leasedBinding.id)
+                return@coroutineScope
+            }
 
-        repository.clearError(leasedBinding.id)
-        var currentBinding = leasedBinding
-        for (update in updates.result) {
-            currentBinding = handleUpdate(currentBinding, token, update)
-            repository.updateLastUpdateId(currentBinding.id, update.updateId)
+            if (!updates.ok) {
+                handleResponseError(leasedBinding, updates)
+                return@coroutineScope
+            }
+
+            repository.clearError(leasedBinding.id)
+            var currentBinding = leasedBinding
+            for (update in updates.result) {
+                currentBinding = handleUpdate(currentBinding, token, update)
+                repository.updateLastUpdateId(
+                    id = currentBinding.id,
+                    lastUpdateId = update.updateId,
+                    owner = instanceId,
+                )
+            }
+        } finally {
+            leaseHeartbeat.cancelAndJoin()
         }
     }
 
@@ -256,6 +280,10 @@ class TelegramBotPollingService(
         chatId: Long,
         result: SendMessageResult,
     ) {
+        if (result.assistantMessage == null && result.execution.status != AgentExecutionStatus.COMPLETED) {
+            sendReplySafely(token, chatId, ACTIVE_EXECUTION_REPLY)
+            return
+        }
         val responseText = result.assistantMessage?.content.orEmpty()
         val chunks = telegramTextChunks(
             text = responseText.ifBlank { FALLBACK_ASSISTANT_REPLY },
@@ -344,6 +372,9 @@ class TelegramBotPollingService(
         const val TELEGRAM_NETWORK_ERROR: String = "telegram_network_error"
         const val TELEGRAM_UNKNOWN_ERROR: String = "telegram_unknown_error"
         const val TELEGRAM_TOKEN_DECRYPT_ERROR: String = "telegram_token_decrypt_error"
+
+        fun leaseRenewIntervalMs(leaseTtlSeconds: Long): Long =
+            (leaseTtlSeconds * 1_000L / 3L).coerceAtLeast(1_000L)
 
         fun telegramTextChunks(
             text: String,

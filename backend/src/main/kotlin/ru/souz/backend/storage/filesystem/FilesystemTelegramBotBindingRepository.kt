@@ -161,12 +161,16 @@ class FilesystemTelegramBotBindingRepository(
         id: UUID,
         lastUpdateId: Long,
         updatedAt: Instant,
+        owner: String?,
     ) = withFileLock {
         val current = readAllBindings().firstOrNull { it.id == id } ?: return@withFileLock
+        if (owner != null && current.pollerOwner != owner) {
+            return@withFileLock
+        }
         mapper.writeJsonFile(
             layout.telegramBotBindingFile(current.userId, current.chatId),
             current.copy(
-                lastUpdateId = lastUpdateId,
+                lastUpdateId = maxOf(current.lastUpdateId, lastUpdateId),
                 updatedAt = updatedAt,
             ).toStored(),
         )
