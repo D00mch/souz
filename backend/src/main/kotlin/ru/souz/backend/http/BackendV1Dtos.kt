@@ -357,12 +357,13 @@ internal fun AgentEventEnvelope.toDto(): BackendV1EventDto =
 
 private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<String, Any?> =
     when (this) {
-        is MessageCreatedPayload -> linkedMapOf(
+        is MessageCreatedPayload -> linkedMapOf<String, Any?>(
             "messageId" to messageId.toString(),
             "seq" to seq,
             "role" to role,
             "content" to content,
-        )
+            "clientMessageId" to clientMessageId,
+        ).withoutNulls()
 
         is MessageDeltaPayload -> linkedMapOf(
             "messageId" to messageId.toString(),
@@ -466,6 +467,7 @@ private fun Map<String, String>.toLegacyTransportPayload(type: AgentEventType): 
             copyLongIfPresent("seq")
             copyIfPresent("role")
             copyIfPresent("content")
+            copyIfPresent("clientMessageId")
         }
 
         AgentEventType.MESSAGE_DELTA -> buildLegacyPayload {

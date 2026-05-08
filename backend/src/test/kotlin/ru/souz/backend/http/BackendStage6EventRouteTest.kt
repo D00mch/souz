@@ -79,7 +79,7 @@ class BackendStage6EventRouteTest {
                 client.post(BackendHttpRoutes.chatMessages(chat.id)) {
                     trustedHeaders("user-a")
                     contentType(ContentType.Application.Json)
-                    setBody("""{"content":"hello ws"}""")
+                    setBody("""{"content":"hello ws","clientMessageId":"client-42"}""")
                 }
             }
             api.awaitStarted("hello ws")
@@ -116,6 +116,8 @@ class BackendStage6EventRouteTest {
             assertTrue(deltaEvents.all { it["seq"].isNull })
             assertTrue(liveEvents.filterNot { it["type"].asText() == "message.delta" }.all { it["durable"].asBoolean() })
             assertTrue(liveEvents.filterNot { it["type"].asText() == "message.delta" }.all { it["seq"].isNumber })
+            assertEquals("client-42", liveEvents.first().path("payload").path("clientMessageId").asText())
+            assertTrue(liveEvents[5].path("payload").path("clientMessageId").isMissingNode)
             session.close()
         }
     }

@@ -294,6 +294,7 @@ internal class BackendAgentRuntimeEventSink(
                 seq = message.seq,
                 role = message.role.value,
                 content = message.content,
+                clientMessageId = message.metadata["clientMessageId"]?.takeIf { it.isNotEmpty() },
             ),
         )
     }

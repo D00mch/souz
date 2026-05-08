@@ -15,6 +15,7 @@ class AgentEventPayloadSerializationTest {
                 seq = 3L,
                 role = "assistant",
                 content = "Hello",
+                clientMessageId = "client-42",
             ),
             AgentEventType.MESSAGE_DELTA to MessageDeltaPayload(
                 messageId = UUID.fromString("22222222-2222-2222-2222-222222222222"),

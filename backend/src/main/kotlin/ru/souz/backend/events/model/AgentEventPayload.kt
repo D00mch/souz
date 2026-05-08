@@ -12,6 +12,7 @@ data class MessageCreatedPayload(
     val seq: Long,
     val role: String,
     val content: String,
+    val clientMessageId: String? = null,
 ) : AgentEventPayload
 
 data class MessageDeltaPayload(

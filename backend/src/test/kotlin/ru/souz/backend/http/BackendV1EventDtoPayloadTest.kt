@@ -8,12 +8,37 @@ import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.ChoiceRequestedPayload
 import ru.souz.backend.events.model.ChoiceOptionItemPayload
+import ru.souz.backend.events.model.MessageCreatedPayload
 import ru.souz.backend.events.model.RawAgentEventPayload
 import ru.souz.backend.events.model.ToolCallFinishedPayload
 import ru.souz.backend.events.model.ToolCallStartedPayload
 import ru.souz.llms.restJsonMapper
 
 class BackendV1EventDtoPayloadTest {
+    @Test
+    fun `typed message created payload dto exposes client message id when present`() {
+        val event = AgentEvent(
+            id = UUID.fromString("01010101-0101-0101-0101-010101010101"),
+            userId = "user-a",
+            chatId = UUID.fromString("02020202-0202-0202-0202-020202020202"),
+            executionId = UUID.fromString("03030303-0303-0303-0303-030303030303"),
+            seq = 2L,
+            type = AgentEventType.MESSAGE_CREATED,
+            payload = MessageCreatedPayload(
+                messageId = UUID.fromString("04040404-0404-0404-0404-040404040404"),
+                seq = 7L,
+                role = "user",
+                content = "hello",
+                clientMessageId = "client-42",
+            ),
+            createdAt = Instant.parse("2026-05-02T09:59:59Z"),
+        )
+
+        val dto = event.toDto()
+
+        assertEquals("client-42", dto.payload["clientMessageId"])
+    }
+
     @Test
     fun `typed tool payload dto keeps native json previews and stable fields`() {
         val event = AgentEvent(
