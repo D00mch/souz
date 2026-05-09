@@ -101,7 +101,7 @@ class PostgresTelegramBotBindingRepository(
                     created_at,
                     updated_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, 0, true, null, null, null, null, null, null, null, null, null, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, 0, true, null, null, null, null, null, null, null, null, null, null, ?, ?)
                 on conflict (chat_id) do update
                 set user_id = excluded.user_id,
                     bot_token_encrypted = excluded.bot_token_encrypted,
