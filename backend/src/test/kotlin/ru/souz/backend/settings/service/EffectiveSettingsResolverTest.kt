@@ -44,6 +44,9 @@ class EffectiveSettingsResolverTest {
                     enabledTools = setOf("ListFiles"),
                     showToolEvents = false,
                     streamingMessages = true,
+                    interfaceLanguage = "en",
+                    requestTimeoutMillis = 45_000L,
+                    useFewShotExamples = false,
                     toolPermissions = emptyMap(),
                     mcp = emptyMap(),
                 )
@@ -67,6 +70,9 @@ class EffectiveSettingsResolverTest {
         assertEquals(setOf("ListFiles"), effective.enabledTools)
         assertFalse(effective.showToolEvents)
         assertTrue(effective.streamingMessages)
+        assertEquals("en", effective.interfaceLanguage)
+        assertEquals(45_000L, effective.requestTimeoutMillis)
+        assertFalse(effective.useFewShotExamples)
     }
 
     @Test
@@ -201,6 +207,45 @@ class EffectiveSettingsResolverTest {
     }
 
     @Test
+    fun `new settings resolve via request overrides then persisted values then backend defaults`() = runTest {
+        val settingsProvider = TestSettingsProvider().apply {
+            gigaChatKey = "giga-key"
+            regionProfile = "en"
+            requestTimeoutMillis = 40_000L
+            useFewShotExamples = false
+        }
+        val repository = MemoryUserSettingsRepository()
+        repository.save(
+            UserSettings(
+                userId = "user-a",
+                locale = Locale.forLanguageTag("ru-RU"),
+                timeZone = ZoneId.of("Europe/Moscow"),
+                interfaceLanguage = "ru",
+                requestTimeoutMillis = 45_000L,
+                useFewShotExamples = false,
+            )
+        )
+
+        val effective = resolver(
+            settingsProvider = settingsProvider,
+            repository = repository,
+        ).resolve(
+            userId = "user-a",
+            requestOverrides = UserSettingsOverrides(
+                interfaceLanguage = "en",
+                requestTimeoutMillis = 50_000L,
+                useFewShotExamples = true,
+            ),
+        )
+
+        assertEquals(Locale.forLanguageTag("ru-RU"), effective.locale)
+        assertEquals(ZoneId.of("Europe/Moscow"), effective.timeZone)
+        assertEquals("en", effective.interfaceLanguage)
+        assertEquals(50_000L, effective.requestTimeoutMillis)
+        assertTrue(effective.useFewShotExamples)
+    }
+
+    @Test
     fun `unsupported enabled tools are filtered out`() = runTest {
         val repository = MemoryUserSettingsRepository()
         repository.save(
@@ -219,12 +264,17 @@ class EffectiveSettingsResolverTest {
     fun `missing locale and time zone fall back to stable defaults`() = runTest {
         val settingsProvider = TestSettingsProvider().apply {
             regionProfile = "en"
+            requestTimeoutMillis = 41_000L
+            useFewShotExamples = false
         }
 
         val effective = resolver(settingsProvider = settingsProvider).resolve("user-a")
 
         assertEquals(Locale.forLanguageTag("en-US"), effective.locale)
         assertEquals(ZoneId.systemDefault(), effective.timeZone)
+        assertEquals("en", effective.interfaceLanguage)
+        assertEquals(41_000L, effective.requestTimeoutMillis)
+        assertTrue(effective.useFewShotExamples)
     }
 
     private fun resolver(

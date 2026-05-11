@@ -43,6 +43,9 @@ internal data class BackendV1SettingsPatchRequest(
     val enabledTools: List<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val interfaceLanguage: String? = null,
+    val requestTimeoutMillis: Long? = null,
+    val useFewShotExamples: Boolean? = null,
 )
 
 internal data class BackendV1OnboardingCompleteRequest(
@@ -52,6 +55,9 @@ internal data class BackendV1OnboardingCompleteRequest(
     val enabledTools: List<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val interfaceLanguage: String? = null,
+    val requestTimeoutMillis: Long? = null,
+    val useFewShotExamples: Boolean? = null,
 )
 
 internal data class BackendV1SettingsDto(
@@ -64,6 +70,9 @@ internal data class BackendV1SettingsDto(
     val enabledTools: List<String>,
     val showToolEvents: Boolean,
     val streamingMessages: Boolean,
+    val interfaceLanguage: String,
+    val requestTimeoutMillis: Long,
+    val useFewShotExamples: Boolean,
 )
 
 internal data class BackendV1ProviderKeysResponse(
@@ -246,6 +255,9 @@ internal fun EffectiveUserSettings.toDto(): BackendV1SettingsDto =
         enabledTools = enabledTools.toList(),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
+        interfaceLanguage = interfaceLanguage,
+        requestTimeoutMillis = requestTimeoutMillis,
+        useFewShotExamples = useFewShotExamples,
     )
 
 internal fun UserProviderKeyView.toDto(): BackendV1ProviderKeyDto =

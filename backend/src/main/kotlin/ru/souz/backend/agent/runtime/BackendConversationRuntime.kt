@@ -129,6 +129,12 @@ class BackendConversationRuntimeFactory(
             delegate = baseSettingsProvider,
             defaultSystemPrompt = request.systemPrompt ?: systemPrompt,
             locale = persistedSession?.locale ?: request.locale,
+            useFewShotExamples = request.useFewShotExamples ?: baseSettingsProvider.useFewShotExamples,
+            requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
+        )
+        val requestScopedToolCatalog = BackendFewShotAwareToolCatalog(
+            delegate = toolCatalog,
+            settingsProvider = settingsProvider,
         )
         val delegateApi = llmApiFactory(
             BackendLlmExecutionContext(
@@ -145,7 +151,7 @@ class BackendConversationRuntimeFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
             desktopInfoRepository = BackendNoopAgentDesktopInfoRepository,
-            toolCatalog = toolCatalog,
+            toolCatalog = requestScopedToolCatalog,
             toolsFilter = toolsFilter,
             defaultBrowserProvider = BackendNoopDefaultBrowserProvider,
             runtimeEnvironment = BackendRequestRuntimeEnvironment(

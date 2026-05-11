@@ -29,6 +29,9 @@ data class UserSettingsOverrides(
     val enabledTools: Set<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val interfaceLanguage: String? = null,
+    val requestTimeoutMillis: Long? = null,
+    val useFewShotExamples: Boolean? = null,
     val toolPermissions: Map<String, ToolPermission>? = null,
     val mcp: Map<String, UserMcpServer>? = null,
 )
@@ -50,6 +53,16 @@ class EffectiveSettingsResolver(
 
         val locale = normalizeLocale(requestOverrides?.locale ?: persisted.locale ?: defaultLocale())
         val timeZone = requestOverrides?.timeZone ?: persisted.timeZone ?: ZoneId.systemDefault()
+        val interfaceLanguage = normalizeInterfaceLanguage(
+            requestOverrides?.interfaceLanguage
+                ?: persisted.interfaceLanguage
+                ?: defaultInterfaceLanguage()
+        )
+        val requestTimeoutMillis = normalizeRequestTimeoutMillis(
+            requestOverrides?.requestTimeoutMillis
+                ?: persisted.requestTimeoutMillis
+                ?: baseSettingsProvider.requestTimeoutMillis
+        )
         val defaultModel = normalizeModel(
             userId = userId,
             model = requestOverrides?.defaultModel ?: persisted.defaultModel,
@@ -61,6 +74,9 @@ class EffectiveSettingsResolver(
         val streamingPreference = requestOverrides?.streamingMessages
             ?: persisted.streamingMessages
             ?: baseSettingsProvider.useStreaming
+        val useFewShotExamples = requestOverrides?.useFewShotExamples
+            ?: persisted.useFewShotExamples
+            ?: DEFAULT_BACKEND_USE_FEW_SHOT_EXAMPLES
 
         return EffectiveUserSettings(
             userId = userId,
@@ -73,6 +89,9 @@ class EffectiveSettingsResolver(
             enabledTools = enabledTools,
             showToolEvents = featureFlags.toolEvents && showToolEventsPreference,
             streamingMessages = featureFlags.streamingMessages && streamingPreference,
+            interfaceLanguage = interfaceLanguage,
+            requestTimeoutMillis = requestTimeoutMillis,
+            useFewShotExamples = useFewShotExamples,
             toolPermissions = requestOverrides?.toolPermissions ?: persisted.toolPermissions,
             mcp = requestOverrides?.mcp ?: persisted.mcp,
         )
@@ -92,6 +111,9 @@ class EffectiveSettingsResolver(
             enabledTools = normalizeEnabledTools(null),
             showToolEvents = true,
             streamingMessages = baseSettingsProvider.useStreaming,
+            interfaceLanguage = defaultInterfaceLanguage(),
+            requestTimeoutMillis = normalizeRequestTimeoutMillis(baseSettingsProvider.requestTimeoutMillis),
+            useFewShotExamples = DEFAULT_BACKEND_USE_FEW_SHOT_EXAMPLES,
             toolPermissions = emptyMap(),
             mcp = emptyMap(),
             createdAt = now,
@@ -168,10 +190,30 @@ class EffectiveSettingsResolver(
     private fun normalizeLocale(locale: Locale): Locale =
         locale.takeIf { it.language.isNotBlank() } ?: defaultLocale()
 
+    private fun normalizeInterfaceLanguage(interfaceLanguage: String): String =
+        when (interfaceLanguage.trim().lowercase()) {
+            REGION_EN -> REGION_EN
+            else -> REGION_RU
+        }
+
+    private fun defaultInterfaceLanguage(): String =
+        if (baseSettingsProvider.regionProfile.equals(REGION_EN, ignoreCase = true)) {
+            REGION_EN
+        } else {
+            REGION_RU
+        }
+
+    private fun normalizeRequestTimeoutMillis(requestTimeoutMillis: Long): Long =
+        requestTimeoutMillis.takeIf { it >= MIN_REQUEST_TIMEOUT_MILLIS }
+            ?: baseSettingsProvider.requestTimeoutMillis.coerceAtLeast(MIN_REQUEST_TIMEOUT_MILLIS)
+
     private fun Locale.languageOrRegion(): String =
         language.takeIf { it.isNotBlank() } ?: baseSettingsProvider.regionProfile
 
     private companion object {
         const val REGION_EN = "en"
+        const val REGION_RU = "ru"
+        const val MIN_REQUEST_TIMEOUT_MILLIS = 1_000L
+        const val DEFAULT_BACKEND_USE_FEW_SHOT_EXAMPLES = true
     }
 }

@@ -17,4 +17,6 @@ internal data class BackendConversationTurnRequest(
     val temperature: Float? = null,
     val systemPrompt: String? = null,
     val streamingMessages: Boolean? = null,
+    val requestTimeoutMillis: Long? = null,
+    val useFewShotExamples: Boolean? = null,
 )

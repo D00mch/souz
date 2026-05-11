@@ -65,6 +65,9 @@ class BackendOnboardingRouteTest {
         assertTrue(payload["currentSettings"].has("enabledTools"))
         assertTrue(payload["currentSettings"].has("showToolEvents"))
         assertTrue(payload["currentSettings"].has("streamingMessages"))
+        assertEquals("ru", payload["currentSettings"]["interfaceLanguage"].asText())
+        assertEquals(context.settingsProvider.requestTimeoutMillis, payload["currentSettings"]["requestTimeoutMillis"].asLong())
+        assertEquals(true, payload["currentSettings"]["useFewShotExamples"].asBoolean())
         assertTrue(payload["recommendedDefaultModel"].isTextual)
     }
 
@@ -199,6 +202,58 @@ class BackendOnboardingRouteTest {
         assertEquals(true, statePayload["hasUsableModelAccess"].asBoolean())
         assertEquals(context.settingsProvider.gigaModel.alias, statePayload["currentSettings"]["defaultModel"].asText())
         assertEquals(listOf("ListFiles"), statePayload["currentSettings"]["enabledTools"].map { it.asText() })
+    }
+
+    @Test
+    fun `completing onboarding accepts new public settings fields and exposes them in state`() = testApplication {
+        val context = routeTestContext(
+            settingsProvider = TestSettingsProvider().apply {
+                gigaChatKey = "giga-key"
+                qwenChatKey = null
+                aiTunnelKey = null
+                anthropicKey = null
+                openaiKey = null
+            },
+        )
+        application {
+            backendApplication(
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                providerKeyService = context.userProviderKeyService,
+                onboardingService = context.onboardingService,
+            )
+        }
+
+        val complete = client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
+            trustedHeaders("new-settings-user")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "defaultModel": "${context.settingsProvider.gigaModel.alias}",
+                  "interfaceLanguage": "en",
+                  "requestTimeoutMillis": 45000,
+                  "useFewShotExamples": false
+                }
+                """.trimIndent()
+            )
+        }
+        val state = client.get(BackendHttpRoutes.ONBOARDING_STATE) {
+            trustedHeaders("new-settings-user")
+        }
+        val statePayload = json.readTree(state.bodyAsText())
+        val storedSettings = runBlocking { context.userSettingsRepository.get("new-settings-user") }
+
+        assertEquals(HttpStatusCode.OK, complete.status)
+        assertEquals(HttpStatusCode.OK, state.status)
+        assertEquals("en", statePayload["currentSettings"]["interfaceLanguage"].asText())
+        assertEquals(45_000L, statePayload["currentSettings"]["requestTimeoutMillis"].asLong())
+        assertEquals(false, statePayload["currentSettings"]["useFewShotExamples"].asBoolean())
+        assertEquals("en", storedSettings?.interfaceLanguage)
+        assertEquals(45_000L, storedSettings?.requestTimeoutMillis)
+        assertEquals(false, storedSettings?.useFewShotExamples)
     }
 
     @Test

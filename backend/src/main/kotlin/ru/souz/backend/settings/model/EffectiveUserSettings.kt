@@ -15,6 +15,9 @@ data class EffectiveUserSettings(
     val enabledTools: Set<String>,
     val showToolEvents: Boolean,
     val streamingMessages: Boolean,
+    val interfaceLanguage: String,
+    val requestTimeoutMillis: Long,
+    val useFewShotExamples: Boolean,
     val toolPermissions: Map<String, ToolPermission>,
     val mcp: Map<String, UserMcpServer>,
 )
