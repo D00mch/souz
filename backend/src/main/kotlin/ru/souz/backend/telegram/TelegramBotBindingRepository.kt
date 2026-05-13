@@ -20,6 +20,7 @@ interface TelegramBotBindingRepository {
         chatId: UUID,
         botToken: String,
         botTokenHash: String,
+        linkSecretHash: String,
         botUsername: String? = null,
         botFirstName: String? = null,
         now: Instant,
@@ -27,8 +28,9 @@ interface TelegramBotBindingRepository {
 
     suspend fun deleteByChat(chatId: UUID)
 
-    suspend fun linkTelegramUser(
+    suspend fun claimTelegramUser(
         id: UUID,
+        linkSecretHash: String,
         telegramUserId: Long,
         telegramChatId: Long,
         telegramUsername: String?,
@@ -36,7 +38,7 @@ interface TelegramBotBindingRepository {
         telegramLastName: String?,
         linkedAt: Instant,
         updatedAt: Instant = linkedAt,
-    ): TelegramBotBinding?
+    ): TelegramUserClaimResult
 
     suspend fun tryAcquireLease(
         id: UUID,
@@ -44,6 +46,12 @@ interface TelegramBotBindingRepository {
         leaseUntil: Instant,
         now: Instant = Instant.now(),
     ): TelegramBotBinding?
+
+    suspend fun hasActiveLease(
+        id: UUID,
+        owner: String,
+        now: Instant = Instant.now(),
+    ): Boolean
 
     suspend fun updateLastUpdateId(
         id: UUID,

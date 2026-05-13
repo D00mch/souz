@@ -311,12 +311,12 @@ Confirmation-related flows:
 
 | Mode | Description |
 |---|---|
-| `memory` | Bounded in-process LRU repositories, useful for local/dev execution |
+| `memory` | Bounded in-process repositories, useful for local/dev execution |
 | `filesystem` | Per-user files under `SOUZ_BACKEND_DATA_DIR` / `souz.backend.dataDir` |
 | `postgres` | JDBC + HikariCP + Flyway-backed durable storage |
 
 Postgres storage supports durable event replay, per-chat message/event sequence numbers, one active execution per chat, optimistic locking for `agent_conversation_state`, and durable tool-call audit rows.
-Telegram bot bindings are available in all backend storage modes; MVP keeps bot tokens plaintext and should be upgraded to encryption-at-rest later.
+Telegram bot bindings are available in all backend storage modes. Bot tokens are encrypted at rest via `TELEGRAM_TOKEN_ENCRYPTION_KEY`, pending links use one-time `/start <secret>` commands with only the secret hash stored server-side, and binding setup drops pending Telegram updates before long polling starts.
 
 ### Backend configuration
 

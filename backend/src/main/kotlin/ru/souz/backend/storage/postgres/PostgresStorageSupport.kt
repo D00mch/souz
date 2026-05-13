@@ -195,6 +195,7 @@ internal fun ResultSet.toTelegramBotBinding(): TelegramBotBinding =
         chatId = getObject("chat_id", java.util.UUID::class.java),
         botTokenEncrypted = getString("bot_token_encrypted"),
         botTokenHash = getString("bot_token_hash"),
+        linkSecretHash = getString("link_secret_hash"),
         botUsername = getString("bot_username"),
         botFirstName = getString("bot_first_name"),
         lastUpdateId = getLong("last_update_id"),

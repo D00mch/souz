@@ -6,6 +6,7 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -100,12 +101,12 @@ class TelegramBotBindingRepositoryTest {
 
     @Test
     fun `memory repository persists telegram link metadata`() = runTest {
-        assertLinkTelegramUserContract(MemoryTelegramBotBindingRepository())
+        assertClaimTelegramUserContract(MemoryTelegramBotBindingRepository())
     }
 
     @Test
     fun `filesystem repository persists telegram link metadata`() = runTest {
-        assertLinkTelegramUserContract(
+        assertClaimTelegramUserContract(
             FilesystemTelegramBotBindingRepository(Files.createTempDirectory("telegram-bindings-fs-link"))
         )
     }
@@ -120,6 +121,7 @@ internal suspend fun assertChatScopedUpsertContract(
         chatId = chatId,
         botToken = "123456:first-token",
         botTokenHash = sha256("123456:first-token"),
+        linkSecretHash = sha256("first-link-secret"),
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
 
@@ -128,12 +130,14 @@ internal suspend fun assertChatScopedUpsertContract(
         chatId = chatId,
         botToken = "123456:second-token",
         botTokenHash = sha256("123456:second-token"),
+        linkSecretHash = sha256("second-link-secret"),
         now = Instant.parse("2026-05-04T09:05:00Z"),
     )
 
     assertEquals(created.id, updated.id)
     assertEquals(created.createdAt, updated.createdAt)
     assertEquals("123456:second-token", updated.botTokenEncrypted)
+    assertEquals(sha256("second-link-secret"), updated.linkSecretHash)
     assertEquals(0L, updated.lastUpdateId)
     assertNull(repository.findByTokenHash(sha256("123456:first-token")))
     assertEquals(updated.id, repository.findByTokenHash(sha256("123456:second-token"))?.id)
@@ -148,6 +152,7 @@ internal suspend fun assertUniqueTokenHashContract(
         chatId = UUID.randomUUID(),
         botToken = "123456:shared-token",
         botTokenHash = sha256("123456:shared-token"),
+        linkSecretHash = sha256("shared-link-secret"),
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
 
@@ -157,6 +162,7 @@ internal suspend fun assertUniqueTokenHashContract(
             chatId = UUID.randomUUID(),
             botToken = "123456:shared-token",
             botTokenHash = sha256("123456:shared-token"),
+            linkSecretHash = sha256("shared-link-secret-2"),
             now = Instant.parse("2026-05-04T09:05:00Z"),
         )
     }
@@ -170,6 +176,7 @@ internal suspend fun assertEnabledListingContract(
         chatId = UUID.randomUUID(),
         botToken = "123456:enabled-token",
         botTokenHash = sha256("123456:enabled-token"),
+        linkSecretHash = sha256("enabled-link-secret"),
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
     val disabled = repository.upsertForChat(
@@ -177,6 +184,7 @@ internal suspend fun assertEnabledListingContract(
         chatId = UUID.randomUUID(),
         botToken = "123456:disabled-token",
         botTokenHash = sha256("123456:disabled-token"),
+        linkSecretHash = sha256("disabled-link-secret"),
         now = Instant.parse("2026-05-04T09:01:00Z"),
     )
 
@@ -200,6 +208,7 @@ internal suspend fun assertLastUpdateContract(
         chatId = UUID.randomUUID(),
         botToken = "123456:update-token",
         botTokenHash = sha256("123456:update-token"),
+        linkSecretHash = sha256("update-link-secret"),
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
 
@@ -224,6 +233,7 @@ internal suspend fun assertLeaseScopedLastUpdateContract(
         chatId = UUID.randomUUID(),
         botToken = "123456:update-owner-token",
         botTokenHash = sha256("123456:update-owner-token"),
+        linkSecretHash = sha256("update-owner-link-secret"),
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
     repository.tryAcquireLease(
@@ -279,6 +289,7 @@ internal suspend fun assertMarkErrorContract(
         chatId = UUID.randomUUID(),
         botToken = "123456:error-token",
         botTokenHash = sha256("123456:error-token"),
+        linkSecretHash = sha256("error-link-secret"),
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
 
@@ -305,6 +316,7 @@ internal suspend fun assertClearErrorContract(
         chatId = UUID.randomUUID(),
         botToken = "123456:clear-token",
         botTokenHash = sha256("123456:clear-token"),
+        linkSecretHash = sha256("clear-link-secret"),
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
 
@@ -328,21 +340,34 @@ internal suspend fun assertClearErrorContract(
     assertEquals(Instant.parse("2026-05-04T09:05:00Z"), stored.updatedAt)
 }
 
-internal suspend fun assertLinkTelegramUserContract(
+internal suspend fun assertClaimTelegramUserContract(
     repository: TelegramBotBindingRepository,
 ) {
+    val linkSecret = "claim-link-secret"
     val binding = repository.upsertForChat(
         userId = "user-a",
         chatId = UUID.randomUUID(),
         botToken = "123456:link-token",
         botTokenHash = sha256("123456:link-token"),
+        linkSecretHash = sha256(linkSecret),
         botUsername = "souz_bot",
         botFirstName = "Souz",
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
 
-    val linked = repository.linkTelegramUser(
+    val invalidSecret = repository.claimTelegramUser(
         id = binding.id,
+        linkSecretHash = sha256("wrong-secret"),
+        telegramUserId = 77L,
+        telegramChatId = 88L,
+        telegramUsername = "alice",
+        telegramFirstName = "Alice",
+        telegramLastName = "Doe",
+        linkedAt = Instant.parse("2026-05-04T09:05:00Z"),
+    )
+    val linked = repository.claimTelegramUser(
+        id = binding.id,
+        linkSecretHash = sha256(linkSecret),
         telegramUserId = 77L,
         telegramChatId = 88L,
         telegramUsername = "alice",
@@ -350,10 +375,22 @@ internal suspend fun assertLinkTelegramUserContract(
         telegramLastName = "Doe",
         linkedAt = Instant.parse("2026-05-04T09:06:00Z"),
     )
+    val alreadyLinked = repository.claimTelegramUser(
+        id = binding.id,
+        linkSecretHash = sha256(linkSecret),
+        telegramUserId = 99L,
+        telegramChatId = 100L,
+        telegramUsername = "mallory",
+        telegramFirstName = "Mallory",
+        telegramLastName = "Evil",
+        linkedAt = Instant.parse("2026-05-04T09:07:00Z"),
+    )
 
     val stored = repository.getByChat(binding.chatId)
 
-    assertNotNull(linked)
+    assertIs<TelegramUserClaimResult.InvalidSecret>(invalidSecret)
+    assertIs<TelegramUserClaimResult.Claimed>(linked)
+    assertIs<TelegramUserClaimResult.AlreadyLinked>(alreadyLinked)
     assertNotNull(stored)
     assertEquals("souz_bot", stored.botUsername)
     assertEquals("Souz", stored.botFirstName)
@@ -363,6 +400,7 @@ internal suspend fun assertLinkTelegramUserContract(
     assertEquals("Alice", stored.telegramFirstName)
     assertEquals("Doe", stored.telegramLastName)
     assertEquals(Instant.parse("2026-05-04T09:06:00Z"), stored.linkedAt)
+    assertNull(stored.linkSecretHash)
     assertEquals(true, stored.linked)
 }
 
@@ -374,6 +412,7 @@ internal suspend fun assertLeaseContract(
         chatId = UUID.randomUUID(),
         botToken = "123456:lease-token",
         botTokenHash = sha256("123456:lease-token"),
+        linkSecretHash = sha256("lease-link-secret"),
         botUsername = "souz_bot",
         botFirstName = "Souz",
         now = Instant.parse("2026-05-04T09:00:00Z"),

@@ -7,6 +7,7 @@ import javax.sql.DataSource
 import ru.souz.backend.telegram.TelegramBotBinding
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotTokenHashConflictException
+import ru.souz.backend.telegram.TelegramUserClaimResult
 
 class PostgresTelegramBotBindingRepository(
     private val dataSource: DataSource,
@@ -71,6 +72,7 @@ class PostgresTelegramBotBindingRepository(
         chatId: UUID,
         botToken: String,
         botTokenHash: String,
+        linkSecretHash: String,
         botUsername: String?,
         botFirstName: String?,
         now: Instant,
@@ -84,6 +86,7 @@ class PostgresTelegramBotBindingRepository(
                     chat_id,
                     bot_token_encrypted,
                     bot_token_hash,
+                    link_secret_hash,
                     bot_username,
                     bot_first_name,
                     last_update_id,
@@ -101,11 +104,12 @@ class PostgresTelegramBotBindingRepository(
                     created_at,
                     updated_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, 0, true, null, null, null, null, null, null, null, null, null, null, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, 0, true, null, null, null, null, null, null, null, null, null, null, ?, ?)
                 on conflict (chat_id) do update
                 set user_id = excluded.user_id,
                     bot_token_encrypted = excluded.bot_token_encrypted,
                     bot_token_hash = excluded.bot_token_hash,
+                    link_secret_hash = excluded.link_secret_hash,
                     bot_username = excluded.bot_username,
                     bot_first_name = excluded.bot_first_name,
                     last_update_id = 0,
@@ -129,10 +133,11 @@ class PostgresTelegramBotBindingRepository(
                 statement.setObject(3, chatId)
                 statement.setString(4, botToken)
                 statement.setString(5, botTokenHash)
-                statement.setString(6, botUsername)
-                statement.setString(7, botFirstName)
-                statement.setInstant(8, now)
+                statement.setString(6, linkSecretHash)
+                statement.setString(7, botUsername)
+                statement.setString(8, botFirstName)
                 statement.setInstant(9, now)
+                statement.setInstant(10, now)
                 statement.executeQuery().use { resultSet ->
                     resultSet.next()
                     resultSet.toTelegramBotBinding()
@@ -157,8 +162,9 @@ class PostgresTelegramBotBindingRepository(
         }
     }
 
-    override suspend fun linkTelegramUser(
+    override suspend fun claimTelegramUser(
         id: UUID,
+        linkSecretHash: String,
         telegramUserId: Long,
         telegramChatId: Long,
         telegramUsername: String?,
@@ -166,16 +172,37 @@ class PostgresTelegramBotBindingRepository(
         telegramLastName: String?,
         linkedAt: Instant,
         updatedAt: Instant,
-    ): TelegramBotBinding? = dataSource.write { connection ->
+    ): TelegramUserClaimResult = dataSource.write { connection ->
+        val current = connection.prepareStatement(
+            """
+            select * from telegram_bot_bindings
+            where id = ?
+            for update
+            """.trimIndent()
+        ).use { statement ->
+            statement.setObject(1, id)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.toTelegramBotBinding() else null
+            }
+        } ?: return@write TelegramUserClaimResult.NotFound
+
+        if (current.linked) {
+            return@write TelegramUserClaimResult.AlreadyLinked(current)
+        }
+        if (current.linkSecretHash != linkSecretHash) {
+            return@write TelegramUserClaimResult.InvalidSecret(current)
+        }
+
         connection.prepareStatement(
             """
             update telegram_bot_bindings
-            set telegram_user_id = coalesce(telegram_user_id, ?),
-                telegram_chat_id = coalesce(telegram_chat_id, ?),
-                telegram_username = coalesce(telegram_username, ?),
-                telegram_first_name = coalesce(telegram_first_name, ?),
-                telegram_last_name = coalesce(telegram_last_name, ?),
-                linked_at = coalesce(linked_at, ?),
+            set link_secret_hash = null,
+                telegram_user_id = ?,
+                telegram_chat_id = ?,
+                telegram_username = ?,
+                telegram_first_name = ?,
+                telegram_last_name = ?,
+                linked_at = ?,
                 updated_at = ?
             where id = ?
             returning *
@@ -190,7 +217,11 @@ class PostgresTelegramBotBindingRepository(
             statement.setInstant(7, updatedAt)
             statement.setObject(8, id)
             statement.executeQuery().use { resultSet ->
-                if (resultSet.next()) resultSet.toTelegramBotBinding() else null
+                if (resultSet.next()) {
+                    TelegramUserClaimResult.Claimed(resultSet.toTelegramBotBinding())
+                } else {
+                    TelegramUserClaimResult.NotFound
+                }
             }
         }
     }
@@ -223,6 +254,30 @@ class PostgresTelegramBotBindingRepository(
             statement.setString(5, owner)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toTelegramBotBinding() else null
+            }
+        }
+    }
+
+    override suspend fun hasActiveLease(
+        id: UUID,
+        owner: String,
+        now: Instant,
+    ): Boolean = dataSource.read { connection ->
+        connection.prepareStatement(
+            """
+            select 1
+            from telegram_bot_bindings
+            where id = ?
+              and poller_owner = ?
+              and poller_lease_until is not null
+              and poller_lease_until >= ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setObject(1, id)
+            statement.setString(2, owner)
+            statement.setInstant(3, now)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
             }
         }
     }

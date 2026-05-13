@@ -127,6 +127,7 @@ internal data class BackendV1MessagesResponse(
 
 internal data class BackendV1TelegramBotBindingResponse(
     val telegramBot: BackendV1TelegramBotBindingDto?,
+    val pendingLinkCommand: String? = null,
 )
 
 internal data class BackendV1UpsertTelegramBotBindingRequest(

@@ -32,6 +32,11 @@ interface TelegramBotApi {
         chatId: Long,
         text: String,
     )
+
+    suspend fun deleteWebhook(
+        token: String,
+        dropPendingUpdates: Boolean = true,
+    )
 }
 
 internal class HttpTelegramBotApi : TelegramBotApi {
@@ -83,6 +88,29 @@ internal class HttpTelegramBotApi : TelegramBotApi {
         if (!response.ok) {
             throw TelegramBotApiHttpException(
                 methodName = "sendMessage",
+                statusCode = response.errorCode ?: 500,
+                telegramErrorCode = response.errorCode,
+                description = response.description,
+                parameters = response.parameters,
+            )
+        }
+    }
+
+    override suspend fun deleteWebhook(
+        token: String,
+        dropPendingUpdates: Boolean,
+    ) {
+        val response = request(
+            token = token,
+            methodName = "deleteWebhook",
+            formParameters = mapOf(
+                "drop_pending_updates" to dropPendingUpdates.toString(),
+            ),
+        ).bodyAs<TelegramMethodAckResponse>()
+            .normalizeHttpStatus()
+        if (!response.ok) {
+            throw TelegramBotApiHttpException(
+                methodName = "deleteWebhook",
                 statusCode = response.errorCode ?: 500,
                 telegramErrorCode = response.errorCode,
                 description = response.description,

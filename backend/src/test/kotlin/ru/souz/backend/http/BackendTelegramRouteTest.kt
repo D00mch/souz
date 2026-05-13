@@ -31,6 +31,7 @@ import ru.souz.backend.telegram.TelegramResponseParameters
 import ru.souz.backend.telegram.TelegramUpdate
 import ru.souz.backend.telegram.TelegramUpdatesResponse
 import ru.souz.backend.telegram.TelegramUser
+import ru.souz.backend.telegram.sha256Hex
 import ru.souz.backend.storage.memory.MemoryTelegramBotBindingRepository
 
 class BackendTelegramRouteTest {
@@ -112,7 +113,7 @@ class BackendTelegramRouteTest {
     }
 
     @Test
-    fun `put telegram bot stores binding and never returns token`() = testApplication {
+    fun `put telegram bot stores binding returns pending link command and never returns token`() = testApplication {
         val context = telegramRouteTestContext()
         val chat = chat(userId = "user-a", title = "Owned")
         context.telegramApi.allowToken("123456:valid-token")
@@ -128,6 +129,8 @@ class BackendTelegramRouteTest {
         }
         val payload = json.readTree(response.bodyAsText())
         val stored = runBlocking { context.repository.getByChat(chat.id) }
+        val pendingLinkCommand = payload["pendingLinkCommand"].asText()
+        val linkSecret = pendingLinkCommand.removePrefix("/start").trim()
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals(chat.id.toString(), payload["telegramBot"]["chatId"].asText())
@@ -144,12 +147,16 @@ class BackendTelegramRouteTest {
         assertTrue(payload["telegramBot"]["botToken"] == null)
         assertTrue(payload["telegramBot"]["botTokenHash"] == null)
         assertTrue(payload["telegramBot"]["botTokenEncrypted"] == null)
+        assertTrue(pendingLinkCommand.startsWith("/start "))
+        assertTrue(linkSecret.isNotBlank())
         assertEquals("souz_bot", stored?.botUsername)
         assertEquals("Souz", stored?.botFirstName)
         assertTrue(stored?.botTokenEncrypted?.isNotBlank() == true)
         assertTrue(stored?.botTokenEncrypted != "123456:valid-token")
+        assertEquals(sha256Hex(linkSecret), stored?.linkSecretHash)
         assertEquals(0L, stored?.lastUpdateId)
         assertEquals(listOf("123456:valid-token"), context.telegramApi.getMeCalls)
+        assertEquals(listOf(DeleteWebhookCall("123456:valid-token", true)), context.telegramApi.deleteWebhookCalls)
     }
 
     @Test
@@ -180,6 +187,7 @@ class BackendTelegramRouteTest {
         assertTrue(payload["telegramBot"]["linkedAt"].isNull)
         assertTrue(payload["telegramBot"]["telegramUserId"] == null)
         assertTrue(payload["telegramBot"]["telegramChatId"] == null)
+        assertTrue(payload["pendingLinkCommand"].isNull)
     }
 
     @Test
@@ -268,13 +276,17 @@ class BackendTelegramRouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"token":"123456:stable-token"}""")
         }
+        val secondPayload = json.readTree(secondResponse.bodyAsText())
         val afterSecond = runBlocking { context.repository.getByChat(chat.id) }
 
         assertEquals(HttpStatusCode.OK, firstResponse.status)
         assertEquals(HttpStatusCode.OK, secondResponse.status)
         assertNotNull(beforeSecond)
+        assertNotNull(afterSecond)
         assertEquals(beforeSecond.id, afterSecond?.id)
         assertEquals(0L, afterSecond?.lastUpdateId)
+        assertTrue(secondPayload["pendingLinkCommand"].asText().startsWith("/start "))
+        assertTrue(afterSecond.linkSecretHash != beforeSecond.linkSecretHash)
     }
 
     @Test
@@ -319,6 +331,7 @@ class BackendTelegramRouteTest {
                 chatId = chat.id,
                 botToken = "123456:first-token",
                 botTokenHash = "old-hash",
+                linkSecretHash = "old-link-secret-hash",
                 now = Instant.parse("2026-05-04T09:00:00Z"),
             )
             val binding = context.repository.getByChat(chat.id)!!
@@ -331,13 +344,16 @@ class BackendTelegramRouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"token":"123456:second-token"}""")
         }
+        val payload = json.readTree(response.bodyAsText())
         val stored = runBlocking { context.repository.getByChat(chat.id) }
 
         assertEquals(HttpStatusCode.OK, response.status)
+        assertTrue(payload["pendingLinkCommand"].asText().startsWith("/start "))
         assertTrue(stored?.botTokenEncrypted?.isNotBlank() == true)
         assertTrue(stored?.botTokenEncrypted != "123456:second-token")
         assertEquals(0L, stored?.lastUpdateId)
         assertTrue(stored?.botTokenHash != "old-hash")
+        assertTrue(stored?.linkSecretHash != "old-link-secret-hash")
     }
 
     @Test
@@ -351,6 +367,7 @@ class BackendTelegramRouteTest {
                 chatId = chat.id,
                 botToken = "123456:token",
                 botTokenHash = "hash",
+                linkSecretHash = "link-hash",
                 now = Instant.parse("2026-05-04T09:00:00Z"),
             )
         }
@@ -458,6 +475,7 @@ private fun telegramRouteTestContext(
 
 private class FakeTelegramBotApi : TelegramBotApi {
     val getMeCalls = mutableListOf<String>()
+    val deleteWebhookCalls = mutableListOf<DeleteWebhookCall>()
 
     private val responses = LinkedHashMap<String, TelegramGetMeResponse>()
 
@@ -505,11 +523,23 @@ private class FakeTelegramBotApi : TelegramBotApi {
         allowedUpdates: List<String>,
     ): TelegramUpdatesResponse = TelegramUpdatesResponse(ok = true, result = emptyList())
 
+    override suspend fun deleteWebhook(
+        token: String,
+        dropPendingUpdates: Boolean,
+    ) {
+        deleteWebhookCalls += DeleteWebhookCall(token, dropPendingUpdates)
+    }
+
     override suspend fun sendMessage(
         token: String,
         chatId: Long,
         text: String,
     ) = Unit
 }
+
+private data class DeleteWebhookCall(
+    val token: String,
+    val dropPendingUpdates: Boolean,
+)
 
 private const val TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="

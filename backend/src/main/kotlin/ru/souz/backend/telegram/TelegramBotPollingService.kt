@@ -9,6 +9,7 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -128,6 +129,7 @@ class TelegramBotPollingService(
     }
 
     private suspend fun pollBinding(binding: TelegramBotBinding) = coroutineScope {
+        val bindingScope = this
         val now = clock.instant()
         val leasedBinding = repository.tryAcquireLease(
             id = binding.id,
@@ -144,7 +146,10 @@ class TelegramBotPollingService(
                     owner = instanceId,
                     leaseUntil = clock.instant().plusSeconds(leaseTtlSeconds),
                     now = clock.instant(),
-                ) ?: return@launch
+                ) ?: run {
+                    bindingScope.cancel(CancellationException("Lost Telegram lease for binding ${leasedBinding.id}."))
+                    return@launch
+                }
             }
         }
 
@@ -190,10 +195,19 @@ class TelegramBotPollingService(
                 return@coroutineScope
             }
 
+            if (!repository.hasActiveLease(leasedBinding.id, instanceId, clock.instant())) {
+                return@coroutineScope
+            }
             repository.clearError(leasedBinding.id)
             var currentBinding = leasedBinding
             for (update in updates.result) {
+                if (!repository.hasActiveLease(currentBinding.id, instanceId, clock.instant())) {
+                    return@coroutineScope
+                }
                 currentBinding = handleUpdate(currentBinding, token, update)
+                if (!repository.hasActiveLease(currentBinding.id, instanceId, clock.instant())) {
+                    return@coroutineScope
+                }
                 repository.updateLastUpdateId(
                     id = currentBinding.id,
                     lastUpdateId = update.updateId,
@@ -213,22 +227,46 @@ class TelegramBotPollingService(
         val message = update.message ?: return binding
         val chatType = message.chat.type
         val sender = message.from
+        val text = message.text?.trim().orEmpty()
 
         if (!binding.linked) {
             if (chatType != PRIVATE_CHAT_TYPE || sender == null) {
                 return binding
             }
-            val linkedBinding = repository.linkTelegramUser(
-                id = binding.id,
-                telegramUserId = sender.id,
-                telegramChatId = message.chat.id,
-                telegramUsername = sender.username,
-                telegramFirstName = sender.firstName,
-                telegramLastName = sender.lastName,
-                linkedAt = clock.instant(),
-            ) ?: binding
-            sendReplySafely(token, message.chat.id, LINKED_REPLY)
-            return linkedBinding
+            val startSecret = extractStartSecret(text, binding.botUsername) ?: return binding
+            return when (
+                val claim = repository.claimTelegramUser(
+                    id = binding.id,
+                    linkSecretHash = sha256Hex(startSecret),
+                    telegramUserId = sender.id,
+                    telegramChatId = message.chat.id,
+                    telegramUsername = sender.username,
+                    telegramFirstName = sender.firstName,
+                    telegramLastName = sender.lastName,
+                    linkedAt = clock.instant(),
+                )
+            ) {
+                is TelegramUserClaimResult.Claimed -> {
+                    sendReplySafely(binding.id, token, message.chat.id, LINKED_REPLY)
+                    claim.binding
+                }
+
+                is TelegramUserClaimResult.InvalidSecret -> {
+                    sendReplySafely(binding.id, token, message.chat.id, PENDING_LINK_REPLY)
+                    claim.binding
+                }
+
+                is TelegramUserClaimResult.AlreadyLinked -> {
+                    val sameSender = sender.id == claim.binding.telegramUserId &&
+                        message.chat.id == claim.binding.telegramChatId
+                    if (!sameSender) {
+                        sendReplySafely(binding.id, token, message.chat.id, ALREADY_BOUND_REPLY)
+                    }
+                    claim.binding
+                }
+
+                TelegramUserClaimResult.NotFound -> binding
+            }
         }
 
         val senderMatches = chatType == PRIVATE_CHAT_TYPE &&
@@ -236,17 +274,16 @@ class TelegramBotPollingService(
             message.chat.id == binding.telegramChatId
         if (!senderMatches) {
             if (chatType == PRIVATE_CHAT_TYPE) {
-                sendReplySafely(token, message.chat.id, ALREADY_BOUND_REPLY)
+                sendReplySafely(binding.id, token, message.chat.id, ALREADY_BOUND_REPLY)
             }
             return binding
         }
 
-        val text = message.text?.trim().orEmpty()
         if (text.isBlank()) {
             return binding
         }
         if (text.length > maxIncomingTextLength) {
-            sendReplySafely(token, message.chat.id, TOO_LONG_REPLY)
+            sendReplySafely(binding.id, token, message.chat.id, TOO_LONG_REPLY)
             return binding
         }
 
@@ -258,30 +295,31 @@ class TelegramBotPollingService(
                 clientMessageId = "telegram:${binding.id}:${update.updateId}",
                 requestOverrides = UserSettingsOverrides(streamingMessages = false),
             )
-            sendAssistantReply(token, message.chat.id, result)
+            sendAssistantReply(binding.id, token, message.chat.id, result)
         } catch (e: CancellationException) {
             throw e
         } catch (e: BackendV1Exception) {
             if (e.code == "chat_already_has_active_execution") {
-                sendReplySafely(token, message.chat.id, ACTIVE_EXECUTION_REPLY)
+                sendReplySafely(binding.id, token, message.chat.id, ACTIVE_EXECUTION_REPLY)
             } else {
                 logger.warn("Telegram turn execution failed with v1 code {} for binding {}", e.code, binding.id)
-                sendReplySafely(token, message.chat.id, GENERIC_FAILURE_REPLY)
+                sendReplySafely(binding.id, token, message.chat.id, GENERIC_FAILURE_REPLY)
             }
         } catch (e: Exception) {
             logger.warn("Telegram turn execution failed for binding {}", binding.id)
-            sendReplySafely(token, message.chat.id, GENERIC_FAILURE_REPLY)
+            sendReplySafely(binding.id, token, message.chat.id, GENERIC_FAILURE_REPLY)
         }
         return binding
     }
 
     private suspend fun sendAssistantReply(
+        bindingId: UUID,
         token: String,
         chatId: Long,
         result: SendMessageResult,
     ) {
         if (result.assistantMessage == null && result.execution.status != AgentExecutionStatus.COMPLETED) {
-            sendReplySafely(token, chatId, ACTIVE_EXECUTION_REPLY)
+            sendReplySafely(bindingId, token, chatId, ACTIVE_EXECUTION_REPLY)
             return
         }
         val responseText = result.assistantMessage?.content.orEmpty()
@@ -290,7 +328,7 @@ class TelegramBotPollingService(
             maxLength = TELEGRAM_TEXT_LIMIT,
         )
         chunks.forEach { chunk ->
-            sendReplySafely(token, chatId, chunk)
+            sendReplySafely(bindingId, token, chatId, chunk)
         }
     }
 
@@ -337,10 +375,14 @@ class TelegramBotPollingService(
     }
 
     private suspend fun sendReplySafely(
+        bindingId: UUID,
         token: String,
         chatId: Long,
         text: String,
     ) {
+        if (!repository.hasActiveLease(bindingId, instanceId, clock.instant())) {
+            return
+        }
         try {
             botApi.sendMessage(token = token, chatId = chatId, text = text)
         } catch (e: CancellationException) {
@@ -364,6 +406,7 @@ class TelegramBotPollingService(
         const val ACTIVE_EXECUTION_REPLY: String = "В этом чате уже выполняется задача. Попробуй позже."
         const val GENERIC_FAILURE_REPLY: String = "Не удалось выполнить команду."
         const val ALREADY_BOUND_REPLY: String = "Этот бот уже привязан к другому Telegram-аккаунту."
+        const val PENDING_LINK_REPLY: String = "Чтобы привязать этот чат, отправь команду из Souz."
         const val TOO_LONG_REPLY: String = "Сообщение слишком длинное."
 
         const val TELEGRAM_UNAUTHORIZED: String = "telegram_unauthorized"
@@ -375,6 +418,26 @@ class TelegramBotPollingService(
 
         fun leaseRenewIntervalMs(leaseTtlSeconds: Long): Long =
             (leaseTtlSeconds * 1_000L / 3L).coerceAtLeast(1_000L)
+
+        fun extractStartSecret(
+            text: String,
+            botUsername: String?,
+        ): String? {
+            if (text.isBlank()) {
+                return null
+            }
+            val parts = text.split(Regex("\\s+"), limit = 2)
+            val command = parts.firstOrNull().orEmpty()
+            val commandName = command.substringBefore('@')
+            if (commandName != "/start") {
+                return null
+            }
+            val addressedBot = command.substringAfter('@', missingDelimiterValue = "")
+            if (addressedBot.isNotBlank() && (botUsername == null || !addressedBot.equals(botUsername, ignoreCase = true))) {
+                return null
+            }
+            return parts.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
+        }
 
         fun telegramTextChunks(
             text: String,

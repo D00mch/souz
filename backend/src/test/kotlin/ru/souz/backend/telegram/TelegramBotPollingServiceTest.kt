@@ -34,20 +34,13 @@ import ru.souz.backend.storage.memory.MemoryTelegramBotBindingRepository
 
 class TelegramBotPollingServiceTest {
     @Test
-    fun `first private telegram message links account and does not execute agent`() = runTest {
+    fun `matching start command links account and does not execute agent`() = runTest {
         val repository = MemoryTelegramBotBindingRepository()
         val botApi = FakePollingTelegramBotApi()
         val executor = RecordingTelegramTurnExecutor()
         val service = pollingService(repository, botApi, executor)
-        val binding = repository.upsertForChat(
-            userId = "user-a",
-            chatId = UUID.randomUUID(),
-            botToken = "123456:link-token",
-            botTokenHash = sha256("123456:link-token"),
-            botUsername = "souz_bot",
-            botFirstName = "Souz",
-            now = Instant.parse("2026-05-04T10:00:00Z"),
-        )
+        val linkSecret = "link-secret-123"
+        val binding = pendingBinding(repository, rawToken = "123456:link-token", linkSecret = linkSecret)
         botApi.enqueueUpdates(
             token = "123456:link-token",
             updater = {
@@ -58,7 +51,7 @@ class TelegramBotPollingServiceTest {
                             updateId = 15L,
                             chatId = 777L,
                             userId = 555L,
-                            text = "Привет",
+                            text = "/start $linkSecret",
                             username = "alice",
                             firstName = "Alice",
                             lastName = "Doe",
@@ -79,11 +72,89 @@ class TelegramBotPollingServiceTest {
         assertEquals("Alice", stored.telegramFirstName)
         assertEquals("Doe", stored.telegramLastName)
         assertNotNull(stored.linkedAt)
+        assertEquals(null, stored.linkSecretHash)
         assertEquals(15L, stored.lastUpdateId)
         assertEquals(
             listOf(SentTelegramMessage(777L, "Готово, этот Telegram-аккаунт привязан к чату Souz.")),
             botApi.sentMessages,
         )
+    }
+
+    @Test
+    fun `pending binding ignores stale text until valid start secret arrives`() = runTest {
+        val repository = MemoryTelegramBotBindingRepository()
+        val botApi = FakePollingTelegramBotApi()
+        val executor = RecordingTelegramTurnExecutor(assistantResponse = "ok")
+        val service = pollingService(repository, botApi, executor)
+        val linkSecret = "link-secret-456"
+        val binding = pendingBinding(repository, rawToken = "123456:pending-token", linkSecret = linkSecret)
+        botApi.enqueueUpdates(
+            token = "123456:pending-token",
+            updater = {
+                TelegramUpdatesResponse(
+                    ok = true,
+                    result = listOf(
+                        privateTextUpdate(
+                            updateId = 11L,
+                            chatId = 777L,
+                            userId = 555L,
+                            text = "old pending text",
+                            username = "alice",
+                            firstName = "Alice",
+                        ),
+                        privateTextUpdate(
+                            updateId = 12L,
+                            chatId = 777L,
+                            userId = 555L,
+                            text = "/start wrong-secret",
+                            username = "alice",
+                            firstName = "Alice",
+                        ),
+                        privateTextUpdate(
+                            updateId = 13L,
+                            chatId = 777L,
+                            userId = 555L,
+                            text = "/start $linkSecret",
+                            username = "alice",
+                            firstName = "Alice",
+                        ),
+                        privateTextUpdate(
+                            updateId = 14L,
+                            chatId = 777L,
+                            userId = 555L,
+                            text = "do work",
+                            username = "alice",
+                            firstName = "Alice",
+                        ),
+                    ),
+                )
+            },
+        )
+
+        service.pollEnabledOnce()
+
+        assertEquals(
+            listOf(
+                TelegramTurnCall(
+                    userId = "user-a",
+                    chatId = binding.chatId,
+                    content = "do work",
+                    clientMessageId = "telegram:${binding.id}:14",
+                    requestOverrides = UserSettingsOverrides(streamingMessages = false),
+                    observedLastUpdateId = 13L,
+                )
+            ),
+            executor.calls,
+        )
+        assertEquals(
+            listOf(
+                SentTelegramMessage(777L, "Чтобы привязать этот чат, отправь команду из Souz."),
+                SentTelegramMessage(777L, "Готово, этот Telegram-аккаунт привязан к чату Souz."),
+                SentTelegramMessage(777L, "ok"),
+            ),
+            botApi.sentMessages,
+        )
+        assertEquals(14L, repository.getByChat(binding.chatId)?.lastUpdateId)
     }
 
     @Test
@@ -256,6 +327,7 @@ class TelegramBotPollingServiceTest {
             chatId = UUID.randomUUID(),
             botToken = "123456:group-token",
             botTokenHash = sha256("123456:group-token"),
+            linkSecretHash = sha256("group-link-secret"),
             botUsername = "souz_bot",
             botFirstName = "Souz",
             now = Instant.parse("2026-05-04T10:00:00Z"),
@@ -472,6 +544,7 @@ class TelegramBotPollingServiceTest {
             chatId = UUID.randomUUID(),
             botToken = "123456:failing-binding",
             botTokenHash = sha256("123456:failing-binding"),
+            linkSecretHash = sha256("failing-link-secret"),
             botUsername = "failing_bot",
             botFirstName = "Failing",
             now = Instant.parse("2026-05-04T10:00:00Z"),
@@ -597,10 +670,37 @@ class TelegramBotPollingServiceTest {
         assertEquals(50L, repository.getByChat(binding.chatId)?.lastUpdateId)
         assertEquals(listOf(SentTelegramMessage(777L, "done")), botApi.sentMessages)
     }
+
+    @Test
+    fun `assistant reply is skipped when lease is lost after execution starts`() = runTest {
+        val repository = LeaseLossTelegramBindingRepository(MemoryTelegramBotBindingRepository())
+        val botApi = FakePollingTelegramBotApi()
+        val executor = RecordingTelegramTurnExecutor(
+            assistantResponse = "should not send",
+            onExecute = {
+                repository.leaseValid = false
+            },
+        )
+        val service = pollingService(repository, botApi, executor)
+        val binding = linkedBinding(repository)
+        botApi.enqueueSingleTextUpdate(
+            token = "123456:linked-token",
+            updateId = 60L,
+            chatId = 777L,
+            userId = 555L,
+            text = "do work",
+        )
+
+        service.pollEnabledOnce()
+
+        assertEquals(1, executor.calls.size)
+        assertTrue(botApi.sentMessages.isEmpty())
+        assertEquals(0L, repository.getByChat(binding.chatId)?.lastUpdateId)
+    }
 }
 
 private fun pollingService(
-    repository: MemoryTelegramBotBindingRepository,
+    repository: TelegramBotBindingRepository,
     botApi: FakePollingTelegramBotApi,
     executor: RecordingTelegramTurnExecutor,
 ): TelegramBotPollingService {
@@ -614,23 +714,39 @@ private fun pollingService(
     )
 }
 
-private suspend fun linkedBinding(
-    repository: MemoryTelegramBotBindingRepository,
-    rawToken: String = "123456:linked-token",
+private suspend fun pendingBinding(
+    repository: TelegramBotBindingRepository,
+    rawToken: String = "123456:pending-token",
+    linkSecret: String = "link-secret",
     userId: String = "user-a",
-): TelegramBotBinding {
-    val binding = repository.upsertForChat(
+): TelegramBotBinding =
+    repository.upsertForChat(
         userId = userId,
         chatId = UUID.randomUUID(),
         botToken = rawToken,
         botTokenHash = sha256(rawToken),
+        linkSecretHash = sha256(linkSecret),
         botUsername = "souz_bot",
         botFirstName = "Souz",
         now = Instant.parse("2026-05-04T10:00:00Z"),
     )
-    return requireNotNull(
-        repository.linkTelegramUser(
+
+private suspend fun linkedBinding(
+    repository: TelegramBotBindingRepository,
+    rawToken: String = "123456:linked-token",
+    userId: String = "user-a",
+): TelegramBotBinding {
+    val linkSecret = "linked-secret"
+    val binding = pendingBinding(
+        repository = repository,
+        rawToken = rawToken,
+        linkSecret = linkSecret,
+        userId = userId,
+    )
+    return when (
+        val result = repository.claimTelegramUser(
             id = binding.id,
+            linkSecretHash = sha256(linkSecret),
             telegramUserId = 555L,
             telegramChatId = 777L,
             telegramUsername = "alice",
@@ -638,7 +754,10 @@ private suspend fun linkedBinding(
             telegramLastName = null,
             linkedAt = Instant.parse("2026-05-04T10:01:00Z"),
         )
-    )
+    ) {
+        is TelegramUserClaimResult.Claimed -> result.binding
+        else -> error("Expected claimed binding, got $result")
+    }
 }
 
 private fun privateTextUpdate(
@@ -692,9 +811,10 @@ private class RecordingTelegramTurnExecutor(
     private val failure: Throwable? = null,
     private val responseExecutionStatus: AgentExecutionStatus = AgentExecutionStatus.COMPLETED,
     private val delayMs: Long = 0L,
+    private val onExecute: suspend () -> Unit = {},
 ) : TelegramTurnExecutor {
     val calls = mutableListOf<TelegramTurnCall>()
-    lateinit var repository: MemoryTelegramBotBindingRepository
+    lateinit var repository: TelegramBotBindingRepository
 
     override suspend fun execute(
         userId: String,
@@ -711,6 +831,7 @@ private class RecordingTelegramTurnExecutor(
             requestOverrides = requestOverrides,
             observedLastUpdateId = repository.getByChat(chatId)?.lastUpdateId,
         )
+        onExecute()
         if (delayMs > 0L) {
             delay(delayMs)
         }
@@ -849,6 +970,11 @@ private class FakePollingTelegramBotApi : TelegramBotApi {
         return updateHandlers[token]?.invoke(offset) ?: TelegramUpdatesResponse(ok = true, result = emptyList())
     }
 
+    override suspend fun deleteWebhook(
+        token: String,
+        dropPendingUpdates: Boolean,
+    ) = Unit
+
     override suspend fun sendMessage(
         token: String,
         chatId: Long,
@@ -883,6 +1009,7 @@ private class FlakyListEnabledTelegramBindingRepository : TelegramBotBindingRepo
         chatId: UUID,
         botToken: String,
         botTokenHash: String,
+        linkSecretHash: String,
         botUsername: String?,
         botFirstName: String?,
         now: Instant,
@@ -909,8 +1036,9 @@ private class FlakyListEnabledTelegramBindingRepository : TelegramBotBindingRepo
         updatedAt: Instant,
     ) = Unit
 
-    override suspend fun linkTelegramUser(
+    override suspend fun claimTelegramUser(
         id: UUID,
+        linkSecretHash: String,
         telegramUserId: Long,
         telegramChatId: Long,
         telegramUsername: String?,
@@ -918,7 +1046,7 @@ private class FlakyListEnabledTelegramBindingRepository : TelegramBotBindingRepo
         telegramLastName: String?,
         linkedAt: Instant,
         updatedAt: Instant,
-    ): TelegramBotBinding? = null
+    ): TelegramUserClaimResult = TelegramUserClaimResult.NotFound
 
     override suspend fun tryAcquireLease(
         id: UUID,
@@ -926,6 +1054,24 @@ private class FlakyListEnabledTelegramBindingRepository : TelegramBotBindingRepo
         leaseUntil: Instant,
         now: Instant,
     ): TelegramBotBinding? = null
+
+    override suspend fun hasActiveLease(
+        id: UUID,
+        owner: String,
+        now: Instant,
+    ): Boolean = false
+}
+
+private class LeaseLossTelegramBindingRepository(
+    private val delegate: MemoryTelegramBotBindingRepository,
+) : TelegramBotBindingRepository by delegate {
+    var leaseValid: Boolean = true
+
+    override suspend fun hasActiveLease(
+        id: UUID,
+        owner: String,
+        now: Instant,
+    ): Boolean = leaseValid && delegate.hasActiveLease(id, owner, now)
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

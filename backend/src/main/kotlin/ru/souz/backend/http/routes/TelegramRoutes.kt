@@ -34,13 +34,15 @@ internal fun Route.telegramRoutes(deps: BackendHttpDependencies) {
         val service = requireV1Service(deps.telegramBotBindingService, "Telegram bot binding")
         call.requireJsonContentV1()
         val request = call.receiveOrBadRequest<BackendV1UpsertTelegramBotBindingRequest>()
+        val result = service.upsert(
+            userId = call.requireUserIdFromTrustedProxy(),
+            chatId = call.requireChatId(),
+            token = request.token.orEmpty(),
+        )
         call.respond(
             BackendV1TelegramBotBindingResponse(
-                telegramBot = service.upsert(
-                    userId = call.requireUserIdFromTrustedProxy(),
-                    chatId = call.requireChatId(),
-                    token = request.token.orEmpty(),
-                ).toDto()
+                telegramBot = result.binding.toDto(),
+                pendingLinkCommand = result.pendingLinkCommand,
             )
         )
     }

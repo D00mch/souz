@@ -9,6 +9,7 @@ data class TelegramBotBinding(
     val chatId: UUID,
     val botTokenEncrypted: String,
     val botTokenHash: String,
+    val linkSecretHash: String?,
     val botUsername: String?,
     val botFirstName: String?,
     val lastUpdateId: Long,
@@ -28,6 +29,22 @@ data class TelegramBotBinding(
 ) {
     val linked: Boolean
         get() = telegramUserId != null && telegramChatId != null
+}
+
+sealed interface TelegramUserClaimResult {
+    data class Claimed(
+        val binding: TelegramBotBinding,
+    ) : TelegramUserClaimResult
+
+    data class AlreadyLinked(
+        val binding: TelegramBotBinding,
+    ) : TelegramUserClaimResult
+
+    data class InvalidSecret(
+        val binding: TelegramBotBinding,
+    ) : TelegramUserClaimResult
+
+    data object NotFound : TelegramUserClaimResult
 }
 
 internal fun sha256Hex(value: String): String =

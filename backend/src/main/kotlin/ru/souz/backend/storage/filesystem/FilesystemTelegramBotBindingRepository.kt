@@ -7,6 +7,7 @@ import java.util.UUID
 import ru.souz.backend.telegram.TelegramBotBinding
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotTokenHashConflictException
+import ru.souz.backend.telegram.TelegramUserClaimResult
 
 class FilesystemTelegramBotBindingRepository(
     dataDir: java.nio.file.Path,
@@ -44,6 +45,7 @@ class FilesystemTelegramBotBindingRepository(
         chatId: UUID,
         botToken: String,
         botTokenHash: String,
+        linkSecretHash: String,
         botUsername: String?,
         botFirstName: String?,
         now: Instant,
@@ -64,6 +66,7 @@ class FilesystemTelegramBotBindingRepository(
                     chatId = chatId,
                     botTokenEncrypted = botToken,
                     botTokenHash = botTokenHash,
+                    linkSecretHash = linkSecretHash,
                     botUsername = botUsername,
                     botFirstName = botFirstName,
                     lastUpdateId = 0L,
@@ -86,6 +89,7 @@ class FilesystemTelegramBotBindingRepository(
                     userId = userId,
                     botTokenEncrypted = botToken,
                     botTokenHash = botTokenHash,
+                    linkSecretHash = linkSecretHash,
                     botUsername = botUsername,
                     botFirstName = botFirstName,
                     lastUpdateId = 0L,
@@ -113,8 +117,9 @@ class FilesystemTelegramBotBindingRepository(
             Files.deleteIfExists(layout.telegramBotBindingFile(binding.userId, binding.chatId))
         }
 
-    override suspend fun linkTelegramUser(
+    override suspend fun claimTelegramUser(
         id: UUID,
+        linkSecretHash: String,
         telegramUserId: Long,
         telegramChatId: Long,
         telegramUsername: String?,
@@ -122,19 +127,26 @@ class FilesystemTelegramBotBindingRepository(
         telegramLastName: String?,
         linkedAt: Instant,
         updatedAt: Instant,
-    ): TelegramBotBinding? = withFileLock {
-        val current = readAllBindings().firstOrNull { it.id == id } ?: return@withFileLock null
+    ): TelegramUserClaimResult = withFileLock {
+        val current = readAllBindings().firstOrNull { it.id == id } ?: return@withFileLock TelegramUserClaimResult.NotFound
+        if (current.linked) {
+            return@withFileLock TelegramUserClaimResult.AlreadyLinked(current)
+        }
+        if (current.linkSecretHash != linkSecretHash) {
+            return@withFileLock TelegramUserClaimResult.InvalidSecret(current)
+        }
         val updated = current.copy(
-            telegramUserId = current.telegramUserId ?: telegramUserId,
-            telegramChatId = current.telegramChatId ?: telegramChatId,
-            telegramUsername = current.telegramUsername ?: telegramUsername,
-            telegramFirstName = current.telegramFirstName ?: telegramFirstName,
-            telegramLastName = current.telegramLastName ?: telegramLastName,
-            linkedAt = current.linkedAt ?: linkedAt,
+            linkSecretHash = null,
+            telegramUserId = telegramUserId,
+            telegramChatId = telegramChatId,
+            telegramUsername = telegramUsername,
+            telegramFirstName = telegramFirstName,
+            telegramLastName = telegramLastName,
+            linkedAt = linkedAt,
             updatedAt = updatedAt,
         )
         mapper.writeJsonFile(layout.telegramBotBindingFile(current.userId, current.chatId), updated.toStored())
-        updated
+        TelegramUserClaimResult.Claimed(updated)
     }
 
     override suspend fun tryAcquireLease(
@@ -155,6 +167,16 @@ class FilesystemTelegramBotBindingRepository(
         )
         mapper.writeJsonFile(layout.telegramBotBindingFile(current.userId, current.chatId), updated.toStored())
         updated
+    }
+
+    override suspend fun hasActiveLease(
+        id: UUID,
+        owner: String,
+        now: Instant,
+    ): Boolean = withFileLock {
+        val current = readAllBindings().firstOrNull { it.id == id } ?: return@withFileLock false
+        val leaseUntil = current.pollerLeaseUntil ?: return@withFileLock false
+        current.pollerOwner == owner && leaseUntil >= now
     }
 
     override suspend fun updateLastUpdateId(

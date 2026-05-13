@@ -84,7 +84,7 @@ class PostgresTelegramBotBindingRepositoryTest {
         val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
 
         dataSource.use {
-            assertLinkTelegramUserContract(PostgresTelegramBotBindingRepository(it))
+            assertClaimTelegramUserContract(PostgresTelegramBotBindingRepository(it))
         }
     }
 

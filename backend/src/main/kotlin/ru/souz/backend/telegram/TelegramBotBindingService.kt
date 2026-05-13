@@ -1,12 +1,19 @@
 package ru.souz.backend.telegram
 
 import io.ktor.http.HttpStatusCode
+import java.security.SecureRandom
+import java.util.Base64
 import java.time.Clock
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.badRequestV1
+
+data class TelegramBotBindingUpsertResult(
+    val binding: TelegramBotBinding,
+    val pendingLinkCommand: String,
+)
 
 class TelegramBotBindingService(
     private val chatRepository: ChatRepository,
@@ -27,7 +34,7 @@ class TelegramBotBindingService(
         userId: String,
         chatId: UUID,
         token: String,
-    ): TelegramBotBinding {
+    ): TelegramBotBindingUpsertResult {
         requireOwnedChat(userId, chatId)
         val normalizedToken = token.trim()
         validateToken(normalizedToken)
@@ -60,13 +67,27 @@ class TelegramBotBindingService(
                 message = "Telegram bot is already bound to another chat.",
             )
         }
+        try {
+            telegramBotApi.deleteWebhook(
+                token = normalizedToken,
+                dropPendingUpdates = true,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: TelegramBotApiTransportException) {
+            throw bindingFailed()
+        } catch (e: Exception) {
+            throw bindingFailed()
+        }
 
-        return try {
+        val linkSecret = generateLinkSecret()
+        val binding = try {
             bindingRepository.upsertForChat(
                 userId = userId,
                 chatId = chatId,
                 botToken = tokenCrypto.encrypt(normalizedToken),
                 botTokenHash = tokenHash,
+                linkSecretHash = sha256Hex(linkSecret),
                 botUsername = getMe.result?.username,
                 botFirstName = getMe.result?.firstName,
                 now = clock.instant(),
@@ -82,6 +103,11 @@ class TelegramBotBindingService(
         } catch (e: Exception) {
             throw bindingFailed()
         }
+
+        return TelegramBotBindingUpsertResult(
+            binding = binding,
+            pendingLinkCommand = "/start $linkSecret",
+        )
     }
 
     suspend fun delete(
@@ -139,5 +165,13 @@ class TelegramBotBindingService(
 
     private companion object {
         const val MAX_TOKEN_LENGTH: Int = 4096
+        const val LINK_SECRET_BYTES: Int = 18
+        val secureRandom: SecureRandom = SecureRandom()
+        val linkSecretEncoder: Base64.Encoder = Base64.getUrlEncoder().withoutPadding()
     }
+
+    private fun generateLinkSecret(): String =
+        ByteArray(LINK_SECRET_BYTES)
+            .also(secureRandom::nextBytes)
+            .let(linkSecretEncoder::encodeToString)
 }
