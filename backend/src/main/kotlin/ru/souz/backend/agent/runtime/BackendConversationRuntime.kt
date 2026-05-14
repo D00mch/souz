@@ -5,6 +5,7 @@ import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -118,6 +119,8 @@ class BackendConversationRuntimeFactory(
     private val systemPrompt: String,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
+    @Suppress("unused")
+    private val skillRegistryRepository: SkillRegistryRepository? = null,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
