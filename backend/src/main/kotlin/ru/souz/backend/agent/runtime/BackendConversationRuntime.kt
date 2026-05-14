@@ -4,9 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
+import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.runtime.AgentRuntimeEventSink
-import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.validation.SkillValidationRecord
+import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -120,7 +124,8 @@ class BackendConversationRuntimeFactory(
     private val systemPrompt: String,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
-    private val skillRegistryRepository: SkillRegistryRepository,
+    @Suppress("unused")
+    private val skillRegistryRepository: SkillRegistryRepository? = null,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
@@ -167,7 +172,7 @@ class BackendConversationRuntimeFactory(
             llmApi = usageTrackingApi,
             apiClassifier = ApiClassifier(delegateApi),
             localClassifier = LocalRegexClassifier,
-            skillRegistryRepository = skillRegistryRepository,
+            skillRegistryRepository = skillRegistryRepository ?: BackendNoopSkillRegistryRepository,
         ).create()
         return BackendConversationRuntime(
             key = key,
@@ -179,4 +184,43 @@ class BackendConversationRuntimeFactory(
             persistedSession = persistedSession,
         )
     }
+}
+
+private object BackendNoopSkillRegistryRepository : SkillRegistryRepository {
+    override suspend fun listSkills(userId: String): List<StoredSkill> = emptyList()
+
+    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? = null
+
+    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? = null
+
+    override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill =
+        error("Skill registry repository is not configured for this backend runtime.")
+
+    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = null
+
+    override suspend fun getValidation(
+        userId: String,
+        skillId: SkillId,
+        bundleHash: String,
+        policyVersion: String,
+    ): SkillValidationRecord? = null
+
+    override suspend fun saveValidation(record: SkillValidationRecord) = Unit
+
+    override suspend fun markValidationStatus(
+        userId: String,
+        skillId: SkillId,
+        bundleHash: String,
+        policyVersion: String,
+        status: SkillValidationStatus,
+        reason: String?,
+    ) = Unit
+
+    override suspend fun invalidateOtherValidations(
+        userId: String,
+        skillId: SkillId,
+        activeBundleHash: String,
+        policyVersion: String,
+        reason: String?,
+    ) = Unit
 }
