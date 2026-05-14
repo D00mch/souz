@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
+import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentTelemetry
@@ -119,8 +120,7 @@ class BackendConversationRuntimeFactory(
     private val systemPrompt: String,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
-    @Suppress("unused")
-    private val skillRegistryRepository: SkillRegistryRepository? = null,
+    private val skillRegistryRepository: SkillRegistryRepository,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
@@ -167,6 +167,7 @@ class BackendConversationRuntimeFactory(
             llmApi = usageTrackingApi,
             apiClassifier = ApiClassifier(delegateApi),
             localClassifier = LocalRegexClassifier,
+            skillRegistryRepository = skillRegistryRepository,
         ).create()
         return BackendConversationRuntime(
             key = key,

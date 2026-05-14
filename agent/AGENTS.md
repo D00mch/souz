@@ -27,6 +27,7 @@ agent/
    │   ├── NodesErrorHandling.kt      # User-facing error mapping
    │   ├── NodesLLM.kt                # LLM request and streaming response handling
    │   ├── NodesMCP.kt                # MCP tool injection node
+   │   ├── NodesSkills.kt             # Prompt-only skill activation node between classification and MCP
    │   └── NodesSummarization.kt      # History summarization and save-point logic
    ├── runtime/                       # Execution helpers used by agent nodes/impls
    │   ├── AgentToolExecutor.kt       # Tool invocation bridge with structured telemetry logging
@@ -42,6 +43,6 @@ tool/                                 # Shared tool enums and classifier contrac
 Notes:
 - `:agent` contains both the public agent contract layer and the concrete implementations.
 - `:graph-engine` is the lower-level boundary; the `agent/graph` package is an internal adapter over it.
-- The `skills` package owns standalone skill-bundle activation: selection runs on stored metadata, full bundles load only for selected ids, and validation approvals are cached by user + skill id + bundle hash + policy version.
+- The `skills` package owns standalone skill-bundle activation: selection runs on stored metadata, full bundles load only for selected ids, validation approvals are cached by user + skill id + bundle hash + policy version, and the main `GraphBasedAgent` now runs prompt-only activation on every turn after classification and before MCP tool injection.
 - Shared `ru.souz.llms` DTOs and chat/tool contracts now live in the separate `:llms` module.
 - `AgentFacade` remains the intended stateful desktop entry point, now delegating to `AgentContextFactory` and `AgentExecutor`.

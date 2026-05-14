@@ -12,7 +12,7 @@ import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
 import ru.souz.paths.DefaultSouzPaths
-import ru.souz.paths.SandboxSouzPaths
+import ru.souz.paths.SouzPaths
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.skills.bundle.FileSystemSkillBundleLoader
@@ -27,23 +27,23 @@ import ru.souz.tool.files.FilesToolUtil
  * validation store behind the shared registry interface.
  */
 class LocalSkillRegistryRepository(
-    stateRoot: Path = DefaultSouzPaths.defaultStateRoot(),
+    paths: SouzPaths = DefaultSouzPaths(),
     clock: Clock = Clock.systemUTC(),
     sandbox: LocalRuntimeSandbox = LocalRuntimeSandbox(
         scope = SandboxScope.localDefault(),
         settingsProvider = SettingsProviderImpl(ConfigStore),
         homePath = DefaultSouzPaths.homeDirectory(),
-        stateRoot = stateRoot,
+        stateRoot = paths.stateRoot,
     ),
     private val skillsRepository: FileSystemSkillsRepository = FileSystemSkillsRepository(
-        paths = SandboxSouzPaths(sandbox.runtimePaths),
+        paths = paths,
         clock = clock,
         loader = FileSystemSkillBundleLoader(
             fileSystem = LocalSkillBundleFileSystem(FilesToolUtil(sandbox)),
         ),
     ),
     private val validationRepository: SkillValidationRepository = FileSystemSkillValidationRepository(
-        paths = SandboxSouzPaths(sandbox.runtimePaths),
+        paths = paths,
     ),
 ) : SkillRegistryRepository {
     override suspend fun listSkills(userId: String): List<StoredSkill> = skillsRepository.listSkills(userId)

@@ -9,6 +9,8 @@ import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundleException
 import ru.souz.agent.skills.validation.SkillValidationPolicy
 import ru.souz.db.SettingsProvider
+import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.skills.filesystem.LocalSkillBundleFileSystem
 import ru.souz.skills.filesystem.SkillBundleFileSystem
 import ru.souz.skills.filesystem.SkillBundleFsContext
@@ -281,7 +283,11 @@ class FileSystemSkillBundleLoaderTest {
     ): FileSystemSkillBundleLoader {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.forbiddenFolders } returns forbiddenFolders
-        val fileSystem = LocalSkillBundleFileSystem(FilesToolUtil(settingsProvider))
+        val sandbox = LocalRuntimeSandbox(
+            scope = SandboxScope.localDefault(),
+            settingsProvider = settingsProvider,
+        )
+        val fileSystem = LocalSkillBundleFileSystem(FilesToolUtil(sandbox))
         return FileSystemSkillBundleLoader(fileSystem = fileSystem, maxFiles = maxFiles)
     }
 

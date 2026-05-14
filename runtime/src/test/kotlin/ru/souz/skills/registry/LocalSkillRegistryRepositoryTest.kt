@@ -18,6 +18,8 @@ import ru.souz.agent.skills.validation.SkillValidationSeverity
 import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.db.SettingsProvider
 import ru.souz.paths.SouzPaths
+import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.skills.bundle.FileSystemSkillBundleLoader
 import ru.souz.skills.filesystem.LocalSkillBundleFileSystem
 import ru.souz.paths.DefaultSouzPaths
@@ -47,7 +49,7 @@ class LocalSkillRegistryRepositoryTest {
     @Test
     fun `saves and loads skill bundle by user id and skill id`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-save-load-")
-        val repository = LocalSkillRegistryRepository(stateRoot = stateRoot)
+        val repository = LocalSkillRegistryRepository(paths = DefaultSouzPaths(stateRoot = stateRoot))
         val bundle = sampleBundle(skillId = SkillId("paper-summarize-academic"))
 
         val stored = repository.saveSkillBundle(userId = "user-1", bundle = bundle)
@@ -284,8 +286,13 @@ class LocalSkillRegistryRepositoryTest {
     private fun createSkillsRepository(paths: SouzPaths): FileSystemSkillsRepository {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.forbiddenFolders } returns emptyList()
+        val sandbox = LocalRuntimeSandbox(
+            scope = SandboxScope.localDefault(),
+            settingsProvider = settingsProvider,
+            stateRoot = paths.stateRoot,
+        )
         val loader = FileSystemSkillBundleLoader(
-            fileSystem = LocalSkillBundleFileSystem(FilesToolUtil(settingsProvider)),
+            fileSystem = LocalSkillBundleFileSystem(FilesToolUtil(sandbox)),
         )
         return FileSystemSkillsRepository(
             paths = paths,
