@@ -1,7 +1,7 @@
 package ru.souz.llms
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import kotlinx.coroutines.asContextElement
+import kotlinx.coroutines.currentCoroutineContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
@@ -11,16 +11,23 @@ interface TokenLogging {
     fun startRequest(requestId: String) = Unit
     fun finishRequest(requestId: String) = Unit
     fun requestContextElement(requestId: String): CoroutineContext = EmptyCoroutineContext
-    fun logTokenUsage(result: LLMResponse.Chat.Ok, body: LLMRequest.Chat)
+    suspend fun logTokenUsage(result: LLMResponse.Chat.Ok, body: LLMRequest.Chat)
 
     fun currentRequestTokenUsage(requestId: String): LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0)
     fun sessionTokenUsage(): LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0)
 }
 
+private class TokenLoggingRequestContext(
+    val requestId: String,
+) : CoroutineContext.Element {
+    override val key: CoroutineContext.Key<TokenLoggingRequestContext> = TokenLoggingRequestContext
+
+    companion object : CoroutineContext.Key<TokenLoggingRequestContext>
+}
+
 class SessionTokenLogging(
     private val logObjectMapper: ObjectMapper,
 ) : TokenLogging {
-    private val activeRequestId = ThreadLocal<String?>()
     private val currentSessionTokensUsage = AtomicReference(ZERO_USAGE)
     private val requestTokenUsage = ConcurrentHashMap<String, LLMResponse.Usage>()
 
@@ -29,10 +36,10 @@ class SessionTokenLogging(
     }
 
     override fun requestContextElement(requestId: String): CoroutineContext =
-        activeRequestId.asContextElement(requestId)
+        TokenLoggingRequestContext(requestId)
 
-    override fun logTokenUsage(result: LLMResponse.Chat.Ok, body: LLMRequest.Chat) {
-        val requestId = activeRequestId.get()
+    override suspend fun logTokenUsage(result: LLMResponse.Chat.Ok, body: LLMRequest.Chat) {
+        val requestId = currentCoroutineContext()[TokenLoggingRequestContext]?.requestId
         val newCurrentTokensUsage = currentSessionTokensUsage.updateAndGet { it + result.usage }
         requestId?.let { id ->
             requestTokenUsage.compute(id) { _, currentUsage ->
