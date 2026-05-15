@@ -433,6 +433,7 @@ generation_result generate_impl(
     const std::string prompt = request.value("prompt", "");
     const int context_size = request.value("context_size", 4096);
     const int requested_max_tokens = request.value("max_tokens", 1024);
+    const int requested_prompt_batch_size = request.value("prompt_batch_size", DEFAULT_PROMPT_BATCH_SIZE);
     const std::vector<std::string> stop_sequences = request.value("stop", std::vector<std::string>{});
 
     const llama_vocab * vocab = llama_model_get_vocab(model->model);
@@ -451,7 +452,8 @@ generation_result generate_impl(
         throw std::runtime_error("Prompt does not leave room for any completion tokens.");
     }
     const int max_tokens = std::max(1, std::min(requested_max_tokens, available_completion_tokens));
-    const int prompt_batch_size = std::max(32, std::min({context_size, DEFAULT_PROMPT_BATCH_SIZE, static_cast<int>(prompt_tokens.size())}));
+    const int prompt_batch_size_cap = std::max(32, std::min(requested_prompt_batch_size, DEFAULT_PROMPT_BATCH_SIZE));
+    const int prompt_batch_size = std::max(32, std::min({context_size, prompt_batch_size_cap, static_cast<int>(prompt_tokens.size())}));
     size_t reused_prompt_tokens = 0;
 
     llama_context * ctx = nullptr;
