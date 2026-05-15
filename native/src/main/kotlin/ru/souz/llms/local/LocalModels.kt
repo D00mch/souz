@@ -51,6 +51,7 @@ data class LocalModelProfile(
     val promptFamily: LocalPromptFamily,
     val samplingDefaults: LocalSamplingDefaults,
     val useNativeGrammar: Boolean = false,
+    val defaultPromptBatchSize: Int = 512,
     override val licenseRequirements: LocalLicenseRequirements,
     override val defaultGpuLayers: Int = 99,
 ) : LocalDownloadableProfile
@@ -189,6 +190,29 @@ object LocalModelProfiles {
         ),
     )
 
+    val QWEN36_35B_A3B_AGGRESSIVE_IQ2_M = LocalModelProfile(
+        gigaModel = LLMModel.LocalQwen36_35B_A3B_Aggressive_IQ2_M,
+        id = "local-qwen36-35b-a3b-aggressive-iq2-m",
+        displayName = "Local Qwen3.6 35B A3B Aggressive",
+        huggingFaceRepoId = "HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive",
+        ggufFilename = "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ2_M.gguf",
+        quantization = "IQ2_M",
+        minRamGb = 16,
+        defaultContextSize = 8192,
+        maxContextSize = 8192,
+        promptFamily = LocalPromptFamily.QWEN_CHATML,
+        samplingDefaults = LocalSamplingDefaults(
+            temperature = 0.2f,
+            topP = 0.9f,
+            topK = 40,
+        ),
+        defaultPromptBatchSize = 128,
+        licenseRequirements = LocalLicenseRequirements(
+            summary = "Apache 2.0",
+            requiresManualAcceptance = false,
+        ),
+    )
+
     val GEMMA4_E2B_IT = LocalModelProfile(
         gigaModel = LLMModel.LocalGemma4_E2B_It,
         id = "local-gemma-4-e2b-it",
@@ -235,6 +259,7 @@ object LocalModelProfiles {
 
     val all: List<LocalModelProfile> = listOf(
         QWEN3_4B_INSTRUCT_2507,
+        QWEN36_35B_A3B_AGGRESSIVE_IQ2_M,
         GEMMA4_E2B_IT,
         GEMMA4_E4B_IT,
     )

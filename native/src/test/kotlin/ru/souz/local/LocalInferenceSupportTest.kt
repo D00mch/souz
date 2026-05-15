@@ -109,6 +109,7 @@ class LocalInferenceSupportTest {
         assertEquals(
             listOf(
                 LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
+                LocalModelProfiles.QWEN36_35B_A3B_AGGRESSIVE_IQ2_M,
                 LocalModelProfiles.GEMMA4_E2B_IT,
                 LocalModelProfiles.GEMMA4_E4B_IT,
             ),
@@ -632,6 +633,22 @@ class LocalInferenceSupportTest {
             assertEquals(store.modelPath(profile).toAbsolutePath().toString(), prompt.targetPath(prompt.downloads.first()))
             assertEquals(LocalEmbeddingProfiles.default().id, prompt.downloads.last().id)
         }
+    }
+
+    @Test
+    fun `download prompt is built for qwen36 aggressive local model`() {
+        val tempRoot = Files.createTempDirectory("souz-local-models-test")
+        val store = LocalModelStore(rootDir = tempRoot)
+        val profile = LocalModelProfiles.QWEN36_35B_A3B_AGGRESSIVE_IQ2_M
+
+        val prompt = store.downloadPromptFor(profile.gigaModel)
+
+        assertNotNull(prompt)
+        assertEquals(profile.gigaModel, prompt.model)
+        assertEquals(profile, prompt.profile)
+        assertEquals(profile.id, prompt.downloads.first().id)
+        assertEquals(profile.quantization, prompt.downloads.first().quantization)
+        assertEquals(LocalEmbeddingProfiles.default().id, prompt.downloads.last().id)
     }
 
     @Test
@@ -1222,6 +1239,101 @@ class LocalInferenceSupportTest {
         assertEquals(1.0f, request.temperature)
         assertEquals(0.95f, request.topP)
         assertEquals(64, request.topK)
+    }
+
+    @Test
+    fun `local runtime uses conservative prompt batch for qwen36 aggressive`() = runTest {
+        val profile = LocalModelProfiles.QWEN36_35B_A3B_AGGRESSIVE_IQ2_M
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "OK",
+            selectedProfile = profile,
+            availableModels = listOf(profile.gigaModel),
+        )
+
+        val modelStore = mockk<LocalModelStore>()
+        every { modelStore.requireAvailable(profile) } returns Path.of("/tmp/${profile.ggufFilename}")
+
+        val promptRenderer = mockk<LocalPromptRenderer>()
+        every { promptRenderer.render(any(), profile) } returns "prompt"
+
+        val requestSlot = slot<String>()
+        val bridge = mockk<LocalNativeBridge>()
+        val runtimePointer = Pointer(71)
+        val modelPointer = Pointer(72)
+        every { bridge.createRuntime() } returns runtimePointer
+        every { bridge.loadModel(runtimePointer, any()) } returns modelPointer
+        every { bridge.generate(runtimePointer, modelPointer, capture(requestSlot)) } returns """
+            {"text":"{\"type\":\"final\",\"content\":\"done\"}","finish_reason":"stop","prompt_tokens":4,"completion_tokens":2,"total_tokens":6,"precached_prompt_tokens":0}
+        """.trimIndent()
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = modelStore,
+            promptRenderer = promptRenderer,
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = bridge,
+        )
+
+        val response = runtime.chat(
+            LLMRequest.Chat(
+                model = profile.gigaModel.alias,
+                messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+            )
+        )
+
+        assertIs<LLMResponse.Chat.Ok>(response)
+        val request = restJsonMapper.readValue(requestSlot.captured, LocalLlamaRuntime.LocalGenerationRequest::class.java)
+        assertEquals(profile.defaultPromptBatchSize, request.promptBatchSize)
+        assertTrue(request.promptBatchSize < LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.defaultPromptBatchSize)
+    }
+
+    @Test
+    fun `local runtime keeps default prompt batch for qwen3`() = runTest {
+        val profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "OK",
+            selectedProfile = profile,
+            availableModels = listOf(profile.gigaModel),
+        )
+
+        val modelStore = mockk<LocalModelStore>()
+        every { modelStore.requireAvailable(profile) } returns Path.of("/tmp/${profile.ggufFilename}")
+
+        val promptRenderer = mockk<LocalPromptRenderer>()
+        every { promptRenderer.render(any(), profile) } returns "prompt"
+
+        val requestSlot = slot<String>()
+        val bridge = mockk<LocalNativeBridge>()
+        val runtimePointer = Pointer(81)
+        val modelPointer = Pointer(82)
+        every { bridge.createRuntime() } returns runtimePointer
+        every { bridge.loadModel(runtimePointer, any()) } returns modelPointer
+        every { bridge.generate(runtimePointer, modelPointer, capture(requestSlot)) } returns """
+            {"text":"{\"type\":\"final\",\"content\":\"done\"}","finish_reason":"stop","prompt_tokens":4,"completion_tokens":2,"total_tokens":6,"precached_prompt_tokens":0}
+        """.trimIndent()
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = modelStore,
+            promptRenderer = promptRenderer,
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = bridge,
+        )
+
+        val response = runtime.chat(
+            LLMRequest.Chat(
+                model = profile.gigaModel.alias,
+                messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+            )
+        )
+
+        assertIs<LLMResponse.Chat.Ok>(response)
+        val request = restJsonMapper.readValue(requestSlot.captured, LocalLlamaRuntime.LocalGenerationRequest::class.java)
+        assertEquals(profile.defaultPromptBatchSize, request.promptBatchSize)
     }
 
     @Test

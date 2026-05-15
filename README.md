@@ -403,7 +403,7 @@ Provider/model selection is key-aware: chat, embeddings, and voice-recognition m
 Features:
 
 - macOS arm64 and x64 packaged bridge binaries.
-- Qwen and Gemma chat profiles.
+- Qwen chat profiles (including IQ2_M Qwen3.6 35B Aggressive) and Gemma chat profiles.
 - Linked EmbeddingGemma GGUF asset for embeddings.
 - Model storage under `~/.local/state/souz/models/`.
 - Native bridge extraction under `~/.local/state/souz/native/`.
