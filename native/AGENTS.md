@@ -30,6 +30,7 @@ Notes:
 - `:native` is a JVM Gradle module that owns the Kotlin local-model runtime under `native/src/main/kotlin/ru/souz/llms/local`.
 - `composeApp` depends on this module for local inference and mirrors the bridge binaries from `native/src/main/resources/darwin-*` into packaged macOS app resources.
 - Local chat profiles now require the linked `unsloth/embeddinggemma-300m-GGUF` asset and the bridge exports a dedicated embeddings path in addition to text generation.
+- Gemma 4 vision profiles also download `mmproj-F16.gguf` automatically into the same model directory, and runtime projector resolution accepts both upstream names (`mmproj-F16.gguf`, `mmproj-BF16.gguf`) and older local aliases.
 - `third_party/llama.cpp` and `native/llama-bridge/build-*` are local-only paths and should stay untracked.
 - Treat those paths as out of scope unless the task is explicitly about updating upstream `llama.cpp` or debugging the native bridge build.
 - Packaged bridge binaries live in `native/src/main/resources/darwin-*`.

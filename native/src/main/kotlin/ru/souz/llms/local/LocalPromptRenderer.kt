@@ -208,7 +208,7 @@ class LocalPromptRenderer {
         profile: LocalModelProfile,
         contextBudget: Int,
     ): RenderedMessage = when (message.role) {
-        LLMMessageRole.user -> RenderedMessage(role = "user", content = message.content.trim())
+        LLMMessageRole.user -> RenderedMessage(role = "user", content = renderUserMessage(message))
         LLMMessageRole.assistant -> RenderedMessage(
             role = "assistant",
             content = renderAssistantMessage(message),
@@ -228,6 +228,16 @@ class LocalPromptRenderer {
         )
 
         LLMMessageRole.system -> error("System messages must be handled separately before rendering.")
+    }
+
+    private fun renderUserMessage(message: LLMRequest.Message): String {
+        val mediaMarkers = message.attachments
+            ?.takeIf { it.isNotEmpty() }
+            ?.joinToString("\n") { LOCAL_MEDIA_MARKER }
+            .orEmpty()
+        return listOf(mediaMarkers, message.content.trim())
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
     }
 
     private fun renderAssistantMessage(message: LLMRequest.Message): String {
@@ -331,5 +341,6 @@ class LocalPromptRenderer {
         const val LOCAL_SMALL_CONTEXT_TOOL_PREVIEW_CHARS = 3_500
         const val LOCAL_LARGE_CONTEXT_TOOL_PREVIEW_CHARS = 7_000
         const val TRUNCATION_SUFFIX = "\n...[truncated for local context window]..."
+        const val LOCAL_MEDIA_MARKER = "<__media__>"
     }
 }

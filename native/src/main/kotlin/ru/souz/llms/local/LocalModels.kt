@@ -15,6 +15,8 @@ data class LocalLicenseRequirements(
 
 interface LocalDownloadableProfile {
     val id: String
+    val storageId: String
+        get() = id
     val displayName: String
     val huggingFaceRepoId: String
     val ggufFilename: String
@@ -51,8 +53,21 @@ data class LocalModelProfile(
     val promptFamily: LocalPromptFamily,
     val samplingDefaults: LocalSamplingDefaults,
     val useNativeGrammar: Boolean = false,
+    val visionProjectorCandidates: List<String> = emptyList(),
     override val licenseRequirements: LocalLicenseRequirements,
     override val defaultGpuLayers: Int = 99,
+) : LocalDownloadableProfile
+
+data class LocalAuxiliaryDownloadProfile(
+    override val id: String,
+    override val storageId: String,
+    override val displayName: String,
+    override val huggingFaceRepoId: String,
+    override val ggufFilename: String,
+    override val quantization: String,
+    override val minRamGb: Int,
+    override val licenseRequirements: LocalLicenseRequirements,
+    override val defaultGpuLayers: Int = 0,
 ) : LocalDownloadableProfile
 
 enum class LocalEmbeddingInputKind {
@@ -205,6 +220,13 @@ object LocalModelProfiles {
             topP = 0.95f,
             topK = 64,
         ),
+        visionProjectorCandidates = listOf(
+            DEFAULT_GEMMA_VISION_PROJECTOR_FILENAME,
+            "mmproj-BF16.gguf",
+            "mmproj-model-f16.gguf",
+            "mmproj-model.gguf",
+            "mmproj-gemma-4-E2B-it-Q4_K_M.gguf",
+        ),
         licenseRequirements = LocalLicenseRequirements(
             summary = "Apache 2.0",
             requiresManualAcceptance = false,
@@ -226,6 +248,13 @@ object LocalModelProfiles {
             temperature = 1.0f,
             topP = 0.95f,
             topK = 64,
+        ),
+        visionProjectorCandidates = listOf(
+            DEFAULT_GEMMA_VISION_PROJECTOR_FILENAME,
+            "mmproj-BF16.gguf",
+            "mmproj-model-f16.gguf",
+            "mmproj-model.gguf",
+            "mmproj-gemma-4-E4B-it-Q4_K_M.gguf",
         ),
         licenseRequirements = LocalLicenseRequirements(
             summary = "Apache 2.0",
@@ -284,7 +313,27 @@ object LocalEmbeddingProfiles {
 }
 
 fun LocalModelProfile.requiredDownloadProfiles(): List<LocalDownloadableProfile> =
-    listOf(this, LocalEmbeddingProfiles.default())
+    buildList {
+        add(this@requiredDownloadProfiles)
+        visionProjectorDownloadProfile()?.let(::add)
+        add(LocalEmbeddingProfiles.default())
+    }
+
+private fun LocalModelProfile.visionProjectorDownloadProfile(): LocalDownloadableProfile? {
+    if (visionProjectorCandidates.isEmpty()) return null
+    return LocalAuxiliaryDownloadProfile(
+        id = "$id-vision-projector",
+        storageId = id,
+        displayName = "$displayName multimodal projector",
+        huggingFaceRepoId = huggingFaceRepoId,
+        ggufFilename = DEFAULT_GEMMA_VISION_PROJECTOR_FILENAME,
+        quantization = "F16",
+        minRamGb = minRamGb,
+        licenseRequirements = licenseRequirements,
+    )
+}
+
+private const val DEFAULT_GEMMA_VISION_PROJECTOR_FILENAME = "mmproj-F16.gguf"
 
 data class LocalProviderStatus(
     val available: Boolean,

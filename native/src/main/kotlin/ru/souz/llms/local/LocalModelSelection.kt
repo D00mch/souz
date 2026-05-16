@@ -11,7 +11,7 @@ data class LocalModelDownloadPrompt(
     private val rootDir: Path,
 ) {
     fun targetPath(profile: LocalDownloadableProfile): String =
-        rootDir.resolve(profile.id).resolve(profile.ggufFilename).toAbsolutePath().toString()
+        rootDir.resolve(profile.storageId).resolve(profile.ggufFilename).toAbsolutePath().toString()
 }
 
 data class LocalModelDownloadState(

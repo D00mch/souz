@@ -2,6 +2,8 @@
 
 #include "ggml-backend.h"
 #include "llama.h"
+#include "mtmd.h"
+#include "mtmd-helper.h"
 
 #include <nlohmann/json.hpp>
 
@@ -38,7 +40,9 @@ struct backend_lifecycle_state {
 
 struct souz_model {
     llama_model * model = nullptr;
+    mtmd_context * vision = nullptr;
     std::string model_path;
+    std::string mmproj_path;
 };
 
 using model_ptr = souz_model *;
@@ -166,6 +170,13 @@ void clear_cached_context(runtime_ptr runtime) {
     runtime->cached_context.model = nullptr;
     runtime->cached_context.context_size = 0;
     runtime->cached_context.tokens.clear();
+}
+
+void free_multimodal_context(model_ptr model) {
+    if (model != nullptr && model->vision != nullptr) {
+        mtmd_free(model->vision);
+        model->vision = nullptr;
+    }
 }
 
 void configure_backend_environment() {
@@ -434,28 +445,36 @@ generation_result generate_impl(
     const int context_size = request.value("context_size", 4096);
     const int requested_max_tokens = request.value("max_tokens", 1024);
     const std::vector<std::string> stop_sequences = request.value("stop", std::vector<std::string>{});
+    const std::vector<std::string> media_paths = request.value("media_paths", std::vector<std::string>{});
+    const bool has_media = !media_paths.empty();
 
     const llama_vocab * vocab = llama_model_get_vocab(model->model);
-    auto prompt_tokens = tokenize(vocab, prompt);
-    result.prompt_tokens = static_cast<int>(prompt_tokens.size());
+    std::vector<llama_token> prompt_tokens;
+    if (!has_media) {
+        prompt_tokens = tokenize(vocab, prompt);
+        result.prompt_tokens = static_cast<int>(prompt_tokens.size());
+    }
 
-    if (prompt_tokens.empty()) {
+    if (!has_media && prompt_tokens.empty()) {
         throw std::runtime_error("Prompt is empty after tokenization.");
     }
-    if (static_cast<int>(prompt_tokens.size()) >= context_size) {
+    if (!has_media && static_cast<int>(prompt_tokens.size()) >= context_size) {
         throw std::runtime_error("Prompt does not fit into the configured local context window.");
     }
 
-    const int available_completion_tokens = context_size - static_cast<int>(prompt_tokens.size());
+    const int prompt_token_count = has_media ? 0 : static_cast<int>(prompt_tokens.size());
+    const int available_completion_tokens = context_size - prompt_token_count;
     if (available_completion_tokens <= 0) {
         throw std::runtime_error("Prompt does not leave room for any completion tokens.");
     }
     const int max_tokens = std::max(1, std::min(requested_max_tokens, available_completion_tokens));
-    const int prompt_batch_size = std::max(32, std::min({context_size, DEFAULT_PROMPT_BATCH_SIZE, static_cast<int>(prompt_tokens.size())}));
+    const int prompt_batch_size = has_media
+        ? context_size
+        : std::max(32, std::min({context_size, DEFAULT_PROMPT_BATCH_SIZE, static_cast<int>(prompt_tokens.size())}));
     size_t reused_prompt_tokens = 0;
 
     llama_context * ctx = nullptr;
-    if (can_reuse_cached_context(runtime, model, context_size, prompt_tokens, reused_prompt_tokens)) {
+    if (!has_media && can_reuse_cached_context(runtime, model, context_size, prompt_tokens, reused_prompt_tokens)) {
         ctx = runtime->cached_context.ctx;
         result.precached_prompt_tokens = static_cast<int>(reused_prompt_tokens);
     } else {
@@ -486,28 +505,81 @@ generation_result generate_impl(
         throw std::runtime_error("Failed to create sampler chain.");
     }
 
-    for (size_t offset = reused_prompt_tokens; offset < prompt_tokens.size(); offset += static_cast<size_t>(prompt_batch_size)) {
-        const int chunk_size = std::min<int>(prompt_batch_size, static_cast<int>(prompt_tokens.size() - offset));
-        llama_batch batch = llama_batch_get_one(prompt_tokens.data() + offset, chunk_size);
-        const int decode_status = llama_decode(ctx, batch);
-        if (decode_status != 0) {
-            if (runtime->cancel_requested.load()) {
-                throw std::runtime_error("Generation cancelled.");
+    if (has_media) {
+        if (model->vision == nullptr) {
+            throw std::runtime_error("Local model was loaded without multimodal projector support.");
+        }
+
+        mtmd_input_text input_text {
+            /* text          = */ prompt.c_str(),
+            /* add_special   = */ false,
+            /* parse_special = */ true,
+        };
+        std::vector<mtmd::bitmap_ptr> bitmaps;
+        std::vector<const mtmd_bitmap *> bitmap_ptrs;
+        bitmaps.reserve(media_paths.size());
+        bitmap_ptrs.reserve(media_paths.size());
+
+        for (const auto & media_path : media_paths) {
+            mtmd::bitmap_ptr bitmap(mtmd_helper_bitmap_init_from_file(model->vision, media_path.c_str()));
+            if (!bitmap) {
+                throw std::runtime_error("Failed to load image for local multimodal inference: " + media_path);
             }
-            throw std::runtime_error(
-                "Failed to decode the prompt: " +
-                    format_generation_details(
-                        context_size,
-                        requested_max_tokens,
-                        static_cast<int>(prompt_tokens.size()),
-                        max_tokens,
-                        prompt_batch_size,
-                        reused_prompt_tokens,
-                        offset,
-                        chunk_size,
-                        decode_status
-                    )
-            );
+            bitmap_ptrs.push_back(bitmap.get());
+            bitmaps.push_back(std::move(bitmap));
+        }
+
+        mtmd::input_chunks chunks(mtmd_input_chunks_init());
+        const int32_t tokenize_status = mtmd_tokenize(
+            model->vision,
+            chunks.ptr.get(),
+            &input_text,
+            bitmap_ptrs.data(),
+            bitmap_ptrs.size()
+        );
+        if (tokenize_status != 0) {
+            throw std::runtime_error("Failed to tokenize local multimodal prompt.");
+        }
+
+        result.prompt_tokens = static_cast<int>(mtmd_helper_get_n_tokens(chunks.ptr.get()));
+        llama_pos new_n_past = 0;
+        const int32_t eval_status = mtmd_helper_eval_chunks(
+            model->vision,
+            ctx,
+            chunks.ptr.get(),
+            0,
+            0,
+            prompt_batch_size,
+            true,
+            &new_n_past
+        );
+        if (eval_status != 0) {
+            throw std::runtime_error("Failed to evaluate the local multimodal prompt.");
+        }
+    } else {
+        for (size_t offset = reused_prompt_tokens; offset < prompt_tokens.size(); offset += static_cast<size_t>(prompt_batch_size)) {
+            const int chunk_size = std::min<int>(prompt_batch_size, static_cast<int>(prompt_tokens.size() - offset));
+            llama_batch batch = llama_batch_get_one(prompt_tokens.data() + offset, chunk_size);
+            const int decode_status = llama_decode(ctx, batch);
+            if (decode_status != 0) {
+                if (runtime->cancel_requested.load()) {
+                    throw std::runtime_error("Generation cancelled.");
+                }
+                throw std::runtime_error(
+                    "Failed to decode the prompt: " +
+                        format_generation_details(
+                            context_size,
+                            requested_max_tokens,
+                            static_cast<int>(prompt_tokens.size()),
+                            max_tokens,
+                            prompt_batch_size,
+                            reused_prompt_tokens,
+                            offset,
+                            chunk_size,
+                            decode_status
+                        )
+                );
+            }
         }
     }
 
@@ -557,11 +629,11 @@ generation_result generate_impl(
                     format_generation_details(
                         context_size,
                         requested_max_tokens,
-                        static_cast<int>(prompt_tokens.size()),
+                        result.prompt_tokens,
                         max_tokens,
                         prompt_batch_size,
                         reused_prompt_tokens,
-                        prompt_tokens.size() + generated_tokens.size(),
+                        static_cast<size_t>(result.prompt_tokens) + generated_tokens.size(),
                         1,
                         decode_status
                     )
@@ -575,12 +647,16 @@ generation_result generate_impl(
 
     runtime->cached_context.model = model;
     runtime->cached_context.context_size = context_size;
-    runtime->cached_context.tokens = prompt_tokens;
-    runtime->cached_context.tokens.insert(
-        runtime->cached_context.tokens.end(),
-        generated_tokens.begin(),
-        generated_tokens.end()
-    );
+    if (!has_media) {
+        runtime->cached_context.tokens = prompt_tokens;
+        runtime->cached_context.tokens.insert(
+            runtime->cached_context.tokens.end(),
+            generated_tokens.begin(),
+            generated_tokens.end()
+        );
+    } else {
+        runtime->cached_context.tokens.clear();
+    }
     result.total_tokens = result.prompt_tokens + result.completion_tokens;
     return result;
 }
@@ -791,6 +867,10 @@ void * souz_llama_model_load(void * runtime, const char * request_json, char * e
         params.n_gpu_layers = request.value("gpu_layers", 99);
         params.use_mmap = request.value("use_mmap", true);
         params.use_mlock = request.value("use_mlock", false);
+        std::string mmproj_path;
+        if (const auto mmproj_it = request.find("mmproj_path"); mmproj_it != request.end() && !mmproj_it->is_null()) {
+            mmproj_path = mmproj_it->get<std::string>();
+        }
 
         llama_model * model = llama_model_load_from_file(model_path.c_str(), params);
         if (model == nullptr) {
@@ -800,6 +880,21 @@ void * souz_llama_model_load(void * runtime, const char * request_json, char * e
         auto * handle = new souz_model();
         handle->model = model;
         handle->model_path = model_path;
+        handle->mmproj_path = mmproj_path;
+        if (!mmproj_path.empty()) {
+            mtmd_context_params mparams = mtmd_context_params_default();
+            mparams.use_gpu = true;
+            mparams.print_timings = false;
+            mparams.n_threads = std::max(1u, std::thread::hardware_concurrency());
+            mparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+            mparams.warmup = false;
+            handle->vision = mtmd_init_from_file(mmproj_path.c_str(), model, mparams);
+            if (handle->vision == nullptr) {
+                llama_model_free(model);
+                delete handle;
+                throw std::runtime_error("Failed to initialize multimodal projector from " + mmproj_path);
+            }
+        }
         return handle;
     } catch (const std::exception & error) {
         write_error(error_buffer, error_buffer_size, error.what());
@@ -816,6 +911,7 @@ void souz_llama_model_unload(void * runtime, void * model) {
     auto * model_ptr = static_cast<struct souz_model *>(model);
     std::lock_guard<std::mutex> lock(runtime_ptr->mutex);
     clear_cached_context(runtime_ptr);
+    free_multimodal_context(model_ptr);
     if (model_ptr->model != nullptr) {
         llama_model_free(model_ptr->model);
         model_ptr->model = nullptr;

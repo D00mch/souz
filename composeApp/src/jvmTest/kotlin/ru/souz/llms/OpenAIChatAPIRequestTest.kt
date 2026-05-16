@@ -194,6 +194,40 @@ class OpenAIChatAPIRequestTest {
     }
 
     @Test
+    fun `buildChatRequest serializes image attachments as multimodal content parts`() {
+        val api = createApi()
+        val imageDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
+        val request = invokeBuildChatRequest(
+            api = api,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Nano.alias,
+                maxTokens = 256,
+                messages = listOf(
+                    LLMRequest.Message(
+                        role = LLMMessageRole.user,
+                        content = "Describe the image",
+                        attachments = listOf(imageDataUrl),
+                    ),
+                ),
+            ),
+            stream = false,
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        val messages = request["messages"] as List<Map<String, Any?>>
+        @Suppress("UNCHECKED_CAST")
+        val content = messages.single()["content"] as List<Map<String, Any?>>
+
+        assertEquals("user", messages.single()["role"])
+        assertEquals("text", content[0]["type"])
+        assertEquals("Describe the image", content[0]["text"])
+        assertEquals("image_url", content[1]["type"])
+        @Suppress("UNCHECKED_CAST")
+        val imageUrl = content[1]["image_url"] as Map<String, String>
+        assertEquals(imageDataUrl, imageUrl["url"])
+    }
+
+    @Test
     fun `buildChatRequest keeps later user message when assistant tool call cannot be resolved`() {
         val api = createApi()
         val request = invokeBuildChatRequest(

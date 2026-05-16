@@ -25,6 +25,7 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
+import java.nio.file.Path
 
 class LocalLlamaRuntime(
     private val availability: LocalProviderAvailability,
@@ -203,7 +204,12 @@ class LocalLlamaRuntime(
             ?: availabilityStatus.selectedProfile
             ?: return NativeGenerationResult.error("No local model profile is available for ${body.model}.")
 
-        val modelHandle = ensureChatModel(profile)
+        val mediaPaths = resolveMediaPaths(body)
+        if (mediaPaths.isNotEmpty() && profile.visionProjectorCandidates.isEmpty()) {
+            return NativeGenerationResult.error("Local model ${profile.displayName} does not support image input.")
+        }
+
+        val modelHandle = ensureChatModel(profile, mediaPaths)
         val runtime = ensureRuntime()
         val prompt = promptRenderer.render(body, profile)
         val contextSize = resolveContextSize(body, profile, prompt)
@@ -219,6 +225,7 @@ class LocalLlamaRuntime(
             seed = DEFAULT_SEED,
             stop = emptyList(),
             grammar = if (profile.useNativeGrammar && useStructuredOutput) LocalStrictJsonContract.grammar else "",
+            mediaPaths = mediaPaths,
         )
 
         val requestVariants = buildRequestVariants(
@@ -407,10 +414,11 @@ class LocalLlamaRuntime(
         profile: LocalModelProfile,
         prompt: String,
     ): Int {
+        val maxContextSize = resolveMaxContextSize(body, profile)
         if (usesConfiguredContextWindow(body)) {
             return body.maxTokens
                 .coerceAtLeast(MIN_CONTEXT_SIZE)
-                .coerceAtMost(profile.maxContextSize)
+                .coerceAtMost(maxContextSize)
         }
 
         val promptEstimate = prompt.estimateTokenCount()
@@ -421,7 +429,7 @@ class LocalLlamaRuntime(
         val desired = promptEstimate + completionBudget + CONTEXT_SAFETY_MARGIN_TOKENS
         return nextContextBucket(desired)
             .coerceAtLeast(MIN_CONTEXT_SIZE)
-            .coerceAtMost(profile.defaultContextSize.coerceAtMost(profile.maxContextSize))
+            .coerceAtMost(resolveDefaultContextSize(body, profile))
     }
 
     internal fun resolveExpansionContextSize(
@@ -430,13 +438,23 @@ class LocalLlamaRuntime(
     ): Int? = if (usesConfiguredContextWindow(body)) {
         null
     } else {
-        profile.defaultContextSize
+        resolveDefaultContextSize(body, profile)
             .coerceAtLeast(MIN_CONTEXT_SIZE)
-            .coerceAtMost(profile.maxContextSize)
+            .coerceAtMost(resolveMaxContextSize(body, profile))
     }
 
     internal fun usesConfiguredContextWindow(body: LLMRequest.Chat): Boolean =
-        body.maxTokens >= MIN_CONTEXT_SIZE
+        !body.hasMediaAttachments() && body.maxTokens >= MIN_CONTEXT_SIZE
+
+    private fun resolveDefaultContextSize(body: LLMRequest.Chat, profile: LocalModelProfile): Int =
+        profile.defaultContextSize.coerceAtMost(resolveMaxContextSize(body, profile))
+
+    private fun resolveMaxContextSize(body: LLMRequest.Chat, profile: LocalModelProfile): Int =
+        if (body.hasMediaAttachments()) {
+            profile.maxContextSize.coerceAtMost(MAX_VISION_CONTEXT_SIZE)
+        } else {
+            profile.maxContextSize
+        }
 
     internal fun resolveEmbeddingInputKind(body: LLMRequest.Embeddings): LocalEmbeddingInputKind =
         when (body.inputKind) {
@@ -455,24 +473,47 @@ class LocalLlamaRuntime(
         }
     }
 
-    private suspend fun ensureChatModel(profile: LocalModelProfile): Pointer =
-        ensureModel(profile = profile, slot = loadedChatModel, resetWarmupState = true)
+    private suspend fun ensureChatModel(
+        profile: LocalModelProfile,
+        mediaPaths: List<String> = emptyList(),
+    ): Pointer = ensureModel(
+        profile = profile,
+        slot = loadedChatModel,
+        resetWarmupState = true,
+        requireVision = mediaPaths.isNotEmpty(),
+    )
 
     private suspend fun ensureEmbeddingModel(profile: LocalEmbeddingProfile): Pointer =
-        ensureModel(profile = profile, slot = loadedEmbeddingModel, resetWarmupState = false)
+        ensureModel(profile = profile, slot = loadedEmbeddingModel, resetWarmupState = false, requireVision = false)
 
     private suspend fun ensureModel(
         profile: LocalDownloadableProfile,
         slot: AtomicReference<LoadedModel?>,
         resetWarmupState: Boolean,
+        requireVision: Boolean,
     ): Pointer = loadMutex.withLock {
         val runtime = runtimeHandle.get() ?: runtimeOperationMutex.withLock {
             runtimeHandle.get() ?: bridge.createRuntime().also(runtimeHandle::set)
         }
-        slot.get()?.takeIf { it.profile.id == profile.id }?.pointer?.let { return@withLock it }
+        val modelPath = modelStore.requireAvailable(profile)
+        val visionProjectorPath = when {
+            requireVision && profile is LocalModelProfile -> resolveVisionProjectorPath(profile, modelPath)
+                ?: error(
+                    "Local model ${profile.displayName} requires a multimodal projector file next to the GGUF model.",
+                )
+
+            else -> null
+        }
+        slot.get()
+            ?.takeIf { it.profile.id == profile.id && it.visionProjectorPath == visionProjectorPath?.toString() }
+            ?.pointer
+            ?.let { return@withLock it }
 
         runtimeOperationMutex.withLock {
-            slot.get()?.takeIf { it.profile.id == profile.id }?.pointer?.let { return@withLock it }
+            slot.get()
+                ?.takeIf { it.profile.id == profile.id && it.visionProjectorPath == visionProjectorPath?.toString() }
+                ?.pointer
+                ?.let { return@withLock it }
 
             slot.get()?.let { current ->
                 bridge.unloadModel(runtime, current.pointer)
@@ -482,20 +523,29 @@ class LocalLlamaRuntime(
                 }
             }
 
-            val modelPath = modelStore.requireAvailable(profile)
             val requestJson = restJsonMapper.writeValueAsString(
                 LocalModelLoadRequest(
                     modelPath = modelPath.toAbsolutePath().toString(),
                     gpuLayers = profile.defaultGpuLayers,
                     useMmap = true,
                     useMlock = false,
+                    mmprojPath = visionProjectorPath?.toAbsolutePath()?.normalize()?.toString(),
                 )
             )
             val pointer = bridge.loadModel(runtime, requestJson)
-            slot.set(LoadedModel(profile = profile, pointer = pointer))
+            slot.set(LoadedModel(profile = profile, pointer = pointer, visionProjectorPath = visionProjectorPath?.toString()))
             return@withLock pointer
         }
     }
+
+    private fun resolveVisionProjectorPath(profile: LocalModelProfile, modelPath: Path): Path? =
+        profile.visionProjectorCandidates
+            .asSequence()
+            .map { candidate -> modelPath.parent.resolve(candidate) }
+            .firstOrNull { path -> java.nio.file.Files.isRegularFile(path) }
+
+    private fun resolveMediaPaths(body: LLMRequest.Chat): List<String> =
+        body.messages.flatMap { message -> message.attachments.orEmpty() }
 
     suspend fun shutdown() {
         cancelActiveRequest()
@@ -543,6 +593,7 @@ class LocalLlamaRuntime(
     private data class LoadedModel(
         val profile: LocalDownloadableProfile,
         val pointer: Pointer,
+        val visionProjectorPath: String?,
     )
 
     data class LocalModelLoadRequest(
@@ -550,6 +601,7 @@ class LocalLlamaRuntime(
         @field:JsonProperty("gpu_layers") val gpuLayers: Int,
         @field:JsonProperty("use_mmap") val useMmap: Boolean,
         @field:JsonProperty("use_mlock") val useMlock: Boolean,
+        @field:JsonProperty("mmproj_path") val mmprojPath: String? = null,
     )
 
     data class LocalGenerationRequest(
@@ -562,6 +614,7 @@ class LocalLlamaRuntime(
         val seed: Int,
         val stop: List<String>,
         val grammar: String,
+        @field:JsonProperty("media_paths") val mediaPaths: List<String> = emptyList(),
     )
 
     data class LocalEmbeddingsRequest(
@@ -614,6 +667,7 @@ class LocalLlamaRuntime(
         const val MAX_COMPLETION_TOKENS = 1024
         const val CONTEXT_SAFETY_MARGIN_TOKENS = 512
         const val MIN_CONTEXT_SIZE = 2048
+        const val MAX_VISION_CONTEXT_SIZE = 4096
         const val WARMUP_COMPLETION_TOKENS = 1
         const val WARMUP_PROMPT = "Warm up."
         val CONTEXT_BUCKETS = intArrayOf(2048, 4096, 6144, 8192, 12288, 16384)
@@ -621,3 +675,6 @@ class LocalLlamaRuntime(
 }
 
 private fun String.estimateTokenCount(): Int = ceil(length / 4.0).toInt()
+
+private fun LLMRequest.Chat.hasMediaAttachments(): Boolean =
+    messages.any { !it.attachments.isNullOrEmpty() }

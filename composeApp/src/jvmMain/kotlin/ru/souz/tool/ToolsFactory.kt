@@ -50,6 +50,8 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
     private val toolExtractText: ToolExtractText by di.instance()
     private val toolFindFilesByName: ToolFindFilesByName by di.instance()
     private val toolReadPdfPages: ToolReadPdfPages by di.instance()
+    private val toolViewImage: ToolViewImage by di.instance()
+    private val toolGenerateImage: ToolGenerateImage by di.instance()
     private val toolOpen: ToolOpen by di.instance()
     private val toolCreateNewBrowserTab: ToolCreateNewBrowserTab by di.instance()
     private val toolSafariInfo: ToolSafariInfo by di.instance()
@@ -125,6 +127,12 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
             toolReadPdfPages.toGiga(),
             toolOpen.toGiga(),
             toolFindFolders.toGiga(),
+        )
+
+        ToolCategory.IMAGE -> listOf(
+            toolTakeScreenshot.toGiga(),
+            toolViewImage.toGiga(),
+            toolGenerateImage.toGiga(),
         )
 
         ToolCategory.BROWSER -> listOf(
@@ -210,7 +218,6 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
         )
 
         ToolCategory.DESKTOP -> listOf(
-            toolTakeScreenshot.toGiga(),
             toolStartScreenRecording.toGiga(),
         )
 

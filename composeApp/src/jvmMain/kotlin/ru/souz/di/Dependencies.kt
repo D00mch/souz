@@ -157,6 +157,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolExtractText(instance()) }
     bindSingleton { ToolFindFilesByName(instance()) }
     bindSingleton { ToolReadPdfPages(instance()) }
+    bindSingleton { ToolViewImage(filesToolUtil = instance(), visionGateway = instance()) }
+    bindSingleton { ToolGenerateImage(filesToolUtil = instance(), imageGenerationGateway = instance()) }
     bindSingleton { ToolOpen(instance(), instance()) }
     bindSingleton { ToolCreateNewBrowserTab(instance()) }
     bindSingleton { ToolSafariInfo(instance()) }

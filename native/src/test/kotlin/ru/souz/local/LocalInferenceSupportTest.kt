@@ -22,6 +22,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import java.nio.file.Files
 import java.nio.file.Path
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.AfterEach
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
@@ -215,6 +216,28 @@ class LocalInferenceSupportTest {
         assertTrue(prompt.contains("<|turn>user\n{\"tool_result\":{\"tool_name\":\"CalendarListEvents\",\"tool_call_id\":\"call_1\",\"content\":\"ok\"}}\n<turn|>"))
         assertTrue(prompt.endsWith("<|turn>assistant\n"))
         assertFalse(prompt.contains("<|im_start|>"))
+    }
+
+    @Test
+    fun `gemma prompt renderer injects media markers for attached images`() {
+        val renderer = LocalPromptRenderer()
+        val chat = LLMRequest.Chat(
+            model = LocalModelProfiles.GEMMA4_E2B_IT.gigaModel.alias,
+            messages = listOf(
+                LLMRequest.Message(
+                    role = LLMMessageRole.user,
+                    content = "Что на картинке?",
+                    attachments = listOf("/tmp/cat.png"),
+                ),
+            ),
+        )
+
+        val prompt = renderer.render(
+            body = chat,
+            profile = LocalModelProfiles.GEMMA4_E2B_IT,
+        )
+
+        assertTrue(prompt.contains("<|turn>user\n<__media__>\nЧто на картинке?\n<turn|>"))
     }
 
     @Test
@@ -630,8 +653,52 @@ class LocalInferenceSupportTest {
             assertEquals(profile, prompt.profile)
             assertEquals(profile.id, prompt.downloads.first().id)
             assertEquals(store.modelPath(profile).toAbsolutePath().toString(), prompt.targetPath(prompt.downloads.first()))
+            assertEquals("${profile.id}-vision-projector", prompt.downloads[1].id)
+            assertEquals(
+                tempRoot.resolve(profile.id).resolve("mmproj-F16.gguf").toAbsolutePath().toString(),
+                prompt.targetPath(prompt.downloads[1]),
+            )
             assertEquals(LocalEmbeddingProfiles.default().id, prompt.downloads.last().id)
         }
+    }
+
+    @Test
+    fun `download required assets for gemma also downloads projector next to model`() = runTest {
+        val tempRoot = Files.createTempDirectory("souz-local-models-test")
+        val profile = LocalModelProfiles.GEMMA4_E2B_IT
+        val requests = mutableListOf<HttpRequest>()
+        val httpClient = mockk<HttpClient>()
+        every {
+            httpClient.send(
+                capture(requests),
+                any<HttpResponse.BodyHandler<InputStream>>(),
+            )
+        } answers {
+            val request = arg<HttpRequest>(0)
+            when {
+                request.uri().toString().contains(profile.ggufFilename) -> binaryResponse("model")
+                request.uri().toString().contains("mmproj-F16.gguf") -> binaryResponse("mmproj")
+                request.uri().toString().contains(LocalEmbeddingProfiles.default().ggufFilename) -> binaryResponse("embed")
+                else -> error("Unexpected download URL: ${request.uri()}")
+            }
+        }
+
+        val store = LocalModelStore(rootDir = tempRoot, httpClient = httpClient)
+
+        val result = store.downloadRequiredAssets(profile)
+
+        assertEquals(store.modelPath(profile), result)
+        assertContentEquals("model".toByteArray(), Files.readAllBytes(store.modelPath(profile)))
+        assertContentEquals(
+            "mmproj".toByteArray(),
+            Files.readAllBytes(tempRoot.resolve(profile.id).resolve("mmproj-F16.gguf")),
+        )
+        assertContentEquals(
+            "embed".toByteArray(),
+            Files.readAllBytes(store.modelPath(LocalEmbeddingProfiles.default())),
+        )
+        assertEquals(3, requests.size)
+        assertTrue(requests.any { it.uri().toString().contains("mmproj-F16.gguf") })
     }
 
     @Test
@@ -804,6 +871,210 @@ class LocalInferenceSupportTest {
         verify(exactly = 1) { bridge.loadModel(runtimePointer, any()) }
         verify(exactly = 1) { promptRenderer.render(any(), profile) }
         verify(exactly = 1) { bridge.generate(runtimePointer, modelPointer, any()) }
+    }
+
+    @Test
+    fun `local runtime forwards media paths and mmproj for gemma vision requests`() = runTest {
+        val profile = LocalModelProfiles.GEMMA4_E2B_IT
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "OK",
+            selectedProfile = profile,
+            availableModels = listOf(profile.gigaModel),
+        )
+
+        val modelDir = Files.createTempDirectory("souz-local-vision-model")
+        val modelPath = modelDir.resolve(profile.ggufFilename)
+        Files.writeString(modelPath, "model")
+        val mmprojPath = modelDir.resolve("mmproj-F16.gguf")
+        Files.writeString(mmprojPath, "mmproj")
+
+        val modelStore = mockk<LocalModelStore>()
+        every { modelStore.requireAvailable(profile) } returns modelPath
+
+        val promptRenderer = mockk<LocalPromptRenderer>()
+        every { promptRenderer.render(any(), profile) } returns "<__media__>\nЧто на картинке?"
+
+        val bridge = mockk<LocalNativeBridge>()
+        val runtimePointer = Pointer(31)
+        val modelPointer = Pointer(32)
+        every { bridge.createRuntime() } returns runtimePointer
+        val loadRequest = slot<String>()
+        every { bridge.loadModel(runtimePointer, capture(loadRequest)) } returns modelPointer
+        val generationRequest = slot<String>()
+        every { bridge.generate(runtimePointer, modelPointer, capture(generationRequest)) } returns """
+            {"text":"{\"type\":\"final\",\"content\":\"Это кот\"}","finish_reason":"stop","prompt_tokens":8,"completion_tokens":2,"total_tokens":10,"precached_prompt_tokens":0}
+        """.trimIndent()
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = modelStore,
+            promptRenderer = promptRenderer,
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = bridge,
+        )
+
+        val result = runtime.chat(
+            LLMRequest.Chat(
+                model = profile.gigaModel.alias,
+                messages = listOf(
+                    LLMRequest.Message(
+                        role = LLMMessageRole.user,
+                        content = "Что на картинке?",
+                        attachments = listOf("/tmp/cat.png"),
+                    ),
+                ),
+            )
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals("Это кот", ok.choices.single().message.content)
+        assertEquals(
+            mmprojPath.toAbsolutePath().normalize().toString(),
+            restJsonMapper.readTree(loadRequest.captured)["mmproj_path"]?.asText(),
+        )
+        assertEquals(
+            listOf("/tmp/cat.png"),
+            restJsonMapper.readTree(generationRequest.captured)["media_paths"].map { it.asText() },
+        )
+        assertEquals(
+            2048,
+            restJsonMapper.readTree(generationRequest.captured)["context_size"].asInt(),
+        )
+    }
+
+    @Test
+    fun `local runtime accepts bf16 projector filename for gemma vision requests`() = runTest {
+        val profile = LocalModelProfiles.GEMMA4_E4B_IT
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "OK",
+            selectedProfile = profile,
+            availableModels = listOf(profile.gigaModel),
+        )
+
+        val modelDir = Files.createTempDirectory("souz-local-vision-model")
+        val modelPath = modelDir.resolve(profile.ggufFilename)
+        Files.writeString(modelPath, "model")
+        val mmprojPath = modelDir.resolve("mmproj-BF16.gguf")
+        Files.writeString(mmprojPath, "mmproj")
+
+        val modelStore = mockk<LocalModelStore>()
+        every { modelStore.requireAvailable(profile) } returns modelPath
+
+        val promptRenderer = mockk<LocalPromptRenderer>()
+        every { promptRenderer.render(any(), profile) } returns "<__media__>\nЧто на картинке?"
+
+        val bridge = mockk<LocalNativeBridge>()
+        val runtimePointer = Pointer(131)
+        val modelPointer = Pointer(132)
+        every { bridge.createRuntime() } returns runtimePointer
+        val loadRequest = slot<String>()
+        every { bridge.loadModel(runtimePointer, capture(loadRequest)) } returns modelPointer
+        every { bridge.generate(runtimePointer, modelPointer, any()) } returns """
+            {"text":"{\"type\":\"final\",\"content\":\"Это кот\"}","finish_reason":"stop","prompt_tokens":8,"completion_tokens":2,"total_tokens":10,"precached_prompt_tokens":0}
+        """.trimIndent()
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = modelStore,
+            promptRenderer = promptRenderer,
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = bridge,
+        )
+
+        val result = runtime.chat(
+            LLMRequest.Chat(
+                model = profile.gigaModel.alias,
+                messages = listOf(
+                    LLMRequest.Message(
+                        role = LLMMessageRole.user,
+                        content = "Что на картинке?",
+                        attachments = listOf("/tmp/cat.png"),
+                    ),
+                ),
+            )
+        )
+
+        assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(
+            mmprojPath.toAbsolutePath().normalize().toString(),
+            restJsonMapper.readTree(loadRequest.captured)["mmproj_path"]?.asText(),
+        )
+    }
+
+    @Test
+    fun `local runtime rejects image input for text only local models`() = runTest {
+        val profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "OK",
+            selectedProfile = profile,
+            availableModels = listOf(profile.gigaModel),
+        )
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = mockk(relaxed = true),
+            promptRenderer = mockk(relaxed = true),
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = mockk(relaxed = true),
+        )
+
+        val result = runtime.chat(
+            LLMRequest.Chat(
+                model = profile.gigaModel.alias,
+                messages = listOf(
+                    LLMRequest.Message(
+                        role = LLMMessageRole.user,
+                        content = "Что на картинке?",
+                        attachments = listOf("/tmp/cat.png"),
+                    ),
+                ),
+            )
+        )
+
+        val error = assertIs<LLMResponse.Chat.Error>(result)
+        assertEquals(
+            "Local model Local Qwen3 4B Instruct 2507 does not support image input.",
+            error.message,
+        )
+    }
+
+    @Test
+    fun `native bridge tolerates null mmproj path in model load request`() {
+        val hostInfo = LocalHostInfoProvider().current()
+        assumeTrue(hostInfo.platform != null, "Test requires a supported local platform with bundled native bridge")
+
+        val hostInfoProvider = mockk<LocalHostInfoProvider>()
+        every { hostInfoProvider.current() } returns hostInfo
+        val bridge = LocalNativeBridge(LocalBridgeLoader(hostInfoProvider))
+        val runtime = bridge.createRuntime()
+        val fakeModel = createTempFile(prefix = "local-model-", suffix = ".gguf")
+        val requestJson = """
+            {
+              "model_path": "${fakeModel.toAbsolutePath().normalize()}",
+              "gpu_layers": 0,
+              "use_mmap": true,
+              "use_mlock": false,
+              "mmproj_path": null
+            }
+        """.trimIndent()
+
+        val error = try {
+            assertFailsWith<IllegalStateException> {
+                bridge.loadModel(runtime, requestJson)
+            }
+        } finally {
+            bridge.destroyRuntime(runtime)
+            Files.deleteIfExists(fakeModel)
+        }
+
+        assertFalse(error.message.orEmpty().contains("type must be string, but is null"))
+        assertTrue(error.message.orEmpty().contains("Failed to load local model"))
     }
 
     @Test
@@ -1078,6 +1349,45 @@ class LocalInferenceSupportTest {
                 ),
                 profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507,
                 prompt = "x".repeat(24_000),
+            )
+        )
+
+        val visionBody = LLMRequest.Chat(
+            model = LocalModelProfiles.GEMMA4_E4B_IT.gigaModel.alias,
+            messages = listOf(
+                LLMRequest.Message(
+                    role = LLMMessageRole.user,
+                    content = "Что на картинке?",
+                    attachments = listOf("/tmp/cat.png"),
+                ),
+            ),
+            maxTokens = 16_000,
+        )
+
+        assertFalse(runtime.usesConfiguredContextWindow(visionBody))
+        assertEquals(
+            2048,
+            runtime.resolveContextSize(
+                body = visionBody,
+                profile = LocalModelProfiles.GEMMA4_E4B_IT,
+                prompt = "<__media__>\nЧто на картинке?",
+            )
+        )
+        assertEquals(
+            4096,
+            runtime.resolveExpansionContextSize(
+                body = LLMRequest.Chat(
+                    model = LocalModelProfiles.GEMMA4_E4B_IT.gigaModel.alias,
+                    messages = listOf(
+                        LLMRequest.Message(
+                            role = LLMMessageRole.user,
+                            content = "Опиши изображение подробно",
+                            attachments = listOf("/tmp/cat.png"),
+                        ),
+                    ),
+                    maxTokens = 256_000,
+                ),
+                profile = LocalModelProfiles.GEMMA4_E4B_IT,
             )
         )
     }
@@ -1447,5 +1757,15 @@ class LocalInferenceSupportTest {
                 )
             )
         }
+    }
+
+    private fun binaryResponse(body: String): HttpResponse<InputStream> {
+        val response = mockk<HttpResponse<InputStream>>()
+        every { response.statusCode() } returns 200
+        every { response.headers() } returns HttpHeaders.of(
+            mapOf("Content-Length" to listOf(body.toByteArray().size.toString()))
+        ) { _, _ -> true }
+        every { response.body() } returns ByteArrayInputStream(body.toByteArray())
+        return response
     }
 }
