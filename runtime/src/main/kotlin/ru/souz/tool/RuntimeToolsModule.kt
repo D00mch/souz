@@ -23,11 +23,13 @@ import ru.souz.tool.files.ToolExtractText
 import ru.souz.tool.files.ToolFindFilesByName
 import ru.souz.tool.files.ToolFindFolders
 import ru.souz.tool.files.ToolFindInFiles
+import ru.souz.tool.files.ToolGenerateImage
 import ru.souz.tool.files.ToolListFiles
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolReadPdfPages
+import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.math.ToolCalculator
 import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolInternetSearch
@@ -66,6 +68,8 @@ fun runtimeToolsDiModule(
     bindSingleton { ToolFindFilesByName(instance()) }
     bindSingleton { ToolReadPdfPages(instance()) }
     bindSingleton { ToolFindFolders(instance()) }
+    bindSingleton { ToolViewImage(filesToolUtil = instance(), visionGateway = instance()) }
+    bindSingleton { ToolGenerateImage(filesToolUtil = instance(), imageGenerationGateway = instance()) }
 
     bindSingleton { ToolSoundConfig(instance()) }
     bindSingleton { ToolSoundConfigDiff(instance()) }
@@ -96,6 +100,8 @@ fun runtimeToolsDiModule(
             toolFindFilesByName = instance(),
             toolReadPdfPages = instance(),
             toolFindFolders = instance(),
+            toolViewImage = instance(),
+            toolGenerateImage = instance(),
             toolSoundConfig = instance(),
             toolSoundConfigDiff = instance(),
             toolCalculator = instance(),
@@ -129,6 +135,8 @@ class RuntimeToolsFactory(
     private val toolFindFilesByName: ToolFindFilesByName,
     private val toolReadPdfPages: ToolReadPdfPages,
     private val toolFindFolders: ToolFindFolders,
+    private val toolViewImage: ToolViewImage,
+    private val toolGenerateImage: ToolGenerateImage,
     private val toolSoundConfig: ToolSoundConfig,
     private val toolSoundConfigDiff: ToolSoundConfigDiff,
     private val toolCalculator: ToolCalculator,
@@ -158,6 +166,14 @@ class RuntimeToolsFactory(
             toolFindFilesByName.toGiga(),
             toolReadPdfPages.toGiga(),
             toolFindFolders.toGiga(),
+        )
+
+        ToolCategory.IMAGE -> listOf(
+            toolViewImage.toGiga(),
+        )
+
+        ToolCategory.IMAGE_GENERATION -> listOf(
+            toolGenerateImage.toGiga(),
         )
 
         ToolCategory.WEB_SEARCH -> buildList {

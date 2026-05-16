@@ -23,9 +23,17 @@ import ru.souz.llms.local.LocalNativeBridge
 import ru.souz.llms.local.LocalPromptRenderer
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.llms.local.LocalStrictJsonParser
+import ru.souz.llms.local.LocalVisionGateway
+import ru.souz.llms.anthropic.AnthropicVisionGateway
 import ru.souz.llms.openai.OpenAIChatAPI
+import ru.souz.llms.openai.OpenAIImageGenerationGateway
+import ru.souz.llms.openai.OpenAIVisionGateway
 import ru.souz.llms.qwen.QwenChatAPI
+import ru.souz.llms.runtime.CapabilityBasedImageGenerationGateway
+import ru.souz.llms.runtime.ImageGenerationGateway
+import ru.souz.llms.runtime.LLMCapabilityResolver
 import ru.souz.llms.runtime.LLMFactory
+import ru.souz.llms.runtime.VisionGateway
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.paths.DefaultSouzPaths
 import ru.souz.paths.SouzPaths
@@ -58,7 +66,15 @@ fun runtimeLlmDiModule(
     bindSingleton<AiTunnelChatAPI> { AiTunnelChatAPI(instance(), instance()) }
     bindSingleton<AnthropicChatAPI> { AnthropicChatAPI(instance(), instance()) }
     bindSingleton<OpenAIChatAPI> { OpenAIChatAPI(instance(), instance()) }
+    bindSingleton { OpenAIImageGenerationGateway(instance()) }
     bindSingleton<LocalChatAPI> { LocalChatAPI(instance()) }
+    bindSingleton { OpenAIVisionGateway(instance(), instance()) }
+    bindSingleton { AnthropicVisionGateway(instance(), instance()) }
+    bindSingleton { LocalVisionGateway(instance(), instance()) }
     bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton<LLMChatAPI> { instance<LLMFactory>() }
+    bindSingleton { LLMCapabilityResolver(instance(), instance(), instance(), instance()) }
+    bindSingleton { CapabilityBasedImageGenerationGateway(instance(), instance()) }
+    bindSingleton<VisionGateway> { instance<LLMCapabilityResolver>() }
+    bindSingleton<ImageGenerationGateway> { instance<CapabilityBasedImageGenerationGateway>() }
 }

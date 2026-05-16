@@ -2,6 +2,8 @@ package ru.souz.tool
 
 enum class ToolCategory {
     FILES,
+    IMAGE,
+    IMAGE_GENERATION,
     BROWSER,
     WEB_SEARCH,
     CONFIG,

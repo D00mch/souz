@@ -40,6 +40,15 @@ class LocalRegexClassifierTest {
     }
 
     @Test
+    fun `classifies local image analysis as image`() = runBlocking {
+        val classifier = LocalRegexClassifier
+        val categories = classifier.classify(
+            body("Посмотри изображение /Users/user/Pictures/cat.png и опиши что на нем")
+        ).categories
+        assertEquals(listOf(ToolCategory.IMAGE), categories)
+    }
+
+    @Test
     fun `classifies browser url`() = runBlocking {
         val classifier = LocalRegexClassifier
         val categories = classifier.classify(body("открой http://example.com"))
