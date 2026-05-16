@@ -95,6 +95,36 @@ class ToolGenerateImageTest {
         assertEquals("Image generation is not supported by the current provider: LOCAL", error.message)
     }
 
+    @Test
+    fun `rejects explicit output path with mismatched extension`() = runTest {
+        val homeDir = tempDir("home")
+        val filesToolUtil = createFilesToolUtil(homeDir)
+        val gateway = mockk<ImageGenerationGateway>()
+        coEvery { gateway.generate(any()) } returns GeneratedImage(
+            bytes = byteArrayOf(9, 8, 7, 6),
+            mimeType = "image/png",
+            provider = "OPENAI",
+            model = "gpt-image-1",
+        )
+
+        val tool = ToolGenerateImage(
+            filesToolUtil = filesToolUtil,
+            imageGenerationGateway = gateway,
+        )
+
+        val error = assertFailsWith<ru.souz.tool.BadInputException> {
+            tool.suspendInvoke(
+                ToolGenerateImage.Input(
+                    prompt = "A tiny red cube",
+                    outputPath = "${homeDir.resolve("Pictures/result.jpg")}",
+                ),
+                ToolInvocationMeta.Empty,
+            )
+        }
+
+        assertEquals("outputPath extension .jpg does not match generated MIME type image/png", error.message)
+    }
+
     private fun createFilesToolUtil(homeDir: Path): FilesToolUtil {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.forbiddenFolders } returns emptyList()

@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.runtime.DEFAULT_MAX_VISION_IMAGE_BYTES
 import ru.souz.llms.runtime.VisionGateway
 import ru.souz.llms.runtime.VisionInput
 import ru.souz.tool.BadInputException
@@ -16,6 +17,7 @@ import ru.souz.tool.ToolSetup
 class ToolViewImage(
     private val filesToolUtil: FilesToolUtil,
     private val visionGateway: VisionGateway,
+    private val maxImageBytes: Long = DEFAULT_MAX_VISION_IMAGE_BYTES,
 ) : ToolSetup<ToolViewImage.Input> {
 
     data class Input(
@@ -53,14 +55,18 @@ class ToolViewImage(
         }
         requireAbsolutePath(input.imagePath)
         val image = filesToolUtil.resolveSafeExistingFile(input.imagePath, meta)
-        val bytes = filesToolUtil.readBytes(image, meta)
+        val sizeBytes = image.sizeBytes
+            ?: runCatching { Files.size(Path.of(image.path)) }.getOrElse {
+                throw BadInputException("Failed to determine image size for ${image.name}")
+            }
+        requireSizeWithinLimit(sizeBytes)
         val mimeType = detectImageMimeType(image.path)
             ?: throw BadInputException("Unsupported image type: ${image.name}")
         return visionGateway.analyze(
             VisionInput(
-                imagePath = image.path,
-                imageBytes = bytes,
+                imagePath = Path.of(image.path),
                 mimeType = mimeType,
+                sizeBytes = sizeBytes,
                 question = input.question.trim(),
             )
         )
@@ -86,6 +92,12 @@ class ToolViewImage(
             "gif" -> "image/gif"
             "bmp" -> "image/bmp"
             else -> null
+        }
+    }
+
+    private fun requireSizeWithinLimit(sizeBytes: Long) {
+        if (sizeBytes > maxImageBytes) {
+            throw BadInputException("image file is too large: $sizeBytes bytes exceeds limit of $maxImageBytes bytes")
         }
     }
 }

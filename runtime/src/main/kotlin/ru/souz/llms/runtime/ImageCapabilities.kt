@@ -1,9 +1,11 @@
 package ru.souz.llms.runtime
 
+import java.nio.file.Path
+
 data class VisionInput(
-    val imagePath: String,
-    val imageBytes: ByteArray,
+    val imagePath: Path,
     val mimeType: String,
+    val sizeBytes: Long,
     val question: String,
 )
 
@@ -13,6 +15,10 @@ fun interface VisionGateway {
 
 data class ImageGenerationInput(
     val prompt: String,
+    val model: String? = null,
+    val size: String? = null,
+    val quality: String? = null,
+    val outputFormat: String? = null,
 )
 
 data class GeneratedImage(
@@ -25,3 +31,5 @@ data class GeneratedImage(
 fun interface ImageGenerationGateway {
     suspend fun generate(input: ImageGenerationInput): GeneratedImage
 }
+
+const val DEFAULT_MAX_VISION_IMAGE_BYTES: Long = 20L * 1024L * 1024L

@@ -130,8 +130,10 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
         )
 
         ToolCategory.IMAGE -> listOf(
-            toolTakeScreenshot.toGiga(),
             toolViewImage.toGiga(),
+        )
+
+        ToolCategory.IMAGE_GENERATION -> listOf(
             toolGenerateImage.toGiga(),
         )
 
@@ -218,6 +220,7 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
         )
 
         ToolCategory.DESKTOP -> listOf(
+            toolTakeScreenshot.toGiga(),
             toolStartScreenRecording.toGiga(),
         )
 

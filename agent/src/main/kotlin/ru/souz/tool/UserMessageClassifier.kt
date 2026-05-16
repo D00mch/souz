@@ -57,10 +57,12 @@ object LocalRegexClassifier : UserMessageClassifier {
 
         ToolCategory.IMAGE -> listOf(
             WeightedRegex(Regex("что видишь на экране|что на экране|опиши экран|посмотри на экран"), 2.5),
-            WeightedRegex(Regex("сделай скриншот|заскринь|скриншот|сфоткай экран|screenshot|capture screen"), 2.0),
             WeightedRegex(Regex("посмотри изображени|посмотри картинк|посмотри фото|опиши изображени|что на изображени|проанализируй изображени|view image|analy[sz]e image"), 2.0),
-            WeightedRegex(Regex("сгенерируй изображени|создай изображени|создай картинк|нарисуй|generate image"), 1.8),
-            WeightedRegex(Regex("\\.png\\b|\\.jpg\\b|\\.jpeg\\b|\\.webp\\b|\\.gif\\b|\\.bmp\\b|изображени|картинк|фото"), 1.6),
+            WeightedRegex(Regex("\\.png\\b|\\.jpg\\b|\\.jpeg\\b|\\.webp\\b|\\.gif\\b|\\.bmp\\b"), 1.6),
+        )
+
+        ToolCategory.IMAGE_GENERATION -> listOf(
+            WeightedRegex(Regex("сгенерируй изображени|создай изображени|создай картинк|нарисуй|generate image"), 2.0),
         )
 
         ToolCategory.BROWSER -> listOf(
@@ -97,7 +99,7 @@ object LocalRegexClassifier : UserMessageClassifier {
         )
 
         ToolCategory.DATA_ANALYTICS -> listOf(
-            WeightedRegex(Regex("построй|созда|сделай|проанализ|колонк|столбец|строка|ячейк"), 1.5),
+            WeightedRegex(Regex("построй|созда|проанализ|колонк|столбец|строка|ячейк"), 1.5),
             WeightedRegex(Regex("скольк|корреляц|консолид|отчёт|отчет|причин"), 1.0),
             WeightedRegex(Regex("excel|таблиц|spreadsheet|xlsx|эксель"), 2.0)
         )
@@ -134,6 +136,8 @@ object LocalRegexClassifier : UserMessageClassifier {
         )
 
         ToolCategory.DESKTOP -> listOf(
+            WeightedRegex(Regex("что видишь на экране|что на экране|опиши экран|посмотри на экран"), 2.6),
+            WeightedRegex(Regex("сделай скриншот|заскринь|скриншот|сфоткай экран|screenshot|capture screen"), 2.0),
             WeightedRegex(Regex("запись экрана|запиши экран|screen recording|record screen|видео экрана"), 2.0),
         )
 

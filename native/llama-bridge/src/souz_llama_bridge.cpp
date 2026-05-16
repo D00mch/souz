@@ -462,12 +462,22 @@ generation_result generate_impl(
         throw std::runtime_error("Prompt does not fit into the configured local context window.");
     }
 
-    const int prompt_token_count = has_media ? 0 : static_cast<int>(prompt_tokens.size());
-    const int available_completion_tokens = context_size - prompt_token_count;
-    if (available_completion_tokens <= 0) {
-        throw std::runtime_error("Prompt does not leave room for any completion tokens.");
+    int prompt_token_count = has_media ? 0 : static_cast<int>(prompt_tokens.size());
+    int available_completion_tokens = 0;
+    int max_tokens = 0;
+    const auto reserve_completion_budget = [&](int effective_prompt_tokens) {
+        if (effective_prompt_tokens >= context_size) {
+            throw std::runtime_error("Prompt does not fit into the configured local context window.");
+        }
+        available_completion_tokens = context_size - effective_prompt_tokens;
+        if (available_completion_tokens <= 0) {
+            throw std::runtime_error("Prompt does not leave room for any completion tokens.");
+        }
+        max_tokens = std::max(1, std::min(requested_max_tokens, available_completion_tokens));
+    };
+    if (!has_media) {
+        reserve_completion_budget(prompt_token_count);
     }
-    const int max_tokens = std::max(1, std::min(requested_max_tokens, available_completion_tokens));
     const int prompt_batch_size = has_media
         ? context_size
         : std::max(32, std::min({context_size, DEFAULT_PROMPT_BATCH_SIZE, static_cast<int>(prompt_tokens.size())}));
@@ -542,6 +552,8 @@ generation_result generate_impl(
         }
 
         result.prompt_tokens = static_cast<int>(mtmd_helper_get_n_tokens(chunks.ptr.get()));
+        prompt_token_count = result.prompt_tokens;
+        reserve_completion_budget(prompt_token_count);
         llama_pos new_n_past = 0;
         const int32_t eval_status = mtmd_helper_eval_chunks(
             model->vision,

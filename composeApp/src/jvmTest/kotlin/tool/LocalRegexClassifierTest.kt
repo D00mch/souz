@@ -49,13 +49,6 @@ class LocalRegexClassifierTest {
     }
 
     @Test
-    fun `classifies screen understanding as image`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Что видишь на экране?")).categories
-        assertEquals(listOf(ToolCategory.IMAGE), categories)
-    }
-
-    @Test
     fun `classifies browser url`() = runBlocking {
         val classifier = LocalRegexClassifier
         val categories = classifier.classify(body("открой http://example.com"))

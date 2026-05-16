@@ -170,6 +170,9 @@ class RuntimeToolsFactory(
 
         ToolCategory.IMAGE -> listOf(
             toolViewImage.toGiga(),
+        )
+
+        ToolCategory.IMAGE_GENERATION -> listOf(
             toolGenerateImage.toGiga(),
         )
 

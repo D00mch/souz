@@ -2,6 +2,7 @@ package ru.souz.tool.files
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.time.Instant
+import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.runtime.ImageGenerationGateway
@@ -78,7 +79,7 @@ class ToolGenerateImage(
         mimeType: String,
         meta: ToolInvocationMeta,
     ) = if (!rawOutputPath.isNullOrBlank()) {
-        filesToolUtil.resolvePath(rawOutputPath, meta)
+        filesToolUtil.resolvePath(normalizeRequestedOutputPath(rawOutputPath, mimeType), meta)
     } else {
         val ext = extensionForMimeType(mimeType)
         filesToolUtil.resolvePath(
@@ -87,11 +88,35 @@ class ToolGenerateImage(
         )
     }
 
+    private fun normalizeRequestedOutputPath(rawOutputPath: String, mimeType: String): String {
+        val expectedExtensions = supportedExtensionsForMimeType(mimeType)
+        val requestedExtension = Path.of(rawOutputPath).fileName.toString()
+            .substringAfterLast('.', "")
+            .lowercase()
+
+        if (requestedExtension.isBlank()) {
+            return "$rawOutputPath.${expectedExtensions.first()}"
+        }
+        if (requestedExtension !in expectedExtensions) {
+            throw BadInputException(
+                "outputPath extension .$requestedExtension does not match generated MIME type $mimeType",
+            )
+        }
+        return rawOutputPath
+    }
+
     private fun extensionForMimeType(mimeType: String): String = when (mimeType.lowercase()) {
         "image/png" -> "png"
         "image/jpeg" -> "jpg"
         "image/webp" -> "webp"
         else -> "bin"
+    }
+
+    private fun supportedExtensionsForMimeType(mimeType: String): Set<String> = when (mimeType.lowercase()) {
+        "image/png" -> setOf("png")
+        "image/jpeg" -> setOf("jpg", "jpeg")
+        "image/webp" -> setOf("webp")
+        else -> setOf(extensionForMimeType(mimeType))
     }
 
     private companion object {

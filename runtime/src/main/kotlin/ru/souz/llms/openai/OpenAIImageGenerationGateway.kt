@@ -68,14 +68,15 @@ class OpenAIImageGenerationGateway(
     }
 
     override suspend fun generate(input: ImageGenerationInput): GeneratedImage = try {
+        val outputFormat = (input.outputFormat ?: OpenAIImageGenerationRequestBuilder.DEFAULT_OUTPUT_FORMAT).lowercase()
         val response = client.post(IMAGES_URL) {
-            setBody(buildRequest(input.prompt))
+            setBody(buildRequestPayload(input))
         }
         val text = response.bodyAsText()
         if (!response.status.isSuccess()) {
             throw IllegalStateException("OpenAI image generation failed: ${response.status.value}. $text")
         }
-        parseResponse(text)
+        parseResponse(text, outputFormat)
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
         throw IllegalStateException("OpenAI image generation failed: ${e.response.status.value}. $text")
@@ -83,16 +84,10 @@ class OpenAIImageGenerationGateway(
         throw IllegalStateException("OpenAI image generation failed: ${t.message}", t)
     }
 
-    @Suppress("SameParameterValue")
-    private fun buildRequest(prompt: String): Map<String, Any> = buildMap {
-        put("model", defaultImageModel)
-        put("prompt", prompt)
-        put("size", DEFAULT_IMAGE_SIZE)
-        put("quality", DEFAULT_IMAGE_QUALITY)
-        put("output_format", DEFAULT_OUTPUT_FORMAT)
-    }
+    fun buildRequestPayload(input: ImageGenerationInput): Map<String, Any> =
+        OpenAIImageGenerationRequestBuilder.build(input, defaultModel = defaultImageModel)
 
-    private fun parseResponse(text: String): GeneratedImage {
+    private fun parseResponse(text: String, outputFormat: String): GeneratedImage {
         val node = restJsonMapper.readTree(text)
         val item = node["data"]?.firstOrNull()
             ?: throw IllegalStateException("OpenAI image generation returned no image data.")
@@ -100,7 +95,7 @@ class OpenAIImageGenerationGateway(
             ?: throw IllegalStateException("OpenAI image generation response did not contain b64_json.")
         return GeneratedImage(
             bytes = Base64.getDecoder().decode(base64),
-            mimeType = OUTPUT_FORMAT_TO_MIME.getValue(DEFAULT_OUTPUT_FORMAT),
+            mimeType = OUTPUT_FORMAT_TO_MIME.getValue(outputFormat),
             provider = "OPENAI",
             model = node["model"]?.asText() ?: defaultImageModel,
         )
@@ -109,9 +104,6 @@ class OpenAIImageGenerationGateway(
     private companion object {
         const val IMAGES_URL = "https://api.openai.com/v1/images/generations"
         const val DEFAULT_IMAGE_MODEL = "gpt-image-1"
-        const val DEFAULT_IMAGE_SIZE = "1024x1024"
-        const val DEFAULT_IMAGE_QUALITY = "medium"
-        const val DEFAULT_OUTPUT_FORMAT = "png"
 
         val OUTPUT_FORMAT_TO_MIME = mapOf(
             "png" to "image/png",

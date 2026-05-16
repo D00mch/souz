@@ -75,13 +75,16 @@ class NodesClassificationPromptTest {
     fun `buildPrompt includes image workflow examples for screen understanding`() {
         val prompt = buildPromptWith(
             mapOf(
-                ToolCategory.IMAGE to mapOf(
+                ToolCategory.DESKTOP to mapOf(
                     "TakeScreenshot" to dummySetup("TakeScreenshot"),
+                ),
+                ToolCategory.IMAGE to mapOf(
                     "ViewImage" to dummySetup("ViewImage"),
                 ),
             )
         )
 
+        assertTrue(prompt.contains("- DESKTOP:"))
         assertTrue(prompt.contains("- IMAGE:"))
         assertTrue(prompt.contains("что видишь на экране"))
         assertTrue(prompt.contains("сделай скриншот и опиши"))
@@ -261,23 +264,27 @@ class NodesClassificationPromptTest {
     }
 
     @Test
-    fun `classification activates image tools when image category is selected`() {
+    fun `classification combines desktop capture and image analysis for screen understanding`() {
         val localClassifier = CapturingClassifier(
             UserMessageClassifier.Reply(
-                categories = listOf(ToolCategory.IMAGE),
+                categories = listOf(ToolCategory.DESKTOP, ToolCategory.IMAGE),
                 confidence = 90.0,
             )
         )
         val apiClassifier = CapturingClassifier(
             UserMessageClassifier.Reply(
-                categories = listOf(ToolCategory.IMAGE),
+                categories = listOf(ToolCategory.DESKTOP, ToolCategory.IMAGE),
                 confidence = 90.0,
             )
         )
         val imageTools = mapOf(
-            ToolCategory.IMAGE to mapOf(
+            ToolCategory.DESKTOP to mapOf(
                 "TakeScreenshot" to dummySetup("TakeScreenshot"),
+            ),
+            ToolCategory.IMAGE to mapOf(
                 "ViewImage" to dummySetup("ViewImage"),
+            ),
+            ToolCategory.IMAGE_GENERATION to mapOf(
                 "GenerateImage" to dummySetup("GenerateImage"),
             ),
         )
@@ -290,7 +297,7 @@ class NodesClassificationPromptTest {
             apiClassifier = apiClassifier,
         )
 
-        assertEquals(listOf("TakeScreenshot", "ViewImage", "GenerateImage"), result.activeTools.map { it.name })
+        assertEquals(listOf("TakeScreenshot", "ViewImage"), result.activeTools.map { it.name })
     }
 
     private fun mockTelegramFilteredToolsSettings(telegramConnected: Boolean): AgentToolsFilter {
