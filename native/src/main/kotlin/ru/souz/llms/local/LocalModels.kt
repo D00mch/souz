@@ -15,6 +15,12 @@ data class LocalLicenseRequirements(
 
 interface LocalDownloadableProfile {
     val id: String
+
+    /**
+     * Directory name used for storing this asset on disk.
+     *
+     * Primary models and their auxiliary assets can intentionally share the same storage directory.
+     */
     val storageId: String
         get() = id
     val displayName: String
@@ -58,6 +64,10 @@ data class LocalModelProfile(
     override val defaultGpuLayers: Int = 99,
 ) : LocalDownloadableProfile
 
+/**
+ * Represents an additional downloadable artifact required by a local model profile, for example
+ * a multimodal projector that should live next to the main GGUF in the same storage directory.
+ */
 data class LocalAuxiliaryDownloadProfile(
     override val id: String,
     override val storageId: String,

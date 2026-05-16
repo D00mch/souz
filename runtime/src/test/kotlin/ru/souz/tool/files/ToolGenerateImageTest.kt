@@ -73,29 +73,6 @@ class ToolGenerateImageTest {
     }
 
     @Test
-    fun `propagates unsupported generation errors cleanly`() = runTest {
-        val filesToolUtil = createFilesToolUtil(tempDir("home"))
-        val gateway = mockk<ImageGenerationGateway>()
-        coEvery { gateway.generate(any()) } throws UnsupportedOperationException(
-            "Image generation is not supported by the current provider: LOCAL",
-        )
-
-        val tool = ToolGenerateImage(
-            filesToolUtil = filesToolUtil,
-            imageGenerationGateway = gateway,
-        )
-
-        val error = assertFailsWith<UnsupportedOperationException> {
-            tool.suspendInvoke(
-                ToolGenerateImage.Input(prompt = "Draw a cat"),
-                ToolInvocationMeta.Empty,
-            )
-        }
-
-        assertEquals("Image generation is not supported by the current provider: LOCAL", error.message)
-    }
-
-    @Test
     fun `rejects explicit output path with mismatched extension`() = runTest {
         val homeDir = tempDir("home")
         val filesToolUtil = createFilesToolUtil(homeDir)

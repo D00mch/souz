@@ -5,6 +5,7 @@ import java.time.Instant
 import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.runtime.ImageFileFormats
 import ru.souz.llms.runtime.ImageGenerationGateway
 import ru.souz.llms.runtime.ImageGenerationInput
 import ru.souz.tool.BadInputException
@@ -81,7 +82,7 @@ class ToolGenerateImage(
     ) = if (!rawOutputPath.isNullOrBlank()) {
         filesToolUtil.resolvePath(normalizeRequestedOutputPath(rawOutputPath, mimeType), meta)
     } else {
-        val ext = extensionForMimeType(mimeType)
+        val ext = ImageFileFormats.primaryExtensionForMimeType(mimeType)
         filesToolUtil.resolvePath(
             "${filesToolUtil.resolveSouzDocumentsDirectory(meta).path}/generated_image_${Instant.now().toEpochMilli()}.$ext",
             meta,
@@ -89,7 +90,7 @@ class ToolGenerateImage(
     }
 
     private fun normalizeRequestedOutputPath(rawOutputPath: String, mimeType: String): String {
-        val expectedExtensions = supportedExtensionsForMimeType(mimeType)
+        val expectedExtensions = ImageFileFormats.supportedExtensionsForMimeType(mimeType)
         val requestedExtension = Path.of(rawOutputPath).fileName.toString()
             .substringAfterLast('.', "")
             .lowercase()
@@ -103,20 +104,6 @@ class ToolGenerateImage(
             )
         }
         return rawOutputPath
-    }
-
-    private fun extensionForMimeType(mimeType: String): String = when (mimeType.lowercase()) {
-        "image/png" -> "png"
-        "image/jpeg" -> "jpg"
-        "image/webp" -> "webp"
-        else -> "bin"
-    }
-
-    private fun supportedExtensionsForMimeType(mimeType: String): Set<String> = when (mimeType.lowercase()) {
-        "image/png" -> setOf("png")
-        "image/jpeg" -> setOf("jpg", "jpeg")
-        "image/webp" -> setOf("webp")
-        else -> setOf(extensionForMimeType(mimeType))
     }
 
     private companion object {

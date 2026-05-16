@@ -39,4 +39,4 @@ Notes:
 - The rebuild script also reapplies `native/llama-bridge/patches/llama.cpp-metal-bfloat-embed.patch` before compiling, because the local `third_party/llama.cpp` checkout is gitignored and the Gemma 4 update needs an extra Metal runtime-compile fix on top of the pinned upstream ref.
 - On macOS the bridge now disables ggml Metal residency sets by default (`GGML_METAL_NO_RESIDENCY=1`) to avoid shutdown aborts; set `SOUZ_LLAMA_METAL_RESIDENCY=1` only if you need to opt back in for debugging.
 - Local runtime debug logs now include the effective generation variants (`context_size`, `max_tokens`, grammar flag) and native decode failures now return detailed batch/context parameters, so Gemma context-window issues can be diagnosed from app logs without attaching a debugger.
-- Multimodal generation now recalculates completion budget after `mtmd_tokenize`, using the real prompt/image token count instead of assuming media prompts consume zero context.
+- Multimodal generation recalculates completion budget after `mtmd_tokenize`, using the real prompt/image token count instead of assuming media prompts consume zero context.

@@ -72,22 +72,19 @@ class NodesClassificationPromptTest {
     }
 
     @Test
-    fun `buildPrompt includes image workflow examples for screen understanding`() {
+    fun `buildPrompt describes current screen requests as desktop plus image workflow`() {
         val prompt = buildPromptWith(
             mapOf(
-                ToolCategory.DESKTOP to mapOf(
-                    "TakeScreenshot" to dummySetup("TakeScreenshot"),
-                ),
-                ToolCategory.IMAGE to mapOf(
-                    "ViewImage" to dummySetup("ViewImage"),
-                ),
+                ToolCategory.DESKTOP to mapOf("TakeScreenshot" to dummySetup("TakeScreenshot")),
+                ToolCategory.IMAGE to mapOf("ViewImage" to dummySetup("ViewImage")),
             )
         )
 
-        assertTrue(prompt.contains("- DESKTOP:"))
-        assertTrue(prompt.contains("- IMAGE:"))
-        assertTrue(prompt.contains("что видишь на экране"))
-        assertTrue(prompt.contains("сделай скриншот и опиши"))
+        assertTrue(prompt.contains("не дал путь к готовому изображению"))
+        assertTrue(prompt.contains("\"Что видишь на экране?\" -> \"DESKTOP,IMAGE 95\""))
+        assertTrue(prompt.contains("\"Опиши что видишь на экране?\" -> \"DESKTOP,IMAGE 95\""))
+        assertFalse(prompt.contains("IMAGE: что видишь на экране"))
+        assertFalse(prompt.contains("IMAGE: сделай скриншот и опиши, что на нем"))
     }
 
     @Test
@@ -264,7 +261,7 @@ class NodesClassificationPromptTest {
     }
 
     @Test
-    fun `classification combines desktop capture and image analysis for screen understanding`() {
+    fun `classification keeps full desktop toolset for screen understanding`() {
         val localClassifier = CapturingClassifier(
             UserMessageClassifier.Reply(
                 categories = listOf(ToolCategory.DESKTOP, ToolCategory.IMAGE),
@@ -280,6 +277,7 @@ class NodesClassificationPromptTest {
         val imageTools = mapOf(
             ToolCategory.DESKTOP to mapOf(
                 "TakeScreenshot" to dummySetup("TakeScreenshot"),
+                "StartScreenRecording" to dummySetup("StartScreenRecording"),
             ),
             ToolCategory.IMAGE to mapOf(
                 "ViewImage" to dummySetup("ViewImage"),
@@ -297,7 +295,10 @@ class NodesClassificationPromptTest {
             apiClassifier = apiClassifier,
         )
 
-        assertEquals(listOf("TakeScreenshot", "ViewImage"), result.activeTools.map { it.name })
+        assertEquals(
+            listOf("TakeScreenshot", "StartScreenRecording", "ViewImage"),
+            result.activeTools.map { it.name }
+        )
     }
 
     private fun mockTelegramFilteredToolsSettings(telegramConnected: Boolean): AgentToolsFilter {

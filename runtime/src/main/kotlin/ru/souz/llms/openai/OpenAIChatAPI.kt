@@ -429,7 +429,7 @@ class OpenAIChatAPI(
             ?.mapTo(mutableListOf<Map<String, Any?>>()) { attachment ->
                 mapOf(
                     "type" to "image_url",
-                    "image_url" to mapOf("url" to requireOpenAiImageDataUrl(attachment)),
+                    "image_url" to mapOf("url" to requireOpenAiImageUrl(attachment)),
                 )
             }
             ?.also { content ->
@@ -448,11 +448,16 @@ class OpenAIChatAPI(
             }
             ?: message.content
 
-    private fun requireOpenAiImageDataUrl(attachment: String): String =
-        attachment.takeIf { it.startsWith("data:image/", ignoreCase = true) }
+    private fun requireOpenAiImageUrl(attachment: String): String =
+        attachment.takeIf(::isSupportedOpenAiImageUrl)
             ?: throw IllegalArgumentException(
-                "OpenAI chat attachments must be image data URLs (data:image/...). Unsupported value: $attachment",
+                "OpenAI chat attachments must be image URLs (http(s)://...) or image data URLs (data:image/...). Unsupported value: $attachment",
             )
+
+    private fun isSupportedOpenAiImageUrl(attachment: String): Boolean =
+        attachment.startsWith("data:image/", ignoreCase = true) ||
+            attachment.startsWith("https://", ignoreCase = true) ||
+            attachment.startsWith("http://", ignoreCase = true)
 
     private fun parseCompletionsResponse(text: String, requestModel: String): LLMResponse.Chat {
         val node = restJsonMapper.readTree(text)

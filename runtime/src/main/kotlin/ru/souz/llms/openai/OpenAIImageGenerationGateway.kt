@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.GeneratedImage
+import ru.souz.llms.runtime.ImageFileFormats
 import ru.souz.llms.runtime.ImageGenerationGateway
 import ru.souz.llms.runtime.ImageGenerationInput
 
@@ -36,11 +37,6 @@ class OpenAIImageGenerationGateway(
             ?: System.getenv("OPENAI_API_KEY")
             ?: System.getProperty("OPENAI_API_KEY")
             ?: throw IllegalStateException("OPENAI_API_KEY is not set")
-
-    private val defaultImageModel: String
-        get() = System.getenv("OPENAI_IMAGE_MODEL")
-            ?: System.getProperty("OPENAI_IMAGE_MODEL")
-            ?: DEFAULT_IMAGE_MODEL
 
     private val client = HttpClient(CIO) {
         defaultRequest {
@@ -85,7 +81,7 @@ class OpenAIImageGenerationGateway(
     }
 
     fun buildRequestPayload(input: ImageGenerationInput): Map<String, Any> =
-        OpenAIImageGenerationRequestBuilder.build(input, defaultModel = defaultImageModel)
+        OpenAIImageGenerationRequestBuilder.build(input, defaultModel = DEFAULT_IMAGE_MODEL)
 
     private fun parseResponse(text: String, outputFormat: String): GeneratedImage {
         val node = restJsonMapper.readTree(text)
@@ -95,20 +91,15 @@ class OpenAIImageGenerationGateway(
             ?: throw IllegalStateException("OpenAI image generation response did not contain b64_json.")
         return GeneratedImage(
             bytes = Base64.getDecoder().decode(base64),
-            mimeType = OUTPUT_FORMAT_TO_MIME.getValue(outputFormat),
+            mimeType = ImageFileFormats.mimeTypeForExtension(outputFormat)
+                ?: throw IllegalStateException("Unsupported OpenAI image output format: $outputFormat"),
             provider = "OPENAI",
-            model = node["model"]?.asText() ?: defaultImageModel,
+            model = node["model"]?.asText() ?: DEFAULT_IMAGE_MODEL,
         )
     }
 
     private companion object {
         const val IMAGES_URL = "https://api.openai.com/v1/images/generations"
         const val DEFAULT_IMAGE_MODEL = "gpt-image-1"
-
-        val OUTPUT_FORMAT_TO_MIME = mapOf(
-            "png" to "image/png",
-            "jpeg" to "image/jpeg",
-            "webp" to "image/webp",
-        )
     }
 }

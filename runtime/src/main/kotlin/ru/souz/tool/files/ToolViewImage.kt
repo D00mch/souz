@@ -5,6 +5,7 @@ import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.runtime.DEFAULT_MAX_VISION_IMAGE_BYTES
+import ru.souz.llms.runtime.ImageFileFormats
 import ru.souz.llms.runtime.VisionGateway
 import ru.souz.llms.runtime.VisionInput
 import ru.souz.tool.BadInputException
@@ -55,43 +56,29 @@ class ToolViewImage(
         }
         requireAbsolutePath(input.imagePath)
         val image = filesToolUtil.resolveSafeExistingFile(input.imagePath, meta)
-        val sizeBytes = image.sizeBytes
-            ?: runCatching { Files.size(Path.of(image.path)) }.getOrElse {
-                throw BadInputException("Failed to determine image size for ${image.name}")
-            }
-        requireSizeWithinLimit(sizeBytes)
-        val mimeType = detectImageMimeType(image.path)
-            ?: throw BadInputException("Unsupported image type: ${image.name}")
-        return visionGateway.analyze(
-            VisionInput(
-                imagePath = Path.of(image.path),
-                mimeType = mimeType,
-                sizeBytes = sizeBytes,
-                question = input.question.trim(),
+        return filesToolUtil.withReadableLocalPathSuspend(image, meta) { localImagePath ->
+            val sizeBytes = image.sizeBytes
+                ?: runCatching { Files.size(localImagePath) }.getOrElse {
+                    throw BadInputException("Failed to determine image size for ${image.name}")
+                }
+            requireSizeWithinLimit(sizeBytes)
+            val mimeType = ImageFileFormats.detectMimeType(localImagePath)
+                ?: throw BadInputException("Unsupported image type: ${image.name}")
+            visionGateway.analyze(
+                VisionInput(
+                    imagePath = localImagePath,
+                    mimeType = mimeType,
+                    sizeBytes = sizeBytes,
+                    question = input.question.trim(),
+                )
             )
-        )
+        }
     }
 
     private fun requireAbsolutePath(rawPath: String) {
         val path = runCatching { Path.of(rawPath) }.getOrNull()
         if (path == null || !path.isAbsolute) {
             throw BadInputException("imagePath must be an absolute local path")
-        }
-    }
-
-    private fun detectImageMimeType(path: String): String? {
-        val detected = runCatching { Files.probeContentType(Path.of(path)) }.getOrNull()
-        if (!detected.isNullOrBlank() && detected.startsWith("image/")) {
-            return detected
-        }
-
-        return when (Path.of(path).fileName.toString().substringAfterLast('.', "").lowercase()) {
-            "png" -> "image/png"
-            "jpg", "jpeg" -> "image/jpeg"
-            "webp" -> "image/webp"
-            "gif" -> "image/gif"
-            "bmp" -> "image/bmp"
-            else -> null
         }
     }
 
