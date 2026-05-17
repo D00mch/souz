@@ -37,8 +37,8 @@ And copies that file to:
   /Users/dumch/work/homebrew-tap/Casks/souz-ai.rb
 
 Examples:
-  ./build-logic/prepare-homebrew-release.sh
-  ./build-logic/prepare-homebrew-release.sh --release-tag 1.0.4
+  ./scripts/prepare-homebrew-release.sh
+  ./scripts/prepare-homebrew-release.sh --release-tag 1.0.4
 
 Options:
   --version <version>          Override version. Defaults to desktopApp/build.gradle.kts packageVersion.
