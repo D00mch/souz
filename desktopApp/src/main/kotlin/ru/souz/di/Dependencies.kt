@@ -44,7 +44,6 @@ import ru.souz.service.observability.StructuredLoggingAgentTelemetry
 import ru.souz.service.permissions.MacDesktopPermissionService
 import ru.souz.service.telegram.TelegramService
 import ru.souz.service.telegram.TelegramBotController
-import ru.souz.service.files.FilesService
 import ru.souz.tool.*
 import ru.souz.tool.application.*
 import ru.souz.tool.browser.*
@@ -142,7 +141,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<SandboxFileSystem> { instance<RuntimeSandbox>().fileSystem }
     bindSingleton<SandboxCommandExecutor> { instance<RuntimeSandbox>().commandExecutor }
     bindSingleton { FilesToolUtil(instance<ToolInvocationRuntimeSandboxResolver>()) }
-    bindSingleton<FilesService> { instance<FilesToolUtil>() }
     bindSingleton<ToolPermissionBroker> { ImmediateToolPermissionBroker(instance()) }
     bindSingleton { DeferredToolModifyPermissionBroker(instance(), instance()) }
     bindSingleton { TelegramContactSelectionBroker() }

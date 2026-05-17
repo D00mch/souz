@@ -48,7 +48,7 @@ If you are not sure about something, left a note for other developers to review.
 │   ├── src/main/kotlin/ru/souz/db/         # Config store + settings provider
 │   ├── src/main/kotlin/ru/souz/llms/       # Provider APIs and runtime LLM helpers
 │   ├── src/main/kotlin/ru/souz/runtime/    # Shared runtime infrastructure (sandbox, DI helpers)
-│   ├── src/main/kotlin/ru/souz/service/    # Shared JVM services (files, MCP, observability, speech, Telegram models)
+│   ├── src/main/kotlin/ru/souz/service/    # Shared JVM services (MCP, observability, speech, Telegram models)
 │   ├── src/main/kotlin/ru/souz/skills/     # Safe skill bundle loading plus persistent skill/validation storage
 │   └── src/main/kotlin/ru/souz/tool/       # Backend-safe runtime tools plus shared tool contracts
 ├── sharedUI/                               # Desktop Compose UI, view models, host ports, UI adapters, UI resources, JVM tests

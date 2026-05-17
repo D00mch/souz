@@ -6,7 +6,6 @@ import org.apache.pdfbox.pdmodel.PDDocument
 import org.slf4j.Logger
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.ToolInvocationMeta
-import ru.souz.paths.DefaultSouzPaths
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxFileSystem
@@ -16,7 +15,6 @@ import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.ToolInvocationSandboxScopeResolver
 import ru.souz.runtime.sandbox.FactoryBackedToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
-import ru.souz.service.files.FilesService
 import ru.souz.tool.BadInputException
 import java.io.File
 import java.io.IOException
@@ -31,7 +29,7 @@ import kotlin.io.path.extension
 
 class FilesToolUtil(
     private val sandboxResolver: ToolInvocationRuntimeSandboxResolver,
-) : FilesService {
+) {
     constructor(sandbox: RuntimeSandbox) : this(
         ToolInvocationRuntimeSandboxResolver.fixed(sandbox)
     )
@@ -62,13 +60,13 @@ class FilesToolUtil(
     fun sandboxFileSystem(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): SandboxFileSystem =
         runtimeSandbox(meta).fileSystem
 
-    override val homeStr: String
+    val homeStr: String
         get() = homeStr(ToolInvocationMeta.localDefault())
 
     fun homeStr(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): String =
         runtimeSandbox(meta).runtimePaths.homePath
 
-    override val homeDirectory: File
+    val homeDirectory: File
         get() = File(homeStr).canonicalFile
 
     fun homeDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): File =
@@ -86,14 +84,8 @@ class FilesToolUtil(
     fun souzDocumentsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Path =
         Path.of(resolveSouzDocumentsDirectory(meta).path)
 
-    val souzTelegramControlDirectoryPath: Path
-        get() = souzTelegramControlDirectoryPath(ToolInvocationMeta.localDefault())
-
     fun souzTelegramControlDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Path =
         Path.of(resolveSouzTelegramControlDirectory(meta).path)
-
-    val souzWebAssetsDirectoryPath: Path
-        get() = souzWebAssetsDirectoryPath(ToolInvocationMeta.localDefault())
 
     fun souzWebAssetsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Path =
         Path.of(resolveSouzWebAssetsDirectory(meta).path)
@@ -101,7 +93,7 @@ class FilesToolUtil(
     /**
      * Generally, we don't want Agent to mess around anything out of $HOME and everything user disallowed
      */
-    override fun isPathSafe(file: File): Boolean {
+    fun isPathSafe(file: File): Boolean {
         return isPathSafe(file, ToolInvocationMeta.localDefault())
     }
 
@@ -114,7 +106,7 @@ class FilesToolUtil(
         sandboxFileSystem(meta).isPathSafe(path)
 
     @Throws(BadInputException::class)
-    override fun requirePathIsSave(file: File) {
+    fun requirePathIsSave(file: File) {
         requirePathIsSave(file, ToolInvocationMeta.localDefault())
     }
 
@@ -127,7 +119,7 @@ class FilesToolUtil(
 
     fun resourceAsText(path: String): String = Companion.resourceAsText(path)
 
-    override fun applyDefaultEnvs(path: String): String {
+    fun applyDefaultEnvs(path: String): String {
         return applyDefaultEnvs(path, ToolInvocationMeta.localDefault())
     }
 
@@ -145,9 +137,6 @@ class FilesToolUtil(
 
     fun resolveSafeExistingFile(rawPath: String, meta: ToolInvocationMeta): SandboxPathInfo =
         sandboxFileSystem(meta).resolveExistingFile(rawPath)
-
-    fun resolveSafeExistingDirectory(rawPath: String): SandboxPathInfo =
-        resolveSafeExistingDirectory(rawPath, ToolInvocationMeta.localDefault())
 
     fun resolveSafeExistingDirectory(rawPath: String, meta: ToolInvocationMeta): SandboxPathInfo =
         sandboxFileSystem(meta).resolveExistingDirectory(rawPath)
