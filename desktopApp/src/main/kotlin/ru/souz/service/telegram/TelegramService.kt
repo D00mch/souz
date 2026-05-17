@@ -88,6 +88,8 @@ class TelegramService(
 
     private val clientRef = AtomicReference<SimpleTelegramClient?>(null)
 
+    override fun isSupported(): Boolean = unsupportedReason == null
+
     init {
         applyTdlightLogLevel(isTelegramDebugLogsEnabled())
         val reason = unsupportedReason

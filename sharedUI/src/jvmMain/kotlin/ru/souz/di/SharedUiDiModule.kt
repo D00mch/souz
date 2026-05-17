@@ -40,7 +40,6 @@ fun sharedUiDiModule(): DI.Module = DI.Module("sharedUi") {
             tokenLogging = instance(),
             log = instance(),
             desktopPermissionService = instance(),
-            voiceInputHotkeyRegistrar = instance(),
         )
     }
 }

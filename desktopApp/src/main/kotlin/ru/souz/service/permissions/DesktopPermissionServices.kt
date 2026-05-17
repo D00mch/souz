@@ -4,7 +4,6 @@ import com.github.kwhat.jnativehook.GlobalScreen
 import org.slf4j.LoggerFactory
 import ru.souz.service.keys.HotkeyListener
 import ru.souz.ui.host.DesktopPermissionService
-import ru.souz.ui.host.VoiceInputHotkeyRegistrar
 import ru.souz.ui.host.VoiceInputHotkeyRegistration
 import java.awt.GraphicsEnvironment
 
@@ -44,10 +43,8 @@ class MacDesktopPermissionService : DesktopPermissionService {
     }
 
     override fun relaunchApp(): Boolean = AppRelauncher.relaunch()
-}
 
-object NativeVoiceInputHotkeyRegistrar : VoiceInputHotkeyRegistrar {
-    override fun register(
+    override fun registerVoiceInputHotkey(
         onPressed: (Boolean) -> Unit,
         onDoubleClick: () -> Unit,
     ): VoiceInputHotkeyRegistration {
@@ -56,7 +53,7 @@ object NativeVoiceInputHotkeyRegistrar : VoiceInputHotkeyRegistrar {
             onDoubleClick = onDoubleClick,
         )
         GlobalScreen.addNativeKeyListener(listener)
-        return VoiceInputHotkeyRegistration {
+        return {
             runCatching { GlobalScreen.removeNativeKeyListener(listener) }
         }
     }

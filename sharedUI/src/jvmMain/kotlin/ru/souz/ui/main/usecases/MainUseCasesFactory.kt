@@ -13,7 +13,6 @@ import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.ui.host.DesktopPermissionService
 import ru.souz.ui.host.UiAudioRecorder
 import ru.souz.ui.host.UiSpeechPlayer
-import ru.souz.ui.host.VoiceInputHotkeyRegistrar
 
 data class MainUseCases(
     val chat: ChatUseCase,
@@ -37,7 +36,6 @@ class MainUseCasesFactory(
     private val tokenLogging: TokenLogging,
     private val log: DesktopStructuredLogger,
     private val desktopPermissionService: DesktopPermissionService,
-    private val voiceInputHotkeyRegistrar: VoiceInputHotkeyRegistrar,
 ) {
 
     fun create(ioDispatcher: CoroutineDispatcher): MainUseCases {
@@ -71,7 +69,7 @@ class MainUseCasesFactory(
             chatUseCase = chatUseCase,
             speechUseCase = speechUseCase,
             permissionsUseCase = permissionsUseCase,
-            hotkeyRegistrar = voiceInputHotkeyRegistrar,
+            desktopPermissionService = desktopPermissionService,
         )
 
         return MainUseCases(

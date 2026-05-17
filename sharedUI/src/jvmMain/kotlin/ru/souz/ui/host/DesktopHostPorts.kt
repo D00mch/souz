@@ -42,35 +42,25 @@ interface DesktopPermissionService {
     fun unregisterNativeHook()
     fun canRegisterNativeHookNow(): Boolean
     fun relaunchApp(): Boolean
-}
-
-interface VoiceInputHotkeyRegistrar {
-    fun register(
+    fun registerVoiceInputHotkey(
         onPressed: (Boolean) -> Unit,
         onDoubleClick: () -> Unit,
     ): VoiceInputHotkeyRegistration
 }
 
-fun interface VoiceInputHotkeyRegistration {
-    fun unregister()
-}
+typealias VoiceInputHotkeyRegistration = () -> Unit
 
 interface DesktopIndexRepository {
     suspend fun storeDesktopDataDaily()
     suspend fun rebuildIndexNow()
 }
 
-fun interface CalendarListProvider {
-    fun listCalendars(): List<String>
-}
-
-interface TelegramPlatformAvailability {
-    fun isSupported(): Boolean
-}
+typealias CalendarListProvider = () -> List<String>
 
 interface TelegramUiService {
     val authState: StateFlow<TelegramAuthState>
 
+    fun isSupported(): Boolean
     suspend fun submitPhoneNumber(phoneNumber: String)
     fun submitLoginCode(code: String)
     fun submitTwoFaPassword(password: String)

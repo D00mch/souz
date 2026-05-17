@@ -1,13 +1,9 @@
 package ru.souz.service.telegram
 
-import ru.souz.ui.host.TelegramPlatformAvailability
-
-object TelegramPlatformSupport : TelegramPlatformAvailability {
+object TelegramPlatformSupport {
     const val MIN_MACOS_MAJOR_VERSION: Int = 15
     const val UNSUPPORTED_MACOS_MESSAGE: String =
         "Telegram is unavailable on this macOS version. Minimum supported version is macOS 15."
-
-    override fun isSupported(): Boolean = unsupportedReason() == null
 
     fun unsupportedReason(): String? {
         if (!isMacOs()) return null

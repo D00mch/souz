@@ -64,8 +64,8 @@ class ToolTest {
         val starts = generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
         for (base in starts) {
             val candidates = listOf(
-                File(base, "sharedUI/src/jvmTest/resources"),
-                File(base, "src/jvmTest/resources"),
+                File(base, "sharedLogic/src/test/resources"),
+                File(base, "src/test/resources"),
             )
             val found = candidates.firstOrNull { it.exists() }
             if (found != null) return found
@@ -74,8 +74,6 @@ class ToolTest {
     }
 
     private fun fixtureDirectory(): File = File(fixtureRoot(), "directory")
-
-    private fun fixturePath(name: String): String = File(fixtureDirectory(), name).path
 
     private fun copyFixtureToTempDirectory(name: String): File {
         val stream = sequenceOf(name, "directory/$name")
@@ -309,7 +307,7 @@ class ToolTest {
     @Ignore
     fun `test ToolFindInFiles`() {
         val resources = ToolFindInFiles(filesToolUtil)
-            .invoke(ToolFindInFiles.Input("src/jvmTest/resources", "Alice"))
+            .invoke(ToolFindInFiles.Input(fixtureRoot().path, "Alice"))
         println(resources)
         assertContains(resources, "sample.csv")
     }

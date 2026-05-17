@@ -35,7 +35,6 @@ import ru.souz.ui.common.usecases.ApiKeyValues
 import ru.souz.ui.host.CalendarListProvider
 import ru.souz.ui.host.DesktopIndexRepository
 import ru.souz.ui.host.TelegramControlBot
-import ru.souz.ui.host.TelegramPlatformAvailability
 import ru.souz.ui.host.TelegramUiService
 import ru.souz.ui.host.UiSpeechPlayer
 import ru.souz.ui.settings.SettingsEvent.*
@@ -60,7 +59,6 @@ class SettingsViewModel(
     private val apiKeyAvailabilityUseCase: ApiKeyAvailabilityUseCase by di.instance()
     private val chatApi: LLMChatAPI by di.instance()
     private val agentFacade: AgentFacade by di.instance()
-    private val telegramPlatformAvailability: TelegramPlatformAvailability by di.instance()
     private val telegramService: TelegramUiService by di.instance()
     private val telegramBotController: TelegramControlBot by di.instance()
     private val calendarListProvider: CalendarListProvider by di.instance()
@@ -85,7 +83,7 @@ class SettingsViewModel(
 
     init {
         viewModelScope.launch {
-            setState { copy(isTelegramSupported = telegramPlatformAvailability.isSupported()) }
+            setState { copy(isTelegramSupported = telegramService.isSupported()) }
             refreshFromProvider()
             fetchBalance()
             fetchCalendars()
@@ -740,7 +738,7 @@ class SettingsViewModel(
         setState { copy(isLoadingCalendars = true) }
 
         val result = runCatching {
-            calendarListProvider.listCalendars()
+            calendarListProvider()
         }.getOrElse {
             l.error("Error fetching calendars", it)
             emptyList()

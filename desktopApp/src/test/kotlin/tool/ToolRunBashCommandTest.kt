@@ -1,6 +1,6 @@
 package tool
 
-import ru.souz.test.invoke
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.ToolRunBashCommand
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -8,7 +8,10 @@ import kotlin.test.assertTrue
 class ToolRunBashCommandTest {
     @Test
     fun `test ls command execution`() {
-        val result = ToolRunBashCommand.invoke(ToolRunBashCommand.Input("ls"))
+        val result = ToolRunBashCommand.invoke(
+            ToolRunBashCommand.Input("ls"),
+            ToolInvocationMeta.localDefault(),
+        )
 
         assertTrue(result.contains("src"), "Output should contain 'src' directory")
         assertTrue(result.contains("build.gradle.kts"), "Output should contain 'build.gradle.kts' file")

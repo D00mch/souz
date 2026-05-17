@@ -20,9 +20,9 @@ import ru.souz.llms.tunnel.MissingAiTunnelVoiceKeyException
 import ru.souz.llms.openai.MissingOpenAiVoiceKeyException
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.service.speech.VoiceRecognitionUnavailableException
+import ru.souz.ui.host.DesktopPermissionService
 import ru.souz.ui.host.UiAudioRecorder
 import ru.souz.ui.host.UiAudioRecordingState
-import ru.souz.ui.host.VoiceInputHotkeyRegistrar
 import ru.souz.ui.main.MainState
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
@@ -36,7 +36,7 @@ class VoiceInputUseCase(
     private val chatUseCase: ChatUseCase,
     private val speechUseCase: SpeechUseCase,
     private val permissionsUseCase: PermissionsUseCase,
-    private val hotkeyRegistrar: VoiceInputHotkeyRegistrar,
+    private val desktopPermissionService: DesktopPermissionService,
 ) {
     private val l = LoggerFactory.getLogger(VoiceInputUseCase::class.java)
     private var lastRecognizedText: String? = null
@@ -59,7 +59,7 @@ class VoiceInputUseCase(
         }
 
         val hotkeyRegistration = if (nativeHookRegistered) {
-            hotkeyRegistrar.register(
+            desktopPermissionService.registerVoiceInputHotkey(
                 onPressed = { pressed ->
                     l.info(if (pressed) "onStart" else "onStop")
                     scope.launch {
@@ -132,7 +132,7 @@ class VoiceInputUseCase(
             }
         } finally {
             if (nativeHookRegistered) {
-                hotkeyRegistration?.unregister()
+                hotkeyRegistration?.invoke()
                 permissionsUseCase.unregisterNativeHook()
             }
         }

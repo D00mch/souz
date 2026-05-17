@@ -44,7 +44,6 @@ import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.ui.host.CalendarListProvider
 import ru.souz.ui.host.DesktopIndexRepository
 import ru.souz.ui.host.TelegramControlBot
-import ru.souz.ui.host.TelegramPlatformAvailability
 import ru.souz.ui.host.TelegramUiService
 import ru.souz.ui.host.UiSpeechPlayer
 import java.io.File
@@ -130,6 +129,7 @@ class SettingsViewModelTest {
 
         val chatApi = mockk<LLMChatAPI>(relaxed = true)
         val telegramService = mockk<TelegramUiService>(relaxed = true)
+        every { telegramService.isSupported() } returns true
         every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
         val localModelStore = mockk<LocalModelStore>(relaxed = true)
         val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
@@ -145,10 +145,9 @@ class SettingsViewModelTest {
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
             bindSingleton<LLMChatAPI> { chatApi }
             bindSingleton<AgentFacade> { agentFacade }
-            bindSingleton<TelegramPlatformAvailability> { mockk(relaxed = true) }
             bindSingleton<TelegramUiService> { telegramService }
             bindSingleton<TelegramControlBot> { mockk(relaxed = true) }
-            bindSingleton<CalendarListProvider> { CalendarListProvider { emptyList() } }
+            bindSingleton<CalendarListProvider> { { emptyList() } }
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }
 
@@ -215,6 +214,7 @@ class SettingsViewModelTest {
 
         val chatApi = mockk<LLMChatAPI>(relaxed = true)
         val telegramService = mockk<TelegramUiService>(relaxed = true)
+        every { telegramService.isSupported() } returns true
         every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
         val desktopInfoRepository = mockk<DesktopIndexRepository>(relaxed = true)
         coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
@@ -228,10 +228,9 @@ class SettingsViewModelTest {
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
             bindSingleton<LLMChatAPI> { chatApi }
             bindSingleton<AgentFacade> { agentFacade }
-            bindSingleton<TelegramPlatformAvailability> { mockk(relaxed = true) }
             bindSingleton<TelegramUiService> { telegramService }
             bindSingleton<TelegramControlBot> { mockk(relaxed = true) }
-            bindSingleton<CalendarListProvider> { CalendarListProvider { emptyList() } }
+            bindSingleton<CalendarListProvider> { { emptyList() } }
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }
 
@@ -306,6 +305,7 @@ class SettingsViewModelTest {
 
         val chatApi = mockk<LLMChatAPI>(relaxed = true)
         val telegramService = mockk<TelegramUiService>(relaxed = true)
+        every { telegramService.isSupported() } returns true
         every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
         val desktopInfoRepository = mockk<DesktopIndexRepository>(relaxed = true)
         coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
@@ -319,10 +319,9 @@ class SettingsViewModelTest {
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
             bindSingleton<LLMChatAPI> { chatApi }
             bindSingleton<AgentFacade> { agentFacade }
-            bindSingleton<TelegramPlatformAvailability> { mockk(relaxed = true) }
             bindSingleton<TelegramUiService> { telegramService }
             bindSingleton<TelegramControlBot> { mockk(relaxed = true) }
-            bindSingleton<CalendarListProvider> { CalendarListProvider { emptyList() } }
+            bindSingleton<CalendarListProvider> { { emptyList() } }
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }
 

@@ -42,10 +42,8 @@ import ru.souz.service.mcp.McpConfigProvider
 import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.service.observability.StructuredLoggingAgentTelemetry
 import ru.souz.service.permissions.MacDesktopPermissionService
-import ru.souz.service.permissions.NativeVoiceInputHotkeyRegistrar
 import ru.souz.service.telegram.TelegramService
 import ru.souz.service.telegram.TelegramBotController
-import ru.souz.service.telegram.TelegramPlatformSupport
 import ru.souz.service.files.FilesService
 import ru.souz.tool.*
 import ru.souz.tool.application.*
@@ -95,11 +93,9 @@ import ru.souz.ui.host.CalendarListProvider
 import ru.souz.ui.host.DesktopIndexRepository
 import ru.souz.ui.host.DesktopPermissionService
 import ru.souz.ui.host.TelegramControlBot
-import ru.souz.ui.host.TelegramPlatformAvailability
 import ru.souz.ui.host.TelegramUiService
 import ru.souz.ui.host.UiAudioRecorder
 import ru.souz.ui.host.UiSpeechPlayer
-import ru.souz.ui.host.VoiceInputHotkeyRegistrar
 
 private object DiTags {
     const val MODULE_MAIN = "main"
@@ -125,20 +121,17 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { InMemoryAudioRecorder(ActiveSoundRecorderImpl()) }
     bindSingleton<UiAudioRecorder> { instance<InMemoryAudioRecorder>() }
     bindSingleton<DesktopPermissionService> { MacDesktopPermissionService() }
-    bindSingleton<VoiceInputHotkeyRegistrar> { NativeVoiceInputHotkeyRegistrar }
 
     // Native
     bindSingleton { Keys() }
 
     // DB
     bindSingleton { VectorDB }
-    bindSingleton { TelegramPlatformSupport }
-    bindSingleton<TelegramPlatformAvailability> { instance<TelegramPlatformSupport>() }
     bindSingleton { LlmBuildProfile(instance(), instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
     bindSingleton<AgentDesktopInfoRepository> { instance<DesktopInfoRepository>() }
     bindSingleton<DesktopIndexRepository> { instance<DesktopInfoRepository>() }
-    bindSingleton<ToolAvailabilityPolicy> { DesktopToolAvailabilityPolicy(instance(), instance()) }
+    bindSingleton<ToolAvailabilityPolicy> { DesktopToolAvailabilityPolicy(instance()) }
     bindSingleton { ToolsSettings(instance(), instance(), instance()) }
     bindSingleton<AgentToolsFilter> { instance<ToolsSettings>() }
     bindSingleton<RuntimeSandboxFactory> { DefaultRuntimeSandboxFactory(settingsProvider = instance()) }
@@ -154,7 +147,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { DeferredToolModifyPermissionBroker(instance(), instance()) }
     bindSingleton { TelegramContactSelectionBroker() }
     bindSingleton { TelegramChatSelectionBroker() }
-    bindSingleton { TelegramService(instance()) }
+    bindSingleton { TelegramService() }
     bindSingleton<TelegramUiService> { instance<TelegramService>() }
     bindSingleton<DefaultBrowserProvider> { DefaultBrowserProviderImpl }
 
@@ -192,7 +185,20 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolCalendarCreateEvent(instance()) }
     bindSingleton { ToolCalendarDeleteEvent(instance()) }
     bindSingleton { ToolCalendarListCalendars(instance()) }
-    bindSingleton<CalendarListProvider> { DesktopCalendarListProvider(instance()) }
+    bindSingleton<CalendarListProvider> {
+        {
+            ToolRunBashCommand.sh(CalendarAppleScriptCommands.listCalendarsCommand(""))
+                .lines()
+                .asSequence()
+                .map { it.trim() }
+                .filter { it.startsWith("- ") }
+                .map { it.removePrefix("- ").trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .sorted()
+                .toList()
+        }
+    }
     bindSingleton { ToolCalendarListEvents() }
     bindSingleton { ToolMailUnreadMessagesCount(instance()) }
     bindSingleton { ToolMailListMessages(instance()) }

@@ -74,7 +74,6 @@ import ru.souz.ui.host.TelegramControlIncomingMessage
 import ru.souz.ui.host.UiAudioRecorder
 import ru.souz.ui.host.UiAudioRecordingState
 import ru.souz.ui.host.UiSpeechPlayer
-import ru.souz.ui.host.VoiceInputHotkeyRegistrar
 import ru.souz.ui.main.search.ChatSearchState
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
@@ -1096,7 +1095,6 @@ class MainViewModelTest {
         every { desktopPermissionService.isHeadless } answers { java.awt.GraphicsEnvironment.isHeadless() }
         every { desktopPermissionService.registerNativeHook() } returns false
         every { desktopPermissionService.canRegisterNativeHookNow() } returns false
-        val voiceInputHotkeyRegistrar = mockk<VoiceInputHotkeyRegistrar>(relaxed = true)
         val tokenLogging = mockk<TokenLogging>(relaxed = true)
         every { tokenLogging.requestContextElement(any()) } returns EmptyCoroutineContext
         every { tokenLogging.currentRequestTokenUsage(any()) } returns LLMResponse.Usage(0, 0, 0, 0)
@@ -1121,10 +1119,8 @@ class MainViewModelTest {
             bindSingleton<TokenLogging> { tokenLogging }
             bindSingleton { DesktopStructuredLogger() }
             bindSingleton<DesktopPermissionService> { desktopPermissionService }
-            bindSingleton<VoiceInputHotkeyRegistrar> { voiceInputHotkeyRegistrar }
             bindSingleton {
                 MainUseCasesFactory(
-                    instance(),
                     instance(),
                     instance(),
                     instance(),
