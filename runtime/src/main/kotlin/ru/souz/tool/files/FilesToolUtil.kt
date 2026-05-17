@@ -325,7 +325,7 @@ class FilesToolUtil(
 
     suspend fun <T> withReadableLocalPathSuspend(
         path: SandboxPathInfo,
-        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        meta: ToolInvocationMeta,
         prefix: String = "souz-read-",
         suffix: String = path.name.safeTempSuffix(),
         block: suspend (Path) -> T,
