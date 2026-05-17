@@ -51,9 +51,6 @@ class FilesToolUtil(
         )
     )
 
-    val sandboxFileSystem: SandboxFileSystem
-        get() = sandboxFileSystem(ToolInvocationMeta.localDefault())
-
     fun runtimeSandbox(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): RuntimeSandbox =
         sandboxResolver.resolve(meta)
 
@@ -69,26 +66,11 @@ class FilesToolUtil(
     val homeDirectory: File
         get() = File(homeStr).canonicalFile
 
-    fun homeDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): File =
-        File(homeStr(meta)).canonicalFile
-
-    val documentsDirectoryPath: Path
-        get() = documentsDirectoryPath(ToolInvocationMeta.localDefault())
-
-    fun documentsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Path =
-        Path.of(resolveDocumentsDirectory(meta).path)
-
     val souzDocumentsDirectoryPath: Path
         get() = souzDocumentsDirectoryPath(ToolInvocationMeta.localDefault())
 
     fun souzDocumentsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Path =
         Path.of(resolveSouzDocumentsDirectory(meta).path)
-
-    fun souzTelegramControlDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Path =
-        Path.of(resolveSouzTelegramControlDirectory(meta).path)
-
-    fun souzWebAssetsDirectoryPath(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Path =
-        Path.of(resolveSouzWebAssetsDirectory(meta).path)
 
     /**
      * Generally, we don't want Agent to mess around anything out of $HOME and everything user disallowed
@@ -104,18 +86,6 @@ class FilesToolUtil(
 
     fun isPathSafe(path: SandboxPathInfo, meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): Boolean =
         sandboxFileSystem(meta).isPathSafe(path)
-
-    @Throws(BadInputException::class)
-    fun requirePathIsSave(file: File) {
-        requirePathIsSave(file, ToolInvocationMeta.localDefault())
-    }
-
-    @Throws(BadInputException::class)
-    fun requirePathIsSave(file: File, meta: ToolInvocationMeta) {
-        if (!isPathSafe(file, meta)) {
-            throw BadInputException("Access denied: File path must be within the home directory")
-        }
-    }
 
     fun resourceAsText(path: String): String = Companion.resourceAsText(path)
 
@@ -289,9 +259,6 @@ class FilesToolUtil(
     fun resolveSouzDocumentsDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): SandboxPathInfo =
         resolvePath("${resolveDocumentsDirectory(meta).path}/souz", meta)
 
-    fun resolveSouzTelegramControlDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): SandboxPathInfo =
-        resolvePath("${resolveSouzDocumentsDirectory(meta).path}/telegram", meta)
-
     fun resolveSouzWebAssetsDirectory(meta: ToolInvocationMeta = ToolInvocationMeta.localDefault()): SandboxPathInfo =
         resolvePath("${resolveSouzDocumentsDirectory(meta).path}/web_assets", meta)
 
@@ -394,80 +361,11 @@ class FilesToolUtil(
         )
     }
 
-    /**
-     * Validates that a unified diff patch (`---` / `+++` headers) touches exactly one file and that,
-     * after applying the same `strip` logic as `patch -pN`, the resulting target path matches
-     * [expectedFilePath].
-     *
-     * This is a guardrail for tools that apply patches inside a directory and want to ensure the patch
-     * cannot unexpectedly target another file. It supports common diff header formats including:
-     * - `a/file.txt` / `b/file.txt`
-     * - bare paths (`file.txt`)
-     * - quoted paths (for names with spaces)
-     * - optional tab-separated timestamps after the path
-     *
-     * `/dev/null` headers are ignored to tolerate create/delete style patches while still validating
-     * the non-null target path.
-     *
-     * Throws [BadInputException] when:
-     * - no file headers are found
-     * - more than one file is targeted
-     * - the patch path is incompatible with [strip]
-     * - the normalized target does not match [expectedFilePath]
-     */
-    fun validateUnifiedDiffTargetsSingleFile(
-        patch: String,
-        expectedFilePath: String,
-        strip: Int,
-    ) {
-        val expectedFile = File(expectedFilePath).canonicalFile
-        val touched = mutableSetOf<String>()
-
-        if (patch.lines().any { line ->
-                line.startsWith("*** Begin Patch") ||
-                        line.startsWith("*** Update File:") ||
-                        line.startsWith("*** End Patch")
-            }
-        ) {
-            throw BadInputException(
-                "Patch must be a unified diff with ---/+++ headers. " +
-                        "Do not use the *** Begin Patch / *** End Patch wrapper."
-            )
-        }
-
-        patch.lineSequence().forEach { line ->
-            if (line.startsWith("@@") && !UNIFIED_DIFF_HUNK_HEADER.matches(line)) {
-                throw BadInputException(
-                    "Invalid hunk header '$line'. Expected format like '@@ -1,3 +1,4 @@'."
-                )
-            }
-
-            val rawPath = extractUnifiedDiffHeaderPath(line) ?: return@forEach
-
-            if (rawPath == "/dev/null") return@forEach
-
-            val stripped = stripPathComponents(rawPath, strip)
-                ?: throw BadInputException("Patch path '$rawPath' is incompatible with strip=$strip")
-            val normalized = stripped.removePrefix("./")
-            touched.add(normalized)
-        }
-
-        if (touched.isEmpty()) throw BadInputException("Patch has no file headers (---/+++).")
-        if (touched.size != 1) throw BadInputException("Patch must target exactly one file; got: $touched")
-        val target = touched.first()
-        val absoluteTargetMatch = isAbsolutePath(target) &&
-                runCatching { File(target).canonicalFile == expectedFile }.getOrDefault(false)
-        val relativeTargetMatch = target == expectedFile.name
-        if (!absoluteTargetMatch && !relativeTargetMatch) {
-            throw BadInputException("Patch targets '$target', but tool path is '${expectedFile.path}'")
-        }
-    }
-
 
     /**
      * Moves file from [sourcePath] to [destinationPath].
      *
-     * First we request [StandardCopyOption.ATOMIC_MOVE], which asks the filesystem to make
+     * First we request [java.nio.file.StandardCopyOption.ATOMIC_MOVE], which asks the filesystem to make
      * the move atomic (all-or-nothing: readers should see either source or destination state,
      * not a partially moved file). Some filesystems do not support atomic moves for a given
      * source/destination pair; in that case we fall back to a regular move.
@@ -487,67 +385,6 @@ class FilesToolUtil(
             createParents = true,
             logger = logger,
         )
-    }
-
-    /**
-     * Returns the configured forbidden folders as canonical paths under the user's home directory.
-     *
-     * Blank entries are ignored, relative entries are resolved from [homeDirectory], and paths outside
-     * the home directory are discarded so later safety checks only compare against valid in-scope roots.
-     */
-    fun forbiddenDirectories(): List<File> {
-        return sandboxFileSystem.forbiddenPaths().map(::File)
-    }
-
-    private fun extractUnifiedDiffHeaderPath(line: String): String? {
-        val raw = when {
-            line.startsWith("--- ") -> line.removePrefix("--- ")
-            line.startsWith("+++ ") -> line.removePrefix("+++ ")
-            else -> return null
-        }.trimStart()
-
-        if (raw.isEmpty()) return null
-
-        return if (raw.startsWith("\"")) {
-            parseQuotedPatchPath(raw) ?: raw.substringBefore('\t').trim()
-        } else {
-            raw.substringBefore('\t').trim()
-        }
-    }
-
-    private fun parseQuotedPatchPath(raw: String): String? {
-        val out = StringBuilder()
-        var escaped = false
-
-        for (i in 1 until raw.length) {
-            val ch = raw[i]
-            if (escaped) {
-                out.append(ch)
-                escaped = false
-                continue
-            }
-            when (ch) {
-                '\\' -> escaped = true
-                '"' -> return out.toString()
-                else -> out.append(ch)
-            }
-        }
-        return null
-    }
-
-    private fun stripPathComponents(path: String, strip: Int): String? {
-        var normalized = path
-        while (normalized.startsWith("./")) normalized = normalized.removePrefix("./")
-        if (strip == 0) return normalized
-
-        val parts = normalized.split('/').filter { it.isNotEmpty() }
-        if (parts.size <= strip) return null
-        return parts.drop(strip).joinToString("/")
-    }
-
-    private fun isAbsolutePath(path: String): Boolean {
-        if (path.startsWith("/")) return true
-        return WINDOWS_ABSOLUTE_PATH.matches(path)
     }
 
     fun detectPreferredLineSeparator(text: String): String = when {
@@ -592,9 +429,6 @@ class FilesToolUtil(
         MemoryUsageSetting.setupTempFileOnly().setTempDir(pdfScratchDirectory(meta).toFile())
 
     companion object {
-        private val UNIFIED_DIFF_HUNK_HEADER =
-            Regex("^@@ -\\d+(?:,\\d+)? \\+\\d+(?:,\\d+)? @@(?: .*)?$")
-        private val WINDOWS_ABSOLUTE_PATH = Regex("^[A-Za-z]:[\\\\/].*")
         private const val BINARY_SAMPLE_SIZE = 1024
         private val NON_EDITABLE_EXTENSIONS = setOf(
             "7z",
@@ -658,8 +492,6 @@ class FilesToolUtil(
             get() = documentsDirectoryPath.resolve("souz")
         val souzTelegramControlDirectoryPath: Path
             get() = souzDocumentsDirectoryPath.resolve("telegram")
-        val souzWebAssetsDirectoryPath: Path
-            get() = souzDocumentsDirectoryPath.resolve("web_assets")
 
         /**
          * Opens a bundled classpath resource as a stream.
@@ -729,7 +561,25 @@ class FilesToolUtil(
     data class NormalizedTextIndex(
         val normalizedText: String,
         val rawOffsets: IntArray,
-    )
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as NormalizedTextIndex
+
+            if (normalizedText != other.normalizedText) return false
+            if (!rawOffsets.contentEquals(other.rawOffsets)) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = normalizedText.hashCode()
+            result = 31 * result + rawOffsets.contentHashCode()
+            return result
+        }
+    }
 
     class CloseablePdfDocument(
         val document: PDDocument,
