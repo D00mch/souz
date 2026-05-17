@@ -6,6 +6,7 @@ import org.apache.pdfbox.pdmodel.PDDocument
 import org.slf4j.Logger
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.runtime.files.isLikelyBinary
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxFileSystem
@@ -25,6 +26,8 @@ import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.io.path.extension
 
 class FilesToolUtil(
@@ -212,7 +215,7 @@ class FilesToolUtil(
         }
 
         val bytes = fileSystem.readBytes(file)
-        if (isLikelyBinary(bytes)) {
+        if (bytes.isLikelyBinary()) {
             throw BadInputException("Only plain text, code, and config files can be edited.")
         }
 
@@ -286,13 +289,22 @@ class FilesToolUtil(
         suffix: String = path.name.safeTempSuffix(),
         block: suspend (Path) -> T,
     ): T {
-        localPathOrNull(path, meta)?.let { return block(it) }
-        val tempFile = Files.createTempFile(pdfScratchDirectory(meta), prefix, suffix)
+        withContext(Dispatchers.IO) { localPathOrNull(path, meta) }?.let { return block(it) }
+
+        val tempFile = withContext(Dispatchers.IO) {
+            val tempFile = Files.createTempFile(pdfScratchDirectory(meta), prefix, suffix)
+            try {
+                Files.write(tempFile, readBytes(path, meta))
+                tempFile
+            } catch (error: Throwable) {
+                runCatching { Files.deleteIfExists(tempFile) }
+                throw error
+            }
+        }
         try {
-            Files.write(tempFile, readBytes(path, meta))
             return block(tempFile)
         } finally {
-            Files.deleteIfExists(tempFile)
+            withContext(Dispatchers.IO) { Files.deleteIfExists(tempFile) }
         }
     }
 
@@ -393,18 +405,6 @@ class FilesToolUtil(
         else -> "\n"
     }
 
-    private fun isLikelyBinary(bytes: ByteArray): Boolean {
-        if (bytes.any { it == 0.toByte() }) return true
-        if (bytes.isEmpty()) return false
-
-        val sample = bytes.take(BINARY_SAMPLE_SIZE)
-        val controlChars = sample.count { byte ->
-            val value = byte.toInt() and 0xFF
-            value < 0x20 && value !in setOf(0x09, 0x0A, 0x0C, 0x0D)
-        }
-        return controlChars * 5 > sample.size
-    }
-
     private fun decodeUtf8Strict(bytes: ByteArray): String {
         val decoder = StandardCharsets.UTF_8
             .newDecoder()
@@ -429,7 +429,6 @@ class FilesToolUtil(
         MemoryUsageSetting.setupTempFileOnly().setTempDir(pdfScratchDirectory(meta).toFile())
 
     companion object {
-        private const val BINARY_SAMPLE_SIZE = 1024
         private val NON_EDITABLE_EXTENSIONS = setOf(
             "7z",
             "avi",
