@@ -241,12 +241,11 @@ compose.desktop {
             // Force JNA to load the bundled dispatcher and never unpack jna*.tmp at runtime.
             jvmArgs("-Djna.boot.library.path=$nativeLibraryPath")
             jvmArgs("-Djna.nosys=true")
-            jvmArgs("-Djna.noclasspath=true")
             // Force sqlite-jdbc to use bundled native binary and avoid sqlite-*.tmp extraction.
             jvmArgs("-Dorg.sqlite.lib.path=$sqliteLibraryPath")
             jvmArgs("-Dorg.sqlite.lib.name=$sqliteLibraryName")
             // Safety net: never let JNativeHook extract into Contents/app (which breaks code signature).
-            jvmArgs("-Djnativehook.lib.path=/tmp/souz-jnativehook")
+            jvmArgs("-Djnativehook.lib.path=/tmp")
             jvmArgs("-Dapple.awt.application.appearance=system")
             // Needed for reflective access to AWT peers to attach NSVisualEffectView on macOS.
             jvmArgs("--add-opens=java.desktop/java.awt=ALL-UNNAMED")
