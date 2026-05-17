@@ -64,6 +64,9 @@ class BackendBootstrapService(
                 enabledTools = effectiveSettings.enabledTools.toList(),
                 showToolEvents = effectiveSettings.showToolEvents,
                 streamingMessages = effectiveSettings.streamingMessages,
+                interfaceLanguage = effectiveSettings.interfaceLanguage,
+                requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
+                useFewShotExamples = effectiveSettings.useFewShotExamples,
             ),
         )
     }

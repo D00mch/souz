@@ -33,6 +33,13 @@ fun invalidV1Request(message: String): BackendV1Exception =
         message = message,
     )
 
+fun badRequestV1(message: String): BackendV1Exception =
+    BackendV1Exception(
+        status = HttpStatusCode.BadRequest,
+        code = "bad_request",
+        message = message,
+    )
+
 fun featureDisabledV1(message: String): BackendV1Exception =
     BackendV1Exception(
         status = HttpStatusCode.NotFound,

@@ -64,7 +64,7 @@ class PostgresRepositoriesTest {
 
         dataSource.use {
             assertEquals(
-                listOf("1", "2", "3", "4", "5"),
+                listOf("1", "2", "3", "4", "5", "6"),
                 appliedMigrationVersions(it),
             )
             assertTrue(tableExists(it, "tool_calls"))
@@ -122,6 +122,9 @@ class PostgresRepositoriesTest {
             assertNull(stored.enabledTools)
             assertNull(stored.showToolEvents)
             assertNull(stored.streamingMessages)
+            assertNull(stored.interfaceLanguage)
+            assertNull(stored.requestTimeoutMillis)
+            assertNull(stored.useFewShotExamples)
             assertTrue(stored.toolPermissions.isEmpty())
             assertTrue(stored.mcp.isEmpty())
         }
@@ -144,6 +147,9 @@ class PostgresRepositoriesTest {
             enabledTools = setOf("ListFiles"),
             showToolEvents = true,
             streamingMessages = true,
+            interfaceLanguage = "en",
+            requestTimeoutMillis = 45_000L,
+            useFewShotExamples = false,
             toolPermissions = mapOf("ListFiles" to ToolPermission(ToolPermissionMode.ALLOW)),
             mcp = mapOf("repo" to UserMcpServer(enabled = true)),
             createdAt = Instant.parse("2026-05-01T09:00:00Z"),
@@ -730,6 +736,9 @@ class PostgresRepositoriesTest {
             enabledTools = setOf("ListFiles"),
             showToolEvents = true,
             streamingMessages = true,
+            interfaceLanguage = "ru",
+            requestTimeoutMillis = 40_000L,
+            useFewShotExamples = true,
             toolPermissions = mapOf("ListFiles" to ToolPermission(ToolPermissionMode.ALLOW)),
             mcp = mapOf("repo" to UserMcpServer(enabled = true)),
             createdAt = Instant.parse("2026-05-01T08:00:00Z"),

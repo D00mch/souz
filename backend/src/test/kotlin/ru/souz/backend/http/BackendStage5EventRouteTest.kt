@@ -76,6 +76,7 @@ class BackendStage5EventRouteTest {
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals(
             listOf(
+                AgentEventType.MESSAGE_CREATED,
                 AgentEventType.EXECUTION_STARTED,
                 AgentEventType.MESSAGE_CREATED,
                 AgentEventType.MESSAGE_COMPLETED,
@@ -84,7 +85,10 @@ class BackendStage5EventRouteTest {
             events.map { it.type },
         )
         assertTrue(events.all { it.executionId == executionId })
-        assertEquals(assistantMessageId, events.first { it.type == AgentEventType.MESSAGE_CREATED }.toDto().payload["messageId"])
+        assertEquals(
+            assistantMessageId,
+            events.last { it.type == AgentEventType.MESSAGE_CREATED }.toDto().payload["messageId"],
+        )
         assertTrue(events.none { it.type == AgentEventType.MESSAGE_DELTA })
         assertEquals(
             "assistant reply to stream me",
@@ -134,6 +138,7 @@ class BackendStage5EventRouteTest {
         assertEquals("assistant reply to plain reply", payload["assistantMessage"]["content"].asText())
         assertEquals(
             listOf(
+                AgentEventType.MESSAGE_CREATED,
                 AgentEventType.EXECUTION_STARTED,
                 AgentEventType.MESSAGE_CREATED,
                 AgentEventType.MESSAGE_COMPLETED,
@@ -234,7 +239,14 @@ class BackendStage5EventRouteTest {
 
         assertEquals(HttpStatusCode.InternalServerError, response.status)
         assertEquals("agent_execution_failed", payload["error"]["code"].asText())
-        assertEquals(listOf(AgentEventType.EXECUTION_STARTED, AgentEventType.EXECUTION_FAILED), events.map { it.type })
+        assertEquals(
+            listOf(
+                AgentEventType.MESSAGE_CREATED,
+                AgentEventType.EXECUTION_STARTED,
+                AgentEventType.EXECUTION_FAILED,
+            ),
+            events.map { it.type },
+        )
         assertEquals(listOf("trigger failure"), storedMessages.map { it.content })
         assertEquals(AgentExecutionStatus.FAILED, execution.status)
         assertNull(execution.assistantMessageId)
@@ -286,7 +298,11 @@ class BackendStage5EventRouteTest {
             assertEquals(HttpStatusCode.Conflict, cancelledResponse.status)
             assertEquals("agent_execution_cancelled", cancelledPayload["error"]["code"].asText())
             assertEquals(
-                listOf(AgentEventType.EXECUTION_STARTED, AgentEventType.EXECUTION_CANCELLED),
+                listOf(
+                    AgentEventType.MESSAGE_CREATED,
+                    AgentEventType.EXECUTION_STARTED,
+                    AgentEventType.EXECUTION_CANCELLED,
+                ),
                 events.map { it.type },
             )
             assertEquals(listOf("cancel me"), storedMessages.map { it.content })

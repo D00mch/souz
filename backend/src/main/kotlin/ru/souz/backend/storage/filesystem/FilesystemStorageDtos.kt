@@ -26,6 +26,7 @@ import ru.souz.backend.settings.model.ToolPermission
 import ru.souz.backend.settings.model.ToolPermissionMode
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
+import ru.souz.backend.telegram.TelegramBotBinding
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.user.model.UserRecord
@@ -175,6 +176,9 @@ internal data class StoredUserSettings(
     val enabledTools: Set<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val interfaceLanguage: String? = null,
+    val requestTimeoutMillis: Long? = null,
+    val useFewShotExamples: Boolean? = null,
     val toolPermissions: Map<String, StoredToolPermission> = emptyMap(),
     val mcp: Map<String, StoredUserMcpServer> = emptyMap(),
     val schemaVersion: Int = UserSettings.CURRENT_SCHEMA_VERSION,
@@ -202,6 +206,32 @@ internal data class StoredUserMcpServer(
     val url: String? = null,
 )
 
+internal data class StoredTelegramBotBinding(
+    val id: String,
+    val userId: String,
+    val chatId: String,
+    val botTokenEncrypted: String? = null,
+    val botToken: String? = null,
+    val botTokenHash: String,
+    val linkSecretHash: String? = null,
+    val botUsername: String? = null,
+    val botFirstName: String? = null,
+    val lastUpdateId: Long,
+    val enabled: Boolean,
+    val telegramUserId: Long? = null,
+    val telegramChatId: Long? = null,
+    val telegramUsername: String? = null,
+    val telegramFirstName: String? = null,
+    val telegramLastName: String? = null,
+    val linkedAt: String? = null,
+    val pollerOwner: String? = null,
+    val pollerLeaseUntil: String? = null,
+    val lastError: String? = null,
+    val lastErrorAt: String? = null,
+    val createdAt: String,
+    val updatedAt: String,
+)
+
 internal fun Chat.toStored(): StoredChat =
     StoredChat(
         id = id.toString(),
@@ -218,6 +248,58 @@ internal fun StoredChat.toDomain(): Chat =
         userId = userId,
         title = title,
         archived = archived,
+        createdAt = Instant.parse(createdAt),
+        updatedAt = Instant.parse(updatedAt),
+    )
+
+internal fun TelegramBotBinding.toStored(): StoredTelegramBotBinding =
+    StoredTelegramBotBinding(
+        id = id.toString(),
+        userId = userId,
+        chatId = chatId.toString(),
+        botTokenEncrypted = botTokenEncrypted,
+        botTokenHash = botTokenHash,
+        linkSecretHash = linkSecretHash,
+        botUsername = botUsername,
+        botFirstName = botFirstName,
+        lastUpdateId = lastUpdateId,
+        enabled = enabled,
+        telegramUserId = telegramUserId,
+        telegramChatId = telegramChatId,
+        telegramUsername = telegramUsername,
+        telegramFirstName = telegramFirstName,
+        telegramLastName = telegramLastName,
+        linkedAt = linkedAt?.toString(),
+        pollerOwner = pollerOwner,
+        pollerLeaseUntil = pollerLeaseUntil?.toString(),
+        lastError = lastError,
+        lastErrorAt = lastErrorAt?.toString(),
+        createdAt = createdAt.toString(),
+        updatedAt = updatedAt.toString(),
+    )
+
+internal fun StoredTelegramBotBinding.toDomain(): TelegramBotBinding =
+    TelegramBotBinding(
+        id = UUID.fromString(id),
+        userId = userId,
+        chatId = UUID.fromString(chatId),
+        botTokenEncrypted = botTokenEncrypted ?: botToken.orEmpty(),
+        botTokenHash = botTokenHash,
+        linkSecretHash = linkSecretHash,
+        botUsername = botUsername,
+        botFirstName = botFirstName,
+        lastUpdateId = lastUpdateId,
+        enabled = enabled,
+        telegramUserId = telegramUserId,
+        telegramChatId = telegramChatId,
+        telegramUsername = telegramUsername,
+        telegramFirstName = telegramFirstName,
+        telegramLastName = telegramLastName,
+        linkedAt = linkedAt?.let(Instant::parse),
+        pollerOwner = pollerOwner,
+        pollerLeaseUntil = pollerLeaseUntil?.let(Instant::parse),
+        lastError = lastError,
+        lastErrorAt = lastErrorAt?.let(Instant::parse),
         createdAt = Instant.parse(createdAt),
         updatedAt = Instant.parse(updatedAt),
     )
@@ -500,6 +582,9 @@ internal fun UserSettings.toStored(): StoredUserSettings =
         enabledTools = enabledTools,
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
+        interfaceLanguage = interfaceLanguage,
+        requestTimeoutMillis = requestTimeoutMillis,
+        useFewShotExamples = useFewShotExamples,
         toolPermissions = toolPermissions.mapValues { (_, value) -> value.toStored() },
         mcp = mcp.mapValues { (_, value) -> value.toStored() },
         schemaVersion = schemaVersion,
@@ -520,6 +605,9 @@ internal fun StoredUserSettings.toDomain(): UserSettings =
         enabledTools = enabledTools,
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
+        interfaceLanguage = interfaceLanguage,
+        requestTimeoutMillis = requestTimeoutMillis,
+        useFewShotExamples = useFewShotExamples,
         toolPermissions = toolPermissions.mapValues { (_, value) -> value.toDomain() },
         mcp = mcp.mapValues { (_, value) -> value.toDomain() },
         schemaVersion = schemaVersion,

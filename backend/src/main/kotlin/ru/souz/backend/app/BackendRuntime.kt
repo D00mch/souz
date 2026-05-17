@@ -13,6 +13,8 @@ import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.settings.service.UserSettingsService
+import ru.souz.backend.telegram.TelegramBotBindingService
+import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.user.repository.UserRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.local.LocalLlamaRuntime
@@ -31,12 +33,22 @@ class BackendRuntime private constructor(
     val optionService: OptionService by lazy { di.direct.instance() }
     val eventService: AgentEventService by lazy { di.direct.instance() }
     val featureFlags: BackendFeatureFlags by lazy { di.direct.instance() }
+    val telegramBotBindingService: TelegramBotBindingService? by lazy {
+        if (featureFlags.telegramBot) di.direct.instance() else null
+    }
+    val telegramBotPollingService: TelegramBotPollingService? by lazy {
+        if (featureFlags.telegramBot) di.direct.instance() else null
+    }
     val userRepository: UserRepository by lazy { di.direct.instance() }
     private val resources: BackendRuntimeResources by lazy { di.direct.instance() }
     private val settingsProvider: SettingsProvider by lazy { di.direct.instance() }
     private val localRuntime: LocalLlamaRuntime by lazy { di.direct.instance() }
 
     fun selectedModel(): String = settingsProvider.gigaModel.alias
+
+    fun startBackgroundServices() {
+        telegramBotPollingService?.start()
+    }
 
     override fun close() {
         localRuntime.close()

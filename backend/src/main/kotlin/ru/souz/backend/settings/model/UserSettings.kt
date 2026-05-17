@@ -32,6 +32,9 @@ data class UserSettings(
     val enabledTools: Set<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val interfaceLanguage: String? = null,
+    val requestTimeoutMillis: Long? = null,
+    val useFewShotExamples: Boolean? = null,
     val toolPermissions: Map<String, ToolPermission> = emptyMap(),
     val mcp: Map<String, UserMcpServer> = emptyMap(),
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
@@ -40,6 +43,6 @@ data class UserSettings(
     val updatedAt: Instant = createdAt,
 ) {
     companion object {
-        const val CURRENT_SCHEMA_VERSION: Int = 2
+        const val CURRENT_SCHEMA_VERSION: Int = 3
     }
 }

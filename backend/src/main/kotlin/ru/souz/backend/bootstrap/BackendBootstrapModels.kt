@@ -45,4 +45,7 @@ data class BootstrapSettings(
     val enabledTools: List<String>,
     val showToolEvents: Boolean,
     val streamingMessages: Boolean,
+    val interfaceLanguage: String,
+    val requestTimeoutMillis: Long,
+    val useFewShotExamples: Boolean,
 )

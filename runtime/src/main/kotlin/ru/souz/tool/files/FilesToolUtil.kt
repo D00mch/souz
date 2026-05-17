@@ -323,6 +323,23 @@ class FilesToolUtil(
         }
     }
 
+    suspend fun <T> withReadableLocalPathSuspend(
+        path: SandboxPathInfo,
+        meta: ToolInvocationMeta = ToolInvocationMeta.Empty,
+        prefix: String = "souz-read-",
+        suffix: String = path.name.safeTempSuffix(),
+        block: suspend (Path) -> T,
+    ): T {
+        localPathOrNull(path, meta)?.let { return block(it) }
+        val tempFile = Files.createTempFile(pdfScratchDirectory(meta), prefix, suffix)
+        try {
+            Files.write(tempFile, readBytes(path, meta))
+            return block(tempFile)
+        } finally {
+            Files.deleteIfExists(tempFile)
+        }
+    }
+
     fun <T> withWritableLocalPath(
         path: SandboxPathInfo,
         meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),

@@ -38,6 +38,15 @@ class FilesystemAgentExecutionRepository(
             loadExecutions(userId, chatId).firstOrNull { it.id == executionId }
         }
 
+    override suspend fun findByClientMessageId(
+        userId: String,
+        chatId: UUID,
+        clientMessageId: String,
+    ): AgentExecution? =
+        withFileLock {
+            loadExecutions(userId, chatId).firstOrNull { it.clientMessageId == clientMessageId }
+        }
+
     override suspend fun findActive(userId: String, chatId: UUID): AgentExecution? =
         withFileLock {
             loadExecutions(userId, chatId)

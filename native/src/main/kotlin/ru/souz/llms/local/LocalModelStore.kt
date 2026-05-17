@@ -30,7 +30,7 @@ class LocalModelStore(
     private val downloadMutex = Mutex()
 
     fun modelPath(profile: LocalDownloadableProfile): Path =
-        rootDir.resolve(profile.id).resolve(profile.ggufFilename)
+        rootDir.resolve(profile.storageId).resolve(profile.ggufFilename)
 
     fun isPresent(profile: LocalDownloadableProfile): Boolean = Files.isRegularFile(modelPath(profile))
 

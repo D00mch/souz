@@ -30,6 +30,7 @@ fun main() {
         executionService = runtime.executionService,
         optionService = runtime.optionService,
         eventService = runtime.eventService,
+        telegramBotBindingService = runtime.telegramBotBindingService,
         featureFlags = runtime.featureFlags,
         selectedModel = runtime::selectedModel,
         bindAddress = InetSocketAddress(host, port),
@@ -44,6 +45,7 @@ fun main() {
     }
     Runtime.getRuntime().addShutdownHook(Thread(shutdown, "souz-backend-shutdown"))
 
+    runtime.startBackgroundServices()
     server.start()
     log.info("Bootstrap API: GET http://{}:{}/v1/bootstrap", host, port)
     CountDownLatch(1).await()

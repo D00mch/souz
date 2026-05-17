@@ -30,6 +30,7 @@ Notes:
 - `:native` is a JVM Gradle module that owns the Kotlin local-model runtime under `native/src/main/kotlin/ru/souz/llms/local`.
 - `composeApp` depends on this module for local inference and mirrors the bridge binaries from `native/src/main/resources/darwin-*` into packaged macOS app resources.
 - Local chat profiles now require the linked `unsloth/embeddinggemma-300m-GGUF` asset and the bridge exports a dedicated embeddings path in addition to text generation.
+- Gemma 4 vision profiles also download `mmproj-F16.gguf` automatically into the same model directory, and runtime projector resolution accepts both upstream names (`mmproj-F16.gguf`, `mmproj-BF16.gguf`) and older local aliases.
 - `third_party/llama.cpp` and `native/llama-bridge/build-*` are local-only paths and should stay untracked.
 - Treat those paths as out of scope unless the task is explicitly about updating upstream `llama.cpp` or debugging the native bridge build.
 - Packaged bridge binaries live in `native/src/main/resources/darwin-*`.
@@ -38,3 +39,4 @@ Notes:
 - The rebuild script also reapplies `native/llama-bridge/patches/llama.cpp-metal-bfloat-embed.patch` before compiling, because the local `third_party/llama.cpp` checkout is gitignored and the Gemma 4 update needs an extra Metal runtime-compile fix on top of the pinned upstream ref.
 - On macOS the bridge now disables ggml Metal residency sets by default (`GGML_METAL_NO_RESIDENCY=1`) to avoid shutdown aborts; set `SOUZ_LLAMA_METAL_RESIDENCY=1` only if you need to opt back in for debugging.
 - Local runtime debug logs now include the effective generation variants (`context_size`, `max_tokens`, grammar flag) and native decode failures now return detailed batch/context parameters, so Gemma context-window issues can be diagnosed from app logs without attaching a debugger.
+- Multimodal generation recalculates completion budget after `mtmd_tokenize`, using the real prompt/image token count instead of assuming media prompts consume zero context.

@@ -70,6 +70,9 @@ class AgentExecutionRequestFactoryTest {
                 systemPrompt = "Use terse answers.",
                 showToolEvents = false,
                 streamingMessages = true,
+                interfaceLanguage = "en",
+                requestTimeoutMillis = 45_000L,
+                useFewShotExamples = false,
             ),
         )
 
@@ -90,6 +93,9 @@ class AgentExecutionRequestFactoryTest {
         assertEquals("Use terse answers.", effectiveSettings.systemPrompt)
         assertFalse(effectiveSettings.showToolEvents)
         assertTrue(effectiveSettings.streamingMessages)
+        assertEquals("en", effectiveSettings.interfaceLanguage)
+        assertEquals(45_000L, effectiveSettings.requestTimeoutMillis)
+        assertFalse(effectiveSettings.useFewShotExamples)
 
         val execution = prepared.execution
         assertEquals(AgentExecutionStatus.QUEUED, execution.status)
@@ -103,6 +109,8 @@ class AgentExecutionRequestFactoryTest {
         assertEquals("Use terse answers.", execution.metadata.getValue("systemPrompt"))
         assertEquals("true", execution.metadata.getValue("streamingMessages"))
         assertEquals("false", execution.metadata.getValue("showToolEvents"))
+        assertEquals("45000", execution.metadata.getValue("requestTimeoutMillis"))
+        assertEquals("false", execution.metadata.getValue("useFewShotExamples"))
 
         val runtimeRequest = prepared.runtimeRequest
         assertEquals("Summarize this chat.", runtimeRequest.prompt)
@@ -114,6 +122,8 @@ class AgentExecutionRequestFactoryTest {
         assertEquals(0.2f, runtimeRequest.temperature)
         assertEquals("Use terse answers.", runtimeRequest.systemPrompt)
         assertEquals(true, runtimeRequest.streamingMessages)
+        assertEquals(45_000L, runtimeRequest.requestTimeoutMillis)
+        assertEquals(false, runtimeRequest.useFewShotExamples)
     }
 
     @Test
@@ -149,6 +159,8 @@ class AgentExecutionRequestFactoryTest {
                 "systemPrompt" to "Stay precise.",
                 "streamingMessages" to "true",
                 "showToolEvents" to "true",
+                "requestTimeoutMillis" to "46000",
+                "useFewShotExamples" to "false",
             ),
         )
         val option = Option(
@@ -185,6 +197,8 @@ class AgentExecutionRequestFactoryTest {
         assertEquals(0.6f, request.temperature)
         assertEquals("Stay precise.", request.systemPrompt)
         assertEquals(true, request.streamingMessages)
+        assertEquals(46_000L, request.requestTimeoutMillis)
+        assertEquals(false, request.useFewShotExamples)
         assertTrue(request.prompt.startsWith("__option_answer__ "))
 
         val payload = restJsonMapper.readTree(request.prompt.removePrefix("__option_answer__ "))

@@ -286,7 +286,7 @@ internal class BackendAgentRuntimeEventSink(
         )
     }
 
-    private suspend fun emitMessageCreated(message: ChatMessage) {
+    suspend fun emitMessageCreated(message: ChatMessage) {
         appendDurableEvent(
             type = AgentEventType.MESSAGE_CREATED,
             payload = MessageCreatedPayload(
@@ -294,6 +294,7 @@ internal class BackendAgentRuntimeEventSink(
                 seq = message.seq,
                 role = message.role.value,
                 content = message.content,
+                clientMessageId = message.metadata["clientMessageId"]?.takeIf { it.isNotEmpty() },
             ),
         )
     }

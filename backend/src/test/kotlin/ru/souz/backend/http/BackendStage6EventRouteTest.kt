@@ -79,7 +79,7 @@ class BackendStage6EventRouteTest {
                 client.post(BackendHttpRoutes.chatMessages(chat.id)) {
                     trustedHeaders("user-a")
                     contentType(ContentType.Application.Json)
-                    setBody("""{"content":"hello ws"}""")
+                    setBody("""{"content":"hello ws","clientMessageId":"client-42"}""")
                 }
             }
             api.awaitStarted("hello ws")
@@ -91,7 +91,7 @@ class BackendStage6EventRouteTest {
             api.release("hello ws")
 
             val liveEvents = buildList {
-                repeat(7) {
+                repeat(8) {
                     add(session.receiveEvent())
                 }
             }
@@ -100,6 +100,7 @@ class BackendStage6EventRouteTest {
 
             assertEquals(
                 listOf(
+                    "message.created",
                     "execution.started",
                     "message.delta",
                     "message.delta",
@@ -115,6 +116,8 @@ class BackendStage6EventRouteTest {
             assertTrue(deltaEvents.all { it["seq"].isNull })
             assertTrue(liveEvents.filterNot { it["type"].asText() == "message.delta" }.all { it["durable"].asBoolean() })
             assertTrue(liveEvents.filterNot { it["type"].asText() == "message.delta" }.all { it["seq"].isNumber })
+            assertEquals("client-42", liveEvents.first().path("payload").path("clientMessageId").asText())
+            assertTrue(liveEvents[5].path("payload").path("clientMessageId").isMissingNode)
             session.close()
         }
     }
@@ -162,13 +165,13 @@ class BackendStage6EventRouteTest {
                 trustedHeaders("user-a")
             }
             val replayedEvents = buildList {
-                repeat(2) {
+                repeat(3) {
                     add(secondSession.receiveEvent())
                 }
             }
             val replayedTypes = replayedEvents.map { it["type"].asText() }
             assertEquals(
-                listOf("message.completed", "execution.finished"),
+                listOf("message.created", "message.completed", "execution.finished"),
                 replayedTypes,
             )
             assertTrue(replayedEvents.all { it["durable"].asBoolean() })
@@ -205,7 +208,7 @@ class BackendStage6EventRouteTest {
             assertEquals("running", payload["execution"]["status"].asText())
 
             val liveEvents = buildList {
-                repeat(3) {
+                repeat(4) {
                     add(session.receiveEvent())
                 }
             }
@@ -214,11 +217,15 @@ class BackendStage6EventRouteTest {
             val storedExecution = context.executionRepository.listByChat("user-a", chat.id).single()
 
             assertEquals(
-                listOf("execution.started", "message.delta", "execution.failed"),
+                listOf("message.created", "execution.started", "message.delta", "execution.failed"),
                 liveEvents.map { it["type"].asText() },
             )
             assertEquals(
-                listOf(AgentEventType.EXECUTION_STARTED, AgentEventType.EXECUTION_FAILED),
+                listOf(
+                    AgentEventType.MESSAGE_CREATED,
+                    AgentEventType.EXECUTION_STARTED,
+                    AgentEventType.EXECUTION_FAILED,
+                ),
                 durableEvents.map { it.type },
             )
             assertEquals(listOf("fail after delta"), storedMessages.map { it.content })
@@ -262,7 +269,7 @@ class BackendStage6EventRouteTest {
             val cancelPayload = stage6Json.readTree(cancelResponse.bodyAsText())
 
             val liveEvents = buildList {
-                repeat(3) {
+                repeat(4) {
                     add(session.receiveEvent())
                 }
             }
@@ -273,11 +280,15 @@ class BackendStage6EventRouteTest {
             assertEquals(HttpStatusCode.OK, cancelResponse.status)
             assertEquals("cancelling", cancelPayload["execution"]["status"].asText())
             assertEquals(
-                listOf("execution.started", "message.delta", "execution.cancelled"),
+                listOf("message.created", "execution.started", "message.delta", "execution.cancelled"),
                 liveEvents.map { it["type"].asText() },
             )
             assertEquals(
-                listOf(AgentEventType.EXECUTION_STARTED, AgentEventType.EXECUTION_CANCELLED),
+                listOf(
+                    AgentEventType.MESSAGE_CREATED,
+                    AgentEventType.EXECUTION_STARTED,
+                    AgentEventType.EXECUTION_CANCELLED,
+                ),
                 durableEvents.map { it.type },
             )
             assertEquals(listOf("cancel after delta"), storedMessages.map { it.content })
@@ -471,7 +482,7 @@ class BackendStage6EventRouteTest {
             api.release("async please")
 
             val terminalEvents = ArrayList<String>()
-            repeat(7) {
+            repeat(8) {
                 terminalEvents += session.receiveEvent()["type"].asText()
             }
             assertTrue("message.completed" in terminalEvents)
@@ -561,7 +572,7 @@ class BackendStage6EventRouteTest {
             api.release("B-stream")
 
             val ownEvents = ArrayList<JsonNode>()
-            repeat(7) {
+            repeat(8) {
                 ownEvents.add(userASession.receiveEvent())
             }
             assertTrue(ownEvents.all { it["chatId"].asText() == userAChat.id.toString() })

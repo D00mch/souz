@@ -12,7 +12,7 @@ The project is designed around one core idea: an AI agent should be useful enoug
 - **GraphBasedAgent** powered by an explicit graph runtime with classification, MCP tool injection, prompt enrichment, LLM execution, tool loops, summarization, retries, tracing, and cancellation.
 - **Shared runtime layer** used by both desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools.
 - **Sandbox abstraction** for filesystem and command execution, with local mode by default and opt-in Docker-backed execution.
-- **HTTP backend** with trusted-proxy auth, per-user settings/provider keys, chat lifecycle, message execution, cancellation, option continuation, event replay, WebSocket streaming, and memory/filesystem/Postgres storage.
+- **HTTP backend** with trusted-proxy auth, per-user settings/provider keys, chat lifecycle, message execution, Telegram bot chat bindings, cancellation, option continuation, event replay, WebSocket streaming, and memory/filesystem/Postgres storage.
 - **Rich desktop tool catalog** for files, browser, web search/research, config, notes, applications, data analytics, calendar, mail, text replacement, Telegram, desktop capture, presentations, and calculator.
 - **SafeMode confirmations** for tool permission prompts, destructive Telegram operations, ambiguous contact/chat selection, and deferred file-modification review.
 - **Multi-provider LLM support** for GigaChat, Qwen, AiTunnel, Anthropic Claude, OpenAI, and local llama.cpp models.
@@ -237,7 +237,7 @@ The backend-safe catalog avoids desktop-only APIs and includes:
 | Data analytics | CSV plotting, Excel read, Excel report |
 | Calculator | Calculator |
 
-The backend intentionally excludes desktop automation, browser control, Mail, Calendar, Notes, Telegram, presentation UI integrations, and other OS-bound tools.
+The backend intentionally excludes desktop automation, browser control, Mail, Calendar, Notes, desktop Telegram tools, presentation UI integrations, and other OS-bound tools. It now separately supports Telegram bot chat bindings for text ingress into existing backend chats.
 
 ## UI confirmations and approval flows
 
@@ -287,6 +287,9 @@ Confirmation-related flows:
 | `POST /v1/chats/{chatId}/unarchive` | Unarchive chat |
 | `GET /v1/chats/{chatId}/messages` | List visible product messages |
 | `POST /v1/chats/{chatId}/messages` | Create user message and start/complete agent execution |
+| `GET /v1/chats/{chatId}/telegram-bot` | Read Telegram bot binding state for an owned chat |
+| `PUT /v1/chats/{chatId}/telegram-bot` | Validate and upsert a Telegram bot binding for an owned chat |
+| `DELETE /v1/chats/{chatId}/telegram-bot` | Remove the Telegram bot binding from an owned chat |
 | `GET /v1/chats/{chatId}/events` | Replay durable chat events |
 | `WS /v1/chats/{chatId}/ws` | Replay and subscribe to live chat events |
 | `POST /v1/options/{optionId}/answer` | Resume execution after a pending option is answered |
@@ -308,11 +311,12 @@ Confirmation-related flows:
 
 | Mode | Description |
 |---|---|
-| `memory` | Bounded in-process LRU repositories, useful for local/dev execution |
+| `memory` | Bounded in-process repositories, useful for local/dev execution |
 | `filesystem` | Per-user files under `SOUZ_BACKEND_DATA_DIR` / `souz.backend.dataDir` |
 | `postgres` | JDBC + HikariCP + Flyway-backed durable storage |
 
 Postgres storage supports durable event replay, per-chat message/event sequence numbers, one active execution per chat, optimistic locking for `agent_conversation_state`, and durable tool-call audit rows.
+Telegram bot bindings are available in all backend storage modes. Bot tokens are encrypted at rest via `TELEGRAM_TOKEN_ENCRYPTION_KEY`, pending links use one-time `/start <secret>` commands with only the secret hash stored server-side, and binding setup drops pending Telegram updates before long polling starts.
 
 ### Backend configuration
 
@@ -504,3 +508,11 @@ See JetBrains Compose Multiplatform release docs for signing and notarization de
 
 - [How to Build AI Agents You Can Actually Trust](https://medium.com/@liverm0r/building-ai-agents-for-non-technical-users-50d24c3184a8)
 - [Russian version on Habr](https://habr.com/ru/articles/1010236/)
+
+## License
+
+Copyright © 2026 Artur Dumchev and Shamil Khizriev
+
+This program and the accompanying materials are made available under the terms of the Eclipse Public License 2.0 which is available at http://www.eclipse.org/legal/epl-2.0.
+
+This Source Code may also be made available under the following Secondary Licenses when the conditions for such availability set forth in the Eclipse Public License, v. 2.0 are satisfied: GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version, with the GNU Classpath Exception which is available at https://www.gnu.org/software/classpath/license.html.

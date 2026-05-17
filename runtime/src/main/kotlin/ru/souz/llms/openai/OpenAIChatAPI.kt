@@ -361,7 +361,7 @@ class OpenAIChatAPI(
                 else -> emit(
                     mutableMapOf<String, Any?>(
                         "role" to msg.role.name,
-                        "content" to msg.content,
+                        "content" to buildContent(msg),
                     ).apply {
                         msg.name?.let { put("name", it) }
                     }
@@ -422,6 +422,42 @@ class OpenAIChatAPI(
             }
         }
     }
+
+    private fun buildContent(message: LLMRequest.Message): Any =
+        message.attachments
+            ?.takeIf { it.isNotEmpty() }
+            ?.mapTo(mutableListOf<Map<String, Any?>>()) { attachment ->
+                mapOf(
+                    "type" to "image_url",
+                    "image_url" to mapOf("url" to requireOpenAiImageUrl(attachment)),
+                )
+            }
+            ?.also { content ->
+                if (message.content.isNotBlank()) {
+                    content.add(
+                        0,
+                        mapOf(
+                            "type" to "text",
+                            "text" to message.content,
+                        )
+                    )
+                }
+                if (content.isEmpty()) {
+                    content += mapOf("type" to "text", "text" to "")
+                }
+            }
+            ?: message.content
+
+    private fun requireOpenAiImageUrl(attachment: String): String =
+        attachment.takeIf(::isSupportedOpenAiImageUrl)
+            ?: throw IllegalArgumentException(
+                "OpenAI chat attachments must be image URLs (http(s)://...) or image data URLs (data:image/...). Unsupported value: $attachment",
+            )
+
+    private fun isSupportedOpenAiImageUrl(attachment: String): Boolean =
+        attachment.startsWith("data:image/", ignoreCase = true) ||
+            attachment.startsWith("https://", ignoreCase = true) ||
+            attachment.startsWith("http://", ignoreCase = true)
 
     private fun parseCompletionsResponse(text: String, requestModel: String): LLMResponse.Chat {
         val node = restJsonMapper.readTree(text)

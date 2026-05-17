@@ -142,6 +142,7 @@ class BackendBootstrapRouteTest {
             regionProfile = "ru"
             useStreaming = true
             gigaChatKey = "giga-key"
+            requestTimeoutMillis = 46_000L
         }
         application {
             backendApplication(
@@ -177,6 +178,9 @@ class BackendBootstrapRouteTest {
         assertEquals(0.25, payload["settings"]["temperature"].asDouble())
         assertEquals("ru-RU", payload["settings"]["locale"].asText())
         assertEquals(ZoneId.systemDefault().id, payload["settings"]["timeZone"].asText())
+        assertEquals("ru", payload["settings"]["interfaceLanguage"].asText())
+        assertEquals(46_000L, payload["settings"]["requestTimeoutMillis"].asLong())
+        assertEquals(true, payload["settings"]["useFewShotExamples"].asBoolean())
         assertTrue(payload["capabilities"]["models"].isArray)
         assertTrue(payload["capabilities"]["tools"].isArray)
         assertNotNull(payload["capabilities"]["models"].firstOrNull())
@@ -305,6 +309,9 @@ class BackendBootstrapRouteTest {
                     enabledTools = setOf("ListFiles"),
                     showToolEvents = false,
                     streamingMessages = false,
+                    interfaceLanguage = "en",
+                    requestTimeoutMillis = 45_000L,
+                    useFewShotExamples = false,
                 )
                 )
             }
@@ -346,6 +353,9 @@ class BackendBootstrapRouteTest {
         assertEquals("Europe/Amsterdam", persistedPayload["settings"]["timeZone"].asText())
         assertEquals(false, persistedPayload["settings"]["showToolEvents"].asBoolean())
         assertEquals(false, persistedPayload["settings"]["streamingMessages"].asBoolean())
+        assertEquals("en", persistedPayload["settings"]["interfaceLanguage"].asText())
+        assertEquals(45_000L, persistedPayload["settings"]["requestTimeoutMillis"].asLong())
+        assertEquals(false, persistedPayload["settings"]["useFewShotExamples"].asBoolean())
 
         assertEquals(HttpStatusCode.OK, defaults.status)
         assertEquals(LLMModel.Max.alias, defaultPayload["settings"]["defaultModel"].asText())
@@ -353,6 +363,9 @@ class BackendBootstrapRouteTest {
         assertEquals(0.4, defaultPayload["settings"]["temperature"].asDouble())
         assertEquals("ru-RU", defaultPayload["settings"]["locale"].asText())
         assertEquals(ZoneId.systemDefault().id, defaultPayload["settings"]["timeZone"].asText())
+        assertEquals("ru", defaultPayload["settings"]["interfaceLanguage"].asText())
+        assertEquals(settingsProvider.requestTimeoutMillis, defaultPayload["settings"]["requestTimeoutMillis"].asLong())
+        assertEquals(true, defaultPayload["settings"]["useFewShotExamples"].asBoolean())
         assertTrue(defaultPayload["settings"].has("defaultModel"))
         assertTrue(defaultPayload["settings"].has("contextSize"))
         assertTrue(defaultPayload["settings"].has("temperature"))
@@ -370,6 +383,7 @@ class BackendBootstrapRouteTest {
             contextSize = 32_000
             temperature = 0.7f
             useStreaming = true
+            requestTimeoutMillis = 42_000L
         }
         application {
             backendApplication(
@@ -402,6 +416,9 @@ class BackendBootstrapRouteTest {
         assertTrue(payload["settings"].has("enabledTools"))
         assertTrue(payload["settings"].has("showToolEvents"))
         assertTrue(payload["settings"].has("streamingMessages"))
+        assertEquals("ru", payload["settings"]["interfaceLanguage"].asText())
+        assertEquals(42_000L, payload["settings"]["requestTimeoutMillis"].asLong())
+        assertEquals(true, payload["settings"]["useFewShotExamples"].asBoolean())
         assertTrue(payload["capabilities"]["models"].isArray)
         assertTrue(payload["capabilities"]["tools"].isArray)
     }

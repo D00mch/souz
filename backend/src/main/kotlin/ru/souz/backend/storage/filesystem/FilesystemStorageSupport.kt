@@ -29,6 +29,16 @@ internal fun filesystemStorageObjectMapper(): ObjectMapper =
 class FilesystemStorageLayout(
     private val dataDir: Path,
 ) {
+    fun userDirectories(): List<Path> {
+        val usersRoot = dataDir.resolve("users")
+        if (!Files.isDirectory(usersRoot)) {
+            return emptyList()
+        }
+        return Files.list(usersRoot).use { stream ->
+            stream.filter { Files.isDirectory(it) }.toList()
+        }
+    }
+
     fun userDir(userId: String): Path =
         dataDir.resolve("users").resolve(FilesystemPathSegmentCodec.encode(userId))
 
@@ -49,6 +59,9 @@ class FilesystemStorageLayout(
 
     fun chatFile(userId: String, chatId: java.util.UUID): Path =
         chatDir(userId, chatId).resolve("chat.json")
+
+    fun telegramBotBindingFile(userId: String, chatId: java.util.UUID): Path =
+        chatDir(userId, chatId).resolve(TELEGRAM_BOT_BINDING_FILE_NAME)
 
     fun messagesFile(userId: String, chatId: java.util.UUID): Path =
         chatDir(userId, chatId).resolve("messages.jsonl")
@@ -79,6 +92,22 @@ class FilesystemStorageLayout(
         return Files.list(chatsRoot).use { stream ->
             stream.filter { Files.isDirectory(it) }.toList()
         }
+    }
+
+    fun allChatDirectories(): List<Path> =
+        userDirectories().flatMap { userDirectory ->
+            val chatsRoot = userDirectory.resolve("chats")
+            if (!Files.isDirectory(chatsRoot)) {
+                emptyList()
+            } else {
+                Files.list(chatsRoot).use { stream ->
+                    stream.filter { Files.isDirectory(it) }.toList()
+                }
+            }
+        }
+
+    companion object {
+        const val TELEGRAM_BOT_BINDING_FILE_NAME: String = "telegram-bot.json"
     }
 }
 

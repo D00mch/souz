@@ -131,6 +131,9 @@ class BackendStage3RouteTest {
                     enabledTools = setOf("ListFiles"),
                     showToolEvents = false,
                     streamingMessages = false,
+                    interfaceLanguage = "en",
+                    requestTimeoutMillis = 45_000L,
+                    useFewShotExamples = false,
                 )
             )
         }
@@ -161,6 +164,9 @@ class BackendStage3RouteTest {
         assertEquals(listOf("ListFiles"), settings["enabledTools"].map { it.asText() })
         assertEquals(false, settings["showToolEvents"].asBoolean())
         assertEquals(false, settings["streamingMessages"].asBoolean())
+        assertEquals("en", settings["interfaceLanguage"].asText())
+        assertEquals(45_000, settings["requestTimeoutMillis"].asLong())
+        assertEquals(false, settings["useFewShotExamples"].asBoolean())
     }
 
     @Test
@@ -193,7 +199,10 @@ class BackendStage3RouteTest {
                   "systemPrompt": "be brief",
                   "enabledTools": ["ListFiles", "OpenBrowser"],
                   "showToolEvents": false,
-                  "streamingMessages": false
+                  "streamingMessages": false,
+                  "interfaceLanguage": "en",
+                  "requestTimeoutMillis": 45000,
+                  "useFewShotExamples": false
                 }
                 """.trimIndent()
             )
@@ -212,8 +221,14 @@ class BackendStage3RouteTest {
         assertEquals(listOf("ListFiles"), settings["enabledTools"].map { it.asText() })
         assertEquals(false, settings["showToolEvents"].asBoolean())
         assertEquals(false, settings["streamingMessages"].asBoolean())
+        assertEquals("en", settings["interfaceLanguage"].asText())
+        assertEquals(45_000L, settings["requestTimeoutMillis"].asLong())
+        assertEquals(false, settings["useFewShotExamples"].asBoolean())
         assertEquals(LLMModel.QwenMax, storedIntent?.defaultModel)
         assertEquals(setOf("ListFiles", "OpenBrowser"), storedIntent?.enabledTools)
+        assertEquals("en", storedIntent?.interfaceLanguage)
+        assertEquals(45_000L, storedIntent?.requestTimeoutMillis)
+        assertEquals(false, storedIntent?.useFewShotExamples)
     }
 
     @Test
@@ -248,6 +263,39 @@ class BackendStage3RouteTest {
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals("he-IL", payload["settings"]["locale"].asText())
         assertEquals(Locale.forLanguageTag("he-IL"), storedIntent?.locale)
+    }
+
+    @Test
+    fun `patch me settings validates timeout lower bound`() = testApplication {
+        val context = routeTestContext()
+        application {
+            backendApplication(
+                bootstrapService = context.bootstrapService,
+                selectedModel = { context.settingsProvider.gigaModel.alias },
+                trustedProxyToken = { "proxy-secret" },
+                userSettingsService = context.userSettingsService,
+                chatService = context.chatService,
+                messageService = context.messageService,
+                executionService = context.executionService,
+            )
+        }
+
+        val response = client.patch(BackendHttpRoutes.SETTINGS) {
+            trustedHeaders("user-invalid-timeout")
+            contentType(ContentType.Application.Json)
+            setBody(
+                """
+                {
+                  "requestTimeoutMillis": 999
+                }
+                """.trimIndent()
+            )
+        }
+        val payload = json.readTree(response.bodyAsText())
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertTrue(payload["error"]["message"].asText().contains("requestTimeoutMillis"))
     }
 
     @Test
@@ -589,6 +637,7 @@ class BackendStage3RouteTest {
         val settingsResponse = client.get(BackendHttpRoutes.SETTINGS) {
             trustedHeaders("fresh-user")
         }
+        val settingsPayload = json.readTree(settingsResponse.bodyAsText())["settings"]
 
         val userRecord = runBlocking { context.userRepository.get("fresh-user") }
         val storedChat = runBlocking { context.chatRepository.get("fresh-user", chatId) }
@@ -603,6 +652,9 @@ class BackendStage3RouteTest {
         assertEquals("fresh-user", storedChat?.userId)
         assertEquals(listOf("fresh-user"), storedMessages.map { it.userId }.distinct())
         assertEquals(1, runBlocking { context.userRepository.count() })
+        assertEquals("ru", settingsPayload["interfaceLanguage"].asText())
+        assertEquals(context.settingsProvider.requestTimeoutMillis, settingsPayload["requestTimeoutMillis"].asLong())
+        assertEquals(true, settingsPayload["useFewShotExamples"].asBoolean())
     }
 
     @Test

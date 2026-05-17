@@ -36,6 +36,7 @@ import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.settings.model.ToolPermission
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
+import ru.souz.backend.telegram.TelegramBotBinding
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.user.model.UserRecord
@@ -45,6 +46,7 @@ import ru.souz.llms.LlmProvider
 
 internal const val ACTIVE_EXECUTION_CONSTRAINT: String = "agent_executions_one_active_per_chat_idx"
 internal const val PRIMARY_KEY_CONSTRAINT: String = "agent_conversation_state_pkey"
+internal const val TELEGRAM_BOT_BINDINGS_TOKEN_HASH_CONSTRAINT: String = "telegram_bot_bindings_bot_token_hash_key"
 internal val postgresStorageMapper = jacksonObjectMapper().findAndRegisterModules()
 
 internal suspend fun <T> DataSource.read(block: (Connection) -> T): T =
@@ -142,6 +144,9 @@ internal data class StoredSettingsPayload(
     val enabledTools: Set<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val interfaceLanguage: String? = null,
+    val requestTimeoutMillis: Long? = null,
+    val useFewShotExamples: Boolean? = null,
     val toolPermissions: Map<String, ToolPermission> = emptyMap(),
     val mcp: Map<String, UserMcpServer> = emptyMap(),
     val schemaVersion: Int = UserSettings.CURRENT_SCHEMA_VERSION,
@@ -179,6 +184,32 @@ internal fun ResultSet.toChat(): Chat =
         userId = getString("user_id"),
         title = getString("title"),
         archived = getBoolean("archived"),
+        createdAt = instant("created_at"),
+        updatedAt = instant("updated_at"),
+    )
+
+internal fun ResultSet.toTelegramBotBinding(): TelegramBotBinding =
+    TelegramBotBinding(
+        id = getObject("id", java.util.UUID::class.java),
+        userId = getString("user_id"),
+        chatId = getObject("chat_id", java.util.UUID::class.java),
+        botTokenEncrypted = getString("bot_token_encrypted"),
+        botTokenHash = getString("bot_token_hash"),
+        linkSecretHash = getString("link_secret_hash"),
+        botUsername = getString("bot_username"),
+        botFirstName = getString("bot_first_name"),
+        lastUpdateId = getLong("last_update_id"),
+        enabled = getBoolean("enabled"),
+        telegramUserId = getObject("telegram_user_id", java.lang.Long::class.java)?.toLong(),
+        telegramChatId = getObject("telegram_chat_id", java.lang.Long::class.java)?.toLong(),
+        telegramUsername = getString("telegram_username"),
+        telegramFirstName = getString("telegram_first_name"),
+        telegramLastName = getString("telegram_last_name"),
+        linkedAt = getObject("linked_at", OffsetDateTime::class.java)?.toInstant(),
+        pollerOwner = getString("poller_owner"),
+        pollerLeaseUntil = getObject("poller_lease_until", OffsetDateTime::class.java)?.toInstant(),
+        lastError = getString("last_error"),
+        lastErrorAt = getObject("last_error_at", OffsetDateTime::class.java)?.toInstant(),
         createdAt = instant("created_at"),
         updatedAt = instant("updated_at"),
     )
@@ -314,6 +345,9 @@ internal fun ResultSet.toUserSettings(): UserSettings {
         enabledTools = payload.enabledTools,
         showToolEvents = payload.showToolEvents,
         streamingMessages = payload.streamingMessages,
+        interfaceLanguage = payload.interfaceLanguage,
+        requestTimeoutMillis = payload.requestTimeoutMillis,
+        useFewShotExamples = payload.useFewShotExamples,
         toolPermissions = payload.toolPermissions,
         mcp = payload.mcp,
         schemaVersion = payload.schemaVersion,
@@ -347,6 +381,9 @@ internal fun UserSettings.toSettingsJson(): String =
             enabledTools = enabledTools,
             showToolEvents = showToolEvents,
             streamingMessages = streamingMessages,
+            interfaceLanguage = interfaceLanguage,
+            requestTimeoutMillis = requestTimeoutMillis,
+            useFewShotExamples = useFewShotExamples,
             toolPermissions = toolPermissions,
             mcp = mcp,
             schemaVersion = schemaVersion,

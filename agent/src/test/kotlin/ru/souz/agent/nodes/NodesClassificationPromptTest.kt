@@ -72,6 +72,22 @@ class NodesClassificationPromptTest {
     }
 
     @Test
+    fun `buildPrompt describes current screen requests as desktop plus image workflow`() {
+        val prompt = buildPromptWith(
+            mapOf(
+                ToolCategory.DESKTOP to mapOf("TakeScreenshot" to dummySetup("TakeScreenshot")),
+                ToolCategory.IMAGE to mapOf("ViewImage" to dummySetup("ViewImage")),
+            )
+        )
+
+        assertTrue(prompt.contains("не дал путь к готовому изображению"))
+        assertTrue(prompt.contains("\"Что видишь на экране?\" -> \"DESKTOP,IMAGE 95\""))
+        assertTrue(prompt.contains("\"Опиши что видишь на экране?\" -> \"DESKTOP,IMAGE 95\""))
+        assertFalse(prompt.contains("IMAGE: что видишь на экране"))
+        assertFalse(prompt.contains("IMAGE: сделай скриншот и опиши, что на нем"))
+    }
+
+    @Test
     fun `applyFilter disables telegram tools when telegram is not connected`() {
         val toolsWithTelegram = defaultTools + (ToolCategory.TELEGRAM to mapOf("TgRead" to dummySetup("TgRead")))
         val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns toolsWithTelegram }
@@ -244,6 +260,47 @@ class NodesClassificationPromptTest {
         assertFalse(prompt.contains("\nBROWSER: "))
     }
 
+    @Test
+    fun `classification keeps full desktop toolset for screen understanding`() {
+        val localClassifier = CapturingClassifier(
+            UserMessageClassifier.Reply(
+                categories = listOf(ToolCategory.DESKTOP, ToolCategory.IMAGE),
+                confidence = 90.0,
+            )
+        )
+        val apiClassifier = CapturingClassifier(
+            UserMessageClassifier.Reply(
+                categories = listOf(ToolCategory.DESKTOP, ToolCategory.IMAGE),
+                confidence = 90.0,
+            )
+        )
+        val imageTools = mapOf(
+            ToolCategory.DESKTOP to mapOf(
+                "TakeScreenshot" to dummySetup("TakeScreenshot"),
+                "StartScreenRecording" to dummySetup("StartScreenRecording"),
+            ),
+            ToolCategory.IMAGE to mapOf(
+                "ViewImage" to dummySetup("ViewImage"),
+            ),
+            ToolCategory.IMAGE_GENERATION to mapOf(
+                "GenerateImage" to dummySetup("GenerateImage"),
+            ),
+        )
+
+        val result = executeClassification(
+            input = "что видишь на экране?",
+            history = emptyList(),
+            tools = imageTools,
+            localClassifier = localClassifier,
+            apiClassifier = apiClassifier,
+        )
+
+        assertEquals(
+            listOf("TakeScreenshot", "StartScreenRecording", "ViewImage"),
+            result.activeTools.map { it.name }
+        )
+    }
+
     private fun mockTelegramFilteredToolsSettings(telegramConnected: Boolean): AgentToolsFilter {
         return mockk<AgentToolsFilter>().also { toolsSettings ->
             every { toolsSettings.applyFilter(any()) } answers {
@@ -275,7 +332,7 @@ class NodesClassificationPromptTest {
         tools: Map<ToolCategory, Map<String, LLMToolSetup>> = defaultTools,
         localClassifier: UserMessageClassifier,
         apiClassifier: UserMessageClassifier,
-    ) {
+    ): AgentContext<String> {
         val settingsProvider = mockk<AgentSettingsProvider> {
             every { gigaModel } returns LLMModel.Max
         }
@@ -292,7 +349,7 @@ class NodesClassificationPromptTest {
             toolsFilter = toolsSettings,
         )
 
-        runBlocking {
+        return runBlocking {
             classification.node().execute(
                 ctx = AgentContext(
                     input = input,

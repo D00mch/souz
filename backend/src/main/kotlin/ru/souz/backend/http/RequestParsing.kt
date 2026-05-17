@@ -13,6 +13,9 @@ import ru.souz.llms.LLMModel
 internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrV1BadRequest(): T =
     receiveOrRequestError(::invalidV1Request)
 
+internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrBadRequest(): T =
+    receiveOrRequestError(::badRequestV1)
+
 internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(): UserSettingsOverrides =
     UserSettingsOverrides(
         defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel") },
@@ -29,6 +32,11 @@ internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(): UserSettin
         }?.toCollection(linkedSetOf()),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
+        interfaceLanguage = interfaceLanguage?.let { parseInterfaceLanguage(it, fieldName = "interfaceLanguage") },
+        requestTimeoutMillis = requestTimeoutMillis?.let {
+            parseRequestTimeoutMillis(it, fieldName = "requestTimeoutMillis")
+        },
+        useFewShotExamples = useFewShotExamples,
     )
 
 internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(): UserSettingsOverrides =
@@ -42,6 +50,11 @@ internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(): UserS
         }?.toCollection(linkedSetOf()),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
+        interfaceLanguage = interfaceLanguage?.let { parseInterfaceLanguage(it, fieldName = "interfaceLanguage") },
+        requestTimeoutMillis = requestTimeoutMillis?.let {
+            parseRequestTimeoutMillis(it, fieldName = "requestTimeoutMillis")
+        },
+        useFewShotExamples = useFewShotExamples,
     )
 
 internal fun BackendV1MessageOptionsRequest?.toUserSettingsOverrides(): UserSettingsOverrides =
@@ -84,6 +97,17 @@ internal fun parseTimeZone(rawTimeZone: String, fieldName: String): ZoneId =
         throw invalidV1Request("$fieldName must be a valid time zone.")
     }
 
+internal fun parseInterfaceLanguage(rawInterfaceLanguage: String, fieldName: String): String =
+    when (rawInterfaceLanguage.trim().lowercase()) {
+        "en" -> "en"
+        "ru" -> "ru"
+        else -> throw invalidV1Request("$fieldName must be one of: en, ru.")
+    }
+
+internal fun parseRequestTimeoutMillis(rawRequestTimeoutMillis: Long, fieldName: String): Long =
+    rawRequestTimeoutMillis.takeIf { it >= MIN_REQUEST_TIMEOUT_MILLIS }
+        ?: throw invalidV1Request("$fieldName must be at least $MIN_REQUEST_TIMEOUT_MILLIS.")
+
 private suspend inline fun <reified T : Any> ApplicationCall.receiveOrRequestError(
     crossinline errorFactory: (String) -> RuntimeException,
 ): T =
@@ -96,3 +120,4 @@ private suspend inline fun <reified T : Any> ApplicationCall.receiveOrRequestErr
     }
 
 private const val UNDEFINED_LANGUAGE = "und"
+private const val MIN_REQUEST_TIMEOUT_MILLIS = 1_000L

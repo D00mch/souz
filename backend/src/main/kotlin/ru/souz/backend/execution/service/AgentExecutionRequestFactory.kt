@@ -75,6 +75,8 @@ internal class AgentExecutionRequestFactory(
                 systemPrompt = effectiveSettings.systemPrompt,
                 streamingMessages = effectiveSettings.streamingMessages,
                 showToolEvents = effectiveSettings.showToolEvents,
+                requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
+                useFewShotExamples = effectiveSettings.useFewShotExamples,
             ),
         )
 
@@ -93,6 +95,8 @@ internal class AgentExecutionRequestFactory(
                 temperature = effectiveSettings.temperature,
                 systemPrompt = effectiveSettings.systemPrompt,
                 streamingMessages = effectiveSettings.streamingMessages,
+                requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
+                useFewShotExamples = effectiveSettings.useFewShotExamples,
             ),
             userMessageMetadata = userMessageMetadata(normalizedClientMessageId),
             shouldReturnRunning = effectiveSettings.streamingMessages && featureFlags.wsEvents,
@@ -130,6 +134,8 @@ internal class AgentExecutionRequestFactory(
             temperature = executionMetadataFloat(execution, METADATA_TEMPERATURE),
             systemPrompt = execution.metadata[METADATA_SYSTEM_PROMPT]?.takeIf { it.isNotEmpty() },
             streamingMessages = executionMetadataBoolean(execution, METADATA_STREAMING_MESSAGES),
+            requestTimeoutMillis = executionMetadataLong(execution, METADATA_REQUEST_TIMEOUT_MILLIS),
+            useFewShotExamples = executionMetadataBoolean(execution, METADATA_USE_FEW_SHOT_EXAMPLES),
         )
 
     fun createEventSink(
@@ -176,6 +182,8 @@ internal class AgentExecutionRequestFactory(
         systemPrompt: String?,
         streamingMessages: Boolean,
         showToolEvents: Boolean,
+        requestTimeoutMillis: Long,
+        useFewShotExamples: Boolean,
     ): Map<String, String> = buildMap {
         put(METADATA_CONTEXT_SIZE, contextSize.toString())
         put(METADATA_TEMPERATURE, temperature.toString())
@@ -183,6 +191,8 @@ internal class AgentExecutionRequestFactory(
         put(METADATA_TIME_ZONE, timeZone)
         put(METADATA_STREAMING_MESSAGES, streamingMessages.toString())
         put(METADATA_SHOW_TOOL_EVENTS, showToolEvents.toString())
+        put(METADATA_REQUEST_TIMEOUT_MILLIS, requestTimeoutMillis.toString())
+        put(METADATA_USE_FEW_SHOT_EXAMPLES, useFewShotExamples.toString())
         systemPrompt?.let { put(METADATA_SYSTEM_PROMPT, it) }
     }
 
@@ -195,6 +205,11 @@ internal class AgentExecutionRequestFactory(
         execution: AgentExecution,
         key: String,
     ): Float? = execution.metadata[key]?.toFloatOrNull()
+
+    private fun executionMetadataLong(
+        execution: AgentExecution,
+        key: String,
+    ): Long? = execution.metadata[key]?.toLongOrNull()
 
     private fun executionMetadataBoolean(
         execution: AgentExecution,
@@ -239,4 +254,6 @@ private const val METADATA_TIME_ZONE = "timeZone"
 private const val METADATA_SYSTEM_PROMPT = "systemPrompt"
 private const val METADATA_STREAMING_MESSAGES = "streamingMessages"
 private const val METADATA_SHOW_TOOL_EVENTS = "showToolEvents"
+private const val METADATA_REQUEST_TIMEOUT_MILLIS = "requestTimeoutMillis"
+private const val METADATA_USE_FEW_SHOT_EXAMPLES = "useFewShotExamples"
 private const val OPTION_CONTINUATION_PREFIX = "__option_answer__"

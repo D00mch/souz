@@ -5,10 +5,7 @@ import it.tdlight.jni.TdApi
 
 private const val TELEGRAM_CONTACT_FUZZY_TOP_K = 40
 private const val TELEGRAM_CHAT_FUZZY_TOP_K = 25
-
-private val LOOKUP_TRANSLITERATOR = ThreadLocal.withInitial {
-    Transliterator.getInstance("Russian-Latin/BGN; Latin-ASCII")
-}
+private const val LOOKUP_TRANSLITERATOR_ID = "Russian-Latin/BGN; Latin-ASCII"
 
 internal data class TelegramLookupSnapshot(
     val contactsByUserId: Map<Long, TelegramCachedContact>,
@@ -25,7 +22,8 @@ internal class TelegramLookupEngine {
         rawName: String,
         snapshot: TelegramLookupSnapshot,
     ): List<TelegramContactCandidate> {
-        val queryVariants = lookupVariants(rawName)
+        val lookupText = LookupText()
+        val queryVariants = lookupText.variants(rawName)
         if (queryVariants.isEmpty()) return emptyList()
         val chatRanks = orderedChatRanks(snapshot)
 
@@ -35,7 +33,7 @@ internal class TelegramLookupEngine {
         snapshot.meUserId?.let(candidateIds::add)
 
         val drafts = candidateIds
-            .mapNotNull { userId -> buildContactCandidateDraft(userId, chatRanks, snapshot) }
+            .mapNotNull { userId -> buildContactCandidateDraft(userId, chatRanks, snapshot, lookupText) }
         if (drafts.isEmpty()) return emptyList()
 
         val draftsById = drafts.associateBy { it.userId }
@@ -45,6 +43,7 @@ internal class TelegramLookupEngine {
                     aliases = draft.aliases,
                     queryVariants = queryVariants,
                     includeFuzzy = false,
+                    lookupText = lookupText,
                 ) + draft.recencyBoost
                 if (score <= 0) null else draft.toCandidate(score)
             }
@@ -66,6 +65,7 @@ internal class TelegramLookupEngine {
                     aliases = draft.aliases,
                     queryVariants = queryVariants,
                     includeFuzzy = true,
+                    lookupText = lookupText,
                 ) + draft.recencyBoost
                 candidate.copy(score = refinedScore)
             }
@@ -76,12 +76,13 @@ internal class TelegramLookupEngine {
         rawName: String,
         snapshot: TelegramLookupSnapshot,
     ): List<TelegramChatCandidate> {
-        val queryVariants = lookupVariants(rawName)
+        val lookupText = LookupText()
+        val queryVariants = lookupText.variants(rawName)
         if (queryVariants.isEmpty()) return emptyList()
         val chatRanks = orderedChatRanks(snapshot)
 
         val drafts = snapshot.chatsById.values
-            .mapNotNull { chat -> buildChatCandidateDraft(chat, chatRanks, snapshot) }
+            .mapNotNull { chat -> buildChatCandidateDraft(chat, chatRanks, snapshot, lookupText) }
         if (drafts.isEmpty()) return emptyList()
 
         val draftsById = drafts.associateBy { it.chatId }
@@ -91,6 +92,7 @@ internal class TelegramLookupEngine {
                     aliases = draft.aliases,
                     queryVariants = queryVariants,
                     includeFuzzy = false,
+                    lookupText = lookupText,
                 ) + draft.recencyBoost
                 if (score <= 0) null else draft.toCandidate(score)
             }
@@ -112,6 +114,7 @@ internal class TelegramLookupEngine {
                     aliases = draft.aliases,
                     queryVariants = queryVariants,
                     includeFuzzy = true,
+                    lookupText = lookupText,
                 ) + draft.recencyBoost
                 candidate.copy(score = refinedScore)
             }
@@ -177,6 +180,7 @@ internal class TelegramLookupEngine {
         userId: Long,
         chatRanks: Map<Long, Int>,
         snapshot: TelegramLookupSnapshot,
+        lookupText: LookupText,
     ): ContactCandidateDraft? {
         val cachedContact = snapshot.contactsByUserId[userId]
         val user = snapshot.usersById[userId]
@@ -186,9 +190,9 @@ internal class TelegramLookupEngine {
         val linkedChat = snapshot.privateChatByUserId[userId]?.let(snapshot.chatsById::get)
         val aliases = linkedSetOf<String>()
         aliases += cachedContact?.aliases.orEmpty()
-        user?.let { aliases += userAliases(it) }
-        aliases += normalizeLookup(displayName)
-        linkedChat?.title?.let { aliases += normalizeLookup(it) }
+        user?.let { aliases += userAliases(it, lookupText) }
+        aliases += lookupText.normalize(displayName)
+        linkedChat?.title?.let { aliases += lookupText.normalize(it) }
         if (aliases.isEmpty()) return null
 
         return ContactCandidateDraft(
@@ -208,12 +212,13 @@ internal class TelegramLookupEngine {
         chat: TelegramCachedChat,
         chatRanks: Map<Long, Int>,
         snapshot: TelegramLookupSnapshot,
+        lookupText: LookupText,
     ): ChatCandidateDraft? {
         val aliases = linkedSetOf<String>()
-        aliases += normalizeLookup(chat.title)
+        aliases += lookupText.normalize(chat.title)
         chat.linkedUserId
             ?.let(snapshot.usersById::get)
-            ?.let(::userAliases)
+            ?.let { userAliases(it, lookupText) }
             ?.let(aliases::addAll)
         if (aliases.isEmpty()) return null
         return ChatCandidateDraft(
@@ -231,12 +236,13 @@ internal class TelegramLookupEngine {
         aliases: Set<String>,
         queryVariants: Set<String>,
         includeFuzzy: Boolean,
+        lookupText: LookupText,
     ): Int {
         var best = 0
 
         for (alias in aliases) {
             if (alias.isBlank()) continue
-            val aliasVariants = lookupVariants(alias)
+            val aliasVariants = lookupText.variants(alias)
             for (query in queryVariants) {
                 val score = aliasVariants.maxOfOrNull { variant ->
                     if (includeFuzzy) {
@@ -326,26 +332,6 @@ internal class TelegramLookupEngine {
             .thenBy { it.title.lowercase() }
     }
 
-    private fun lookupVariants(value: String): Set<String> {
-        val normalized = normalizeLookup(value)
-        if (normalized.isBlank()) return emptySet()
-
-        return buildSet {
-            add(normalized)
-            add(normalized.replace(" ", ""))
-            val latinized = transliterateToLatin(normalized)
-            if (latinized.isNotBlank()) {
-                add(latinized)
-                add(latinized.replace(" ", ""))
-            }
-        }
-    }
-
-    private fun transliterateToLatin(value: String): String {
-        val transliterated = LOOKUP_TRANSLITERATOR.get().transliterate(value.lowercase())
-        return normalizeLookup(transliterated)
-    }
-
     private fun levenshteinDistance(left: String, right: String): Int {
         if (left == right) return 0
         if (left.isEmpty()) return right.length
@@ -393,32 +379,32 @@ internal class TelegramLookupEngine {
         return user.id.toString()
     }
 
-    private fun userAliases(user: TdApi.User): Set<String> {
+    private fun userAliases(user: TdApi.User, lookupText: LookupText): Set<String> {
         val aliases = linkedSetOf<String>()
         val first = user.firstName.orEmpty().trim()
         val last = user.lastName.orEmpty().trim()
         val full = listOf(first, last).filter { it.isNotBlank() }.joinToString(" ")
 
         if (full.isNotBlank()) {
-            aliases += normalizeLookup(full)
+            aliases += lookupText.normalize(full)
         }
         if (first.isNotBlank()) {
-            aliases += normalizeLookup(first)
+            aliases += lookupText.normalize(first)
         }
         if (last.isNotBlank()) {
-            aliases += normalizeLookup(last)
+            aliases += lookupText.normalize(last)
         }
 
         user.usernames?.activeUsernames?.forEach { rawUsername ->
             val username = rawUsername ?: return@forEach
-            val normalized = normalizeLookup(username)
+            val normalized = lookupText.normalize(username)
             if (normalized.isNotBlank()) {
                 aliases += normalized
-                aliases += normalizeLookup("@$username")
+                aliases += lookupText.normalize("@$username")
             }
         }
 
-        val phoneAlias = normalizeLookup("+${user.phoneNumber.orEmpty()}")
+        val phoneAlias = lookupText.normalize("+${user.phoneNumber.orEmpty()}")
         if (phoneAlias.isNotBlank()) {
             aliases += phoneAlias
         }
@@ -426,17 +412,41 @@ internal class TelegramLookupEngine {
         return aliases
     }
 
-    private fun normalizeLookup(value: String): String = value
-        .trim()
-        .lowercase()
-        .replace(Regex("[^\\p{L}\\p{N}@+]+"), " ")
-        .replace(Regex("\\s+"), " ")
-        .trim()
-
     private fun maskPhone(phone: String?): String? {
         if (phone.isNullOrBlank()) return null
         val normalized = if (phone.startsWith("+")) phone else "+$phone"
         if (normalized.length <= 9) return normalized.take(5) + "***"
         return normalized.take(5) + "***" + normalized.takeLast(4)
+    }
+
+    private class LookupText {
+        private val transliterator = Transliterator.getInstance(LOOKUP_TRANSLITERATOR_ID)
+
+        fun variants(value: String): Set<String> {
+            val normalized = normalize(value)
+            if (normalized.isBlank()) return emptySet()
+
+            return buildSet {
+                add(normalized)
+                add(normalized.replace(" ", ""))
+                val latinized = transliterateToLatin(normalized)
+                if (latinized.isNotBlank()) {
+                    add(latinized)
+                    add(latinized.replace(" ", ""))
+                }
+            }
+        }
+
+        fun normalize(value: String): String = value
+            .trim()
+            .lowercase()
+            .replace(Regex("[^\\p{L}\\p{N}@+]+"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        private fun transliterateToLatin(value: String): String {
+            val transliterated = transliterator.transliterate(value.lowercase())
+            return normalize(transliterated)
+        }
     }
 }

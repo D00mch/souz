@@ -18,7 +18,7 @@ class ToolTakeScreenshot(
 
     override val name: String = "TakeScreenshot"
     override val description: String = "Takes an instant screenshot of the main screen and saves it to the Desktop. " +
-            "Returns the path to the saved file."
+            "Returns the path to the saved file so it can be inspected with ViewImage."
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -33,7 +33,7 @@ class ToolTakeScreenshot(
 
     override val returnParameters = ReturnParameters(
         properties = mapOf(
-            "result" to ReturnProperty("string", "Path to the saved screenshot")
+            "result" to ReturnProperty("string", "Path to the saved screenshot. Pass it to ViewImage to analyze the screenshot contents.")
         )
     )
 

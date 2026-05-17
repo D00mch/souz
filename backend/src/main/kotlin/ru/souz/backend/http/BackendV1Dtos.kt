@@ -26,6 +26,7 @@ import ru.souz.backend.execution.model.AgentExecutionUsage
 import ru.souz.backend.keys.model.UserProviderKeyView
 import ru.souz.backend.execution.service.CancelExecutionResult
 import ru.souz.backend.settings.model.EffectiveUserSettings
+import ru.souz.backend.telegram.TelegramBotBinding
 import ru.souz.llms.restJsonMapper
 
 internal data class BackendV1SettingsResponse(
@@ -42,6 +43,9 @@ internal data class BackendV1SettingsPatchRequest(
     val enabledTools: List<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val interfaceLanguage: String? = null,
+    val requestTimeoutMillis: Long? = null,
+    val useFewShotExamples: Boolean? = null,
 )
 
 internal data class BackendV1OnboardingCompleteRequest(
@@ -51,6 +55,9 @@ internal data class BackendV1OnboardingCompleteRequest(
     val enabledTools: List<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val interfaceLanguage: String? = null,
+    val requestTimeoutMillis: Long? = null,
+    val useFewShotExamples: Boolean? = null,
 )
 
 internal data class BackendV1SettingsDto(
@@ -63,6 +70,9 @@ internal data class BackendV1SettingsDto(
     val enabledTools: List<String>,
     val showToolEvents: Boolean,
     val streamingMessages: Boolean,
+    val interfaceLanguage: String,
+    val requestTimeoutMillis: Long,
+    val useFewShotExamples: Boolean,
 )
 
 internal data class BackendV1ProviderKeysResponse(
@@ -113,6 +123,15 @@ internal data class BackendV1ChatDto(
 internal data class BackendV1MessagesResponse(
     val items: List<BackendV1MessageDto>,
     val nextBeforeSeq: Long?,
+)
+
+internal data class BackendV1TelegramBotBindingResponse(
+    val telegramBot: BackendV1TelegramBotBindingDto?,
+    val pendingLinkCommand: String? = null,
+)
+
+internal data class BackendV1UpsertTelegramBotBindingRequest(
+    val token: String? = null,
 )
 
 internal data class BackendV1CreateMessageRequest(
@@ -170,6 +189,20 @@ internal data class BackendV1MessageDto(
     val createdAt: String,
 )
 
+internal data class BackendV1TelegramBotBindingDto(
+    val chatId: String,
+    val enabled: Boolean,
+    val botUsername: String?,
+    val botFirstName: String?,
+    val createdAt: String,
+    val updatedAt: String,
+    val linked: Boolean,
+    val telegramUsername: String? = null,
+    val telegramFirstName: String? = null,
+    val telegramLastName: String? = null,
+    val linkedAt: String? = null,
+)
+
 internal data class BackendV1ExecutionDto(
     val id: String,
     val chatId: String,
@@ -223,6 +256,9 @@ internal fun EffectiveUserSettings.toDto(): BackendV1SettingsDto =
         enabledTools = enabledTools.toList(),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
+        interfaceLanguage = interfaceLanguage,
+        requestTimeoutMillis = requestTimeoutMillis,
+        useFewShotExamples = useFewShotExamples,
     )
 
 internal fun UserProviderKeyView.toDto(): BackendV1ProviderKeyDto =
@@ -244,6 +280,21 @@ internal fun Chat.toDto(lastMessagePreview: String? = null): BackendV1ChatDto =
         createdAt = createdAt.toString(),
         updatedAt = updatedAt.toString(),
         lastMessagePreview = lastMessagePreview,
+    )
+
+internal fun TelegramBotBinding.toDto(): BackendV1TelegramBotBindingDto =
+    BackendV1TelegramBotBindingDto(
+        chatId = chatId.toString(),
+        enabled = enabled,
+        botUsername = botUsername,
+        botFirstName = botFirstName,
+        createdAt = createdAt.toString(),
+        updatedAt = updatedAt.toString(),
+        linked = linked,
+        telegramUsername = telegramUsername,
+        telegramFirstName = telegramFirstName,
+        telegramLastName = telegramLastName,
+        linkedAt = linkedAt?.toString(),
     )
 
 internal fun SendMessageResult.toResponse(): BackendV1CreateMessageResponse =
@@ -319,12 +370,13 @@ internal fun AgentEventEnvelope.toDto(): BackendV1EventDto =
 
 private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<String, Any?> =
     when (this) {
-        is MessageCreatedPayload -> linkedMapOf(
+        is MessageCreatedPayload -> linkedMapOf<String, Any?>(
             "messageId" to messageId.toString(),
             "seq" to seq,
             "role" to role,
             "content" to content,
-        )
+            "clientMessageId" to clientMessageId,
+        ).withoutNulls()
 
         is MessageDeltaPayload -> linkedMapOf(
             "messageId" to messageId.toString(),
@@ -428,6 +480,7 @@ private fun Map<String, String>.toLegacyTransportPayload(type: AgentEventType): 
             copyLongIfPresent("seq")
             copyIfPresent("role")
             copyIfPresent("content")
+            copyIfPresent("clientMessageId")
         }
 
         AgentEventType.MESSAGE_DELTA -> buildLegacyPayload {

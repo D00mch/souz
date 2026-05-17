@@ -17,12 +17,16 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.ToolCategory
+
 /** Request-scoped backend settings wrapper used by the shared agent/runtime code. */
 class BackendConversationSettingsProvider(
     private val delegate: SettingsProvider,
     private val defaultSystemPrompt: String,
     locale: String,
+    useFewShotExamples: Boolean = delegate.useFewShotExamples,
+    requestTimeoutMillis: Long = delegate.requestTimeoutMillis,
 ) : SettingsProvider by delegate {
     private var overrideSystemPrompt: String? = null
 
@@ -30,7 +34,9 @@ class BackendConversationSettingsProvider(
     override var regionProfile: String = localeToRegionProfile(locale)
     override var activeAgentId: AgentId = AgentId.default
     override var gigaModel: LLMModel = delegate.gigaModel
+    override var useFewShotExamples: Boolean = useFewShotExamples
     override var useStreaming: Boolean = false
+    override var requestTimeoutMillis: Long = requestTimeoutMillis
     override var contextSize: Int = delegate.contextSize
     override var temperature: Float = delegate.temperature
 
@@ -61,6 +67,8 @@ class BackendConversationSettingsProvider(
         this.regionProfile = localeToRegionProfile(request.locale)
         this.overrideSystemPrompt = request.systemPrompt
         this.useStreaming = request.streamingMessages == true
+        this.useFewShotExamples = request.useFewShotExamples ?: this.useFewShotExamples
+        this.requestTimeoutMillis = request.requestTimeoutMillis ?: this.requestTimeoutMillis
     }
 
     private fun parseModel(rawModel: String): LLMModel? =
@@ -76,6 +84,35 @@ class BackendConversationSettingsProvider(
         } else {
             SettingsProviderImpl.REGION_RU
         }
+    }
+}
+
+internal class BackendFewShotAwareToolCatalog(
+    private val delegate: AgentToolCatalog,
+    private val settingsProvider: SettingsProvider,
+) : AgentToolCatalog {
+    private val toolsWithoutFewShotExamples: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
+        delegate.toolsByCategory.mapValues { (_, toolsByName) ->
+            toolsByName.mapValues { (_, toolSetup) -> toolSetup.withoutFewShotExamples() }
+        }
+    }
+
+    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>
+        get() = if (settingsProvider.useFewShotExamples) delegate.toolsByCategory else toolsWithoutFewShotExamples
+}
+
+private fun LLMToolSetup.withoutFewShotExamples(): LLMToolSetup {
+    val delegate = this
+    return object : LLMToolSetup {
+        override val fn: LLMRequest.Function = delegate.fn.copy(fewShotExamples = emptyList())
+
+        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
+            delegate.invoke(functionCall)
+
+        override suspend fun invoke(
+            functionCall: LLMResponse.FunctionCall,
+            meta: ToolInvocationMeta,
+        ): LLMRequest.Message = delegate.invoke(functionCall, meta)
     }
 }
 
