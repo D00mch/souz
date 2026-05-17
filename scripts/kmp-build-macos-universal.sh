@@ -3,8 +3,8 @@
 # Build script for creating universal macOS App Store package
 # This script builds both x86_64 and arm64 versions and combines them using lipo
 #
-# Usage: ./ci/build-macos-universal.sh [build_number]
-# Example: ./ci/build-macos-universal.sh 23
+# Usage: ./scripts/kmp-build-macos-universal.sh [build_number]
+# Example: ./scripts/kmp-build-macos-universal.sh 23
 #
 # Configuration is read from:
 #   - local.properties (signing identities)

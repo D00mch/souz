@@ -24,8 +24,8 @@ usage() {
 Usage: kmp-build-macos-dev.sh --jdk-arch arm64|aarch64|x86_64|x64
 
 Examples:
-  ./build-logic/kmp-build-macos-dev.sh --jdk-arch arm64
-  ./build-logic/kmp-build-macos-dev.sh --jdk-arch x86_64
+  ./scripts/kmp-build-macos-dev.sh --jdk-arch arm64
+  ./scripts/kmp-build-macos-dev.sh --jdk-arch x86_64
 EOF
 }
 

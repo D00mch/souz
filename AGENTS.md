@@ -64,7 +64,7 @@ If you are not sure about something, left a note for other developers to review.
 │   ├── src/test/kotlin/ru/souz/backend/    # Backend service/runtime tests
 │   └── AGENTS.md                           # Module notes and REST contract
 ├── dest/                                   # Local output/scratch directory
-├── build-logic/                            # Included Gradle build with convention plugins/shared build logic
+├── scripts/                                # Build, release, and packaging helper scripts
 └── gradle/                                 # Gradle version catalog and wrapper configuration
 ```
 
