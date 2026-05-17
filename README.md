@@ -42,7 +42,7 @@ Or download the latest build from [GitHub Releases](https://github.com/D00mch/so
 ├── sharedUI/               # Compose Desktop UI, view models, host ports, UI adapters, UI resources
 ├── desktopApp/             # Runnable desktop host, DI composition root, OS integrations, packaging
 ├── backend/                # Ktor HTTP backend over the shared agent runtime
-├── build-logic/            # Gradle convention plugins and release scripts
+├── scripts/                # Build, release, and packaging helper scripts
 ├── docs/                   # Project documentation
 └── gradle/                 # Version catalog and wrapper configuration
 ```
@@ -490,13 +490,13 @@ Useful release scripts:
 
 ```bash
 # Prepare universal macOS app bundle
-build-logic/kmp-build-macos-universal.sh
+scripts/kmp-build-macos-universal.sh
 
 # Build notarized arch-specific DMGs and export to dest/homebrew/<version>/
-build-logic/kmp-build-macos-dev.sh
+scripts/kmp-build-macos-dev.sh
 
 # Generate Homebrew cask from exported DMGs
-build-logic/prepare-homebrew-release.sh
+scripts/prepare-homebrew-release.sh
 ```
 
 See JetBrains Compose Multiplatform release docs for signing and notarization details.
