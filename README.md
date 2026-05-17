@@ -38,9 +38,10 @@ Or download the latest build from [GitHub Releases](https://github.com/D00mch/so
 ├── graph-engine/           # Framework-free typed graph DSL/runtime
 ├── llms/                   # Shared LLM DTOs, provider enums, model profiles, token logging
 ├── native/                 # llama.cpp bridge and local model runtime
-├── runtime/                # Shared JVM runtime, sandbox, provider clients, backend-safe tools
+├── sharedLogic/            # Shared JVM runtime, sandbox, provider clients, backend-safe tools
+├── sharedUI/               # Compose Desktop UI, view models, host ports, UI adapters, UI resources
+├── desktopApp/             # Runnable desktop host, DI composition root, OS integrations, packaging
 ├── backend/                # Ktor HTTP backend over the shared agent runtime
-├── composeApp/             # Compose Desktop UI and desktop-only tools/integrations
 ├── build-logic/            # Gradle convention plugins and release scripts
 ├── docs/                   # Project documentation
 └── gradle/                 # Version catalog and wrapper configuration
@@ -53,31 +54,34 @@ Gradle modules included by the build:
 :graph-engine
 :llms
 :native
-:runtime
-:composeApp
+:sharedLogic
+:sharedUI
+:desktopApp
 :backend
 ```
 
 Module docs:
 
-- [`runtime/README.md`](runtime/README.md) covers the shared JVM runtime layer, sandbox modes, backend-safe tools, and Docker sandbox image setup.
+- [`sharedLogic/README.md`](sharedLogic/README.md) covers the shared JVM runtime layer, sandbox modes, tools, and Docker sandbox image setup.
 
 ## Architecture (module structure)
 
 ```mermaid
 flowchart LR
-    userNode["User"] --> desktopUi[":composeApp\nCompose Desktop UI"]
-    desktopUi --> agentNode[":agent\nGraphBasedAgent"]
+    userNode["User"] --> desktopApp[":desktopApp\nDesktop entry + packaging"]
+    desktopApp --> sharedUi[":sharedUI\nCompose UI + UI adapters"]
+    sharedUi --> agentNode[":agent\nGraphBasedAgent"]
     backendApi[":backend\nHTTP API"] --> agentNode
 
     agentNode --> graphEngine[":graph-engine\nTyped graph runtime"]
-    agentNode --> runtimeNode[":runtime\nShared JVM runtime"]
+    agentNode --> runtimeNode[":sharedLogic\nShared JVM runtime"]
     agentNode --> llmsNode[":llms\nLLM contracts"]
     runtimeNode --> llmsNode
     runtimeNode --> nativeRuntime[":native\nLocal llama.cpp runtime"]
     backendApi --> runtimeNode
-    desktopUi --> runtimeNode
-    desktopUi --> nativeRuntime
+    desktopApp --> runtimeNode
+    sharedUi --> runtimeNode
+    sharedUi --> nativeRuntime
 
     runtimeNode --> sandboxNode["RuntimeSandbox\nfilesystem + commands"]
     runtimeNode --> toolsNode["Tool catalog"]
@@ -86,13 +90,15 @@ flowchart LR
 
 ### Frontend / Desktop app
 
-`:composeApp` owns the desktop experience:
+`:desktopApp` owns the runnable desktop entry point, app composition root, OS integrations, desktop-only services/tools, and Compose Desktop packaging. It depends on `:sharedLogic` and `:sharedUI`.
+
+`:sharedUI` owns the desktop experience:
 
 - Compose screens, ViewModels, app theme, reusable UI components, and setup/settings flows.
 - Chat UI with model/context selectors, attachments, send/mic controls, streaming state, speech output, and graph/thinking visualization.
 - Tool-management UI and permission/selection approval flows.
 - Settings UI for models, provider keys, general behavior, security, folders, Telegram, sessions, visualization, and support logs.
-- macOS-specific services for permissions, hotkeys, audio, media keys, window effects, app launching, browser automation, Mail, Calendar, Notes, screenshots, and screen recording.
+- Host-port interfaces plus UI adapters for permission/selection flows and macOS window effects. Non-UI desktop services and OS-bound tools live in `:desktopApp`.
 
 UI code should stay presentation-only. Business logic belongs in ViewModels or use cases.
 
@@ -103,9 +109,10 @@ Souz keeps platform-specific logic at the edges:
 - `:llms` contains provider-agnostic contracts and shared model/profile definitions.
 - `:graph-engine` contains no LLM/tool/agent knowledge; it only runs typed suspendable graph nodes.
 - `:agent` implements agent behavior on top of the graph engine.
-- `:runtime` contains JVM-shared runtime services and backend-safe tools. See [`runtime/README.md`](runtime/README.md).
+- `:sharedLogic` contains JVM-shared runtime services, backend-safe tools, sandbox/skills infrastructure, provider clients, and shared contracts/models. See [`sharedLogic/README.md`](sharedLogic/README.md).
 - `:native` contains local model support used by desktop and backend-capable runtime wiring.
-- `:composeApp` adds Desktop/KMP UI and OS integrations.
+- `:sharedUI` contains Desktop/KMP UI, view models, UI adapters, and desktop test coverage.
+- `:desktopApp` contains the runnable desktop entry points, DI composition root, OS integrations, desktop-only tools/services, packaging resources, and is the only app module that depends on `:sharedUI`.
 - `:backend` exposes the same runtime over HTTP without starting the desktop app.
 
 ## GraphBasedAgent
@@ -172,7 +179,7 @@ RuntimeSandbox
 └── commandExecutor: SandboxCommandExecutor
 ```
 
-The current implementations are `LocalRuntimeSandbox` and `DockerRuntimeSandbox`. Local mode is the default. Docker mode is opt-in through `SOUZ_SANDBOX_MODE=docker` and requires the `souz-runtime-sandbox:latest` image to exist locally. Build it with `./gradlew :runtime:buildRuntimeSandboxImage`. Tools plus skill loading, storage, and validation depend on sandbox abstractions instead of directly assuming host access. See [`runtime/README.md`](runtime/README.md) for setup details.
+The current implementations are `LocalRuntimeSandbox` and `DockerRuntimeSandbox`. Local mode is the default. Docker mode is opt-in through `SOUZ_SANDBOX_MODE=docker` and requires the `souz-runtime-sandbox:latest` image to exist locally. Build it with `./gradlew :sharedLogic:buildRuntimeSandboxImage`. Tools plus skill loading, storage, and validation depend on sandbox abstractions instead of directly assuming host access. See [`sharedLogic/README.md`](sharedLogic/README.md) for setup details.
 
 Default state layout is under:
 
@@ -203,8 +210,8 @@ Safety mechanisms include:
 
 Souz has two tool catalogs:
 
-- **Desktop catalog** in `:composeApp`, with OS-bound tools and UI approval flows.
-- **Runtime/backend-safe catalog** in `:runtime`, reusable by `:backend` without desktop dependencies.
+- **Desktop catalog** in `:desktopApp`, composed with shared runtime tools and surfaced through `:sharedUI` approval flows.
+- **Runtime/backend-safe catalog** in `:sharedLogic`, reusable by `:backend` without instantiating desktop-only services.
 
 ### Desktop tools
 
@@ -237,7 +244,7 @@ The backend-safe catalog avoids desktop-only APIs and includes:
 | Data analytics | CSV plotting, Excel read, Excel report |
 | Calculator | Calculator |
 
-The backend intentionally excludes desktop automation, browser control, Mail, Calendar, Notes, desktop Telegram tools, presentation UI integrations, and other OS-bound tools. It now separately supports Telegram bot chat bindings for text ingress into existing backend chats.
+The backend intentionally excludes desktop automation, browser control, Mail, Calendar, Notes, desktop Telegram tools, presentation UI integrations, and other OS-bound tools. It separately supports Telegram bot chat bindings for text ingress into existing backend chats.
 
 ## UI confirmations and approval flows
 
@@ -357,7 +364,7 @@ By default it binds to `127.0.0.1:8080`.
 
 ## Skills
 
-Souz supports standalone ClawHub/OpenClaw-style skill bundles across `:agent` and `:runtime`.
+Souz supports standalone ClawHub/OpenClaw-style skill bundles across `:agent` and `:sharedLogic`.
 
 Skill pipeline:
 
@@ -418,7 +425,7 @@ Features:
 Rebuild packaged bridge binaries:
 
 ```bash
-composeApp/src/jvmMain/resources/scripts/build-llama-bridge.sh
+desktopApp/src/main/resources/scripts/build-llama-bridge.sh
 ```
 
 ## MCP
@@ -449,20 +456,20 @@ Recommended IntelliJ IDEA plugins:
 Run the desktop app:
 
 ```bash
-./gradlew :composeApp:jvmRun
+./gradlew :desktopApp:run
 ```
 
 Run desktop tests:
 
 ```bash
-./gradlew :composeApp:cleanJvmTest :composeApp:jvmTest
+./gradlew :sharedUI:cleanJvmTest :sharedUI:jvmTest
 ```
 
 Run agent integration scenarios:
 
 ```bash
 export SOUZ_AGENT_INTEGRATION_TESTS_ON=true
-./gradlew :composeApp:cleanJvmTest :composeApp:jvmTest --tests "agent.GraphAgentComplexScenarios"
+./gradlew :sharedUI:cleanJvmTest :sharedUI:jvmTest --tests "agent.GraphAgentComplexScenarios"
 ```
 
 Run backend tests:
@@ -501,7 +508,7 @@ See JetBrains Compose Multiplatform release docs for signing and notarization de
 - Coordinate UI logic from ViewModels and delegate domain work to use cases.
 - Avoid mixing coroutines with low-level JVM concurrency primitives unless there is a clear boundary.
 - Use open/closed design for tools, providers, and runtime adapters.
-- Keep desktop-only integrations out of `:runtime` and `:backend`.
+- Keep Compose/UI dependencies out of `:sharedLogic`; backend wiring should avoid desktop-only service/tool implementations.
 - Read the nearest `AGENTS.md` before editing a module or nested package.
 
 ## Related reading

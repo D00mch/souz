@@ -18,7 +18,7 @@ Relevant current packaging details:
 - App bundle name: `Souz AI.app`
 - Bundle id: `ru.souz`
 - Minimum macOS version in Gradle packaging: `12.0` (`monterey`)
-- Release packaging already targets macOS DMG/PKG in [composeApp/build.gradle.kts](/Users/dumch/work/souz/composeApp/build.gradle.kts)
+- Release packaging already targets macOS DMG/PKG in [desktopApp/build.gradle.kts](/Users/dumch/work/souz/desktopApp/build.gradle.kts)
 - Developer ID notarized DMG flow exists in [build-logic/kmp-build-macos-dev.sh](/Users/dumch/work/souz/build-logic/kmp-build-macos-dev.sh)
 - `build-logic/kmp-build-macos-dev.sh` renames the final DMG to `Souz_aarch64-<version>.dmg` for Apple Silicon and `Souz_X86_64-<version>.dmg` for Intel.
 
@@ -67,7 +67,7 @@ By default, it writes:
   --release-tag 1.0.4
 ```
 
-By default, the script reads the app version from [composeApp/build.gradle.kts](/Users/dumch/work/souz/composeApp/build.gradle.kts). Pass `--version` if the release tag and Gradle version are temporarily out of sync.
+By default, the script reads the app version from [desktopApp/build.gradle.kts](/Users/dumch/work/souz/desktopApp/build.gradle.kts). Pass `--version` if the release tag and Gradle version are temporarily out of sync.
 
 Default GitHub release asset names:
 

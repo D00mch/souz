@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-BUILD_GRADLE="$PROJECT_DIR/composeApp/build.gradle.kts"
+BUILD_GRADLE="$PROJECT_DIR/desktopApp/build.gradle.kts"
 DEFAULT_GITHUB_REPO="D00mch/souz"
 DEFAULT_TAP_CASKS_DIR="/Users/dumch/work/homebrew-tap/Casks"
 TOKEN="souz-ai"
@@ -41,7 +41,7 @@ Examples:
   ./build-logic/prepare-homebrew-release.sh --release-tag 1.0.4
 
 Options:
-  --version <version>          Override version. Defaults to composeApp/build.gradle.kts packageVersion.
+  --version <version>          Override version. Defaults to desktopApp/build.gradle.kts packageVersion.
   --release-tag <tag>          GitHub release tag. Defaults to version.
   --github-repo <owner/repo>   Release repository. Default: D00mch/souz
   --tap-casks-dir <path>       Destination tap Casks directory. Default: /Users/dumch/work/homebrew-tap/Casks

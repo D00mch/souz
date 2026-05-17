@@ -2,8 +2,8 @@
 
 ## Module Scope
 
-- Shared `ru.souz.llms` contracts live here: DTOs, model/provider enums, request/response helpers, token logging, build-profile selection logic, and the shared Souz state-path helper consumed by `:agent`, `:runtime`, and `:native`.
-- This module should stay independent from `composeApp` and `native`.
+- Shared `ru.souz.llms` contracts live here: DTOs, model/provider enums, request/response helpers, token logging, build-profile selection logic, and the shared Souz state-path helper consumed by `:agent`, `:sharedLogic`, and `:native`.
+- This module should stay independent from `:sharedUI`, `:desktopApp`, and `:native`.
 - Local-model availability is consumed through `LocalModelAvailability` so `LlmBuildProfile` can stay in this shared module without depending on the JVM local runtime implementation.
 
 ## Project Structure

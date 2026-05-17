@@ -23,13 +23,13 @@ BUILD_NUMBER="${1:-2}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-RESOURCES_DIR="$PROJECT_DIR/composeApp/src/jvmMain/resources"
-BUILD_DIR="$PROJECT_DIR/composeApp/build/compose/binaries"
-COMPOSE_RUNTIME_CACHE_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/main/runtime"
-COMPOSE_CHECK_RUNTIME_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/checkRuntime"
-UNIVERSAL_BUILD_DIR="$PROJECT_DIR/composeApp/build/universal-build"
+RESOURCES_DIR="$PROJECT_DIR/desktopApp/src/main/resources"
+BUILD_DIR="$PROJECT_DIR/desktopApp/build/compose/binaries"
+COMPOSE_RUNTIME_CACHE_DIR="$PROJECT_DIR/desktopApp/build/compose/tmp/main/runtime"
+COMPOSE_CHECK_RUNTIME_DIR="$PROJECT_DIR/desktopApp/build/compose/tmp/checkRuntime"
+UNIVERSAL_BUILD_DIR="$PROJECT_DIR/desktopApp/build/universal-build"
 LOCAL_PROPERTIES="$PROJECT_DIR/local.properties"
-BUILD_GRADLE="$PROJECT_DIR/composeApp/build.gradle.kts"
+BUILD_GRADLE="$PROJECT_DIR/desktopApp/build.gradle.kts"
 JNA_LIBRARY_FILE="libjnidispatch.jnilib"
 JNA_ARM64_RELATIVE_PATH="Contents/app/resources/darwin-arm64/$JNA_LIBRARY_FILE"
 JNA_X64_RELATIVE_PATH="Contents/app/resources/darwin-x64/$JNA_LIBRARY_FILE"
@@ -630,7 +630,7 @@ log_success "Clean complete"
 mkdir -p "$UNIVERSAL_BUILD_DIR"
 
 # =============================================================================
-# Validate native JNI resources bundled from composeApp/src/jvmMain/resources
+# Validate native JNI resources bundled from desktopApp/src/main/resources
 # =============================================================================
 
 log_step "Validating native JNI resources"
@@ -691,7 +691,7 @@ reset_compose_runtime_cache
 
 # Build with x86_64 JDK
 log_info "Running Gradle build with x86_64 JDK..."
-./gradlew :composeApp:createReleaseDistributable \
+./gradlew :desktopApp:createReleaseDistributable \
     -Pmac.includeAllNativeResources=true \
     -PmacOsAppStoreRelease=true \
     -PbuildNumber="$BUILD_NUMBER" \
@@ -728,7 +728,7 @@ if [ -n "$APP_NAME" ] && [ "$APP_NAME" != "$DETECTED_APP_NAME" ]; then
 fi
 
 APP_NAME="$DETECTED_APP_NAME"
-OUTPUT_PKG="$PROJECT_DIR/composeApp/build/${APP_NAME}-${VERSION}-universal.pkg"
+OUTPUT_PKG="$PROJECT_DIR/desktopApp/build/${APP_NAME}-${VERSION}-universal.pkg"
 log_info "Resolved app bundle name: $APP_NAME"
 
 assert_file_arch "$X64_APP/Contents/MacOS/${APP_NAME}" "x86_64" "x86_64 launcher binary"
@@ -760,7 +760,7 @@ reset_compose_runtime_cache
 
 # Build with arm64 JDK
 log_info "Running Gradle build with arm64 JDK..."
-./gradlew :composeApp:createReleaseDistributable \
+./gradlew :desktopApp:createReleaseDistributable \
     -Pmac.includeAllNativeResources=true \
     -PmacOsAppStoreRelease=true \
     -PbuildNumber="$BUILD_NUMBER" \

@@ -1,0 +1,1 @@
+Содержимое file.txt в подпапке directory.

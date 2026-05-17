@@ -16,12 +16,12 @@ dependencies {
     testImplementation(libs.junit.jupiterParams)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutinesTest)
-    testImplementation(projects.runtime)
+    testImplementation(projects.sharedLogic)
 }
 
 sourceSets {
     test {
-        resources.srcDir(project(":runtime").layout.projectDirectory.dir("docker"))
+        resources.srcDir(project(":sharedLogic").layout.projectDirectory.dir("docker"))
     }
 }
 

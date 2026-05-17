@@ -23,13 +23,13 @@
 - Native sources live in `llama-bridge/`.
 - `third_party/llama.cpp` and `llama-bridge/build-*` are local-only paths and should stay untracked.
 - Packaged bridge binaries live in `native/src/main/resources/darwin-*`.
-- Rebuild packaged binaries with `composeApp/src/jvmMain/resources/scripts/build-llama-bridge.sh`.
+- Rebuild packaged binaries with `desktopApp/src/main/resources/scripts/build-llama-bridge.sh`.
 - On macOS the bridge disables ggml Metal residency sets by default with `GGML_METAL_NO_RESIDENCY=1`; set `SOUZ_LLAMA_METAL_RESIDENCY=1` only when you need to opt back in for debugging.
 
 ## Boundaries
 
 - `:native` depends on `:llms` for shared DTOs and provider-facing interfaces.
-- `composeApp` depends on `:native` for local inference and mirrors the module-owned bridge binaries into packaged app resources for macOS distribution.
+- `:sharedUI` uses `:native` for local inference, while `:desktopApp` mirrors the module-owned bridge binaries into packaged app resources for macOS distribution.
 - Keep UI, app wiring, and platform packaging concerns out of this module.
 
 ## Tests

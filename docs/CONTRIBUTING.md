@@ -15,8 +15,8 @@
 
 Implementations overview:
 
-- [Agent engine](../composeApp/src/jvmMain/kotlin/ru/souz/agent/engine/README.md)
-- [MCP Integration](../composeApp/src/jvmMain/kotlin/ru/souz/mcp/README.md)
+- [Agent module](../agent/README.md)
+- [MCP integration](../sharedUI/src/jvmMain/kotlin/ru/souz/service/mcp/README.md)
 
 Implementation details are provided within [AGENTS.md](../AGENTS.md) files.
 

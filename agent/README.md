@@ -1,6 +1,6 @@
 # Agent Module
 
-This package contains the standalone agent runtime extracted from `composeApp`.
+This package contains the standalone agent runtime extracted from the desktop app.
 
 ## Responsibilities
 
@@ -11,7 +11,7 @@ This package contains the standalone agent runtime extracted from `composeApp`.
 ## Boundaries
 
 - `agent` depends on shared agent-facing contracts and DTOs moved into the `:agent` module.
-- `agent` does not depend on Compose UI, application DI wiring, or concrete host services from `composeApp`.
+- `agent` does not depend on Compose UI, application DI wiring, or concrete host services from `:sharedUI`/`:desktopApp`.
 - Host integrations such as settings, telemetry/observability, MCP discovery, localization, and desktop context are accessed through `spi/`.
 
 ## Host Contract

@@ -7,13 +7,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-BUILD_GRADLE="$PROJECT_DIR/composeApp/build.gradle.kts"
-MAIN_RELEASE_DIR="$PROJECT_DIR/composeApp/build/compose/binaries/main-release"
+BUILD_GRADLE="$PROJECT_DIR/desktopApp/build.gradle.kts"
+MAIN_RELEASE_DIR="$PROJECT_DIR/desktopApp/build/compose/binaries/main-release"
 APP_OUTPUT_DIR="$MAIN_RELEASE_DIR/app"
 DMG_OUTPUT_DIR="$MAIN_RELEASE_DIR/dmg"
 DEST_DIR="$PROJECT_DIR/dest/homebrew"
-COMPOSE_RUNTIME_CACHE_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/main/runtime"
-COMPOSE_CHECK_RUNTIME_DIR="$PROJECT_DIR/composeApp/build/compose/tmp/checkRuntime"
+COMPOSE_RUNTIME_CACHE_DIR="$PROJECT_DIR/desktopApp/build/compose/tmp/main/runtime"
+COMPOSE_CHECK_RUNTIME_DIR="$PROJECT_DIR/desktopApp/build/compose/tmp/checkRuntime"
 
 # =============================================================================
 # Validation
@@ -131,7 +131,7 @@ rm -rf "$MAIN_RELEASE_DIR"
 echo "Cleaning cached Compose runtime image: $COMPOSE_RUNTIME_CACHE_DIR"
 rm -rf "$COMPOSE_RUNTIME_CACHE_DIR" "$COMPOSE_CHECK_RUNTIME_DIR"
 
-"$PROJECT_DIR/gradlew" :composeApp:notarizeReleaseDmg \
+"$PROJECT_DIR/gradlew" :desktopApp:notarizeReleaseDmg \
   -PmacOsAppStoreRelease=false \
   -Pmac.signing.enabled=true \
   -Pmac.signing.identity="$APPLE_SIGNING_ID" \

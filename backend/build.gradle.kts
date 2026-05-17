@@ -11,7 +11,7 @@ dependencies {
     implementation(project(":agent"))
     implementation(project(":llms"))
     implementation(project(":native"))
-    implementation(project(":runtime"))
+    implementation(project(":sharedLogic"))
     implementation(kotlin("stdlib"))
     implementation(libs.kotlinx.coroutines)
     implementation(libs.jackson)
