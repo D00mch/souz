@@ -306,8 +306,6 @@ class SkillActivationPipeline(
     }
 
     private suspend fun validateWithLlm(state: State): State {
-        if (true) return state.copy(phase = SkillActivationPhase.ACTIVATE_SKILL)
-
         val bundle = state.requireBundle()
         val skillId = state.requireCurrentSkillId()
         val bundleHash = state.requireBundleHash()
