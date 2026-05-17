@@ -8,6 +8,7 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.runtime.ImageFileFormats
 import ru.souz.llms.runtime.ImageGenerationGateway
 import ru.souz.llms.runtime.ImageGenerationInput
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription

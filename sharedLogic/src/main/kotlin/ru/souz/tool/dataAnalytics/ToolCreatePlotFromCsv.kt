@@ -16,8 +16,8 @@ import org.slf4j.LoggerFactory
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.sandbox.SandboxMode
 import ru.souz.tool.*
-import ru.souz.tool.files.FilesToolUtil
-import ru.souz.tool.files.ForbiddenFolder
+import ru.souz.runtime.files.FilesToolUtil
+import ru.souz.runtime.files.ForbiddenFolder
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
 import java.awt.Desktop

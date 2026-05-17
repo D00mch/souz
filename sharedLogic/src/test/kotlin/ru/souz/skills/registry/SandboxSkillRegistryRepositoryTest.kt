@@ -17,14 +17,14 @@ import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationSeverity
 import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.db.SettingsProvider
-import ru.souz.paths.SandboxSouzPaths
+import ru.souz.runtime.paths.SandboxSouzPaths
 import ru.souz.paths.SouzPaths
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.paths.DefaultSouzPaths
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.test.AfterTest

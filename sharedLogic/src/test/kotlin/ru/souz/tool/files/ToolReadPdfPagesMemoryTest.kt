@@ -11,6 +11,7 @@ import org.apache.pdfbox.pdmodel.font.PDType1Font
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.db.SettingsProvider
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxPathInfo

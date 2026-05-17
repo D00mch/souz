@@ -8,7 +8,6 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.agentDiModule
 import ru.souz.agent.spi.AgentDesktopInfoRepository
-import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -58,16 +57,13 @@ import ru.souz.tool.mail.*
 import ru.souz.tool.notes.*
 import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
-import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.service.speech.AiTunnelSpeechRecognitionProvider
-import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.service.speech.ModelAwareSpeechRecognitionProvider
 import ru.souz.service.speech.OpenAISpeechRecognitionProvider
 import ru.souz.service.speech.SaluteSpeechRecognitionProvider
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.service.telegram.TelegramChatSelectionBroker
 import ru.souz.service.telegram.TelegramContactSelectionBroker
-import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.tool.presentation.ToolPresentationCreate
 import ru.souz.tool.presentation.ToolPresentationRead
 import ru.souz.tool.telegram.ToolTelegramForward
@@ -83,9 +79,9 @@ import ru.souz.tool.web.ToolWebImageSearch
 import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebImageDownloader
 import ru.souz.tool.web.internal.WebResearchClient
-import ru.souz.ui.common.ComposeAgentErrorMessages
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.skills.ToolRunSkillCommand
 import ru.souz.ui.host.CalendarListProvider

@@ -8,7 +8,7 @@ import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolSetup
 import ru.souz.tool.application.ToolOpen
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 
 class ToolOpenDefaultBrowser(
     private val bash: ToolRunBashCommand,

@@ -14,7 +14,7 @@ import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.skills.filesystem.SandboxSkillBundleFileSystem
 import ru.souz.skills.filesystem.SkillBundleFileSystem
 import ru.souz.skills.filesystem.SkillBundleFsContext
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest

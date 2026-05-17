@@ -11,6 +11,7 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.GeneratedImage
 import ru.souz.llms.runtime.ImageGenerationGateway
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import java.nio.file.Files

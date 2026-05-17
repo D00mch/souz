@@ -4,7 +4,7 @@ import org.apache.tika.Tika
 import kotlinx.coroutines.runBlocking
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.BadInputException
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import java.net.URI
 import java.util.UUID
 

@@ -8,7 +8,7 @@ import ru.souz.llms.restJsonMapper
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.test.invoke
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.files.ToolFindFolders
 import java.io.File
 import java.nio.file.Files

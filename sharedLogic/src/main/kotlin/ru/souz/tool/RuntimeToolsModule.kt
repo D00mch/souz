@@ -6,7 +6,6 @@ import org.kodein.di.instance
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.SkillToolBindingTags
-import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.FactoryBackedToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
@@ -18,7 +17,7 @@ import ru.souz.tool.config.ToolSoundConfigDiff
 import ru.souz.tool.dataAnalytics.ToolCreatePlotFromCsv
 import ru.souz.tool.dataAnalytics.excel.ExcelRead
 import ru.souz.tool.dataAnalytics.excel.ExcelReport
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.files.ToolDeleteFile
 import ru.souz.tool.files.ToolExtractText
 import ru.souz.tool.files.ToolFindFilesByName

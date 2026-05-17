@@ -27,7 +27,6 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.restJsonMapper
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.openai.OpenAIChatAPI
@@ -41,7 +40,7 @@ import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.ToolsFactory
 import ru.souz.tool.calendar.ToolCalendarCreateEvent
 import ru.souz.tool.calendar.ToolCalendarDeleteEvent
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.files.ToolDeleteFile
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile

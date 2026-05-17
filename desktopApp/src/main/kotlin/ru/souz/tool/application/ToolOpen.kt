@@ -7,7 +7,7 @@ import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
 import ru.souz.tool.*
 import ru.souz.tool.desktop.ToolOpenFolder
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import java.awt.Desktop
 import java.io.File
 import java.net.URI

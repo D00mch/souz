@@ -8,6 +8,7 @@ import ru.souz.llms.runtime.DEFAULT_MAX_VISION_IMAGE_BYTES
 import ru.souz.llms.runtime.ImageFileFormats
 import ru.souz.llms.runtime.VisionGateway
 import ru.souz.llms.runtime.VisionInput
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription

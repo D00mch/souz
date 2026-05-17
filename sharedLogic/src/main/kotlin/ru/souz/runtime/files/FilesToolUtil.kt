@@ -1,4 +1,4 @@
-package ru.souz.tool.files
+package ru.souz.runtime.files
 
 import org.apache.pdfbox.Loader
 import org.apache.pdfbox.io.MemoryUsageSetting
@@ -6,7 +6,6 @@ import org.apache.pdfbox.pdmodel.PDDocument
 import org.slf4j.Logger
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.ToolInvocationMeta
-import ru.souz.runtime.files.isLikelyBinary
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxFileSystem

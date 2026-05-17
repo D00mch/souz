@@ -11,7 +11,7 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.web.internal.InternetSearchExecutor
 import ru.souz.tool.web.internal.WebResearchClient
 

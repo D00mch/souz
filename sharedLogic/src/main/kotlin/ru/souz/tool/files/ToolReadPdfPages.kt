@@ -9,6 +9,7 @@ import ru.souz.tool.ToolSetup
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.runtime.files.FilesToolUtil
 import java.io.IOException
 
 class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolReadPdfPages.Input> {

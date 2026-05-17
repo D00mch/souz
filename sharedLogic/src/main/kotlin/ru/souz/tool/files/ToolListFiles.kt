@@ -3,6 +3,7 @@ package ru.souz.tool.files
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.*
 
 class ToolListFiles(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolListFiles.Input> {

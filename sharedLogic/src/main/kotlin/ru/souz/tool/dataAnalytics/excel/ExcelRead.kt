@@ -3,7 +3,7 @@ package ru.souz.tool.dataAnalytics.excel
 import org.apache.poi.ss.usermodel.*
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 
 class ExcelRead(
     private val filesToolUtil: FilesToolUtil

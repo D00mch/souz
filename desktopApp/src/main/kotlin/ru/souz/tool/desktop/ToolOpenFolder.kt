@@ -3,7 +3,7 @@ package ru.souz.tool.desktop
 import ru.souz.llms.ToolInvocationMeta
 
 import ru.souz.tool.*
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.files.ToolListFiles
 import org.slf4j.LoggerFactory
 import ru.souz.db.ConfigStore

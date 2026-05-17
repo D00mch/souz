@@ -22,7 +22,7 @@ import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
-import ru.souz.paths.SandboxSouzPaths
+import ru.souz.runtime.paths.SandboxSouzPaths
 import ru.souz.paths.SouzPaths
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxFileSystem

@@ -60,7 +60,7 @@ import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.ui.BaseViewModel
 import ru.souz.ui.main.usecases.FinderPathExtractor

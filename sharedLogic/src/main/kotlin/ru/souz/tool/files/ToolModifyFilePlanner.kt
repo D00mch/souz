@@ -2,6 +2,7 @@ package ru.souz.tool.files
 
 import com.github.difflib.DiffUtils
 import com.github.difflib.UnifiedDiffUtils
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.BadInputException
 
 internal data class ToolModifyPreparedEdit(
