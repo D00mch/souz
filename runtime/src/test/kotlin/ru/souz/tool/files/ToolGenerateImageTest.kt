@@ -55,7 +55,7 @@ class ToolGenerateImageTest {
                 prompt = "A tiny red cube",
                 outputPath = null,
             ),
-            ToolInvocationMeta.Empty,
+            ToolInvocationMeta.localDefault(),
         )
 
         val result: Map<String, String> = restJsonMapper.readValue(raw)
@@ -95,7 +95,7 @@ class ToolGenerateImageTest {
                     prompt = "A tiny red cube",
                     outputPath = "${homeDir.resolve("Pictures/result.jpg")}",
                 ),
-                ToolInvocationMeta.Empty,
+                ToolInvocationMeta.localDefault(),
             )
         }
 

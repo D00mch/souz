@@ -60,7 +60,7 @@ class ToolViewImageTest {
                 imagePath = imagePath.toAbsolutePath().toString(),
                 question = "What is in the image?",
             ),
-            ToolInvocationMeta.Empty,
+            ToolInvocationMeta.localDefault(),
         )
 
         assertEquals("A small cat", result)
@@ -91,7 +91,7 @@ class ToolViewImageTest {
                     imagePath = imagePath.toAbsolutePath().toString(),
                     question = "What is in the image?",
                 ),
-                ToolInvocationMeta.Empty,
+                ToolInvocationMeta.localDefault(),
             )
         }
 
@@ -142,7 +142,7 @@ class ToolViewImageTest {
                 imagePath = "/sandbox/cat.png",
                 question = "What is in the image?",
             ),
-            ToolInvocationMeta.Empty,
+            ToolInvocationMeta.localDefault(),
         )
 
         assertEquals("A bridged cat", result)
