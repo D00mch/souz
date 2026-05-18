@@ -13,9 +13,12 @@ internal fun ByteArray.isLikelyBinary(): Boolean {
             bytes.take(BINARY_SAMPLE_SIZE).let { sample ->
                 sample.count { byte ->
                     val value = byte.toInt() and 0xFF
-                    value < 0x20 && value !in setOf(0x09, 0x0A, 0x0C, 0x0D)
+                    value < 0x20 && !isTextWhitespaceControl(value)
                 } * 5 > sample.size
             }
 }
+
+private fun isTextWhitespaceControl(value: Int): Boolean =
+    value == 0x09 || value == 0x0A || value == 0x0C || value == 0x0D
 
 private const val BINARY_SAMPLE_SIZE = 1024

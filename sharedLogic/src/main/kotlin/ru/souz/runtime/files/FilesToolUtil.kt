@@ -26,6 +26,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlin.io.path.extension
 
@@ -290,20 +291,18 @@ class FilesToolUtil(
     ): T {
         withContext(Dispatchers.IO) { localPathOrNull(path, meta) }?.let { return block(it) }
 
-        val tempFile = withContext(Dispatchers.IO) {
-            val tempFile = Files.createTempFile(pdfScratchDirectory(meta), prefix, suffix)
-            try {
-                Files.write(tempFile, readBytes(path, meta))
-                tempFile
-            } catch (error: Throwable) {
-                runCatching { Files.deleteIfExists(tempFile) }
-                throw error
-            }
-        }
+        var tempFile: Path? = null
         try {
-            return block(tempFile)
+            withContext(Dispatchers.IO) {
+                val file = Files.createTempFile(pdfScratchDirectory(meta), prefix, suffix)
+                tempFile = file
+                Files.write(file, readBytes(path, meta))
+            }
+            return block(checkNotNull(tempFile))
         } finally {
-            withContext(Dispatchers.IO) { Files.deleteIfExists(tempFile) }
+            tempFile?.let { file ->
+                withContext(NonCancellable + Dispatchers.IO) { Files.deleteIfExists(file) }
+            }
         }
     }
 
