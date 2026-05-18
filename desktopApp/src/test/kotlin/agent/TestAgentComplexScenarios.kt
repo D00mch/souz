@@ -12,7 +12,7 @@ import ru.souz.agent.AgentId
 import ru.souz.llms.LLMModel
 import ru.souz.service.telegram.TelegramService
 import ru.souz.tool.ToolRunBashCommand
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.files.ToolExtractText
 import ru.souz.tool.files.ToolFindFilesByName
 import ru.souz.tool.mail.ToolMailSendNewMessage

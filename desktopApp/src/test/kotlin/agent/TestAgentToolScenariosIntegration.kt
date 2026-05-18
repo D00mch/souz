@@ -15,6 +15,7 @@ import org.kodein.di.bindSingleton
 import ru.souz.agent.AgentId
 import ru.souz.GraphBasedAgent
 import ru.souz.llms.LLMModel
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.application.ToolOpen
 import ru.souz.tool.application.ToolShowApps

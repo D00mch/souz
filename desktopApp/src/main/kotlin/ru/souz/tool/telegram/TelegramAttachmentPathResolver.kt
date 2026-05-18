@@ -1,6 +1,6 @@
 package ru.souz.tool.telegram
 
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 
 internal object TelegramAttachmentPathResolver {
 

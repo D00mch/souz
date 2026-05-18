@@ -5,7 +5,7 @@ import ru.souz.llms.ToolInvocationMeta
 import com.fasterxml.jackson.annotation.JsonProperty
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.*
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 
 class ToolShowApps(
     private val filesToolUtil: FilesToolUtil,

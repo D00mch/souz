@@ -15,6 +15,7 @@ import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.runtime.sandbox.SandboxRuntimePaths
 import ru.souz.llms.runtime.VisionGateway
 import ru.souz.llms.runtime.VisionInput
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import java.nio.file.Files

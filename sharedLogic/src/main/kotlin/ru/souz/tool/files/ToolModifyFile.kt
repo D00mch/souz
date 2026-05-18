@@ -2,6 +2,7 @@ package ru.souz.tool.files
 
 import org.slf4j.LoggerFactory
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.*
 
 class ToolModifyFile(

@@ -11,11 +11,10 @@ import ru.souz.tool.config.ToolInstructionStore
 import ru.souz.tool.config.ToolInstructionStore.Companion.buildInstruction
 import ru.souz.tool.application.ToolShowApps
 import ru.souz.tool.files.ToolListFiles
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import java.util.ArrayList
 import kotlin.collections.map
 import ru.souz.tool.browser.BrowserType
-import kotlin.getValue
 
 /**
  * Collects various desktop information and converts it to a list of data

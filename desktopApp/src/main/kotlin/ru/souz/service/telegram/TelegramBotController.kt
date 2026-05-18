@@ -34,7 +34,7 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
 import ru.souz.db.ConfigStore
 import ru.souz.llms.restJsonMapper
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.ui.host.TelegramControlBot
 import ru.souz.ui.host.TelegramControlIncomingMessage

@@ -3,7 +3,7 @@ package ru.souz.skills.registry
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import ru.souz.paths.SandboxSouzPaths
+import ru.souz.runtime.paths.SandboxSouzPaths
 import ru.souz.runtime.sandbox.SandboxRuntimePaths
 
 class SandboxSouzPathsTest {

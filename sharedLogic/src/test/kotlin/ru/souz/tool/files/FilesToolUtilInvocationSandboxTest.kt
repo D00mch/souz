@@ -11,6 +11,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox

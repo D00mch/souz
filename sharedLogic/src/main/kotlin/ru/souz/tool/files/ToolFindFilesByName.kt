@@ -2,6 +2,7 @@ package ru.souz.tool.files
 
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription

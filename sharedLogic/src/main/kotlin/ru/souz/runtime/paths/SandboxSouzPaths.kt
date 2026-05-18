@@ -1,5 +1,6 @@
-package ru.souz.paths
+package ru.souz.runtime.paths
 
+import ru.souz.paths.SouzPaths
 import java.nio.file.Path
 import ru.souz.runtime.sandbox.SandboxRuntimePaths
 

@@ -12,7 +12,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.test.invoke
-import ru.souz.tool.files.FilesToolUtil
+import ru.souz.runtime.files.FilesToolUtil
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.charset.StandardCharsets

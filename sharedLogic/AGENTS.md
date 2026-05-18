@@ -38,7 +38,7 @@ sharedLogic/
         │       ├── runtime/
         │       │   ├── di/                   # Shared runtime DI modules
         │       │   └── sandbox/              # Local/Docker sandbox abstractions
-        │       ├── service/                  # Files, MCP, observability, speech, shared Telegram models/brokers
+        │       ├── service/                  # MCP, observability, speech, shared Telegram models/brokers
         │       └── tool/
         │           ├── RuntimeToolsModule.kt # Backend-safe tool catalog wiring
         │           ├── config/               # Non-UI config tools

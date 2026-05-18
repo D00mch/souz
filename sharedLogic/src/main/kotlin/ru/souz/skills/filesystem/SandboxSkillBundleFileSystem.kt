@@ -8,6 +8,7 @@ import java.nio.file.Path
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.souz.agent.skills.bundle.SkillBundleException
+import ru.souz.runtime.files.isLikelyBinary
 import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.tool.BadInputException
@@ -104,7 +105,7 @@ class SandboxSkillBundleFileSystem(
 
         val bytes = runCatching { sandboxFileSystem.readBytes(sandboxPath) }
             .getOrElse { error -> throw SkillBundleException("Failed to read skill file: $path", error) }
-        if (isLikelyBinary(bytes)) {
+        if (bytes.isLikelyBinary()) {
             throw SkillBundleException("Skill files must be UTF-8 text, but a binary file was found: $path")
         }
 
@@ -129,27 +130,11 @@ class SandboxSkillBundleFileSystem(
         }
     }
 
-    private fun isLikelyBinary(bytes: ByteArray): Boolean {
-        if (bytes.any { it == 0.toByte() }) return true
-        if (bytes.isEmpty()) return false
-
-        val sample = bytes.take(BINARY_SAMPLE_SIZE)
-        val controlChars = sample.count { byte ->
-            val value = byte.toInt() and 0xFF
-            value < 0x20 && value !in setOf(0x09, 0x0A, 0x0C, 0x0D)
-        }
-        return controlChars * 5 > sample.size
-    }
-
     private fun decodeUtf8Strict(bytes: ByteArray): String {
         val decoder = StandardCharsets.UTF_8
             .newDecoder()
             .onMalformedInput(CodingErrorAction.REPORT)
             .onUnmappableCharacter(CodingErrorAction.REPORT)
         return decoder.decode(ByteBuffer.wrap(bytes)).toString()
-    }
-
-    private companion object {
-        private const val BINARY_SAMPLE_SIZE = 1024
     }
 }

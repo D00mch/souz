@@ -9,6 +9,7 @@ import org.apache.tika.parser.AutoDetectParser
 import org.apache.tika.sax.BodyContentHandler
 import org.xml.sax.SAXException
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription

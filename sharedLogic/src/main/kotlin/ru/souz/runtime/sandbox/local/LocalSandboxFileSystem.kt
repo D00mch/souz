@@ -6,7 +6,7 @@ import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.runtime.sandbox.SandboxRuntimePaths
 import ru.souz.tool.BadInputException
-import ru.souz.tool.files.ForbiddenFolder
+import ru.souz.runtime.files.ForbiddenFolder
 import java.awt.Desktop
 import java.io.File
 import java.io.InputStream
