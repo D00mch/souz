@@ -21,6 +21,7 @@ If you are not sure about something, left a note for other developers to review.
 ## Features
 
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
+- **Canonical long-term memory core** with shared `:agent` memory contracts, desktop SQLite canonical storage at `~/.local/state/souz/memory.db`, diagnostics tables, graph read model support, and backend storage-mode parity (`memory`/`filesystem`/`postgres`) ready for later runtime wiring.
 - **Standalone ClawHub/OpenClaw skills support across `:agent` and `:sharedLogic`**: bundle parsing, canonical hashing, sandbox-safe filesystem bundle loading, desktop-first single-user skill storage with backend user-scoped storage support, runtime-backed activated-skill command execution through `RunSkillCommand`, plus a Docker-bundled academic paper skill fixture seeded into runtime registry storage for sandbox testing.
 - **Shared sandbox abstraction for tools and skills** in `:sharedLogic`: sandbox filesystem/path/process contracts sit under `sharedLogic/src/main/kotlin/ru/souz/runtime/sandbox/`.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
@@ -38,7 +39,7 @@ If you are not sure about something, left a note for other developers to review.
 ```text
 .
 ├── docs/                                   # Project docs extracted from top-level notes
-├── agent/                                  # Shared agent runtime module
+├── agent/                                  # Shared agent runtime module and memory domain contracts
 ├── graph-engine/                           # Shared graph DSL/runtime module
 ├── llms/                                   # Shared LLM contracts/helpers module
 ├── native/                                 # Shared local-model runtime/native bridge module
@@ -47,6 +48,7 @@ If you are not sure about something, left a note for other developers to review.
 │   ├── docker/                             # Docker entrypoint and bundled development skill fixtures
 │   ├── src/main/kotlin/ru/souz/db/         # Config store + settings provider
 │   ├── src/main/kotlin/ru/souz/llms/       # Provider APIs and runtime LLM helpers
+│   ├── src/main/kotlin/ru/souz/memory/     # Desktop canonical SQLite memory storage and graph read model
 │   ├── src/main/kotlin/ru/souz/runtime/    # Shared runtime infrastructure (sandbox, DI helpers)
 │   ├── src/main/kotlin/ru/souz/service/    # Shared JVM services (MCP, observability, speech, Telegram models)
 │   ├── src/main/kotlin/ru/souz/skills/     # Safe skill bundle loading plus persistent skill/validation storage
@@ -60,7 +62,7 @@ If you are not sure about something, left a note for other developers to review.
 │   ├── src/main/resources/                 # Native libraries, icons, entitlements, scripts, support assets
 │   └── build.gradle.kts                    # Compose Desktop packaging and distribution tasks
 ├── backend/                                # JVM HTTP backend with shared agent runtime reuse
-│   ├── src/main/kotlin/ru/souz/backend/    # app, http, agent runtime, bootstrap, config, security, storage backend packages
+│   ├── src/main/kotlin/ru/souz/backend/    # app, http, agent runtime, bootstrap, config, security, memory, storage backend packages
 │   ├── src/test/kotlin/ru/souz/backend/    # Backend service/runtime tests
 │   └── AGENTS.md                           # Module notes and REST contract
 ├── dest/                                   # Local output/scratch directory

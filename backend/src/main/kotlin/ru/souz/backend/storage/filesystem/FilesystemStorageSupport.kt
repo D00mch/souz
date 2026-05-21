@@ -84,6 +84,21 @@ class FilesystemStorageLayout(
     fun toolCallsFile(userId: String, chatId: String): Path =
         chatsDir(userId).resolve(chatId).resolve("tool-calls.jsonl")
 
+    fun memoryDir(userId: String): Path =
+        userDir(userId).resolve("memory")
+
+    fun memoryEntitiesFile(userId: String): Path =
+        memoryDir(userId).resolve("entities.json")
+
+    fun memoryEvidenceFile(userId: String): Path =
+        memoryDir(userId).resolve("evidence.json")
+
+    fun memoryFactsFile(userId: String): Path =
+        memoryDir(userId).resolve("facts.json")
+
+    fun memoryFactEvidenceFile(userId: String): Path =
+        memoryDir(userId).resolve("fact-evidence.json")
+
     fun chatDirectories(userId: String): List<Path> {
         val chatsRoot = chatsDir(userId)
         if (!Files.isDirectory(chatsRoot)) {

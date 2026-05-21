@@ -12,6 +12,7 @@ agent/
    ├── SystemPromptResolver.kt        # Default system prompt selection by agent/model/profile
    ├── TraceableAgent.kt              # Internal tracing contract used by concrete agents
    ├── graph/                         # Internal adapter from agent state to :graph-engine
+   ├── memory/                        # Long-term memory DTOs and service contracts shared by desktop/backend storage
    ├── skills/                        # Skill bundle selection, validation, activation, and registry storage
    │   ├── SkillActivationPipeline.kt # Explicit skill-selection/validation/activation state machine
    │   ├── activation/                # Activated-skill models, skill ids, and history/context injection

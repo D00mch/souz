@@ -30,6 +30,7 @@ sharedLogic/
         │   └── ru/souz/
         │       ├── db/                       # ConfigStore, SettingsProvider, vector DB
         │       ├── llms/                     # Provider clients, voice APIs, and LLM runtime helpers
+        │       ├── memory/                   # Desktop canonical SQLite memory store, migrations, diagnostics, graph read model
         │       ├── skills/
         │       │   ├── bundle/               # Load SkillBundle: how bytes/files become a SkillBundle
         │       │   ├── filesystem/           # Safe/replaceable filesystem access: host/user/sandbox

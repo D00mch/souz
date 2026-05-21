@@ -33,6 +33,7 @@ dependencies {
     implementation(kotlin("reflect"))
     implementation(libs.kotlinx.coroutines)
     implementation(libs.jackson)
+    implementation(libs.sqlite.jdbc)
     implementation(libs.ktor.serializationJackson)
     implementation(libs.bundles.ktorClient)
     implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")

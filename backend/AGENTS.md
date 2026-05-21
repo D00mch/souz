@@ -41,7 +41,7 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
 - Storage modes: `memory`, `filesystem`, `postgres`.
 - `memory` uses bounded in-process repositories to reduce accidental OOM risk.
 - `filesystem` stores per-user data under `SOUZ_BACKEND_DATA_DIR` / `souz.backend.dataDir` using URL-safe user path segments and append-only logs for messages, executions, options, events, and tool calls; Telegram bot bindings live beside the chat as `telegram-bot.json` with encrypted token payload plus linked Telegram-user metadata.
-- `postgres` uses JDBC + HikariCP + Flyway, allocates message/event sequence numbers per chat, enforces one active execution per chat, persists durable replay only when `SOUZ_FEATURE_DURABLE_EVENT_REPLAY=true`, uses optimistic locking on `agent_conversation_state`, keeps Telegram binding token hashes unique, and stores per-binding poller lease ownership in `telegram_bot_bindings` for multi-instance polling safety.
+- `postgres` uses JDBC + HikariCP + Flyway, allocates message/event sequence numbers per chat, enforces one active execution per chat, persists durable replay only when `SOUZ_FEATURE_DURABLE_EVENT_REPLAY=true`, uses optimistic locking on `agent_conversation_state`, keeps Telegram binding token hashes unique, stores per-binding poller lease ownership in `telegram_bot_bindings` for multi-instance polling safety, and now carries the canonical memory tables under the same migration flow for later runtime wiring.
 - Telegram bot tokens now use `TELEGRAM_TOKEN_ENCRYPTION_KEY` / `souz.telegram.tokenEncryptionKey` for AES-GCM encryption at rest. Telegram link secrets are stored only as hashes. Legacy rows copied forward from the old plaintext column still need to be rebound or rewritten by the application path before they stop relying on the plaintext compatibility fallback. Older pending-link rows created before the one-time-secret flow should be rebound so the UI can issue a fresh `/start <secret>` command.
 
 ## Config
@@ -88,6 +88,7 @@ backend/
     │   ├── execution/    # Execution models, repositories, lifecycle services
     │   ├── http/         # Ktor server, DTOs, routes, validation
     │   ├── keys/         # Provider-key models, repositories, services
+    │   ├── memory/       # Shared backend memory storage contract for storage-mode parity
     │   ├── onboarding/   # First-run onboarding state and completion service
     │   ├── options/      # Option models, repositories, services
     │   ├── security/     # Trusted proxy request identity
