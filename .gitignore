@@ -53,3 +53,11 @@ bin/
 /third_party/llama.cpp/
 /native/llama-bridge/build-*/
 hs_err_pid*.log
+
+### Legacy top-level modules removed from the Souz layout ###
+/composeApp/
+/runtime/
+/proto/
+/src/
+/telemetryBackend/
+/buildSrc/
